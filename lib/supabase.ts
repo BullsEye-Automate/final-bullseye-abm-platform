@@ -44,6 +44,35 @@ export type PipelineMix = { label: string; share: number; velocity: string };
 export type Competitor = { name: string; note?: string };
 export type Geography  = { region: string; priority: string; note?: string };
 
+export type Contact = {
+  id: string;
+  company_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  job_title: string | null;
+  linkedin_headline: string | null;
+  linkedin_url: string | null;
+  email: string | null;
+  phone: string | null;
+  seniority: string | null;
+  tenure: string | null;
+  prefilter_result: "yes" | "no" | null;
+  prefilter_reason: string | null;
+  fit_score: number | null;
+  fit: string | null;
+  fit_reason: string | null;
+  fit_action: "enrich" | "manual_review" | "discard" | null;
+  linkedin_icebreaker: string | null;
+  email_subject: string | null;
+  email_body: string | null;
+  status: "pending" | "enriched" | "contacted" | "replied" | "discarded";
+  clay_row_id: string | null;
+  lemlist_lead_id: string | null;
+  hubspot_contact_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type Company = {
   id: string;
   company_name: string;
