@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
   const { data: inserted, error: insertErr } = await db
     .from("companies")
     .insert(dedupedRows)
-    .select("*");
+    .select("id, company_name, status, fit_score");
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
 
   return NextResponse.json({
