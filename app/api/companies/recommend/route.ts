@@ -74,9 +74,22 @@ export async function POST(req: NextRequest) {
     icp_version: icp.version
   }));
 
+  const existingLower = new Set(exclude.map((n) => n.toLowerCase()));
+  const seenLower = new Set<string>();
+  const dedupedRows = rows.filter((r) => {
+    const k = r.company_name.toLowerCase();
+    if (existingLower.has(k) || seenLower.has(k)) return false;
+    seenLower.add(k);
+    return true;
+  });
+
+  if (dedupedRows.length === 0) {
+    return NextResponse.json({ inserted: [], skipped: rows.length });
+  }
+
   const { data: inserted, error: insertErr } = await db
     .from("companies")
-    .upsert(rows, { onConflict: "company_name", ignoreDuplicates: true })
+    .insert(dedupedRows)
     .select("*");
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
 
