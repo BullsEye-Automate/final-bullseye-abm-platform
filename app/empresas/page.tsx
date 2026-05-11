@@ -59,7 +59,7 @@ export default function EmpresasPage() {
 
   async function load() {
     setLoading(true);
-    const res = await fetch(`/api/companies?status=${tab}`);
+    const res = await fetch(`/api/companies?status=${tab}`, { cache: "no-store" });
     const data = await res.json();
     setLoading(false);
     if (!res.ok) {

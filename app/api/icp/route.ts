@@ -14,7 +14,10 @@ export async function GET() {
     .limit(1)
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ icp: data });
+  return NextResponse.json(
+    { icp: data },
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
 }
 
 export async function POST(req: NextRequest) {

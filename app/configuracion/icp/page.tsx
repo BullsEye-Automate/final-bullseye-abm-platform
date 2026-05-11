@@ -37,7 +37,7 @@ export default function IcpPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/icp")
+    fetch("/api/icp", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         setIcp(d.icp);

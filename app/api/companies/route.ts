@@ -14,5 +14,8 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ companies: data ?? [] });
+  return NextResponse.json(
+    { companies: data ?? [] },
+    { headers: { "Cache-Control": "no-store, max-age=0" } }
+  );
 }
