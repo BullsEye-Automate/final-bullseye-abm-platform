@@ -12,7 +12,11 @@ export function supabaseAdmin(): SupabaseClient {
     );
   }
   _admin = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      fetch: (input, init) =>
+        fetch(input as RequestInfo, { ...(init ?? {}), cache: "no-store" })
+    }
   });
   return _admin;
 }
