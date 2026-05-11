@@ -24,7 +24,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { data: company, error: fetchErr } = await db
     .from("companies")
-    .select("*")
+    .select(
+      "id, company_name, status, reject_reason, approved_by, approved_at, fit_score, fit_signals, icp_version"
+    )
     .eq("id", params.id)
     .maybeSingle();
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
@@ -49,7 +51,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .from("companies")
     .update(update)
     .eq("id", params.id)
-    .select("*")
+    .select(
+      "id, company_name, status, reject_reason, approved_by, approved_at, fit_score, fit_signals, icp_version"
+    )
     .single();
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
 
