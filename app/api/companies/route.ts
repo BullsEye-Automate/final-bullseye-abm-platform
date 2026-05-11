@@ -9,7 +9,9 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   const { data, error } = await db
     .from("companies")
-    .select("*")
+    .select(
+      "id, company_name, company_website, company_linkedin_url, company_city, company_country, company_size, company_type, cad_software, scanner_technology, fit_signals, fit_score, research_summary, research_sources, competitor_match, status, reject_reason, approved_by, approved_at, icp_version, created_at, updated_at"
+    )
     .eq("status", status)
     .order("created_at", { ascending: false })
     .limit(200);
