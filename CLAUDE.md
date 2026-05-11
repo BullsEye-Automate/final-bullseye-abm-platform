@@ -31,3 +31,28 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 | 3 | Pendiente | Cola revisión manual (score 5-7) + feedback loop completo |
 | 4 | Pendiente | Generador de mensajes + Lemlist API + HubSpot API |
 | 5 | Pendiente | Dashboard unificado |
+
+## Estado actual (handoff entre sesiones)
+
+**Hecho del Sprint 2 (fase A):**
+- Tablas `contacts` + `contact_feedback` migradas en Supabase del usuario.
+- Pre-filter Claude funcionando: `lib/prefilter.ts` + `lib/contactsPrompts.ts` (prompt validado con Tom Wiand).
+- `/api/contacts` (GET con buckets pending/manual_review/enriched/discarded + contadores).
+- `/api/contacts/import` (POST: acepta JSON de Clay, corre pre-filter, persiste).
+- `/contactos` pantalla con tabs, agrupada por empresa, panel de import por JSON.
+- Sidebar tiene Contactos activo.
+- Probado end-to-end: el usuario importó Tom Wiand (YES) y Jane Smith (NO) sobre DLP Dental Laboratory y funcionó.
+
+**Próximo paso (Sprint 2 fase B — cablear Clay HTTP):**
+
+Reemplazar el paste manual de JSON por un botón "Buscar contactos en Clay" desde una empresa aprobada. El flujo:
+
+1. **App → Clay Companies (push)**: el usuario ya generó el webhook entrante de la tabla Companies en Clay. La URL completa está guardada en Vercel como `CLAY_COMPANIES_WEBHOOK_URL`. Pendiente: crear `POST /api/clay/push-company` que POSTea a esa URL con `{company_name, company_website, company_city, company_size, company_type, cad_software, scanner_technology, fit_signals, fit_score, linkedin_url}` (las columnas que la tabla Companies en Clay espera — el usuario confirmó el schema en `docs/notas_arquitectura.md`).
+2. **Clay corre "Find people at company"** automáticamente y enriquece columnas adicionales.
+3. **Clay → App (raw contactos)**: pendiente crear webhook en Clay que cuando un row de Companies termine de procesar, mande los contactos encontrados a `/api/clay/raw-contacts` en nuestra app. La app corre pre-filter y persiste en Supabase.
+4. **App → Clay Contacts (push YES)**: para los contactos pre-filter YES, POSTear a otro webhook (el de la tabla Contacts de Clay — todavía no generado, va igual que el de Companies). Variable de entorno futura: `CLAY_CONTACTS_WEBHOOK_URL`.
+5. **Clay scorea y manda a Lemlist** automáticamente (lo configura Clay, no la app).
+
+**Para retomar en una nueva sesión:**
+
+> Continúo el Sprint 2 fase B de weCAD4you-prospecting. Lee `CLAUDE.md`, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. El webhook de Clay Companies ya está en Vercel como `CLAY_COMPANIES_WEBHOOK_URL`. Próximo paso: construir `POST /api/clay/push-company` + botón "Empujar a Clay" en la pantalla de Empresas para empresas aprobadas.
