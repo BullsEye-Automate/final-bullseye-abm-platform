@@ -52,14 +52,19 @@ export default function EmpresasPage() {
   const [limit, setLimit] = useState(8);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [statusCounts, setStatusCounts] = useState<{ pending: number; approved: number; rejected: number }>({
+    pending: 0,
+    approved: 0,
+    rejected: 0
+  });
   const [loading, setLoading] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<{ inserted: number; skipped: number } | null>(null);
 
-  async function load() {
+  async function load(forStatus: "pending" | "approved" | "rejected" = tab) {
     setLoading(true);
-    const res = await fetch(`/api/companies?status=${tab}`, { cache: "no-store" });
+    const res = await fetch(`/api/companies?status=${forStatus}`, { cache: "no-store" });
     const data = await res.json();
     setLoading(false);
     if (!res.ok) {
@@ -67,6 +72,7 @@ export default function EmpresasPage() {
       return;
     }
     setCompanies(data.companies);
+    if (data.counts) setStatusCounts(data.counts);
   }
 
   useEffect(() => {
@@ -90,7 +96,7 @@ export default function EmpresasPage() {
     }
     setLastRun({ inserted: data.inserted?.length ?? 0, skipped: data.skipped ?? 0 });
     setTab("pending");
-    load();
+    load("pending");
   }
 
   const counts = useMemo(() => {
@@ -172,25 +178,37 @@ export default function EmpresasPage() {
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {(["pending", "approved", "rejected"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setTab(s)}
-              className={`btn ${
-                tab === s
-                  ? "bg-brand text-white"
-                  : "bg-white border border-[#E5E2F0] text-ink hover:border-brand-soft"
-              }`}
-            >
-              {s === "pending" ? "Pendientes" : s === "approved" ? "Aprobadas" : "Rechazadas"}
-            </button>
-          ))}
+          {(["pending", "approved", "rejected"] as const).map((s) => {
+            const label = s === "pending" ? "Pendientes" : s === "approved" ? "Aprobadas" : "Rechazadas";
+            const count = statusCounts[s];
+            const active = tab === s;
+            return (
+              <button
+                key={s}
+                onClick={() => setTab(s)}
+                className={`btn ${
+                  active
+                    ? "bg-brand text-white"
+                    : "bg-white border border-[#E5E2F0] text-ink hover:border-brand-soft"
+                }`}
+              >
+                {label}
+                <span
+                  className={`ml-2 inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] font-semibold ${
+                    active ? "bg-white/20 text-white" : "bg-[#F1EEF7] text-ink-muted"
+                  }`}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
         </div>
         <div className="flex items-center gap-3 text-xs">
           <ScoreChip label="alto" color="success" count={counts.high ?? 0} />
           <ScoreChip label="medio" color="warning" count={counts.medium ?? 0} />
           <ScoreChip label="bajo" color="danger" count={counts.low ?? 0} />
-          <button className="btn-secondary" onClick={load} disabled={loading}>
+          <button className="btn-secondary" onClick={() => load()} disabled={loading}>
             <IconRefresh size={14} /> Refrescar
           </button>
         </div>

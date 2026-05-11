@@ -16,8 +16,22 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(200);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
+    db.from("companies").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    db.from("companies").select("id", { count: "exact", head: true }).eq("status", "approved"),
+    db.from("companies").select("id", { count: "exact", head: true }).eq("status", "rejected")
+  ]);
+
   return NextResponse.json(
-    { companies: data ?? [] },
+    {
+      companies: data ?? [],
+      counts: {
+        pending: pendingRes.count ?? 0,
+        approved: approvedRes.count ?? 0,
+        rejected: rejectedRes.count ?? 0
+      }
+    },
     { headers: { "Cache-Control": "no-store, max-age=0" } }
   );
 }
