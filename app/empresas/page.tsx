@@ -9,7 +9,8 @@ import {
   IconBrandLinkedin,
   IconRefresh,
   IconAlertCircle,
-  IconBuildingFactory2
+  IconBuildingFactory2,
+  IconRocket
 } from "@tabler/icons-react";
 
 type Company = {
@@ -30,6 +31,8 @@ type Company = {
   competitor_match: string | null;
   status: string;
   reject_reason: string | null;
+  clay_pushed_at: string | null;
+  clay_push_error: string | null;
   created_at: string;
 };
 
@@ -268,6 +271,9 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
+  const [pushingClay, setPushingClay] = useState(false);
+  const [clayError, setClayError] = useState<string | null>(c.clay_push_error);
+  const [clayPushedAt, setClayPushedAt] = useState<string | null>(c.clay_pushed_at);
 
   async function decide(decision: "approved" | "rejected", reasonArg?: string) {
     setBusy(true);
@@ -283,6 +289,23 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
       const d = await res.json();
       alert(d.error ?? "Error");
     }
+  }
+
+  async function pushToClay() {
+    setPushingClay(true);
+    setClayError(null);
+    const res = await fetch("/api/clay/push-company", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ company_id: c.id })
+    });
+    const data = await res.json();
+    setPushingClay(false);
+    if (!res.ok) {
+      setClayError(data.error ?? "Error empujando a Clay");
+      return;
+    }
+    setClayPushedAt(data.company?.clay_pushed_at ?? new Date().toISOString());
   }
 
   const scoreClass =
@@ -393,6 +416,41 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
       {c.reject_reason && (
         <div className="text-xs text-danger-fg bg-danger-bg rounded-md p-2">
           Rechazada: {c.reject_reason}
+        </div>
+      )}
+
+      {c.status === "approved" && (
+        <div className="flex flex-col gap-2 pt-1 border-t border-[#EEEDFE]">
+          <div className="flex items-center gap-2 pt-2">
+            {clayPushedAt ? (
+              <div className="flex items-center gap-2 text-sm text-success-fg flex-1">
+                <IconCheck size={14} />
+                <span>
+                  En Clay desde {new Date(clayPushedAt).toLocaleString("es", {
+                    day: "2-digit",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit"
+                  })}
+                </span>
+              </div>
+            ) : (
+              <button
+                onClick={pushToClay}
+                disabled={pushingClay}
+                className="btn-primary flex-1"
+                title="POST a Clay Companies para que busque contactos"
+              >
+                <IconRocket size={14} />
+                {pushingClay ? "Empujando…" : "Empujar a Clay"}
+              </button>
+            )}
+          </div>
+          {clayError && (
+            <div className="text-xs text-danger-fg flex items-center gap-2">
+              <IconAlertCircle size={14} /> {clayError}
+            </div>
+          )}
         </div>
       )}
 
