@@ -103,7 +103,7 @@ export default function Sidebar() {
                 return (
                   <div
                     key={item.href}
-                    className="sb-item opacity-40 cursor-not-allowed"
+                    className="sb-item opacity-60 cursor-not-allowed"
                     title="Próximamente"
                   >
                     <Icon size={16} stroke={1.5} />
