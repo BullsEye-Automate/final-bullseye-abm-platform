@@ -32,6 +32,7 @@ export default function IcpPage() {
   const [icp, setIcp] = useState<Icp | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,6 +48,19 @@ export default function IcpPage() {
         setLoading(false);
       });
   }, []);
+
+  async function seed() {
+    setSeeding(true);
+    setError(null);
+    const res = await fetch("/api/icp/seed", { method: "POST" });
+    const data = await res.json();
+    setSeeding(false);
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo crear el ICP v1");
+      return;
+    }
+    setIcp(data.icp);
+  }
 
   async function save() {
     if (!icp) return;
@@ -70,11 +84,25 @@ export default function IcpPage() {
   if (loading) return <div className="text-ink-muted">Cargando ICP…</div>;
   if (!icp) {
     return (
-      <div className="card">
-        <div className="text-danger-fg flex items-center gap-2">
-          <IconAlertCircle size={18} />
-          No hay ICP configurado. Corre `supabase/seed.sql` en tu proyecto Supabase para crear la v1.
+      <div className="card space-y-4">
+        <div className="text-ink flex items-start gap-2">
+          <IconAlertCircle size={18} className="mt-0.5 text-danger-fg" />
+          <div>
+            <div className="font-medium">No hay ICP configurado todavía.</div>
+            <div className="text-sm text-ink-muted mt-1">
+              Crea la versión v1 con los valores por defecto del documento weCAD4you_ICP. Después
+              podrás editarla y guardar versiones nuevas desde esta misma pantalla.
+            </div>
+          </div>
         </div>
+        {error && (
+          <div className="text-danger-fg text-sm flex items-center gap-2">
+            <IconAlertCircle size={14} /> {error}
+          </div>
+        )}
+        <button onClick={seed} disabled={seeding} className="btn-primary">
+          <IconPlus size={16} /> {seeding ? "Creando…" : "Crear ICP v1 con valores por defecto"}
+        </button>
       </div>
     );
   }
