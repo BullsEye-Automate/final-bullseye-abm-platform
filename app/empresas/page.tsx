@@ -64,6 +64,36 @@ export default function EmpresasPage() {
   const [discovering, setDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRun, setLastRun] = useState<{ inserted: number; skipped: number } | null>(null);
+  const [bulkPushing, setBulkPushing] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ pushed: number; total: number; errors: number } | null>(null);
+
+  const unpushedCount = useMemo(
+    () =>
+      tab === "approved"
+        ? companies.filter((c) => !c.clay_pushed_at).length
+        : 0,
+    [tab, companies]
+  );
+
+  async function pushAllToClay() {
+    if (unpushedCount === 0) return;
+    setBulkPushing(true);
+    setBulkResult(null);
+    setError(null);
+    const res = await fetch("/api/clay/push-companies", { method: "POST" });
+    const data = await res.json();
+    setBulkPushing(false);
+    if (!res.ok) {
+      setError(data.error ?? "Error empujando empresas a Clay");
+      return;
+    }
+    setBulkResult({
+      pushed: data.pushed ?? 0,
+      total: data.total ?? 0,
+      errors: (data.errors ?? []).length
+    });
+    load("approved");
+  }
 
   async function load(forStatus: "pending" | "approved" | "rejected" = tab) {
     setLoading(true);
@@ -211,11 +241,34 @@ export default function EmpresasPage() {
           <ScoreChip label="alto" color="success" count={counts.high ?? 0} />
           <ScoreChip label="medio" color="warning" count={counts.medium ?? 0} />
           <ScoreChip label="bajo" color="danger" count={counts.low ?? 0} />
+          {tab === "approved" && unpushedCount > 0 && (
+            <button
+              onClick={pushAllToClay}
+              disabled={bulkPushing}
+              className="btn-primary"
+              title="Empuja a Clay todas las aprobadas que aún no fueron prospectadas"
+            >
+              <IconRocket size={14} />
+              {bulkPushing
+                ? "Prospectando…"
+                : `Prospectar todas en Clay (${unpushedCount})`}
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => load()} disabled={loading}>
             <IconRefresh size={14} /> Refrescar
           </button>
         </div>
       </div>
+
+      {bulkResult && (
+        <div className="card text-sm flex items-center gap-3">
+          <IconCheck size={16} className="text-success-fg" />
+          <span>
+            {bulkResult.pushed} de {bulkResult.total} empresas empujadas a Clay
+            {bulkResult.errors > 0 && ` · ${bulkResult.errors} con error`}
+          </span>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-ink-muted">Cargando…</div>
@@ -442,7 +495,7 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
                 title="POST a Clay Companies para que busque contactos"
               >
                 <IconRocket size={14} />
-                {pushingClay ? "Empujando…" : "Empujar a Clay"}
+                {pushingClay ? "Prospectando…" : "Prospectar en Clay"}
               </button>
             )}
           </div>
