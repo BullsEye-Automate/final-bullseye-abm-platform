@@ -175,25 +175,27 @@ export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoverRes
     ? `\n\nNO incluyas estas empresas (ya están en la base):\n${exclude.map((n) => `- ${n}`).join("\n")}`
     : "";
 
-  const perplexityUser = `Busca ${ask} laboratorios dentales, clínicas multi-centro o DSOs ÚNICAMENTE en ${regionLabel}, perfil "${sizeHint}", que muestren evidencia pública de flujo digital CAD/CAM dental.
+  const perplexityUser = `Busca ${ask} laboratorios dentales, clínicas multi-centro o DSOs basados en ${regionLabel} que muestren señales de flujos digitales CAD/CAM dental. Perfil deseado: ${sizeHint}.
 
-REQUISITO GEOGRÁFICO DURO: descarta cualquier empresa fuera de ${regionLabel}. No incluyas empresas de otras regiones aunque hagan match con el resto del ICP.
+Para cada empresa, devuelve los datos que encuentres en fuentes públicas. No descartes empresas si te falta algún dato — el sistema posterior filtra.
 
-Para cada empresa, encuentra OBLIGATORIAMENTE:
-- Nombre exacto
-- País — debe ser ${regionLabel}. Si no puedes confirmar el país, descarta la empresa.
-- URL de LinkedIn corporativo (formato https://www.linkedin.com/company/<slug>) — REQUERIDA y copiada literal de la fuente, no construida desde el nombre. Si no la puedes verificar en una fuente real, descarta la empresa.
-- Sitio web oficial (solo si aparece literal en la fuente)
-
-Datos adicionales si están:
-- Ciudad / país
-- Tamaño aproximado en empleados (LinkedIn o web)
+Datos que necesito por empresa:
+- Nombre exacto de la empresa (obligatorio)
+- Ubicación: ciudad y estado/región
+- URL de LinkedIn corporativo en formato https://www.linkedin.com/company/<slug>, SOLO si aparece literal en la fuente. NO la construyas a partir del nombre, NO la inventes. Si no la encuentras, déjala en blanco e inclúyela igual.
+- Sitio web oficial si está disponible
+- Tamaño aproximado en empleados si la fuente lo trae
 - Software CAD que mencionan (exocad, inLab, 3Shape, Dental Wings)
 - Escáner intraoral que usan (iTero, Medit, Carestream, Cerec)
 - Si externalizan diseño CAD con alguno de estos competidores: ${competitors}
 - Señales activas: contratando técnico CAD, publican casos digitales, expansión
 
-Prioriza empresas con presencia verificable en LinkedIn. No inventes URLs.${excludeBlock}`;
+Estrategia de búsqueda:
+- Mira directorios públicos de labs dentales en ${regionLabel}, perfiles de LinkedIn de empresas, web corporativas con sección "About" o "Technology", notas de prensa sobre expansión o adopción de software CAD.
+- Busca también empresas que aparezcan en listas tipo "Top dental laboratories in [estado/región]", reviews de software CAD dental, casos de éxito de fabricantes de escáneres.
+- Diversifica entre varios estados/regiones para no concentrar todo en un solo lugar.
+
+Cita la fuente de cada empresa con [N].${excludeBlock}`;
 
   const research = await perplexitySearch({
     system:
