@@ -25,19 +25,34 @@ type IncomingContact = RawContact & {
   "Company Table Data"?: any;
 };
 
+// Clay serializa los sub-campos de "Company Table Data" usando el display name
+// (ej. "Wecad Company Id") en vez del internal name (wecad_company_id).
+// Esta búsqueda normaliza keys ignorando espacios, underscores y mayúsculas.
+function pickWecadCompanyId(obj: Record<string, any>): string {
+  for (const [k, v] of Object.entries(obj)) {
+    if (k.replace(/[\s_]/g, "").toLowerCase() === "wecadcompanyid") {
+      const s = (v ?? "").toString().trim();
+      if (s) return s;
+    }
+  }
+  return "";
+}
+
 function extractCompanyId(item: IncomingContact): string {
   const direct = (item.wecad_company_id ?? "").toString().trim();
   if (direct) return direct;
   const ctd = item.company_table_data ?? item["Company Table Data"];
   if (ctd && typeof ctd === "object") {
-    const fromObj = (ctd.wecad_company_id ?? "").toString().trim();
+    const fromObj = pickWecadCompanyId(ctd);
     if (fromObj) return fromObj;
   }
   if (typeof ctd === "string") {
     try {
       const parsed = JSON.parse(ctd);
-      const fromStr = (parsed?.wecad_company_id ?? "").toString().trim();
-      if (fromStr) return fromStr;
+      if (parsed && typeof parsed === "object") {
+        const fromStr = pickWecadCompanyId(parsed);
+        if (fromStr) return fromStr;
+      }
     } catch {
       // ignore
     }
