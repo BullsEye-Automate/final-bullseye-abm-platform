@@ -72,6 +72,56 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 - Motivo: una corrida pidiendo US devolvió Modern Dental Group de Hong Kong. La región era solo hint, no enforcement.
 - Edge: si Claude devuelve `company_country: null` para una región estricta (US o CA), la empresa se descarta. Mejor perder borderline que dejar pasar fuera-de-región.
 
+**Estado exacto donde quedó la sesión del 12 may 2026:**
+
+Estamos en medio de cablear la columna HTTP en Clay que dispara hacia `/api/clay/raw-contacts`. Pasos completados en Clay:
+
+1. ✅ Discovery devolvió "Modern Dental Laboratory" (Valencia, ES). El LinkedIn URL `linkedin.com/company/modern-dental-laboratory` carga (pasó verificación HTTP) pero en realidad apunta a la página corporativa de Modern Dental Group (HK). Sutil gap: la región dice ES en Supabase pero los contactos que devuelve LinkedIn son HK. No bloqueante para el test, anotar como gap futuro (validar que el nombre en el LinkedIn page matchee `company_name`).
+2. ✅ Empresa aprobada + empujada a Clay. `wecad_company_id`: `b179e3ac-3283-4129-af08-d658283dc5cd`.
+3. ✅ En Clay tabla Companies, agregué wizard **Find People** (Source: Companies/People/Jobs). Configuración: Start from "Table of companies" → Companies → View "Default view" → Company identifiers `linkedin_url`.
+4. ✅ Find People preview devolvió 2 contactos: Alison Cheng (Senior Accountant, HK) y Michelle O W. (Group Financial Controller, HK). Ambos son finance — van a fallar el pre-filter de la app (esperado, esto valida el branch NO).
+5. ✅ Continue → Enrich People modal → marqué SOLO "Enrich person" (0.5/row). NO marqué Work Email (Lemlist lo hace después con sus créditos), NO Summarize LinkedIn, NO Posts.
+6. ✅ "Save and run 2 rows" → Clay creó tabla nueva **Raw People** (o como se llame en Clay) con las 2 filas enriquecidas.
+7. ✅ Columnas en la tabla Raw People:
+   - `Company Employees` (source de Find People)
+   - **`Company Table Data`** ← oro, contiene el join completo a Companies incluyendo `wecad_company_id`
+   - `First Name`, `Last Name`, `Full Name`
+   - `Job Title`, `Location`, `Company Domain`, `LinkedIn Profile`
+   - `Enrich person`
+   - `# Connections`, `Headline`, `Summary`, `Jobs Count`
+
+**Lo que está en pantalla AHORA (no terminado):**
+
+El usuario abrió una columna nueva tipo **HTTP API** sobre la tabla Raw People. Está en el panel Configure con secciones:
+- Account (Add account — opcional, no necesitamos auth todavía porque `CLAY_WEBHOOK_SECRET` no está set en Vercel)
+- Column mapping con SETUP INPUTS:
+  - Method (Optional) — hay que setear `POST`
+  - Endpoint * (required) — vacío, hay que pegar `https://wecad-prospecting.vercel.app/api/clay/raw-contacts`
+  - Query parameters (Optional) — dejar vacío
+  - Body (Optional) — hay que armar el JSON
+  - Headers (Optional) — `Content-Type: application/json`
+- Run settings:
+  - Auto-run ON (bien)
+  - Add run condition (sin marcar todavía — hay que marcarlo y configurar)
+- Status: "Required inputs missing" porque falta Endpoint
+
+**Body JSON que hay que armar (usando `/` para insertar refs a columnas en Clay):**
+
+```json
+{
+  "wecad_company_id": "<ref: Company Table Data → wecad_company_id>",
+  "first_name": "<ref: First Name>",
+  "last_name": "<ref: Last Name>",
+  "job_title": "<ref: Job Title>",
+  "linkedin_headline": "<ref: Headline>",
+  "linkedin_url": "<ref: LinkedIn Profile>"
+}
+```
+
+**Run condition recomendada:**
+- `Enrich person` is complete / status success
+- `LinkedIn Profile` is not empty
+
 **Estado actual (mid-setup en Clay):**
 
 El usuario está configurando en la tabla **Companies** de Clay dos columnas nuevas:
