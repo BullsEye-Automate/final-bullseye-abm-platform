@@ -56,24 +56,52 @@ export async function POST(req: NextRequest) {
   if (exErr) return NextResponse.json({ error: exErr.message }, { status: 500 });
   const exclude = (existing ?? []).map((r) => r.company_name);
 
-  let discovered;
+  let discoveredResult;
+  let retried = false;
   try {
-    discovered = await discoverCompanies({
+    discoveredResult = await discoverCompanies({
       icp: icp as IcpConfig,
       region,
       size_min: sizeRule.min,
       size_max: sizeRule.max ?? null,
       size_note: sizeRule.note ?? null,
       limit,
-      exclude
+      exclude,
+      overshoot: 2,
+      verify_linkedin_live: true,
+      strict_region: true
     });
+
+    // Si los filtros estrictos no dejaron nada, reintentamos UNA vez con
+    // la verificación HTTP de LinkedIn desactivada y la región solo por
+    // prompt. Sube el ruido pero garantiza que la revisión humana tenga
+    // candidatos. El usuario ya filtra a mano en la cola de Pendientes.
+    if (discoveredResult.companies.length === 0) {
+      retried = true;
+      const relaxed = await discoverCompanies({
+        icp: icp as IcpConfig,
+        region,
+        size_min: sizeRule.min,
+        size_max: sizeRule.max ?? null,
+        size_note: sizeRule.note ?? null,
+        limit,
+        exclude,
+        overshoot: 2,
+        verify_linkedin_live: false,
+        strict_region: false
+      });
+      discoveredResult = relaxed;
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Discovery failed";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 
+  const discovered = discoveredResult.companies;
+  const diagnostics = { ...discoveredResult.diagnostics, retried };
+
   if (discovered.length === 0) {
-    return NextResponse.json({ inserted: [], skipped: 0 });
+    return NextResponse.json({ inserted: [], skipped: 0, diagnostics });
   }
 
   const rows = discovered.map((c) => ({
@@ -105,7 +133,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (dedupedRows.length === 0) {
-    return NextResponse.json({ inserted: [], skipped: rows.length });
+    return NextResponse.json({ inserted: [], skipped: rows.length, diagnostics });
   }
 
   const { data: inserted, error: insertErr } = await db
@@ -116,6 +144,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     inserted: inserted ?? [],
-    skipped: rows.length - (inserted?.length ?? 0)
+    skipped: rows.length - (inserted?.length ?? 0),
+    diagnostics
   });
 }

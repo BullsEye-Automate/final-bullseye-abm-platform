@@ -82,7 +82,23 @@ export default function EmpresasPage() {
   const [loading, setLoading] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastRun, setLastRun] = useState<{ inserted: number; skipped: number } | null>(null);
+  const [lastRun, setLastRun] = useState<{
+    inserted: number;
+    skipped: number;
+    diagnostics?: {
+      perplexity_asked: number;
+      claude_extracted: number;
+      passed_name: number;
+      passed_dedup: number;
+      passed_linkedin_regex: number;
+      passed_region: number;
+      passed_linkedin_live: number;
+      final: number;
+      verify_linkedin_live: boolean;
+      strict_region: boolean;
+      retried: boolean;
+    };
+  } | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ pushed: number; total: number; errors: number } | null>(null);
 
@@ -173,7 +189,11 @@ export default function EmpresasPage() {
       setError(data.error ?? "Discovery failed");
       return;
     }
-    setLastRun({ inserted: data.inserted?.length ?? 0, skipped: data.skipped ?? 0 });
+    setLastRun({
+      inserted: data.inserted?.length ?? 0,
+      skipped: data.skipped ?? 0,
+      diagnostics: data.diagnostics
+    });
     setTab("pending");
     load("pending");
   }
@@ -248,9 +268,45 @@ export default function EmpresasPage() {
           </div>
         </div>
         {lastRun && (
-          <div className="mt-3 text-sm text-success-fg flex items-center gap-2">
-            <IconCheck size={14} /> {lastRun.inserted} nuevas insertadas
-            {lastRun.skipped > 0 && ` · ${lastRun.skipped} duplicadas omitidas`}
+          <div className="mt-3 space-y-2">
+            <div
+              className={`text-sm flex items-center gap-2 ${
+                lastRun.inserted > 0 ? "text-success-fg" : "text-warning-fg"
+              }`}
+            >
+              <IconCheck size={14} /> {lastRun.inserted} nuevas insertadas
+              {lastRun.skipped > 0 && ` · ${lastRun.skipped} duplicadas omitidas`}
+              {lastRun.diagnostics?.retried && " · reintento relajado activado"}
+            </div>
+            {lastRun.diagnostics && (
+              <details className="text-xs text-ink-muted">
+                <summary className="cursor-pointer hover:text-ink">Ver embudo de filtros</summary>
+                <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+                  <FunnelStep label="Perplexity solicitó" value={lastRun.diagnostics.perplexity_asked} />
+                  <FunnelStep label="Claude extrajo" value={lastRun.diagnostics.claude_extracted} />
+                  <FunnelStep label="Con nombre" value={lastRun.diagnostics.passed_name} />
+                  <FunnelStep label="No duplicadas" value={lastRun.diagnostics.passed_dedup} />
+                  <FunnelStep label="LinkedIn regex" value={lastRun.diagnostics.passed_linkedin_regex} />
+                  <FunnelStep
+                    label={
+                      lastRun.diagnostics.strict_region
+                        ? "Región estricta"
+                        : "Región (solo prompt)"
+                    }
+                    value={lastRun.diagnostics.passed_region}
+                  />
+                  <FunnelStep
+                    label={
+                      lastRun.diagnostics.verify_linkedin_live
+                        ? "LinkedIn live"
+                        : "LinkedIn live (off)"
+                    }
+                    value={lastRun.diagnostics.passed_linkedin_live}
+                  />
+                  <FunnelStep label="Final (tras límite)" value={lastRun.diagnostics.final} />
+                </div>
+              </details>
+            )}
           </div>
         )}
         {error && (
@@ -347,6 +403,15 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <div className="label mb-1">{label}</div>
       {children}
     </label>
+  );
+}
+
+function FunnelStep({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="bg-[#F4F2FB] rounded-md px-2 py-1.5">
+      <div className="text-[10px] uppercase tracking-wide text-ink-subtle">{label}</div>
+      <div className="text-sm font-semibold text-ink">{value}</div>
+    </div>
   );
 }
 

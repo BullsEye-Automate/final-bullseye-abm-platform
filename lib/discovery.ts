@@ -28,6 +28,33 @@ type DiscoverOpts = {
   size_note?: string | null;
   limit: number;
   exclude: string[];
+  // Pedir a Perplexity más empresas que el limite final, para que los filtros
+  // de abajo tengan colchón. Por ejemplo overshoot=2 pide 2*limit a Perplexity
+  // y devuelve hasta `limit` filtradas.
+  overshoot?: number;
+  // Verificación HTTP de cada LinkedIn URL. Cuando es false, solo el regex.
+  verify_linkedin_live?: boolean;
+  // Cuando es false, no se aplica el filtro estricto de país (solo el prompt
+  // ya le pide a Claude que respete la región).
+  strict_region?: boolean;
+};
+
+export type DiscoveryDiagnostics = {
+  perplexity_asked: number;
+  claude_extracted: number;
+  passed_name: number;
+  passed_dedup: number;
+  passed_linkedin_regex: number;
+  passed_region: number;
+  passed_linkedin_live: number;
+  final: number;
+  verify_linkedin_live: boolean;
+  strict_region: boolean;
+};
+
+export type DiscoverResult = {
+  companies: DiscoveredCompany[];
+  diagnostics: DiscoveryDiagnostics;
 };
 
 function renderIcpPrompt(icp: IcpConfig): string {
@@ -130,8 +157,12 @@ function isInStrictRegion(region: string, country: string | null | undefined): b
   return allowed.includes(country.toLowerCase().trim());
 }
 
-export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoveredCompany[]> {
+export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoverResult> {
   const { icp, region, size_min, size_max, size_note, limit, exclude } = opts;
+  const overshoot = Math.max(1, opts.overshoot ?? 2);
+  const verifyLinkedinLive = opts.verify_linkedin_live ?? true;
+  const strictRegion = opts.strict_region ?? true;
+  const ask = Math.min(limit * overshoot, 30);
 
   // 1) Perplexity research
   const regionLabel = REGION_LABEL[region] ?? region;
@@ -141,7 +172,7 @@ export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoveredC
     ? `\n\nNO incluyas estas empresas (ya están en la base):\n${exclude.map((n) => `- ${n}`).join("\n")}`
     : "";
 
-  const perplexityUser = `Busca ${limit} laboratorios dentales, clínicas multi-centro o DSOs ÚNICAMENTE en ${regionLabel}, perfil "${sizeHint}", que muestren evidencia pública de flujo digital CAD/CAM dental.
+  const perplexityUser = `Busca ${ask} laboratorios dentales, clínicas multi-centro o DSOs ÚNICAMENTE en ${regionLabel}, perfil "${sizeHint}", que muestren evidencia pública de flujo digital CAD/CAM dental.
 
 REQUISITO GEOGRÁFICO DURO: descarta cualquier empresa fuera de ${regionLabel}. No incluyas empresas de otras regiones aunque hagan match con el resto del ICP.
 
@@ -191,7 +222,7 @@ ${research.content}
 
 ---
 
-A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vigente. Devuelve JSON estricto como se definió en el sistema. Si no encuentras suficientes empresas válidas, devuelve menos — nunca inventes.`
+A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigente. Devuelve JSON estricto como se definió en el sistema. Si no encuentras suficientes empresas válidas, devuelve menos — nunca inventes.`
       }
     ]
   });
@@ -223,24 +254,44 @@ A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vig
       }))
     : [];
 
-  // Drop anything missing a name, malformed LinkedIn URL, or already in the
-  // exclude list.
+  // Pipeline de filtros — registrar cuántas empresas sobreviven a cada paso
+  // para mostrar el funnel en la UI.
   const excludeSet = new Set(exclude.map((n) => n.toLowerCase().trim()));
-  const formatFiltered = companies.filter((c) => {
-    if (c.company_name.length === 0) return false;
-    if (excludeSet.has(c.company_name.toLowerCase().trim())) return false;
-    if (!isValidLinkedinCompanyUrl(c.company_linkedin_url)) return false;
-    if (!isInStrictRegion(region, c.company_country)) return false;
-    return true;
-  });
 
-  // Verify each LinkedIn URL is actually live (LinkedIn redirects unknown
-  // slugs to /company/unavailable/, which catches both hallucinated companies
-  // and wrong slugs). Run in parallel with a tight timeout.
-  const liveness = await Promise.all(
-    formatFiltered.map((c) => isLiveLinkedinCompanyUrl(c.company_linkedin_url!))
-  );
-  return formatFiltered.filter((_, i) => liveness[i]);
+  const namedOnly = companies.filter((c) => c.company_name.length > 0);
+  const dedupOnly = namedOnly.filter((c) => !excludeSet.has(c.company_name.toLowerCase().trim()));
+  const regexOnly = dedupOnly.filter((c) => isValidLinkedinCompanyUrl(c.company_linkedin_url));
+  const regionOnly = strictRegion
+    ? regexOnly.filter((c) => isInStrictRegion(region, c.company_country))
+    : regexOnly;
+
+  let liveOnly: DiscoveredCompany[];
+  if (verifyLinkedinLive) {
+    const liveness = await Promise.all(
+      regionOnly.map((c) => isLiveLinkedinCompanyUrl(c.company_linkedin_url!))
+    );
+    liveOnly = regionOnly.filter((_, i) => liveness[i]);
+  } else {
+    liveOnly = regionOnly;
+  }
+
+  // Cortamos a `limit` tras filtrar (el overshoot solo era buffer).
+  const final = liveOnly.slice(0, limit);
+
+  const diagnostics: DiscoveryDiagnostics = {
+    perplexity_asked: ask,
+    claude_extracted: companies.length,
+    passed_name: namedOnly.length,
+    passed_dedup: dedupOnly.length,
+    passed_linkedin_regex: regexOnly.length,
+    passed_region: regionOnly.length,
+    passed_linkedin_live: liveOnly.length,
+    final: final.length,
+    verify_linkedin_live: verifyLinkedinLive,
+    strict_region: strictRegion
+  };
+
+  return { companies: final, diagnostics };
 }
 
 const LINKEDIN_COMPANY_URL_RE =
