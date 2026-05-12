@@ -91,6 +91,8 @@ export default function EmpresasPage() {
       perplexity_content_chars: number;
       perplexity_content_preview: string;
       claude_model_used: string;
+      claude_response_chars: number;
+      claude_response_preview: string;
       claude_extracted: number;
       passed_name: number;
       passed_dedup: number;
@@ -330,6 +332,15 @@ export default function EmpresasPage() {
                   </div>
                   <pre className="bg-[#F4F2FB] rounded-md p-2 whitespace-pre-wrap break-words text-[11px] text-ink/80 max-h-48 overflow-auto">
                     {lastRun.diagnostics.perplexity_content_preview || "(vacío)"}
+                  </pre>
+                </div>
+                <div className="mt-3">
+                  <div className="label mb-1">
+                    Claude respondió {lastRun.diagnostics.claude_response_chars} caracteres ·
+                    preview:
+                  </div>
+                  <pre className="bg-[#F4F2FB] rounded-md p-2 whitespace-pre-wrap break-words text-[11px] text-ink/80 max-h-48 overflow-auto">
+                    {lastRun.diagnostics.claude_response_preview || "(vacío)"}
                   </pre>
                 </div>
               </details>

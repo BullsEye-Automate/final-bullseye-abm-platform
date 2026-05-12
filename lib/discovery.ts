@@ -44,6 +44,8 @@ export type DiscoveryDiagnostics = {
   perplexity_content_chars: number;
   perplexity_content_preview: string;
   claude_model_used: string;
+  claude_response_chars: number;
+  claude_response_preview: string;
   claude_extracted: number;
   passed_name: number;
   passed_dedup: number;
@@ -209,7 +211,7 @@ Cita la fuente de cada empresa con [N].${excludeBlock}`;
   const icpRendered = renderIcpPrompt(icp);
 
   const { message, model_used } = await createMessageWithFallback({
-    max_tokens: 4096,
+    max_tokens: 16384,
     system: [
       { type: "text", text: SYSTEM_DISCOVERY },
       {
@@ -288,6 +290,8 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
     perplexity_content_chars: research.content.length,
     perplexity_content_preview: research.content.slice(0, 600),
     claude_model_used: model_used,
+    claude_response_chars: text.length,
+    claude_response_preview: text.slice(0, 800),
     claude_extracted: companies.length,
     passed_name: namedOnly.length,
     passed_dedup: dedupOnly.length,
