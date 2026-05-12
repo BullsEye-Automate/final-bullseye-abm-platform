@@ -4,7 +4,7 @@
 
 - Hago todo el ciclo end-to-end yo: editar → commit → push → **crear PR si no existe → mergear el PR yo mismo** (squash) sin pedirle al usuario que entre a GitHub.
 - El usuario no usa terminal y prefiere no entrar a GitHub. Después del merge, basta con esperar a que Vercel redespliegue (1-2 min) y probar en `wecad-prospecting.vercel.app`.
-- Rama de trabajo: `claude/fix-icp-display-bn9Fg`. Base por defecto: `claude/wecad4you-prospecting-app-Hltfi` (no hay `main`).
+- Rama de trabajo actual: `claude/clay-http-api-column-dfQWD`. Base por defecto: `claude/wecad4you-prospecting-app-Hltfi` (no hay `main`).
 
 ## Stack
 
@@ -72,7 +72,26 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 - Motivo: una corrida pidiendo US devolvió Modern Dental Group de Hong Kong. La región era solo hint, no enforcement.
 - Edge: si Claude devuelve `company_country: null` para una región estricta (US o CA), la empresa se descarta. Mejor perder borderline que dejar pasar fuera-de-región.
 
-**Estado exacto donde quedó la sesión del 12 may 2026:**
+**Hecho del Sprint 2 (fase B, parte 6 — endpoint raw-contacts acepta nested `company_table_data`):**
+- PR #20 mergeado. `app/api/clay/raw-contacts/route.ts` ahora extrae `wecad_company_id` en este orden:
+  1) `wecad_company_id` flat (shape viejo, intacto)
+  2) `company_table_data.wecad_company_id` (objeto)
+  3) `"Company Table Data".wecad_company_id` (alias con espacios — por si Clay serializa la columna con el nombre humano)
+  4) Si `company_table_data` viene como string JSON, lo parsea
+- Motivo: en la UI de Clay, chipear el sub-campo nested `Company Table Data → wecad_company_id` rompía el JSON del body. Con el cambio, en Clay basta con chipear `Company Table Data` top-level.
+- Body recomendado para la columna HTTP API de Clay:
+  ```json
+  {
+    "company_table_data": <chip Company Table Data>,
+    "first_name": <chip First Name>,
+    "last_name": <chip Last Name>,
+    "job_title": <chip Job Title>,
+    "linkedin_headline": <chip Headline>,
+    "linkedin_url": <chip LinkedIn Profile>
+  }
+  ```
+
+**Estado exacto donde quedó la sesión del 12 may 2026 (segunda parte):**
 
 Estamos en medio de cablear la columna HTTP en Clay que dispara hacia `/api/clay/raw-contacts`. Pasos completados en Clay:
 
@@ -143,6 +162,48 @@ Quedó pendiente confirmar el shape exacto que devuelve "Find people" (cómo Cla
 - `CLAY_WEBHOOK_SECRET` — opcional. Si está set, el endpoint raw-contacts requiere header `x-webhook-secret` o `Authorization: Bearer …` con el mismo valor. Si no está set, queda público.
 - `CLAY_CONTACTS_WEBHOOK_URL` — pendiente, para el siguiente paso.
 
+**Estado UI Clay al cortar la sesión (handoff mid-config):**
+
+Tabla activa en Clay: **"Company Employees, Spe..."** (la creada por Find People sobre Modern Dental Laboratory). 2 filas de test: Alison Cheng + Michelle O W. (ambas finance HK, esperadas como pre-filter NO).
+
+Columna HTTP API "Push to App" en Configure → estado:
+- **Account**: vacío (sin auth, `CLAY_WEBHOOK_SECRET` no está set).
+- **Method**: POST ✅
+- **Endpoint**: `https://wecad-prospecting.vercel.app/api/clay/raw-contacts` ✅
+- **Headers**: `Content-Type: application/json` ✅
+- **Body**: PENDIENTE. Pegar la base y reemplazar cada `null` por chip vía `/`:
+  ```json
+  {
+    "company_table_data": null,
+    "first_name": null,
+    "last_name": null,
+    "job_title": null,
+    "linkedin_headline": null,
+    "linkedin_url": null
+  }
+  ```
+  Chips: Company Table Data (top-level, NO sub-campo), First Name, Last Name, Job Title, Headline, LinkedIn Profile.
+- **Run condition**: ✅ confirmada visualmente en screenshot. `Enrich person != "" AND LinkedIn Profile != ""` (ambos chips top-level, operadores escritos a mano).
+- **Auto-run**: ON ✅
+- **Delay run**: "Run immediately" ✅
+- **Retry on failure**: pendiente verificar si Clay expone esa opción en esta vista.
+
+**Próximo paso al retomar:**
+
+1. Confirmar que el body de la columna quedó armado (pedir screenshot del Body si hay duda).
+2. Pedir al usuario que corra SOLO la fila de Alison Cheng (no "Run all rows"). Buscar "Run row" en el menú de 3 puntos sobre esa fila.
+3. Verificar en `/contactos` (UI app) que el contacto aparece en bucket **Descartados** (pre-filter espera NO para roles finance). Si aparece en Pending, revisar prompt del pre-filter.
+4. Si Alison anduvo, repetir con Michelle.
+5. Una vez validado el loop entrante, próximo bloque del Sprint 2 fase B: **App → Clay Contacts (push YES)**. Necesita:
+   - Variable `CLAY_CONTACTS_WEBHOOK_URL` en Vercel (pendiente de generar webhook source en la tabla Contacts de Clay).
+   - Endpoint `POST /api/clay/push-contacts` en la app (no existe todavía).
+   - Botón en `/contactos` para empujar los YES a Clay.
+
+**Gaps conocidos abiertos:**
+
+1. Modern Dental Laboratory está aprobada en Supabase como Valencia/ES pero el LinkedIn URL apunta a Modern Dental Group (HK). La verificación HTTP del paso B parte 4 no detecta este caso porque la URL carga. Gap futuro: validar que el nombre de empresa en la LinkedIn page matchee `company_name` de Supabase.
+2. DLP Dental Laboratory sigue aprobada en Supabase con URLs inventadas. Hay que rechazarla manual desde `/empresas` → pestaña Aprobadas → link "Mover a rechazadas" (agregado en PR #17). No se hizo todavía.
+
 **Para retomar en una nueva sesión:**
 
-> Continúo el Sprint 2 fase B de weCAD4you-prospecting. Lee `CLAUDE.md`, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Quedé en medio de configurar en Clay la enrichment "Find people" sobre la tabla Companies + la columna HTTP que dispara a `/api/clay/raw-contacts`. El próximo bloque es validar el shape de "Find people" y armar el body del webhook saliente.
+> Continúo el Sprint 2 fase B de weCAD4you-prospecting. Rama de trabajo: `claude/clay-http-api-column-dfQWD`. Lee `CLAUDE.md`, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Estado: PR #20 mergeado (endpoint `/api/clay/raw-contacts` acepta `company_table_data` nested). En Clay, la columna HTTP API "Push to App" sobre la tabla "Company Employees" tiene Method/Endpoint/Headers/Run condition listos; falta armar el Body (6 chips) y correr la primera fila (Alison Cheng) como test. Recordá: (a) todo lo que puedas hacer vos hacelo vos sin pedirme, (b) cuando me toque actuar en Clay, dame paso a paso muy detallado.
