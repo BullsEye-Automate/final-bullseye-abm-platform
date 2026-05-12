@@ -72,10 +72,10 @@ export async function POST(req: NextRequest) {
       strict_region: true
     });
 
-    // Si los filtros estrictos no dejaron nada, reintentamos UNA vez con
-    // la verificación HTTP de LinkedIn desactivada y la región solo por
-    // prompt. Sube el ruido pero garantiza que la revisión humana tenga
-    // candidatos. El usuario ya filtra a mano en la cola de Pendientes.
+    // Si la pasada estricta no dejó nada, reintentamos UNA vez relajando
+    // SOLO la región (Claude a veces devuelve company_country=null incluso
+    // cuando la empresa está en US). Mantenemos la verificación HTTP de
+    // LinkedIn — sin ella entrarían URLs alucinadas y la calidad cae mucho.
     if (discoveredResult.companies.length === 0) {
       retried = true;
       const relaxed = await discoverCompanies({
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
         limit,
         exclude,
         overshoot: 2,
-        verify_linkedin_live: false,
+        verify_linkedin_live: true,
         strict_region: false
       });
       discoveredResult = relaxed;
