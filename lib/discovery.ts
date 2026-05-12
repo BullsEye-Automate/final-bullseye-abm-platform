@@ -74,6 +74,7 @@ Reglas:
 - Tener diseñadores propios NO descarta — es señal de que entienden el valor.
 - Tamaño de empresa: estima en empleados. Si la evidencia da un rango, usa el punto medio.
 - REQUISITO DURO — company_linkedin_url: solo incluye la empresa si la evidencia trae una URL verificable de su página corporativa de LinkedIn (formato exacto https://www.linkedin.com/company/<slug>). NUNCA construyas el slug a partir del nombre, NUNCA adivines. Si la evidencia no la trae, descarta la empresa antes de devolverla.
+- REQUISITO DURO — company_country: debe coincidir con la región solicitada por el usuario. Si la empresa está fuera de esa región, descártala antes de devolverla. Usa el código ISO de 2 letras cuando sea posible (US, CA, MX, GB, DE, etc.).
 - company_website: si lo incluyes, debe estar literal en la evidencia. Si dudas, déjalo en null antes que inventar.
 
 Devuelve SIEMPRE JSON válido con esta forma exacta:
@@ -112,6 +113,21 @@ const REGION_LABEL: Record<string, string> = {
   LATAM: "Latinoamérica"
 };
 
+// Strict region validation. For single-country regions (US, CA) we enforce the
+// country at parse-time; for multi-country regions (EU, LATAM) we trust the
+// prompt because validating against the full list is brittle.
+const REGION_COUNTRIES: Record<string, string[]> = {
+  US: ["us", "u.s.", "u.s.a.", "usa", "united states", "united states of america", "estados unidos"],
+  CA: ["ca", "canada", "canadá"]
+};
+
+function isInStrictRegion(region: string, country: string | null | undefined): boolean {
+  const allowed = REGION_COUNTRIES[region];
+  if (!allowed) return true; // EU/LATAM: prompt-only enforcement
+  if (!country) return false;
+  return allowed.includes(country.toLowerCase().trim());
+}
+
 export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoveredCompany[]> {
   const { icp, region, size, limit, exclude } = opts;
 
@@ -123,10 +139,13 @@ export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoveredC
     ? `\n\nNO incluyas estas empresas (ya están en la base):\n${exclude.map((n) => `- ${n}`).join("\n")}`
     : "";
 
-  const perplexityUser = `Busca ${limit} laboratorios dentales, clínicas multi-centro o DSOs en ${regionLabel}, perfil "${sizeHint}", que muestren evidencia pública de flujo digital CAD/CAM dental.
+  const perplexityUser = `Busca ${limit} laboratorios dentales, clínicas multi-centro o DSOs ÚNICAMENTE en ${regionLabel}, perfil "${sizeHint}", que muestren evidencia pública de flujo digital CAD/CAM dental.
+
+REQUISITO GEOGRÁFICO DURO: descarta cualquier empresa fuera de ${regionLabel}. No incluyas empresas de otras regiones aunque hagan match con el resto del ICP.
 
 Para cada empresa, encuentra OBLIGATORIAMENTE:
 - Nombre exacto
+- País — debe ser ${regionLabel}. Si no puedes confirmar el país, descarta la empresa.
 - URL de LinkedIn corporativo (formato https://www.linkedin.com/company/<slug>) — REQUERIDA y copiada literal de la fuente, no construida desde el nombre. Si no la puedes verificar en una fuente real, descarta la empresa.
 - Sitio web oficial (solo si aparece literal en la fuente)
 
@@ -209,6 +228,7 @@ A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vig
     if (c.company_name.length === 0) return false;
     if (excludeSet.has(c.company_name.toLowerCase().trim())) return false;
     if (!isValidLinkedinCompanyUrl(c.company_linkedin_url)) return false;
+    if (!isInStrictRegion(region, c.company_country)) return false;
     return true;
   });
 
