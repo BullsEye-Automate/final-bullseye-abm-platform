@@ -11,7 +11,8 @@ import {
   IconRefresh,
   IconSend,
   IconThumbUp,
-  IconThumbDown
+  IconThumbDown,
+  IconTrash
 } from "@tabler/icons-react";
 
 type Contact = {
@@ -70,6 +71,7 @@ export default function ContactosPage() {
   const [bulkPushing, setBulkPushing] = useState(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function load(forBucket: Bucket = bucket) {
     setLoading(true);
@@ -155,6 +157,25 @@ export default function ContactosPage() {
         ? "Contacto aprobado. Pasa a En campaña; el feedback se guardó."
         : "Contacto rechazado. Pasa a Descartados; la razón se guardó."
     );
+    await load();
+  }
+
+  async function removeContact(contactId: string, label: string) {
+    const ok = window.confirm(
+      `¿Eliminar a ${label} de la base? Esta acción no se puede deshacer. El feedback histórico en contact_feedback se conserva.`
+    );
+    if (!ok) return;
+    setDeletingId(contactId);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch(`/api/contacts/${contactId}`, { method: "DELETE" });
+    const data = await res.json();
+    setDeletingId(null);
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo eliminar");
+      return;
+    }
+    setPushNotice(`${label} eliminado de la base.`);
     await load();
   }
 
@@ -309,6 +330,8 @@ export default function ContactosPage() {
                     isPushing={pushingId === c.id}
                     onDecide={decide}
                     isDeciding={decidingId === c.id}
+                    onDelete={removeContact}
+                    isDeleting={deletingId === c.id}
                   />
                 ))}
               </div>
@@ -349,7 +372,9 @@ function ContactCard({
   onPush,
   isPushing,
   onDecide,
-  isDeciding
+  isDeciding,
+  onDelete,
+  isDeleting
 }: {
   c: Contact;
   bucket: Bucket;
@@ -357,6 +382,8 @@ function ContactCard({
   isPushing: boolean;
   onDecide: (id: string, decision: "approved" | "rejected") => void | Promise<void>;
   isDeciding: boolean;
+  onDelete: (id: string, label: string) => void | Promise<void>;
+  isDeleting: boolean;
 }) {
   const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
   const scoreClass =
@@ -505,6 +532,15 @@ function ContactCard({
             {isPushing ? "Empujando…" : "Prospectar en Clay"}
           </button>
         )}
+        <button
+          onClick={() => onDelete(c.id, fullName)}
+          disabled={isDeleting}
+          className="btn-secondary text-xs text-danger-fg"
+          title="Eliminar contacto de la base (el feedback histórico se conserva)"
+        >
+          <IconTrash size={12} />
+          {isDeleting ? "Eliminando…" : "Eliminar"}
+        </button>
       </div>
     </div>
   );
