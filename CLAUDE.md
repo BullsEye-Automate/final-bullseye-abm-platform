@@ -4,7 +4,7 @@
 
 - Hago todo el ciclo end-to-end yo: editar → commit → push → **crear PR si no existe → mergear el PR yo mismo** (squash) sin pedirle al usuario que entre a GitHub.
 - El usuario no usa terminal y prefiere no entrar a GitHub. Después del merge, basta con esperar a que Vercel redespliegue (1-2 min) y probar en `wecad-prospecting.vercel.app`.
-- Rama de trabajo actual: `claude/clay-http-api-column-dfQWD`. Base por defecto: `claude/wecad4you-prospecting-app-Hltfi` (no hay `main`).
+- Rama de trabajo actual: `claude/clay-http-api-column-Y2QbX`. Base por defecto: `claude/wecad4you-prospecting-app-Hltfi` (no hay `main`).
 
 ## Stack
 
@@ -91,7 +91,50 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
   }
   ```
 
-**Estado exacto donde quedó la sesión del 12 may 2026 (segunda parte):**
+**Hecho del Sprint 2 (fase B, parte 7 — endpoint raw-contacts key-insensitive):**
+- PR #22 mergeado. `extractCompanyId` ahora normaliza keys (strip espacios/underscores, lowercase) antes de buscar `wecadcompanyid`. Motivo: Clay serializa los sub-campos de `Company Table Data` con display name `"Wecad Company Id"` (espacios, Title Case), no con el internal name snake_case. La primera corrida desde Clay devolvía `received:1, inserted:0, error: "sin wecad_company_id"`. Con el fix, los chips Clay-style funcionan sin trabajo extra en el body.
+
+**Hecho del Sprint 2 (fase B, parte 8 — pre-filter rechaza finanzas):**
+- PR #23 mergeado. `lib/contactsPrompts.ts`: agregado a la lista NO explícita "Finance roles (CFO, Financial Controller, Accountant, Treasurer, Bookkeeper, Finance Manager) — they may approve but do not initiate CAD/CAM outsourcing decisions; the buyer is operations/production leadership".
+- Motivo: Michelle O W. (Group Financial Controller) cayó YES porque finanzas no estaba en ninguna lista → aplicó la regla por defecto "When in doubt, YES". Inconsistente con buyer personas (`docs/contexto_sistema.md` §4 — el buyer es operations/production, no finanzas).
+- Cambio retro: Michelle quedó en Pendientes con el resultado viejo. Para futuros contactos, finanzas → Descartados.
+
+**Hecho del Sprint 2 (fase B, parte 9 — App → Clay Contacts push de YES):**
+- PR #24 mergeado. Cierra el loop App ↔ Clay para contactos.
+- Migración `supabase/contacts_clay_push_migration.sql` añade `clay_pushed_at` + `clay_push_error` a `contacts` (ya pegada por el usuario en Supabase ✅).
+- `POST /api/clay/push-contact` (single) y `POST /api/clay/push-contacts` (bulk YES no empujados en status pending). Lógica compartida en `lib/clayPushContact.ts`.
+- Payload incluye campos del contacto + join a empresa (company_name, company_type, company_size, cad_software, scanner_technology, fit_signals) + `wecad_company_id` + `wecad_contact_id` para reconciliar.
+- Variable de entorno requerida: `CLAY_CONTACTS_WEBHOOK_URL` (ya set en Vercel ✅).
+- UI `/contactos`: badge "en Clay ✓" cuando `clay_pushed_at` no es null, botón individual "Prospectar en Clay" en cards YES no empujadas, botón bulk "Prospectar todos en Clay (N)" arriba de la pestaña Pendientes.
+- Webhook source en Clay tabla Contacts creado y mapeado (Setup mapping resuelto después del primer payload, igual que Companies en su momento).
+
+**Validación end-to-end del loop completo (Sprint 2 fase B cerrado):**
+
+| Paso | Resultado |
+|---|---|
+| Discovery → Modern Dental Laboratory | Empresa aprobada, LinkedIn URL pasa verificación HTTP |
+| App → Clay Companies (push) | `wecad_company_id` = `b179e3ac-3283-4129-af08-d658283dc5cd` ✅ |
+| Clay Find People + Enrich Person | 2 contactos (Alison Cheng, Michelle O W.) |
+| Clay HTTP API column → `/api/clay/raw-contacts` | `received:1, inserted:1` por fila ✅ |
+| Pre-filter Claude | Alison NO (Senior Accountant), Michelle YES inicial (luego fix de finanzas) |
+| `/contactos` UI | Alison en Descartados, Michelle en Pendientes ✅ |
+| App → Clay Contacts (push de Michelle) | Fila nueva en tabla Contacts de Clay con `wecad_contact_id` ✅ |
+| Clay scoring (Lead Scoring AI column) | action = `discard` para Michelle (correcto, finanzas) |
+| Clay Add Lead to Campaign | Inicialmente disparó para Michelle (run condition vacía) → fix abajo |
+| Run condition `Lead Scoring action = "enrich"` | Aplicada en Clay con chip + Generate ✅ |
+
+**Cierres operativos pendientes (usuario, no código):**
+
+1. **Michelle en Lemlist**: entró a la campaña antes del fix de run condition. Hay que sacarla manualmente: Lemlist → campaña `weCAD4you — Lab Digital Outreach v1` → buscar Michelle → Remove from campaign. Evita métricas contaminadas y un email sin sentido el día 5.
+2. **DLP Dental Laboratory aprobada con URLs falsas**: rechazarla desde `/empresas` → Aprobadas → link "Mover a rechazadas". Gap conocido desde fase B parte 4, no se hizo todavía.
+3. **Modern Dental Laboratory**: aprobada como ES (Valencia) pero el LinkedIn URL apunta a Modern Dental Group (HK). Verificación HTTP no detecta el caso porque la URL carga. Gap futuro: validar que el nombre en la LinkedIn page matchee `company_name`.
+
+**Variables de entorno en Vercel:**
+- `CLAY_COMPANIES_WEBHOOK_URL` — set ✅
+- `CLAY_CONTACTS_WEBHOOK_URL` — set ✅
+- `CLAY_WEBHOOK_SECRET` — set ✅ (requiere header `x-webhook-secret` en raw-contacts)
+
+**Estado original donde quedó la sesión anterior (mantenido por contexto):**
 
 Estamos en medio de cablear la columna HTTP en Clay que dispara hacia `/api/clay/raw-contacts`. Pasos completados en Clay:
 
@@ -206,4 +249,4 @@ Columna HTTP API "Push to App" en Configure → estado:
 
 **Para retomar en una nueva sesión:**
 
-> Continúo el Sprint 2 fase B de weCAD4you-prospecting. Rama de trabajo: `claude/clay-http-api-column-dfQWD`. Lee `CLAUDE.md`, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Estado: PR #20 mergeado (endpoint `/api/clay/raw-contacts` acepta `company_table_data` nested). En Clay, la columna HTTP API "Push to App" sobre la tabla "Company Employees" tiene Method/Endpoint/Headers/Run condition listos; falta armar el Body (6 chips) y correr la primera fila (Alison Cheng) como test. Recordá: (a) todo lo que puedas hacer vos hacelo vos sin pedirme, (b) cuando me toque actuar en Clay, dame paso a paso muy detallado.
+> Continúo weCAD4you-prospecting. Sprint 2 fase B está cerrado: el loop completo App ↔ Clay ↔ Lemlist está validado end-to-end con Tom Wiand (YES → enrich → en Lemlist) y Michelle O W. (YES → discard, ya quedó filtrada por run condition `Lead Scoring action = "enrich"`). Rama base por defecto: `claude/wecad4you-prospecting-app-Hltfi`. Antes de empezar a codear cualquier cosa, lee `CLAUDE.md` completo, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Recordá las reglas: (a) todo lo que puedas hacer vos hacelo vos sin pedirme (editar, commit, push, PR, merge squash vía mcp__github) — solo pedime ayuda cuando no tengas alcance (Clay UI, Vercel env vars, Supabase SQL editor, Lemlist UI), (b) cuando me toque actuar fuera de la app, dame paso a paso muy detallado. Próximos bloques pendientes en orden sugerido: (1) cierres operativos sin código — sacar a Michelle de la campaña de Lemlist, rechazar DLP Dental Laboratory desde `/empresas` Aprobadas, (2) Sprint 3 — cola revisión manual score 5-7 + feedback loop a Supabase (`contact_feedback` ya migrado), (3) Sprint 4 — la app escribe contactos en HubSpot directo vía API (no Lemlist), (4) Sprint 5 — dashboard unificado. Antes de arrancar cualquier sprint nuevo, preguntame qué priorizar o si hay un bug/iteración primero.
