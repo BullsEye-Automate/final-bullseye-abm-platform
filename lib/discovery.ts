@@ -202,17 +202,23 @@ A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vig
       }))
     : [];
 
-  // Drop anything missing a name, missing a verifiable LinkedIn company URL,
-  // or already in the exclude list. The LinkedIn requirement protects the
-  // downstream Clay "Find People" step, which can only find contacts if the
-  // company has a real LinkedIn page.
+  // Drop anything missing a name, malformed LinkedIn URL, or already in the
+  // exclude list.
   const excludeSet = new Set(exclude.map((n) => n.toLowerCase().trim()));
-  return companies.filter((c) => {
+  const formatFiltered = companies.filter((c) => {
     if (c.company_name.length === 0) return false;
     if (excludeSet.has(c.company_name.toLowerCase().trim())) return false;
     if (!isValidLinkedinCompanyUrl(c.company_linkedin_url)) return false;
     return true;
   });
+
+  // Verify each LinkedIn URL is actually live (LinkedIn redirects unknown
+  // slugs to /company/unavailable/, which catches both hallucinated companies
+  // and wrong slugs). Run in parallel with a tight timeout.
+  const liveness = await Promise.all(
+    formatFiltered.map((c) => isLiveLinkedinCompanyUrl(c.company_linkedin_url!))
+  );
+  return formatFiltered.filter((_, i) => liveness[i]);
 }
 
 const LINKEDIN_COMPANY_URL_RE =
@@ -221,6 +227,33 @@ const LINKEDIN_COMPANY_URL_RE =
 export function isValidLinkedinCompanyUrl(url: string | null | undefined): boolean {
   if (!url) return false;
   return LINKEDIN_COMPANY_URL_RE.test(url.trim());
+}
+
+const LINKEDIN_VERIFY_TIMEOUT_MS = 6000;
+const LINKEDIN_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+export async function isLiveLinkedinCompanyUrl(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        "User-Agent": LINKEDIN_USER_AGENT,
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9"
+      },
+      signal: AbortSignal.timeout(LINKEDIN_VERIFY_TIMEOUT_MS)
+    });
+    if (res.url.toLowerCase().includes("/company/unavailable")) return false;
+    if (res.status === 404 || res.status === 410) return false;
+    return true;
+  } catch {
+    // Network error / timeout / bot-block (LinkedIn often returns 999 or hangs).
+    // Be permissive: better to ship a borderline one than drop a real one for
+    // transient infra reasons.
+    return true;
+  }
 }
 
 function extractJson(text: string): any {

@@ -504,6 +504,43 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
               <IconAlertCircle size={14} /> {clayError}
             </div>
           )}
+          {rejecting ? (
+            <div className="flex items-center gap-2">
+              <input
+                className="input"
+                placeholder="Razón del rechazo"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                autoFocus
+              />
+              <button
+                onClick={() => decide("rejected", reason)}
+                disabled={busy || !reason.trim()}
+                className="btn-danger"
+              >
+                <IconX size={14} /> Confirmar
+              </button>
+              <button
+                onClick={() => {
+                  setRejecting(false);
+                  setReason("");
+                }}
+                disabled={busy}
+                className="btn-secondary"
+              >
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setRejecting(true)}
+              disabled={busy}
+              className="text-xs text-ink-muted hover:text-danger-fg self-start inline-flex items-center gap-1"
+              title="Mover esta empresa a rechazadas"
+            >
+              <IconX size={12} /> Mover a rechazadas
+            </button>
+          )}
         </div>
       )}
 
