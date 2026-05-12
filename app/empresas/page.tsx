@@ -90,6 +90,7 @@ export default function EmpresasPage() {
       perplexity_asked: number;
       perplexity_content_chars: number;
       perplexity_content_preview: string;
+      claude_model_used: string;
       claude_extracted: number;
       passed_name: number;
       passed_dedup: number;
@@ -273,13 +274,27 @@ export default function EmpresasPage() {
         {lastRun && (
           <div className="mt-3 space-y-2">
             <div
-              className={`text-sm flex items-center gap-2 ${
+              className={`text-sm flex flex-wrap items-center gap-2 ${
                 lastRun.inserted > 0 ? "text-success-fg" : "text-warning-fg"
               }`}
             >
               <IconCheck size={14} /> {lastRun.inserted} nuevas insertadas
               {lastRun.skipped > 0 && ` · ${lastRun.skipped} duplicadas omitidas`}
               {lastRun.diagnostics?.retried && " · reintento relajado activado"}
+              {lastRun.diagnostics?.claude_model_used && (
+                <span
+                  className={`badge ${
+                    /haiku/i.test(lastRun.diagnostics.claude_model_used)
+                      ? "bg-warning-bg text-warning-fg"
+                      : "bg-[#EEEDFE] text-brand"
+                  }`}
+                  title={`Modelo usado para extracción: ${lastRun.diagnostics.claude_model_used}`}
+                >
+                  modelo: {/haiku/i.test(lastRun.diagnostics.claude_model_used)
+                    ? "Haiku (fallback)"
+                    : "Sonnet"}
+                </span>
+              )}
             </div>
             {lastRun.diagnostics && (
               <details className="text-xs text-ink-muted">

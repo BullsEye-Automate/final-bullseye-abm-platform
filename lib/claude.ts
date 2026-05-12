@@ -16,3 +16,29 @@ export function anthropic(): Anthropic {
 }
 
 export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
+export const CLAUDE_FALLBACK_MODEL =
+  process.env.CLAUDE_FALLBACK_MODEL || "claude-haiku-4-5-20251001";
+
+// Llama a Claude con fallback automático a un modelo más pequeño si el
+// primario está sobrecargado (529 Overloaded). El cliente ya reintenta
+// internamente con backoff; este wrapper se activa solo si después de
+// esos 5 intentos sigue saturado. Devuelve qué modelo terminó usándose
+// para que la UI pueda mostrar un badge.
+export async function createMessageWithFallback(
+  params: Omit<Anthropic.MessageCreateParamsNonStreaming, "model">
+): Promise<{ message: Anthropic.Message; model_used: string }> {
+  try {
+    const message = await anthropic().messages.create({ ...params, model: CLAUDE_MODEL });
+    return { message, model_used: CLAUDE_MODEL };
+  } catch (err) {
+    const status = (err as { status?: number })?.status;
+    const message = (err as Error)?.message ?? "";
+    const overloaded = status === 529 || /overloaded/i.test(message);
+    if (!overloaded) throw err;
+    const fallbackMsg = await anthropic().messages.create({
+      ...params,
+      model: CLAUDE_FALLBACK_MODEL
+    });
+    return { message: fallbackMsg, model_used: CLAUDE_FALLBACK_MODEL };
+  }
+}

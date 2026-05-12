@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { anthropic, CLAUDE_MODEL } from "./claude";
+import { createMessageWithFallback } from "./claude";
 import { perplexitySearch, PerplexityCitation } from "./perplexity";
 import type { IcpConfig } from "./supabase";
 
@@ -43,6 +43,7 @@ export type DiscoveryDiagnostics = {
   perplexity_asked: number;
   perplexity_content_chars: number;
   perplexity_content_preview: string;
+  claude_model_used: string;
   claude_extracted: number;
   passed_name: number;
   passed_dedup: number;
@@ -207,8 +208,7 @@ Cita la fuente de cada empresa con [N].${excludeBlock}`;
   // Cache the ICP rendering (stable across requests) so subsequent runs are cheap.
   const icpRendered = renderIcpPrompt(icp);
 
-  const message = await anthropic().messages.create({
-    model: CLAUDE_MODEL,
+  const { message, model_used } = await createMessageWithFallback({
     max_tokens: 4096,
     system: [
       { type: "text", text: SYSTEM_DISCOVERY },
@@ -287,6 +287,7 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
     perplexity_asked: ask,
     perplexity_content_chars: research.content.length,
     perplexity_content_preview: research.content.slice(0, 600),
+    claude_model_used: model_used,
     claude_extracted: companies.length,
     passed_name: namedOnly.length,
     passed_dedup: dedupOnly.length,
