@@ -10,13 +10,40 @@ export const maxDuration = 300;
 // Formatos aceptados:
 //   1) Un solo contacto:
 //      { wecad_company_id, first_name, last_name, job_title, ... }
+//      o { company_table_data: { wecad_company_id, ... }, first_name, ... }
 //   2) Lote para una empresa:
 //      { wecad_company_id, contacts: [ {first_name,...}, ... ] }
 //      o { wecad_company_id, people: [...] }
 //   3) Lote mixto (cada item con su propio wecad_company_id):
 //      [ { wecad_company_id, ... }, { wecad_company_id, ... } ]
+// El id de empresa se busca primero en wecad_company_id (flat). Si no está,
+// se intenta extraer de company_table_data.wecad_company_id (objeto o JSON string).
 
-type IncomingContact = RawContact & { wecad_company_id?: string };
+type IncomingContact = RawContact & {
+  wecad_company_id?: string;
+  company_table_data?: any;
+  "Company Table Data"?: any;
+};
+
+function extractCompanyId(item: IncomingContact): string {
+  const direct = (item.wecad_company_id ?? "").toString().trim();
+  if (direct) return direct;
+  const ctd = item.company_table_data ?? item["Company Table Data"];
+  if (ctd && typeof ctd === "object") {
+    const fromObj = (ctd.wecad_company_id ?? "").toString().trim();
+    if (fromObj) return fromObj;
+  }
+  if (typeof ctd === "string") {
+    try {
+      const parsed = JSON.parse(ctd);
+      const fromStr = (parsed?.wecad_company_id ?? "").toString().trim();
+      if (fromStr) return fromStr;
+    } catch {
+      // ignore
+    }
+  }
+  return "";
+}
 
 function checkAuth(req: NextRequest): { ok: true } | { ok: false; error: string } {
   const expected = process.env.CLAY_WEBHOOK_SECRET;
@@ -65,13 +92,18 @@ export async function POST(req: NextRequest) {
   const byCompany = new Map<string, RawContact[]>();
   const noCompany: IncomingContact[] = [];
   for (const it of items) {
-    const cid = (it.wecad_company_id ?? "").trim();
+    const cid = extractCompanyId(it);
     if (!cid) {
       noCompany.push(it);
       continue;
     }
     const arr = byCompany.get(cid) ?? [];
-    const { wecad_company_id: _omit, ...rest } = it;
+    const {
+      wecad_company_id: _omit,
+      company_table_data: _omit2,
+      "Company Table Data": _omit3,
+      ...rest
+    } = it;
     arr.push(rest);
     byCompany.set(cid, arr);
   }
