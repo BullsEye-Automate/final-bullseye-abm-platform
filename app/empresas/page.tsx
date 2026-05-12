@@ -10,7 +10,8 @@ import {
   IconRefresh,
   IconAlertCircle,
   IconBuildingFactory2,
-  IconRocket
+  IconRocket,
+  IconTrash
 } from "@tabler/icons-react";
 
 type Company = {
@@ -454,6 +455,23 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
   const [pushingClay, setPushingClay] = useState(false);
   const [clayError, setClayError] = useState<string | null>(c.clay_push_error);
   const [clayPushedAt, setClayPushedAt] = useState<string | null>(c.clay_pushed_at);
+  const [deleting, setDeleting] = useState(false);
+
+  async function removeCompany() {
+    const ok = window.confirm(
+      `¿Eliminar a ${c.company_name} de la base?\n\nEsto borra la empresa, sus contactos asociados y el feedback histórico. No se puede deshacer.\n\nÚtil si la URL de LinkedIn está alucinada y prefieres que el discovery la pueda volver a recomendar más adelante.`
+    );
+    if (!ok) return;
+    setDeleting(true);
+    const res = await fetch(`/api/companies/${c.id}`, { method: "DELETE" });
+    setDeleting(false);
+    if (!res.ok) {
+      const d = await res.json();
+      alert(d.error ?? "No se pudo eliminar");
+      return;
+    }
+    onChange();
+  }
 
   async function decide(decision: "approved" | "rejected", reasonArg?: string) {
     setBusy(true);
@@ -703,6 +721,17 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
           )}
         </div>
       )}
+      <div className="flex justify-end pt-1">
+        <button
+          onClick={removeCompany}
+          disabled={deleting}
+          className="text-xs text-ink-muted hover:text-danger-fg inline-flex items-center gap-1"
+          title="Eliminar de la base. La empresa puede volver a ser recomendada por discovery."
+        >
+          <IconTrash size={12} />
+          {deleting ? "Eliminando…" : "Eliminar"}
+        </button>
+      </div>
     </div>
   );
 }
