@@ -8,7 +8,8 @@ import {
   IconAlertCircle,
   IconBrandLinkedin,
   IconBuildingFactory2,
-  IconRefresh
+  IconRefresh,
+  IconSend
 } from "@tabler/icons-react";
 
 type Contact = {
@@ -30,6 +31,8 @@ type Contact = {
   email_subject: string | null;
   email_body: string | null;
   status: string;
+  clay_pushed_at: string | null;
+  clay_push_error: string | null;
   created_at: string;
 };
 
@@ -57,6 +60,9 @@ export default function ContactosPage() {
   const [loading, setLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pushingId, setPushingId] = useState<string | null>(null);
+  const [bulkPushing, setBulkPushing] = useState(false);
+  const [pushNotice, setPushNotice] = useState<string | null>(null);
 
   async function load(forBucket: Bucket = bucket) {
     setLoading(true);
@@ -69,6 +75,45 @@ export default function ContactosPage() {
     }
     setContacts(data.contacts ?? []);
     if (data.counts) setCounts(data.counts);
+  }
+
+  async function pushOne(contactId: string) {
+    setPushingId(contactId);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch("/api/clay/push-contact", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contact_id: contactId })
+    });
+    const data = await res.json();
+    setPushingId(null);
+    if (!res.ok) {
+      setError(data.error ?? "Push failed");
+      return;
+    }
+    setPushNotice("Contacto empujado a Clay.");
+    await load();
+  }
+
+  async function pushAllPending() {
+    setBulkPushing(true);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch("/api/clay/push-contacts", { method: "POST" });
+    const data = await res.json();
+    setBulkPushing(false);
+    if (!res.ok) {
+      setError(data.error ?? "Bulk push failed");
+      return;
+    }
+    const errs = (data.errors ?? []) as { error: string }[];
+    const total = data.total ?? 0;
+    const pushed = data.pushed ?? 0;
+    setPushNotice(
+      `${pushed} de ${total} contactos empujados a Clay${errs.length > 0 ? ` · ${errs.length} con error` : ""}.`
+    );
+    await load();
   }
 
   async function loadApprovedCompanies() {
@@ -88,6 +133,13 @@ export default function ContactosPage() {
   useEffect(() => {
     loadApprovedCompanies();
   }, []);
+
+  const pushablePendingCount = useMemo(() => {
+    if (bucket !== "pending") return 0;
+    return contacts.filter(
+      (c) => c.prefilter_result === "yes" && !c.clay_pushed_at
+    ).length;
+  }, [contacts, bucket]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Contact[]>();
@@ -158,14 +210,35 @@ export default function ContactosPage() {
             );
           })}
         </div>
-        <button className="btn-secondary" onClick={() => load()} disabled={loading}>
-          <IconRefresh size={14} /> Refrescar
-        </button>
+        <div className="flex items-center gap-2">
+          {bucket === "pending" && pushablePendingCount > 0 && (
+            <button
+              onClick={pushAllPending}
+              disabled={bulkPushing}
+              className="btn-primary"
+              title="Empuja a Clay todos los contactos pre-filter YES que aún no fueron enviados"
+            >
+              <IconSend size={14} />
+              {bulkPushing
+                ? "Empujando…"
+                : `Prospectar todos en Clay (${pushablePendingCount})`}
+            </button>
+          )}
+          <button className="btn-secondary" onClick={() => load()} disabled={loading}>
+            <IconRefresh size={14} /> Refrescar
+          </button>
+        </div>
       </div>
 
       {error && (
         <div className="card border border-danger-bg text-danger-fg flex items-center gap-2">
           <IconAlertCircle size={16} /> {error}
+        </div>
+      )}
+
+      {pushNotice && (
+        <div className="card border border-success-bg text-success-fg flex items-center gap-2">
+          <IconCheck size={16} /> {pushNotice}
         </div>
       )}
 
@@ -186,7 +259,12 @@ export default function ContactosPage() {
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {items.map((c) => (
-                  <ContactCard key={c.id} c={c} />
+                  <ContactCard
+                    key={c.id}
+                    c={c}
+                    onPush={pushOne}
+                    isPushing={pushingId === c.id}
+                  />
                 ))}
               </div>
             </section>
@@ -220,7 +298,15 @@ function EmptyState({ bucket, hasApproved }: { bucket: Bucket; hasApproved: bool
   );
 }
 
-function ContactCard({ c }: { c: Contact }) {
+function ContactCard({
+  c,
+  onPush,
+  isPushing
+}: {
+  c: Contact;
+  onPush: (id: string) => void | Promise<void>;
+  isPushing: boolean;
+}) {
   const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
   const scoreClass =
     c.fit_score === null
@@ -230,6 +316,7 @@ function ContactCard({ c }: { c: Contact }) {
       : c.fit_score >= 5
       ? "bg-warning-bg text-warning-fg"
       : "bg-danger-bg text-danger-fg";
+  const canPush = c.prefilter_result === "yes" && !c.clay_pushed_at;
   return (
     <div className="card flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -241,6 +328,9 @@ function ContactCard({ c }: { c: Contact }) {
             )}
             {c.prefilter_result === "no" && (
               <span className="badge bg-danger-bg text-danger-fg">pre-filter ✗</span>
+            )}
+            {c.clay_pushed_at && (
+              <span className="badge bg-success-bg text-success-fg">en Clay ✓</span>
             )}
             {c.fit_score !== null && (
               <span className={`badge ${scoreClass}`}>score {c.fit_score}/10</span>
@@ -303,6 +393,26 @@ function ContactCard({ c }: { c: Contact }) {
             <p className="text-ink/90 whitespace-pre-line mt-1">{c.email_body}</p>
           </div>
         </details>
+      )}
+
+      {c.clay_push_error && (
+        <div className="text-xs text-danger-fg flex items-start gap-2">
+          <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span className="break-words">{c.clay_push_error}</span>
+        </div>
+      )}
+
+      {canPush && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => onPush(c.id)}
+            disabled={isPushing}
+            className="btn-primary text-xs"
+          >
+            <IconSend size={12} />
+            {isPushing ? "Empujando…" : "Prospectar en Clay"}
+          </button>
+        </div>
       )}
     </div>
   );
