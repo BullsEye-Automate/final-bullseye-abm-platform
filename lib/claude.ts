@@ -8,7 +8,10 @@ export function anthropic(): Anthropic {
   if (!apiKey) {
     throw new Error("ANTHROPIC_API_KEY missing. Set it in .env.local");
   }
-  _client = new Anthropic({ apiKey });
+  // Bumped from SDK default (2) to mitigate transient 529 Overloaded
+  // errors from Anthropic. The SDK retries with exponential backoff on
+  // 408/409/429/5xx, which covers our case.
+  _client = new Anthropic({ apiKey, maxRetries: 5 });
   return _client;
 }
 

@@ -93,8 +93,15 @@ export async function POST(req: NextRequest) {
       discoveredResult = relaxed;
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Discovery failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    const raw = err instanceof Error ? err.message : "Discovery failed";
+    // Detect Anthropic's transient overload (the SDK already retries 5
+    // times with backoff; if we still see this, their API is hammered).
+    const overloaded =
+      /overloaded/i.test(raw) || /\b529\b/.test(raw) || /rate.?limit/i.test(raw);
+    const msg = overloaded
+      ? "Anthropic API saturada (529 Overloaded). Reintenta en 30-60 segundos."
+      : raw;
+    return NextResponse.json({ error: msg }, { status: overloaded ? 503 : 500 });
   }
 
   const discovered = discoveredResult.companies;
