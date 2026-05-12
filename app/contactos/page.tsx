@@ -9,7 +9,9 @@ import {
   IconBrandLinkedin,
   IconBuildingFactory2,
   IconRefresh,
-  IconSend
+  IconSend,
+  IconThumbUp,
+  IconThumbDown
 } from "@tabler/icons-react";
 
 type Contact = {
@@ -33,6 +35,10 @@ type Contact = {
   status: string;
   clay_pushed_at: string | null;
   clay_push_error: string | null;
+  human_decision: "approved" | "rejected" | null;
+  human_decision_at: string | null;
+  human_decision_reason: string | null;
+  human_decision_by: string | null;
   created_at: string;
 };
 
@@ -63,6 +69,7 @@ export default function ContactosPage() {
   const [pushingId, setPushingId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
 
   async function load(forBucket: Bucket = bucket) {
     setLoading(true);
@@ -112,6 +119,41 @@ export default function ContactosPage() {
     const pushed = data.pushed ?? 0;
     setPushNotice(
       `${pushed} de ${total} contactos empujados a Clay${errs.length > 0 ? ` · ${errs.length} con error` : ""}.`
+    );
+    await load();
+  }
+
+  async function decide(contactId: string, decision: "approved" | "rejected") {
+    let reason: string | null = null;
+    if (decision === "rejected") {
+      const input = window.prompt(
+        "Razón del rechazo (queda en contact_feedback para entrenar el modelo):"
+      );
+      if (input == null) return; // user cancelled
+      reason = input.trim();
+      if (!reason) {
+        setError("La razón es obligatoria al rechazar.");
+        return;
+      }
+    }
+    setDecidingId(contactId);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch(`/api/contacts/${contactId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision, reason: reason ?? undefined })
+    });
+    const data = await res.json();
+    setDecidingId(null);
+    if (!res.ok) {
+      setError(data.error ?? "Decisión fallida");
+      return;
+    }
+    setPushNotice(
+      decision === "approved"
+        ? "Contacto aprobado. Pasa a En campaña; el feedback se guardó."
+        : "Contacto rechazado. Pasa a Descartados; la razón se guardó."
     );
     await load();
   }
@@ -262,8 +304,11 @@ export default function ContactosPage() {
                   <ContactCard
                     key={c.id}
                     c={c}
+                    bucket={bucket}
                     onPush={pushOne}
                     isPushing={pushingId === c.id}
+                    onDecide={decide}
+                    isDeciding={decidingId === c.id}
                   />
                 ))}
               </div>
@@ -300,12 +345,18 @@ function EmptyState({ bucket, hasApproved }: { bucket: Bucket; hasApproved: bool
 
 function ContactCard({
   c,
+  bucket,
   onPush,
-  isPushing
+  isPushing,
+  onDecide,
+  isDeciding
 }: {
   c: Contact;
+  bucket: Bucket;
   onPush: (id: string) => void | Promise<void>;
   isPushing: boolean;
+  onDecide: (id: string, decision: "approved" | "rejected") => void | Promise<void>;
+  isDeciding: boolean;
 }) {
   const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
   const scoreClass =
@@ -317,6 +368,7 @@ function ContactCard({
       ? "bg-warning-bg text-warning-fg"
       : "bg-danger-bg text-danger-fg";
   const canPush = c.prefilter_result === "yes" && !c.clay_pushed_at;
+  const canDecide = bucket === "manual_review" && c.human_decision == null;
   return (
     <div className="card flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -334,6 +386,15 @@ function ContactCard({
             )}
             {c.fit_score !== null && (
               <span className={`badge ${scoreClass}`}>score {c.fit_score}/10</span>
+            )}
+            {c.fit_action === "manual_review" && c.human_decision == null && (
+              <span className="badge bg-warning-bg text-warning-fg">revisión manual</span>
+            )}
+            {c.human_decision === "approved" && (
+              <span className="badge bg-success-bg text-success-fg">aprobado manual ✓</span>
+            )}
+            {c.human_decision === "rejected" && (
+              <span className="badge bg-danger-bg text-danger-fg">rechazado manual ✗</span>
             )}
           </div>
           <div className="text-xs text-ink-muted mt-1">
@@ -402,8 +463,39 @@ function ContactCard({
         </div>
       )}
 
-      {canPush && (
-        <div className="flex justify-end">
+      {c.human_decision_reason && c.human_decision != null && (
+        <div className="text-xs text-ink-muted">
+          <span className="label mr-1">
+            {c.human_decision === "approved" ? "Nota humana" : "Razón rechazo"}
+          </span>
+          {c.human_decision_reason}
+        </div>
+      )}
+
+      <div className="flex flex-wrap justify-end gap-2">
+        {canDecide && (
+          <>
+            <button
+              onClick={() => onDecide(c.id, "rejected")}
+              disabled={isDeciding}
+              className="btn-secondary text-xs"
+              title="Rechazar — pasa a Descartados con razón en feedback"
+            >
+              <IconThumbDown size={12} />
+              {isDeciding ? "Guardando…" : "Rechazar"}
+            </button>
+            <button
+              onClick={() => onDecide(c.id, "approved")}
+              disabled={isDeciding}
+              className="btn-primary text-xs"
+              title="Aprobar — marca fit_action=enrich y guarda feedback"
+            >
+              <IconThumbUp size={12} />
+              {isDeciding ? "Guardando…" : "Aprobar"}
+            </button>
+          </>
+        )}
+        {canPush && (
           <button
             onClick={() => onPush(c.id)}
             disabled={isPushing}
@@ -412,8 +504,8 @@ function ContactCard({
             <IconSend size={12} />
             {isPushing ? "Empujando…" : "Prospectar en Clay"}
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -4,7 +4,7 @@
 
 - Hago todo el ciclo end-to-end yo: editar → commit → push → **crear PR si no existe → mergear el PR yo mismo** (squash) sin pedirle al usuario que entre a GitHub.
 - El usuario no usa terminal y prefiere no entrar a GitHub. Después del merge, basta con esperar a que Vercel redespliegue (1-2 min) y probar en `wecad-prospecting.vercel.app`.
-- Rama de trabajo actual: `claude/clay-http-api-column-Y2QbX`. Base por defecto: `claude/wecad4you-prospecting-app-Hltfi` (no hay `main`).
+- Rama de trabajo actual: `claude/validate-prospecting-loop-IRiLL`. Base por defecto: `claude/wecad4you-prospecting-app-Hltfi` (no hay `main`).
 
 ## Stack
 
@@ -27,8 +27,8 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 | Sprint | Estado | Entregable |
 |---|---|---|
 | 1 | Hecho | ICP + descubrimiento empresas + revisión humana |
-| 2 | En curso | Contactos: pre-filter Claude + import desde Clay + UI |
-| 3 | Pendiente | Cola revisión manual (score 5-7) + feedback loop completo |
+| 2 | Hecho | Contactos: pre-filter Claude + import desde Clay + UI |
+| 3 | En curso | Cola revisión manual (score 5-7) + feedback loop completo |
 | 4 | Pendiente | Generador de mensajes + Lemlist API + HubSpot API |
 | 5 | Pendiente | Dashboard unificado |
 
@@ -107,6 +107,36 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 - Variable de entorno requerida: `CLAY_CONTACTS_WEBHOOK_URL` (ya set en Vercel ✅).
 - UI `/contactos`: badge "en Clay ✓" cuando `clay_pushed_at` no es null, botón individual "Prospectar en Clay" en cards YES no empujadas, botón bulk "Prospectar todos en Clay (N)" arriba de la pestaña Pendientes.
 - Webhook source en Clay tabla Contacts creado y mapeado (Setup mapping resuelto después del primer payload, igual que Companies en su momento).
+
+**Hecho del Sprint 3 (fase 1 — cola revisión manual + feedback humano):**
+- Migración `supabase/contacts_manual_review_migration.sql` añade `human_decision` (`approved`/`rejected`), `human_decision_at`, `human_decision_reason`, `human_decision_by` a `contacts`. Pegar manual en SQL editor de Supabase una vez.
+- `POST /api/clay/scored-contacts`: webhook entrante de Clay con el resultado de la columna Lead Scoring AI. Acepta single o array. Identifica el contacto por `wecad_contact_id` (el UUID que mandamos al pushear). Actualiza `fit_score`, `fit`, `fit_reason`, `fit_action`, y opcionalmente `linkedin_icebreaker`, `email_subject`, `email_body`. Si `fit_action='discard'` también marca `status='discarded'`. Keys case-insensitive (mismo trato que `raw-contacts`).
+- `POST /api/contacts/[id]/decision`: veredicto humano sobre un contacto en cola de revisión manual. `approved` → `fit_action='enrich'` + `human_decision='approved'`. `rejected` → `status='discarded'` + `human_decision='rejected'` (razón obligatoria). Ambos casos persisten en `contact_feedback` con `claude_score`/`claude_action` (lo que vino de Clay) vs `human_action`/`human_reason`.
+- `GET /api/contacts` buckets actualizados: `manual_review` ahora excluye contactos ya decididos (`human_decision IS NULL`); `enriched` incluye `fit_action='enrich'` para que los aprobados manualmente aparezcan ahí aunque `status` no haya transicionado todavía; `discarded` incluye `human_decision='rejected'`.
+- UI `/contactos`: cards en bucket Revisión manual muestran botones "Aprobar" y "Rechazar" (modal `prompt` para razón al rechazar). Badges "revisión manual" / "aprobado manual ✓" / "rechazado manual ✗" visibles en otros buckets para trazabilidad.
+- Loop cerrado para entrenamiento: cada veredicto deja un registro en `contact_feedback` que en Sprint 4 podemos formatear como `historical_feedback` e inyectar en el prompt de Lead Scoring de Clay.
+
+**Cableado Clay pendiente (paso del usuario, no código):**
+1. Pegar `supabase/contacts_manual_review_migration.sql` en SQL editor de Supabase.
+2. En Clay tabla **Contacts**, agregar columna **HTTP API** "Push score to App" análoga a la que ya existe para `raw-contacts`:
+   - Method: `POST`
+   - Endpoint: `https://wecad-prospecting.vercel.app/api/clay/scored-contacts`
+   - Headers: `Content-Type: application/json`, `x-webhook-secret: <CLAY_WEBHOOK_SECRET>`
+   - Body (chips Clay-style):
+     ```json
+     {
+       "wecad_contact_id": "<chip wecad_contact_id>",
+       "fit_score": "<chip Lead Scoring score>",
+       "fit": "<chip Lead Scoring fit>",
+       "fit_reason": "<chip Lead Scoring reason>",
+       "fit_action": "<chip Lead Scoring action>",
+       "linkedin_icebreaker": "<chip LinkedIn Icebreaker response>",
+       "email_subject": "<chip email_subject>",
+       "email_body": "<chip email_body>"
+     }
+     ```
+   - Run condition: `Lead Scoring action != ""` (dispara solo cuando termina el scoring).
+   - Auto-run: ON, Delay: Run immediately.
 
 **Validación end-to-end del loop completo (Sprint 2 fase B cerrado):**
 

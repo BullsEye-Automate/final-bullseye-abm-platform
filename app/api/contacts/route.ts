@@ -5,7 +5,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CONTACT_COLUMNS =
-  "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, phone, seniority, tenure, prefilter_result, prefilter_reason, fit_score, fit, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, status, clay_row_id, clay_pushed_at, clay_push_error, lemlist_lead_id, hubspot_contact_id, created_at, updated_at";
+  "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, phone, seniority, tenure, prefilter_result, prefilter_reason, fit_score, fit, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, status, clay_row_id, clay_pushed_at, clay_push_error, lemlist_lead_id, hubspot_contact_id, human_decision, human_decision_at, human_decision_reason, human_decision_by, created_at, updated_at";
+
+// Filtros compartidos entre la query principal y los contadores.
+// manual_review excluye contactos con veredicto humano (esos pasan a enriched o discarded).
+// enriched incluye fit_action='enrich' aunque el status no haya transicionado todavía.
+const MANUAL_REVIEW_FILTER = (q: any) =>
+  q.eq("fit_action", "manual_review").is("human_decision", null);
+
+const ENRICHED_OR = "status.in.(enriched,contacted,replied),fit_action.eq.enrich";
+
+const DISCARDED_OR =
+  "prefilter_result.eq.no,fit_action.eq.discard,status.eq.discarded,human_decision.eq.rejected";
 
 export async function GET(req: NextRequest) {
   const bucket = req.nextUrl.searchParams.get("bucket") ?? "pending";
@@ -17,17 +28,17 @@ export async function GET(req: NextRequest) {
 
   // Buckets:
   //   pending       → pre-filter yes, sin scoring aún (fit_action IS NULL, status pending)
-  //   manual_review → fit_action = manual_review (score 5-7)
-  //   enriched      → status IN (enriched, contacted, replied)
-  //   discarded     → pre-filter no, fit_action = discard, o status = discarded
+  //   manual_review → fit_action = manual_review AND sin veredicto humano (score 5-7)
+  //   enriched      → status IN (enriched, contacted, replied) o fit_action = enrich
+  //   discarded     → pre-filter no, fit_action = discard, status = discarded, o rechazado manual
   if (bucket === "pending") {
     q = q.eq("prefilter_result", "yes").is("fit_action", null).eq("status", "pending");
   } else if (bucket === "manual_review") {
-    q = q.eq("fit_action", "manual_review");
+    q = MANUAL_REVIEW_FILTER(q);
   } else if (bucket === "enriched") {
-    q = q.in("status", ["enriched", "contacted", "replied"]);
+    q = q.or(ENRICHED_OR);
   } else if (bucket === "discarded") {
-    q = q.or("prefilter_result.eq.no,fit_action.eq.discard,status.eq.discarded");
+    q = q.or(DISCARDED_OR);
   }
 
   const { data, error } = await q
@@ -38,9 +49,9 @@ export async function GET(req: NextRequest) {
 
   const [pending, manual, enriched, discarded] = await Promise.all([
     db.from("contacts").select("id", { count: "exact", head: true }).eq("prefilter_result", "yes").is("fit_action", null).eq("status", "pending"),
-    db.from("contacts").select("id", { count: "exact", head: true }).eq("fit_action", "manual_review"),
-    db.from("contacts").select("id", { count: "exact", head: true }).in("status", ["enriched", "contacted", "replied"]),
-    db.from("contacts").select("id", { count: "exact", head: true }).or("prefilter_result.eq.no,fit_action.eq.discard,status.eq.discarded")
+    MANUAL_REVIEW_FILTER(db.from("contacts").select("id", { count: "exact", head: true })),
+    db.from("contacts").select("id", { count: "exact", head: true }).or(ENRICHED_OR),
+    db.from("contacts").select("id", { count: "exact", head: true }).or(DISCARDED_OR)
   ]);
 
   return NextResponse.json(
