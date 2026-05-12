@@ -27,6 +27,7 @@ Answer NO if the contact is:
 - Clinical dentist or hygienist with no ownership or management role
 - Sales rep, distributor, or equipment vendor
 - Software developer, IT staff, or administrative assistant
+- Finance roles (CFO, Financial Controller, Accountant, Treasurer, Bookkeeper, Finance Manager) — they may approve but do not initiate CAD/CAM outsourcing decisions; the buyer is operations/production leadership
 
 When in doubt about whether someone has decision power, answer YES. It is better to score a borderline contact than to miss a potential decision maker.
 
