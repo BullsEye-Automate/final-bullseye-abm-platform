@@ -41,6 +41,8 @@ type DiscoverOpts = {
 
 export type DiscoveryDiagnostics = {
   perplexity_asked: number;
+  perplexity_content_chars: number;
+  perplexity_content_preview: string;
   claude_extracted: number;
   passed_name: number;
   passed_dedup: number;
@@ -94,16 +96,17 @@ function renderIcpPrompt(icp: IcpConfig): string {
 }
 
 const SYSTEM_DISCOVERY = `Eres analista de prospección B2B para weCAD4you, un servicio de outsourcing de diseño CAD/CAM dental.
-Tu trabajo es identificar empresas reales que cumplen el ICP, basándote en la investigación web que se te entregará.
+Tu trabajo es extraer empresas reales que aparezcan en la investigación web entregada, dejando que el sistema posterior filtre las que no cumplen el ICP.
 
-Reglas:
+Reglas de extracción:
 - Trabajas ÚNICAMENTE con la evidencia provista. No inventes empresas ni señales. Si la evidencia no menciona algo, déjalo en null.
+- Extrae TODA empresa que la evidencia mencione como laboratorio dental, clínica multi-centro o DSO, aunque falten campos. El filtrado fino (LinkedIn URL válida, país, tamaño) lo hace el código después; tu trabajo es no perder candidatos en este paso.
 - Una empresa califica si: es lab / multi-centro / DSO + tiene evidencia de flujo digital + tiene volumen real (no 1–2 personas).
 - Si la empresa ya externaliza con un competidor (Evident, Full Contour, Aidite, Automate by 3Shape), márcala como "high" y rellena competitor_match.
 - Tener diseñadores propios NO descarta — es señal de que entienden el valor.
-- Tamaño de empresa: estima en empleados. Si la evidencia da un rango, usa el punto medio.
-- REQUISITO DURO — company_linkedin_url: solo incluye la empresa si la evidencia trae una URL verificable de su página corporativa de LinkedIn (formato exacto https://www.linkedin.com/company/<slug>). NUNCA construyas el slug a partir del nombre, NUNCA adivines. Si la evidencia no la trae, descarta la empresa antes de devolverla.
-- REQUISITO DURO — company_country: debe coincidir con la región solicitada por el usuario. Si la empresa está fuera de esa región, descártala antes de devolverla. Usa el código ISO de 2 letras cuando sea posible (US, CA, MX, GB, DE, etc.).
+- Tamaño de empresa: estima en empleados. Si la evidencia da un rango, usa el punto medio. Si no hay tamaño, deja null (no descartes por eso).
+- company_linkedin_url: si la evidencia trae la URL corporativa de LinkedIn (formato https://www.linkedin.com/company/<slug>), inclúyela LITERAL. Si no la trae, deja null — NO la inventes ni construyas desde el nombre, pero TAMPOCO descartes la empresa por eso.
+- company_country: usa el código ISO de 2 letras cuando puedas inferirlo de la evidencia (US, CA, MX, GB, etc.). Si no puedes inferirlo, deja null (no descartes por eso).
 - company_website: si lo incluyes, debe estar literal en la evidencia. Si dudas, déjalo en null antes que inventar.
 
 Devuelve SIEMPRE JSON válido con esta forma exacta:
@@ -280,6 +283,8 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
 
   const diagnostics: DiscoveryDiagnostics = {
     perplexity_asked: ask,
+    perplexity_content_chars: research.content.length,
+    perplexity_content_preview: research.content.slice(0, 600),
     claude_extracted: companies.length,
     passed_name: namedOnly.length,
     passed_dedup: dedupOnly.length,
