@@ -4,7 +4,7 @@ import { discoverCompanies } from "@/lib/discovery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 type Body = {
   region?: string;

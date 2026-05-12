@@ -179,16 +179,38 @@ export default function EmpresasPage() {
       setError("No hay reglas de tamaño aprobadas en el ICP. Configura una en /configuracion/icp.");
       return;
     }
-    const res = await fetch("/api/companies/recommend", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        region,
-        size_min: selected.min,
-        size_max: selected.max,
-        limit
-      })
-    });
+    // 290s timeout: el endpoint tiene maxDuration=300, cortamos 10s antes
+    // para mostrar un error claro en vez de quedarnos esperando un response
+    // que Vercel ya mató.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 290_000);
+    let res: Response;
+    try {
+      res = await fetch("/api/companies/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          region,
+          size_min: selected.min,
+          size_max: selected.max,
+          limit
+        }),
+        signal: controller.signal
+      });
+    } catch (err) {
+      clearTimeout(timeoutId);
+      setDiscovering(false);
+      const aborted = err instanceof DOMException && err.name === "AbortError";
+      setError(
+        aborted
+          ? "La búsqueda tardó más de 5 minutos. Prueba con un límite menor (5-8) o reintenta."
+          : err instanceof Error
+          ? err.message
+          : "Discovery failed"
+      );
+      return;
+    }
+    clearTimeout(timeoutId);
     const data = await res.json();
     setDiscovering(false);
     if (!res.ok) {
