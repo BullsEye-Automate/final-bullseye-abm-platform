@@ -55,14 +55,27 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 - Lógica de pre-filter + dedup + insert extraída a `lib/contactsIntake.ts` (compartida con `/api/contacts/import`).
 - Auth opcional vía header `x-webhook-secret` o `Authorization: Bearer ...`. Activa solo si está seteada `CLAY_WEBHOOK_SECRET` en Vercel (recomendado pero opcional).
 
+**Estado actual (mid-setup en Clay):**
+
+El usuario está configurando en la tabla **Companies** de Clay dos columnas nuevas:
+1. Una enrichment para buscar contactos. En Clay aparece como **"Find people"** (Source · Companies, People, Jobs) — NO como "Find people at company". Esa es la correcta.
+2. Una columna HTTP / Webhook que dispara hacia `/api/clay/raw-contacts` cuando "Find people" termina.
+
+Quedó pendiente confirmar el shape exacto que devuelve "Find people" (cómo Clay representa la lista de contactos en la celda) para armar bien el body del webhook saliente. Cuando el usuario corra "Find people" sobre la empresa DLP Dental Laboratory (que ya está en Clay), tiene que mandar screenshot del resultado.
+
 **Próximo paso (Sprint 2 fase B — completar loop con Clay):**
 
 1. ~~App → Clay Companies (push)~~ — hecho.
-2. **Clay corre "Find people at company"** automáticamente y enriquece columnas adicionales.
-3. ~~Clay → App (raw contactos)~~ — endpoint hecho. Falta configurar en Clay el webhook saliente que dispare cuando termina el run de "Find people at company", apuntando a `https://wecad-prospecting.vercel.app/api/clay/raw-contacts` y mandando `wecad_company_id` + los contactos.
+2. **Clay: "Find people"** — usuario lo está configurando AHORA. Al terminar, hay que verificar shape de los datos.
+3. ~~Backend de Clay → App (raw contactos)~~ — endpoint `POST /api/clay/raw-contacts` ya vive. Falta cablear en Clay la columna HTTP que dispara hacia él.
 4. **App → Clay Contacts (push YES)**: para los contactos pre-filter YES, POSTear al webhook de la tabla Contacts de Clay (todavía no generado). Variable de entorno futura: `CLAY_CONTACTS_WEBHOOK_URL`.
 5. **Clay scorea y manda a Lemlist** automáticamente (lo configura Clay, no la app).
 
+**Variables de entorno en Vercel:**
+- `CLAY_COMPANIES_WEBHOOK_URL` — set
+- `CLAY_WEBHOOK_SECRET` — opcional. Si está set, el endpoint raw-contacts requiere header `x-webhook-secret` o `Authorization: Bearer …` con el mismo valor. Si no está set, queda público.
+- `CLAY_CONTACTS_WEBHOOK_URL` — pendiente, para el siguiente paso.
+
 **Para retomar en una nueva sesión:**
 
-> Continúo el Sprint 2 fase B de weCAD4you-prospecting. Lee `CLAUDE.md`, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Push de empresas a Clay y webhook entrante de raw-contacts ya están vivos. Próximo paso: cuando el usuario tenga el webhook entrante de la tabla Contacts de Clay, agregar `POST /api/clay/push-contact` que mande a Clay solo los contactos con `prefilter_result='yes'`, ya sea botón individual o bulk en `/contactos`.
+> Continúo el Sprint 2 fase B de weCAD4you-prospecting. Lee `CLAUDE.md`, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Quedé en medio de configurar en Clay la enrichment "Find people" sobre la tabla Companies + la columna HTTP que dispara a `/api/clay/raw-contacts`. El próximo bloque es validar el shape de "Find people" y armar el body del webhook saliente.
