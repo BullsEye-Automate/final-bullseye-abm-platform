@@ -69,6 +69,7 @@ export default function ContactosPage() {
   const [error, setError] = useState<string | null>(null);
   const [pushingId, setPushingId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -179,6 +180,31 @@ export default function ContactosPage() {
     await load();
   }
 
+  async function bulkDeleteCurrentBucket() {
+    const count = counts[bucket];
+    if (count === 0) return;
+    const ok = window.confirm(
+      `¿Eliminar TODOS los ${count} contactos del bucket "${BUCKET_LABELS[bucket]}"? Esta acción no se puede deshacer. El feedback histórico en contact_feedback se conserva.`
+    );
+    if (!ok) return;
+    setBulkDeleting(true);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch("/api/contacts/bulk-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bucket })
+    });
+    const data = await res.json();
+    setBulkDeleting(false);
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo eliminar el bucket");
+      return;
+    }
+    setPushNotice(`${data.deleted} contactos eliminados del bucket ${BUCKET_LABELS[bucket]}.`);
+    await load();
+  }
+
   async function loadApprovedCompanies() {
     const res = await fetch("/api/companies?status=approved", { cache: "no-store" });
     const data = await res.json();
@@ -285,6 +311,17 @@ export default function ContactosPage() {
               {bulkPushing
                 ? "Empujando…"
                 : `Prospectar todos en Clay (${pushablePendingCount})`}
+            </button>
+          )}
+          {counts[bucket] > 0 && (
+            <button
+              onClick={bulkDeleteCurrentBucket}
+              disabled={bulkDeleting}
+              className="btn-secondary text-danger-fg"
+              title={`Elimina los ${counts[bucket]} contactos del bucket actual`}
+            >
+              <IconTrash size={14} />
+              {bulkDeleting ? "Eliminando…" : `Eliminar todos (${counts[bucket]})`}
             </button>
           )}
           <button className="btn-secondary" onClick={() => load()} disabled={loading}>
