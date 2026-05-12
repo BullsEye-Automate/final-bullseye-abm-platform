@@ -112,6 +112,11 @@ Reglas de extracción:
 - company_country: usa el código ISO de 2 letras cuando puedas inferirlo de la evidencia (US, CA, MX, GB, etc.). Si no puedes inferirlo, deja null (no descartes por eso).
 - company_website: si lo incluyes, debe estar literal en la evidencia. Si dudas, déjalo en null antes que inventar.
 
+Reglas de scoring (fit_score):
+- "high": labs con software exocad o inLab confirmado, O empresas que ya externalizan con un competidor (Evident, Full Contour, Aidite, Automate). Esto es el sweet spot de weCAD4you.
+- "medium": labs con 3Shape o Dental Wings, O labs con señales digitales fuertes pero sin software CAD confirmado, O labs exocad/inLab sin evidencia adicional. 3Shape NO sube a "high" salvo que tenga TRES o más señales adicionales fuertes (competidor en uso, contratación CAD activa, escáner premium, casos digitales publicados).
+- "low": evidencia digital débil, posible flujo analógico, o tamaño fuera de banda.
+
 Devuelve SIEMPRE JSON válido con esta forma exacta:
 {
   "companies": [
@@ -180,6 +185,11 @@ export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoverRes
 
   const perplexityUser = `Busca ${ask} laboratorios dentales, clínicas multi-centro o DSOs basados en ${regionLabel} que muestren señales de flujos digitales CAD/CAM dental. Perfil deseado: ${sizeHint}.
 
+PRIORIDAD DE SOFTWARE CAD (clave para weCAD4you):
+- Alta prioridad: labs que usan **exocad** o **inLab** (Dentsply Sirona). Son nuestro sweet spot.
+- Prioridad media: labs que usan **3Shape** o **Dental Wings**. Válidos pero secundarios — incluye solo si también tienen otras señales fuertes (escáneres premium, contrataciones, externalización ya con competidor, etc.).
+- Si tienes que elegir entre devolver más empresas 3Shape o menos pero con exocad/inLab, prefiere exocad/inLab.
+
 Para cada empresa, devuelve los datos que encuentres en fuentes públicas. No descartes empresas si te falta algún dato — el sistema posterior filtra.
 
 Datos que necesito por empresa:
@@ -188,15 +198,16 @@ Datos que necesito por empresa:
 - URL de LinkedIn corporativo en formato https://www.linkedin.com/company/<slug>, SOLO si aparece literal en la fuente. NO la construyas a partir del nombre, NO la inventes. Si no la encuentras, déjala en blanco e inclúyela igual.
 - Sitio web oficial si está disponible
 - Tamaño aproximado en empleados si la fuente lo trae
-- Software CAD que mencionan (exocad, inLab, 3Shape, Dental Wings)
+- Software CAD que mencionan (especifica exocad / inLab / 3Shape / Dental Wings)
 - Escáner intraoral que usan (iTero, Medit, Carestream, Cerec)
 - Si externalizan diseño CAD con alguno de estos competidores: ${competitors}
 - Señales activas: contratando técnico CAD, publican casos digitales, expansión
 
-Estrategia de búsqueda:
-- Mira directorios públicos de labs dentales en ${regionLabel}, perfiles de LinkedIn de empresas, web corporativas con sección "About" o "Technology", notas de prensa sobre expansión o adopción de software CAD.
-- Busca también empresas que aparezcan en listas tipo "Top dental laboratories in [estado/región]", reviews de software CAD dental, casos de éxito de fabricantes de escáneres.
-- Diversifica entre varios estados/regiones para no concentrar todo en un solo lugar.
+Estrategia de búsqueda (sigue este orden):
+1. Busca específicamente "exocad dental lab ${regionLabel}", "inLab dental lab ${regionLabel}", "exocad case studies", listados de partners de exocad/inLab. Esos son el target principal.
+2. Mira directorios públicos de labs dentales (NADL, DentalLabNetwork, etc.) y filtra por mención de exocad o inLab.
+3. Después, si necesitas completar el conteo, agrega labs con 3Shape o Dental Wings que tengan otras señales fuertes.
+4. Diversifica entre varios estados/regiones para no concentrar todo en un solo lugar.
 
 Cita la fuente de cada empresa con [N].${excludeBlock}`;
 
