@@ -23,7 +23,9 @@ export type DiscoveredCompany = {
 type DiscoverOpts = {
   icp: IcpConfig;
   region: string;
-  size: "small" | "medium" | "large";
+  size_min: number;
+  size_max: number | null;
+  size_note?: string | null;
   limit: number;
   exclude: string[];
 };
@@ -100,11 +102,11 @@ Devuelve SIEMPRE JSON válido con esta forma exacta:
 fit_signals: una lista corta y concreta de las señales detectadas, separadas por " · ".
 research_summary: 2–3 frases explicando por qué califica esta empresa según el ICP.`;
 
-const SIZE_HINT: Record<DiscoverOpts["size"], string> = {
-  small:  "labs y clínicas con 5–30 empleados (sweet spot, dueño decide)",
-  medium: "labs y clínicas con 31–100 empleados",
-  large:  "labs grandes, DSOs y grupos de 100+ empleados con flujo digital"
-};
+function renderSizeHint(min: number, max: number | null, note?: string | null): string {
+  const range = max === null ? `${min}+` : `${min}–${max}`;
+  const noteStr = note ? ` — ${note}` : "";
+  return `labs, clínicas multi-centro y DSOs con ${range} empleados${noteStr}`;
+}
 
 const REGION_LABEL: Record<string, string> = {
   US: "Estados Unidos",
@@ -129,11 +131,11 @@ function isInStrictRegion(region: string, country: string | null | undefined): b
 }
 
 export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoveredCompany[]> {
-  const { icp, region, size, limit, exclude } = opts;
+  const { icp, region, size_min, size_max, size_note, limit, exclude } = opts;
 
   // 1) Perplexity research
   const regionLabel = REGION_LABEL[region] ?? region;
-  const sizeHint = SIZE_HINT[size];
+  const sizeHint = renderSizeHint(size_min, size_max, size_note);
   const competitors = icp.competitors.map((c) => c.name).join(", ");
   const excludeBlock = exclude.length
     ? `\n\nNO incluyas estas empresas (ya están en la base):\n${exclude.map((n) => `- ${n}`).join("\n")}`

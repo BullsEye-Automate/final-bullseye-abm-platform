@@ -43,15 +43,34 @@ const REGIONS: { value: string; label: string }[] = [
   { value: "LATAM", label: "LATAM" }
 ];
 
-const SIZES: { value: "small" | "medium" | "large"; label: string }[] = [
-  { value: "small",  label: "5–30 empleados (sweet spot)" },
-  { value: "medium", label: "31–100 empleados" },
-  { value: "large",  label: "100+ empleados / DSOs" }
-];
+type SizeOption = {
+  key: string;
+  min: number;
+  max: number | null;
+  note: string | null;
+  label: string;
+};
+
+function sizeOptionFromRule(rule: {
+  min: number;
+  max: number | null;
+  note?: string | null;
+}): SizeOption {
+  const range = rule.max === null ? `${rule.min}+ empleados` : `${rule.min}–${rule.max} empleados`;
+  const label = rule.note ? `${range} · ${rule.note}` : range;
+  return {
+    key: `${rule.min}-${rule.max ?? "inf"}`,
+    min: rule.min,
+    max: rule.max ?? null,
+    note: rule.note ?? null,
+    label
+  };
+}
 
 export default function EmpresasPage() {
   const [region, setRegion] = useState("US");
-  const [size, setSize] = useState<"small" | "medium" | "large">("small");
+  const [sizeOptions, setSizeOptions] = useState<SizeOption[]>([]);
+  const [sizeKey, setSizeKey] = useState<string>("");
   const [limit, setLimit] = useState(8);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -112,14 +131,41 @@ export default function EmpresasPage() {
     load();
   }, [tab]);
 
+  useEffect(() => {
+    (async () => {
+      const res = await fetch("/api/icp", { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok || !data?.icp?.size_rules) return;
+      const opts: SizeOption[] = (data.icp.size_rules as any[])
+        .filter((r) => r.decision === "approve")
+        .map((r) => sizeOptionFromRule(r));
+      setSizeOptions(opts);
+      if (opts.length > 0) {
+        const sweet = opts.find((o) => /sweet/i.test(o.note ?? "")) ?? opts[0];
+        setSizeKey(sweet.key);
+      }
+    })();
+  }, []);
+
   async function discover() {
     setDiscovering(true);
     setError(null);
     setLastRun(null);
+    const selected = sizeOptions.find((o) => o.key === sizeKey);
+    if (!selected) {
+      setDiscovering(false);
+      setError("No hay reglas de tamaño aprobadas en el ICP. Configura una en /configuracion/icp.");
+      return;
+    }
     const res = await fetch("/api/companies/recommend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ region, size, limit })
+      body: JSON.stringify({
+        region,
+        size_min: selected.min,
+        size_max: selected.max,
+        limit
+      })
     });
     const data = await res.json();
     setDiscovering(false);
@@ -167,17 +213,22 @@ export default function EmpresasPage() {
               ))}
             </select>
           </Field>
-          <Field label="Tamaño objetivo">
+          <Field label="Tamaño objetivo (desde ICP)">
             <select
               className="input"
-              value={size}
-              onChange={(e) => setSize(e.target.value as typeof size)}
+              value={sizeKey}
+              onChange={(e) => setSizeKey(e.target.value)}
+              disabled={sizeOptions.length === 0}
             >
-              {SIZES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
+              {sizeOptions.length === 0 ? (
+                <option value="">Cargando reglas del ICP…</option>
+              ) : (
+                sizeOptions.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))
+              )}
             </select>
           </Field>
           <Field label="Máximo de empresas">

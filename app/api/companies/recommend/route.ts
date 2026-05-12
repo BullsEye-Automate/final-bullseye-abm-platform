@@ -8,14 +8,14 @@ export const maxDuration = 120;
 
 type Body = {
   region?: string;
-  size?: "small" | "medium" | "large";
+  size_min?: number;
+  size_max?: number | null;
   limit?: number;
 };
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Body;
   const region = body.region ?? "US";
-  const size = body.size ?? "small";
   const limit = Math.min(Math.max(body.limit ?? 8, 1), 15);
 
   const db = supabaseAdmin();
@@ -30,6 +30,25 @@ export async function POST(req: NextRequest) {
   if (icpErr) return NextResponse.json({ error: icpErr.message }, { status: 500 });
   if (!icp) return NextResponse.json({ error: "No active ICP configured" }, { status: 400 });
 
+  // Tamaño objetivo: tiene que matchear una size_rule aprobada del ICP. Si no
+  // viene en el body, usamos la primera regla approve (sweet spot por defecto).
+  const approveRules = (icp.size_rules ?? []).filter(
+    (r: { decision: string }) => r.decision === "approve"
+  ) as { min: number; max: number | null; note?: string | null }[];
+  if (approveRules.length === 0) {
+    return NextResponse.json(
+      { error: "El ICP activo no tiene size_rules con decision=approve" },
+      { status: 400 }
+    );
+  }
+  const requestedMin = body.size_min;
+  const requestedMax = body.size_max === undefined ? null : body.size_max;
+  const matchedRule =
+    typeof requestedMin === "number"
+      ? approveRules.find((r) => r.min === requestedMin && (r.max ?? null) === requestedMax)
+      : null;
+  const sizeRule = matchedRule ?? approveRules[0];
+
   const { data: existing, error: exErr } = await db
     .from("companies")
     .select("company_name")
@@ -42,7 +61,9 @@ export async function POST(req: NextRequest) {
     discovered = await discoverCompanies({
       icp: icp as IcpConfig,
       region,
-      size,
+      size_min: sizeRule.min,
+      size_max: sizeRule.max ?? null,
+      size_note: sizeRule.note ?? null,
       limit,
       exclude
     });
