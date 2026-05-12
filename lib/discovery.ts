@@ -73,6 +73,8 @@ Reglas:
 - Si la empresa ya externaliza con un competidor (Evident, Full Contour, Aidite, Automate by 3Shape), márcala como "high" y rellena competitor_match.
 - Tener diseñadores propios NO descarta — es señal de que entienden el valor.
 - Tamaño de empresa: estima en empleados. Si la evidencia da un rango, usa el punto medio.
+- REQUISITO DURO — company_linkedin_url: solo incluye la empresa si la evidencia trae una URL verificable de su página corporativa de LinkedIn (formato exacto https://www.linkedin.com/company/<slug>). NUNCA construyas el slug a partir del nombre, NUNCA adivines. Si la evidencia no la trae, descarta la empresa antes de devolverla.
+- company_website: si lo incluyes, debe estar literal en la evidencia. Si dudas, déjalo en null antes que inventar.
 
 Devuelve SIEMPRE JSON válido con esta forma exacta:
 {
@@ -123,9 +125,12 @@ export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoveredC
 
   const perplexityUser = `Busca ${limit} laboratorios dentales, clínicas multi-centro o DSOs en ${regionLabel}, perfil "${sizeHint}", que muestren evidencia pública de flujo digital CAD/CAM dental.
 
-Para cada empresa, intenta encontrar:
-- Nombre exacto y sitio web
-- LinkedIn de la empresa si está disponible
+Para cada empresa, encuentra OBLIGATORIAMENTE:
+- Nombre exacto
+- URL de LinkedIn corporativo (formato https://www.linkedin.com/company/<slug>) — REQUERIDA y copiada literal de la fuente, no construida desde el nombre. Si no la puedes verificar en una fuente real, descarta la empresa.
+- Sitio web oficial (solo si aparece literal en la fuente)
+
+Datos adicionales si están:
 - Ciudad / país
 - Tamaño aproximado en empleados (LinkedIn o web)
 - Software CAD que mencionan (exocad, inLab, 3Shape, Dental Wings)
@@ -133,7 +138,7 @@ Para cada empresa, intenta encontrar:
 - Si externalizan diseño CAD con alguno de estos competidores: ${competitors}
 - Señales activas: contratando técnico CAD, publican casos digitales, expansión
 
-Prioriza empresas con menciones públicas verificables. No inventes datos.${excludeBlock}`;
+Prioriza empresas con presencia verificable en LinkedIn. No inventes URLs.${excludeBlock}`;
 
   const research = await perplexitySearch({
     system:
@@ -197,11 +202,25 @@ A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vig
       }))
     : [];
 
-  // Filter out anything missing a name or already in the exclude list
+  // Drop anything missing a name, missing a verifiable LinkedIn company URL,
+  // or already in the exclude list. The LinkedIn requirement protects the
+  // downstream Clay "Find People" step, which can only find contacts if the
+  // company has a real LinkedIn page.
   const excludeSet = new Set(exclude.map((n) => n.toLowerCase().trim()));
-  return companies.filter(
-    (c) => c.company_name.length > 0 && !excludeSet.has(c.company_name.toLowerCase().trim())
-  );
+  return companies.filter((c) => {
+    if (c.company_name.length === 0) return false;
+    if (excludeSet.has(c.company_name.toLowerCase().trim())) return false;
+    if (!isValidLinkedinCompanyUrl(c.company_linkedin_url)) return false;
+    return true;
+  });
+}
+
+const LINKEDIN_COMPANY_URL_RE =
+  /^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/company\/[A-Za-z0-9._%-]+\/?$/i;
+
+export function isValidLinkedinCompanyUrl(url: string | null | undefined): boolean {
+  if (!url) return false;
+  return LINKEDIN_COMPANY_URL_RE.test(url.trim());
 }
 
 function extractJson(text: string): any {
