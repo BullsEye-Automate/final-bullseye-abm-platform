@@ -45,18 +45,24 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 
 **Hecho del Sprint 2 (fase B, parte 1 — push de empresas a Clay):**
 - Migración `supabase/clay_push_migration.sql` añade `clay_pushed_at` y `clay_push_error` a `companies`. Pegar manual en SQL editor de Supabase una vez.
-- `POST /api/clay/push-company` valida que la empresa esté `approved`, mapea `company_type` (multi_clinic→clinic, dso→DSO), POSTea al webhook de Clay y marca `clay_pushed_at`. Si ya fue empujada y no se pasa `force: true`, responde 409.
-- Botón "Empujar a Clay" en cada card de empresa aprobada en `/empresas`. Una vez empujada, muestra "En Clay desde …" con timestamp y el botón desaparece.
-- Variable de entorno requerida: `CLAY_COMPANIES_WEBHOOK_URL` (ya configurada en Vercel).
+- `POST /api/clay/push-company` (single) y `POST /api/clay/push-companies` (bulk de aprobadas sin empujar). Lógica compartida en `lib/clayPush.ts`. Mapea `company_type` (multi_clinic→clinic, dso→DSO).
+- Botón individual "Prospectar en Clay" en cada card aprobada + botón bulk "Prospectar todas en Clay (N)" en la pestaña Aprobadas.
+- Variable de entorno requerida: `CLAY_COMPANIES_WEBHOOK_URL` (ya en Vercel).
+- En Clay, las columnas de la tabla Companies se auto-mapearon desde el "Setup mapping" del webhook source (incluye `wecad_company_id` para reconciliar).
+
+**Hecho del Sprint 2 (fase B, parte 2 — webhook entrante con contactos crudos):**
+- `POST /api/clay/raw-contacts`: webhook entrante. Acepta payload single, batch `{wecad_company_id, contacts:[...]}` o array mixto. Agrupa por empresa, corre pre-filter Claude y persiste con la misma lógica que el import manual.
+- Lógica de pre-filter + dedup + insert extraída a `lib/contactsIntake.ts` (compartida con `/api/contacts/import`).
+- Auth opcional vía header `x-webhook-secret` o `Authorization: Bearer ...`. Activa solo si está seteada `CLAY_WEBHOOK_SECRET` en Vercel (recomendado pero opcional).
 
 **Próximo paso (Sprint 2 fase B — completar loop con Clay):**
 
 1. ~~App → Clay Companies (push)~~ — hecho.
 2. **Clay corre "Find people at company"** automáticamente y enriquece columnas adicionales.
-3. **Clay → App (raw contactos)**: pendiente crear webhook en Clay que cuando un row de Companies termine de procesar, mande los contactos encontrados a `/api/clay/raw-contacts` en nuestra app. La app corre pre-filter y persiste en Supabase.
-4. **App → Clay Contacts (push YES)**: para los contactos pre-filter YES, POSTear a otro webhook (el de la tabla Contacts de Clay — todavía no generado, va igual que el de Companies). Variable de entorno futura: `CLAY_CONTACTS_WEBHOOK_URL`.
+3. ~~Clay → App (raw contactos)~~ — endpoint hecho. Falta configurar en Clay el webhook saliente que dispare cuando termina el run de "Find people at company", apuntando a `https://wecad-prospecting.vercel.app/api/clay/raw-contacts` y mandando `wecad_company_id` + los contactos.
+4. **App → Clay Contacts (push YES)**: para los contactos pre-filter YES, POSTear al webhook de la tabla Contacts de Clay (todavía no generado). Variable de entorno futura: `CLAY_CONTACTS_WEBHOOK_URL`.
 5. **Clay scorea y manda a Lemlist** automáticamente (lo configura Clay, no la app).
 
 **Para retomar en una nueva sesión:**
 
-> Continúo el Sprint 2 fase B de weCAD4you-prospecting. Lee `CLAUDE.md`, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. El push de empresas a Clay ya está vivo. Próximo paso: crear el endpoint `POST /api/clay/raw-contacts` (webhook entrante de Clay con los contactos crudos) que corra el pre-filter y persista en Supabase.
+> Continúo el Sprint 2 fase B de weCAD4you-prospecting. Lee `CLAUDE.md`, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Push de empresas a Clay y webhook entrante de raw-contacts ya están vivos. Próximo paso: cuando el usuario tenga el webhook entrante de la tabla Contacts de Clay, agregar `POST /api/clay/push-contact` que mande a Clay solo los contactos con `prefilter_result='yes'`, ya sea botón individual o bulk en `/contactos`.
