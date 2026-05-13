@@ -9,6 +9,7 @@ import {
   IconMail,
   IconBrandLinkedin,
   IconPhone,
+  IconPhoneCall,
   IconMessage2,
   IconChartFunnel,
   IconReportAnalytics,
@@ -39,7 +40,7 @@ const SECTIONS: Section[] = [
     label: "SDR",
     items: [
       { href: "/telefonos",  label: "Teléfonos",  icon: IconPhone },
-      { href: "/llamadas",   label: "Llamadas",   icon: IconPhone,    disabled: true },
+      { href: "/llamadas",   label: "Llamadas",   icon: IconPhoneCall },
       { href: "/respuestas", label: "Respuestas", icon: IconMessage2, disabled: true }
     ]
   },

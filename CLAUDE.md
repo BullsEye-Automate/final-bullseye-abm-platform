@@ -592,18 +592,149 @@ Pasos para la próxima sesión:
 5. **Time series con rango = año**: agrupa por mes en vez de día.
    Si la app tiene poca data, el chart puede verse vacío al inicio.
 
+## Hecho del Sprint 5 fase 2 — Llamadas + transcripciones + coaching IA (sesión 2026-05-13e)
+
+Pull de calls de HubSpot a Supabase con análisis automático de Claude
+sobre la transcripción (o las notas si no hay transcripción). Para cada
+llamada: clasifica la respuesta del cliente (interested / objection_*
+/ callback_requested / not_interested / voicemail / gatekeeper / etc.),
+da score 0-10 al SDR (overall + sub-scores apertura, descubrimiento,
+manejo de objeciones, próximo paso), lista fortalezas y oportunidades
+de mejora con citas textuales del transcript, y recomienda un próximo
+paso concreto. Más reportería agregada (ranking SDRs, top áreas de
+mejora, distribución de respuestas, sub-scores promedio).
+
+### Archivos nuevos
+
+- `supabase/calls_migration.sql` — tabla `calls` con columnas HubSpot
+  (hubspot_call_id unique, direction, duration_ms, disposition_*,
+  status, body, recording_url, transcription, has_transcription) +
+  joins a contacts/companies + bloque de análisis (analyzed_at,
+  analysis_model, customer_response_category/label/summary, los 5
+  scores, sdr_strengths jsonb, sdr_improvements jsonb, recommended_
+  next_step). Pegar manual en SQL editor.
+- `lib/hubspotCalls.ts` — cliente HubSpot Calls API. searchCallsSince
+  (paging hasta maxResults), batchReadCallAssociations (re-fetch con
+  contacts/companies asociados — la search no los expone), caches en
+  memoria (10min TTL) para getDispositionMap (hs_call_disposition GUID
+  → label) y getOwnerMap (owner id → nombre).
+- `lib/callAnalyzer.ts` — analyzeCall(input). createMessageWithFallback
+  (Sonnet → Haiku 4.5 si overloaded). Output JSON estricto en español
+  rioplatense. Categorías estables: interested, objection_price/timing/
+  no_need/existing_solution/authority, callback_requested, not_interested,
+  no_engagement, voicemail, wrong_number, gatekeeper, other.
+- `lib/callsSync.ts` — orquesta search + batch read + resuelve maps
+  + lookup contacts/companies en Supabase por hubspot_*_id + upsert
+  por hubspot_call_id. Luego para los que tienen `analyzed_at IS NULL`
+  corre analyzeCall en serie y persiste. Errores de análisis se
+  guardan en `analysis_error` (no bloquea el sync).
+- `app/api/calls/sync/route.ts` — `POST` con body opcional
+  `{since_days?: 30, max_results?: 200, analyze?: true}`. maxDuration
+  300s para soportar análisis serial de muchas calls.
+- `app/api/calls/route.ts` — GET list con filtros range (8 presets +
+  `all`), response (customer_response_category), owner, limit. Devuelve
+  llamadas DESC + KPIs (total, avg_duration_sec, avg_sdr_score,
+  interested_count/rate, callbacks_count).
+- `app/api/calls/[id]/route.ts` — GET detalle con joins a contact
+  (con company) y company. Incluye todos los campos de análisis.
+- `app/api/calls/[id]/analyze/route.ts` — POST re-corre análisis.
+- `app/api/calls/report/route.ts` — GET agregado para reportería:
+  distribución de respuestas, ranking SDRs (avg_score, interested_rate),
+  sub-scores promedio, top áreas de mejora (agregando `area` de
+  sdr_improvements), time series diario.
+- `app/llamadas/page.tsx` — lista agrupada por día con cards por
+  llamada (contacto, empresa, direction, duration, disposition, score
+  SDR badge, customer_response label, summary, próximo paso). Header
+  con dropdown rango + botón "Sincronizar HubSpot" + link a reportería.
+- `app/llamadas/[id]/page.tsx` — detalle: header con metadata +
+  card "Respuesta del cliente" (badge + summary + próximo paso) +
+  card "Evaluación SDR" con score grande + barras sub-scores +
+  fortalezas + oportunidades de mejora con citas + secciones notas
+  y transcripción. Botón "Re-analizar".
+- `app/llamadas/reporte/page.tsx` — totals + distribución respuestas
+  (barras horizontales) + sub-scores promedio (barras) + ranking SDRs
+  (tabla con top badge) + top áreas de mejora (barras) + actividad
+  diaria (bar chart con color por score promedio del día).
+
+### Cambios
+
+- `components/Sidebar.tsx`: "Llamadas" ya no está disabled, ícono
+  cambiado a `IconPhoneCall` para distinguir de "Teléfonos".
+
+### Flujo SDR día a día (cómo se usa Llamadas)
+
+1. SDR registra llamadas en HubSpot como siempre (manualmente o vía
+   integración de llamadas — Aircall, Kixie, dialer in-app de HubSpot,
+   etc.). Si la llamada se graba, HubSpot puede generar transcripción
+   automáticamente (depende del plan).
+2. Coach/manager abre `/llamadas` y aprieta **"Sincronizar HubSpot"**.
+   El sync pulla calls de los últimos 30 días, las upsertea en Supabase,
+   y para cada una llama a Claude para analizar respuesta cliente +
+   evaluar al SDR.
+3. Manager revisa lista: ve qué llamadas terminaron mejor (interested,
+   callbacks) y cuáles peor (objeciones repetidas, gatekeeper, no
+   engagement). Cada card muestra el score IA y el customer response.
+4. Click en una llamada → detalle con análisis completo. Lee
+   transcripción + sugerencias de coaching personalizadas con citas
+   del propio transcript del SDR.
+5. `/llamadas/reporte` da la vista agregada: ranking de SDRs, top
+   áreas de mejora recurrentes (ej. "Apertura" aparece 12×, "Manejo
+   de objeción precio" 8× → próxima sesión de training).
+
+### Sync semantics
+
+- Idempotente: upsert por `hubspot_call_id`. Re-correr el sync no
+  duplica.
+- Análisis solo se corre cuando `analyzed_at IS NULL`. Para forzar
+  re-análisis: botón "Re-analizar" en el detail page (llama a
+  `/api/calls/[id]/analyze`).
+- Falla de análisis individual no rompe el sync: el error se persiste
+  en `calls.analysis_error` y aparece como badge rojo en la card.
+- Resolución de FKs: contactos/empresas se linkean solo si fueron
+  pusheadas previamente a HubSpot por la app (tienen `hubspot_*_id`
+  no nulo). Llamadas a prospectos no enlazados muestran "(sin
+  contacto vinculado)" pero aún se analizan con la info disponible.
+
+### Variables de entorno en Vercel
+
+No requiere nuevas. Usa `HUBSPOT_ACCESS_TOKEN` (mismo scope ya
+configurado: `crm.objects.contacts.read`, `crm.objects.companies.read`
+— ambos cubren calls API porque calls usa el mismo crm.objects scope
+general) + `ANTHROPIC_API_KEY`. Si el typo de scopes en HubSpot da
+401, agregar `crm.objects.calls.read` explícitamente y `crm.objects.
+owners.read`.
+
+### Gaps conocidos al cierre Sprint 5 fase 2
+
+1. **Sync manual**: el botón "Sincronizar HubSpot" es manual. Para
+   automatizarlo: webhook de HubSpot CRM (suscripción `object.creation`
+   en calls), tarea cron de Vercel (Pro plan), o trigger en HubSpot
+   Workflow (bloqueado por plan del cliente). Por ahora el flujo manual
+   es suficiente.
+2. **Transcripciones dependen del plan de HubSpot**: si la grabación
+   no tiene transcript, Claude analiza con metadata + notas. La UI lo
+   indica con badge "sin transcripción" implícito (no aparece el badge
+   "transcripción").
+3. **Sub-scores en voicemail/gatekeeper**: el prompt instruye que en
+   esos casos opening/discovery/etc deben ser 0 (no había diálogo). El
+   overall_score refleja calidad del mensaje dejado.
+4. **No hay drilldown desde reporte → lista**: clickear una barra
+   en distribución respuestas no filtra la lista. Mejora futura.
+5. **Análisis en serie, no en paralelo**: para 200 calls con avg ~5s
+   por análisis ≈ 17 min. El endpoint tiene `maxDuration: 300s` así
+   que con muchas calls puede timeout. Workaround actual: bajar
+   `max_results`. Futuro: paralelizar con `Promise.all` en chunks de
+   5-10.
+
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
-> Continúo weCAD4you-prospecting. Sprint 5 fase 1 (Dashboard ejecutivo)
-> cerrado en código pero queda 1 commit sin mergear: `880efcf` en
-> branch `claude/continue-wecad4you-prospecting-YNgtt` (fix denominador
-> "Origen de teléfonos" — solo cuenta contactos en Lemlist). **PRIMER
-> PASO**: re-autenticar GitHub MCP, crear PR y mergear ese commit
-> contra base `claude/wecad4you-prospecting-app-Hltfi`.
+> Continúo weCAD4you-prospecting. Sprint 5 fase 2 (Llamadas + transcripciones
+> + coaching IA) cerrado y mergeado.
 >
 > Antes de codear nada nuevo, leer `CLAUDE.md` completo (especialmente
-> "Hecho del Sprint 5 fase 1" y "Hecho del Sprint 4 fase 2"),
-> `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`.
+> "Hecho del Sprint 5 fase 2", "Hecho del Sprint 5 fase 1" y "Hecho del
+> Sprint 4 fase 2"), `docs/contexto_sistema.md` y
+> `docs/notas_arquitectura.md`.
 >
 > Estado vivo del producto:
 > - Discovery → Empresas: `/empresas` con cards aprobado/rechazado.
@@ -613,13 +744,13 @@ Pasos para la próxima sesión:
 > - Lemlist enriquece phone+email automático (findPhone=true en push).
 > - Lusha manual: `/telefonos` con dual phone fields (Lemlist + Lusha).
 > - HubSpot: 7 listas dinámicas SDR creadas (Hot/Warm/Reintentar/etc.).
-> - Dashboard ejecutivo: `/dashboard` con 8 presets de fecha, KPIs,
->   funnel, distribuciones, sparkline.
+> - Dashboard ejecutivo: `/dashboard` con 8 presets de fecha.
+> - Llamadas: `/llamadas` con sync de HubSpot + análisis IA (respuesta
+>   cliente + score SDR + mejoras personalizadas) + reportería agregada.
 >
 > Reglas: vos hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist/
-> HubSpot UI. Próximos módulos a activar (recomendación de la sesión
-> anterior): Respuestas (Lemlist replies tracking) → Llamadas (call
-> logging from HubSpot).
+> HubSpot UI. Próximos módulos sugeridos: Respuestas (Lemlist replies
+> tracking) → Funnel → Entrenar modelo (feedback loop ICP).
 >
 > NO recrear: integración App → Clay vía REST API (no expone CRUD),
 > HubSpot Workflow webhooks (requiere Operations Hub Pro), cron de
