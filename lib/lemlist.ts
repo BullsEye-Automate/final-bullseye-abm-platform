@@ -70,12 +70,12 @@ function buildPayload(lead: LemlistLead): Record<string, unknown> {
 // preferencia. El primero es el v1 documentado en developer.lemlist.com
 // que ha sido estable por años. El v2 es el namespace más nuevo pero
 // menos consistente — lo dejamos como último recurso.
-// Flags de enrichment para que Lemlist dispare su waterfall al insertar
-// (email + verify + phone). Replica lo que hace la columna "Add Lead to
-// Campaign" de Clay con sus toggles ON. Lemlist documenta findEmail y
-// verifyEmail como query params del v1; agregamos findPhone también para
-// cubrir el teléfono. Si Lemlist no reconoce alguno, lo ignora silencioso.
-const ENRICHMENT_QUERY = "findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true";
+// Flags de enrichment para que Lemlist dispare su waterfall al insertar.
+// Solo email — el teléfono cuesta 20 créditos vs 5 del email; mejor que
+// el SDR pida teléfono manual con Lusha cuando lo necesite (Sprint 3+).
+// linkedinEnrichment llena seniority/tenure desde LinkedIn (sin costo
+// extra documentado). Lemlist ignora query params desconocidos silencioso.
+const ENRICHMENT_QUERY = "findEmail=true&verifyEmail=true&linkedinEnrichment=true";
 
 function buildCandidateRequests(
   campaignId: string,
@@ -85,11 +85,11 @@ function buildCandidateRequests(
   const requests: Array<{ url: string; method: string }> = [];
 
   // v1 con email en URL — el más documentado. Solo si hay email.
-  // No agregamos findEmail aquí porque ya tenemos email; verifyEmail sí.
+  // No agregamos findEmail aquí porque ya tenemos email; solo verify.
   if (email) {
     const enc = encodeURIComponent(email);
     requests.push({
-      url: `${LEMLIST_API_BASE}/campaigns/${id}/leads/${enc}?verifyEmail=true&findPhone=true`,
+      url: `${LEMLIST_API_BASE}/campaigns/${id}/leads/${enc}?verifyEmail=true`,
       method: "POST"
     });
   }
