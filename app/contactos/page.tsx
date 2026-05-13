@@ -38,6 +38,9 @@ type Contact = {
   clay_push_error: string | null;
   lemlist_pushed_at: string | null;
   lemlist_push_error: string | null;
+  hubspot_contact_id: string | null;
+  hubspot_synced_at: string | null;
+  hubspot_sync_error: string | null;
   human_decision: "approved" | "rejected" | null;
   human_decision_at: string | null;
   human_decision_reason: string | null;
@@ -76,6 +79,7 @@ export default function ContactosPage() {
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [retryingHubspotId, setRetryingHubspotId] = useState<string | null>(null);
   const [clayDebug, setClayDebug] = useState<{
     label: string;
     payload: unknown;
@@ -169,22 +173,31 @@ export default function ContactosPage() {
     let notice = "";
     if (decision === "approved") {
       const lp = data.lemlist_push;
+      const hp = data.hubspot_push;
+      const parts: string[] = [];
       if (lp == null) {
-        notice = "Contacto aprobado. Pasa a Pendientes; el feedback se guardó.";
+        parts.push("aprobado");
       } else if (lp.ok === false) {
         setLemlistDebug({
           label: "App aprobó OK pero Lemlist falló al recibir el contacto",
           payload: lp
         });
-        notice =
-          "Contacto aprobado en la app, pero el push a Lemlist falló. Ver detalle abajo.";
+        parts.push("Lemlist falló (ver panel abajo)");
       } else {
-        notice = lp.messages_generated
-          ? `Contacto aprobado y empujado a Lemlist. Mensajes generados por Claude (${
-              lp.model_used ?? "modelo"
-            }).`
-          : "Contacto aprobado y empujado a Lemlist con los mensajes existentes.";
+        parts.push(
+          lp.messages_generated
+            ? `Lemlist OK (mensajes generados con ${lp.model_used ?? "Claude"})`
+            : "Lemlist OK"
+        );
       }
+      if (hp != null) {
+        if (hp.ok === false) {
+          parts.push(`HubSpot falló: ${hp.error}`);
+        } else {
+          parts.push(`HubSpot ${hp.created ? "creado" : "actualizado"}`);
+        }
+      }
+      notice = `Contacto ${parts.join(" · ")}.`;
     } else {
       notice = "Contacto rechazado. Pasa a Descartados; la razón se guardó.";
     }
@@ -219,6 +232,28 @@ export default function ContactosPage() {
       );
     } else {
       setPushNotice(`${label} empujado a Lemlist correctamente en el reintento.`);
+    }
+    await load();
+  }
+
+  async function retryHubspot(contactId: string, label: string) {
+    setRetryingHubspotId(contactId);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch(`/api/hubspot/push-contact/${contactId}`, {
+      method: "POST"
+    });
+    const data = await res.json();
+    setRetryingHubspotId(null);
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo reintentar el push a HubSpot");
+      return;
+    }
+    const hp = data.hubspot_push;
+    if (hp?.ok === false) {
+      setError(`HubSpot rechazó el contacto: ${hp.error}`);
+    } else {
+      setPushNotice(`${label} sincronizado a HubSpot ${hp?.created ? "(nuevo)" : "(update)"}.`);
     }
     await load();
   }
@@ -474,6 +509,8 @@ export default function ContactosPage() {
                     isDeleting={deletingId === c.id}
                     onRetryLemlist={retryLemlist}
                     isRetryingLemlist={retryingId === c.id}
+                    onRetryHubspot={retryHubspot}
+                    isRetryingHubspot={retryingHubspotId === c.id}
                   />
                 ))}
               </div>
@@ -518,7 +555,9 @@ function ContactCard({
   onDelete,
   isDeleting,
   onRetryLemlist,
-  isRetryingLemlist
+  isRetryingLemlist,
+  onRetryHubspot,
+  isRetryingHubspot
 }: {
   c: Contact;
   bucket: Bucket;
@@ -530,6 +569,8 @@ function ContactCard({
   isDeleting: boolean;
   onRetryLemlist: (id: string, label: string) => void | Promise<void>;
   isRetryingLemlist: boolean;
+  onRetryHubspot: (id: string, label: string) => void | Promise<void>;
+  isRetryingHubspot: boolean;
 }) {
   const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
   const scoreClass =
@@ -548,6 +589,11 @@ function ContactCard({
     c.human_decision === "approved" &&
     !c.lemlist_pushed_at &&
     !!c.lemlist_push_error;
+  // HubSpot puede reintentar si nunca se sincronizó O si hay un error
+  // persistido (idempotente: si ya está bien, igual hace update).
+  const canRetryHubspot =
+    c.human_decision === "approved" &&
+    (!c.hubspot_contact_id || !!c.hubspot_sync_error);
   // En el bucket Descartados ofrecemos solo "Aprobar" (recuperar). Sirve
   // para rescatar false negatives del pre-filter o falsos discard de Clay.
   const canRecover = bucket === "discarded" && c.human_decision !== "approved";
@@ -568,6 +614,9 @@ function ContactCard({
             )}
             {c.lemlist_pushed_at && (
               <span className="badge bg-success-bg text-success-fg">en Lemlist ✓</span>
+            )}
+            {c.hubspot_contact_id && (
+              <span className="badge bg-success-bg text-success-fg">en HubSpot ✓</span>
             )}
             {c.fit_score !== null && (
               <span className={`badge ${scoreClass}`}>score {c.fit_score}/10</span>
@@ -655,6 +704,13 @@ function ContactCard({
         </div>
       )}
 
+      {c.hubspot_sync_error && (
+        <div className="text-xs text-danger-fg flex items-start gap-2">
+          <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span className="break-words">HubSpot: {c.hubspot_sync_error}</span>
+        </div>
+      )}
+
       {c.human_decision_reason && c.human_decision != null && (
         <div className="text-xs text-ink-muted">
           <span className="label mr-1">
@@ -717,6 +773,21 @@ function ContactCard({
           >
             <IconRefresh size={12} />
             {isRetryingLemlist ? "Reintentando…" : "Reintentar Lemlist"}
+          </button>
+        )}
+        {canRetryHubspot && (
+          <button
+            onClick={() => onRetryHubspot(c.id, fullName)}
+            disabled={isRetryingHubspot}
+            className="btn-primary text-xs"
+            title="Sincronizar el contacto a HubSpot con todo el historial"
+          >
+            <IconRefresh size={12} />
+            {isRetryingHubspot
+              ? "Sincronizando…"
+              : c.hubspot_contact_id
+              ? "Resync HubSpot"
+              : "Sincronizar a HubSpot"}
           </button>
         )}
         <button

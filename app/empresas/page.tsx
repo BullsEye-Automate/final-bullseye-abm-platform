@@ -34,6 +34,9 @@ type Company = {
   reject_reason: string | null;
   clay_pushed_at: string | null;
   clay_push_error: string | null;
+  hubspot_company_id: string | null;
+  hubspot_synced_at: string | null;
+  hubspot_sync_error: string | null;
   created_at: string;
 };
 
@@ -504,6 +507,26 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
   const [clayError, setClayError] = useState<string | null>(c.clay_push_error);
   const [clayPushedAt, setClayPushedAt] = useState<string | null>(c.clay_pushed_at);
   const [deleting, setDeleting] = useState(false);
+  const [pushingHubspot, setPushingHubspot] = useState(false);
+  const [hubspotId, setHubspotId] = useState<string | null>(c.hubspot_company_id);
+  const [hubspotError, setHubspotError] = useState<string | null>(c.hubspot_sync_error);
+
+  async function pushToHubspot() {
+    setPushingHubspot(true);
+    setHubspotError(null);
+    const res = await fetch(`/api/hubspot/push-company/${c.id}`, { method: "POST" });
+    const data = await res.json();
+    setPushingHubspot(false);
+    if (!res.ok) {
+      setHubspotError(data.error ?? "Error empujando a HubSpot");
+      return;
+    }
+    if (data.hubspot_push?.ok === false) {
+      setHubspotError(data.hubspot_push.error ?? "HubSpot rechazó la empresa");
+      return;
+    }
+    setHubspotId(data.company?.hubspot_company_id ?? data.hubspot_push?.hubspot_id ?? null);
+  }
 
   async function removeCompany() {
     const ok = window.confirm(
@@ -695,6 +718,37 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
           {clayError && (
             <div className="text-xs text-danger-fg flex items-center gap-2">
               <IconAlertCircle size={14} /> {clayError}
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            {hubspotId ? (
+              <div className="flex items-center gap-2 text-sm text-success-fg flex-1">
+                <IconCheck size={14} />
+                <span>En HubSpot ({hubspotId})</span>
+                <button
+                  onClick={pushToHubspot}
+                  disabled={pushingHubspot}
+                  className="btn-secondary text-xs ml-auto"
+                  title="Re-sincronizar (idempotente: actualiza los wecad_* fields)"
+                >
+                  {pushingHubspot ? "…" : "Resync"}
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={pushToHubspot}
+                disabled={pushingHubspot}
+                className="btn-secondary flex-1"
+                title="Crea la empresa en HubSpot con los wecad_* fields"
+              >
+                <IconRocket size={14} />
+                {pushingHubspot ? "Sincronizando…" : "Sincronizar a HubSpot"}
+              </button>
+            )}
+          </div>
+          {hubspotError && (
+            <div className="text-xs text-danger-fg flex items-center gap-2">
+              <IconAlertCircle size={14} /> HubSpot: {hubspotError}
             </div>
           )}
           {rejecting ? (
