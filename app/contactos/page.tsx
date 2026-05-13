@@ -75,6 +75,7 @@ export default function ContactosPage() {
   const [pushNotice, setPushNotice] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [clayDebug, setClayDebug] = useState<{
     label: string;
     payload: unknown;
@@ -188,6 +189,37 @@ export default function ContactosPage() {
       notice = "Contacto rechazado. Pasa a Descartados; la razón se guardó.";
     }
     setPushNotice(notice);
+    await load();
+  }
+
+  async function retryLemlist(contactId: string, label: string) {
+    setRetryingId(contactId);
+    setPushNotice(null);
+    setError(null);
+    setLemlistDebug(null);
+    const res = await fetch(`/api/contacts/${contactId}/lemlist-retry`, {
+      method: "POST"
+    });
+    const data = await res.json();
+    setRetryingId(null);
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo reintentar el push");
+      return;
+    }
+    const lp = data.lemlist_push;
+    if (lp?.ok === false) {
+      setLemlistDebug({
+        label: `Reintento de Lemlist falló para ${label}`,
+        payload: lp
+      });
+      setPushNotice(
+        `Reintento fallido. Ver detalle abajo — la app probó ${
+          lp.debug?.attempts?.length ?? "varios"
+        } patrones de URL.`
+      );
+    } else {
+      setPushNotice(`${label} empujado a Lemlist correctamente en el reintento.`);
+    }
     await load();
   }
 
@@ -440,6 +472,8 @@ export default function ContactosPage() {
                     isDeciding={decidingId === c.id}
                     onDelete={removeContact}
                     isDeleting={deletingId === c.id}
+                    onRetryLemlist={retryLemlist}
+                    isRetryingLemlist={retryingId === c.id}
                   />
                 ))}
               </div>
@@ -482,7 +516,9 @@ function ContactCard({
   onDecide,
   isDeciding,
   onDelete,
-  isDeleting
+  isDeleting,
+  onRetryLemlist,
+  isRetryingLemlist
 }: {
   c: Contact;
   bucket: Bucket;
@@ -492,6 +528,8 @@ function ContactCard({
   isDeciding: boolean;
   onDelete: (id: string, label: string) => void | Promise<void>;
   isDeleting: boolean;
+  onRetryLemlist: (id: string, label: string) => void | Promise<void>;
+  isRetryingLemlist: boolean;
 }) {
   const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
   const scoreClass =
@@ -504,6 +542,12 @@ function ContactCard({
       : "bg-danger-bg text-danger-fg";
   const canPush = c.prefilter_result === "yes" && !c.clay_pushed_at;
   const canDecide = bucket === "manual_review" && c.human_decision == null;
+  // Botón de reintento: el contacto fue aprobado pero el push a Lemlist
+  // falló (típicamente por error transitorio del API o URL pattern incorrecto).
+  const canRetryLemlist =
+    c.human_decision === "approved" &&
+    !c.lemlist_pushed_at &&
+    !!c.lemlist_push_error;
   // En el bucket Descartados ofrecemos solo "Aprobar" (recuperar). Sirve
   // para rescatar false negatives del pre-filter o falsos discard de Clay.
   const canRecover = bucket === "discarded" && c.human_decision !== "approved";
@@ -662,6 +706,17 @@ function ContactCard({
           >
             <IconSend size={12} />
             {isPushing ? "Empujando…" : "Prospectar en Clay"}
+          </button>
+        )}
+        {canRetryLemlist && (
+          <button
+            onClick={() => onRetryLemlist(c.id, fullName)}
+            disabled={isRetryingLemlist}
+            className="btn-primary text-xs"
+            title="Reintentar el push a Lemlist (probó múltiples URL patterns)"
+          >
+            <IconRefresh size={12} />
+            {isRetryingLemlist ? "Reintentando…" : "Reintentar Lemlist"}
           </button>
         )}
         <button
