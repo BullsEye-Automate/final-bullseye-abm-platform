@@ -73,6 +73,10 @@ export default function ContactosPage() {
   const [pushNotice, setPushNotice] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [clayDebug, setClayDebug] = useState<{
+    label: string;
+    payload: unknown;
+  } | null>(null);
 
   async function load(forBucket: Bucket = bucket) {
     setLoading(true);
@@ -142,6 +146,7 @@ export default function ContactosPage() {
     setDecidingId(contactId);
     setPushNotice(null);
     setError(null);
+    setClayDebug(null);
     const res = await fetch(`/api/contacts/${contactId}/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -152,6 +157,18 @@ export default function ContactosPage() {
     if (!res.ok) {
       setError(data.error ?? "Decisión fallida");
       return;
+    }
+    // Si la app aprobó OK pero el push a Clay falló, mostramos el debug
+    // completo para poder diagnosticar el formato del Clay API real.
+    if (
+      decision === "approved" &&
+      data.clay_push_decision &&
+      data.clay_push_decision.ok === false
+    ) {
+      setClayDebug({
+        label: "App aprobó OK pero Clay API falló al actualizar App Decision",
+        payload: data.clay_push_decision
+      });
     }
     setPushNotice(
       decision === "approved"
@@ -339,6 +356,28 @@ export default function ContactosPage() {
       {pushNotice && (
         <div className="card border border-success-bg text-success-fg flex items-center gap-2">
           <IconCheck size={16} /> {pushNotice}
+        </div>
+      )}
+
+      {clayDebug && (
+        <div className="card border border-warning-bg text-ink space-y-2">
+          <div className="flex items-start gap-2 text-warning-fg font-medium">
+            <IconAlertCircle size={16} className="mt-0.5 shrink-0" />
+            <div>{clayDebug.label}</div>
+          </div>
+          <p className="text-xs text-ink-muted">
+            La aprobación quedó guardada en la app pero Clay no recibió la actualización.
+            Mándame este JSON para ajustar el formato del API.
+          </p>
+          <pre className="bg-[#F4F2FB] rounded-md p-3 whitespace-pre-wrap break-words text-[11px] text-ink/80 max-h-96 overflow-auto">
+            {JSON.stringify(clayDebug.payload, null, 2)}
+          </pre>
+          <button
+            onClick={() => setClayDebug(null)}
+            className="btn-secondary text-xs"
+          >
+            Cerrar
+          </button>
         </div>
       )}
 
