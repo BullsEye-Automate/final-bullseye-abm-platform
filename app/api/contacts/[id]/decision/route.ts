@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { pushApprovedToLemlist } from "@/lib/lemlistPush";
+import {
+  pushCompanyToHubSpot,
+  pushContactToHubSpot,
+  type HubSpotCompanyInput,
+  type HubSpotContactInput
+} from "@/lib/hubspotPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -141,23 +147,71 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     | { ok: true; lead_id?: string; messages_generated: boolean; model_used?: string }
     | { ok: false; error: string; status?: number; debug?: unknown }
     | null = null;
+  let hubspot_push:
+    | { ok: true; hubspot_id: string; created: boolean }
+    | { ok: false; error: string; status?: number; debug?: unknown }
+    | null = null;
 
   const shouldPushLemlist =
     body.decision === "approved" && !isRecovery && !contact.lemlist_pushed_at;
 
   if (shouldPushLemlist) {
+    // Orden: Lemlist primero (genera mensajes + crea el lead, fuente de
+    // verdad del icebreaker / subject / body). Después HubSpot, con todos
+    // los datos actualizados — incluye lemlist_pushed_at en wecad_*.
     lemlist_push = await pushApprovedToLemlist(db, params.id, contact, company);
-    // Re-fetch del contacto para devolver el estado actualizado (con
-    // mensajes generados / lemlist_pushed_at / lemlist_push_error).
-    const { data: refetched } = await db
+  }
+
+  // Push a HubSpot en cualquier approval desde manual_review (success O
+  // failure de Lemlist no bloquea — HubSpot recibe el estado actual,
+  // incluyendo lemlist_push_error si lo hubo). En recovery también
+  // pusheamos: el contacto vuelve a Pendientes pero queremos tenerlo en
+  // HubSpot con su historia.
+  if (body.decision === "approved") {
+    // Re-fetch contacto + company para pushear con datos frescos.
+    const { data: fresh } = await db
       .from("contacts")
       .select(
-        "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, phone, seniority, tenure, prefilter_result, prefilter_reason, fit_score, fit, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, status, clay_pushed_at, clay_push_error, lemlist_pushed_at, lemlist_push_error, human_decision, human_decision_at, human_decision_reason, human_decision_by, created_at, updated_at"
+        "id, company_id, first_name, last_name, job_title, email, phone, linkedin_url, fit_score, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, human_decision, human_decision_reason, clay_pushed_at, lemlist_pushed_at, hubspot_contact_id"
       )
       .eq("id", params.id)
       .single();
-    if (refetched) Object.assign(updated as object, refetched);
+    if (fresh) {
+      // Push company a HubSpot primero (necesitamos su id para asociar).
+      let hubspotCompanyId: string | null = null;
+      if (fresh.company_id) {
+        const { data: companyRow } = await db
+          .from("companies")
+          .select(
+            "id, company_name, company_website, company_linkedin_url, company_city, company_country, company_size, company_type, cad_software, scanner_technology, fit_signals, fit_score, approved_at, clay_pushed_at, hubspot_company_id"
+          )
+          .eq("id", fresh.company_id)
+          .maybeSingle();
+        if (companyRow) {
+          const cRes = await pushCompanyToHubSpot(db, companyRow as HubSpotCompanyInput);
+          if (cRes.ok) hubspotCompanyId = cRes.hubspot_id;
+        }
+      }
+      hubspot_push = await pushContactToHubSpot(
+        db,
+        fresh as HubSpotContactInput,
+        hubspotCompanyId
+      );
+    }
   }
 
-  return NextResponse.json({ contact: updated, lemlist_push });
+  // Re-fetch final del contacto con todo el estado (lemlist + hubspot).
+  const { data: refetched } = await db
+    .from("contacts")
+    .select(
+      "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, phone, seniority, tenure, prefilter_result, prefilter_reason, fit_score, fit, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, status, clay_pushed_at, clay_push_error, lemlist_pushed_at, lemlist_push_error, hubspot_contact_id, hubspot_synced_at, hubspot_sync_error, human_decision, human_decision_at, human_decision_reason, human_decision_by, created_at, updated_at"
+    )
+    .eq("id", params.id)
+    .single();
+
+  return NextResponse.json({
+    contact: refetched ?? updated,
+    lemlist_push,
+    hubspot_push
+  });
 }

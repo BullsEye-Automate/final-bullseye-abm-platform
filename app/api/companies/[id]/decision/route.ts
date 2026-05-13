@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { pushCompanyToHubSpot, type HubSpotCompanyInput } from "@/lib/hubspotPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type Body = {
   decision: "approved" | "rejected";
@@ -52,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .update(update)
     .eq("id", params.id)
     .select(
-      "id, company_name, status, reject_reason, approved_by, approved_at, fit_score, fit_signals, icp_version"
+      "id, company_name, company_website, company_linkedin_url, company_city, company_country, company_size, company_type, cad_software, scanner_technology, fit_signals, fit_score, research_summary, status, reject_reason, approved_by, approved_at, icp_version, clay_pushed_at, clay_push_error, hubspot_company_id, hubspot_synced_at, hubspot_sync_error"
     )
     .single();
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
@@ -68,5 +70,25 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (fbErr) return NextResponse.json({ error: fbErr.message }, { status: 500 });
 
-  return NextResponse.json({ company: updated });
+  // Si fue aprobación, push a HubSpot. Lo hacemos en background-ish (await
+  // pero no bloqueamos en caso de error — la decisión ya está persistida
+  // y el usuario puede reintentar desde la UI).
+  let hubspot_push:
+    | { ok: true; hubspot_id: string; created: boolean }
+    | { ok: false; error: string; status?: number; debug?: unknown }
+    | null = null;
+  if (body.decision === "approved") {
+    hubspot_push = await pushCompanyToHubSpot(db, updated as HubSpotCompanyInput);
+  }
+
+  // Re-fetch para devolver el estado actualizado de HubSpot a la UI.
+  const { data: refetched } = await db
+    .from("companies")
+    .select(
+      "id, company_name, status, reject_reason, approved_by, approved_at, fit_score, fit_signals, icp_version, hubspot_company_id, hubspot_synced_at, hubspot_sync_error"
+    )
+    .eq("id", params.id)
+    .single();
+
+  return NextResponse.json({ company: refetched ?? updated, hubspot_push });
 }
