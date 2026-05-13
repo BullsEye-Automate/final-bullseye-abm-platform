@@ -74,19 +74,22 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           human_decision_at: now,
           human_decision_reason: body.reason?.trim() || null,
           human_decision_by: reviewer,
-          clay_pushed_at: null,
-          clay_push_error: null,
           ...(isRecovery
             ? {
                 // Recuperación desde Descartados: vuelve a Pendientes como
-                // contacto fresco, listo para empujarse a Clay.
+                // contacto fresco, listo para empujarse a Clay. Limpiamos
+                // clay_pushed_at para que el botón Prospectar reaparezca.
                 fit_action: null,
                 status: "pending",
+                clay_pushed_at: null,
+                clay_push_error: null,
                 ...(contact.prefilter_result === "no" ? { prefilter_result: "yes" } : {})
               }
             : {
-                // Aprobación desde Revisión manual (score 5-7 de Clay):
-                // el humano decidió enriquecer → marca fit_action=enrich.
+                // Aprobación desde Revisión manual: el contacto YA está en Clay.
+                // Solo marcamos fit_action='enrich' y el webhook a Clay (más
+                // abajo) actualiza App Decision para destrabar Lemlist. NO
+                // limpiamos clay_pushed_at — el contacto sigue en Clay.
                 fit_action: "enrich"
               })
         }
