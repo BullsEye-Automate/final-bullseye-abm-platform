@@ -2,55 +2,48 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { findRowByColumnValue, updateRowCell } from "./clayApi";
 
 export type PushDecisionResult =
-  | { ok: true; row_id: string }
+  | { ok: true; row_id: string; matched_url?: string }
   | {
       ok: false;
       status: number;
       error: string;
-      debug?: string;
+      debug?: unknown;
       skipped?: "not_in_clay" | "not_found" | "row_not_found";
     };
 
-// Notifica a Clay del veredicto humano sobre un contacto. Usa Clay REST API
-// para buscar la fila por Wecad Contact Id y actualizar la celda App Decision.
-//
-// Requisitos en Vercel:
-//   - CLAY_API_TOKEN (Bearer token de Clay, Settings → API key)
-//   - CLAY_CONTACTS_TABLE_ID (UUID de la tabla Contacts, ej. t_xxx)
-//
-// En Clay tabla Contacts:
-//   - Columna "App Decision" (Text, manual) ya creada.
-//   - Run conditions de "Add Lead to Campaign" y AI columns deben incluir:
-//       Lead Scoring action = "enrich" OR App Decision = "approved"
+// Llama a Clay REST API para encontrar la fila por Wecad Contact Id y
+// actualizar la celda App Decision. Devuelve detalles cuando falla para
+// poder iterar sobre el formato real del API.
 export async function pushDecisionToClay(
   db: SupabaseClient,
   contactId: string,
   decision: "approved" | "rejected"
 ): Promise<PushDecisionResult> {
-  const tableId = process.env.CLAY_CONTACTS_TABLE_ID;
-  if (!tableId) {
+  if (!process.env.CLAY_CONTACTS_TABLE_ID) {
     return {
       ok: false,
       status: 500,
       error: "CLAY_CONTACTS_TABLE_ID is not configured"
     };
   }
+  if (!process.env.CLAY_API_TOKEN) {
+    return {
+      ok: false,
+      status: 500,
+      error: "CLAY_API_TOKEN is not configured"
+    };
+  }
 
   const { data: contact, error: cErr } = await db
     .from("contacts")
-    .select("id, clay_pushed_at, first_name, last_name")
+    .select("id, clay_pushed_at")
     .eq("id", contactId)
     .maybeSingle();
   if (cErr) {
     return { ok: false, status: 500, error: cErr.message };
   }
   if (!contact) {
-    return {
-      ok: false,
-      status: 404,
-      error: "Contact not found",
-      skipped: "not_found"
-    };
+    return { ok: false, status: 404, error: "Contact not found", skipped: "not_found" };
   }
   if (!contact.clay_pushed_at) {
     return {
@@ -61,8 +54,7 @@ export async function pushDecisionToClay(
     };
   }
 
-  // Buscar la fila en Clay por Wecad Contact Id.
-  const find = await findRowByColumnValue(tableId, "Wecad Contact Id", contactId);
+  const find = await findRowByColumnValue("Wecad Contact Id", contactId);
   if (!find.row_id) {
     return {
       ok: false,
@@ -73,14 +65,13 @@ export async function pushDecisionToClay(
     };
   }
 
-  // Actualizar la celda App Decision.
-  const update = await updateRowCell(tableId, find.row_id, "App Decision", decision);
+  const update = await updateRowCell(find.row_id, "App Decision", decision);
   if (!update.ok) {
     return {
       ok: false,
       status: update.status,
-      error: update.error,
-      debug: find.debug
+      error: update.error ?? "Failed to update cell",
+      debug: { find_debug: find.debug, update_debug: update.debug }
     };
   }
 
