@@ -11,21 +11,25 @@ export const maxDuration = 30;
 //
 // Flujo: el SDR pega un LinkedIn URL → buscamos el contacto en Supabase
 // (fuente de verdad de los contactos que pasaron por la app); si no
-// está, fallback a HubSpot search por hs_linkedinid (la propiedad
-// donde la app guarda el LinkedIn URL al pushear). Si encontramos el
-// contacto en algún lado, llamamos a Lusha; si Lusha devuelve phone,
-// lo escribimos en HubSpot (PATCH /crm/v3/objects/contacts/{id}) y
-// también en Supabase si existe.
+// está, fallback a HubSpot search por hs_linkedinid. Si encontramos el
+// contacto:
+//   - Si ya tiene phone y force=false → devolvemos already_has_phone.
+//   - Si force=true o sin phone → llamamos Lusha. Si Lusha devuelve
+//     phone, lo escribimos a HubSpot (wecad_phone_lusha + phone
+//     principal) y a Supabase (phone_lusha + phone principal). Si el
+//     contacto ya tenía phone (de Lemlist), también guardamos ese
+//     valor en wecad_phone_lemlist / phone_lemlist como snapshot
+//     para que no se pierda.
 //
-// El SDR ve: phone encontrado + dónde está reflejado.
+// Resultado: el SDR puede ver ambos teléfonos lado a lado en HubSpot.
 
 type LookupResult = {
   ok: boolean;
   status:
-    | "not_found"          // ni Supabase ni HubSpot tienen el contacto
-    | "phone_not_found"    // contacto encontrado pero Lusha no trajo phone
-    | "already_has_phone"  // contacto ya tenía phone (no hacemos nada)
-    | "enriched";          // phone nuevo de Lusha, persistido
+    | "not_found"
+    | "phone_not_found"
+    | "already_has_phone"
+    | "enriched";
   linkedin_url: string;
   contact?: {
     source: "supabase" | "hubspot";
@@ -33,6 +37,8 @@ type LookupResult = {
     hubspot_contact_id: string | null;
     supabase_contact_id: string | null;
     existing_phone: string | null;
+    phone_lemlist: string | null;
+    phone_lusha: string | null;
   };
   phone?: string | null;
   hubspot_updated?: boolean;
@@ -45,9 +51,6 @@ type LookupResult = {
 function normalizeLinkedinUrl(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;
-  // Acepta formas como linkedin.com/in/foo, www.linkedin.com/in/foo,
-  // https://linkedin.com/in/foo/, https://www.linkedin.com/in/foo?utm=x.
-  // Devuelve la forma canónica https://www.linkedin.com/in/<slug>/.
   let url = trimmed;
   if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
   let parsed: URL;
@@ -71,6 +74,7 @@ export async function POST(req: NextRequest) {
     typeof (body as { linkedin_url?: string }).linkedin_url === "string"
       ? (body as { linkedin_url: string }).linkedin_url
       : "";
+  const force = !!(body as { force?: boolean }).force;
   const normalized = normalizeLinkedinUrl(rawUrl);
 
   if (!normalized) {
@@ -87,29 +91,25 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // 1) Buscar el contacto en Supabase. Probamos exact match, además
-  // de un LIKE por slug, para tolerar variantes (con o sin trailing
-  // slash, lowercase vs no).
+  // 1) Buscar el contacto en Supabase.
   const slug = normalized.split("/in/")[1]?.replace(/\/$/, "") ?? "";
   const { data: rows } = await db
     .from("contacts")
     .select(
-      "id, first_name, last_name, phone, linkedin_url, hubspot_contact_id, company_id"
+      "id, first_name, last_name, phone, phone_lemlist, phone_lusha, phone_source, linkedin_url, hubspot_contact_id, company_id"
     )
     .or(`linkedin_url.ilike.%${slug}%,linkedin_url.eq.${normalized}`)
     .limit(5);
 
   let supabaseContact = rows && rows.length > 0 ? rows[0] : null;
-  // Si Supabase tiene varios, preferimos el que ya esté en HubSpot.
   if (rows && rows.length > 1) {
     const withHs = rows.find((r) => r.hubspot_contact_id);
     if (withHs) supabaseContact = withHs;
   }
 
-  // 2) Si no está en Supabase, fallback a HubSpot por hs_linkedinid.
+  // 2) Fallback HubSpot search.
   let hubspotContactId: string | null = supabaseContact?.hubspot_contact_id ?? null;
   let hubspotName: string | null = null;
-  let hubspotExistingPhone: string | null = null;
 
   if (!hubspotContactId) {
     const hsSearch = await searchByProperty("contacts", "hs_linkedinid", normalized);
@@ -133,23 +133,28 @@ export async function POST(req: NextRequest) {
     } as LookupResult);
   }
 
-  const existingPhone =
-    supabaseContact?.phone ?? hubspotExistingPhone ?? null;
+  const existingPhone = supabaseContact?.phone ?? null;
+  const existingPhoneLemlist = supabaseContact?.phone_lemlist ?? null;
+  const existingPhoneLusha = supabaseContact?.phone_lusha ?? null;
+  const existingSource = supabaseContact?.phone_source ?? null;
+  const contactName = supabaseContact
+    ? `${supabaseContact.first_name ?? ""} ${supabaseContact.last_name ?? ""}`.trim() || null
+    : hubspotName;
 
-  // 3) Si ya tiene phone, devolvemos sin gastar crédito Lusha.
-  if (existingPhone && existingPhone.trim().length > 4) {
+  // 3) Si ya tiene phone y NO forzaron → devolvemos sin gastar Lusha.
+  if (!force && existingPhone && existingPhone.trim().length > 4) {
     return NextResponse.json({
       ok: true,
       status: "already_has_phone",
       linkedin_url: normalized,
       contact: {
         source: supabaseContact ? "supabase" : "hubspot",
-        name: supabaseContact
-          ? `${supabaseContact.first_name ?? ""} ${supabaseContact.last_name ?? ""}`.trim() || null
-          : hubspotName,
+        name: contactName,
         hubspot_contact_id: hubspotContactId,
         supabase_contact_id: supabaseContact?.id ?? null,
-        existing_phone: existingPhone
+        existing_phone: existingPhone,
+        phone_lemlist: existingPhoneLemlist,
+        phone_lusha: existingPhoneLusha
       },
       phone: existingPhone
     } as LookupResult);
@@ -169,12 +174,12 @@ export async function POST(req: NextRequest) {
       linkedin_url: normalized,
       contact: {
         source: supabaseContact ? "supabase" : "hubspot",
-        name: supabaseContact
-          ? `${supabaseContact.first_name ?? ""} ${supabaseContact.last_name ?? ""}`.trim() || null
-          : hubspotName,
+        name: contactName,
         hubspot_contact_id: hubspotContactId,
         supabase_contact_id: supabaseContact?.id ?? null,
-        existing_phone: null
+        existing_phone: existingPhone,
+        phone_lemlist: existingPhoneLemlist,
+        phone_lusha: existingPhoneLusha
       },
       lusha_debug: lusha.ok
         ? { status: lusha.status, raw: lusha.raw, email_found: lusha.email }
@@ -182,17 +187,35 @@ export async function POST(req: NextRequest) {
     } as LookupResult);
   }
 
-  const newPhone = lusha.phone;
+  const lushaPhone = lusha.phone;
 
-  // 5) PATCH a HubSpot.
+  // 5) Decidir si rescatamos el phone existente como "Lemlist phone".
+  // Si el phone actual no es de Lusha (= probablemente vino de Lemlist
+  // o de la sync nativa) Y todavía no tenemos phone_lemlist guardado,
+  // lo snapshotteamos antes de sobreescribir.
+  const shouldSnapshotLemlist =
+    !!existingPhone &&
+    existingPhone.trim().length > 4 &&
+    existingSource !== "lusha" &&
+    !existingPhoneLemlist;
+  const newPhoneLemlist = shouldSnapshotLemlist
+    ? existingPhone
+    : existingPhoneLemlist;
+
+  // 6) PATCH a HubSpot.
   let hubspotUpdated = false;
   let hubspotDebug: unknown = undefined;
   if (hubspotContactId) {
-    const upd = await updateObject("contacts", hubspotContactId, {
-      phone: newPhone,
+    const props: Record<string, string> = {
+      phone: lushaPhone,
+      wecad_phone_lusha: lushaPhone,
       wecad_phone_source: "lusha",
       wecad_phone_enrichment_status: "done_lusha"
-    });
+    };
+    if (shouldSnapshotLemlist && existingPhone) {
+      props.wecad_phone_lemlist = existingPhone;
+    }
+    const upd = await updateObject("contacts", hubspotContactId, props);
     if (upd.ok) {
       hubspotUpdated = true;
     } else {
@@ -200,18 +223,23 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 6) Update Supabase si existe el contacto ahí.
+  // 7) Update Supabase.
   let supabaseUpdated = false;
   if (supabaseContact) {
+    const updFields: Record<string, unknown> = {
+      phone: lushaPhone,
+      phone_lusha: lushaPhone,
+      phone_source: "lusha",
+      phone_enriched_at: new Date().toISOString(),
+      phone_enrichment_status: "done_lusha",
+      lusha_lookup_at: new Date().toISOString()
+    };
+    if (shouldSnapshotLemlist && existingPhone) {
+      updFields.phone_lemlist = existingPhone;
+    }
     const { error: updErr } = await db
       .from("contacts")
-      .update({
-        phone: newPhone,
-        phone_source: "lusha",
-        phone_enriched_at: new Date().toISOString(),
-        phone_enrichment_status: "done_lusha",
-        lusha_lookup_at: new Date().toISOString()
-      })
+      .update(updFields)
       .eq("id", supabaseContact.id);
     if (!updErr) supabaseUpdated = true;
   }
@@ -222,14 +250,14 @@ export async function POST(req: NextRequest) {
     linkedin_url: normalized,
     contact: {
       source: supabaseContact ? "supabase" : "hubspot",
-      name: supabaseContact
-        ? `${supabaseContact.first_name ?? ""} ${supabaseContact.last_name ?? ""}`.trim() || null
-        : hubspotName,
+      name: contactName,
       hubspot_contact_id: hubspotContactId,
       supabase_contact_id: supabaseContact?.id ?? null,
-      existing_phone: null
+      existing_phone: existingPhone,
+      phone_lemlist: newPhoneLemlist,
+      phone_lusha: lushaPhone
     },
-    phone: newPhone,
+    phone: lushaPhone,
     hubspot_updated: hubspotUpdated,
     supabase_updated: supabaseUpdated,
     hubspot_debug: hubspotDebug

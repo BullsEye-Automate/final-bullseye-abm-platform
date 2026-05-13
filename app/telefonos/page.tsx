@@ -23,6 +23,8 @@ type LookupResult = {
     hubspot_contact_id: string | null;
     supabase_contact_id: string | null;
     existing_phone: string | null;
+    phone_lemlist: string | null;
+    phone_lusha: string | null;
   };
   phone?: string | null;
   hubspot_updated?: boolean;
@@ -35,17 +37,19 @@ type LookupResult = {
 export default function TelefonosPage() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forceLoading, setForceLoading] = useState(false);
   const [result, setResult] = useState<LookupResult | null>(null);
 
-  async function run() {
+  async function run(force = false) {
     if (!url.trim()) return;
-    setLoading(true);
-    setResult(null);
+    if (force) setForceLoading(true);
+    else setLoading(true);
+    if (!force) setResult(null);
     try {
       const res = await fetch("/api/lusha-lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ linkedin_url: url.trim() })
+        body: JSON.stringify({ linkedin_url: url.trim(), force })
       });
       const data = await res.json();
       setResult(data);
@@ -58,11 +62,12 @@ export default function TelefonosPage() {
       });
     } finally {
       setLoading(false);
+      setForceLoading(false);
     }
   }
 
   function onKey(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" && !loading) run();
+    if (e.key === "Enter" && !loading) run(false);
   }
 
   return (
@@ -75,8 +80,8 @@ export default function TelefonosPage() {
         <div className="text-sm text-ink-muted mt-1 max-w-2xl">
           Pegá el LinkedIn URL del contacto. Lusha intenta levantar el
           teléfono (~1 crédito si encuentra) y lo escribe directo al contact
-          de HubSpot. Si el contacto está también en weCAD-prospecting, se
-          sincroniza acá también.
+          de HubSpot. Si Lemlist ya había devuelto otro teléfono, lo
+          conservamos en una propiedad separada para que puedas comparar.
         </div>
       </header>
 
@@ -89,10 +94,14 @@ export default function TelefonosPage() {
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={onKey}
             placeholder="https://www.linkedin.com/in/usuario/"
-            disabled={loading}
+            disabled={loading || forceLoading}
             className="input flex-1"
           />
-          <button onClick={run} disabled={loading || !url.trim()} className="btn-primary">
+          <button
+            onClick={() => run(false)}
+            disabled={loading || forceLoading || !url.trim()}
+            className="btn-primary"
+          >
             <IconSearch size={16} />
             {loading ? "Buscando…" : "Buscar"}
           </button>
@@ -104,12 +113,26 @@ export default function TelefonosPage() {
         </div>
       </div>
 
-      {result && <ResultPanel result={result} />}
+      {result && (
+        <ResultPanel
+          result={result}
+          onForce={() => run(true)}
+          forceLoading={forceLoading}
+        />
+      )}
     </div>
   );
 }
 
-function ResultPanel({ result }: { result: LookupResult }) {
+function ResultPanel({
+  result,
+  onForce,
+  forceLoading
+}: {
+  result: LookupResult;
+  onForce: () => void;
+  forceLoading: boolean;
+}) {
   if (result.status === "not_found") {
     return (
       <div className="card p-4 border-l-4 border-danger-fg">
@@ -118,7 +141,7 @@ function ResultPanel({ result }: { result: LookupResult }) {
         </div>
         <div className="text-sm text-ink-muted mt-1">
           {result.error ??
-            "No encontré ese LinkedIn en Supabase ni en HubSpot. Verificá que el contacto haya pasado por la app o que el LinkedIn URL del contact en HubSpot sea exactamente este."}
+            "No encontré ese LinkedIn en Supabase ni en HubSpot. Verificá que el contacto haya pasado por la app."}
         </div>
         <div className="text-xs text-ink-muted mt-2">
           URL probada: <code>{result.linkedin_url}</code>
@@ -129,17 +152,28 @@ function ResultPanel({ result }: { result: LookupResult }) {
 
   if (result.status === "already_has_phone") {
     return (
-      <div className="card p-4 border-l-4 border-success-fg">
+      <div className="card p-4 border-l-4 border-success-fg space-y-3">
         <div className="flex items-center gap-2 font-medium text-success-fg">
           <IconCheck size={16} /> Ya tenía teléfono — no se llamó a Lusha
         </div>
         <ContactInfo result={result} />
-        <div className="text-sm mt-2">
-          📞 <strong>{result.phone}</strong>
-        </div>
-        <div className="text-xs text-ink-muted mt-1">
-          Si el teléfono parece incorrecto, podés actualizarlo manualmente en
-          HubSpot o decirle al admin que lo borre para volver a llamar a Lusha.
+        <PhonesPanel result={result} />
+        <div className="pt-2 border-t border-divider">
+          <button
+            onClick={onForce}
+            disabled={forceLoading}
+            className="btn-secondary text-xs"
+            title="Llama a Lusha de todas formas. Cuesta ~1 crédito Lusha si encuentra; gratis si no."
+          >
+            <IconSearch size={12} />
+            {forceLoading
+              ? "Buscando con Lusha…"
+              : "Buscar también con Lusha (1 crédito si encuentra)"}
+          </button>
+          <div className="text-xs text-ink-muted mt-1">
+            El número de arriba probablemente viene de Lemlist. Si querés un
+            segundo número de Lusha para tener fallback, dale al botón.
+          </div>
         </div>
       </div>
     );
@@ -147,19 +181,25 @@ function ResultPanel({ result }: { result: LookupResult }) {
 
   if (result.status === "phone_not_found") {
     return (
-      <div className="card p-4 border-l-4 border-warning-fg">
+      <div className="card p-4 border-l-4 border-warning-fg space-y-3">
         <div className="flex items-center gap-2 font-medium text-warning-fg">
           <IconAlertCircle size={16} /> Lusha no encontró teléfono
         </div>
         <ContactInfo result={result} />
-        <div className="text-sm text-ink-muted mt-2">
+        <PhonesPanel result={result} />
+        <div className="text-sm text-ink-muted">
           Lusha respondió OK pero no devolvió phone para este contacto. No se
           cobró crédito (Lusha solo cobra cuando devuelve resultado).
         </div>
         {result.lusha_debug !== undefined && (
-          <pre className="text-[10px] bg-ink-muted/10 p-2 rounded mt-2 overflow-auto">
-            {JSON.stringify(result.lusha_debug, null, 2)}
-          </pre>
+          <details className="text-xs">
+            <summary className="cursor-pointer text-ink-muted">
+              Ver respuesta cruda de Lusha
+            </summary>
+            <pre className="text-[10px] bg-ink-muted/10 p-2 rounded mt-1 overflow-auto">
+              {JSON.stringify(result.lusha_debug, null, 2)}
+            </pre>
+          </details>
         )}
       </div>
     );
@@ -167,15 +207,17 @@ function ResultPanel({ result }: { result: LookupResult }) {
 
   // enriched
   return (
-    <div className="card p-4 border-l-4 border-success-fg">
+    <div className="card p-4 border-l-4 border-success-fg space-y-3">
       <div className="flex items-center gap-2 font-medium text-success-fg">
         <IconCheck size={16} /> Teléfono encontrado y guardado
       </div>
       <ContactInfo result={result} />
-      <div className="text-lg font-semibold mt-3">📞 {result.phone}</div>
-      <div className="text-xs text-ink-muted mt-2 space-y-0.5">
+      <PhonesPanel result={result} highlightLusha />
+      <div className="text-xs text-ink-muted space-y-0.5">
         {result.hubspot_updated && <div>✓ Actualizado en HubSpot</div>}
-        {result.supabase_updated && <div>✓ Actualizado en weCAD-prospecting (Supabase)</div>}
+        {result.supabase_updated && (
+          <div>✓ Actualizado en weCAD-prospecting (Supabase)</div>
+        )}
         {result.contact?.hubspot_contact_id && (
           <a
             href={`https://app.hubspot.com/contacts/contacts/${result.contact.hubspot_contact_id}`}
@@ -188,7 +230,7 @@ function ResultPanel({ result }: { result: LookupResult }) {
         )}
       </div>
       {result.hubspot_debug !== undefined && (
-        <div className="mt-2">
+        <div>
           <div className="text-xs text-danger-fg">
             ⚠ HubSpot devolvió error al guardar:
           </div>
@@ -201,10 +243,71 @@ function ResultPanel({ result }: { result: LookupResult }) {
   );
 }
 
+function PhonesPanel({
+  result,
+  highlightLusha
+}: {
+  result: LookupResult;
+  highlightLusha?: boolean;
+}) {
+  const lemlist = result.contact?.phone_lemlist;
+  const lusha = result.contact?.phone_lusha;
+  const primary = result.phone ?? result.contact?.existing_phone ?? null;
+
+  // Si no tenemos ningún teléfono explícito, mostramos solo el principal.
+  if (!lemlist && !lusha && !primary) return null;
+
+  return (
+    <div className="space-y-1.5">
+      {lemlist && (
+        <PhoneRow
+          label="Lemlist"
+          number={lemlist}
+          isPrimary={primary === lemlist && !highlightLusha}
+        />
+      )}
+      {lusha && (
+        <PhoneRow
+          label="Lusha"
+          number={lusha}
+          isPrimary={primary === lusha || !!highlightLusha}
+        />
+      )}
+      {!lemlist && !lusha && primary && (
+        <PhoneRow label="Principal" number={primary} isPrimary />
+      )}
+    </div>
+  );
+}
+
+function PhoneRow({
+  label,
+  number,
+  isPrimary
+}: {
+  label: string;
+  number: string;
+  isPrimary: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="badge bg-ink-muted/15 text-ink-muted">{label}</span>
+      <span className={isPrimary ? "font-semibold text-lg" : "text-ink"}>
+        📞 {number}
+      </span>
+      {isPrimary && (
+        <span className="badge bg-success-bg text-success-fg text-[10px]">
+          principal en HubSpot
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ContactInfo({ result }: { result: LookupResult }) {
   if (!result.contact) return null;
   return (
-    <div className="text-sm mt-2">
+    <div className="text-sm">
       <div>
         <strong>{result.contact.name ?? "(sin nombre)"}</strong>{" "}
         <span className="text-ink-muted text-xs">
