@@ -53,8 +53,8 @@ export default function HubspotConfigPage() {
       <header>
         <div className="label">Sistema · Configuración</div>
         <h1 className="text-2xl font-semibold tracking-tight">HubSpot — Setup inicial</h1>
-        <div className="text-sm text-ink-muted mt-1">
-          Crea las custom properties wecad_* y las 6 listas dinámicas que el SDR
+        <div className="text-sm text-ink-muted mt-1 max-w-2xl">
+          Crea las custom properties wecad_* y las 7 listas dinámicas que el SDR
           usa día a día. Idempotente: si ya existen, no las duplica.
         </div>
       </header>
@@ -63,9 +63,8 @@ export default function HubspotConfigPage() {
         <div className="text-sm text-ink-muted">
           Esto crea (si no existen):
           <ul className="list-disc ml-5 mt-1 space-y-0.5">
-            <li>Properties de contacto: <code>wecad_callback_date</code>, <code>wecad_qualification_outcome</code>, <code>wecad_phone_enrichment_status</code>, <code>wecad_phone_source</code></li>
-            <li>Property de empresa: <code>wecad_company_size</code> y otras del set wecad_*</li>
-            <li>6 listas dinámicas: Hot por llamar, Warm por llamar, Warm sin teléfono, Reintentar, Callbacks de hoy, En pipeline</li>
+            <li>Properties de contacto: <code>wecad_phone_lemlist</code>, <code>wecad_phone_lusha</code>, <code>wecad_callback_date</code>, <code>wecad_qualification_outcome</code>, etc.</li>
+            <li>7 listas dinámicas: Hot por llamar, Hot sin teléfono (Lusha), Warm por llamar, Warm sin teléfono (Lusha), Reintentar, Callbacks de hoy, En pipeline</li>
           </ul>
         </div>
         <button onClick={runSetup} disabled={loading} className="btn-primary">
@@ -91,9 +90,7 @@ export default function HubspotConfigPage() {
               <div>Ya existían: {result.summary.already_existed}</div>
               <div>
                 Fallidas:{" "}
-                <span
-                  className={result.summary.failed > 0 ? "text-danger-fg font-medium" : ""}
-                >
+                <span className={result.summary.failed > 0 ? "text-danger-fg font-medium" : ""}>
                   {result.summary.failed}
                 </span>
               </div>
@@ -136,17 +133,16 @@ export default function HubspotConfigPage() {
                     )}
                   </div>
                   {l.listId && (
-                    <div className="text-xs text-ink-muted mt-0.5">
-                      listId: {l.listId}
-                    </div>
+                    <div className="text-xs text-ink-muted mt-0.5">listId: {l.listId}</div>
                   )}
-                  {l.error && (
-                    <div className="text-xs text-danger-fg mt-1">{l.error}</div>
-                  )}
+                  {l.error && <div className="text-xs text-danger-fg mt-1">{l.error}</div>}
                   {l.debug != null && (
-                    <pre className="text-[10px] bg-ink-muted/10 p-2 rounded mt-1 overflow-auto">
-                      {JSON.stringify(l.debug, null, 2)}
-                    </pre>
+                    <details className="text-[10px] mt-1">
+                      <summary className="cursor-pointer text-ink-muted">Ver debug</summary>
+                      <pre className="bg-ink-muted/10 p-2 rounded mt-1 overflow-auto">
+                        {JSON.stringify(l.debug, null, 2)}
+                      </pre>
+                    </details>
                   )}
                 </div>
               ))}

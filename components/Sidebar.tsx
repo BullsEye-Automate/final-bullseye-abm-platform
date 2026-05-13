@@ -14,7 +14,8 @@ import {
   IconChartFunnel,
   IconReportAnalytics,
   IconBrain,
-  IconSettings
+  IconSettings,
+  IconCloudUpload
 } from "@tabler/icons-react";
 
 type Item = { href: string; label: string; icon: any; disabled?: boolean };
@@ -61,7 +62,8 @@ const SECTIONS: Section[] = [
   {
     label: "Sistema",
     items: [
-      { href: "/configuracion/icp", label: "Configuración", icon: IconSettings }
+      { href: "/configuracion/icp",     label: "Configuración", icon: IconSettings },
+      { href: "/configuracion/hubspot", label: "HubSpot setup", icon: IconCloudUpload }
     ]
   }
 ];
