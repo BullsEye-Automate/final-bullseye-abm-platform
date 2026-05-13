@@ -159,16 +159,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Orden: Lemlist primero (genera mensajes + crea el lead, fuente de
     // verdad del icebreaker / subject / body). Después HubSpot, con todos
     // los datos actualizados — incluye lemlist_pushed_at en wecad_*.
+    // Lemlist enriquece phone proactivamente (findPhone=true) y syncroniza
+    // a HubSpot vía su integración nativa. Si no encuentra phone, el SDR
+    // puede ir a /telefonos y disparar Lusha manualmente.
     lemlist_push = await pushApprovedToLemlist(db, params.id, contact, company);
-
-    // Si Lemlist aceptó el lead y el contacto todavía no tiene phone,
-    // marcamos pending para que el cron / SDR lo enriquezca después.
-    if (lemlist_push.ok && !contact.phone) {
-      await db
-        .from("contacts")
-        .update({ phone_enrichment_status: "lemlist_pending" })
-        .eq("id", params.id);
-    }
   }
 
   // Push a HubSpot en cualquier approval desde manual_review (success O

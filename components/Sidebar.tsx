@@ -14,8 +14,7 @@ import {
   IconChartFunnel,
   IconReportAnalytics,
   IconBrain,
-  IconSettings,
-  IconCloudUpload
+  IconSettings
 } from "@tabler/icons-react";
 
 type Item = { href: string; label: string; icon: any; disabled?: boolean };
@@ -41,6 +40,7 @@ const SECTIONS: Section[] = [
   {
     label: "SDR",
     items: [
+      { href: "/telefonos",  label: "Teléfonos",  icon: IconPhone },
       { href: "/llamadas",   label: "Llamadas",   icon: IconPhone,    disabled: true },
       { href: "/respuestas", label: "Respuestas", icon: IconMessage2, disabled: true }
     ]
@@ -61,8 +61,7 @@ const SECTIONS: Section[] = [
   {
     label: "Sistema",
     items: [
-      { href: "/configuracion/icp",     label: "Configuración",      icon: IconSettings },
-      { href: "/configuracion/hubspot", label: "HubSpot setup",      icon: IconCloudUpload }
+      { href: "/configuracion/icp", label: "Configuración", icon: IconSettings }
     ]
   }
 ];
