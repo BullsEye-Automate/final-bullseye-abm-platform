@@ -4,7 +4,7 @@
 
 - Hago todo el ciclo end-to-end yo: editar → commit → push → **crear PR si no existe → mergear el PR yo mismo** (squash) sin pedirle al usuario que entre a GitHub.
 - El usuario no usa terminal y prefiere no entrar a GitHub. Después del merge, basta con esperar a que Vercel redespliegue (1-2 min) y probar en `wecad-prospecting.vercel.app`.
-- Rama de trabajo actual: `claude/validate-prospecting-loop-IRiLL`. Base por defecto: `claude/wecad4you-prospecting-app-Hltfi` (no hay `main`).
+- Rama de trabajo actual: `claude/continue-wecad4you-prospecting-YNgtt`. Base por defecto: `claude/wecad4you-prospecting-app-Hltfi` (no hay `main`).
 
 ## Stack
 
@@ -21,6 +21,18 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 - **Pre-filter de contactos vive en la app, no en Clay** — corre con Claude antes de meter el contacto en Clay. Prompt en `lib/contactsPrompts.ts`, validado con Tom Wiand.
 - **App escribe contactos en HubSpot directo**, Lemlist solo sincroniza engagement por email.
 - **Supabase = fuente de verdad** para feedback y entrenamiento; Clay = base de trabajo activa.
+- **Approvals de Revisión manual van directo a Lemlist desde la app** (Sprint 3 fase 2). NO pasan por Clay porque Clay API REST no expone CRUD de filas. La app genera icebreaker + email_subject + email_body con Claude y llama a Lemlist API v2 directamente.
+
+## Lo que se borró de Clay (sesión Sprint 3 fase 2) y NO debe volver
+
+Durante una sesión previa se intentó cerrar el loop App → Clay para que las aprobaciones de Revisión manual dispararan Lemlist. Después de comprobar que Clay API REST no expone CRUD de rows (v1/v2 = "deprecated API endpoint", v3 = "NoMatchingURL" en TODAS las combinaciones razonables), se pivoteó a Lemlist API directa. La limpieza final dejó Clay en este estado — no recrear lo borrado a menos que Clay publique CRUD endpoints en el futuro:
+
+- **Columna `App Decision`** (Text manual en tabla Contacts): borrada.
+- **Webhook source `CLAY_APPROVAL_WEBHOOK`** ("Pull in data from a Webhook (2)" en tabla Contacts): borrado.
+- **Filas vacías** que el webhook fallido creó: borradas.
+- **Run conditions** de `LinkedIn Icebreaker`, `Email Personalizer`, `Add Lead to Campaign`: revertidas a `Lead Scoring action = "enrich"` (sin el `OR App Decision = "approved"` que se había agregado temporalmente).
+- **Run condition** de `Push score to App` (HTTP API column que llama a `/api/clay/scored-contacts`): debe quedar en `Lead Scoring action != ""` para que llegue al app tanto si la acción es `enrich`, `manual_review` o `discard`.
+- **Lib del código**: borradas `lib/clayApi.ts` y `lib/clayPushDecision.ts`. NO restaurar — si algo de Clay tiene que escribir state al app, usar webhooks de Clay → endpoints del app (no al revés).
 
 ## Sprints
 
@@ -28,7 +40,7 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 |---|---|---|
 | 1 | Hecho | ICP + descubrimiento empresas + revisión humana |
 | 2 | Hecho | Contactos: pre-filter Claude + import desde Clay + UI |
-| 3 | En curso · fase 1 cerrada, fase 2 = Lemlist API direct (próxima sesión) | Cola revisión manual + feedback loop + Lemlist API directa para approvals |
+| 3 | Hecho · fase 1 (cola revisión manual) + fase 2 (Lemlist API direct) | Cola revisión manual + feedback loop + Lemlist API directa para approvals |
 | 4 | Pendiente | HubSpot writer + dashboard de mensajes |
 | 5 | Pendiente | Dashboard unificado |
 
@@ -116,7 +128,7 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 - UI `/contactos`: cards en bucket Revisión manual muestran botones "Aprobar" y "Rechazar" (modal `prompt` para razón al rechazar). Badges "revisión manual" / "aprobado manual ✓" / "rechazado manual ✗" visibles en otros buckets para trazabilidad.
 - Loop cerrado para entrenamiento: cada veredicto deja un registro en `contact_feedback` que en Sprint 4 podemos formatear como `historical_feedback` e inyectar en el prompt de Lead Scoring de Clay.
 
-**Cableado Clay pendiente (paso del usuario, no código):**
+**Cableado Clay (paso del usuario, no código — ya aplicado al cierre de Sprint 3):**
 1. Pegar `supabase/contacts_manual_review_migration.sql` en SQL editor de Supabase.
 2. En Clay tabla **Contacts**, agregar columna **HTTP API** "Push score to App" análoga a la que ya existe para `raw-contacts`:
    - Method: `POST`
@@ -153,49 +165,36 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 | Clay Add Lead to Campaign | Inicialmente disparó para Michelle (run condition vacía) → fix abajo |
 | Run condition `Lead Scoring action = "enrich"` | Aplicada en Clay con chip + Generate ✅ |
 
-**Cierres operativos pendientes (usuario, no código):**
+**Cierres operativos pendientes (usuario, no código — snapshot histórico de Sprint 2; ver "Gaps conocidos al cierre" al final para el estado vigente):**
 
-1. **Michelle en Lemlist**: entró a la campaña antes del fix de run condition. Hay que sacarla manualmente: Lemlist → campaña `weCAD4you — Lab Digital Outreach v1` → buscar Michelle → Remove from campaign. Evita métricas contaminadas y un email sin sentido el día 5.
-2. **DLP Dental Laboratory aprobada con URLs falsas**: rechazarla desde `/empresas` → Aprobadas → link "Mover a rechazadas". Gap conocido desde fase B parte 4, no se hizo todavía.
+1. **Michelle en Lemlist**: entró a la campaña antes del fix de run condition. Hay que sacarla manualmente. (Histórico; ya pasó hace semanas.)
+2. **DLP Dental Laboratory aprobada con URLs falsas**: rechazarla desde `/empresas` → Aprobadas → link "Mover a rechazadas".
 3. **Modern Dental Laboratory**: aprobada como ES (Valencia) pero el LinkedIn URL apunta a Modern Dental Group (HK). Verificación HTTP no detecta el caso porque la URL carga. Gap futuro: validar que el nombre en la LinkedIn page matchee `company_name`.
 
-**Variables de entorno en Vercel (estado actual):**
-- `CLAY_COMPANIES_WEBHOOK_URL` — set ✅ (push de empresas a Clay)
-- `CLAY_CONTACTS_WEBHOOK_URL` — set ✅ (push de contactos pre-filter YES a Clay)
-- `CLAY_WEBHOOK_SECRET` — set ✅ (header `x-webhook-secret` en raw-contacts y scored-contacts)
+**Variables de entorno en Vercel (snapshot histórico — ver "Variables de entorno en Vercel (estado actual final)" más abajo para el estado vigente):**
+- `CLAY_COMPANIES_WEBHOOK_URL` — set ✅
+- `CLAY_CONTACTS_WEBHOOK_URL` — set ✅
+- `CLAY_WEBHOOK_SECRET` — set ✅
 - `ANTHROPIC_API_KEY` — set ✅
 - `PERPLEXITY_API_KEY` — set ✅
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — set ✅
-- **A borrar al hacer switch a Lemlist API direct (Sprint 3 fase 2):**
-  - `CLAY_APPROVAL_WEBHOOK_URL` (obsoleta)
-  - `CLAY_API_TOKEN` (obsoleta — Clay no expone row CRUD)
-  - `CLAY_CONTACTS_TABLE_ID` (obsoleta)
-  - `CLAY_WORKSPACE_ID` (obsoleta)
-  - `CLAY_WORKBOOK_ID` (obsoleta)
-- **Pendientes a generar (Sprint 3 fase 2):**
-  - `LEMLIST_API_KEY` ⚠️
-  - `LEMLIST_CAMPAIGN_ID` ⚠️
 
-**Cableado de App → Clay para Revisión manual (cierra el loop con Clay REST API):**
+**Cableado de approvals de Revisión manual (estado vigente: Lemlist API direct):**
 
-Cuando un humano aprueba un contacto en Revisión manual de la app, hay que actualizar la columna "App Decision" en Clay para que `Add Lead to Campaign` lo mande a Lemlist. Usamos la **Clay REST API** directamente (los webhook sources de Clay no soportan upsert por key, sólo inserts).
+Cuando un humano aprueba un contacto en Revisión manual de la app, la app llama a Lemlist API directamente (NO pasa por Clay). El flujo es:
 
-1. **En Clay**:
-   - Settings → Account → API key: copiar el token → setear en Vercel como `CLAY_API_TOKEN`.
-   - Tabla Contacts: copiar el `table_id` de la URL (`https://app.clay.com/workspaces/{ws}/workbooks/{wb}/tables/{table_id}/...`) → setear en Vercel como `CLAY_CONTACTS_TABLE_ID`.
-   - Crear columna manual **"App Decision"** (Text, sin source).
-   - Actualizar la run condition de **Add Lead to Campaign** y opcionalmente de **LinkedIn Icebreaker**, **Email Personalizer**, **email_subject**, **email_body** a:
-     ```
-     Lead Scoring action = "enrich" OR App Decision = "approved"
-     ```
-   - Esto evita gastar créditos enriqueciendo contactos en manual_review y los habilita al aprobar.
+1. **Contacto YES** → push App → Clay → Lead Scoring → `action = "manual_review"` → las AI columns y `Add Lead to Campaign` NO corren (run condition `action = "enrich"` no matchea).
+2. **Usuario aprueba** en `/contactos` Revisión manual → endpoint `/api/contacts/[id]/decision`:
+   - Persiste `human_decision='approved'` + `fit_action='enrich'` en Supabase.
+   - Genera `linkedin_icebreaker` + `email_subject` + `email_body` con Claude (Sonnet con fallback Haiku) si faltan.
+   - Llama a `POST https://api.lemlist.com/api/v2/campaigns/{LEMLIST_CAMPAIGN_ID}/leads` con `linkedinUrl`, `email?`, datos del contacto/empresa y custom fields (`icebreaker`, `emailSubject`, `emailBody`, `wecad_fit_*`).
+   - Persiste `lemlist_pushed_at` o `lemlist_push_error`.
+   - Devuelve `lemlist_push` en el response.
+3. **Lemlist recibe el lead** → corre su propio enrichment (email + teléfono con sus créditos) → al Día 3 dispara la invitación LinkedIn con `{{icebreaker}}` → al Día 5 dispara el email con `{{emailSubject}}` / `{{emailBody}}`.
 
-2. **Flujo end-to-end después del setup**:
-   - Contacto YES → push App → Clay → Lead Scoring → action `manual_review` → AI columns y Lemlist NO corren.
-   - Usuario aprueba en `/contactos` Revisión manual → endpoint `/api/contacts/[id]/decision` actualiza Supabase y llama a Clay REST API: `GET /v3/tables/{id}/rows?filter[Wecad Contact Id]={uuid}` → `PATCH /v3/tables/{id}/rows/{row_id}` con `{App Decision: "approved"}`.
-   - Clay setea App Decision = "approved" → run conditions matchean → AI columns corren si faltaban → Add Lead to Campaign empuja a Lemlist.
+**Por qué no Clay**: Clay API REST no expone CRUD de rows (ver "Investigación Clay API" más abajo) y los webhook sources de Clay solo soportan INSERT, no UPSERT por key.
 
-3. **Si la Clay REST API responde con error**, el response del endpoint `/api/contacts/[id]/decision` incluye `clay_push_decision.debug` con el payload de respuesta de Clay. Útil para diagnosticar si el filter pattern de la query no matchea con la API real.
+**Si Lemlist responde error**, el response del endpoint `/api/contacts/[id]/decision` incluye `lemlist_push.debug.response` con el cuerpo crudo del API. UI surface ese debug en panel amarillo.
 
 **Hecho del Sprint 3 (resto de iteraciones, sesión 2026-05-13):**
 
@@ -241,70 +240,87 @@ El loop App → Clay para Revisión manual approvals se rompió en dos intentos:
 
 **Decisión (final, sesión 2026-05-13):** descartar el approach Clay para approvals → **bypass Clay con Lemlist API directa** desde la app. Próxima sesión arranca con esto.
 
-**Sprint 3 fase 2 → Lemlist API direct (próxima sesión):**
+**Hecho del Sprint 3 (fase 2 — Lemlist API direct, sesión 2026-05-13b):**
 
-Para que un contacto en manual_review aprobado termine en la campaña de Lemlist, la app va a llamar a Lemlist API directamente sin pasar por Clay. Plan de implementación:
+PR #52 mergeado. Cierra el loop manual_review → Lemlist sin pasar por Clay.
 
-1. **Env vars en Vercel** (pendiente, el usuario las consigue):
-   - `LEMLIST_API_KEY` — token de Lemlist (Settings → Integrations → API → Generate)
-   - `LEMLIST_CAMPAIGN_ID` — id de la campaña "weCAD4you — Lab Digital Outreach v1" (de la URL del campaign editor en Lemlist)
+- Migración `supabase/contacts_lemlist_push_migration.sql` añade `lemlist_pushed_at` + `lemlist_push_error` a `contacts`. Pegar manual en SQL editor de Supabase una vez.
+- `lib/lemlist.ts` — cliente para `POST https://api.lemlist.com/api/v2/campaigns/{id}/leads`. Auth Basic con usuario vacío + `LEMLIST_API_KEY` como password (forma documentada y estable de Lemlist). Sobre falla devuelve `debug.response` con el cuerpo crudo del API para diagnosticar shape.
+- `lib/messageGenerator.ts` — genera icebreaker + email_subject + email_body con una sola llamada a Claude (Sonnet con fallback automático a Haiku 4.5 vía `createMessageWithFallback`). Reglas críticas hardcodeadas:
+  - Icebreaker ≤ **180 chars** (LinkedIn corta a 200). Defensivo: clamp + regex que strippa cualquier saludo si Claude desobedece.
+  - Icebreaker SIN "Hi {firstName}, " — la plantilla Lemlist del Día 3 ya lo agrega. Si lo incluyéramos doble sale "Hi Brittany , Brittany, …".
+  - Email body SÍ arranca con "Hi {firstName},\\n\\n" porque la plantilla Day 5 espera solo `{{emailBody}}` sin saludo extra (ver `notas_arquitectura.md` §7).
+  - Subject ≤ 7 palabras.
+- `app/api/contacts/[id]/decision/route.ts` modificado: cuando approve viene de manual_review (no recovery) y `lemlist_pushed_at` está vacío:
+  1. Si el contacto no tiene icebreaker/subject/body (manual_review NO los recibe de Clay porque la run condition es `action=enrich`), los genera con `messageGenerator` y los persiste en `contacts`.
+  2. Empuja el lead a Lemlist con `addLeadToCampaign`.
+  3. Devuelve `lemlist_push` en el response (con `messages_generated`, `model_used`, `lead_id` en caso ok; o `error` + `debug` en caso fail).
+- UI `/contactos`:
+  - Badge "en Lemlist ✓" cuando `lemlist_pushed_at` no es null (junto al "en Clay ✓").
+  - Card surface `lemlist_push_error` persistido (prefijado "Lemlist:" para distinguir del "Clay:").
+  - Panel debug amarillo cuando el push falla en runtime (similar al panel viejo de Clay, mostrando el JSON de Lemlist API).
+- Variables de entorno requeridas en Vercel:
+  - `LEMLIST_API_KEY` — token de Lemlist (Settings → Integrations → API)
+  - `LEMLIST_CAMPAIGN_ID` — `cam_TrfWtYHwp6qBb4Z8B` (campaña "weCAD4you — Lab Digital Outreach v1")
+- Limpieza completada:
+  - Borrados `lib/clayApi.ts` y `lib/clayPushDecision.ts`.
+  - En Clay tabla Contacts: borrada la columna `App Decision`, borrado el webhook source `CLAY_APPROVAL_WEBHOOK`, borradas las filas vacías.
+  - Run conditions revertidas a `Lead Scoring action = "enrich"` en `LinkedIn Icebreaker`, `Email Personalizer`, `Add Lead to Campaign`. La de `Push score to App` quedó en `Lead Scoring action != ""` (permite que llegue al app la decisión de Clay para action=enrich, manual_review y discard).
+  - Env vars obsoletas borradas en Vercel: `CLAY_APPROVAL_WEBHOOK_URL`, `CLAY_API_TOKEN`, `CLAY_CONTACTS_TABLE_ID`, `CLAY_WORKSPACE_ID`, `CLAY_WORKBOOK_ID`.
 
-2. **Código nuevo**:
-   - `lib/lemlist.ts` — cliente para Lemlist API: `addLeadToCampaign(campaignId, lead)` que POST a `/api/v2/campaigns/{id}/leads`. Auth con Bearer.
-   - `lib/messageGenerator.ts` — generador de icebreaker + email_subject + email_body con Claude. **Requisitos críticos del prompt de icebreaker** (el de Clay tiene bugs, evitar repetir):
-     - Máximo **180 caracteres** (LinkedIn corta invitaciones a 200; dejamos 20 chars de margen).
-     - NO incluir saludo "Hi {firstName}, " — la plantilla de Lemlist lo agrega sola. Si lo incluímos doble (como hoy con Clay), sale "Hi Brittany , Brittany, …" en la invitación.
-     - Tono colega del sector dental, no vendedor.
-     - Una sola referencia específica a la empresa (señal real, no genérica).
-     - Termina con pregunta de bajo compromiso.
-   - Lee datos del contacto + de la empresa de Supabase para personalizar.
-   - Modificar `app/api/contacts/[id]/decision/route.ts`: cuando approve viene de manual_review y `clay_pushed_at` está set:
-     1. Llamar al messageGenerator → guardar icebreaker / subject / body en `contacts`.
-     2. Llamar a Lemlist API → push lead con los mensajes generados.
-     3. Devolver el resultado en `lemlist_push` (similar al ya viejo `clay_push_decision`).
-   - UI `/contactos`: surface el `lemlist_push` debug si falla (igual mecanismo que ya hicimos para `clay_push_decision`).
+**Investigación Clay API (sesión 2026-05-13 — resultado: API REST no expone row CRUD):**
 
-3. **Limpieza simultánea**:
-   - `lib/clayApi.ts` — borrar (no se usa más).
-   - `lib/clayPushDecision.ts` — borrar.
-   - Borrar webhook source "CLAY_APPROVAL_WEBHOOK" en Clay tabla Contacts (no se usa).
-   - Borrar env vars obsoletas en Vercel: `CLAY_APPROVAL_WEBHOOK_URL`, `CLAY_API_TOKEN`, `CLAY_CONTACTS_TABLE_ID`, `CLAY_WORKSPACE_ID`, `CLAY_WORKBOOK_ID`.
-   - En Clay tabla Contacts, las run conditions de Add Lead to Campaign vuelven a `Lead Scoring action = "enrich"` (sin el OR de App Decision). Las run conditions de icebreaker/email idem.
+El loop App → Clay para Revisión manual approvals se rompió en dos intentos:
 
-4. **Trade-off conocido**: para contactos en manual_review, Clay NO genera icebreaker/email/etc (run condition restringe a `action=enrich`). La app los genera por su cuenta cuando aprobamos. Eso aumenta el uso de tokens Claude en la app pero no consume créditos AI de Clay. Para enrich-action contacts el flujo Clay → Lemlist sigue intacto.
+1. **Webhook source (App Decision)**: Clay's webhook sources solo soportan INSERT, no UPSERT. Pruebas con el setup mapping no permitieron configurar reconciliación por `Wecad Contact Id`. Cada approval creaba una fila nueva con solo `app_decision` y `wecad_contact_id` llenos, en vez de actualizar la fila original.
 
-5. **Validación end-to-end Sprint 3 fase 2**:
-   - Aprobar un contacto en `/contactos` Revisión manual → ver en Lemlist que aparece con icebreaker + email generados.
-   - Verificar que Lemlist enriquece email/phone con sus créditos cuando solo le mandamos LinkedIn URL.
+2. **Clay REST API directa**: probado con `CLAY_API_TOKEN` válido contra todas las combinaciones razonables de URL:
+   - `/v1/tables/{id}/rows` → 404 `"deprecated API endpoint"`
+   - `/v2/tables/{id}/rows` → 404 `"deprecated API endpoint"`
+   - `/v3/tables/{id}/rows` → 404 `"NoMatchingURL"`
+   - Mismos paths con `/workspaces/{ws}/` o `/workbooks/{wb}/` prefix → idéntico resultado
+   - 4 variantes de query string (filter[], where[], directo, /search) — todas 404
 
-**Estado del repositorio al cierre:**
+   Conclusión: la API pública actual de Clay no expone CRUD de rows en tablas de usuario. NO recrear la integración a menos que Clay publique CRUD endpoints en el futuro.
 
-- Rama: `claude/validate-prospecting-loop-IRiLL` (working tree clean, pusheada).
-- Último PR mergeado: #49 (`fix(clayApi): try multiple URL patterns…`).
-- Total PRs en la sesión: 26-49 (24 PRs, todos squash-mergeados a `claude/wecad4you-prospecting-app-Hltfi`).
+**Estado del repositorio al cierre (sesión Sprint 3 fase 2):**
 
-**Estado en Clay al cierre:**
+- Rama: `claude/continue-wecad4you-prospecting-YNgtt` (working tree clean, pusheada y mergeada).
+- Último PR mergeado: #52 (`feat(lemlist): push manual_review approvals to Lemlist directly`).
 
-- Tabla Contacts tiene dos webhook sources (Pull in data from a Webhook (1) y (2)). El (2) "CLAY_APPROVAL_WEBHOOK" fue creado durante esta sesión para el flujo App → Clay App Decision. **Se va a borrar al cambiar a Lemlist API direct.**
-- Filas duplicadas vacías en tabla Contacts creadas por el webhook (2) cuando intentamos upsert: **se borran al cierre**.
-- Columna `App Decision` (Text manual) creada en tabla Contacts: **se borra al cambiar a Lemlist API direct, o se deja sin uso si el usuario prefiere**.
-- Run conditions actuales en Clay incluyen `OR App Decision = "approved"` en Add Lead to Campaign y AI columns: **revertir a solo `Lead Scoring action = "enrich"` al hacer el switch a Lemlist API direct**.
+**Estado en Clay al cierre (limpieza Sprint 3 fase 2 — TODO completado por el usuario):**
+
+- Tabla Contacts tiene SOLO el webhook source original (1) "Pull in data from a Webhook" (el que alimenta `/api/clay/raw-contacts` con contactos de Find People).
+- Run conditions vuelven al estado pre-sesión-Clay-API:
+  - `LinkedIn Icebreaker`, `Email Personalizer`, `email_subject`, `email_body`, `Add Lead to Campaign` → `Lead Scoring action = "enrich"`.
+  - `Push score to App` (HTTP API column hacia `/api/clay/scored-contacts`) → `Lead Scoring action != ""`.
+- Las únicas dos integraciones App ↔ Clay que quedan vivas son: (a) `App → Clay`: push de empresas aprobadas (`/api/clay/push-company`) y push de contactos pre-filter YES (`/api/clay/push-contact`) vía webhooks de Clay; (b) `Clay → App`: webhook `raw-contacts` cuando Find People completa, y webhook `scored-contacts` cuando Lead Scoring completa.
 
 **Estado en Supabase al cierre:**
 
-- Migraciones aplicadas: `contacts_migration.sql`, `contacts_clay_push_migration.sql`, `contacts_manual_review_migration.sql`. No hay migraciones nuevas pendientes para Sprint 3 fase 2.
-- Tabla `contacts` tiene varios registros con `human_decision='approved'` pero con `fit_action='enrich'` y `clay_pushed_at` no nulo (los manual_review aprobados durante esta sesión). Esos contactos están en bucket "En campaña" en la UI pero **no llegaron realmente a Lemlist** porque el push a Clay falló. Cuando esté lista la integración Lemlist API direct, posible re-correr para ellos.
+- Migraciones aplicadas: `contacts_migration.sql`, `contacts_clay_push_migration.sql`, `contacts_manual_review_migration.sql`, **`contacts_lemlist_push_migration.sql`** (esta última pendiente de pegado manual al cerrar la sesión — confirmar que el usuario la corrió).
+- Tabla `contacts` tiene varios registros con `human_decision='approved'` pero con `fit_action='enrich'` y `clay_pushed_at` no nulo, **sin `lemlist_pushed_at`** (los manual_review aprobados durante sesiones anteriores cuando el push a Clay fallaba). Esos contactos están en bucket "En campaña" en la UI pero **no llegaron realmente a Lemlist**. Posible futura mejora: botón "Re-empujar a Lemlist" o script bulk para procesar esos huérfanos con la nueva integración.
+
+**Variables de entorno en Vercel (estado actual final):**
+- `CLAY_COMPANIES_WEBHOOK_URL` — set ✅ (push de empresas a Clay)
+- `CLAY_CONTACTS_WEBHOOK_URL` — set ✅ (push de contactos pre-filter YES a Clay)
+- `CLAY_WEBHOOK_SECRET` — set ✅ (header en raw-contacts y scored-contacts)
+- `ANTHROPIC_API_KEY` — set ✅
+- `PERPLEXITY_API_KEY` — set ✅
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — set ✅
+- `LEMLIST_API_KEY` — set ✅
+- `LEMLIST_CAMPAIGN_ID` — `cam_TrfWtYHwp6qBb4Z8B` ✅
+- Borradas: `CLAY_APPROVAL_WEBHOOK_URL`, `CLAY_API_TOKEN`, `CLAY_CONTACTS_TABLE_ID`, `CLAY_WORKSPACE_ID`, `CLAY_WORKBOOK_ID`.
 
 **Gaps conocidos al cierre:**
 
-1. **URGENTE — icebreaker de LinkedIn excede límite y duplica nombre.** Lemlist UI muestra warning: "Invitation messages are limited to 200 characters on LinkedIn". El icebreaker actual de Clay genera ~300 chars Y arranca con "Hi Brittany ," — la plantilla de Lemlist ya prepende "Hi {{firstName}}, " así que sale doble: "Hi Brittany , Brittany, scaling digital...". A arreglar mañana en dos lugares:
-   - Cuando hagamos `lib/messageGenerator.ts` (Sprint 3 fase 2 Lemlist direct): el prompt debe imponer ≤180 chars (deja margen) y NO incluir saludo — solo el body del icebreaker. La plantilla Lemlist agrega el "Hi {{firstName}}, " sola.
-   - Mientras tanto en Clay (tabla Contacts): editar el prompt de la columna AI **LinkedIn Icebreaker** para que (a) máximo 180 caracteres, (b) NO incluya "Hi {{firstName}}", (c) salida sea solo el contenido del icebreaker. El primer paso de la campaña Lemlist ya agrega "Hi {firstName}," automáticamente.
+1. ~~URGENTE — icebreaker excede 180 chars y duplica el nombre.~~ **Resuelto en la app** vía `lib/messageGenerator.ts` (clamp a 180 + regex strip de saludo). **Pendiente en Clay**: el prompt de la AI column `LinkedIn Icebreaker` para contactos `action=enrich` directo (que NO pasan por la app) sigue generando ~300 chars con "Hi {firstName}". El usuario tiene que editar ese prompt en Clay UI para alinearlo con las mismas reglas (≤180 chars, sin saludo).
 2. Razones IA del Lead Scoring de Clay vienen en inglés. Solución: editar el prompt de Lead Scoring en Clay y agregar "Respond in Spanish (Latin American). The 'reason' field must be written in Spanish."
 3. Clay Find People devuelve gente histórica (ya no trabaja en la empresa target) — el size-aware pre-filter + la detección de "former/ex-" mitiga la mayoría pero no 100%.
 4. Empresas grandes tipo Aspen Dental (16k empleados) probablemente NO son fit real para el ICP (sweet spot 15-50). El usuario aceptó dejarla aprobada para validar el flujo.
 5. Modern Dental Laboratory aprobada como ES pero LinkedIn apunta a HK (gap viejo, no resuelto).
+6. **Contactos manual_review huérfanos**: ver sección "Estado en Supabase al cierre". Pueden re-empujarse con un endpoint/script si se quieren rescatar.
 
 **Para retomar en una nueva sesión (prompt de arranque):**
 
-> Continúo weCAD4you-prospecting. En la sesión anterior cerramos Sprint 3 fase 1 (cola Revisión manual + botones Aprobar/Rechazar/Recuperar + bulk delete + size-aware pre-filter + CAD priority + Haiku fallback + funnel diagnostics + delete companies/contacts). En el final intentamos cerrar el loop App → Clay para que las aprobaciones de Revisión manual dispararan Lemlist, pero **Clay API REST no expone row CRUD** (todas las URLs devuelven 404 "deprecated API endpoint" en /v1-v2 y "NoMatchingURL" en /v3, ver detalle en CLAUDE.md). Decisión final: bypaseamos Clay para approvals y vamos a integrar **Lemlist API directa** desde la app. Rama: `claude/validate-prospecting-loop-IRiLL`. Base: `claude/wecad4you-prospecting-app-Hltfi`. Antes de codear lee `CLAUDE.md` completo (especialmente la sección "Sprint 3 fase 2 → Lemlist API direct" que tiene el plan paso a paso), `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Reglas: vos hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist UI. Plan de hoy: implementar Lemlist API direct (1 lib client + 1 generador de mensajes con Claude + modificar decision endpoint + UI surface). Antes de codear pedime las dos env vars que voy a generar en Lemlist: `LEMLIST_API_KEY` y `LEMLIST_CAMPAIGN_ID`. Mientras tanto podés ir leyendo los docs y armando el plan.
+> Continúo weCAD4you-prospecting. Sprint 3 completo (fase 1 = cola Revisión manual + Aprobar/Rechazar/Recuperar; fase 2 = Lemlist API direct para approvals porque Clay API REST no expone row CRUD). Loop end-to-end App ↔ Clay ↔ Lemlist cerrado. Rama base: `claude/wecad4you-prospecting-app-Hltfi`. Antes de codear lee `CLAUDE.md` completo (especialmente "Hecho del Sprint 3 fase 2" y "Lo que se borró de Clay"), `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Reglas: vos hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist UI. Próximo sprint = 4 (HubSpot writer + dashboard de mensajes). NO recrear la integración App → Clay vía REST API (no existe); si necesitamos que Clay reciba state desde la app, usar webhooks Clay → app, no al revés.
