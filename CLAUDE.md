@@ -251,7 +251,13 @@ Para que un contacto en manual_review aprobado termine en la campaña de Lemlist
 
 2. **Código nuevo**:
    - `lib/lemlist.ts` — cliente para Lemlist API: `addLeadToCampaign(campaignId, lead)` que POST a `/api/v2/campaigns/{id}/leads`. Auth con Bearer.
-   - `lib/messageGenerator.ts` — generador de icebreaker + email_subject + email_body con Claude, usando los prompts que ya viven en Clay (los copiamos a `lib/contactsPrompts.ts`). Lee datos del contacto + de la empresa de Supabase.
+   - `lib/messageGenerator.ts` — generador de icebreaker + email_subject + email_body con Claude. **Requisitos críticos del prompt de icebreaker** (el de Clay tiene bugs, evitar repetir):
+     - Máximo **180 caracteres** (LinkedIn corta invitaciones a 200; dejamos 20 chars de margen).
+     - NO incluir saludo "Hi {firstName}, " — la plantilla de Lemlist lo agrega sola. Si lo incluímos doble (como hoy con Clay), sale "Hi Brittany , Brittany, …" en la invitación.
+     - Tono colega del sector dental, no vendedor.
+     - Una sola referencia específica a la empresa (señal real, no genérica).
+     - Termina con pregunta de bajo compromiso.
+   - Lee datos del contacto + de la empresa de Supabase para personalizar.
    - Modificar `app/api/contacts/[id]/decision/route.ts`: cuando approve viene de manual_review y `clay_pushed_at` está set:
      1. Llamar al messageGenerator → guardar icebreaker / subject / body en `contacts`.
      2. Llamar a Lemlist API → push lead con los mensajes generados.
@@ -291,10 +297,13 @@ Para que un contacto en manual_review aprobado termine en la campaña de Lemlist
 
 **Gaps conocidos al cierre:**
 
-1. Razones IA del Lead Scoring de Clay vienen en inglés. Solución: editar el prompt de Lead Scoring en Clay y agregar "Respond in Spanish (Latin American). The 'reason' field must be written in Spanish."
-2. Clay Find People devuelve gente histórica (ya no trabaja en la empresa target) — el size-aware pre-filter + la detección de "former/ex-" mitiga la mayoría pero no 100%.
-3. Empresas grandes tipo Aspen Dental (16k empleados) probablemente NO son fit real para el ICP (sweet spot 15-50). El usuario aceptó dejarla aprobada para validar el flujo.
-4. Modern Dental Laboratory aprobada como ES pero LinkedIn apunta a HK (gap viejo, no resuelto).
+1. **URGENTE — icebreaker de LinkedIn excede límite y duplica nombre.** Lemlist UI muestra warning: "Invitation messages are limited to 200 characters on LinkedIn". El icebreaker actual de Clay genera ~300 chars Y arranca con "Hi Brittany ," — la plantilla de Lemlist ya prepende "Hi {{firstName}}, " así que sale doble: "Hi Brittany , Brittany, scaling digital...". A arreglar mañana en dos lugares:
+   - Cuando hagamos `lib/messageGenerator.ts` (Sprint 3 fase 2 Lemlist direct): el prompt debe imponer ≤180 chars (deja margen) y NO incluir saludo — solo el body del icebreaker. La plantilla Lemlist agrega el "Hi {{firstName}}, " sola.
+   - Mientras tanto en Clay (tabla Contacts): editar el prompt de la columna AI **LinkedIn Icebreaker** para que (a) máximo 180 caracteres, (b) NO incluya "Hi {{firstName}}", (c) salida sea solo el contenido del icebreaker. El primer paso de la campaña Lemlist ya agrega "Hi {firstName}," automáticamente.
+2. Razones IA del Lead Scoring de Clay vienen en inglés. Solución: editar el prompt de Lead Scoring en Clay y agregar "Respond in Spanish (Latin American). The 'reason' field must be written in Spanish."
+3. Clay Find People devuelve gente histórica (ya no trabaja en la empresa target) — el size-aware pre-filter + la detección de "former/ex-" mitiga la mayoría pero no 100%.
+4. Empresas grandes tipo Aspen Dental (16k empleados) probablemente NO son fit real para el ICP (sweet spot 15-50). El usuario aceptó dejarla aprobada para validar el flujo.
+5. Modern Dental Laboratory aprobada como ES pero LinkedIn apunta a HK (gap viejo, no resuelto).
 
 **Para retomar en una nueva sesión (prompt de arranque):**
 
