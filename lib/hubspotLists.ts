@@ -126,7 +126,7 @@ function datetimeBefore(property: string, epochMs: number): V3Filter {
   return {
     property,
     filterType: "PROPERTY",
-    operation: { operationType: "TIME_POINT", operator: "IS_BEFORE", timestamp: epochMs }
+    operation: { operationType: "TIME_POINT", operator: "IS_BEFORE", timePoint: epochMs }
   };
 }
 
