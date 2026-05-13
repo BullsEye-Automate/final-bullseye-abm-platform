@@ -433,6 +433,9 @@ function ContactCard({
       : "bg-danger-bg text-danger-fg";
   const canPush = c.prefilter_result === "yes" && !c.clay_pushed_at;
   const canDecide = bucket === "manual_review" && c.human_decision == null;
+  // En el bucket Descartados ofrecemos solo "Aprobar" (recuperar). Sirve
+  // para rescatar false negatives del pre-filter o falsos discard de Clay.
+  const canRecover = bucket === "discarded" && c.human_decision !== "approved";
   return (
     <div className="card flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -558,6 +561,17 @@ function ContactCard({
               {isDeciding ? "Guardando…" : "Aprobar"}
             </button>
           </>
+        )}
+        {canRecover && (
+          <button
+            onClick={() => onDecide(c.id, "approved")}
+            disabled={isDeciding}
+            className="btn-primary text-xs"
+            title="Recuperar — pasa a Pendientes y se puede empujar a Clay"
+          >
+            <IconThumbUp size={12} />
+            {isDeciding ? "Guardando…" : "Aprobar (recuperar)"}
+          </button>
         )}
         {canPush && (
           <button

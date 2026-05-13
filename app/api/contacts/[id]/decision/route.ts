@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: contact, error: fetchErr } = await db
     .from("contacts")
     .select(
-      "id, company_id, job_title, linkedin_headline, fit_score, fit_action, status, human_decision"
+      "id, company_id, job_title, linkedin_headline, fit_score, fit_action, status, human_decision, prefilter_result"
     )
     .eq("id", params.id)
     .maybeSingle();
@@ -65,7 +65,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           human_decision_at: now,
           human_decision_reason: body.reason?.trim() || null,
           human_decision_by: reviewer,
-          fit_action: "enrich"
+          fit_action: "enrich",
+          // Si el contacto venía de Descartados (status=discarded o prefilter=no),
+          // lo "rehabilitamos": vuelve a pending y se considera prefilter YES
+          // para que pueda empujarse a Clay. La razón del descarte queda en
+          // contact_feedback como histórico.
+          ...(contact.status === "discarded" ? { status: "pending" } : {}),
+          ...(contact.prefilter_result === "no" ? { prefilter_result: "yes" } : {}),
+          clay_pushed_at: null,
+          clay_push_error: null
         }
       : {
           human_decision: "rejected",
