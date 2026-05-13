@@ -30,6 +30,11 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!contact) return NextResponse.json({ error: "Contact not found" }, { status: 404 });
 
   let hubspotCompanyId: string | null = null;
+  let companySnapshot: {
+    company_type: string | null;
+    cad_software: string | null;
+    scanner_technology: string | null;
+  } | null = null;
   if (contact.company_id) {
     const { data: company } = await db
       .from("companies")
@@ -42,13 +47,19 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       const cInput: HubSpotCompanyInput = company as HubSpotCompanyInput;
       const cRes = await pushCompanyToHubSpot(db, cInput);
       if (cRes.ok) hubspotCompanyId = cRes.hubspot_id;
+      companySnapshot = {
+        company_type: company.company_type,
+        cad_software: company.cad_software,
+        scanner_technology: company.scanner_technology
+      };
     }
   }
 
   const result = await pushContactToHubSpot(
     db,
     contact as HubSpotContactInput,
-    hubspotCompanyId
+    hubspotCompanyId,
+    companySnapshot
   );
 
   const { data: refetched } = await db

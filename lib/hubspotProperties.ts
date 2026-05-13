@@ -112,6 +112,40 @@ const CONTACT_PROPERTIES: PropertyDef[] = [
     type: "string",
     fieldType: "text",
     groupName: GROUP_NAME
+  },
+
+  // Denormalizados desde la empresa asociada — al SDR le sirve verlos en
+  // la card del contacto para priorizar sin un click extra. Se actualizan
+  // en cada resync; si cambian en la empresa, quedan stale hasta el
+  // próximo push del contacto.
+  {
+    name: "wecad_cad_software",
+    label: "weCAD CAD Software",
+    type: "string",
+    fieldType: "text",
+    groupName: GROUP_NAME,
+    description: "CAD software de la empresa asociada (denormalizado)."
+  },
+  {
+    name: "wecad_company_type",
+    label: "weCAD Company Type",
+    type: "enumeration",
+    fieldType: "select",
+    groupName: GROUP_NAME,
+    description: "Tipo de empresa asociada (denormalizado).",
+    options: [
+      { label: "Dental laboratory", value: "lab" },
+      { label: "Multi-location clinic", value: "multi_clinic" },
+      { label: "DSO", value: "dso" }
+    ]
+  },
+  {
+    name: "wecad_scanner_technology",
+    label: "weCAD Scanner Technology",
+    type: "string",
+    fieldType: "text",
+    groupName: GROUP_NAME,
+    description: "Scanner intraoral de la empresa asociada (denormalizado)."
   }
 ];
 

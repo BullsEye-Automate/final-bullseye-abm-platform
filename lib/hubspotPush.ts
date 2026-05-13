@@ -191,17 +191,27 @@ export type HubSpotContactInput = {
   hubspot_contact_id?: string | null;
 };
 
+// Snapshot mínimo de la empresa para denormalizar campos al contacto.
+// Lo pasa el caller (decision endpoint, retry endpoint) cuando ya tiene
+// la row de companies cargada — evita un segundo fetch acá adentro.
+export type HubSpotCompanySnapshot = {
+  company_type: string | null;
+  cad_software: string | null;
+  scanner_technology: string | null;
+};
+
 export async function pushContactToHubSpot(
   db: SupabaseClient,
   contact: HubSpotContactInput,
-  hubspotCompanyId: string | null
+  hubspotCompanyId: string | null,
+  companySnapshot: HubSpotCompanySnapshot | null = null
 ): Promise<HubSpotPushResult> {
   const props = await ensureContactProperties();
   if (!props.ok && props.errors.length > 0) {
     console.warn("HubSpot contact properties failed to ensure:", props.errors);
   }
 
-  const properties = buildContactProperties(contact);
+  const properties = buildContactProperties(contact, companySnapshot);
 
   // 1) hubspot_contact_id ya conocido → PATCH directo.
   if (contact.hubspot_contact_id) {
@@ -263,10 +273,18 @@ export async function pushContactToHubSpot(
   return { ok: true, hubspot_id: newId, created: true };
 }
 
-function buildContactProperties(c: HubSpotContactInput): HubSpotProperties {
+function buildContactProperties(
+  c: HubSpotContactInput,
+  company: HubSpotCompanySnapshot | null
+): HubSpotProperties {
   const props: HubSpotProperties = {
     wecad_contact_id: c.id
   };
+  if (company?.cad_software) props.wecad_cad_software = company.cad_software;
+  if (company?.company_type) props.wecad_company_type = company.company_type;
+  if (company?.scanner_technology) {
+    props.wecad_scanner_technology = company.scanner_technology;
+  }
   if (c.first_name) props.firstname = c.first_name;
   if (c.last_name) props.lastname = c.last_name;
   if (c.email) props.email = c.email;
