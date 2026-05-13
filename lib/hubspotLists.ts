@@ -88,29 +88,25 @@ function numberGte(property: string, value: number): V3Filter {
   };
 }
 
-function numberBetween(property: string, low: number, high: number): V3Filter {
+function numberLte(property: string, value: number): V3Filter {
   return {
     property,
     filterType: "PROPERTY",
-    operation: {
-      operationType: "NUMBER",
-      operator: "BETWEEN",
-      lowestValue: low,
-      highestValue: high
-    }
+    operation: { operationType: "NUMBER", operator: "IS_LESS_THAN_OR_EQUAL_TO", value }
   };
 }
 
-// "Phone has any value" se modela en v3 lists como STRING NEQ "":
-// IS_KNOWN/HAS_PROPERTY pide [value] required en este endpoint (validado
-// empíricamente contra la API). NEQ "" matchea todo phone no-vacío y
-// excluye el resto (incluido null por simetría con cómo HubSpot maneja
-// missing properties en filtros).
+// "Phone has any value" se modela como STRING IS_NOT_EQUAL_TO "".
+// HubSpot v3 Lists API operators válidos para STRING (que la API
+// misma devuelve en errores 400): IS_EQUAL_TO, IS_NOT_EQUAL_TO,
+// CONTAINS, DOES_NOT_CONTAIN, STARTS_WITH, ENDS_WITH,
+// HAS_EVER_BEEN_EQUAL_TO, HAS_NEVER_BEEN_EQUAL_TO, HAS_EVER_CONTAINED,
+// HAS_NEVER_CONTAINED. No tiene IS_KNOWN ni HAS_PROPERTY ni NEQ.
 function isKnown(property: string): V3Filter {
   return {
     property,
     filterType: "PROPERTY",
-    operation: { operationType: "STRING", operator: "NEQ", value: "" }
+    operation: { operationType: "STRING", operator: "IS_NOT_EQUAL_TO", value: "" }
   };
 }
 
@@ -118,18 +114,19 @@ function isNotKnown(property: string): V3Filter {
   return {
     property,
     filterType: "PROPERTY",
-    operation: { operationType: "STRING", operator: "EQ", value: "" }
+    operation: { operationType: "STRING", operator: "IS_EQUAL_TO", value: "" }
   };
 }
 
-// HubSpot v3 lists espera timestamp como epoch milliseconds (long),
-// no ISO string. La API tira "Cannot deserialize value of type long
-// from String" cuando recibe ISO.
+// DATETIME en v3 lists usa operationType TIME_POINT (no DATETIME).
+// Lista de operationTypes válidos para datetime properties (devuelta
+// por la API): TIME_RANGED, ALL_PROPERTY, COMPARATIVE_PROPERTY_UPDATED,
+// TIME_POINT.
 function datetimeBefore(property: string, epochMs: number): V3Filter {
   return {
     property,
     filterType: "PROPERTY",
-    operation: { operationType: "DATETIME", operator: "IS_BEFORE_DATE", timestamp: epochMs }
+    operation: { operationType: "TIME_POINT", operator: "IS_BEFORE", timestamp: epochMs }
   };
 }
 
@@ -237,7 +234,8 @@ export const LIST_DEFINITIONS: ListDef[] = [
     description:
       "Segunda prioridad. Fit medio (5-7) con teléfono, lead status NEW.",
     filterBranch: andOnly([
-      numberBetween("wecad_fit_score", 5, 7),
+      numberGte("wecad_fit_score", 5),
+      numberLte("wecad_fit_score", 7),
       isKnown("phone"),
       enumIn("hs_lead_status", ["NEW"])
     ])
@@ -247,7 +245,8 @@ export const LIST_DEFINITIONS: ListDef[] = [
     description:
       "Fit 5-7 sin phone. Pegá su LinkedIn URL en /telefonos para forzar Lusha si querés llamarlos.",
     filterBranch: andOnly([
-      numberBetween("wecad_fit_score", 5, 7),
+      numberGte("wecad_fit_score", 5),
+      numberLte("wecad_fit_score", 7),
       isNotKnown("phone"),
       enumIn("hs_lead_status", ["NEW"])
     ])
