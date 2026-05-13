@@ -28,8 +28,8 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 |---|---|---|
 | 1 | Hecho | ICP + descubrimiento empresas + revisión humana |
 | 2 | Hecho | Contactos: pre-filter Claude + import desde Clay + UI |
-| 3 | En curso | Cola revisión manual (score 5-7) + feedback loop completo |
-| 4 | Pendiente | Generador de mensajes + Lemlist API + HubSpot API |
+| 3 | En curso · fase 1 cerrada, fase 2 = Lemlist API direct (próxima sesión) | Cola revisión manual + feedback loop + Lemlist API directa para approvals |
+| 4 | Pendiente | HubSpot writer + dashboard de mensajes |
 | 5 | Pendiente | Dashboard unificado |
 
 ## Estado actual (handoff entre sesiones)
@@ -159,13 +159,22 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 2. **DLP Dental Laboratory aprobada con URLs falsas**: rechazarla desde `/empresas` → Aprobadas → link "Mover a rechazadas". Gap conocido desde fase B parte 4, no se hizo todavía.
 3. **Modern Dental Laboratory**: aprobada como ES (Valencia) pero el LinkedIn URL apunta a Modern Dental Group (HK). Verificación HTTP no detecta el caso porque la URL carga. Gap futuro: validar que el nombre en la LinkedIn page matchee `company_name`.
 
-**Variables de entorno en Vercel:**
-- `CLAY_COMPANIES_WEBHOOK_URL` — set ✅
-- `CLAY_CONTACTS_WEBHOOK_URL` — set ✅
-- `CLAY_WEBHOOK_SECRET` — set ✅ (requiere header `x-webhook-secret` en raw-contacts)
-- `CLAY_APPROVAL_WEBHOOK_URL` — **obsoleta, ya no se usa** (reemplazada por Clay REST API)
-- `CLAY_API_TOKEN` — **pendiente** ⚠️ (Bearer token de Clay; Settings → API key)
-- `CLAY_CONTACTS_TABLE_ID` — **pendiente** ⚠️ (id de la tabla Contacts en Clay, formato `t_xxx`)
+**Variables de entorno en Vercel (estado actual):**
+- `CLAY_COMPANIES_WEBHOOK_URL` — set ✅ (push de empresas a Clay)
+- `CLAY_CONTACTS_WEBHOOK_URL` — set ✅ (push de contactos pre-filter YES a Clay)
+- `CLAY_WEBHOOK_SECRET` — set ✅ (header `x-webhook-secret` en raw-contacts y scored-contacts)
+- `ANTHROPIC_API_KEY` — set ✅
+- `PERPLEXITY_API_KEY` — set ✅
+- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — set ✅
+- **A borrar al hacer switch a Lemlist API direct (Sprint 3 fase 2):**
+  - `CLAY_APPROVAL_WEBHOOK_URL` (obsoleta)
+  - `CLAY_API_TOKEN` (obsoleta — Clay no expone row CRUD)
+  - `CLAY_CONTACTS_TABLE_ID` (obsoleta)
+  - `CLAY_WORKSPACE_ID` (obsoleta)
+  - `CLAY_WORKBOOK_ID` (obsoleta)
+- **Pendientes a generar (Sprint 3 fase 2):**
+  - `LEMLIST_API_KEY` ⚠️
+  - `LEMLIST_CAMPAIGN_ID` ⚠️
 
 **Cableado de App → Clay para Revisión manual (cierra el loop con Clay REST API):**
 
@@ -188,119 +197,105 @@ Cuando un humano aprueba un contacto en Revisión manual de la app, hay que actu
 
 3. **Si la Clay REST API responde con error**, el response del endpoint `/api/contacts/[id]/decision` incluye `clay_push_decision.debug` con el payload de respuesta de Clay. Útil para diagnosticar si el filter pattern de la query no matchea con la API real.
 
-**Estado original donde quedó la sesión anterior (mantenido por contexto):**
+**Hecho del Sprint 3 (resto de iteraciones, sesión 2026-05-13):**
 
-Estamos en medio de cablear la columna HTTP en Clay que dispara hacia `/api/clay/raw-contacts`. Pasos completados en Clay:
+Sesión larga iterando sobre yield, calidad y feedback loop. PRs mergeados en orden:
 
-1. ✅ Discovery devolvió "Modern Dental Laboratory" (Valencia, ES). El LinkedIn URL `linkedin.com/company/modern-dental-laboratory` carga (pasó verificación HTTP) pero en realidad apunta a la página corporativa de Modern Dental Group (HK). Sutil gap: la región dice ES en Supabase pero los contactos que devuelve LinkedIn son HK. No bloqueante para el test, anotar como gap futuro (validar que el nombre en el LinkedIn page matchee `company_name`).
-2. ✅ Empresa aprobada + empujada a Clay. `wecad_company_id`: `b179e3ac-3283-4129-af08-d658283dc5cd`.
-3. ✅ En Clay tabla Companies, agregué wizard **Find People** (Source: Companies/People/Jobs). Configuración: Start from "Table of companies" → Companies → View "Default view" → Company identifiers `linkedin_url`.
-4. ✅ Find People preview devolvió 2 contactos: Alison Cheng (Senior Accountant, HK) y Michelle O W. (Group Financial Controller, HK). Ambos son finance — van a fallar el pre-filter de la app (esperado, esto valida el branch NO).
-5. ✅ Continue → Enrich People modal → marqué SOLO "Enrich person" (0.5/row). NO marqué Work Email (Lemlist lo hace después con sus créditos), NO Summarize LinkedIn, NO Posts.
-6. ✅ "Save and run 2 rows" → Clay creó tabla nueva **Raw People** (o como se llame en Clay) con las 2 filas enriquecidas.
-7. ✅ Columnas en la tabla Raw People:
-   - `Company Employees` (source de Find People)
-   - **`Company Table Data`** ← oro, contiene el join completo a Companies incluyendo `wecad_company_id`
-   - `First Name`, `Last Name`, `Full Name`
-   - `Job Title`, `Location`, `Company Domain`, `LinkedIn Profile`
-   - `Enrich person`
-   - `# Connections`, `Headline`, `Summary`, `Jobs Count`
+- **PR #28**: `/empresas` dropdown "Tamaño objetivo" deja de ser hardcoded — ahora se llena dinámicamente desde `size_rules` aprobadas del ICP. Editar reglas en `/configuracion/icp` se refleja en discovery.
+- **PR #29**: Discovery overshoot (Perplexity asks `limit*2`) + retry relajado automático cuando 0 + diagnóstico `funnel` visible en UI con el embudo paso a paso.
+- **PR #30**: Sacado el "REQUISITO DURO" del prompt de Claude que hacía pre-filtrar y devolver 0. Ahora Claude extrae todo y el código filtra después.
+- **PR #31**: Mismo fix en prompt de Perplexity — sacado el "OBLIGATORIAMENTE" que hacía a Perplexity autocensurarse. Plus instrucciones de búsqueda más específicas (NADL, partner listings, top labs in [state]).
+- **PR #32**: Retry relajado mantiene live check de LinkedIn (solo afloja `strict_region`) — sin esto entraban URLs alucinadas.
+- **PR #33**: Botón "Eliminar" en company cards. Endpoint `DELETE /api/companies/[id]`. Útil para limpiar empresas con URLs alucinadas para que vuelvan a ser candidatas.
+- **PR #34**: `lib/claude.ts` maxRetries 2→5 + manejo claro de 529 Overloaded en `/api/companies/recommend` (mensaje en español).
+- **PR #35**: Fallback automático a Haiku 4.5 cuando Sonnet sigue overloaded después de retries. Helper `createMessageWithFallback`. UI muestra badge "modelo: Sonnet" vs "modelo: Haiku (fallback)".
+- **PR #36**: `max_tokens` 4096→16384 en Claude para que extraiga las 16 empresas sin truncar el JSON. Bug causaba `Claude extrajo: 0` aunque Perplexity devolvía 8.5KB.
+- **PR #37**: `maxDuration` 120→300s + AbortController en frontend (290s) para evitar spinner colgado.
+- **PR #38**: Prompts de discovery con prioridad explícita exocad/inLab > 3Shape. Claude scorea 3Shape como `medium` por default (sube a `high` solo con 3+ señales fuertes adicionales).
+- **PR #39**: Pre-filter prompt apretado significativamente:
+  - Lista NO ampliada: Marketing, HR / People Ops / Talent, L&D / Training, IT / Software / Data, Legal / Compliance, Patient Services / Front Desk, Students.
+  - "When in doubt, YES" → "When in doubt, NO" (mejor perder borderline que llenar Lemlist).
+  - Detección de "former / ex- / previously" → NO (Clay Find People trae gente histórica con título antiguo).
+- **PR #40**: Bulk delete por bucket en `/contactos`. Endpoint `POST /api/contacts/bulk-delete`. Botón rojo "Eliminar todos (N)" arriba a la derecha.
+- **PR #41**: Pre-filter size-aware. `PrefilterInput` lleva `company_size`; el prompt cambia estrictez según banda (small ≤30 generoso, medium 31-100 estándar, large/DSO >100 estricto). Office Manager en DSO de 1000+ → NO; Lead Technician en lab de 10 → YES.
+- **PR #42**: Aflojado el bracket Large para que "Operations Manager", "Production Manager", "Lab Manager", "CAD Manager" sean YES aunque sin contexto extra. Botón "Aprobar (recuperar)" en bucket Descartados.
+- **PR #43**: Recovery desde Descartados va a Pendientes (no a En campaña). Diferencia explícita: manual_review approve → fit_action='enrich'; discarded recover → fit_action=null + status='pending'.
+- **PR #44**: `lib/clayPushDecision.ts` que dispara webhook a Clay con `{wecad_contact_id, app_decision}`. Endpoint `decision` lo llama cuando approve viene de manual_review.
+- **PR #45**: Fix bug del PR #43: no limpiar `clay_pushed_at` en approve desde manual_review (solo en recovery).
+- **PR #46-49**: Pivot del webhook a Clay REST API (porque webhook sources de Clay no soportan upsert), pruebas múltiples URL patterns. **Resultado: bloqueado** — ver sección abajo.
 
-**Lo que está en pantalla AHORA (no terminado):**
+**Investigación Clay API (sesión 2026-05-13 — resultado: API REST no expone row CRUD):**
 
-El usuario abrió una columna nueva tipo **HTTP API** sobre la tabla Raw People. Está en el panel Configure con secciones:
-- Account (Add account — opcional, no necesitamos auth todavía porque `CLAY_WEBHOOK_SECRET` no está set en Vercel)
-- Column mapping con SETUP INPUTS:
-  - Method (Optional) — hay que setear `POST`
-  - Endpoint * (required) — vacío, hay que pegar `https://wecad-prospecting.vercel.app/api/clay/raw-contacts`
-  - Query parameters (Optional) — dejar vacío
-  - Body (Optional) — hay que armar el JSON
-  - Headers (Optional) — `Content-Type: application/json`
-- Run settings:
-  - Auto-run ON (bien)
-  - Add run condition (sin marcar todavía — hay que marcarlo y configurar)
-- Status: "Required inputs missing" porque falta Endpoint
+El loop App → Clay para Revisión manual approvals se rompió en dos intentos:
 
-**Body JSON que hay que armar (usando `/` para insertar refs a columnas en Clay):**
+1. **Webhook source (App Decision)**: Clay's webhook sources solo soportan INSERT, no UPSERT. Pruebas con el setup mapping no permitieron configurar reconciliación por `Wecad Contact Id`. Cada approval creaba una fila nueva con solo `app_decision` y `wecad_contact_id` llenos, en vez de actualizar la fila original.
 
-```json
-{
-  "wecad_company_id": "<ref: Company Table Data → wecad_company_id>",
-  "first_name": "<ref: First Name>",
-  "last_name": "<ref: Last Name>",
-  "job_title": "<ref: Job Title>",
-  "linkedin_headline": "<ref: Headline>",
-  "linkedin_url": "<ref: LinkedIn Profile>"
-}
-```
+2. **Clay REST API directa**: probado con `CLAY_API_TOKEN` válido contra todas las combinaciones razonables de URL:
+   - `/v1/tables/{id}/rows` → 404 `"deprecated API endpoint"` (Clay tenía esto pero lo deprecaron)
+   - `/v2/tables/{id}/rows` → 404 `"deprecated API endpoint"`
+   - `/v3/tables/{id}/rows` → 404 `"NoMatchingURL"` (no existe en v3)
+   - Mismos paths con `/workspaces/{ws}/` o `/workbooks/{wb}/` prefix → idéntico resultado
+   - 4 variantes de query string (filter[], where[], directo, /search) — todas 404
 
-**Run condition recomendada:**
-- `Enrich person` is complete / status success
-- `LinkedIn Profile` is not empty
+   Conclusión: la API pública actual de Clay no expone CRUD de rows en tablas de usuario. Solo expone endpoints para webhooks, find-people-searches, y similar.
 
-**Estado actual (mid-setup en Clay):**
+**Decisión (final, sesión 2026-05-13):** descartar el approach Clay para approvals → **bypass Clay con Lemlist API directa** desde la app. Próxima sesión arranca con esto.
 
-El usuario está configurando en la tabla **Companies** de Clay dos columnas nuevas:
-1. Una enrichment para buscar contactos. En Clay aparece como **"Find people"** (Source · Companies, People, Jobs) — NO como "Find people at company". Esa es la correcta.
-2. Una columna HTTP / Webhook que dispara hacia `/api/clay/raw-contacts` cuando "Find people" termina.
+**Sprint 3 fase 2 → Lemlist API direct (próxima sesión):**
 
-Quedó pendiente confirmar el shape exacto que devuelve "Find people" (cómo Clay representa la lista de contactos en la celda) para armar bien el body del webhook saliente. Cuando el usuario corra "Find people" sobre la empresa DLP Dental Laboratory (que ya está en Clay), tiene que mandar screenshot del resultado.
+Para que un contacto en manual_review aprobado termine en la campaña de Lemlist, la app va a llamar a Lemlist API directamente sin pasar por Clay. Plan de implementación:
 
-**Próximo paso (Sprint 2 fase B — completar loop con Clay):**
+1. **Env vars en Vercel** (pendiente, el usuario las consigue):
+   - `LEMLIST_API_KEY` — token de Lemlist (Settings → Integrations → API → Generate)
+   - `LEMLIST_CAMPAIGN_ID` — id de la campaña "weCAD4you — Lab Digital Outreach v1" (de la URL del campaign editor en Lemlist)
 
-1. ~~App → Clay Companies (push)~~ — hecho.
-2. **Clay: "Find people"** — usuario lo está configurando AHORA. Al terminar, hay que verificar shape de los datos.
-3. ~~Backend de Clay → App (raw contactos)~~ — endpoint `POST /api/clay/raw-contacts` ya vive. Falta cablear en Clay la columna HTTP que dispara hacia él.
-4. **App → Clay Contacts (push YES)**: para los contactos pre-filter YES, POSTear al webhook de la tabla Contacts de Clay (todavía no generado). Variable de entorno futura: `CLAY_CONTACTS_WEBHOOK_URL`.
-5. **Clay scorea y manda a Lemlist** automáticamente (lo configura Clay, no la app).
+2. **Código nuevo**:
+   - `lib/lemlist.ts` — cliente para Lemlist API: `addLeadToCampaign(campaignId, lead)` que POST a `/api/v2/campaigns/{id}/leads`. Auth con Bearer.
+   - `lib/messageGenerator.ts` — generador de icebreaker + email_subject + email_body con Claude, usando los prompts que ya viven en Clay (los copiamos a `lib/contactsPrompts.ts`). Lee datos del contacto + de la empresa de Supabase.
+   - Modificar `app/api/contacts/[id]/decision/route.ts`: cuando approve viene de manual_review y `clay_pushed_at` está set:
+     1. Llamar al messageGenerator → guardar icebreaker / subject / body en `contacts`.
+     2. Llamar a Lemlist API → push lead con los mensajes generados.
+     3. Devolver el resultado en `lemlist_push` (similar al ya viejo `clay_push_decision`).
+   - UI `/contactos`: surface el `lemlist_push` debug si falla (igual mecanismo que ya hicimos para `clay_push_decision`).
 
-**Variables de entorno en Vercel:**
-- `CLAY_COMPANIES_WEBHOOK_URL` — set
-- `CLAY_WEBHOOK_SECRET` — opcional. Si está set, el endpoint raw-contacts requiere header `x-webhook-secret` o `Authorization: Bearer …` con el mismo valor. Si no está set, queda público.
-- `CLAY_CONTACTS_WEBHOOK_URL` — pendiente, para el siguiente paso.
+3. **Limpieza simultánea**:
+   - `lib/clayApi.ts` — borrar (no se usa más).
+   - `lib/clayPushDecision.ts` — borrar.
+   - Borrar webhook source "CLAY_APPROVAL_WEBHOOK" en Clay tabla Contacts (no se usa).
+   - Borrar env vars obsoletas en Vercel: `CLAY_APPROVAL_WEBHOOK_URL`, `CLAY_API_TOKEN`, `CLAY_CONTACTS_TABLE_ID`, `CLAY_WORKSPACE_ID`, `CLAY_WORKBOOK_ID`.
+   - En Clay tabla Contacts, las run conditions de Add Lead to Campaign vuelven a `Lead Scoring action = "enrich"` (sin el OR de App Decision). Las run conditions de icebreaker/email idem.
 
-**Estado UI Clay al cortar la sesión (handoff mid-config):**
+4. **Trade-off conocido**: para contactos en manual_review, Clay NO genera icebreaker/email/etc (run condition restringe a `action=enrich`). La app los genera por su cuenta cuando aprobamos. Eso aumenta el uso de tokens Claude en la app pero no consume créditos AI de Clay. Para enrich-action contacts el flujo Clay → Lemlist sigue intacto.
 
-Tabla activa en Clay: **"Company Employees, Spe..."** (la creada por Find People sobre Modern Dental Laboratory). 2 filas de test: Alison Cheng + Michelle O W. (ambas finance HK, esperadas como pre-filter NO).
+5. **Validación end-to-end Sprint 3 fase 2**:
+   - Aprobar un contacto en `/contactos` Revisión manual → ver en Lemlist que aparece con icebreaker + email generados.
+   - Verificar que Lemlist enriquece email/phone con sus créditos cuando solo le mandamos LinkedIn URL.
 
-Columna HTTP API "Push to App" en Configure → estado:
-- **Account**: vacío (sin auth, `CLAY_WEBHOOK_SECRET` no está set).
-- **Method**: POST ✅
-- **Endpoint**: `https://wecad-prospecting.vercel.app/api/clay/raw-contacts` ✅
-- **Headers**: `Content-Type: application/json` ✅
-- **Body**: PENDIENTE. Pegar la base y reemplazar cada `null` por chip vía `/`:
-  ```json
-  {
-    "company_table_data": null,
-    "first_name": null,
-    "last_name": null,
-    "job_title": null,
-    "linkedin_headline": null,
-    "linkedin_url": null
-  }
-  ```
-  Chips: Company Table Data (top-level, NO sub-campo), First Name, Last Name, Job Title, Headline, LinkedIn Profile.
-- **Run condition**: ✅ confirmada visualmente en screenshot. `Enrich person != "" AND LinkedIn Profile != ""` (ambos chips top-level, operadores escritos a mano).
-- **Auto-run**: ON ✅
-- **Delay run**: "Run immediately" ✅
-- **Retry on failure**: pendiente verificar si Clay expone esa opción en esta vista.
+**Estado del repositorio al cierre:**
 
-**Próximo paso al retomar:**
+- Rama: `claude/validate-prospecting-loop-IRiLL` (working tree clean, pusheada).
+- Último PR mergeado: #49 (`fix(clayApi): try multiple URL patterns…`).
+- Total PRs en la sesión: 26-49 (24 PRs, todos squash-mergeados a `claude/wecad4you-prospecting-app-Hltfi`).
 
-1. Confirmar que el body de la columna quedó armado (pedir screenshot del Body si hay duda).
-2. Pedir al usuario que corra SOLO la fila de Alison Cheng (no "Run all rows"). Buscar "Run row" en el menú de 3 puntos sobre esa fila.
-3. Verificar en `/contactos` (UI app) que el contacto aparece en bucket **Descartados** (pre-filter espera NO para roles finance). Si aparece en Pending, revisar prompt del pre-filter.
-4. Si Alison anduvo, repetir con Michelle.
-5. Una vez validado el loop entrante, próximo bloque del Sprint 2 fase B: **App → Clay Contacts (push YES)**. Necesita:
-   - Variable `CLAY_CONTACTS_WEBHOOK_URL` en Vercel (pendiente de generar webhook source en la tabla Contacts de Clay).
-   - Endpoint `POST /api/clay/push-contacts` en la app (no existe todavía).
-   - Botón en `/contactos` para empujar los YES a Clay.
+**Estado en Clay al cierre:**
 
-**Gaps conocidos abiertos:**
+- Tabla Contacts tiene dos webhook sources (Pull in data from a Webhook (1) y (2)). El (2) "CLAY_APPROVAL_WEBHOOK" fue creado durante esta sesión para el flujo App → Clay App Decision. **Se va a borrar al cambiar a Lemlist API direct.**
+- Filas duplicadas vacías en tabla Contacts creadas por el webhook (2) cuando intentamos upsert: **se borran al cierre**.
+- Columna `App Decision` (Text manual) creada en tabla Contacts: **se borra al cambiar a Lemlist API direct, o se deja sin uso si el usuario prefiere**.
+- Run conditions actuales en Clay incluyen `OR App Decision = "approved"` en Add Lead to Campaign y AI columns: **revertir a solo `Lead Scoring action = "enrich"` al hacer el switch a Lemlist API direct**.
 
-1. Modern Dental Laboratory está aprobada en Supabase como Valencia/ES pero el LinkedIn URL apunta a Modern Dental Group (HK). La verificación HTTP del paso B parte 4 no detecta este caso porque la URL carga. Gap futuro: validar que el nombre de empresa en la LinkedIn page matchee `company_name` de Supabase.
-2. DLP Dental Laboratory sigue aprobada en Supabase con URLs inventadas. Hay que rechazarla manual desde `/empresas` → pestaña Aprobadas → link "Mover a rechazadas" (agregado en PR #17). No se hizo todavía.
+**Estado en Supabase al cierre:**
 
-**Para retomar en una nueva sesión:**
+- Migraciones aplicadas: `contacts_migration.sql`, `contacts_clay_push_migration.sql`, `contacts_manual_review_migration.sql`. No hay migraciones nuevas pendientes para Sprint 3 fase 2.
+- Tabla `contacts` tiene varios registros con `human_decision='approved'` pero con `fit_action='enrich'` y `clay_pushed_at` no nulo (los manual_review aprobados durante esta sesión). Esos contactos están en bucket "En campaña" en la UI pero **no llegaron realmente a Lemlist** porque el push a Clay falló. Cuando esté lista la integración Lemlist API direct, posible re-correr para ellos.
 
-> Continúo weCAD4you-prospecting. Sprint 2 fase B está cerrado: el loop completo App ↔ Clay ↔ Lemlist está validado end-to-end con Tom Wiand (YES → enrich → en Lemlist) y Michelle O W. (YES → discard, ya quedó filtrada por run condition `Lead Scoring action = "enrich"`). Rama base por defecto: `claude/wecad4you-prospecting-app-Hltfi`. Antes de empezar a codear cualquier cosa, lee `CLAUDE.md` completo, `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Recordá las reglas: (a) todo lo que puedas hacer vos hacelo vos sin pedirme (editar, commit, push, PR, merge squash vía mcp__github) — solo pedime ayuda cuando no tengas alcance (Clay UI, Vercel env vars, Supabase SQL editor, Lemlist UI), (b) cuando me toque actuar fuera de la app, dame paso a paso muy detallado. Próximos bloques pendientes en orden sugerido: (1) cierres operativos sin código — sacar a Michelle de la campaña de Lemlist, rechazar DLP Dental Laboratory desde `/empresas` Aprobadas, (2) Sprint 3 — cola revisión manual score 5-7 + feedback loop a Supabase (`contact_feedback` ya migrado), (3) Sprint 4 — la app escribe contactos en HubSpot directo vía API (no Lemlist), (4) Sprint 5 — dashboard unificado. Antes de arrancar cualquier sprint nuevo, preguntame qué priorizar o si hay un bug/iteración primero.
+**Gaps conocidos al cierre:**
+
+1. Razones IA del Lead Scoring de Clay vienen en inglés. Solución: editar el prompt de Lead Scoring en Clay y agregar "Respond in Spanish (Latin American). The 'reason' field must be written in Spanish."
+2. Clay Find People devuelve gente histórica (ya no trabaja en la empresa target) — el size-aware pre-filter + la detección de "former/ex-" mitiga la mayoría pero no 100%.
+3. Empresas grandes tipo Aspen Dental (16k empleados) probablemente NO son fit real para el ICP (sweet spot 15-50). El usuario aceptó dejarla aprobada para validar el flujo.
+4. Modern Dental Laboratory aprobada como ES pero LinkedIn apunta a HK (gap viejo, no resuelto).
+
+**Para retomar en una nueva sesión (prompt de arranque):**
+
+> Continúo weCAD4you-prospecting. En la sesión anterior cerramos Sprint 3 fase 1 (cola Revisión manual + botones Aprobar/Rechazar/Recuperar + bulk delete + size-aware pre-filter + CAD priority + Haiku fallback + funnel diagnostics + delete companies/contacts). En el final intentamos cerrar el loop App → Clay para que las aprobaciones de Revisión manual dispararan Lemlist, pero **Clay API REST no expone row CRUD** (todas las URLs devuelven 404 "deprecated API endpoint" en /v1-v2 y "NoMatchingURL" en /v3, ver detalle en CLAUDE.md). Decisión final: bypaseamos Clay para approvals y vamos a integrar **Lemlist API directa** desde la app. Rama: `claude/validate-prospecting-loop-IRiLL`. Base: `claude/wecad4you-prospecting-app-Hltfi`. Antes de codear lee `CLAUDE.md` completo (especialmente la sección "Sprint 3 fase 2 → Lemlist API direct" que tiene el plan paso a paso), `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Reglas: vos hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist UI. Plan de hoy: implementar Lemlist API direct (1 lib client + 1 generador de mensajes con Claude + modificar decision endpoint + UI surface). Antes de codear pedime las dos env vars que voy a generar en Lemlist: `LEMLIST_API_KEY` y `LEMLIST_CAMPAIGN_ID`. Mientras tanto podés ir leyendo los docs y armando el plan.
