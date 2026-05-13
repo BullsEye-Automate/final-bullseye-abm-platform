@@ -36,6 +36,8 @@ type Contact = {
   status: string;
   clay_pushed_at: string | null;
   clay_push_error: string | null;
+  lemlist_pushed_at: string | null;
+  lemlist_push_error: string | null;
   human_decision: "approved" | "rejected" | null;
   human_decision_at: string | null;
   human_decision_reason: string | null;
@@ -74,6 +76,10 @@ export default function ContactosPage() {
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [clayDebug, setClayDebug] = useState<{
+    label: string;
+    payload: unknown;
+  } | null>(null);
+  const [lemlistDebug, setLemlistDebug] = useState<{
     label: string;
     payload: unknown;
   } | null>(null);
@@ -147,6 +153,7 @@ export default function ContactosPage() {
     setPushNotice(null);
     setError(null);
     setClayDebug(null);
+    setLemlistDebug(null);
     const res = await fetch(`/api/contacts/${contactId}/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -158,40 +165,29 @@ export default function ContactosPage() {
       setError(data.error ?? "Decisión fallida");
       return;
     }
-    // Surface el estado completo de la llamada a Clay (haya pasado o no)
-    // para poder diagnosticar sin dev tools.
+    let notice = "";
     if (decision === "approved") {
-      const cpd = data.clay_push_decision;
-      let label: string;
-      let payload: unknown;
-      if (cpd == null) {
-        label =
-          "Clay no se llamó. Posible causa: el contacto no tiene clay_pushed_at (no se empujó a Clay previamente).";
-        payload = {
-          clay_push_decision: null,
-          contact: {
-            id: data.contact?.id,
-            clay_pushed_at: data.contact?.clay_pushed_at,
-            human_decision: data.contact?.human_decision,
-            fit_action: data.contact?.fit_action,
-            status: data.contact?.status,
-            prefilter_result: data.contact?.prefilter_result
-          }
-        };
-        setClayDebug({ label, payload });
-      } else if (cpd.ok === false) {
-        label = "App aprobó OK pero Clay API falló al actualizar App Decision";
-        payload = cpd;
-        setClayDebug({ label, payload });
+      const lp = data.lemlist_push;
+      if (lp == null) {
+        notice = "Contacto aprobado. Pasa a Pendientes; el feedback se guardó.";
+      } else if (lp.ok === false) {
+        setLemlistDebug({
+          label: "App aprobó OK pero Lemlist falló al recibir el contacto",
+          payload: lp
+        });
+        notice =
+          "Contacto aprobado en la app, pero el push a Lemlist falló. Ver detalle abajo.";
       } else {
-        // ok=true → no mostramos nada extra, solo el success
+        notice = lp.messages_generated
+          ? `Contacto aprobado y empujado a Lemlist. Mensajes generados por Claude (${
+              lp.model_used ?? "modelo"
+            }).`
+          : "Contacto aprobado y empujado a Lemlist con los mensajes existentes.";
       }
+    } else {
+      notice = "Contacto rechazado. Pasa a Descartados; la razón se guardó.";
     }
-    setPushNotice(
-      decision === "approved"
-        ? "Contacto aprobado. Pasa a En campaña; el feedback se guardó."
-        : "Contacto rechazado. Pasa a Descartados; la razón se guardó."
-    );
+    setPushNotice(notice);
     await load();
   }
 
@@ -382,15 +378,34 @@ export default function ContactosPage() {
             <IconAlertCircle size={16} className="mt-0.5 shrink-0" />
             <div>{clayDebug.label}</div>
           </div>
-          <p className="text-xs text-ink-muted">
-            La aprobación quedó guardada en la app pero Clay no recibió la actualización.
-            Mándame este JSON para ajustar el formato del API.
-          </p>
           <pre className="bg-[#F4F2FB] rounded-md p-3 whitespace-pre-wrap break-words text-[11px] text-ink/80 max-h-96 overflow-auto">
             {JSON.stringify(clayDebug.payload, null, 2)}
           </pre>
           <button
             onClick={() => setClayDebug(null)}
+            className="btn-secondary text-xs"
+          >
+            Cerrar
+          </button>
+        </div>
+      )}
+
+      {lemlistDebug && (
+        <div className="card border border-warning-bg text-ink space-y-2">
+          <div className="flex items-start gap-2 text-warning-fg font-medium">
+            <IconAlertCircle size={16} className="mt-0.5 shrink-0" />
+            <div>{lemlistDebug.label}</div>
+          </div>
+          <p className="text-xs text-ink-muted">
+            La aprobación quedó guardada en la app y los mensajes se generaron, pero Lemlist
+            rechazó el lead. Verificá el contacto en la campaña; este JSON tiene la respuesta
+            cruda de la API para diagnosticar.
+          </p>
+          <pre className="bg-[#F4F2FB] rounded-md p-3 whitespace-pre-wrap break-words text-[11px] text-ink/80 max-h-96 overflow-auto">
+            {JSON.stringify(lemlistDebug.payload, null, 2)}
+          </pre>
+          <button
+            onClick={() => setLemlistDebug(null)}
             className="btn-secondary text-xs"
           >
             Cerrar
@@ -507,6 +522,9 @@ function ContactCard({
             {c.clay_pushed_at && (
               <span className="badge bg-success-bg text-success-fg">en Clay ✓</span>
             )}
+            {c.lemlist_pushed_at && (
+              <span className="badge bg-success-bg text-success-fg">en Lemlist ✓</span>
+            )}
             {c.fit_score !== null && (
               <span className={`badge ${scoreClass}`}>score {c.fit_score}/10</span>
             )}
@@ -582,7 +600,14 @@ function ContactCard({
       {c.clay_push_error && (
         <div className="text-xs text-danger-fg flex items-start gap-2">
           <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
-          <span className="break-words">{c.clay_push_error}</span>
+          <span className="break-words">Clay: {c.clay_push_error}</span>
+        </div>
+      )}
+
+      {c.lemlist_push_error && (
+        <div className="text-xs text-danger-fg flex items-start gap-2">
+          <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span className="break-words">Lemlist: {c.lemlist_push_error}</span>
         </div>
       )}
 
