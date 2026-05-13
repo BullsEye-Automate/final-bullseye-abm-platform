@@ -117,7 +117,7 @@ export default function DashboardPage() {
             />
             <DistributionCard
               title="Origen de teléfonos"
-              subtitle="De dónde vino el teléfono de cada contacto"
+              subtitle="Solo contactos pusheados a Lemlist (outreach activo)"
               icon={<IconPhone size={16} />}
               items={data.distribution.phone_sources}
               palette={PHONE_PALETTE}
