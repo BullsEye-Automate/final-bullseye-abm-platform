@@ -176,7 +176,9 @@ export async function POST(req: NextRequest) {
         supabase_contact_id: supabaseContact?.id ?? null,
         existing_phone: null
       },
-      lusha_debug: lusha.ok ? { phone: null, status: lusha.status } : { error: lusha.error, status: lusha.status }
+      lusha_debug: lusha.ok
+        ? { status: lusha.status, raw: lusha.raw, email_found: lusha.email }
+        : { error: lusha.error, status: lusha.status, debug: (lusha as { debug?: unknown }).debug }
     } as LookupResult);
   }
 

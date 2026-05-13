@@ -54,8 +54,33 @@ export async function lookupLushaPerson(
     };
   }
 
-  // Lusha v2 expone /person con filtros tipo array. Probamos en orden de
-  // confiabilidad: LinkedIn URL > email > nombre+empresa.
+  // Lusha v2 — probamos múltiples URL/method patterns en orden, devolvemos
+  // el primero que matchee. Diferentes versiones de Lusha API usan shapes
+  // distintos; defensive multi-try es la única manera estable.
+  //
+  // Lo que sabemos al 2026-05:
+  //   POST /v2/person + body { contacts: [{contactId, linkedinUrl}] } →
+  //     a veces 200 con results inline, a veces 201 (bulk async).
+  //   GET /v2/person?linkedinUrl=... → más confiable para single lookups,
+  //     siempre 200 cuando encuentra.
+  //   POST /v2/person + body { linkedinUrl } (sin contacts wrapper) →
+  //     algunas docs antiguas, vale la pena probar.
+
+  const candidates: Array<{ url: string; method: string; body?: string }> = [];
+  const qs = new URLSearchParams();
+  if (input.linkedinUrl) qs.set("linkedinUrl", input.linkedinUrl);
+  else if (input.email) qs.set("email", input.email);
+  else {
+    if (input.firstName) qs.set("firstName", input.firstName);
+    if (input.lastName) qs.set("lastName", input.lastName);
+    if (input.companyName) qs.set("companyName", input.companyName);
+  }
+
+  // 1) GET sincrónico (el más confiable según docs Lusha actuales).
+  candidates.push({ url: `${LUSHA_API_BASE}/v2/person?${qs.toString()}`, method: "GET" });
+
+  // 2) POST con contacts wrapper (el shape que usaba antes, por si Lusha
+  //    todavía lo soporta y a 201 le sigue con resultado en el body).
   const filter: Record<string, unknown> = {};
   if (input.linkedinUrl) filter.linkedinUrl = input.linkedinUrl;
   else if (input.email) filter.email = input.email;
@@ -63,51 +88,97 @@ export async function lookupLushaPerson(
     filter.fullName = `${input.firstName} ${input.lastName}`.trim();
     if (input.companyName) filter.companies = [{ name: input.companyName }];
   }
+  candidates.push({
+    url: `${LUSHA_API_BASE}/v2/person`,
+    method: "POST",
+    body: JSON.stringify({ contacts: [{ contactId: "1", ...filter }] })
+  });
 
-  const body = {
-    contacts: [{ contactId: "1", ...filter }]
-  };
+  // 3) POST flat (sin contacts wrapper) — shape de docs antiguas.
+  candidates.push({
+    url: `${LUSHA_API_BASE}/v2/person`,
+    method: "POST",
+    body: JSON.stringify(filter)
+  });
 
-  let res: Response;
-  try {
-    res = await fetch(`${LUSHA_API_BASE}/v2/person`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify(body),
-      cache: "no-store"
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Network error";
-    return { ok: false, status: 0, error: message };
-  }
+  const attempts: Array<{ url: string; method: string; status: number; preview: string }> = [];
+  let lastParsed: unknown = null;
+  let lastStatus = 0;
 
-  const rawText = await res.text();
-  let parsed: unknown = null;
-  try {
-    parsed = rawText ? JSON.parse(rawText) : null;
-  } catch {
-    parsed = { raw: rawText.slice(0, 600) };
-  }
+  for (const c of candidates) {
+    let res: Response;
+    try {
+      res = await fetch(c.url, {
+        method: c.method,
+        headers: authHeaders(),
+        body: c.body,
+        cache: "no-store"
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Network error";
+      attempts.push({ url: c.url, method: c.method, status: 0, preview: message });
+      continue;
+    }
 
-  if (!res.ok) {
-    return {
-      ok: false,
+    const rawText = await res.text();
+    let parsed: unknown = null;
+    try {
+      parsed = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      parsed = { raw: rawText.slice(0, 600) };
+    }
+
+    attempts.push({
+      url: c.url,
+      method: c.method,
       status: res.status,
-      error: `Lusha ${res.status}`,
-      debug: parsed
-    };
+      preview: rawText.slice(0, 200)
+    });
+
+    lastParsed = parsed;
+    lastStatus = res.status;
+
+    if (!res.ok) {
+      // Si es 4xx claro (auth, bad input), abortamos — no tiene sentido
+      // seguir probando.
+      if (res.status >= 400 && res.status < 500 && res.status !== 404) {
+        return {
+          ok: false,
+          status: res.status,
+          error: `Lusha ${res.status}`,
+          debug: { attempts, response: parsed }
+        };
+      }
+      continue;
+    }
+
+    // 2xx — extraemos phone. Si encontramos algo, devolvemos.
+    const phones = extractPhones(parsed);
+    if (phones.bestPhone) {
+      return {
+        ok: true,
+        status: res.status,
+        phone: phones.bestPhone,
+        mobile: phones.mobile,
+        direct: phones.direct,
+        email: extractEmail(parsed),
+        raw: parsed
+      };
+    }
   }
 
-  const phones = extractPhones(parsed);
-  const email = extractEmail(parsed);
+  // Ningún candidato devolvió phone. Reportamos el último parsed para que
+  // el SDR vea qué dijo Lusha.
+  const phones = extractPhones(lastParsed);
+  const email = extractEmail(lastParsed);
   return {
     ok: true,
-    status: res.status,
+    status: lastStatus || 200,
     phone: phones.bestPhone,
     mobile: phones.mobile,
     direct: phones.direct,
     email,
-    raw: parsed
+    raw: { attempts, last_response: lastParsed }
   };
 }
 
