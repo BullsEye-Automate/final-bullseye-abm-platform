@@ -279,23 +279,23 @@ const COMPANY_PROPERTIES: PropertyDef[] = [
 let ensuredContacts = false;
 let ensuredCompanies = false;
 
-export async function ensureContactProperties(): Promise<{
+export async function ensureContactProperties(opts: { force?: boolean } = {}): Promise<{
   ok: boolean;
   created: string[];
   errors: Array<{ property: string; error: string }>;
 }> {
-  if (ensuredContacts) return { ok: true, created: [], errors: [] };
+  if (!opts.force && ensuredContacts) return { ok: true, created: [], errors: [] };
   const result = await ensureForObject("contacts", CONTACT_PROPERTIES);
   if (result.ok) ensuredContacts = true;
   return result;
 }
 
-export async function ensureCompanyProperties(): Promise<{
+export async function ensureCompanyProperties(opts: { force?: boolean } = {}): Promise<{
   ok: boolean;
   created: string[];
   errors: Array<{ property: string; error: string }>;
 }> {
-  if (ensuredCompanies) return { ok: true, created: [], errors: [] };
+  if (!opts.force && ensuredCompanies) return { ok: true, created: [], errors: [] };
   const result = await ensureForObject("companies", COMPANY_PROPERTIES);
   if (result.ok) ensuredCompanies = true;
   return result;
