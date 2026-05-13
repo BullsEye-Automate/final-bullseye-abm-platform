@@ -188,6 +188,8 @@ export type HubSpotContactInput = {
   human_decision_reason: string | null;
   clay_pushed_at: string | null;
   lemlist_pushed_at: string | null;
+  phone_enrichment_status?: string | null;
+  phone_source?: string | null;
   hubspot_contact_id?: string | null;
 };
 
@@ -301,6 +303,11 @@ function buildContactProperties(
   if (c.email_body) props.wecad_email_body = c.email_body;
   if (c.clay_pushed_at) props.wecad_clay_pushed_at = c.clay_pushed_at;
   if (c.lemlist_pushed_at) props.wecad_lemlist_pushed_at = c.lemlist_pushed_at;
+  if (c.phone_enrichment_status) {
+    props.wecad_phone_enrichment_status = c.phone_enrichment_status;
+  }
+  if (c.phone_source) props.wecad_phone_source = c.phone_source;
+  if (c.phone) props.phone = c.phone;
   if (process.env.LEMLIST_CAMPAIGN_ID) {
     props.wecad_lemlist_campaign = process.env.LEMLIST_CAMPAIGN_ID;
   }

@@ -71,11 +71,13 @@ function buildPayload(lead: LemlistLead): Record<string, unknown> {
 // que ha sido estable por años. El v2 es el namespace más nuevo pero
 // menos consistente — lo dejamos como último recurso.
 // Flags de enrichment para que Lemlist dispare su waterfall al insertar.
-// Solo email — el teléfono cuesta 20 créditos vs 5 del email; mejor que
-// el SDR pida teléfono manual con Lusha cuando lo necesite (Sprint 3+).
+// Email + phone — Lemlist es ~10x más barato que Lusha por phone, así que
+// pagamos Lemlist proactivo y reservamos Lusha solo como fallback cuando
+// Lemlist no encuentra (lib/phoneEnrichment.ts).
 // linkedinEnrichment llena seniority/tenure desde LinkedIn (sin costo
 // extra documentado). Lemlist ignora query params desconocidos silencioso.
-const ENRICHMENT_QUERY = "findEmail=true&verifyEmail=true&linkedinEnrichment=true";
+const ENRICHMENT_QUERY =
+  "findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true";
 
 function buildCandidateRequests(
   campaignId: string,
@@ -89,7 +91,7 @@ function buildCandidateRequests(
   if (email) {
     const enc = encodeURIComponent(email);
     requests.push({
-      url: `${LEMLIST_API_BASE}/campaigns/${id}/leads/${enc}?verifyEmail=true`,
+      url: `${LEMLIST_API_BASE}/campaigns/${id}/leads/${enc}?verifyEmail=true&findPhone=true`,
       method: "POST"
     });
   }
@@ -207,6 +209,113 @@ export async function addLeadToCampaign(
     ok: false,
     status: last?.status ?? 0,
     error: `Lemlist rejected the lead on all ${attempts.length} URL pattern(s) tried`,
+    debug: { attempts }
+  };
+}
+
+// ============================================================================
+// GET lead — devuelve el estado actual del lead (enriquecimientos incluidos).
+// Probamos varios URL patterns igual que el push, porque Lemlist no documenta
+// claramente la canonical URL y los endpoints han variado entre versiones.
+// ============================================================================
+
+export type LemlistLeadFetched = {
+  _id?: string;
+  email?: string | null;
+  phone?: string | null;
+  mobilePhone?: string | null;
+  directPhone?: string | null;
+  // Lemlist a veces guarda los teléfonos en custom fields anidados; los
+  // intentamos también más abajo (extractPhone).
+  [key: string]: unknown;
+};
+
+export type LemlistGetResult =
+  | { ok: true; status: number; lead: LemlistLeadFetched; phone: string | null }
+  | { ok: false; status: number; error: string; debug?: unknown };
+
+function extractPhone(lead: LemlistLeadFetched): string | null {
+  // Lemlist mete teléfonos en varios campos según el origen del enrichment
+  // (LinkedIn enrichment vs phone finder vs manual). Probamos en orden.
+  const candidates = [
+    lead.phone,
+    lead.mobilePhone,
+    lead.directPhone,
+    (lead as Record<string, unknown>).phoneNumber,
+    (lead as Record<string, unknown>).workPhone
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim().length > 4) return c.trim();
+  }
+  return null;
+}
+
+export async function getLemlistLeadByEmail(
+  campaignId: string,
+  email: string
+): Promise<LemlistGetResult> {
+  if (!process.env.LEMLIST_API_KEY) {
+    return { ok: false, status: 500, error: "LEMLIST_API_KEY is not configured" };
+  }
+  const id = encodeURIComponent(campaignId);
+  const enc = encodeURIComponent(email);
+  const urls = [
+    `${LEMLIST_API_BASE}/v2/campaigns/${id}/leads/${enc}`,
+    `${LEMLIST_API_BASE}/campaigns/${id}/leads/${enc}`,
+    `${LEMLIST_API_BASE}/leads/${enc}`
+  ];
+  return tryGetUrls(urls);
+}
+
+export async function getLemlistLeadById(leadId: string): Promise<LemlistGetResult> {
+  if (!process.env.LEMLIST_API_KEY) {
+    return { ok: false, status: 500, error: "LEMLIST_API_KEY is not configured" };
+  }
+  const enc = encodeURIComponent(leadId);
+  const urls = [
+    `${LEMLIST_API_BASE}/v2/leads/${enc}`,
+    `${LEMLIST_API_BASE}/leads/${enc}`
+  ];
+  return tryGetUrls(urls);
+}
+
+async function tryGetUrls(urls: string[]): Promise<LemlistGetResult> {
+  const attempts: Array<{ url: string; status: number; preview: string }> = [];
+  for (const url of urls) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: buildAuthHeader(), Accept: "application/json" },
+        cache: "no-store"
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Network error";
+      attempts.push({ url, status: 0, preview: message });
+      continue;
+    }
+    const raw = await res.text();
+    if (res.ok) {
+      let parsed: LemlistLeadFetched = {};
+      try {
+        parsed = (raw ? JSON.parse(raw) : {}) as LemlistLeadFetched;
+      } catch {
+        parsed = {};
+      }
+      return {
+        ok: true,
+        status: res.status,
+        lead: parsed,
+        phone: extractPhone(parsed)
+      };
+    }
+    attempts.push({ url, status: res.status, preview: raw.slice(0, 200) });
+  }
+  const last = attempts[attempts.length - 1];
+  return {
+    ok: false,
+    status: last?.status ?? 0,
+    error: `Lemlist GET failed on all ${attempts.length} URL pattern(s)`,
     debug: { attempts }
   };
 }

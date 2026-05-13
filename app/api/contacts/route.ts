@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CONTACT_COLUMNS =
-  "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, phone, seniority, tenure, prefilter_result, prefilter_reason, fit_score, fit, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, status, clay_row_id, clay_pushed_at, clay_push_error, lemlist_lead_id, lemlist_pushed_at, lemlist_push_error, hubspot_contact_id, hubspot_synced_at, hubspot_sync_error, human_decision, human_decision_at, human_decision_reason, human_decision_by, created_at, updated_at";
+  "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, phone, seniority, tenure, prefilter_result, prefilter_reason, fit_score, fit, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, status, clay_row_id, clay_pushed_at, clay_push_error, lemlist_lead_id, lemlist_pushed_at, lemlist_push_error, hubspot_contact_id, hubspot_synced_at, hubspot_sync_error, phone_enrichment_status, phone_source, phone_enriched_at, lusha_lookup_at, lemlist_lookup_at, human_decision, human_decision_at, human_decision_reason, human_decision_by, created_at, updated_at";
 
 // Filtros compartidos entre la query principal y los contadores.
 // manual_review excluye contactos con veredicto humano (esos pasan a enriched o discarded).

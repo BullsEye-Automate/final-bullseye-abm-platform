@@ -41,6 +41,14 @@ type Contact = {
   hubspot_contact_id: string | null;
   hubspot_synced_at: string | null;
   hubspot_sync_error: string | null;
+  phone_enrichment_status:
+    | "lemlist_pending"
+    | "requested"
+    | "done_lemlist"
+    | "done_lusha"
+    | "not_found"
+    | null;
+  phone_source: "lemlist" | "lusha" | null;
   human_decision: "approved" | "rejected" | null;
   human_decision_at: string | null;
   human_decision_reason: string | null;
@@ -80,6 +88,7 @@ export default function ContactosPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [retryingHubspotId, setRetryingHubspotId] = useState<string | null>(null);
+  const [enrichingPhoneId, setEnrichingPhoneId] = useState<string | null>(null);
   const [clayDebug, setClayDebug] = useState<{
     label: string;
     payload: unknown;
@@ -254,6 +263,29 @@ export default function ContactosPage() {
       setError(`HubSpot rechazó el contacto: ${hp.error}`);
     } else {
       setPushNotice(`${label} sincronizado a HubSpot ${hp?.created ? "(nuevo)" : "(update)"}.`);
+    }
+    await load();
+  }
+
+  async function enrichPhone(contactId: string, label: string) {
+    setEnrichingPhoneId(contactId);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch(`/api/enrich/phone/${contactId}`, { method: "POST" });
+    const data = await res.json();
+    setEnrichingPhoneId(null);
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo enriquecer el teléfono");
+      return;
+    }
+    if (data.status === "not_found") {
+      setPushNotice(`${label}: Lemlist + Lusha no encontraron teléfono.`);
+    } else if (data.status === "skipped_already_set") {
+      setPushNotice(`${label}: ya tenía teléfono (${data.phone}).`);
+    } else {
+      setPushNotice(
+        `${label}: teléfono enriquecido (${data.phone}) vía ${data.source}.`
+      );
     }
     await load();
   }
@@ -511,6 +543,8 @@ export default function ContactosPage() {
                     isRetryingLemlist={retryingId === c.id}
                     onRetryHubspot={retryHubspot}
                     isRetryingHubspot={retryingHubspotId === c.id}
+                    onEnrichPhone={enrichPhone}
+                    isEnrichingPhone={enrichingPhoneId === c.id}
                   />
                 ))}
               </div>
@@ -557,7 +591,9 @@ function ContactCard({
   onRetryLemlist,
   isRetryingLemlist,
   onRetryHubspot,
-  isRetryingHubspot
+  isRetryingHubspot,
+  onEnrichPhone,
+  isEnrichingPhone
 }: {
   c: Contact;
   bucket: Bucket;
@@ -571,6 +607,8 @@ function ContactCard({
   isRetryingLemlist: boolean;
   onRetryHubspot: (id: string, label: string) => void | Promise<void>;
   isRetryingHubspot: boolean;
+  onEnrichPhone: (id: string, label: string) => void | Promise<void>;
+  isEnrichingPhone: boolean;
 }) {
   const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
   const scoreClass =
@@ -594,6 +632,10 @@ function ContactCard({
   const canRetryHubspot =
     c.human_decision === "approved" &&
     (!c.hubspot_contact_id || !!c.hubspot_sync_error);
+  const canEnrichPhone =
+    c.human_decision === "approved" &&
+    !c.phone &&
+    c.phone_enrichment_status !== "not_found";
   // En el bucket Descartados ofrecemos solo "Aprobar" (recuperar). Sirve
   // para rescatar false negatives del pre-filter o falsos discard de Clay.
   const canRecover = bucket === "discarded" && c.human_decision !== "approved";
@@ -618,6 +660,23 @@ function ContactCard({
             {c.hubspot_contact_id && (
               <span className="badge bg-success-bg text-success-fg">en HubSpot ✓</span>
             )}
+            {c.phone && (
+              <span className="badge bg-success-bg text-success-fg">
+                📞 {c.phone_source ? c.phone_source : "phone"}
+              </span>
+            )}
+            {!c.phone && c.phone_enrichment_status === "not_found" && (
+              <span className="badge bg-warning-bg text-warning-fg">
+                sin tel (Lemlist+Lusha vacío)
+              </span>
+            )}
+            {!c.phone &&
+              (c.phone_enrichment_status === "lemlist_pending" ||
+                c.phone_enrichment_status === "requested") && (
+                <span className="badge bg-brand-tint text-brand">
+                  tel: buscando…
+                </span>
+              )}
             {c.fit_score !== null && (
               <span className={`badge ${scoreClass}`}>score {c.fit_score}/10</span>
             )}
@@ -788,6 +847,17 @@ function ContactCard({
               : c.hubspot_contact_id
               ? "Resync HubSpot"
               : "Sincronizar a HubSpot"}
+          </button>
+        )}
+        {canEnrichPhone && (
+          <button
+            onClick={() => onEnrichPhone(c.id, fullName)}
+            disabled={isEnrichingPhone}
+            className="btn-secondary text-xs"
+            title="Lemlist primero (más barato), Lusha fallback. ~1-5 seg."
+          >
+            <IconRefresh size={12} />
+            {isEnrichingPhone ? "Buscando…" : "Buscar teléfono"}
           </button>
         )}
         <button
