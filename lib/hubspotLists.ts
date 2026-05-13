@@ -101,11 +101,16 @@ function numberBetween(property: string, low: number, high: number): V3Filter {
   };
 }
 
+// "Phone has any value" se modela en v3 lists como STRING NEQ "":
+// IS_KNOWN/HAS_PROPERTY pide [value] required en este endpoint (validado
+// empíricamente contra la API). NEQ "" matchea todo phone no-vacío y
+// excluye el resto (incluido null por simetría con cómo HubSpot maneja
+// missing properties en filtros).
 function isKnown(property: string): V3Filter {
   return {
     property,
     filterType: "PROPERTY",
-    operation: { operationType: "STRING", operator: "IS_KNOWN" }
+    operation: { operationType: "STRING", operator: "NEQ", value: "" }
   };
 }
 
@@ -113,15 +118,18 @@ function isNotKnown(property: string): V3Filter {
   return {
     property,
     filterType: "PROPERTY",
-    operation: { operationType: "STRING", operator: "NOT_KNOWN" }
+    operation: { operationType: "STRING", operator: "EQ", value: "" }
   };
 }
 
-function datetimeBefore(property: string, isoTimestamp: string): V3Filter {
+// HubSpot v3 lists espera timestamp como epoch milliseconds (long),
+// no ISO string. La API tira "Cannot deserialize value of type long
+// from String" cuando recibe ISO.
+function datetimeBefore(property: string, epochMs: number): V3Filter {
   return {
     property,
     filterType: "PROPERTY",
-    operation: { operationType: "DATETIME", operator: "IS_BEFORE_DATE", timestamp: isoTimestamp }
+    operation: { operationType: "DATETIME", operator: "IS_BEFORE_DATE", timestamp: epochMs }
   };
 }
 
@@ -201,7 +209,7 @@ export async function ensureList(def: ListDef): Promise<
 // Definiciones de las 7 listas que el SDR usa día a día.
 // ============================================================================
 
-const TODAY_END = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+const TODAY_END_MS = Date.now() + 24 * 60 * 60 * 1000;
 
 export const LIST_DEFINITIONS: ListDef[] = [
   {
@@ -259,7 +267,7 @@ export const LIST_DEFINITIONS: ListDef[] = [
       "Leads en BAD_TIMING con callback agendado para hoy o antes.",
     filterBranch: andOnly([
       enumIn("hs_lead_status", ["BAD_TIMING"]),
-      datetimeBefore("wecad_callback_date", TODAY_END)
+      datetimeBefore("wecad_callback_date", TODAY_END_MS)
     ])
   },
   {
