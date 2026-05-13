@@ -31,7 +31,7 @@ export async function intakeContactsForCompany(
 ): Promise<IntakeResult> {
   const { data: company, error: cErr } = await db
     .from("companies")
-    .select("id, company_type, company_name")
+    .select("id, company_type, company_name, company_size")
     .eq("id", companyId)
     .maybeSingle();
   if (cErr) return { ok: false, status: 500, error: cErr.message };
@@ -64,7 +64,8 @@ export async function intakeContactsForCompany(
       prefilter = await runPrefilter({
         job_title: c.job_title ?? null,
         linkedin_headline: c.linkedin_headline ?? null,
-        company_type: company.company_type ?? null
+        company_type: company.company_type ?? null,
+        company_size: company.company_size ?? null
       });
     } catch {
       // Si Claude falla, marcamos yes para no descartar el contacto por error de infra.

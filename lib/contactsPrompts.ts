@@ -4,17 +4,36 @@ export const PREFILTER_SYSTEM = `You are a B2B sales filter for weCAD4you, a den
 
 weCAD4you targets dental laboratories, multi-location dental clinics, and DSOs that use digital workflows (exocad, inLab, 3Shape, Dental Wings). The ideal contact is someone who makes purchasing decisions OR directly manages production / clinical operations at a dental lab, clinic, or DSO.`;
 
+function sizeBand(size: number | null): "small" | "medium" | "large" | "unknown" {
+  if (size == null) return "unknown";
+  if (size <= 30) return "small";
+  if (size <= 100) return "medium";
+  return "large";
+}
+
 export function prefilterUserPrompt(args: {
   job_title: string | null;
   linkedin_headline: string | null;
   company_type: string | null;
+  company_size: number | null;
 }): string {
+  const band = sizeBand(args.company_size);
+  const sizeText =
+    args.company_size != null ? `${args.company_size} employees (${band})` : "unknown size";
+
   return `CONTACT:
 - Job title: ${args.job_title ?? "(unknown)"}
 - LinkedIn headline: ${args.linkedin_headline ?? "(unknown)"}
 - Company type: ${args.company_type ?? "(unknown)"}
+- Company size: ${sizeText}
 
-Answer YES if the contact's role clearly relates to DENTAL OPERATIONS, PRODUCTION, or PURCHASING:
+COMPANY-SIZE STRICTNESS — adjust your threshold based on the band:
+- SMALL labs (≤30 employees): be GENEROUS. In a 10-person lab, even a "Lead Dental Technician", "Senior CAD Designer", "Production Lead", or "Senior Lab Technician" usually influences buying decisions. Owner / founder / president → YES even with vague titles. Anyone with "lead" or "senior" + lab/CAD/production context → YES.
+- MEDIUM labs (31-100 employees): STANDARD strictness. Require a clear management or operations role. Pure technicians without "lead/senior" + management context → NO.
+- LARGE / DSO (>100 employees) — CRITICAL filter for noise: Only senior buyer roles. VP, Director, Senior Manager, Chief, Head of + (Operations | Production | Clinical Services | Lab | CAD/CAM | Manufacturing | Digital). Regular "Manager" or "Coordinator" titles → NO unless they EXPLICITLY mention overseeing CAD, lab, multi-site operations, or production. A single-location Office Manager or Practice Manager at a 1000+ employee DSO is too operational → NO. Regional / District / Area Manager → YES only if the role clearly oversees dental operations (not marketing/HR regions).
+- UNKNOWN size: apply the MEDIUM rules as default.
+
+Answer YES if the contact's role clearly relates to DENTAL OPERATIONS, PRODUCTION, or PURCHASING (with strictness adjusted by the band above):
 - Lab owner, director, president, founder, partner, or general manager
 - Production manager, lab manager, operations manager, or workflow manager
 - Digital workflow manager, CAD/CAM manager, or production coordinator
