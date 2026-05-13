@@ -179,6 +179,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (fresh) {
       // Push company a HubSpot primero (necesitamos su id para asociar).
       let hubspotCompanyId: string | null = null;
+      let companySnapshot: {
+        company_type: string | null;
+        cad_software: string | null;
+        scanner_technology: string | null;
+      } | null = null;
       if (fresh.company_id) {
         const { data: companyRow } = await db
           .from("companies")
@@ -190,12 +195,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         if (companyRow) {
           const cRes = await pushCompanyToHubSpot(db, companyRow as HubSpotCompanyInput);
           if (cRes.ok) hubspotCompanyId = cRes.hubspot_id;
+          companySnapshot = {
+            company_type: companyRow.company_type,
+            cad_software: companyRow.cad_software,
+            scanner_technology: companyRow.scanner_technology
+          };
         }
       }
       hubspot_push = await pushContactToHubSpot(
         db,
         fresh as HubSpotContactInput,
-        hubspotCompanyId
+        hubspotCompanyId,
+        companySnapshot
       );
     }
   }
