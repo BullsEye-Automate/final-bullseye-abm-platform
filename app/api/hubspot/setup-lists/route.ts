@@ -16,9 +16,11 @@ export const maxDuration = 60;
 // las listas referencian — si no, los filtros tirarían 400.
 
 export async function POST(_req: NextRequest) {
-  // 1) Asegurar custom props (contacts + companies).
-  const contactProps = await ensureContactProperties();
-  const companyProps = await ensureCompanyProperties();
+  // 1) Asegurar custom props (contacts + companies). Forzamos saltarse el
+  // cache de instance porque el usuario puede correr esto para crear
+  // properties nuevas que se agregaron en commits posteriores.
+  const contactProps = await ensureContactProperties({ force: true });
+  const companyProps = await ensureCompanyProperties({ force: true });
 
   // 2) Crear las listas.
   const results: Array<{
