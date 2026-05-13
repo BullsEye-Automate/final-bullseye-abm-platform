@@ -23,7 +23,7 @@ const SECTIONS: Section[] = [
   {
     label: "Prospección",
     items: [
-      { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard, disabled: true },
+      { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
       { href: "/empresas",  label: "Empresas",  icon: IconBuildingFactory2 },
       { href: "/contactos", label: "Contactos", icon: IconUsers }
     ]
