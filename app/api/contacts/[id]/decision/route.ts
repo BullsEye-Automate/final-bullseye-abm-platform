@@ -58,6 +58,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const now = new Date().toISOString();
+  // Distinguimos "approve desde manual_review" (fit_action='enrich' → En campaña)
+  // vs "recover desde Descartados" (fit_action=null + status=pending → Pendientes).
+  // Un contacto se considera recovery si estaba descartado por prefilter NO o
+  // status discarded — no por fit_action='manual_review'.
+  const isRecovery =
+    body.decision === "approved" &&
+    (contact.status === "discarded" || contact.prefilter_result === "no");
+
   const update: Record<string, any> =
     body.decision === "approved"
       ? {
@@ -65,15 +73,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           human_decision_at: now,
           human_decision_reason: body.reason?.trim() || null,
           human_decision_by: reviewer,
-          fit_action: "enrich",
-          // Si el contacto venía de Descartados (status=discarded o prefilter=no),
-          // lo "rehabilitamos": vuelve a pending y se considera prefilter YES
-          // para que pueda empujarse a Clay. La razón del descarte queda en
-          // contact_feedback como histórico.
-          ...(contact.status === "discarded" ? { status: "pending" } : {}),
-          ...(contact.prefilter_result === "no" ? { prefilter_result: "yes" } : {}),
           clay_pushed_at: null,
-          clay_push_error: null
+          clay_push_error: null,
+          ...(isRecovery
+            ? {
+                // Recuperación desde Descartados: vuelve a Pendientes como
+                // contacto fresco, listo para empujarse a Clay.
+                fit_action: null,
+                status: "pending",
+                ...(contact.prefilter_result === "no" ? { prefilter_result: "yes" } : {})
+              }
+            : {
+                // Aprobación desde Revisión manual (score 5-7 de Clay):
+                // el humano decidió enriquecer → marca fit_action=enrich.
+                fit_action: "enrich"
+              })
         }
       : {
           human_decision: "rejected",
