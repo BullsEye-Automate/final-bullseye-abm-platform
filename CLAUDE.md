@@ -163,6 +163,26 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 - `CLAY_COMPANIES_WEBHOOK_URL` — set ✅
 - `CLAY_CONTACTS_WEBHOOK_URL` — set ✅
 - `CLAY_WEBHOOK_SECRET` — set ✅ (requiere header `x-webhook-secret` en raw-contacts)
+- `CLAY_APPROVAL_WEBHOOK_URL` — **pendiente** ⚠️ (para notificar a Clay cuando se aprueba un contacto en Revisión manual; ver setup abajo)
+
+**Cableado de App → Clay para Revisión manual (cierra el loop):**
+
+Cuando un humano aprueba un contacto en Revisión manual de la app, hay que actualizarlo en Clay para que `Add Lead to Campaign` lo mande a Lemlist. Setup:
+
+1. **En Clay**, tabla **Contacts**:
+   - Agregar columna manual **"App Decision"** (Text, sin source).
+   - Crear webhook source nuevo que escuche payloads `{wecad_contact_id, app_decision, first_name, last_name}` y mapee `app_decision` → columna "App Decision" reconciliando por `wecad_contact_id`.
+   - Copiar la URL del webhook → setear en Vercel como `CLAY_APPROVAL_WEBHOOK_URL`.
+   - Actualizar la run condition de **Add Lead to Campaign** y opcionalmente de **LinkedIn Icebreaker**, **Email Personalizer**, **email_subject**, **email_body** a:
+     ```
+     Lead Scoring action = "enrich" OR App Decision = "approved"
+     ```
+   - Esto evita gastar créditos enriqueciendo contactos en manual_review y los habilita al aprobar.
+
+2. **Flujo end-to-end después del setup**:
+   - Contacto YES → push App → Clay → Lead Scoring → action `manual_review` → AI columns y Lemlist NO corren.
+   - Usuario aprueba en `/contactos` Revisión manual → endpoint `/api/contacts/[id]/decision` actualiza Supabase y POSTea a `CLAY_APPROVAL_WEBHOOK_URL` con `{wecad_contact_id, app_decision: "approved"}`.
+   - Clay setea App Decision = "approved" → run conditions matchean → AI columns corren si faltaban → Add Lead to Campaign empuja a Lemlist.
 
 **Estado original donde quedó la sesión anterior (mantenido por contexto):**
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { pushDecisionToClay } from "@/lib/clayPushDecision";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { data: contact, error: fetchErr } = await db
     .from("contacts")
     .select(
-      "id, company_id, job_title, linkedin_headline, fit_score, fit_action, status, human_decision, prefilter_result"
+      "id, company_id, job_title, linkedin_headline, fit_score, fit_action, status, human_decision, prefilter_result, clay_pushed_at"
     )
     .eq("id", params.id)
     .maybeSingle();
@@ -121,5 +122,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (fbErr) return NextResponse.json({ error: fbErr.message }, { status: 500 });
 
-  return NextResponse.json({ contact: updated });
+  // Si fue aprobación desde Revisión manual (NO recovery de Descartados),
+  // notificamos a Clay para que la fila correspondiente en la tabla Contacts
+  // marque "App Decision = approved" y dispare las run conditions de Lemlist.
+  // Recovery no necesita esto porque el contacto vuelve a Pendientes y el
+  // usuario empuja manualmente a Clay desde ahí.
+  let clay_push_decision: { ok: boolean; error?: string } | null = null;
+  if (body.decision === "approved" && !isRecovery && contact.clay_pushed_at) {
+    const r = await pushDecisionToClay(db, params.id, "approved");
+    clay_push_decision = r.ok ? { ok: true } : { ok: false, error: r.error };
+  }
+
+  return NextResponse.json({ contact: updated, clay_push_decision });
 }
