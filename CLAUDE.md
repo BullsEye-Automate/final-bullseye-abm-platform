@@ -163,16 +163,18 @@ Ver `docs/contexto_sistema.md` y `docs/notas_arquitectura.md` (subidos por el us
 - `CLAY_COMPANIES_WEBHOOK_URL` — set ✅
 - `CLAY_CONTACTS_WEBHOOK_URL` — set ✅
 - `CLAY_WEBHOOK_SECRET` — set ✅ (requiere header `x-webhook-secret` en raw-contacts)
-- `CLAY_APPROVAL_WEBHOOK_URL` — **pendiente** ⚠️ (para notificar a Clay cuando se aprueba un contacto en Revisión manual; ver setup abajo)
+- `CLAY_APPROVAL_WEBHOOK_URL` — **obsoleta, ya no se usa** (reemplazada por Clay REST API)
+- `CLAY_API_TOKEN` — **pendiente** ⚠️ (Bearer token de Clay; Settings → API key)
+- `CLAY_CONTACTS_TABLE_ID` — **pendiente** ⚠️ (id de la tabla Contacts en Clay, formato `t_xxx`)
 
-**Cableado de App → Clay para Revisión manual (cierra el loop):**
+**Cableado de App → Clay para Revisión manual (cierra el loop con Clay REST API):**
 
-Cuando un humano aprueba un contacto en Revisión manual de la app, hay que actualizarlo en Clay para que `Add Lead to Campaign` lo mande a Lemlist. Setup:
+Cuando un humano aprueba un contacto en Revisión manual de la app, hay que actualizar la columna "App Decision" en Clay para que `Add Lead to Campaign` lo mande a Lemlist. Usamos la **Clay REST API** directamente (los webhook sources de Clay no soportan upsert por key, sólo inserts).
 
-1. **En Clay**, tabla **Contacts**:
-   - Agregar columna manual **"App Decision"** (Text, sin source).
-   - Crear webhook source nuevo que escuche payloads `{wecad_contact_id, app_decision, first_name, last_name}` y mapee `app_decision` → columna "App Decision" reconciliando por `wecad_contact_id`.
-   - Copiar la URL del webhook → setear en Vercel como `CLAY_APPROVAL_WEBHOOK_URL`.
+1. **En Clay**:
+   - Settings → Account → API key: copiar el token → setear en Vercel como `CLAY_API_TOKEN`.
+   - Tabla Contacts: copiar el `table_id` de la URL (`https://app.clay.com/workspaces/{ws}/workbooks/{wb}/tables/{table_id}/...`) → setear en Vercel como `CLAY_CONTACTS_TABLE_ID`.
+   - Crear columna manual **"App Decision"** (Text, sin source).
    - Actualizar la run condition de **Add Lead to Campaign** y opcionalmente de **LinkedIn Icebreaker**, **Email Personalizer**, **email_subject**, **email_body** a:
      ```
      Lead Scoring action = "enrich" OR App Decision = "approved"
@@ -181,8 +183,10 @@ Cuando un humano aprueba un contacto en Revisión manual de la app, hay que actu
 
 2. **Flujo end-to-end después del setup**:
    - Contacto YES → push App → Clay → Lead Scoring → action `manual_review` → AI columns y Lemlist NO corren.
-   - Usuario aprueba en `/contactos` Revisión manual → endpoint `/api/contacts/[id]/decision` actualiza Supabase y POSTea a `CLAY_APPROVAL_WEBHOOK_URL` con `{wecad_contact_id, app_decision: "approved"}`.
+   - Usuario aprueba en `/contactos` Revisión manual → endpoint `/api/contacts/[id]/decision` actualiza Supabase y llama a Clay REST API: `GET /v3/tables/{id}/rows?filter[Wecad Contact Id]={uuid}` → `PATCH /v3/tables/{id}/rows/{row_id}` con `{App Decision: "approved"}`.
    - Clay setea App Decision = "approved" → run conditions matchean → AI columns corren si faltaban → Add Lead to Campaign empuja a Lemlist.
+
+3. **Si la Clay REST API responde con error**, el response del endpoint `/api/contacts/[id]/decision` incluye `clay_push_decision.debug` con el payload de respuesta de Clay. Útil para diagnosticar si el filter pattern de la query no matchea con la API real.
 
 **Estado original donde quedó la sesión anterior (mantenido por contexto):**
 

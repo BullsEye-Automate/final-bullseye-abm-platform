@@ -130,10 +130,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // marque "App Decision = approved" y dispare las run conditions de Lemlist.
   // Recovery no necesita esto porque el contacto vuelve a Pendientes y el
   // usuario empuja manualmente a Clay desde ahí.
-  let clay_push_decision: { ok: boolean; error?: string } | null = null;
+  let clay_push_decision:
+    | { ok: true; row_id?: string }
+    | { ok: false; error: string; debug?: string }
+    | null = null;
   if (body.decision === "approved" && !isRecovery && contact.clay_pushed_at) {
     const r = await pushDecisionToClay(db, params.id, "approved");
-    clay_push_decision = r.ok ? { ok: true } : { ok: false, error: r.error };
+    clay_push_decision = r.ok
+      ? { ok: true, row_id: r.row_id }
+      : { ok: false, error: r.error, debug: (r as any).debug };
   }
 
   return NextResponse.json({ contact: updated, clay_push_decision });

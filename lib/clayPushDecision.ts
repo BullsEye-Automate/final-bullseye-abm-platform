@@ -1,25 +1,38 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { findRowByColumnValue, updateRowCell } from "./clayApi";
 
 export type PushDecisionResult =
-  | { ok: true; clay_pushed_at: string }
-  | { ok: false; status: number; error: string; skipped?: "not_in_clay" | "not_found" };
+  | { ok: true; row_id: string }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      debug?: string;
+      skipped?: "not_in_clay" | "not_found" | "row_not_found";
+    };
 
-// Notifica a Clay del veredicto humano sobre un contacto que ya está en la
-// tabla Contacts de Clay (cargado vía push-contact). El payload incluye
-// wecad_contact_id + app_decision para que Clay encuentre la fila y actualice
-// la columna "App Decision". Las run conditions en Clay sobre las columnas AI
-// e "Add Lead to Campaign" deben usar OR contra "App Decision = approved".
+// Notifica a Clay del veredicto humano sobre un contacto. Usa Clay REST API
+// para buscar la fila por Wecad Contact Id y actualizar la celda App Decision.
+//
+// Requisitos en Vercel:
+//   - CLAY_API_TOKEN (Bearer token de Clay, Settings → API key)
+//   - CLAY_CONTACTS_TABLE_ID (UUID de la tabla Contacts, ej. t_xxx)
+//
+// En Clay tabla Contacts:
+//   - Columna "App Decision" (Text, manual) ya creada.
+//   - Run conditions de "Add Lead to Campaign" y AI columns deben incluir:
+//       Lead Scoring action = "enrich" OR App Decision = "approved"
 export async function pushDecisionToClay(
   db: SupabaseClient,
   contactId: string,
   decision: "approved" | "rejected"
 ): Promise<PushDecisionResult> {
-  const webhookUrl = process.env.CLAY_APPROVAL_WEBHOOK_URL;
-  if (!webhookUrl) {
+  const tableId = process.env.CLAY_CONTACTS_TABLE_ID;
+  if (!tableId) {
     return {
       ok: false,
       status: 500,
-      error: "CLAY_APPROVAL_WEBHOOK_URL is not configured"
+      error: "CLAY_CONTACTS_TABLE_ID is not configured"
     };
   }
 
@@ -48,32 +61,28 @@ export async function pushDecisionToClay(
     };
   }
 
-  const payload = {
-    wecad_contact_id: contactId,
-    app_decision: decision,
-    first_name: contact.first_name ?? "",
-    last_name: contact.last_name ?? ""
-  };
-
-  try {
-    const res = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      cache: "no-store"
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      return {
-        ok: false,
-        status: 502,
-        error: `Clay responded ${res.status}: ${text.slice(0, 200) || "no body"}`
-      };
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Network error";
-    return { ok: false, status: 502, error: message };
+  // Buscar la fila en Clay por Wecad Contact Id.
+  const find = await findRowByColumnValue(tableId, "Wecad Contact Id", contactId);
+  if (!find.row_id) {
+    return {
+      ok: false,
+      status: 404,
+      error: "Could not find Clay row for wecad_contact_id",
+      debug: find.debug,
+      skipped: "row_not_found"
+    };
   }
 
-  return { ok: true, clay_pushed_at: new Date().toISOString() };
+  // Actualizar la celda App Decision.
+  const update = await updateRowCell(tableId, find.row_id, "App Decision", decision);
+  if (!update.ok) {
+    return {
+      ok: false,
+      status: update.status,
+      error: update.error,
+      debug: find.debug
+    };
+  }
+
+  return { ok: true, row_id: find.row_id };
 }
