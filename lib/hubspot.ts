@@ -78,7 +78,8 @@ export type PropertyFieldType =
   | "textarea"
   | "number"
   | "select"
-  | "date";
+  | "date"
+  | "phonenumber";
 
 export type PropertyDef = {
   name: string;

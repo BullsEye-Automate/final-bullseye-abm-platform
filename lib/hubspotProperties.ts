@@ -197,7 +197,23 @@ const CONTACT_PROPERTIES: PropertyDef[] = [
     type: "string",
     fieldType: "text",
     groupName: GROUP_NAME,
-    description: "Provedor que devolvió el teléfono (lemlist / lusha)."
+    description: "Provedor que devolvió el teléfono principal (lemlist / lusha)."
+  },
+  {
+    name: "wecad_phone_lemlist",
+    label: "weCAD Phone (Lemlist)",
+    type: "string",
+    fieldType: "phonenumber",
+    groupName: GROUP_NAME,
+    description: "Teléfono que devolvió Lemlist (sync nativo). Se conserva aunque después Lusha sobrescriba el field principal."
+  },
+  {
+    name: "wecad_phone_lusha",
+    label: "weCAD Phone (Lusha)",
+    type: "string",
+    fieldType: "phonenumber",
+    groupName: GROUP_NAME,
+    description: "Teléfono que devolvió Lusha (lookup manual). Se conserva aunque Lemlist haya devuelto otro."
   }
 ];
 
