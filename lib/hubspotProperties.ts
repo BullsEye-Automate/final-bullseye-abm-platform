@@ -146,6 +146,58 @@ const CONTACT_PROPERTIES: PropertyDef[] = [
     fieldType: "text",
     groupName: GROUP_NAME,
     description: "Scanner intraoral de la empresa asociada (denormalizado)."
+  },
+
+  // Sprint 4 fase 2 — workflow SDR + phone enrichment.
+  {
+    name: "wecad_callback_date",
+    label: "weCAD Callback Date",
+    type: "datetime",
+    fieldType: "date",
+    groupName: GROUP_NAME,
+    description: "Fecha de callback agendada por el SDR cuando el lead queda en Bad Timing."
+  },
+  {
+    name: "wecad_qualification_outcome",
+    label: "weCAD Qualification Outcome",
+    type: "enumeration",
+    fieldType: "select",
+    groupName: GROUP_NAME,
+    description: "Motivo cualitativo del SDR cuando descalifica o califica el lead. Entrena el ICP.",
+    options: [
+      { label: "Qualified — moving forward", value: "qualified" },
+      { label: "Not interested", value: "not_interested" },
+      { label: "Wrong persona (no decision power)", value: "wrong_persona" },
+      { label: "No budget / no timeline", value: "no_budget" },
+      { label: "Already using competitor (happy)", value: "competitor_locked" },
+      { label: "Wrong company (not fit)", value: "wrong_company" },
+      { label: "Bad data (wrong contact info)", value: "bad_data" },
+      { label: "Other", value: "other" }
+    ]
+  },
+  {
+    name: "wecad_phone_enrichment_status",
+    label: "weCAD Phone Enrichment Status",
+    type: "enumeration",
+    fieldType: "select",
+    groupName: GROUP_NAME,
+    description: "Estado del enrichment de teléfono. El SDR cambia a 'Requested' para disparar el workflow de enrichment manual.",
+    options: [
+      { label: "Not requested", value: "not_requested" },
+      { label: "Requested (trigger enrichment)", value: "requested" },
+      { label: "Lemlist pending", value: "lemlist_pending" },
+      { label: "Done — found via Lemlist", value: "done_lemlist" },
+      { label: "Done — found via Lusha", value: "done_lusha" },
+      { label: "Not found (Lemlist + Lusha tried)", value: "not_found" }
+    ]
+  },
+  {
+    name: "wecad_phone_source",
+    label: "weCAD Phone Source",
+    type: "string",
+    fieldType: "text",
+    groupName: GROUP_NAME,
+    description: "Provedor que devolvió el teléfono (lemlist / lusha)."
   }
 ];
 

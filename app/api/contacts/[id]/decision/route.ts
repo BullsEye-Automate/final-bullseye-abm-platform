@@ -160,6 +160,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // verdad del icebreaker / subject / body). Después HubSpot, con todos
     // los datos actualizados — incluye lemlist_pushed_at en wecad_*.
     lemlist_push = await pushApprovedToLemlist(db, params.id, contact, company);
+
+    // Si Lemlist aceptó el lead y el contacto todavía no tiene phone,
+    // marcamos pending para que el cron / SDR lo enriquezca después.
+    if (lemlist_push.ok && !contact.phone) {
+      await db
+        .from("contacts")
+        .update({ phone_enrichment_status: "lemlist_pending" })
+        .eq("id", params.id);
+    }
   }
 
   // Push a HubSpot en cualquier approval desde manual_review (success O
@@ -172,7 +181,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const { data: fresh } = await db
       .from("contacts")
       .select(
-        "id, company_id, first_name, last_name, job_title, email, phone, linkedin_url, fit_score, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, human_decision, human_decision_reason, clay_pushed_at, lemlist_pushed_at, hubspot_contact_id"
+        "id, company_id, first_name, last_name, job_title, email, phone, linkedin_url, fit_score, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, human_decision, human_decision_reason, clay_pushed_at, lemlist_pushed_at, phone_enrichment_status, phone_source, hubspot_contact_id"
       )
       .eq("id", params.id)
       .single();
