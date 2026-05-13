@@ -158,17 +158,34 @@ export default function ContactosPage() {
       setError(data.error ?? "Decisión fallida");
       return;
     }
-    // Si la app aprobó OK pero el push a Clay falló, mostramos el debug
-    // completo para poder diagnosticar el formato del Clay API real.
-    if (
-      decision === "approved" &&
-      data.clay_push_decision &&
-      data.clay_push_decision.ok === false
-    ) {
-      setClayDebug({
-        label: "App aprobó OK pero Clay API falló al actualizar App Decision",
-        payload: data.clay_push_decision
-      });
+    // Surface el estado completo de la llamada a Clay (haya pasado o no)
+    // para poder diagnosticar sin dev tools.
+    if (decision === "approved") {
+      const cpd = data.clay_push_decision;
+      let label: string;
+      let payload: unknown;
+      if (cpd == null) {
+        label =
+          "Clay no se llamó. Posible causa: el contacto no tiene clay_pushed_at (no se empujó a Clay previamente).";
+        payload = {
+          clay_push_decision: null,
+          contact: {
+            id: data.contact?.id,
+            clay_pushed_at: data.contact?.clay_pushed_at,
+            human_decision: data.contact?.human_decision,
+            fit_action: data.contact?.fit_action,
+            status: data.contact?.status,
+            prefilter_result: data.contact?.prefilter_result
+          }
+        };
+        setClayDebug({ label, payload });
+      } else if (cpd.ok === false) {
+        label = "App aprobó OK pero Clay API falló al actualizar App Decision";
+        payload = cpd;
+        setClayDebug({ label, payload });
+      } else {
+        // ok=true → no mostramos nada extra, solo el success
+      }
     }
     setPushNotice(
       decision === "approved"
