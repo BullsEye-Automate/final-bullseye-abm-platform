@@ -191,9 +191,18 @@ export async function computeDashboard(
     .map(([key, count]) => ({ key, label: COMPANY_TYPE_LABEL[key] ?? key, count }))
     .sort((a, b) => b.count - a.count);
 
+  // Solo contamos origen de phone sobre los contactos que entraron a
+  // Lemlist (outreach activo). Sin este filtro, "Sin teléfono" infla
+  // con contactos que pre-filter NO o que están en cola — no es
+  // accionable.
   const phoneSourceCounts: Record<string, number> = { lemlist: 0, lusha: 0, none: 0 };
   for (const r of contactsRows.data ?? []) {
-    const c = r as { phone: string | null; phone_source: string | null };
+    const c = r as {
+      phone: string | null;
+      phone_source: string | null;
+      lemlist_pushed_at: string | null;
+    };
+    if (!c.lemlist_pushed_at) continue;
     if (!c.phone || c.phone.trim().length < 4) {
       phoneSourceCounts.none++;
     } else if (c.phone_source === "lusha") {

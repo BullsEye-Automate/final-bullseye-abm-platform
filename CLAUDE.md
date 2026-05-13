@@ -510,17 +510,117 @@ Migraciones nuevas pendientes de pegar manualmente en SQL editor
    mismatch, contactos manual_review huérfanos pre-PR-#52, prompts en
    inglés del Lead Scoring de Clay.
 
+## Hecho del Sprint 5 fase 1 — Dashboard ejecutivo (sesión 2026-05-13d)
+
+PR #70 mergeado. Primer módulo de visibilidad del pipeline.
+
+### Archivos nuevos
+
+- `lib/dashboardRanges.ts` — 8 presets de fecha con período "anterior"
+  equivalente para deltas: Esta semana / Semana pasada / Este mes /
+  Mes pasado / Este semestre (S1=ene-jun, S2=jul-dic) / Semestre
+  pasado / Este año / Año pasado. ISO week (lunes-domingo) para
+  semanas. Todas las fechas en UTC.
+- `lib/dashboardQueries.ts` — agrega métricas Supabase. Cada Delta
+  tiene `current`, `previous` y `pct_change` (null si previous=0).
+  Funnel de 7 pasos: discovery → aprobado → contactos → YES →
+  Lemlist → phone → HubSpot. Distribuciones, calidad del filtro,
+  time series por día (bucketea a mes si rango > 180 días).
+- `app/api/dashboard/route.ts` — GET con query param `range`
+  (default `this_month`). Devuelve snapshot completo en un solo
+  request.
+- `app/dashboard/page.tsx` — UI con header + dropdown rango +
+  4 KPI hero cards con delta ↑↓ + 4 mini cards de tasas con barra
+  horizontal + funnel 7 pasos con gradient + 2-col distribuciones
+  (donut-style stacked bar + leyenda) + 3-col calidad (action IA,
+  manual review pending + % humano descartó, top razones descarte)
+  + SVG sparkline 2-series para activity diaria.
+
+### Cambios
+
+- `app/page.tsx`: `/` redirige a `/dashboard` (antes redirigía a
+  `/empresas`).
+- `components/Sidebar.tsx`: "Dashboard" ya no está disabled.
+
+### Diseño
+
+Sigue el design system existente:
+- `bg-canvas #F4F2FB`, `text-ink #1A1733`, `text-ink-muted #6B6884`.
+- Cards: `card` class (rounded-card 12px, shadow-card sutil).
+- Brand purple `#3D2878` (DEFAULT), `#7F77DD` (soft), `#EEEDFE` (tint).
+- Status colors: success `#0F6E56`, warning `#854F0B`, info `#185FA5`,
+  danger `#993C1D`.
+- Sparkline en SVG inline (sin libs externas).
+- Loading state con skeleton cards animadas.
+
+### Fix pendiente al cierre de sesión
+
+**PR todavía sin crear/mergear (MCP GitHub se desconectó):**
+
+Commit `880efcf` en branch `claude/continue-wecad4you-prospecting-YNgtt`:
+
+> fix(dashboard): origen de teléfonos solo cuenta contactos en Lemlist
+
+El card "Origen de teléfonos" en `/dashboard` inflaba "Sin teléfono"
+con contactos pre-filter descartados. El fix filtra a contactos
+con `lemlist_pushed_at IS NOT NULL` (outreach activo). Subtítulo
+actualizado para que se entienda el denominador.
+
+Pasos para la próxima sesión:
+1. Re-autenticar GitHub MCP (`mcp__github__authenticate`).
+2. Crear PR del commit `880efcf` contra base
+   `claude/wecad4you-prospecting-app-Hltfi`.
+3. Mergear (squash).
+
+### Gaps conocidos al cierre Sprint 5 fase 1
+
+1. **Comparación de períodos contra "anterior equivalente"**: si
+   estás a día 5 del mes, "este mes" compara contra mes pasado
+   completo, lo cual es comparar 5 días contra 30. Próxima mejora:
+   normalizar el período anterior a misma cantidad de días que el
+   actual (ej. comparar día 1-5 de este mes vs día 1-5 del pasado).
+2. **No hay drilldown desde cards**: clickear un KPI no lleva a la
+   lista filtrada. Mejora futura: link a `/contactos?filter=...` o
+   `/empresas?filter=...`.
+3. **Cache**: cada refresh recarga toda la query. Si el dataset
+   crece mucho, considerar:
+   - Materialized views en Supabase actualizadas cada N min.
+   - SWR/React Query con cache de 1 min en el cliente.
+   - Pre-compute en cron y almacenar en una tabla `dashboard_snapshots`.
+4. **No hay export**: el directorio puede querer PDF/PNG. Mejora
+   futura: botón "Exportar PDF" usando `html2pdf` o similar.
+5. **Time series con rango = año**: agrupa por mes en vez de día.
+   Si la app tiene poca data, el chart puede verse vacío al inicio.
+
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
-> Continúo weCAD4you-prospecting. Sprint 4 fase 2 cerrado: phone
-> enrichment (Lemlist auto + Lusha manual via `/telefonos`), dual phone
-> fields en HubSpot/Supabase, 7 listas dinámicas SDR creadas en HubSpot.
-> Rama base: `claude/wecad4you-prospecting-app-Hltfi`. Antes de codear
-> lee `CLAUDE.md` completo (especialmente "Hecho del Sprint 4 fase 2"),
-> `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Reglas: vos
-> hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist/HubSpot UI.
-> Próximos módulos a activar: Dashboard (visibilidad pipeline) →
-> Respuestas (Lemlist replies tracking) → Llamadas (call logging). NO
-> recrear: integración App → Clay vía REST API (no expone CRUD), HubSpot
-> Workflow webhooks (requiere Operations Hub Pro), cron de GitHub Actions
-> (abandonado en PR #62).
+> Continúo weCAD4you-prospecting. Sprint 5 fase 1 (Dashboard ejecutivo)
+> cerrado en código pero queda 1 commit sin mergear: `880efcf` en
+> branch `claude/continue-wecad4you-prospecting-YNgtt` (fix denominador
+> "Origen de teléfonos" — solo cuenta contactos en Lemlist). **PRIMER
+> PASO**: re-autenticar GitHub MCP, crear PR y mergear ese commit
+> contra base `claude/wecad4you-prospecting-app-Hltfi`.
+>
+> Antes de codear nada nuevo, leer `CLAUDE.md` completo (especialmente
+> "Hecho del Sprint 5 fase 1" y "Hecho del Sprint 4 fase 2"),
+> `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`.
+>
+> Estado vivo del producto:
+> - Discovery → Empresas: `/empresas` con cards aprobado/rechazado.
+> - Pre-filter Claude → Contactos: `/contactos` con tabs (pendientes,
+>   manual review, en campaña, descartados).
+> - App → Lemlist (manual_review approvals): vía Lemlist API direct.
+> - Lemlist enriquece phone+email automático (findPhone=true en push).
+> - Lusha manual: `/telefonos` con dual phone fields (Lemlist + Lusha).
+> - HubSpot: 7 listas dinámicas SDR creadas (Hot/Warm/Reintentar/etc.).
+> - Dashboard ejecutivo: `/dashboard` con 8 presets de fecha, KPIs,
+>   funnel, distribuciones, sparkline.
+>
+> Reglas: vos hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist/
+> HubSpot UI. Próximos módulos a activar (recomendación de la sesión
+> anterior): Respuestas (Lemlist replies tracking) → Llamadas (call
+> logging from HubSpot).
+>
+> NO recrear: integración App → Clay vía REST API (no expone CRUD),
+> HubSpot Workflow webhooks (requiere Operations Hub Pro), cron de
+> GitHub Actions (abandonado en PR #62).
