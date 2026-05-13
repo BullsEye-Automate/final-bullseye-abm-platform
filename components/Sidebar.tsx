@@ -6,7 +6,6 @@ import {
   IconLayoutDashboard,
   IconBuildingFactory2,
   IconUsers,
-  IconClipboardList,
   IconMail,
   IconBrandLinkedin,
   IconPhone,
@@ -14,8 +13,7 @@ import {
   IconChartFunnel,
   IconReportAnalytics,
   IconBrain,
-  IconSettings,
-  IconCloudUpload
+  IconSettings
 } from "@tabler/icons-react";
 
 type Item = { href: string; label: string; icon: any; disabled?: boolean };
@@ -25,10 +23,9 @@ const SECTIONS: Section[] = [
   {
     label: "Prospección",
     items: [
-      { href: "/dashboard",       label: "Dashboard",       icon: IconLayoutDashboard, disabled: true },
-      { href: "/empresas",        label: "Empresas",        icon: IconBuildingFactory2 },
-      { href: "/contactos",       label: "Contactos",       icon: IconUsers },
-      { href: "/revision-manual", label: "Revisión manual", icon: IconClipboardList,    disabled: true }
+      { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard, disabled: true },
+      { href: "/empresas",  label: "Empresas",  icon: IconBuildingFactory2 },
+      { href: "/contactos", label: "Contactos", icon: IconUsers }
     ]
   },
   {
@@ -62,8 +59,7 @@ const SECTIONS: Section[] = [
   {
     label: "Sistema",
     items: [
-      { href: "/configuracion/icp",     label: "Configuración", icon: IconSettings },
-      { href: "/configuracion/hubspot", label: "HubSpot setup", icon: IconCloudUpload }
+      { href: "/configuracion/icp", label: "Configuración", icon: IconSettings }
     ]
   }
 ];

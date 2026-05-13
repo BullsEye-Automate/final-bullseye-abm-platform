@@ -321,6 +321,206 @@ El loop App → Clay para Revisión manual approvals se rompió en dos intentos:
 5. Modern Dental Laboratory aprobada como ES pero LinkedIn apunta a HK (gap viejo, no resuelto).
 6. **Contactos manual_review huérfanos**: ver sección "Estado en Supabase al cierre". Pueden re-empujarse con un endpoint/script si se quieren rescatar.
 
-**Para retomar en una nueva sesión (prompt de arranque):**
+## Hecho del Sprint 4 fase 2 — phone enrichment + listas HubSpot (sesión 2026-05-13c)
 
-> Continúo weCAD4you-prospecting. Sprint 3 completo (fase 1 = cola Revisión manual + Aprobar/Rechazar/Recuperar; fase 2 = Lemlist API direct para approvals porque Clay API REST no expone row CRUD). Loop end-to-end App ↔ Clay ↔ Lemlist cerrado. Rama base: `claude/wecad4you-prospecting-app-Hltfi`. Antes de codear lee `CLAUDE.md` completo (especialmente "Hecho del Sprint 3 fase 2" y "Lo que se borró de Clay"), `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Reglas: vos hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist UI. Próximo sprint = 4 (HubSpot writer + dashboard de mensajes). NO recrear la integración App → Clay vía REST API (no existe); si necesitamos que Clay reciba state desde la app, usar webhooks Clay → app, no al revés.
+Esta sesión cerró el bucle de teléfonos y agregó organización del SDR
+en HubSpot. PRs #58 a #69.
+
+### Phone enrichment — flujo final
+
+**Lemlist auto (la mayoría de los teléfonos)**:
+- `lib/lemlist.ts`: el push a Lemlist incluye `findPhone=true` en la
+  query string (`ENRICHMENT_QUERY = "findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true"`).
+  Lemlist enriquece phone proactivo al insertar.
+- Lemlist sincroniza automáticamente a HubSpot vía su integración
+  nativa (sin código nuestro).
+- Aplica tanto a manual_review approvals (donde la app llama
+  `addLeadToCampaign`) como a auto-enrich vía Clay → "Add Lead to
+  Campaign" — Lemlist enriquece todos los nuevos leads si el plan lo
+  soporta (verificar en Lemlist Settings que phone enrichment esté
+  habilitado a nivel workspace).
+
+**Lusha manual (fallback cuando Lemlist no encuentra)**:
+- Página `/telefonos` (sidebar SDR → Teléfonos): SDR pega LinkedIn
+  URL → endpoint `POST /api/lusha-lookup` busca el contacto en
+  Supabase (con fallback HubSpot por `hs_linkedinid`) → llama Lusha
+  → PATCH a HubSpot + update Supabase.
+- `lib/lusha.ts`: cliente para `/v2/person`. Prueba 3 URL/method
+  patterns en orden (GET sincrónico, POST con `contacts` wrapper,
+  POST flat) para tolerar variaciones del API de Lusha. Si todos
+  devuelven sin phone, expone el raw response en el debug.
+- Auth: header `api_key: <LUSHA_API_KEY>` (no Bearer).
+- Idempotente: si el contacto ya tiene phone, no gasta crédito Lusha
+  salvo que el SDR fuerce con `force: true` (botón "Buscar también
+  con Lusha" en la UI cuando el contacto ya tenía phone de Lemlist).
+- Cuando Lusha devuelve un phone diferente al existente de Lemlist,
+  guardamos AMBOS en propiedades separadas (ver sección dual fields).
+
+### Dual phone fields (Lemlist + Lusha lado a lado)
+
+Cuando Lemlist y Lusha devuelven teléfonos diferentes (común porque
+buscan en bases distintas), conservamos ambos para que el SDR pueda
+comparar y elegir cuál llamar.
+
+**Supabase** (`supabase/phone_dual_source_migration.sql`):
+- `contacts.phone` — principal, último escrito.
+- `contacts.phone_lemlist` — snapshot del phone que vino de Lemlist.
+- `contacts.phone_lusha` — phone que vino de Lusha.
+- `contacts.phone_source` — indica de qué fuente vino el principal.
+
+**HubSpot** (creadas via `/configuracion/hubspot` → setup-lists endpoint):
+- `phone` (estándar HubSpot) — principal.
+- `wecad_phone_lemlist` (fieldType phonenumber).
+- `wecad_phone_lusha` (fieldType phonenumber).
+- `wecad_phone_source` — string lemlist/lusha.
+
+**Lógica del endpoint Lusha**:
+- Antes de sobreescribir phone con Lusha's value: si phone actual no
+  es de Lusha y `phone_lemlist` está vacío → snapshot del phone
+  existente a `phone_lemlist`. Asume que el phone preexistente vino
+  de Lemlist (correcto para 99% de los casos).
+- Después: phone = Lusha, phone_lusha = Lusha, phone_source = lusha.
+
+### Listas dinámicas en HubSpot (organización SDR)
+
+Reemplazo del approach Workflow webhook bloqueado (Marketing Hub Pro
+NO incluye "Send a webhook" action — requiere Operations Hub Pro+).
+En vez de triggers, usamos 7 listas dinámicas que se actualizan
+automáticamente cuando cambian properties. SDR trabaja desde esas
+listas en HubSpot, no necesita workflow.
+
+**Las 7 listas** (creadas via `POST /api/hubspot/setup-lists`, definidas
+en `lib/hubspotLists.ts`):
+
+| Nombre | Filtro |
+|---|---|
+| weCAD · Hot por llamar (fit ≥ 8 + phone) | wecad_fit_score ≥ 8 AND phone ≠ "" AND hs_lead_status = NEW |
+| weCAD · Hot sin teléfono (pedir Lusha) | wecad_fit_score ≥ 8 AND phone = "" AND hs_lead_status = NEW |
+| weCAD · Warm por llamar (fit 5-7 + phone) | wecad_fit_score 5..7 AND phone ≠ "" AND hs_lead_status = NEW |
+| weCAD · Warm sin teléfono (pedir Lusha) | wecad_fit_score 5..7 AND phone = "" AND hs_lead_status = NEW |
+| weCAD · Reintentar (1er intento sin contacto) | hs_lead_status = ATTEMPTED_TO_CONTACT AND phone ≠ "" |
+| weCAD · Callbacks de hoy | hs_lead_status = BAD_TIMING AND wecad_callback_date < today+1 |
+| weCAD · En pipeline | hs_lead_status IN (CONNECTED, IN_PROGRESS, OPEN_DEAL) |
+
+**Schema HubSpot Lists v3 — gotchas encontrados por iteración**:
+- Root `filterBranch` siempre debe ser `OR` con sub-branches `AND`.
+  Una AND-only condition se modela como `OR → [AND → [filters...]]`.
+- STRING NO tiene `IS_KNOWN` / `HAS_PROPERTY` (a pesar de docs viejas).
+  Operadores válidos: `IS_EQUAL_TO`, `IS_NOT_EQUAL_TO`, `CONTAINS`,
+  `DOES_NOT_CONTAIN`, `STARTS_WITH`, `ENDS_WITH`, etc. Workaround
+  para "phone existe": `IS_NOT_EQUAL_TO ""`.
+- DATETIME usa `operationType: "TIME_POINT"` (no `DATETIME`), con
+  campo `timePoint: <epoch ms>` (NO `timestamp`, NO ISO string).
+- NUMBER `BETWEEN` da [value] required — usar GTE + LTE en filtros
+  separados.
+
+### Properties wecad_* nuevas
+
+Definidas en `lib/hubspotProperties.ts`, creadas auto al push de
+contactos (o forzadas via `/configuracion/hubspot`):
+- `wecad_phone_lemlist`, `wecad_phone_lusha` (phonenumber)
+- `wecad_phone_source`, `wecad_phone_enrichment_status` (string/enum)
+- `wecad_callback_date` (datetime, para "Callbacks de hoy" list)
+- `wecad_qualification_outcome` (enum: qualified / not_interested /
+  wrong_persona / no_budget / competitor_locked / wrong_company /
+  bad_data / other — para feedback loop ICP)
+
+### Endpoints nuevos (vivos)
+
+- `POST /api/lusha-lookup` — body `{linkedin_url, force?: boolean}`.
+  Llamado desde `/telefonos`.
+- `POST /api/hubspot/setup-lists` — one-shot. Crea properties + 7
+  listas. Llamado desde `/configuracion/hubspot`. Idempotente.
+
+### Lo que se intentó y NO funcionó (no recrear)
+
+1. **HubSpot Workflow webhook action**: requiere Operations Hub Pro+,
+   no disponible en Marketing Hub Pro del usuario. PR #62 borró toda
+   la infraestructura asociada (`/api/hubspot/webhook/enrich-phone`,
+   `/api/cron/enrich-phones`, `.github/workflows/enrich-phones.yml`).
+   Si en el futuro suben de plan, se puede restaurar de git history
+   pero por ahora no.
+2. **GitHub Actions cron** para enrichment automático periódico:
+   funcional pero borrado en el mismo pivot. Reemplazado por el
+   flujo manual `/telefonos`.
+3. **HubSpot Lists API operators viejos** (`IS_KNOWN`, `HAS_PROPERTY`,
+   `NEQ`, `EQ`): documentados en algunas pages de HubSpot pero la API
+   v3 actual no los acepta. Usar la lista que la API misma devuelve
+   en errores 400.
+
+### Variables de entorno en Vercel (estado actual)
+
+- `LUSHA_API_KEY` — set ✅ (nuevo, requerido para `/telefonos`)
+- Borrar: `CRON_SECRET` (ya no se usa, era para el cron borrado)
+- El resto sin cambios (Clay/Lemlist/HubSpot/Anthropic/Perplexity/
+  Supabase tokens).
+
+### Estado en Supabase al cierre
+
+Migraciones nuevas pendientes de pegar manualmente en SQL editor
+(idempotentes con `if not exists`):
+- `supabase/phone_enrichment_migration.sql` (status, source, timestamps)
+- `supabase/phone_dual_source_migration.sql` (phone_lemlist, phone_lusha)
+
+### Estado en HubSpot al cierre
+
+- Custom properties wecad_* creadas (incluye las 6 nuevas del Sprint 4 fase 2).
+- 7 listas dinámicas creadas — visible en HubSpot → CRM → Listas → buscar "weCAD".
+- Lemlist sync nativa activa (sigue como estaba).
+- Scope `crm.lists.write` agregado a la Private App (necesario para
+  crear listas via API).
+
+### Flujo SDR día a día (cómo se usa hoy)
+
+1. **Empezar el día**: HubSpot → Listas → "weCAD · Hot por llamar".
+   Llamás a los que están ahí.
+2. **Si nadie contesta**: cambiás Lead status a "Attempted to contact"
+   → cae automático a "Reintentar (1er intento sin contacto)".
+3. **Si pide callback**: cambiás Lead status a "Bad timing" + completás
+   `weCAD Callback Date` con la fecha agendada → cae automático a
+   "Callbacks de hoy" el día agendado.
+4. **Si fit alto sin phone**: aparece en "Hot sin teléfono". Copiás su
+   LinkedIn URL → app `/telefonos` → click Buscar → Lusha levanta el
+   phone → el contacto cae automático a "Hot por llamar".
+5. **Cuando avanza a deal**: Lead status → "Connected" / "Open deal"
+   → cae a "En pipeline" para tracking.
+
+### Sidebar al cierre (cleanup)
+
+- Removidos del sidebar (PR #69): "HubSpot setup" y "Revisión manual".
+- La pantalla `/configuracion/hubspot` sigue existiendo (accesible via
+  URL directa) por si hay que correr el setup endpoint otra vez.
+- "Revisión manual" siempre estuvo disabled — era placeholder. La
+  funcionalidad real vive en `/contactos` tab "Revisión manual".
+
+### Gaps conocidos al cierre Sprint 4 fase 2
+
+1. **NEQ "" workaround para phone existe**: el approach `STRING
+   IS_NOT_EQUAL_TO ""` puede no matchear contactos con phone=null
+   (vs ""). En la práctica Lemlist y Lusha escriben strings, no null,
+   así que matchea. Si aparece un caso null → switch a otro shape.
+2. **Lusha v2 API**: el shape del response que parseamos es defensivo
+   con múltiples paths. Si Lusha cambia el shape, el parser puede
+   fallar silencioso (devolver phone=null aunque haya). Mostrar siempre
+   el raw response en debug ayuda a diagnosticar.
+3. **No hay tracking de costos**: la app no muestra cuántos créditos
+   Lemlist/Lusha consumió. El usuario monitorea desde los dashboards
+   de Lemlist y Lusha.
+4. Heredados de sesiones anteriores: Modern Dental Laboratory ES/HK
+   mismatch, contactos manual_review huérfanos pre-PR-#52, prompts en
+   inglés del Lead Scoring de Clay.
+
+## Para retomar en una nueva sesión (prompt de arranque actualizado)
+
+> Continúo weCAD4you-prospecting. Sprint 4 fase 2 cerrado: phone
+> enrichment (Lemlist auto + Lusha manual via `/telefonos`), dual phone
+> fields en HubSpot/Supabase, 7 listas dinámicas SDR creadas en HubSpot.
+> Rama base: `claude/wecad4you-prospecting-app-Hltfi`. Antes de codear
+> lee `CLAUDE.md` completo (especialmente "Hecho del Sprint 4 fase 2"),
+> `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`. Reglas: vos
+> hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist/HubSpot UI.
+> Próximos módulos a activar: Dashboard (visibilidad pipeline) →
+> Respuestas (Lemlist replies tracking) → Llamadas (call logging). NO
+> recrear: integración App → Clay vía REST API (no expone CRUD), HubSpot
+> Workflow webhooks (requiere Operations Hub Pro), cron de GitHub Actions
+> (abandonado en PR #62).
