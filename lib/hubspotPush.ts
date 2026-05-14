@@ -259,8 +259,12 @@ export async function pushContactToHubSpot(
     return { ok: true, hubspot_id: hubspotId, created: false };
   }
 
-  // 5) No existe → create.
-  const c = await createObject("contacts", properties);
+  // 5) No existe → create. Los contactos nuevos entran con lead status
+  // "NEW" para que caigan en las listas dinámicas de HubSpot (las listas
+  // "Hot/Warm por llamar" y "sin teléfono" filtran hs_lead_status = NEW).
+  // Solo en el create: en los PATCH de arriba NO tocamos hs_lead_status
+  // para no pisar el progreso que el SDR ya hizo sobre el contacto.
+  const c = await createObject("contacts", { ...properties, hs_lead_status: "NEW" });
   if (!c.ok) {
     await persistContactError(db, contact.id, `create: ${c.error}`);
     return { ok: false, error: c.error, status: c.status, debug: c.debug };
