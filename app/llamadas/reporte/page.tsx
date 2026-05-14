@@ -37,10 +37,10 @@ type Report = {
     pickup_contacts_denominator: number;
   };
   sub_scores: {
-    opening: number | null;
-    discovery: number | null;
-    objection_handling: number | null;
-    next_step: number | null;
+    opening: SubScoreDetail;
+    discovery: SubScoreDetail;
+    objection_handling: SubScoreDetail;
+    next_step: SubScoreDetail;
   };
   response_distribution: Array<{ key: string; label: string; count: number; call_ids: string[] }>;
   sdr_ranking: Array<{
@@ -60,6 +60,16 @@ type Report = {
     example_quotes: Array<{ call_id: string; quote: string }>;
   }>;
   activity: Array<{ date: string; calls: number; avg_score: number | null }>;
+};
+
+type SubScoreDetail = {
+  value: number | null;
+  worst_calls: Array<{
+    call_id: string;
+    score: number;
+    suggestion: string | null;
+    quote: string | null;
+  }>;
 };
 
 type Owner = { hubspot_owner_id: string; name: string; calls: number };
@@ -553,12 +563,13 @@ function SubScoresCard({
 }: {
   scores: Report["sub_scores"];
 }) {
-  const items: Array<{ label: string; value: number | null }> = [
-    { label: "Apertura", value: scores.opening },
-    { label: "Descubrimiento", value: scores.discovery },
-    { label: "Manejo de objeciones", value: scores.objection_handling },
-    { label: "Próximo paso", value: scores.next_step }
+  const items: Array<{ key: string; label: string; data: SubScoreDetail }> = [
+    { key: "opening", label: "Apertura", data: scores.opening },
+    { key: "discovery", label: "Descubrimiento", data: scores.discovery },
+    { key: "objection_handling", label: "Manejo de objeciones", data: scores.objection_handling },
+    { key: "next_step", label: "Próximo paso", data: scores.next_step }
   ];
+  const [expanded, setExpanded] = useState<string | null>(null);
   return (
     <div className="card">
       <div className="label mb-3 flex items-center gap-1">
@@ -566,20 +577,63 @@ function SubScoresCard({
       </div>
       <div className="space-y-3">
         {items.map((it) => {
-          const v = it.value ?? 0;
+          const v = it.data.value ?? 0;
           const pct = Math.min(100, (v / 10) * 100);
           const color = v >= 7 ? "#0F6E56" : v < 5 ? "#993C1D" : "#854F0B";
+          const isOpen = expanded === it.key;
+          const hasDetail = it.data.worst_calls.length > 0;
           return (
-            <div key={it.label}>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-ink">{it.label}</span>
-                <span className="font-semibold" style={{ color }}>
-                  {it.value == null ? "—" : `${v.toFixed(1)}/10`}
-                </span>
-              </div>
-              <div className="h-2 mt-1 bg-canvas rounded-full overflow-hidden">
-                <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-              </div>
+            <div key={it.key}>
+              <button
+                onClick={() => hasDetail && setExpanded(isOpen ? null : it.key)}
+                disabled={!hasDetail}
+                className={hasDetail ? "w-full text-left hover:bg-canvas rounded px-1 py-0.5" : "w-full text-left px-1 py-0.5"}
+              >
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-ink flex items-center gap-1">
+                    {hasDetail && (isOpen ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />)}
+                    {it.label}
+                  </span>
+                  <span className="font-semibold" style={{ color }}>
+                    {it.data.value == null ? "—" : `${v.toFixed(1)}/10`}
+                  </span>
+                </div>
+                <div className="h-2 mt-1 bg-canvas rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                </div>
+              </button>
+              {isOpen && hasDetail && (
+                <div className="mt-2 ml-4 pl-3 border-l border-[#E5E2F0] space-y-2">
+                  <div className="text-xs text-ink-muted mb-1">
+                    Llamadas con peor score en esta dimensión:
+                  </div>
+                  {it.data.worst_calls.map((w) => (
+                    <Link
+                      key={w.call_id}
+                      href={`/llamadas/${w.call_id}`}
+                      className="block text-xs hover:bg-canvas rounded px-2 py-2"
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="font-semibold" style={{ color: "#993C1D" }}>
+                          {w.score.toFixed(1)}/10
+                        </span>
+                        <IconExternalLink size={10} className="text-ink-muted" />
+                      </div>
+                      {w.suggestion && (
+                        <div className="text-ink mt-1">
+                          <IconBulb size={10} className="inline mr-1" style={{ color: "#854F0B" }} />
+                          {w.suggestion}
+                        </div>
+                      )}
+                      {w.quote && (
+                        <div className="text-ink-muted mt-1 italic">
+                          <IconQuote size={10} className="inline mr-1" /> "{w.quote}"
+                        </div>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}

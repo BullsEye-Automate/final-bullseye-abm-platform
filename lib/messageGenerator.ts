@@ -76,11 +76,13 @@ function buildUserPrompt(input: MessageInput): string {
   lines.push(`- Tone: dental industry peer, never salesy or generic.`);
   lines.push(`- End with a low-commitment question.`);
   lines.push(`- NO links, NO emojis, NO line breaks.`);
+  lines.push(`- DO NOT use em-dash (—), en-dash (–) or hyphen (-) as a sentence separator. They scream "AI-generated". Use periods, commas, semicolons or colons instead.`);
   lines.push(``);
   lines.push(`RULES for email_subject:`);
   lines.push(`- MAX 7 words.`);
   lines.push(`- Specific to them (mention company name, software, or signal).`);
   lines.push(`- No clickbait, no caps lock, no emojis.`);
+  lines.push(`- DO NOT use em-dash (—) or en-dash (–). Use a colon (:) if you need a break.`);
   lines.push(``);
   lines.push(`RULES for email_body:`);
   lines.push(`- Start with "Hi ${input.first_name ?? "there"},\\n\\n".`);
@@ -89,7 +91,9 @@ function buildUserPrompt(input: MessageInput): string {
   lines.push(`- Line 3: a concrete, specific result (24h turnaround, 98.9% no adjustments, compatibility, scale without hiring).`);
   lines.push(`- CTA: one low-commitment question.`);
   lines.push(`- No bullet points, no bold.`);
-  lines.push(`- Sign-off optional ("— Team weCAD4you" is fine).`);
+  lines.push(`- DO NOT use em-dash (—), en-dash (–) or hyphen (-) as a sentence separator. They scream "AI-generated". Use periods, commas, semicolons or colons.`);
+  lines.push(`- DO NOT add any sign-off or signature ("— Team weCAD4you", "Best,", "Saludos,", "Cheers,", etc.). Lemlist appends the signature automatically.`);
+  lines.push(`- The email body must END with the CTA question. Nothing after it.`);
   lines.push(``);
   lines.push(`Respond with the JSON object only, no prose around it.`);
   return lines.join("\n");
@@ -103,6 +107,37 @@ function extractJson(raw: string): unknown {
   return JSON.parse(body);
 }
 
+// Reemplaza em-dash (—) y en-dash (–) por puntos/comas según contexto.
+// Hyphen (-) entre letras lo dejamos (palabras compuestas como "follow-up").
+// Si el hyphen está rodeado de espacios (" - "), lo tratamos como separador.
+function stripAiDashes(text: string): string {
+  let t = text;
+  // Em/en dash con espacios alrededor → coma + espacio
+  t = t.replace(/\s*[—–]\s*/g, ", ");
+  // Hyphen con espacios alrededor → coma + espacio
+  t = t.replace(/(\s)-(\s)/g, ", ");
+  // Si quedó ", , " por concatenación, colapsar
+  t = t.replace(/,\s*,/g, ",");
+  return t;
+}
+
+// Saca cualquier sign-off típico al final del email body (Lemlist agrega el suyo).
+function stripSignature(text: string): string {
+  let t = text.trim();
+  // Patrones comunes — siempre al final. Recortamos desde el inicio del
+  // signoff hasta el final del string.
+  const patterns: RegExp[] = [
+    /\n+\s*[—–-]\s*Team\s+weCAD4you[\s\S]*$/i,
+    /\n+\s*Team\s+weCAD4you[\s\S]*$/i,
+    /\n+\s*(Best|Best regards|Cheers|Thanks|Thank you|Saludos|Atentamente|Cordialmente|Regards|Sincerely)[,\.\s][\s\S]*$/i,
+    /\n+\s*[—–-]\s*\w+[\s\S]*$/  // Cualquier línea final que arranque con dash + nombre
+  ];
+  for (const p of patterns) {
+    t = t.replace(p, "").trim();
+  }
+  return t;
+}
+
 function clampIcebreaker(text: string, firstName: string | null): string {
   let t = text.trim();
   // Defensiva: si Claude igual incluyó "Hi <name>," al inicio, lo sacamos.
@@ -112,8 +147,21 @@ function clampIcebreaker(text: string, firstName: string | null): string {
   t = t.replace(/^hi\s+[^,]{1,40},\s*/i, "").trim();
   // Sin saltos de línea
   t = t.replace(/\s+/g, " ").trim();
+  // Sacar dashes "AI-generated"
+  t = stripAiDashes(t);
   if (t.length > 180) t = t.slice(0, 180).trim();
   return t;
+}
+
+function sanitizeSubject(text: string): string {
+  return stripAiDashes(text.trim());
+}
+
+function sanitizeBody(text: string): string {
+  // Orden: primero sign-off (que puede contener dashes), después dashes.
+  let t = stripSignature(text);
+  t = stripAiDashes(t);
+  return t.trim();
 }
 
 export async function generateMessages(input: MessageInput): Promise<GeneratedMessages> {
@@ -139,8 +187,8 @@ export async function generateMessages(input: MessageInput): Promise<GeneratedMe
 
   return {
     linkedin_icebreaker: clampIcebreaker(parsed.linkedin_icebreaker, input.first_name),
-    email_subject: parsed.email_subject.trim(),
-    email_body: parsed.email_body.trim(),
+    email_subject: sanitizeSubject(parsed.email_subject),
+    email_body: sanitizeBody(parsed.email_body),
     model_used
   };
 }

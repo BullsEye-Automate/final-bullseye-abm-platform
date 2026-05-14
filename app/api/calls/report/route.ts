@@ -146,36 +146,75 @@ export async function GET(req: NextRequest) {
     }))
     .sort((a, b) => (b.avg_score ?? -1) - (a.avg_score ?? -1));
 
-  // ---- 3. Sub-scores promedio ----
+  // ---- 3. Sub-scores promedio + worst calls por dimensión ----
+  const SUB_SCORE_AREA_KEYWORDS: Record<string, string[]> = {
+    opening: ["apertura", "opening", "introduc"],
+    discovery: ["descubr", "discovery", "pregunt", "necesid"],
+    objection_handling: ["objec"],
+    next_step: ["próximo paso", "proximo paso", "next step", "cierre", "compromiso"]
+  };
+  function findImprovementForDim(
+    imps: Row["sdr_improvements"],
+    dim: keyof typeof SUB_SCORE_AREA_KEYWORDS
+  ): { suggestion: string | null; quote: string | null } {
+    if (!imps || imps.length === 0) return { suggestion: null, quote: null };
+    const keys = SUB_SCORE_AREA_KEYWORDS[dim];
+    const matched = imps.find((i) => {
+      const a = (i?.area ?? "").toLowerCase();
+      return keys.some((k) => a.includes(k));
+    });
+    const pick = matched ?? imps[0];
+    return {
+      suggestion: pick?.suggestion?.toString().trim() || null,
+      quote: pick?.example_quote ? String(pick.example_quote).trim().slice(0, 400) : null
+    };
+  }
+
+  function dimAverage(field: keyof Row): number | null {
+    if (analyzed.length === 0) return null;
+    return (
+      Math.round(
+        (analyzed.reduce((s, r) => s + Number(r[field] ?? 0), 0) / analyzed.length) * 10
+      ) / 10
+    );
+  }
+
+  function worstForDim(
+    field: keyof Row,
+    dim: keyof typeof SUB_SCORE_AREA_KEYWORDS
+  ): Array<{ call_id: string; score: number; suggestion: string | null; quote: string | null }> {
+    return analyzed
+      .filter((r) => r[field] != null)
+      .sort((a, b) => Number(a[field]) - Number(b[field]))
+      .slice(0, 5)
+      .map((r) => {
+        const imp = findImprovementForDim(r.sdr_improvements, dim);
+        return {
+          call_id: r.id,
+          score: Number(r[field]),
+          suggestion: imp.suggestion,
+          quote: imp.quote
+        };
+      });
+  }
+
   const subScores = {
-    opening:
-      analyzed.length > 0
-        ? Math.round(
-            (analyzed.reduce((s, r) => s + Number(r.sdr_score_opening ?? 0), 0) / analyzed.length) *
-              10
-          ) / 10
-        : null,
-    discovery:
-      analyzed.length > 0
-        ? Math.round(
-            (analyzed.reduce((s, r) => s + Number(r.sdr_score_discovery ?? 0), 0) / analyzed.length) *
-              10
-          ) / 10
-        : null,
-    objection_handling:
-      analyzed.length > 0
-        ? Math.round(
-            (analyzed.reduce((s, r) => s + Number(r.sdr_score_objection ?? 0), 0) / analyzed.length) *
-              10
-          ) / 10
-        : null,
-    next_step:
-      analyzed.length > 0
-        ? Math.round(
-            (analyzed.reduce((s, r) => s + Number(r.sdr_score_next_step ?? 0), 0) / analyzed.length) *
-              10
-          ) / 10
-        : null
+    opening: {
+      value: dimAverage("sdr_score_opening"),
+      worst_calls: worstForDim("sdr_score_opening", "opening")
+    },
+    discovery: {
+      value: dimAverage("sdr_score_discovery"),
+      worst_calls: worstForDim("sdr_score_discovery", "discovery")
+    },
+    objection_handling: {
+      value: dimAverage("sdr_score_objection"),
+      worst_calls: worstForDim("sdr_score_objection", "objection_handling")
+    },
+    next_step: {
+      value: dimAverage("sdr_score_next_step"),
+      worst_calls: worstForDim("sdr_score_next_step", "next_step")
+    }
   };
 
   // ---- 4. Top áreas de mejora (con call_ids + agregación de sugerencias) ----

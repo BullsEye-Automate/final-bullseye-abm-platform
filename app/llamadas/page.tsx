@@ -203,25 +203,36 @@ export default function LlamadasPage() {
       fetched_from_hubspot: number;
       linked: number;
       by_strategy: { wecad_id: number; hubspot_id: number; linkedin: number; email: number };
+      imported: number;
+      imported_companies: number;
       still_orphan: number;
       errors?: Array<{ stage: string; message: string }>;
       error?: string;
-    }>("/api/calls/link-orphans", { limit: 200 });
+    }>("/api/calls/link-orphans", { limit: 200, import_unmatched: true });
     if (!r.ok || !r.data) {
       setLinkMsg(`Error vinculación: ${r.error ?? r.data?.error ?? `HTTP ${r.status}`}`);
     } else {
       const j = r.data;
       const strat = j.by_strategy;
-      const parts = [
+      const matchParts = [
         strat.wecad_id > 0 && `${strat.wecad_id} por wecad_id`,
         strat.hubspot_id > 0 && `${strat.hubspot_id} por hubspot_id`,
         strat.linkedin > 0 && `${strat.linkedin} por LinkedIn`,
         strat.email > 0 && `${strat.email} por email`
-      ].filter(Boolean).join(", ");
+      ]
+        .filter(Boolean)
+        .join(", ");
+      const importParts =
+        j.imported > 0
+          ? ` · importados desde HubSpot ${j.imported} contactos${
+              j.imported_companies > 0 ? ` y ${j.imported_companies} empresas` : ""
+            }`
+          : "";
       setLinkMsg(
-        `Vincular · revisé ${j.scanned} huérfanas · vinculadas ${j.linked}` +
-          (parts ? ` (${parts})` : "") +
-          ` · quedan ${j.still_orphan} sin match`
+        `Vincular · ${j.scanned} huérfanas · ${j.linked} vinculadas` +
+          (matchParts ? ` (${matchParts})` : "") +
+          importParts +
+          (j.still_orphan > 0 ? ` · quedan ${j.still_orphan} sin resolver` : "")
       );
       load();
     }

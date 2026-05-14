@@ -8,6 +8,8 @@ const CONTACT_PROPS_FOR_LINKING = [
   "email",
   "firstname",
   "lastname",
+  "jobtitle",
+  "phone",
   "hs_linkedinid",
   "wecad_contact_id",
   "associatedcompanyid"
@@ -64,9 +66,21 @@ export type HubSpotContactSlim = {
   email: string | null;
   firstname: string | null;
   lastname: string | null;
+  jobtitle: string | null;
+  phone: string | null;
   hs_linkedinid: string | null;
   wecad_contact_id: string | null;
   associatedcompanyid: string | null;
+};
+
+export type HubSpotCompanySlim = {
+  id: string;
+  name: string | null;
+  domain: string | null;
+  city: string | null;
+  country: string | null;
+  numberofemployees: number | null;
+  linkedin_company_page: string | null;
 };
 
 // Batch read de contactos por sus IDs de HubSpot.
@@ -95,9 +109,54 @@ export async function batchReadContacts(
         email: p.email ?? null,
         firstname: p.firstname ?? null,
         lastname: p.lastname ?? null,
+        jobtitle: p.jobtitle ?? null,
+        phone: p.phone ?? null,
         hs_linkedinid: p.hs_linkedinid ?? null,
         wecad_contact_id: p.wecad_contact_id ?? null,
         associatedcompanyid: p.associatedcompanyid ?? null
+      });
+    }
+  }
+  return { ok: true, status: 200, data: out };
+}
+
+const COMPANY_PROPS_FOR_LINKING = [
+  "name",
+  "domain",
+  "city",
+  "country",
+  "numberofemployees",
+  "linkedin_company_page"
+];
+
+export async function batchReadCompanies(
+  ids: string[]
+): Promise<HubSpotApiResult<HubSpotCompanySlim[]>> {
+  if (ids.length === 0) return { ok: true, status: 200, data: [] };
+  const out: HubSpotCompanySlim[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const res = await hubspotFetch<{
+      results?: Array<{ id: string; properties?: Record<string, string | null> }>;
+    }>("/crm/v3/objects/companies/batch/read", {
+      method: "POST",
+      body: JSON.stringify({
+        properties: COMPANY_PROPS_FOR_LINKING,
+        inputs: chunk.map((id) => ({ id }))
+      })
+    });
+    if (!res.ok) return res;
+    for (const r of res.data.results ?? []) {
+      const p = r.properties ?? {};
+      const employees = p.numberofemployees ? Number(p.numberofemployees) : null;
+      out.push({
+        id: r.id,
+        name: p.name ?? null,
+        domain: p.domain ?? null,
+        city: p.city ?? null,
+        country: p.country ?? null,
+        numberofemployees: Number.isFinite(employees) ? employees : null,
+        linkedin_company_page: p.linkedin_company_page ?? null
       });
     }
   }

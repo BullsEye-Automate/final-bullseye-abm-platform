@@ -16,7 +16,12 @@
 // company_id del contacto matcheado.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { batchReadContacts, type HubSpotContactSlim } from "./hubspotContacts";
+import {
+  batchReadContacts,
+  batchReadCompanies,
+  type HubSpotContactSlim,
+  type HubSpotCompanySlim
+} from "./hubspotContacts";
 
 type Orphan = {
   id: string;
@@ -42,6 +47,8 @@ export type LinkOrphansResult = {
     linkedin: number;
     email: number;
   };
+  imported: number;          // contactos creados nuevos en Supabase
+  imported_companies: number; // empresas creadas nuevas en Supabase
   still_orphan: number;
   errors: Array<{ stage: string; message: string }>;
 };
@@ -59,9 +66,10 @@ function normalizeEmail(e: string | null): string | null {
 
 export async function linkOrphanCalls(
   db: SupabaseClient,
-  options: { limit?: number } = {}
+  options: { limit?: number; importUnmatched?: boolean } = {}
 ): Promise<LinkOrphansResult> {
   const limit = Math.min(Math.max(options.limit ?? 200, 1), 500);
+  const importUnmatched = options.importUnmatched !== false; // default: true
 
   const result: LinkOrphansResult = {
     ok: true,
@@ -69,6 +77,8 @@ export async function linkOrphanCalls(
     fetched_from_hubspot: 0,
     linked: 0,
     by_strategy: { wecad_id: 0, hubspot_id: 0, linkedin: 0, email: 0 },
+    imported: 0,
+    imported_companies: 0,
     still_orphan: 0,
     errors: []
   };
@@ -160,7 +170,10 @@ export async function linkOrphanCalls(
     if (em) byEmail.set(em, c);
   }
 
-  // 4. Para cada orphan, resolvemos en cascada.
+  // 4. Para cada orphan, resolvemos en cascada. Las que no matchean
+  // las juntamos para importarlas después si importUnmatched=true.
+  const unmatched: Array<{ orphan: Orphan; hsContact: HubSpotContactSlim }> = [];
+
   for (const o of orphans) {
     const hsContact = hsById.get(o.hubspot_contact_id);
     if (!hsContact) {
@@ -189,7 +202,7 @@ export async function linkOrphanCalls(
     }
 
     if (!matched) {
-      result.still_orphan++;
+      unmatched.push({ orphan: o, hsContact });
       continue;
     }
 
@@ -205,9 +218,6 @@ export async function linkOrphanCalls(
       continue;
     }
 
-    // Bonus: si la fila en contacts todavía no tenía hubspot_contact_id
-    // pero el call dice que tiene uno, lo persistimos. Eso ayuda a que
-    // futuros syncs/links salgan más rápido.
     if (!matched.row.hubspot_contact_id) {
       await db
         .from("contacts")
@@ -217,6 +227,150 @@ export async function linkOrphanCalls(
 
     result.linked++;
     result.by_strategy[matched.strategy]++;
+  }
+
+  // 5. Auto-import: para las unmatched, traemos las companies asociadas
+  // de HubSpot, las upsertea-mos en Supabase, creamos contactos en
+  // Supabase y vinculamos las calls.
+  if (!importUnmatched || unmatched.length === 0) {
+    result.still_orphan += unmatched.length;
+    return result;
+  }
+
+  const companyIds = Array.from(
+    new Set(unmatched.map((u) => u.hsContact.associatedcompanyid).filter((v): v is string => !!v))
+  );
+  const companyMap = new Map<string, HubSpotCompanySlim>();
+  if (companyIds.length > 0) {
+    const compRes = await batchReadCompanies(companyIds);
+    if (compRes.ok) {
+      for (const c of compRes.data) companyMap.set(c.id, c);
+    } else {
+      result.errors.push({ stage: "hubspot_companies_read", message: compRes.error });
+      // No tirar abajo el import, seguimos sin company info
+    }
+  }
+
+  // Pre-resolver Supabase companies por hubspot_company_id para reusar.
+  const supabaseCompanyByHsId = new Map<string, string>();
+  if (companyIds.length > 0) {
+    const { data: existing } = await db
+      .from("companies")
+      .select("id, hubspot_company_id")
+      .in("hubspot_company_id", companyIds);
+    for (const row of (existing ?? []) as Array<{ id: string; hubspot_company_id: string | null }>) {
+      if (row.hubspot_company_id) supabaseCompanyByHsId.set(row.hubspot_company_id, row.id);
+    }
+  }
+
+  for (const { orphan, hsContact } of unmatched) {
+    try {
+      let supabaseCompanyId: string | null = null;
+      const hsCompanyId = hsContact.associatedcompanyid;
+
+      if (hsCompanyId) {
+        // ¿Ya existe en Supabase?
+        const existing = supabaseCompanyByHsId.get(hsCompanyId);
+        if (existing) {
+          supabaseCompanyId = existing;
+        } else {
+          const hsCompany = companyMap.get(hsCompanyId);
+          if (hsCompany) {
+            const { data: inserted, error: cErr } = await db
+              .from("companies")
+              .insert({
+                company_name: hsCompany.name ?? "(sin nombre)",
+                company_website: hsCompany.domain ? `https://${hsCompany.domain}` : null,
+                company_linkedin_url: hsCompany.linkedin_company_page,
+                company_city: hsCompany.city,
+                company_country: hsCompany.country,
+                company_size: hsCompany.numberofemployees,
+                status: "approved", // viene de HubSpot, asumimos válida
+                hubspot_company_id: hsCompany.id,
+                research_summary: "Importada desde HubSpot vía vincular llamadas huérfanas."
+              })
+              .select("id")
+              .single();
+            if (cErr) {
+              result.errors.push({ stage: "import_company", message: cErr.message });
+            } else if (inserted) {
+              supabaseCompanyId = (inserted as { id: string }).id;
+              supabaseCompanyByHsId.set(hsCompanyId, supabaseCompanyId);
+              result.imported_companies++;
+            }
+          }
+        }
+      }
+
+      // Si no logramos company y la company es requerida (NOT NULL en
+      // schema), creamos una placeholder por contacto. Hay que ver el
+      // schema: contacts.company_id es NOT NULL en contacts_migration.sql.
+      // Workaround: si no hay company, creamos una placeholder con
+      // company_name = "(sin empresa en HubSpot)" para mantener el FK.
+      if (!supabaseCompanyId) {
+        const placeholderName = "(sin empresa en HubSpot)";
+        const { data: placeholderCo, error: pcErr } = await db
+          .from("companies")
+          .insert({
+            company_name: placeholderName,
+            status: "approved",
+            research_summary: "Placeholder creado al importar contacto huérfano sin company asociada en HubSpot."
+          })
+          .select("id")
+          .single();
+        if (pcErr) {
+          result.errors.push({ stage: "import_company_placeholder", message: pcErr.message });
+          result.still_orphan++;
+          continue;
+        }
+        supabaseCompanyId = (placeholderCo as { id: string }).id;
+        result.imported_companies++;
+      }
+
+      // Crear contact
+      const linkedinUrl = hsContact.hs_linkedinid
+        ? hsContact.hs_linkedinid.startsWith("http")
+          ? hsContact.hs_linkedinid
+          : `https://${hsContact.hs_linkedinid.replace(/^\/+/, "")}`
+        : null;
+
+      const { data: inserted, error: contactErr } = await db
+        .from("contacts")
+        .insert({
+          company_id: supabaseCompanyId,
+          first_name: hsContact.firstname,
+          last_name: hsContact.lastname,
+          job_title: hsContact.jobtitle,
+          linkedin_url: linkedinUrl,
+          email: hsContact.email,
+          phone: hsContact.phone,
+          hubspot_contact_id: hsContact.id,
+          status: "contacted", // ya fue contactado (tiene call)
+          prefilter_result: null,
+          prefilter_reason: "Importado desde HubSpot vía vincular llamadas huérfanas."
+        })
+        .select("id")
+        .single();
+      if (contactErr) {
+        result.errors.push({ stage: "import_contact", message: contactErr.message });
+        result.still_orphan++;
+        continue;
+      }
+      const newContactId = (inserted as { id: string }).id;
+      result.imported++;
+
+      // Vincular la call
+      await db
+        .from("calls")
+        .update({ contact_id: newContactId, company_id: supabaseCompanyId })
+        .eq("id", orphan.id);
+    } catch (err) {
+      result.errors.push({
+        stage: "import_loop",
+        message: err instanceof Error ? err.message : "Unknown"
+      });
+      result.still_orphan++;
+    }
   }
 
   return result;
