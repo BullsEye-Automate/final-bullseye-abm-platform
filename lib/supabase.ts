@@ -33,6 +33,7 @@ export type IcpConfig = {
   pipeline_mix: PipelineMix[];
   competitors: Competitor[];
   geographies: Geography[];
+  buyer_personas: BuyerPersonas | null;
   notes: string;
   created_by: string | null;
   created_at: string;
@@ -43,6 +44,15 @@ export type SizeRule   = { min: number; max: number | null; decision: "approve" 
 export type PipelineMix = { label: string; share: number; velocity: string };
 export type Competitor = { name: string; note?: string };
 export type Geography  = { region: string; priority: string; note?: string };
+
+// Buyer personas: alimenta el pre-filtro de contactos. target_roles =
+// cargos que la IA debe marcar YES; excluded_roles = cargos que debe
+// marcar NO; notes = contexto libre del buyer persona.
+export type BuyerPersonas = {
+  target_roles: string[];
+  excluded_roles: string[];
+  notes: string;
+};
 
 export type Contact = {
   id: string;

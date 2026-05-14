@@ -1,12 +1,16 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic, CLAUDE_MODEL } from "./claude";
 import { PREFILTER_SYSTEM, prefilterUserPrompt } from "./contactsPrompts";
+import type { BuyerPersonas } from "./supabase";
 
 export type PrefilterInput = {
   job_title: string | null;
   linkedin_headline: string | null;
   company_type: string | null;
   company_size: number | null;
+  // Cargos objetivo/excluidos del ICP activo. Si no se pasa, el prompt
+  // cae a DEFAULT_BUYER_PERSONAS.
+  buyer_personas?: BuyerPersonas | null;
 };
 
 export type PrefilterResult = "yes" | "no";

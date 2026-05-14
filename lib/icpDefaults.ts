@@ -1,10 +1,46 @@
 import type {
+  BuyerPersonas,
   Competitor,
   Geography,
   OrgType,
   PipelineMix,
   SizeRule
 } from "./supabase";
+
+// Buyer personas por defecto — alimenta el pre-filtro de contactos cuando
+// el ICP activo todavía no tiene un buyer_personas propio (filas viejas).
+// El usuario puede editar todo esto desde /configuracion/icp.
+export const DEFAULT_BUYER_PERSONAS: BuyerPersonas = {
+  target_roles: [
+    "Owner, co-owner, founder, co-founder, president",
+    "CEO and any C-level executive (COO, CCO) — top decision makers, ALWAYS a buyer regardless of whether their headline mentions digital/CAD",
+    "General Manager, Managing Director",
+    "Director or VP of Operations, Production, Clinical Services, Manufacturing or Digital",
+    "Lab Manager, Production Manager, Operations Manager, Workflow Manager",
+    "CAD/CAM Manager, Digital Workflow Manager, Production Coordinator",
+    "Office Manager or Practice Manager (often handles purchasing decisions)",
+    "Regional / District / Area Manager when the role oversees dental operations or labs",
+    "Partner in the lab, clinic group or DSO",
+    "Dentist or doctor who is ALSO owner, founder, director, partner or manager of a clinic, DSO or dental group"
+  ],
+  excluded_roles: [
+    "Pure technicians with no management role: CAD technician/operator/designer, dental technician, ceramist, lab technician",
+    "Dental assistant, hygienist, dental nurse, sterilization tech, surgical assistant",
+    "Clinical dentist / associate / oral surgeon / orthodontist with no ownership or management role",
+    "Marketing (any: digital, content, brand, social media, marketing manager or director)",
+    "HR / People Operations / Talent Acquisition / Recruiting",
+    "Learning & Development / Training / Education / Onboarding",
+    "IT, Software Engineer, Developer, DevOps, Data Analyst or Scientist",
+    "Sales rep, account executive, business development, distributor, vendor, equipment sales",
+    "Finance (CFO, Financial Controller, Accountant, Treasurer, Bookkeeper, Finance Manager) — they may approve but do not initiate CAD/CAM outsourcing decisions",
+    "Legal, Compliance, Privacy, Risk Management",
+    "Customer Service, Patient Services, Patient Coordinator, Insurance Coordinator, Front Desk, Receptionist",
+    "Real Estate, Facilities, procurement of non-CAD supplies",
+    "Students, interns, residents, or unspecified roles"
+  ],
+  notes:
+    "El comprador de weCAD4you es liderazgo de operaciones/producción o la dueñería del lab/clínica/DSO. El CEO, owner y founder SIEMPRE son YES aunque su headline no mencione nada digital — son los que firman. En labs chicos (<30 empleados) el dueño ES el comprador. En DSOs grandes, solo roles senior de operaciones."
+};
 
 export const ICP_V1_DEFAULTS: {
   org_types: OrgType[];
@@ -15,6 +51,7 @@ export const ICP_V1_DEFAULTS: {
   pipeline_mix: PipelineMix[];
   competitors: Competitor[];
   geographies: Geography[];
+  buyer_personas: BuyerPersonas;
   notes: string;
 } = {
   org_types: [
@@ -65,6 +102,7 @@ export const ICP_V1_DEFAULTS: {
     { region: "EU", priority: "terciario", note: "GDPR — legitimate interest" },
     { region: "LATAM", priority: "oportunístico" }
   ],
+  buyer_personas: DEFAULT_BUYER_PERSONAS,
   notes:
     "Regla de oro: lab / multi-centro / DSO + flujo digital + volumen real. Tener diseñadores propios NO descarta — es señal de que entienden el valor."
 };

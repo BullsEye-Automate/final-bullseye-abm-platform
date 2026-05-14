@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runPrefilter } from "./prefilter";
+import type { BuyerPersonas } from "./supabase";
 
 export type RawContact = {
   first_name?: string | null;
@@ -36,6 +37,19 @@ export async function intakeContactsForCompany(
     .maybeSingle();
   if (cErr) return { ok: false, status: 500, error: cErr.message };
   if (!company) return { ok: false, status: 404, error: "Company not found" };
+
+  // Buyer personas del ICP activo — alimenta el pre-filtro. Si no hay
+  // ICP o no tiene buyer_personas, runPrefilter cae al default.
+  const { data: icp } = await db
+    .from("icp_config")
+    .select("buyer_personas")
+    .eq("is_active", true)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const buyerPersonas =
+    ((icp as { buyer_personas?: BuyerPersonas } | null)?.buyer_personas as BuyerPersonas | null) ??
+    null;
 
   const { data: existing, error: exErr } = await db
     .from("contacts")
@@ -79,7 +93,8 @@ export async function intakeContactsForCompany(
         job_title: c.job_title ?? null,
         linkedin_headline: c.linkedin_headline ?? null,
         company_type: company.company_type ?? null,
-        company_size: company.company_size ?? null
+        company_size: company.company_size ?? null,
+        buyer_personas: buyerPersonas
       });
     } catch {
       // Si Claude falla, marcamos yes para no descartar el contacto por error de infra.

@@ -8,11 +8,13 @@ import {
   IconAlertCircle,
   IconCheck
 } from "@tabler/icons-react";
+import { DEFAULT_BUYER_PERSONAS } from "@/lib/icpDefaults";
 
 type OrgType = { key: string; label: string; accept: boolean; note?: string };
 type SizeRule = { min: number; max: number | null; decision: "approve" | "reject"; note?: string };
 type Competitor = { name: string; note?: string };
 type PipelineMix = { label: string; share: number; velocity: string };
+type BuyerPersonas = { target_roles: string[]; excluded_roles: string[]; notes: string };
 
 type Icp = {
   id: string;
@@ -25,6 +27,7 @@ type Icp = {
   pipeline_mix: PipelineMix[];
   competitors: Competitor[];
   geographies: { region: string; priority: string; note?: string }[];
+  buyer_personas: BuyerPersonas;
   notes: string;
 };
 
@@ -40,6 +43,11 @@ export default function IcpPage() {
     fetch("/api/icp", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
+        // Filas de ICP viejas no tienen buyer_personas — caemos al default
+        // para que la sección sea editable igual.
+        if (d.icp) {
+          d.icp.buyer_personas = d.icp.buyer_personas ?? DEFAULT_BUYER_PERSONAS;
+        }
         setIcp(d.icp);
         setLoading(false);
       })
@@ -287,6 +295,50 @@ export default function IcpPage() {
           >
             <IconPlus size={14} /> Añadir regla
           </button>
+        </div>
+      </section>
+
+      <section className="card">
+        <h2 className="font-semibold mb-1">Filtro 4 · Buyer Persona (cargos)</h2>
+        <p className="text-xs text-ink-muted mb-3">
+          Alimenta el pre-filtro de contactos. La IA marca YES los cargos objetivo y NO los
+          excluidos. La estrictez por tamaño de empresa y la detección de ex-empleados se
+          aplican siempre encima de esto.
+        </p>
+        <div className="space-y-4">
+          <SignalList
+            title="Cargos objetivo (YES)"
+            helper="Roles que deciden o gestionan producción/operaciones. El dueño, CEO y founder son YES siempre, aunque su perfil no mencione nada digital."
+            items={icp.buyer_personas.target_roles}
+            onChange={(v) =>
+              setIcp({ ...icp, buyer_personas: { ...icp.buyer_personas, target_roles: v } })
+            }
+          />
+          <SignalList
+            title="Cargos a excluir (NO)"
+            helper="Roles que no inician decisiones de outsourcing CAD/CAM."
+            items={icp.buyer_personas.excluded_roles}
+            onChange={(v) =>
+              setIcp({ ...icp, buyer_personas: { ...icp.buyer_personas, excluded_roles: v } })
+            }
+          />
+          <div>
+            <h3 className="text-sm font-medium mb-1">Notas del buyer persona</h3>
+            <p className="text-xs text-ink-muted mb-2">
+              Contexto libre que la IA pondera fuerte. Ej: cómo varía el comprador según el
+              tamaño del lab.
+            </p>
+            <textarea
+              className="input min-h-[90px]"
+              value={icp.buyer_personas.notes}
+              onChange={(e) =>
+                setIcp({
+                  ...icp,
+                  buyer_personas: { ...icp.buyer_personas, notes: e.target.value }
+                })
+              }
+            />
+          </div>
         </div>
       </section>
 

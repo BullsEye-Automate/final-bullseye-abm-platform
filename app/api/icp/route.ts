@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, IcpConfig } from "@/lib/supabase";
+import { DEFAULT_BUYER_PERSONAS } from "@/lib/icpDefaults";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
     pipeline_mix: body.pipeline_mix ?? [],
     competitors: body.competitors ?? [],
     geographies: body.geographies ?? [],
+    buyer_personas: body.buyer_personas ?? DEFAULT_BUYER_PERSONAS,
     notes: body.notes ?? "",
     created_by: reviewer
   };
