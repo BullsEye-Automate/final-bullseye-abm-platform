@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { pushApprovedToLemlist } from "@/lib/lemlistPush";
+import {
+  pushContactToHubSpot,
+  pushCompanyToHubSpot,
+  type HubSpotContactInput,
+  type HubSpotCompanyInput
+} from "@/lib/hubspotPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 // POST /api/contacts/[id]/push-to-lemlist
 //
@@ -12,7 +18,8 @@ export const maxDuration = 60;
 // para contactos que ya tienen email (típicamente scrapeados del sitio web
 // de la empresa): Clay no aporta nada porque no hay LinkedIn URL para
 // enriquecer y el email ya lo tenemos. La app genera icebreaker + email
-// con Claude (igual que el approval de revisión manual) y pushea.
+// con Claude y pushea. Después también sincroniza el contacto a HubSpot
+// (y su empresa si hace falta), igual que el flujo de revisión manual.
 //
 // Tras un push exitoso marca fit_action='enrich' para que el contacto pase
 // del bucket "Pendientes" a "En campaña".
@@ -80,33 +87,91 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     );
   }
 
-  let company: {
+  // Snapshot de la empresa para el push a Lemlist + datos para HubSpot.
+  type CompanyRow = {
+    id: string;
     company_name: string | null;
+    company_website: string | null;
+    company_linkedin_url: string | null;
+    company_city: string | null;
+    company_country: string | null;
     company_size: number | null;
     company_type: string | null;
     cad_software: string | null;
     scanner_technology: string | null;
     fit_signals: string | null;
-  } | null = null;
+    fit_score: string | null;
+    approved_at: string | null;
+    clay_pushed_at: string | null;
+    hubspot_company_id: string | null;
+  };
+  let company: CompanyRow | null = null;
   if (contact.company_id) {
     const { data } = await db
       .from("companies")
       .select(
-        "company_name, company_size, company_type, cad_software, scanner_technology, fit_signals"
+        "id, company_name, company_website, company_linkedin_url, company_city, company_country, " +
+          "company_size, company_type, cad_software, scanner_technology, fit_signals, fit_score, " +
+          "approved_at, clay_pushed_at, hubspot_company_id"
       )
       .eq("id", contact.company_id)
       .maybeSingle();
-    company = data ?? null;
+    company = (data as unknown as CompanyRow) ?? null;
   }
 
-  const result = await pushApprovedToLemlist(db, params.id, contact, company);
+  // 1) Push a Lemlist (genera mensajes con Claude si faltan).
+  const lemlistResult = await pushApprovedToLemlist(db, params.id, contact, company);
 
   // Tras un push exitoso, marcamos fit_action='enrich' para que el contacto
-  // salga de "Pendientes" y aparezca en "En campaña" (mismo patrón que el
-  // approval de revisión manual). pushApprovedToLemlist ya setea
-  // lemlist_pushed_at.
-  if (result.ok) {
+  // salga de "Pendientes" y aparezca en "En campaña".
+  if (lemlistResult.ok) {
     await db.from("contacts").update({ fit_action: "enrich" }).eq("id", params.id);
+  }
+
+  // 2) Sincronizar a HubSpot (contacto + empresa). Independiente del
+  // resultado de Lemlist — el contacto debería estar en el CRM igual.
+  let hubspotResult: unknown = null;
+  try {
+    let hubspotCompanyId: string | null = company?.hubspot_company_id ?? null;
+    let companySnapshot: {
+      company_type: string | null;
+      cad_software: string | null;
+      scanner_technology: string | null;
+    } | null = null;
+    if (company) {
+      const cRes = await pushCompanyToHubSpot(db, company as unknown as HubSpotCompanyInput);
+      if (cRes.ok) hubspotCompanyId = cRes.hubspot_id;
+      companySnapshot = {
+        company_type: company.company_type,
+        cad_software: company.cad_software,
+        scanner_technology: company.scanner_technology
+      };
+    }
+    // Recargamos el contacto: pushApprovedToLemlist persistió los mensajes
+    // generados, y queremos que HubSpot reciba los wecad_* fields al día.
+    const { data: freshRaw } = await db
+      .from("contacts")
+      .select(
+        "id, company_id, first_name, last_name, job_title, email, phone, linkedin_url, " +
+          "fit_score, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, " +
+          "human_decision, human_decision_reason, clay_pushed_at, lemlist_pushed_at, " +
+          "phone_enrichment_status, phone_source, hubspot_contact_id"
+      )
+      .eq("id", params.id)
+      .maybeSingle();
+    if (freshRaw) {
+      hubspotResult = await pushContactToHubSpot(
+        db,
+        freshRaw as unknown as HubSpotContactInput,
+        hubspotCompanyId,
+        companySnapshot
+      );
+    }
+  } catch (err) {
+    hubspotResult = {
+      ok: false,
+      error: err instanceof Error ? err.message : "HubSpot push failed"
+    };
   }
 
   const { data: refetched } = await db
@@ -115,11 +180,16 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, " +
         "phone, seniority, tenure, prefilter_result, prefilter_reason, fit_score, fit, fit_reason, " +
         "fit_action, linkedin_icebreaker, email_subject, email_body, status, clay_pushed_at, " +
-        "clay_push_error, lemlist_pushed_at, lemlist_push_error, human_decision, human_decision_at, " +
+        "clay_push_error, lemlist_pushed_at, lemlist_push_error, hubspot_contact_id, " +
+        "hubspot_synced_at, hubspot_sync_error, human_decision, human_decision_at, " +
         "human_decision_reason, human_decision_by, created_at, updated_at"
     )
     .eq("id", params.id)
     .single();
 
-  return NextResponse.json({ contact: refetched, lemlist_push: result });
+  return NextResponse.json({
+    contact: refetched,
+    lemlist_push: lemlistResult,
+    hubspot_push: hubspotResult
+  });
 }

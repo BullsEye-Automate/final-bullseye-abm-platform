@@ -143,19 +143,26 @@ export default function ContactosPage() {
       return;
     }
     const lp = data.lemlist_push;
+    const hp = data.hubspot_push;
+    const hubspotNote =
+      hp == null
+        ? ""
+        : hp.ok === false
+        ? ` · HubSpot falló: ${hp.error}`
+        : ` · HubSpot ${hp.created ? "creado" : "actualizado"}`;
     if (lp?.ok === false) {
       setLemlistDebug({
         label: `Push directo a Lemlist falló para ${label}`,
         payload: lp
       });
-      setPushNotice(`${label}: Lemlist falló (ver detalle abajo).`);
+      setPushNotice(`${label}: Lemlist falló (ver detalle abajo).${hubspotNote}`);
     } else {
       setPushNotice(
         `${label} empujado directo a Lemlist${
           lp?.messages_generated
             ? ` (mensajes generados con ${lp.model_used ?? "Claude"})`
             : ""
-        }. Pasa a "En campaña".`
+        }${hubspotNote}. Pasa a "En campaña".`
       );
     }
     await load();
