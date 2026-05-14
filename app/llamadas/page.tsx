@@ -53,12 +53,22 @@ type Kpis = {
   total_analyzed: number;
   pending_analysis: number;
   orphan_calls: number;
+  unique_contacts: number;
+  unique_companies: number;
   avg_duration_sec: number;
   avg_sdr_score: number | null;
   interested_count: number;
   callbacks_count: number;
   interested_rate: number | null;
+  pickup_rate_calls: number | null;
+  pickup_calls_numerator: number;
+  pickup_calls_denominator: number;
+  pickup_rate_contacts: number | null;
+  pickup_contacts_numerator: number;
+  pickup_contacts_denominator: number;
 };
+
+type Owner = { hubspot_owner_id: string; name: string; calls: number };
 
 type ListResponse = {
   range: { key: string; label: string };
@@ -86,6 +96,8 @@ const RESPONSE_FILTERS: Array<{ key: string; label: string }> = [
 export default function LlamadasPage() {
   const [range, setRange] = useState<RangeKey | "all">("this_month");
   const [response, setResponse] = useState<string>("");
+  const [owner, setOwner] = useState<string>("");
+  const [owners, setOwners] = useState<Owner[]>([]);
   const [data, setData] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -101,6 +113,7 @@ export default function LlamadasPage() {
     setError(null);
     const params = new URLSearchParams({ range });
     if (response) params.set("response", response);
+    if (owner) params.set("owner", owner);
     try {
       const res = await fetch(`/api/calls?${params.toString()}`);
       const json = await res.json();
@@ -115,11 +128,19 @@ export default function LlamadasPage() {
     } finally {
       setLoading(false);
     }
-  }, [range, response]);
+  }, [range, response, owner]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // Lista de owners para el filtro (fetch una vez)
+  useEffect(() => {
+    fetch("/api/calls/owners")
+      .then((r) => r.json())
+      .then((j) => setOwners(j.owners ?? []))
+      .catch(() => {});
+  }, []);
 
   async function postJson<T>(
     path: string,
@@ -276,7 +297,13 @@ export default function LlamadasPage() {
 
       {data && <KpiCards kpis={data.kpis} />}
 
-      <Filters response={response} onResponseChange={setResponse} />
+      <Filters
+        response={response}
+        onResponseChange={setResponse}
+        owner={owner}
+        onOwnerChange={setOwner}
+        owners={owners}
+      />
 
       {!loading && data && data.calls.length === 0 && (
         <div className="card text-center py-12 text-ink-muted">
@@ -386,18 +413,34 @@ function Header({
 
 function KpiCards({ kpis }: { kpis: Kpis }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <Kpi label="Llamadas" value={String(kpis.total_calls)} sub={`${kpis.total_analyzed} analizadas`} />
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <Kpi
+        label="Llamadas"
+        value={String(kpis.total_calls)}
+        sub={`${kpis.unique_contacts} contactos · ${kpis.unique_companies} empresas`}
+      />
       <Kpi
         label="Duración promedio"
         value={formatDuration(kpis.avg_duration_sec)}
-        sub="por llamada"
+        sub={`${kpis.total_analyzed} analizadas`}
       />
       <Kpi
         label="Score SDR promedio"
         value={kpis.avg_sdr_score == null ? "—" : `${kpis.avg_sdr_score}/10`}
         sub={kpis.total_analyzed > 0 ? "según IA" : "sin análisis"}
         accent={kpis.avg_sdr_score != null && kpis.avg_sdr_score >= 7 ? "good" : kpis.avg_sdr_score != null && kpis.avg_sdr_score < 5 ? "bad" : undefined}
+      />
+      <Kpi
+        label="Tasa pickup · llamada"
+        value={kpis.pickup_rate_calls == null ? "—" : `${kpis.pickup_rate_calls}%`}
+        sub={`${kpis.pickup_calls_numerator}/${kpis.pickup_calls_denominator} contestadas`}
+        accent={kpis.pickup_rate_calls != null && kpis.pickup_rate_calls >= 40 ? "good" : kpis.pickup_rate_calls != null && kpis.pickup_rate_calls < 20 ? "bad" : undefined}
+      />
+      <Kpi
+        label="Tasa pickup · contacto"
+        value={kpis.pickup_rate_contacts == null ? "—" : `${kpis.pickup_rate_contacts}%`}
+        sub={`${kpis.pickup_contacts_numerator}/${kpis.pickup_contacts_denominator} atendieron`}
+        accent={kpis.pickup_rate_contacts != null && kpis.pickup_rate_contacts >= 50 ? "good" : kpis.pickup_rate_contacts != null && kpis.pickup_rate_contacts < 30 ? "bad" : undefined}
       />
       <Kpi
         label="Interesados"
@@ -443,14 +486,20 @@ function Kpi({
 
 function Filters({
   response,
-  onResponseChange
+  onResponseChange,
+  owner,
+  onOwnerChange,
+  owners
 }: {
   response: string;
   onResponseChange: (v: string) => void;
+  owner: string;
+  onOwnerChange: (v: string) => void;
+  owners: Owner[];
 }) {
   return (
     <div className="card flex flex-wrap items-center gap-3">
-      <div className="text-sm text-ink-muted">Filtrar por respuesta del cliente:</div>
+      <div className="text-sm text-ink-muted">Filtrar:</div>
       <select
         value={response}
         onChange={(e) => onResponseChange(e.target.value)}
@@ -459,6 +508,18 @@ function Filters({
         {RESPONSE_FILTERS.map((f) => (
           <option key={f.key} value={f.key}>
             {f.label}
+          </option>
+        ))}
+      </select>
+      <select
+        value={owner}
+        onChange={(e) => onOwnerChange(e.target.value)}
+        className="bg-white border border-[#E5E2F0] rounded-lg px-3 py-1.5 text-sm"
+      >
+        <option value="">Todos los SDRs</option>
+        {owners.map((o) => (
+          <option key={o.hubspot_owner_id} value={o.hubspot_owner_id}>
+            {o.name} ({o.calls})
           </option>
         ))}
       </select>

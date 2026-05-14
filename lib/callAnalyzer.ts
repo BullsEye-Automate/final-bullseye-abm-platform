@@ -28,6 +28,29 @@ export type CustomerResponseCategory =
   | "gatekeeper"
   | "other";
 
+// Categorías donde el contacto ATENDIÓ y hubo conversación (aunque no haya
+// estado interesado). Se usan para calcular pickup rate.
+export const PICKUP_CATEGORIES: ReadonlySet<CustomerResponseCategory> = new Set([
+  "interested",
+  "objection_price",
+  "objection_timing",
+  "objection_no_need",
+  "objection_existing_solution",
+  "objection_authority",
+  "callback_requested",
+  "not_interested",
+  "no_engagement"
+]);
+
+// Categorías donde NO hubo pickup del decision maker (buzón, gatekeeper,
+// número equivocado). Cuentan en el denominador como "intento" pero no
+// suman al numerador de pickup.
+export const NO_PICKUP_CATEGORIES: ReadonlySet<CustomerResponseCategory> = new Set([
+  "voicemail",
+  "gatekeeper",
+  "wrong_number"
+]);
+
 export const CUSTOMER_RESPONSE_LABELS: Record<CustomerResponseCategory, string> = {
   interested: "Interesado",
   objection_price: "Objeción · Precio",

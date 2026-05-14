@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, RANGE_LABELS, type RangeKey } from "@/lib/dashboardRanges";
-import { CUSTOMER_RESPONSE_LABELS, type CustomerResponseCategory } from "@/lib/callAnalyzer";
+import {
+  CUSTOMER_RESPONSE_LABELS,
+  PICKUP_CATEGORIES,
+  NO_PICKUP_CATEGORIES,
+  type CustomerResponseCategory
+} from "@/lib/callAnalyzer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET /api/calls/report?range=this_month
-// Devuelve agregaciones para el módulo de reportería:
-//   - Distribución de respuestas del cliente
-//   - Ranking de SDRs por score promedio
-//   - Sub-scores promedio agregados (apertura, descubrimiento, objeción, next_step)
-//   - Top áreas de mejora (agregando "area" de sdr_improvements)
-//   - Time series diario: calls + score promedio
+// GET /api/calls/report?range=this_month&owner=<hubspot_owner_id>
 type Row = {
   id: string;
   call_timestamp: string | null;
@@ -20,54 +19,105 @@ type Row = {
   owner_name: string | null;
   duration_ms: number | null;
   customer_response_category: CustomerResponseCategory | null;
+  contact_id: string | null;
+  company_id: string | null;
   sdr_score_overall: number | null;
   sdr_score_opening: number | null;
   sdr_score_discovery: number | null;
   sdr_score_objection: number | null;
   sdr_score_next_step: number | null;
-  sdr_improvements: Array<{ area?: string; suggestion?: string }> | null;
+  sdr_improvements: Array<{ area?: string; suggestion?: string; example_quote?: string | null }> | null;
   analyzed_at: string | null;
 };
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const rangeParam = url.searchParams.get("range") ?? "this_month";
+  const owner = url.searchParams.get("owner");
   const key: RangeKey = isValidRangeKey(rangeParam) ? rangeParam : "this_month";
   const range = resolveRange(key);
 
   const db = supabaseAdmin();
-  const { data: rowsRaw, error } = await db
+  let q = db
     .from("calls")
     .select(
       "id, call_timestamp, hubspot_owner_id, owner_name, duration_ms, " +
-        "customer_response_category, sdr_score_overall, sdr_score_opening, " +
+        "customer_response_category, contact_id, company_id, " +
+        "sdr_score_overall, sdr_score_opening, " +
         "sdr_score_discovery, sdr_score_objection, sdr_score_next_step, " +
         "sdr_improvements, analyzed_at"
     )
     .gte("call_timestamp", range.start.toISOString())
     .lte("call_timestamp", range.end.toISOString());
+  if (owner) q = q.eq("hubspot_owner_id", owner);
 
+  const { data: rowsRaw, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const rows = (rowsRaw ?? []) as unknown as Row[];
 
-  // 1. Distribución de respuestas
-  const responseCounts: Record<string, number> = {};
+  // ---- Totals con contactos y empresas únicas ----
+  const uniqueContacts = new Set(
+    rows.filter((r) => r.contact_id).map((r) => r.contact_id as string)
+  );
+  const uniqueCompanies = new Set(
+    rows.filter((r) => r.company_id).map((r) => r.company_id as string)
+  );
+
+  // ---- Tasas de pickup ----
+  const analyzed = rows.filter((r) => r.analyzed_at && r.sdr_score_overall != null);
+  const pickupCalls = analyzed.filter(
+    (r) => r.customer_response_category && PICKUP_CATEGORIES.has(r.customer_response_category)
+  );
+  const noPickupCalls = analyzed.filter(
+    (r) => r.customer_response_category && NO_PICKUP_CATEGORIES.has(r.customer_response_category)
+  );
+  const pickupDenominator = pickupCalls.length + noPickupCalls.length;
+  const pickupRateCalls =
+    pickupDenominator > 0
+      ? Math.round((pickupCalls.length / pickupDenominator) * 1000) / 10
+      : null;
+
+  const contactsWorked = new Set<string>();
+  const contactsWithPickup = new Set<string>();
+  for (const r of analyzed) {
+    if (!r.contact_id || !r.customer_response_category) continue;
+    if (
+      PICKUP_CATEGORIES.has(r.customer_response_category) ||
+      NO_PICKUP_CATEGORIES.has(r.customer_response_category)
+    ) {
+      contactsWorked.add(r.contact_id);
+      if (PICKUP_CATEGORIES.has(r.customer_response_category)) {
+        contactsWithPickup.add(r.contact_id);
+      }
+    }
+  }
+  const pickupRateContacts =
+    contactsWorked.size > 0
+      ? Math.round((contactsWithPickup.size / contactsWorked.size) * 1000) / 10
+      : null;
+
+  // ---- 1. Distribución de respuestas (con call_ids para drilldown) ----
+  const responseMap = new Map<string, { count: number; call_ids: string[] }>();
   for (const r of rows) {
     const k = r.customer_response_category ?? "(no analizado)";
-    responseCounts[k] = (responseCounts[k] ?? 0) + 1;
+    const entry = responseMap.get(k) ?? { count: 0, call_ids: [] };
+    entry.count++;
+    entry.call_ids.push(r.id);
+    responseMap.set(k, entry);
   }
-  const responseDistribution = Object.entries(responseCounts)
-    .map(([key, count]) => ({
+  const responseDistribution = Array.from(responseMap.entries())
+    .map(([key, v]) => ({
       key,
       label:
         key === "(no analizado)"
           ? "Sin analizar"
           : CUSTOMER_RESPONSE_LABELS[key as CustomerResponseCategory] ?? key,
-      count
+      count: v.count,
+      call_ids: v.call_ids
     }))
     .sort((a, b) => b.count - a.count);
 
-  // 2. Ranking SDRs
+  // ---- 2. Ranking SDRs ----
   const sdrAgg = new Map<
     string,
     { name: string; calls: number; analyzed: number; score_sum: number; interested: number }
@@ -96,8 +146,7 @@ export async function GET(req: NextRequest) {
     }))
     .sort((a, b) => (b.avg_score ?? -1) - (a.avg_score ?? -1));
 
-  // 3. Sub-scores promedio
-  const analyzed = rows.filter((r) => r.analyzed_at && r.sdr_score_overall != null);
+  // ---- 3. Sub-scores promedio ----
   const subScores = {
     opening:
       analyzed.length > 0
@@ -129,22 +178,46 @@ export async function GET(req: NextRequest) {
         : null
   };
 
-  // 4. Top áreas de mejora (frecuencia agregada del campo "area")
-  const areaCounts = new Map<string, number>();
+  // ---- 4. Top áreas de mejora (con call_ids + agregación de sugerencias) ----
+  // Para cada área, guardamos: count, lista de call_ids, sugerencias agregadas
+  // (deduped y top 5), y la cita textual más representativa de cada call.
+  type AreaAgg = {
+    count: number;
+    call_ids: string[];
+    suggestions: string[];
+    quotes: Array<{ call_id: string; quote: string }>;
+  };
+  const areaMap = new Map<string, AreaAgg>();
   for (const r of rows) {
     const imps = r.sdr_improvements ?? [];
     for (const i of imps) {
-      const a = (i?.area ?? "").toString().trim();
-      if (!a) continue;
-      areaCounts.set(a, (areaCounts.get(a) ?? 0) + 1);
+      const area = (i?.area ?? "").toString().trim();
+      if (!area) continue;
+      const entry = areaMap.get(area) ?? { count: 0, call_ids: [], suggestions: [], quotes: [] };
+      entry.count++;
+      if (!entry.call_ids.includes(r.id)) entry.call_ids.push(r.id);
+      const sug = (i.suggestion ?? "").toString().trim();
+      if (sug) entry.suggestions.push(sug);
+      const q = (i.example_quote ?? "").toString().trim();
+      if (q) entry.quotes.push({ call_id: r.id, quote: q });
+      areaMap.set(area, entry);
     }
   }
-  const topImprovementAreas = Array.from(areaCounts.entries())
-    .map(([area, count]) => ({ area, count }))
+  const topImprovementAreas = Array.from(areaMap.entries())
+    .map(([area, v]) => ({
+      area,
+      count: v.count,
+      call_ids: v.call_ids,
+      // Top 5 sugerencias más comunes (dedup case-insensitive aproximada
+      // por primeros 40 chars).
+      top_suggestions: dedupTop(v.suggestions, 5),
+      // Hasta 5 quotes representativas
+      example_quotes: v.quotes.slice(0, 5)
+    }))
     .sort((a, b) => b.count - a.count)
     .slice(0, 8);
 
-  // 5. Time series diario (calls + avg score)
+  // ---- 5. Time series diario ----
   const byDay = new Map<string, { calls: number; score_sum: number; analyzed: number }>();
   for (const r of rows) {
     if (!r.call_timestamp) continue;
@@ -175,13 +248,22 @@ export async function GET(req: NextRequest) {
     totals: {
       calls: rows.length,
       analyzed: analyzed.length,
+      unique_contacts: uniqueContacts.size,
+      unique_companies: uniqueCompanies.size,
       avg_score:
         analyzed.length > 0
           ? Math.round(
-              (analyzed.reduce((s, r) => s + Number(r.sdr_score_overall ?? 0), 0) / analyzed.length) *
+              (analyzed.reduce((s, r) => s + Number(r.sdr_score_overall ?? 0), 0) /
+                analyzed.length) *
                 10
             ) / 10
-          : null
+          : null,
+      pickup_rate_calls: pickupRateCalls,
+      pickup_calls_numerator: pickupCalls.length,
+      pickup_calls_denominator: pickupDenominator,
+      pickup_rate_contacts: pickupRateContacts,
+      pickup_contacts_numerator: contactsWithPickup.size,
+      pickup_contacts_denominator: contactsWorked.size
     },
     sub_scores: subScores,
     response_distribution: responseDistribution,
@@ -189,4 +271,17 @@ export async function GET(req: NextRequest) {
     top_improvement_areas: topImprovementAreas,
     activity
   });
+}
+
+function dedupTop(items: string[], n: number): Array<{ text: string; count: number }> {
+  const map = new Map<string, { text: string; count: number }>();
+  for (const it of items) {
+    const key = it.toLowerCase().slice(0, 40);
+    const entry = map.get(key) ?? { text: it, count: 0 };
+    entry.count++;
+    map.set(key, entry);
+  }
+  return Array.from(map.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, n);
 }

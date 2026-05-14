@@ -15,6 +15,17 @@ export const dynamic = "force-dynamic";
 // más un bloque agregado para KPIs del header de la página.
 
 import { resolveRange, isValidRangeKey, RANGE_LABELS, type RangeKey } from "@/lib/dashboardRanges";
+import { PICKUP_CATEGORIES, NO_PICKUP_CATEGORIES, type CustomerResponseCategory } from "@/lib/callAnalyzer";
+
+type KpiRow = {
+  id: string;
+  duration_ms: number | null;
+  sdr_score_overall: number | null;
+  customer_response_category: CustomerResponseCategory | null;
+  analyzed_at: string | null;
+  contact_id: string | null;
+  company_id: string | null;
+};
 
 const ALL_KEY = "all";
 
@@ -60,18 +71,63 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // KPIs del rango
-  let kpiQ = db.from("calls").select("id, duration_ms, sdr_score_overall, customer_response_category, analyzed_at", {
-    count: "exact"
-  });
+  let kpiQ = db
+    .from("calls")
+    .select(
+      "id, duration_ms, sdr_score_overall, customer_response_category, analyzed_at, contact_id, company_id"
+    );
   if (start) kpiQ = kpiQ.gte("call_timestamp", start.toISOString());
   if (end) kpiQ = kpiQ.lte("call_timestamp", end.toISOString());
   if (owner) kpiQ = kpiQ.eq("hubspot_owner_id", owner);
-  const { data: allRows } = await kpiQ;
+  const { data: allRowsRaw } = await kpiQ;
+  const allRows = (allRowsRaw ?? []) as unknown as KpiRow[];
 
-  const total = allRows?.length ?? 0;
-  const analyzedRows = (allRows ?? []).filter((r) => r.analyzed_at);
+  const total = allRows.length;
+  const analyzedRows = allRows.filter((r) => r.analyzed_at);
   const totalAnalyzed = analyzedRows.length;
-  const pendingAnalysis = (allRows ?? []).filter((r) => !r.analyzed_at).length;
+  const pendingAnalysis = allRows.filter((r) => !r.analyzed_at).length;
+
+  // Contactos y empresas únicas (excluyendo nulls).
+  const uniqueContacts = new Set(
+    allRows.filter((r) => r.contact_id).map((r) => r.contact_id as string)
+  ).size;
+  const uniqueCompanies = new Set(
+    allRows.filter((r) => r.company_id).map((r) => r.company_id as string)
+  ).size;
+
+  // Tasas de pickup. Solo cuentan calls analizadas (con customer_response_category).
+  // Denominador = pickup + no_pickup (categorías ambiguas como "other" o nulls quedan fuera).
+  const pickupCalls = analyzedRows.filter(
+    (r) => r.customer_response_category && PICKUP_CATEGORIES.has(r.customer_response_category)
+  );
+  const noPickupCalls = analyzedRows.filter(
+    (r) => r.customer_response_category && NO_PICKUP_CATEGORIES.has(r.customer_response_category)
+  );
+  const pickupDenominator = pickupCalls.length + noPickupCalls.length;
+  const pickupRateCalls =
+    pickupDenominator > 0
+      ? Math.round((pickupCalls.length / pickupDenominator) * 1000) / 10
+      : null;
+
+  // Tasa de contactos atendieron / contactos trabajados.
+  const contactsWorked = new Set<string>();
+  const contactsWithPickup = new Set<string>();
+  for (const r of analyzedRows) {
+    if (!r.contact_id || !r.customer_response_category) continue;
+    if (
+      PICKUP_CATEGORIES.has(r.customer_response_category) ||
+      NO_PICKUP_CATEGORIES.has(r.customer_response_category)
+    ) {
+      contactsWorked.add(r.contact_id);
+      if (PICKUP_CATEGORIES.has(r.customer_response_category)) {
+        contactsWithPickup.add(r.contact_id);
+      }
+    }
+  }
+  const pickupRateContacts =
+    contactsWorked.size > 0
+      ? Math.round((contactsWithPickup.size / contactsWorked.size) * 1000) / 10
+      : null;
 
   // Huérfanas globales (no por rango): calls con hubspot_contact_id pero
   // sin contact_id en Supabase. Se vinculan via /api/calls/link-orphans.
@@ -103,11 +159,19 @@ export async function GET(req: NextRequest) {
       total_analyzed: totalAnalyzed,
       pending_analysis: pendingAnalysis,
       orphan_calls: orphanCount ?? 0,
+      unique_contacts: uniqueContacts,
+      unique_companies: uniqueCompanies,
       avg_duration_sec: avgDuration,
       avg_sdr_score: avgScore,
       interested_count: interested,
       callbacks_count: callbacks,
-      interested_rate: total > 0 ? Math.round((interested / total) * 1000) / 10 : null
+      interested_rate: total > 0 ? Math.round((interested / total) * 1000) / 10 : null,
+      pickup_rate_calls: pickupRateCalls,
+      pickup_calls_numerator: pickupCalls.length,
+      pickup_calls_denominator: pickupDenominator,
+      pickup_rate_contacts: pickupRateContacts,
+      pickup_contacts_numerator: contactsWithPickup.size,
+      pickup_contacts_denominator: contactsWorked.size
     },
     calls: data ?? []
   });
