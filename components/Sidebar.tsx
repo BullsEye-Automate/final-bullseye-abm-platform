@@ -39,7 +39,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/telefonos",  label: "Teléfonos",  icon: IconPhone },
       { href: "/llamadas",   label: "Llamadas",   icon: IconPhoneCall },
-      { href: "/respuestas", label: "Respuestas", icon: IconMessage2, disabled: true }
+      { href: "/respuestas", label: "Respuestas", icon: IconMessage2 }
     ]
   },
   {
