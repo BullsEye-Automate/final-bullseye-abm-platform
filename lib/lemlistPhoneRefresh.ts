@@ -119,11 +119,19 @@ export async function refreshLemlistPhones(
     }
     res.lemlist_ok += 1;
     // Lemlist todavía no enriqueció el teléfono. Guardamos el primer lead
-    // crudo sin phone para poder ver el shape real de la respuesta.
+    // crudo sin phone (con la respuesta HTTP cruda y las URLs probadas) para
+    // poder ver el shape real de la respuesta de Lemlist.
     if (!lead.phone) {
       if (!res.debug) res.debug = {};
       if (!res.debug.first_lead_without_phone) {
-        res.debug.first_lead_without_phone = { email: c.email, lead: lead.lead };
+        res.debug.first_lead_without_phone = {
+          email: c.email,
+          matched_url: lead.matched_url,
+          status: lead.status,
+          raw: lead.raw,
+          parsed_lead: lead.lead,
+          attempts: lead.attempts
+        };
       }
       continue;
     }

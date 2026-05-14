@@ -245,8 +245,18 @@ export type LemlistLeadFetched = {
   [key: string]: unknown;
 };
 
+export type LemlistGetAttempt = { url: string; status: number; preview: string };
+
 export type LemlistGetResult =
-  | { ok: true; status: number; lead: LemlistLeadFetched; phone: string | null }
+  | {
+      ok: true;
+      status: number;
+      lead: LemlistLeadFetched;
+      phone: string | null;
+      matched_url: string;
+      raw: string;
+      attempts: LemlistGetAttempt[];
+    }
   | { ok: false; status: number; error: string; debug?: unknown };
 
 function extractPhone(lead: LemlistLeadFetched): string | null {
@@ -295,7 +305,7 @@ export async function getLemlistLeadById(leadId: string): Promise<LemlistGetResu
 }
 
 async function tryGetUrls(urls: string[]): Promise<LemlistGetResult> {
-  const attempts: Array<{ url: string; status: number; preview: string }> = [];
+  const attempts: LemlistGetAttempt[] = [];
   for (const url of urls) {
     let res: Response;
     try {
@@ -310,10 +320,25 @@ async function tryGetUrls(urls: string[]): Promise<LemlistGetResult> {
       continue;
     }
     const raw = await res.text();
+    attempts.push({ url, status: res.status, preview: raw.slice(0, 200) });
     if (res.ok) {
       let parsed: LemlistLeadFetched = {};
       try {
-        parsed = (raw ? JSON.parse(raw) : {}) as LemlistLeadFetched;
+        const json = raw ? JSON.parse(raw) : {};
+        // Lemlist a veces devuelve el lead envuelto ({lead:{...}}, {data:{...}})
+        // o como primer elemento de un array. Desenvolvemos antes de extraer.
+        if (Array.isArray(json)) {
+          parsed = (json[0] ?? {}) as LemlistLeadFetched;
+        } else if (json && typeof json === "object") {
+          const obj = json as Record<string, unknown>;
+          if (obj.lead && typeof obj.lead === "object") {
+            parsed = obj.lead as LemlistLeadFetched;
+          } else if (obj.data && typeof obj.data === "object") {
+            parsed = obj.data as LemlistLeadFetched;
+          } else {
+            parsed = obj as LemlistLeadFetched;
+          }
+        }
       } catch {
         parsed = {};
       }
@@ -321,10 +346,12 @@ async function tryGetUrls(urls: string[]): Promise<LemlistGetResult> {
         ok: true,
         status: res.status,
         lead: parsed,
-        phone: extractPhone(parsed)
+        phone: extractPhone(parsed),
+        matched_url: url,
+        raw: raw.slice(0, 1500),
+        attempts
       };
     }
-    attempts.push({ url, status: res.status, preview: raw.slice(0, 200) });
   }
   const last = attempts[attempts.length - 1];
   return {
