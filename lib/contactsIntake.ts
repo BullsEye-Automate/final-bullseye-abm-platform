@@ -39,12 +39,20 @@ export async function intakeContactsForCompany(
 
   const { data: existing, error: exErr } = await db
     .from("contacts")
-    .select("linkedin_url")
+    .select("linkedin_url, email")
     .eq("company_id", companyId);
   if (exErr) return { ok: false, status: 500, error: exErr.message };
+  // Dedup por LinkedIn URL y también por email — los contactos scrapeados de
+  // la web suelen no tener LinkedIn URL pero sí email, así que sin el dedup
+  // por email se duplicarían al re-scrapear.
   const seen = new Set(
     (existing ?? [])
       .map((r) => (r.linkedin_url ?? "").toLowerCase().trim())
+      .filter(Boolean)
+  );
+  const seenEmail = new Set(
+    (existing ?? [])
+      .map((r) => (r.email ?? "").toLowerCase().trim())
       .filter(Boolean)
   );
 
@@ -53,11 +61,17 @@ export async function intakeContactsForCompany(
 
   for (const c of raws) {
     const linkedin = (c.linkedin_url ?? "").toLowerCase().trim();
+    const email = (c.email ?? "").toLowerCase().trim();
     if (linkedin && seen.has(linkedin)) {
       summary.skipped += 1;
       continue;
     }
+    if (email && seenEmail.has(email)) {
+      summary.skipped += 1;
+      continue;
+    }
     if (linkedin) seen.add(linkedin);
+    if (email) seenEmail.add(email);
 
     let prefilter: "yes" | "no" = "no";
     try {

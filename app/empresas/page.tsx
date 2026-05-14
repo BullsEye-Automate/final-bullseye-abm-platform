@@ -994,6 +994,37 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
   const [pushingHubspot, setPushingHubspot] = useState(false);
   const [hubspotId, setHubspotId] = useState<string | null>(c.hubspot_company_id);
   const [hubspotError, setHubspotError] = useState<string | null>(c.hubspot_sync_error);
+  const [scraping, setScraping] = useState(false);
+  const [scrapeMsg, setScrapeMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(
+    null
+  );
+
+  async function scrapeWebsite() {
+    setScraping(true);
+    setScrapeMsg(null);
+    try {
+      const res = await fetch(`/api/companies/${c.id}/scrape-contacts`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setScrapeMsg({ kind: "err", text: data.error ?? `HTTP ${res.status}` });
+      } else if (data.found === 0) {
+        setScrapeMsg({ kind: "warn", text: data.message ?? "No se encontraron personas en la web." });
+      } else {
+        const s = data.summary;
+        setScrapeMsg({
+          kind: s.yes > 0 ? "ok" : "warn",
+          text: `${data.found} personas encontradas en la web · ${s.yes} pasaron el pre-filtro (van a Contactos) · ${s.no} descartadas · ${s.skipped} duplicadas`
+        });
+      }
+    } catch (err) {
+      setScrapeMsg({
+        kind: "err",
+        text: err instanceof Error ? err.message : "Error de red"
+      });
+    } finally {
+      setScraping(false);
+    }
+  }
 
   async function pushToHubspot() {
     setPushingHubspot(true);
@@ -1307,7 +1338,39 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
           )}
         </div>
       )}
-      <div className="flex justify-end pt-1">
+      {scrapeMsg && (
+        <div
+          className={`text-xs flex items-start gap-1.5 ${
+            scrapeMsg.kind === "ok"
+              ? "text-success-fg"
+              : scrapeMsg.kind === "warn"
+              ? "text-warning-fg"
+              : "text-danger-fg"
+          }`}
+        >
+          {scrapeMsg.kind === "ok" ? (
+            <IconCheck size={13} className="shrink-0 mt-0.5" />
+          ) : (
+            <IconAlertCircle size={13} className="shrink-0 mt-0.5" />
+          )}
+          <span>{scrapeMsg.text}</span>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between pt-1">
+        {c.company_website ? (
+          <button
+            onClick={scrapeWebsite}
+            disabled={scraping}
+            className="text-xs text-ink-muted hover:text-brand inline-flex items-center gap-1"
+            title="Busca la página de equipo del sitio web y extrae contactos (nombre, cargo, email). Útil para labs que tienen su equipo en la web pero no en LinkedIn."
+          >
+            <IconSearch size={12} />
+            {scraping ? "Buscando en la web…" : "Buscar contactos en la web"}
+          </button>
+        ) : (
+          <span />
+        )}
         <button
           onClick={removeCompany}
           disabled={deleting}
