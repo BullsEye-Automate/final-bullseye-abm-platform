@@ -10,9 +10,17 @@ export const maxDuration = 60;
 // fueron aprobados (human_decision='approved') pero cuyo push original
 // falló por un error transitorio del API de Lemlist. La UI muestra un
 // botón "Reintentar Lemlist" cuando lemlist_push_error está set.
+//
+// Body opcional { force: true }: re-empuja un contacto que YA está en
+// Lemlist (lemlist_pushed_at set). Útil para arreglar leads que se
+// empujaron con el icebreaker en blanco (bug previo): pushApprovedToLemlist
+// regenera los mensajes si están vacíos y vuelve a empujar — Lemlist
+// upsertea el lead por email/linkedinUrl, así que actualiza el existente.
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const db = supabaseAdmin();
+  const body = (await req.json().catch(() => null)) as { force?: boolean } | null;
+  const force = body?.force === true;
 
   const { data: contact, error: fetchErr } = await db
     .from("contacts")
@@ -24,13 +32,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
   if (!contact) return NextResponse.json({ error: "Contact not found" }, { status: 404 });
 
-  if (contact.human_decision !== "approved") {
+  // En modo force aceptamos cualquier contacto que ya esté (o haya estado)
+  // encaminado a Lemlist; si no, exigimos approval de revisión manual.
+  if (contact.human_decision !== "approved" && !(force && contact.lemlist_pushed_at)) {
     return NextResponse.json(
       { error: "Only manual-review approved contacts can be re-pushed to Lemlist" },
       { status: 400 }
     );
   }
-  if (contact.lemlist_pushed_at) {
+  if (contact.lemlist_pushed_at && !force) {
     return NextResponse.json(
       { error: "Contact already in Lemlist" },
       { status: 409 }

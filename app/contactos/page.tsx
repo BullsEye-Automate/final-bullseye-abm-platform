@@ -257,13 +257,18 @@ export default function ContactosPage() {
     await load();
   }
 
-  async function retryLemlist(contactId: string, label: string) {
+  // force=true re-empuja un contacto que YA está en Lemlist — sirve para
+  // arreglar leads con el icebreaker en blanco: el backend regenera los
+  // mensajes vacíos y Lemlist upsertea el lead.
+  async function retryLemlist(contactId: string, label: string, force = false) {
     setRetryingId(contactId);
     setPushNotice(null);
     setError(null);
     setLemlistDebug(null);
     const res = await fetch(`/api/contacts/${contactId}/lemlist-retry`, {
-      method: "POST"
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force })
     });
     const data = await res.json();
     setRetryingId(null);
@@ -283,7 +288,11 @@ export default function ContactosPage() {
         } patrones de URL.`
       );
     } else {
-      setPushNotice(`${label} empujado a Lemlist correctamente en el reintento.`);
+      setPushNotice(
+        force
+          ? `${label}: mensajes regenerados y re-empujado a Lemlist.`
+          : `${label} empujado a Lemlist correctamente en el reintento.`
+      );
     }
     await load();
   }
@@ -724,7 +733,7 @@ function ContactCard({
   isDeciding: boolean;
   onDelete: (id: string, label: string) => void | Promise<void>;
   isDeleting: boolean;
-  onRetryLemlist: (id: string, label: string) => void | Promise<void>;
+  onRetryLemlist: (id: string, label: string, force?: boolean) => void | Promise<void>;
   isRetryingLemlist: boolean;
   onRetryHubspot: (id: string, label: string) => void | Promise<void>;
   isRetryingHubspot: boolean;
@@ -755,6 +764,12 @@ function ContactCard({
     c.human_decision === "approved" &&
     !c.lemlist_pushed_at &&
     !!c.lemlist_push_error;
+  // Contacto YA en Lemlist pero con el icebreaker en blanco: el lead se
+  // empujó sin el {{icebreaker}} (bug previo) y Lemlist avisa "has no
+  // value". El botón regenera el mensaje y re-empuja (force).
+  const canForceRepushLemlist =
+    !!c.lemlist_pushed_at &&
+    (!c.linkedin_icebreaker || !c.linkedin_icebreaker.trim());
   // HubSpot puede reintentar si nunca se sincronizó O si hay un error
   // persistido (idempotente: si ya está bien, igual hace update).
   const canRetryHubspot =
@@ -781,6 +796,15 @@ function ContactCard({
             {c.lemlist_pushed_at && (
               <span className="badge bg-success-bg text-success-fg">en Lemlist ✓</span>
             )}
+            {c.lemlist_pushed_at &&
+              (!c.linkedin_icebreaker || !c.linkedin_icebreaker.trim()) && (
+                <span
+                  className="badge bg-warning-bg text-warning-fg"
+                  title="El lead se empujó a Lemlist sin icebreaker. Usá el botón 'Regenerar icebreaker y re-empujar'."
+                >
+                  sin icebreaker ⚠
+                </span>
+              )}
             {c.hubspot_contact_id && (
               <span className="badge bg-success-bg text-success-fg">en HubSpot ✓</span>
             )}
@@ -967,6 +991,17 @@ function ContactCard({
           >
             <IconRefresh size={12} />
             {isRetryingLemlist ? "Reintentando…" : "Reintentar Lemlist"}
+          </button>
+        )}
+        {canForceRepushLemlist && (
+          <button
+            onClick={() => onRetryLemlist(c.id, fullName, true)}
+            disabled={isRetryingLemlist}
+            className="btn-primary text-xs"
+            title="Este contacto está en Lemlist sin icebreaker. Regenera el mensaje con Claude y re-empuja el lead (Lemlist lo actualiza)."
+          >
+            <IconRefresh size={12} />
+            {isRetryingLemlist ? "Regenerando…" : "Regenerar icebreaker y re-empujar"}
           </button>
         )}
         {canRetryHubspot && (

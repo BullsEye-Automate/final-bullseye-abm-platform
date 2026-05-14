@@ -65,6 +65,10 @@ export async function pushApprovedToLemlist(
     return { ok: false, error };
   }
 
+  // Un string presente pero en blanco ("", "  ", "\n") cuenta como faltante:
+  // si no, el push manda icebreaker:"  " y Lemlist avisa "has no value".
+  const blank = (s: string | null | undefined): boolean => !s || !s.trim();
+
   // 1) Generar mensajes si faltan (manual_review no dispara las AI cols de Clay).
   let icebreaker = contact.linkedin_icebreaker;
   let subject = contact.email_subject;
@@ -72,7 +76,7 @@ export async function pushApprovedToLemlist(
   let messages_generated = false;
   let model_used: string | undefined;
 
-  if (!icebreaker || !subject || !emailBody) {
+  if (blank(icebreaker) || blank(subject) || blank(emailBody)) {
     if (!company) {
       const error = "Cannot generate messages: contact has no company joined";
       await db.from("contacts").update({ lemlist_push_error: error }).eq("id", contactId);
@@ -117,7 +121,23 @@ export async function pushApprovedToLemlist(
     }
   }
 
-  // 2) Push a Lemlist.
+  // 2) Guard: nunca empujar un lead con icebreaker/subject/body en blanco.
+  // Lemlist mostraría "{{icebreaker}} has no value" y el toque de LinkedIn
+  // saldría roto. Mejor abortar y dejar el error visible para reintentar.
+  if (blank(icebreaker) || blank(subject) || blank(emailBody)) {
+    const faltan = [
+      blank(icebreaker) && "icebreaker",
+      blank(subject) && "email_subject",
+      blank(emailBody) && "email_body"
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const error = `No se empuja a Lemlist: ${faltan} quedó en blanco después de generar mensajes`;
+    await db.from("contacts").update({ lemlist_push_error: error }).eq("id", contactId);
+    return { ok: false, error };
+  }
+
+  // 3) Push a Lemlist.
   const push = await addLeadToCampaign(campaignId, {
     linkedinUrl: contact.linkedin_url,
     email: contact.email,

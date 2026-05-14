@@ -57,9 +57,9 @@ function buildPayload(lead: LemlistLead): Record<string, unknown> {
   if (lead.companyName) payload.companyName = lead.companyName;
   if (lead.jobTitle) payload.jobTitle = lead.jobTitle;
   if (lead.phone) payload.phone = lead.phone;
-  payload.icebreaker = lead.icebreaker;
-  payload.emailSubject = lead.emailSubject;
-  payload.emailBody = lead.emailBody;
+  payload.icebreaker = lead.icebreaker.trim();
+  payload.emailSubject = lead.emailSubject.trim();
+  payload.emailBody = lead.emailBody.trim();
   if (lead.wecad_fit_score != null) payload.wecad_fit_score = lead.wecad_fit_score;
   if (lead.wecad_fit_reason) payload.wecad_fit_reason = lead.wecad_fit_reason;
   if (lead.wecad_fit_action) payload.wecad_fit_action = lead.wecad_fit_action;
@@ -174,6 +174,21 @@ export async function addLeadToCampaign(
       ok: false,
       status: 400,
       error: "Lead has neither linkedinUrl nor email — Lemlist needs at least one"
+    };
+  }
+  // Guard de borde: nunca empujar un lead con las variables de la secuencia
+  // en blanco. Lemlist lo aceptaría pero después muestra "{{icebreaker}} has
+  // no value" y el toque de LinkedIn / email sale roto.
+  const missing = [
+    !lead.icebreaker?.trim() && "icebreaker",
+    !lead.emailSubject?.trim() && "emailSubject",
+    !lead.emailBody?.trim() && "emailBody"
+  ].filter(Boolean);
+  if (missing.length > 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Lead has blank ${missing.join(", ")} — refusing to push (Lemlist would warn "{{variable}} has no value")`
     };
   }
 

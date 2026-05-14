@@ -138,19 +138,28 @@ function stripSignature(text: string): string {
   return t;
 }
 
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function clampIcebreaker(text: string, firstName: string | null): string {
-  let t = text.trim();
-  // Defensiva: si Claude igual incluyó "Hi <name>," al inicio, lo sacamos.
-  const greetRegex = new RegExp(`^hi\\s+${(firstName ?? "").trim()}[,\\s].*?,\\s*`, "i");
-  t = t.replace(greetRegex, "").trim();
-  // Genérico: "Hi <anything>," al principio
-  t = t.replace(/^hi\s+[^,]{1,40},\s*/i, "").trim();
-  // Sin saltos de línea
-  t = t.replace(/\s+/g, " ").trim();
+  let t = text.trim().replace(/\s+/g, " ");
   // Sacar dashes "AI-generated"
   t = stripAiDashes(t);
+  // Defensiva: si Claude igual incluyó "Hi <name>," al inicio, lo sacamos —
+  // pero SOLO si queda contenido sustantivo después. Si Claude devolvió puro
+  // saludo ("Hi Nick,"), preferimos mandar eso antes que un string vacío,
+  // que en Lemlist sale como "{{icebreaker}} has no value".
+  const name = escapeRegex((firstName ?? "").trim());
+  let stripped = t;
+  if (name) {
+    stripped = stripped.replace(new RegExp(`^hi\\s+${name}[,\\s].*?,\\s*`, "i"), "").trim();
+  }
+  // Genérico: "Hi <anything>," al principio
+  stripped = stripped.replace(/^hi\s+[^,]{1,40},\s*/i, "").trim();
+  if (stripped.length > 0) t = stripped;
   if (t.length > 180) t = t.slice(0, 180).trim();
-  return t;
+  return t.trim();
 }
 
 function sanitizeSubject(text: string): string {
@@ -185,10 +194,26 @@ export async function generateMessages(input: MessageInput): Promise<GeneratedMe
     throw new Error("Claude response missing one of icebreaker/subject/body");
   }
 
-  return {
+  const result: GeneratedMessages = {
     linkedin_icebreaker: clampIcebreaker(parsed.linkedin_icebreaker, input.first_name),
     email_subject: sanitizeSubject(parsed.email_subject),
     email_body: sanitizeBody(parsed.email_body),
     model_used
   };
+
+  // Los sanitizers (clamp / strip dash / strip signature) pueden vaciar un
+  // campo si Claude devolvió algo degenerado. Validamos el resultado FINAL,
+  // no el parseado — un campo vacío acá termina como "{{variable}} has no
+  // value" en Lemlist. Mejor fallar y que el caller decida (reintentar).
+  if (
+    !result.linkedin_icebreaker.trim() ||
+    !result.email_subject.trim() ||
+    !result.email_body.trim()
+  ) {
+    throw new Error(
+      "El mensaje generado quedó vacío después de sanitizar (icebreaker/subject/body)"
+    );
+  }
+
+  return result;
 }
