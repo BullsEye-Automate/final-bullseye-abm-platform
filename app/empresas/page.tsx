@@ -220,6 +220,8 @@ export default function EmpresasPage() {
       claude_extracted: number;
       passed_name: number;
       passed_dedup: number;
+      passed_fit: number;
+      salvaged_linkedin: number;
       passed_linkedin_regex: number;
       passed_region: number;
       passed_linkedin_live: number;
@@ -808,6 +810,11 @@ Smile Designers Lab,,,`}
                   <FunnelStep label="Claude extrajo" value={lastRun.diagnostics.claude_extracted} />
                   <FunnelStep label="Con nombre" value={lastRun.diagnostics.passed_name} />
                   <FunnelStep label="No duplicadas" value={lastRun.diagnostics.passed_dedup} />
+                  <FunnelStep label="Pasó filtro de fit" value={lastRun.diagnostics.passed_fit} />
+                  <FunnelStep
+                    label="LinkedIn salvados"
+                    value={lastRun.diagnostics.salvaged_linkedin}
+                  />
                   <FunnelStep label="LinkedIn regex" value={lastRun.diagnostics.passed_linkedin_regex} />
                   <FunnelStep
                     label={

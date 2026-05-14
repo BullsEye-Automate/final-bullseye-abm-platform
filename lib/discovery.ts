@@ -37,6 +37,9 @@ type DiscoverOpts = {
   // Cuando es false, no se aplica el filtro estricto de país (solo el prompt
   // ya le pide a Claude que respete la región).
   strict_region?: boolean;
+  // Cuando es true (default), corre un paso extra de Perplexity para
+  // resolver LinkedIn URLs de empresas buen-fit que Claude dejó sin URL.
+  salvage_linkedin?: boolean;
 };
 
 export type DiscoveryDiagnostics = {
@@ -49,6 +52,8 @@ export type DiscoveryDiagnostics = {
   claude_extracted: number;
   passed_name: number;
   passed_dedup: number;
+  passed_fit: number;
+  salvaged_linkedin: number;
   passed_linkedin_regex: number;
   passed_region: number;
   passed_linkedin_live: number;
@@ -103,11 +108,18 @@ Tu trabajo es extraer empresas reales que aparezcan en la investigación web ent
 
 Reglas de extracción:
 - Trabajas ÚNICAMENTE con la evidencia provista. No inventes empresas ni señales. Si la evidencia no menciona algo, déjalo en null.
-- Extrae TODA empresa que la evidencia mencione como laboratorio dental, clínica multi-centro o DSO, aunque falten campos. El filtrado fino (LinkedIn URL válida, país, tamaño) lo hace el código después; tu trabajo es no perder candidatos en este paso.
+- Extrae empresas que la evidencia mencione como laboratorio dental, clínica multi-centro o DSO, aunque falten campos. El filtrado fino (LinkedIn URL válida, país, tamaño) lo hace el código después; tu trabajo es no perder candidatos válidos en este paso.
+- **NO extraigas** (estos NO son nuestro target y ensucian la cola de revisión):
+  - Distribuidores de insumos o equipos dentales.
+  - Fabricantes de equipos, materiales o software dental.
+  - Proveedores, mayoristas, consultoras, agencias.
+  - Centros de fresado que solo venden equipos sin operar como laboratorio.
+  - Empresas de OTRAS industrias (biotecnología, agro, farma, etc.) — aunque el nombre tenga la palabra "lab".
+  Si una empresa NO es claramente un laboratorio dental, una clínica dental multi-centro o un DSO que opera como tal, NO la incluyas en absoluto. No uses "other" como cajón de sastre: si no encaja en lab/multi_clinic/dso, omitila.
 - Una empresa califica si: es lab / multi-centro / DSO + tiene evidencia de flujo digital + tiene volumen real (no 1–2 personas).
 - Si la empresa ya externaliza con un competidor (Evident, Full Contour, Aidite, Automate by 3Shape), márcala como "high" y rellena competitor_match.
 - Tener diseñadores propios NO descarta — es señal de que entienden el valor.
-- Tamaño de empresa: estima en empleados. Si la evidencia da un rango, usa el punto medio. Si no hay tamaño, deja null (no descartes por eso).
+- Tamaño de empresa: estima en empleados. Si la evidencia da un rango, usa el punto medio. Si no hay tamaño, deja null (no descartes por eso). Respeta la banda de tamaño pedida: si la evidencia dice que la empresa es mucho más grande que el rango pedido, probablemente no es nuestro target.
 - company_linkedin_url: si la evidencia trae la URL corporativa de LinkedIn (formato https://www.linkedin.com/company/<slug>), inclúyela LITERAL. Si no la trae, deja null — NO la inventes ni construyas desde el nombre, pero TAMPOCO descartes la empresa por eso.
 - company_country: usa el código ISO de 2 letras cuando puedas inferirlo de la evidencia (US, CA, MX, GB, etc.). Si no puedes inferirlo, deja null (no descartes por eso).
 - company_website: si lo incluyes, debe estar literal en la evidencia. Si dudas, déjalo en null antes que inventar.
@@ -170,9 +182,10 @@ function isInStrictRegion(region: string, country: string | null | undefined): b
 
 export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoverResult> {
   const { icp, region, size_min, size_max, size_note, limit, exclude } = opts;
-  const overshoot = Math.max(1, opts.overshoot ?? 2);
+  const overshoot = Math.max(1, opts.overshoot ?? 3);
   const verifyLinkedinLive = opts.verify_linkedin_live ?? true;
   const strictRegion = opts.strict_region ?? true;
+  const salvageLinkedin = opts.salvage_linkedin ?? true;
   const ask = Math.min(limit * overshoot, 30);
 
   // 1) Perplexity research
@@ -185,12 +198,25 @@ export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoverRes
 
   const perplexityUser = `Busca ${ask} laboratorios dentales, clínicas multi-centro o DSOs basados en ${regionLabel} que muestren señales de flujos digitales CAD/CAM dental. Perfil deseado: ${sizeHint}.
 
+QUÉ BUSCAR (solo esto):
+- Laboratorios dentales que operan como tales (diseñan/fabrican restauraciones).
+- Grupos de clínicas dentales multi-centro.
+- DSOs (Dental Service Organizations).
+
+QUÉ NO INCLUIR (importante, ensucia los resultados):
+- Distribuidores o mayoristas de insumos/equipos dentales.
+- Fabricantes de equipos, materiales o software dental (ej. fabricantes de escáneres, de fresadoras, de resinas).
+- Proveedores, consultoras, agencias de marketing dental.
+- Centros de fresado que solo venden o alquilan equipos sin operar como laboratorio.
+- Empresas de OTRAS industrias aunque tengan "lab" en el nombre (biotecnología, agro, farmacéutica, investigación científica, etc.).
+- Empresas muy por fuera de la banda de tamaño pedida (${sizeHint}).
+
 PRIORIDAD DE SOFTWARE CAD (clave para weCAD4you):
 - Alta prioridad: labs que usan **exocad** o **inLab** (Dentsply Sirona). Son nuestro sweet spot.
 - Prioridad media: labs que usan **3Shape** o **Dental Wings**. Válidos pero secundarios — incluye solo si también tienen otras señales fuertes (escáneres premium, contrataciones, externalización ya con competidor, etc.).
 - Si tienes que elegir entre devolver más empresas 3Shape o menos pero con exocad/inLab, prefiere exocad/inLab.
 
-Para cada empresa, devuelve los datos que encuentres en fuentes públicas. No descartes empresas si te falta algún dato — el sistema posterior filtra.
+Para cada empresa, devuelve los datos que encuentres en fuentes públicas. No descartes laboratorios válidos si te falta algún dato — el sistema posterior filtra. Pero NO incluyas empresas que claramente no son labs/clínicas/DSOs.
 
 Datos que necesito por empresa:
 - Nombre exacto de la empresa (obligatorio)
@@ -278,7 +304,38 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
 
   const namedOnly = companies.filter((c) => c.company_name.length > 0);
   const dedupOnly = namedOnly.filter((c) => !excludeSet.has(c.company_name.toLowerCase().trim()));
-  const regexOnly = dedupOnly.filter((c) => isValidLinkedinCompanyUrl(c.company_linkedin_url));
+
+  // Filtro de fit: descarta tipos fuera de target (distribuidores, fabricantes,
+  // no-dentales que Claude marcó "other") y tamaños groseramente fuera de banda.
+  // Esto evita que basura llegue a la cola de revisión humana.
+  const fitOnly = dedupOnly.filter((c) => passesFit(c, size_min, size_max));
+
+  // Salvataje de LinkedIn URL: el mayor asesino de yield es que Claude deja
+  // company_linkedin_url en null porque Perplexity no la trajo literal. Para
+  // las empresas buen-fit sin URL válida, hacemos una segunda búsqueda
+  // dedicada que solo resuelve URLs.
+  let salvagedCount = 0;
+  let withUrl = fitOnly;
+  if (salvageLinkedin) {
+    const missing = fitOnly.filter((c) => !isValidLinkedinCompanyUrl(c.company_linkedin_url));
+    if (missing.length > 0) {
+      const resolved = await salvageLinkedinUrls(
+        missing.map((c) => c.company_name),
+        regionLabel
+      );
+      withUrl = fitOnly.map((c) => {
+        if (isValidLinkedinCompanyUrl(c.company_linkedin_url)) return c;
+        const url = resolved.get(c.company_name.toLowerCase().trim());
+        if (url && isValidLinkedinCompanyUrl(url)) {
+          salvagedCount++;
+          return { ...c, company_linkedin_url: url };
+        }
+        return c;
+      });
+    }
+  }
+
+  const regexOnly = withUrl.filter((c) => isValidLinkedinCompanyUrl(c.company_linkedin_url));
   const regionOnly = strictRegion
     ? regexOnly.filter((c) => isInStrictRegion(region, c.company_country))
     : regexOnly;
@@ -306,6 +363,8 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
     claude_extracted: companies.length,
     passed_name: namedOnly.length,
     passed_dedup: dedupOnly.length,
+    passed_fit: fitOnly.length,
+    salvaged_linkedin: salvagedCount,
     passed_linkedin_regex: regexOnly.length,
     passed_region: regionOnly.length,
     passed_linkedin_live: liveOnly.length,
@@ -315,6 +374,71 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
   };
 
   return { companies: final, diagnostics };
+}
+
+// Filtro de fit aplicado en código (no en el prompt — el prompt ya pide a
+// Claude que no extraiga basura, pero esto es la red de seguridad).
+function passesFit(
+  c: DiscoveredCompany,
+  sizeMin: number,
+  sizeMax: number | null
+): boolean {
+  // Tipo fuera de target: distribuidores, fabricantes, no-dentales. Claude
+  // los debería omitir, pero si igual marca "other", acá los cortamos.
+  if (c.company_type === "other") return false;
+  // Tamaño groseramente fuera de banda — solo cuando el tamaño es conocido
+  // (los null pasan, Claude muchas veces no tiene el dato). Tolerancia
+  // generosa (3x el techo) para no perder borderline: un techo de 50 deja
+  // pasar hasta 150, pero descarta el distribuidor de 350.
+  if (c.company_size != null) {
+    if (sizeMax != null && c.company_size > sizeMax * 3) return false;
+    const floor = Math.max(1, Math.floor(sizeMin / 3));
+    if (c.company_size < floor) return false;
+  }
+  return true;
+}
+
+// Segunda llamada a Perplexity dedicada a resolver LinkedIn URLs de empresas
+// que pasaron el filtro de fit pero quedaron sin URL. Best-effort: lo que no
+// resuelva queda en null y se filtra después. Matchea por nombre exacto
+// (lowercase) — Perplexity debería echar el nombre tal cual se lo pasamos.
+async function salvageLinkedinUrls(
+  names: string[],
+  regionLabel: string
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (names.length === 0) return out;
+  const list = names.map((n) => `- ${n}`).join("\n");
+
+  let research;
+  try {
+    research = await perplexitySearch({
+      system:
+        "Eres un asistente de research B2B. Devolvés URLs de LinkedIn corporativo verificadas en fuentes públicas. NUNCA inventás URLs.",
+      user: `Para cada una de estas empresas de ${regionLabel}, encontrá su URL de LinkedIn corporativo oficial en formato https://www.linkedin.com/company/<slug>.
+
+Empresas:
+${list}
+
+Reglas:
+- Incluí la URL SOLO si la encontrás en fuentes públicas verificables. Si no la encontrás, dejá linkedin_url en null. NUNCA la inventes ni la construyas desde el nombre.
+- Devolvé SOLO JSON válido, sin texto alrededor, con esta forma:
+{ "results": [ { "name": "<nombre exacto tal como te lo pasé>", "linkedin_url": "https://www.linkedin.com/company/..." | null } ] }`
+    });
+  } catch {
+    return out;
+  }
+
+  const parsed = extractJson(research.content);
+  if (!parsed || !Array.isArray(parsed.results)) return out;
+  for (const r of parsed.results) {
+    const name = String(r?.name ?? "").toLowerCase().trim();
+    const url = r?.linkedin_url;
+    if (name && typeof url === "string" && isValidLinkedinCompanyUrl(url)) {
+      out.set(name, url.trim());
+    }
+  }
+  return out;
 }
 
 const LINKEDIN_COMPANY_URL_RE =

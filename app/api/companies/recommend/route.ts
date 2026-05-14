@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       size_note: sizeRule.note ?? null,
       limit,
       exclude,
-      overshoot: 2,
+      overshoot: 3,
       verify_linkedin_live: true,
       strict_region: true
     });
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
         size_note: sizeRule.note ?? null,
         limit,
         exclude,
-        overshoot: 2,
+        overshoot: 3,
         verify_linkedin_live: true,
         strict_region: false
       });
