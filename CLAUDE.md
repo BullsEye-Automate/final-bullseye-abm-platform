@@ -889,6 +889,54 @@ manual en `/llamadas` sigue funcionando como fallback.
   legacy `weCAD4you Webhooks`)
 - Resto sin cambios respecto al cierre Sprint 4.
 
+## Pendiente / decisión abierta — Entregabilidad de email en Lemlist (sesión 2026-05-14)
+
+Discusión con el usuario sobre qué hacer con leads cuyo email viene
+`Undeliverable` / `Risky` desde el enrichment de Lemlist.
+
+### Decisión de criterio (acordado)
+
+- **Undeliverable**: NO mandar email (hard bounce → daña reputación
+  del dominio de envío para TODAS las campañas). Pero NO excluirlos
+  del auto-launch, porque eso les mata también el toque de LinkedIn.
+- **Risky**: incluir. "Risky" = verificador no está seguro (catch-all,
+  role-based), no = malo. La cadencia multicanal (LinkedIn Día 3 +
+  email Día 5) hedgea el riesgo. Monitorear bounce rate; si >5%,
+  ponerse estricto.
+- **Not verified**: verificar primero; si no se puede, tratar como Risky.
+- **Data de prueba**: `tom@wiand.example` (TLD reservado `.example`,
+  no puede recibir mail) es el contacto de testing de Sprint 2 —
+  sacarlo de la campaña real.
+
+### Approach acordado: bifurcación dentro de la secuencia Lemlist
+
+En vez de excluir undeliverables del auto-launch (los deja sin LinkedIn),
+**todos entran** a la campaña (auto-launch con los 4 estados marcados) y
+la secuencia bifurca con un **paso de condición**:
+- Email OK → rama completa (LinkedIn + email).
+- Email undeliverable → rama solo-LinkedIn (sin pasos de email).
+
+### Lo que falta resolver (próxima sesión)
+
+El usuario tiene que verificar en la UI de Lemlist **si el paso de
+condición permite condicionar nativamente sobre el email status**
+(undeliverable/risky/deliverable):
+- **Si SÍ** → lo arma en Lemlist UI, cero código.
+- **Si NO** → la app tiene que escribir un custom field tipo
+  `email_quality` en el lead de Lemlist y la condición bifurca sobre
+  ese campo. Complicación: la app NO sabe la entregabilidad al momento
+  del push (Lemlist la calcula después con su propio enrichment).
+  Opciones para resolverlo: (a) verificación propia de email antes
+  de pushear, o (b) webhook entrante de Lemlist que nos avise el
+  status y recién ahí seteamos el custom field. Ambas son trabajo
+  no trivial — decidir con el usuario cuál vale la pena.
+
+### Mejora futura relacionada
+
+Surfacear el estado de entregabilidad del email en `/contactos` para
+que el usuario tome esta decisión desde la app sin entrar a Lemlist.
+Encaja bien con el módulo de Respuestas / Funnel.
+
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
 > Continúo weCAD4you-prospecting. Última sesión cerró Sprint 5 fases
