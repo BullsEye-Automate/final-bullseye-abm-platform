@@ -165,12 +165,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     lemlist_push = await pushApprovedToLemlist(db, params.id, contact, company);
   }
 
-  // Push a HubSpot en cualquier approval desde manual_review (success O
-  // failure de Lemlist no bloquea — HubSpot recibe el estado actual,
-  // incluyendo lemlist_push_error si lo hubo). En recovery también
-  // pusheamos: el contacto vuelve a Pendientes pero queremos tenerlo en
-  // HubSpot con su historia.
-  if (body.decision === "approved") {
+  // Push a HubSpot SOLO en approval desde Revisión manual (= aprobado como
+  // FIT por un humano). NO en recovery: un contacto recuperado vuelve a
+  // Pendientes, todavía no fue scoreado ni entró a campaña, así que crear
+  // su registro en HubSpot sería prematuro y ensucia el CRM con no-fits.
+  // Regla del producto: a HubSpot solo van los aprobados FIT o los que
+  // entran a campaña de Lemlist (success O failure de Lemlist no bloquea
+  // el push acá — HubSpot recibe el estado actual con lemlist_push_error
+  // si lo hubo, porque el contacto YA fue aprobado como fit).
+  if (body.decision === "approved" && !isRecovery) {
     // Re-fetch contacto + company para pushear con datos frescos.
     const { data: fresh } = await db
       .from("contacts")

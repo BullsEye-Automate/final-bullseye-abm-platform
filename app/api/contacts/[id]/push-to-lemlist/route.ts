@@ -128,50 +128,55 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     await db.from("contacts").update({ fit_action: "enrich" }).eq("id", params.id);
   }
 
-  // 2) Sincronizar a HubSpot (contacto + empresa). Independiente del
-  // resultado de Lemlist — el contacto debería estar en el CRM igual.
+  // 2) Sincronizar a HubSpot (contacto + empresa) SOLO si el contacto entró
+  // a la campaña de Lemlist. Regla del producto: a HubSpot solo van los
+  // aprobados FIT o los que entran a campaña. Si Lemlist falló, el contacto
+  // queda en Pendientes con lemlist_push_error y se puede reintentar con
+  // "Directo a Lemlist" — recién ahí se crea en HubSpot.
   let hubspotResult: unknown = null;
-  try {
-    let hubspotCompanyId: string | null = company?.hubspot_company_id ?? null;
-    let companySnapshot: {
-      company_type: string | null;
-      cad_software: string | null;
-      scanner_technology: string | null;
-    } | null = null;
-    if (company) {
-      const cRes = await pushCompanyToHubSpot(db, company as unknown as HubSpotCompanyInput);
-      if (cRes.ok) hubspotCompanyId = cRes.hubspot_id;
-      companySnapshot = {
-        company_type: company.company_type,
-        cad_software: company.cad_software,
-        scanner_technology: company.scanner_technology
+  if (lemlistResult.ok) {
+    try {
+      let hubspotCompanyId: string | null = company?.hubspot_company_id ?? null;
+      let companySnapshot: {
+        company_type: string | null;
+        cad_software: string | null;
+        scanner_technology: string | null;
+      } | null = null;
+      if (company) {
+        const cRes = await pushCompanyToHubSpot(db, company as unknown as HubSpotCompanyInput);
+        if (cRes.ok) hubspotCompanyId = cRes.hubspot_id;
+        companySnapshot = {
+          company_type: company.company_type,
+          cad_software: company.cad_software,
+          scanner_technology: company.scanner_technology
+        };
+      }
+      // Recargamos el contacto: pushApprovedToLemlist persistió los mensajes
+      // generados, y queremos que HubSpot reciba los wecad_* fields al día.
+      const { data: freshRaw } = await db
+        .from("contacts")
+        .select(
+          "id, company_id, first_name, last_name, job_title, email, phone, linkedin_url, " +
+            "fit_score, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, " +
+            "human_decision, human_decision_reason, clay_pushed_at, lemlist_pushed_at, " +
+            "phone_enrichment_status, phone_source, hubspot_contact_id"
+        )
+        .eq("id", params.id)
+        .maybeSingle();
+      if (freshRaw) {
+        hubspotResult = await pushContactToHubSpot(
+          db,
+          freshRaw as unknown as HubSpotContactInput,
+          hubspotCompanyId,
+          companySnapshot
+        );
+      }
+    } catch (err) {
+      hubspotResult = {
+        ok: false,
+        error: err instanceof Error ? err.message : "HubSpot push failed"
       };
     }
-    // Recargamos el contacto: pushApprovedToLemlist persistió los mensajes
-    // generados, y queremos que HubSpot reciba los wecad_* fields al día.
-    const { data: freshRaw } = await db
-      .from("contacts")
-      .select(
-        "id, company_id, first_name, last_name, job_title, email, phone, linkedin_url, " +
-          "fit_score, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, " +
-          "human_decision, human_decision_reason, clay_pushed_at, lemlist_pushed_at, " +
-          "phone_enrichment_status, phone_source, hubspot_contact_id"
-      )
-      .eq("id", params.id)
-      .maybeSingle();
-    if (freshRaw) {
-      hubspotResult = await pushContactToHubSpot(
-        db,
-        freshRaw as unknown as HubSpotContactInput,
-        hubspotCompanyId,
-        companySnapshot
-      );
-    }
-  } catch (err) {
-    hubspotResult = {
-      ok: false,
-      error: err instanceof Error ? err.message : "HubSpot push failed"
-    };
   }
 
   const { data: refetched } = await db
