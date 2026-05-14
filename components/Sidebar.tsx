@@ -7,7 +7,6 @@ import {
   IconBuildingFactory2,
   IconUsers,
   IconMail,
-  IconBrandLinkedin,
   IconPhone,
   IconPhoneCall,
   IconMessage2,
@@ -32,8 +31,7 @@ const SECTIONS: Section[] = [
   {
     label: "Outreach",
     items: [
-      { href: "/campanas",  label: "Campañas email", icon: IconMail,         disabled: true },
-      { href: "/linkedin",  label: "LinkedIn",       icon: IconBrandLinkedin, disabled: true }
+      { href: "/campanas", label: "Campañas", icon: IconMail }
     ]
   },
   {
