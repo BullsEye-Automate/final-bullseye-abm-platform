@@ -11,7 +11,10 @@ import {
   IconAlertCircle,
   IconBuildingFactory2,
   IconRocket,
-  IconTrash
+  IconTrash,
+  IconSearch,
+  IconUpload,
+  IconFileText
 } from "@tabler/icons-react";
 
 type Company = {
@@ -71,6 +74,124 @@ function sizeOptionFromRule(rule: {
   };
 }
 
+// ---- Importación CSV ----
+
+type CsvRow = {
+  name: string;
+  linkedin_url?: string;
+  website?: string;
+  city?: string;
+  country?: string;
+};
+
+type ImportResultUI = {
+  received: number;
+  researched: number;
+  inserted: number;
+  skipped_duplicates: number;
+  not_found: number;
+  off_target: number;
+  failed: number;
+  rows: Array<{
+    name: string;
+    status: "inserted" | "duplicate" | "not_found" | "failed";
+    fit_score?: string;
+    company_type?: string;
+    off_target?: boolean;
+    error?: string;
+  }>;
+};
+
+// Parser de CSV minimalista pero robusto: soporta comillas dobles, comas
+// dentro de campos quoted, y normaliza los nombres de columna. La única
+// columna obligatoria es company_name (o name). El resto es opcional.
+function parseCsv(text: string): CsvRow[] {
+  const lines = splitCsvLines(text.trim());
+  if (lines.length < 2) return [];
+
+  const header = parseCsvLine(lines[0]).map((h) =>
+    h.toLowerCase().trim().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "")
+  );
+  const idx = (names: string[]) => {
+    for (const n of names) {
+      const i = header.indexOf(n);
+      if (i !== -1) return i;
+    }
+    return -1;
+  };
+  const nameIdx = idx(["company_name", "name", "empresa", "nombre"]);
+  const linkedinIdx = idx(["linkedin_url", "linkedin", "url_linkedin"]);
+  const websiteIdx = idx(["website", "sitio_web", "web", "url"]);
+  const cityIdx = idx(["city", "ciudad"]);
+  const countryIdx = idx(["country", "pais", "país"]);
+
+  if (nameIdx === -1) {
+    throw new Error(
+      'El CSV necesita una columna "company_name" (o "name"). Revisá la primera fila.'
+    );
+  }
+
+  const out: CsvRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const cols = parseCsvLine(lines[i]);
+    const name = (cols[nameIdx] ?? "").trim();
+    if (!name) continue;
+    out.push({
+      name,
+      linkedin_url: linkedinIdx !== -1 ? (cols[linkedinIdx] ?? "").trim() || undefined : undefined,
+      website: websiteIdx !== -1 ? (cols[websiteIdx] ?? "").trim() || undefined : undefined,
+      city: cityIdx !== -1 ? (cols[cityIdx] ?? "").trim() || undefined : undefined,
+      country: countryIdx !== -1 ? (cols[countryIdx] ?? "").trim() || undefined : undefined
+    });
+  }
+  return out;
+}
+
+// Divide en líneas respetando comillas (un campo quoted puede tener \n).
+function splitCsvLines(text: string): string[] {
+  const lines: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') inQuotes = !inQuotes;
+    if ((ch === "\n" || ch === "\r") && !inQuotes) {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      lines.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+function parseCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      out.push(cur);
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
 export default function EmpresasPage() {
   const [region, setRegion] = useState("US");
   const [sizeOptions, setSizeOptions] = useState<SizeOption[]>([]);
@@ -110,6 +231,119 @@ export default function EmpresasPage() {
   } | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ pushed: number; total: number; errors: number } | null>(null);
+
+  // Modo del panel "Recomendar empresas": IA broad / buscar por nombre / importar CSV.
+  const [mode, setMode] = useState<"ai" | "search" | "import">("ai");
+
+  // Modo "buscar por nombre"
+  const [searchName, setSearchName] = useState("");
+  const [searchLinkedin, setSearchLinkedin] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchMsg, setSearchMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(
+    null
+  );
+
+  // Modo "importar CSV"
+  const [csvRows, setCsvRows] = useState<CsvRow[] | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResultUI | null>(null);
+
+  async function searchByName() {
+    const name = searchName.trim();
+    if (!name) return;
+    setSearching(true);
+    setSearchMsg(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/companies/research-one", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          linkedin_url: searchLinkedin.trim() || undefined
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSearchMsg({ kind: "err", text: data.error ?? `HTTP ${res.status}` });
+      } else if (data.already_exists) {
+        setSearchMsg({ kind: "warn", text: data.message });
+      } else if (data.not_found) {
+        setSearchMsg({ kind: "warn", text: data.message });
+      } else {
+        setSearchMsg({
+          kind: data.off_target ? "warn" : "ok",
+          text: data.off_target
+            ? `"${data.inserted?.company_name}" agregada a Pendientes, pero ojo: la IA la marcó como fuera de rubro (${data.inserted?.company_type}). Revisá el razonamiento en la tarjeta.`
+            : `"${data.inserted?.company_name}" agregada a Pendientes (fit ${data.inserted?.fit_score}).`
+        });
+        setSearchName("");
+        setSearchLinkedin("");
+        setTab("pending");
+        load("pending");
+      }
+    } catch (err) {
+      setSearchMsg({
+        kind: "err",
+        text: err instanceof Error ? err.message : "Error de red"
+      });
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function handleCsvFile(file: File) {
+    setCsvError(null);
+    setImportResult(null);
+    setCsvFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const rows = parseCsv(String(reader.result ?? ""));
+        if (rows.length === 0) {
+          setCsvError("El CSV no tiene filas con company_name. Revisá el formato.");
+          setCsvRows(null);
+          return;
+        }
+        setCsvRows(rows);
+      } catch (err) {
+        setCsvError(err instanceof Error ? err.message : "No se pudo leer el CSV");
+        setCsvRows(null);
+      }
+    };
+    reader.onerror = () => setCsvError("No se pudo leer el archivo");
+    reader.readAsText(file);
+  }
+
+  async function runImport() {
+    if (!csvRows || csvRows.length === 0) return;
+    setImporting(true);
+    setImportResult(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/companies/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companies: csvRows })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+      } else {
+        setImportResult(data);
+        setCsvRows(null);
+        setCsvFileName(null);
+        setTab("pending");
+        load("pending");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setImporting(false);
+    }
+  }
 
   const unpushedCount = useMemo(
     () =>
@@ -254,6 +488,36 @@ export default function EmpresasPage() {
         <h2 className="font-semibold mb-3 flex items-center gap-2">
           <IconSparkles size={18} className="text-brand" /> Recomendar empresas
         </h2>
+
+        {/* Selector de modo */}
+        <div className="flex items-center gap-1 mb-4 bg-[#F4F2FB] rounded-lg p-1 w-fit">
+          {(
+            [
+              { key: "ai", label: "Recomendación IA", icon: IconSparkles },
+              { key: "search", label: "Buscar por nombre", icon: IconSearch },
+              { key: "import", label: "Importar CSV", icon: IconUpload }
+            ] as const
+          ).map((m) => {
+            const Icon = m.icon;
+            const active = mode === m.key;
+            return (
+              <button
+                key={m.key}
+                onClick={() => setMode(m.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-white text-brand shadow-sm"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                <Icon size={14} /> {m.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {mode === "ai" && (
+          <>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
           <Field label="Región">
             <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
@@ -298,7 +562,220 @@ export default function EmpresasPage() {
             </button>
           </div>
         </div>
-        {lastRun && (
+          </>
+        )}
+
+        {mode === "search" && (
+          <div className="space-y-3">
+            <div className="text-sm text-ink-muted">
+              Investigá una empresa puntual por nombre. La IA busca su LinkedIn, software CAD,
+              tamaño y señales, y la deja en Pendientes para que la revises. Si no es del rubro,
+              te lo dice en el razonamiento.
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <Field label="Nombre de la empresa">
+                <input
+                  className="input"
+                  placeholder="ej. Modern Dental Laboratory"
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !searching) searchByName();
+                  }}
+                />
+              </Field>
+              <Field label="LinkedIn URL (opcional, mejora la precisión)">
+                <input
+                  className="input"
+                  placeholder="https://www.linkedin.com/company/..."
+                  value={searchLinkedin}
+                  onChange={(e) => setSearchLinkedin(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !searching) searchByName();
+                  }}
+                />
+              </Field>
+              <div>
+                <button
+                  onClick={searchByName}
+                  disabled={searching || !searchName.trim()}
+                  className="btn-primary w-full"
+                >
+                  <IconSearch size={16} /> {searching ? "Investigando…" : "Investigar empresa"}
+                </button>
+              </div>
+            </div>
+            {searchMsg && (
+              <div
+                className={`text-sm flex items-center gap-2 ${
+                  searchMsg.kind === "ok"
+                    ? "text-success-fg"
+                    : searchMsg.kind === "warn"
+                    ? "text-warning-fg"
+                    : "text-danger-fg"
+                }`}
+              >
+                {searchMsg.kind === "ok" ? (
+                  <IconCheck size={14} />
+                ) : (
+                  <IconAlertCircle size={14} />
+                )}
+                {searchMsg.text}
+              </div>
+            )}
+          </div>
+        )}
+
+        {mode === "import" && (
+          <div className="space-y-3">
+            <div className="bg-[#F4F2FB] rounded-lg p-3 text-sm">
+              <div className="font-medium text-ink mb-1 flex items-center gap-1.5">
+                <IconFileText size={14} /> Formato del CSV
+              </div>
+              <p className="text-ink-muted mb-2">
+                Exportá tu Excel como CSV (Archivo → Guardar como → CSV). La primera fila tiene
+                que ser el encabezado. La <strong>única columna obligatoria es{" "}
+                <code className="bg-white px-1 rounded">company_name</code></strong>. El resto
+                son opcionales pero mejoran la precisión:
+              </p>
+              <ul className="text-ink-muted space-y-0.5 mb-2">
+                <li>
+                  · <code className="bg-white px-1 rounded">company_name</code> — nombre de la
+                  empresa (obligatorio)
+                </li>
+                <li>
+                  · <code className="bg-white px-1 rounded">linkedin_url</code> — URL de LinkedIn
+                  corporativo
+                </li>
+                <li>
+                  · <code className="bg-white px-1 rounded">website</code> — sitio web
+                </li>
+                <li>
+                  · <code className="bg-white px-1 rounded">city</code> — ciudad
+                </li>
+                <li>
+                  · <code className="bg-white px-1 rounded">country</code> — país
+                </li>
+              </ul>
+              <p className="text-ink-muted">
+                Si solo tenés el nombre, alcanza: la IA va a buscar el LinkedIn y el resto de la
+                info por su cuenta. Máximo 40 filas por importación.
+              </p>
+              <pre className="bg-white rounded-md p-2 mt-2 text-[11px] text-ink/70 overflow-auto">
+{`company_name,linkedin_url,city,country
+Modern Dental Laboratory,https://www.linkedin.com/company/modern-dental,Valencia,ES
+DLP Dental Lab,,Miami,US
+Smile Designers Lab,,,`}
+              </pre>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="btn-secondary cursor-pointer">
+                <IconUpload size={14} /> Elegir archivo CSV
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleCsvFile(f);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              {csvFileName && (
+                <span className="text-sm text-ink-muted">
+                  {csvFileName}
+                  {csvRows && ` · ${csvRows.length} empresas detectadas`}
+                </span>
+              )}
+              {csvRows && csvRows.length > 0 && (
+                <button
+                  onClick={runImport}
+                  disabled={importing}
+                  className="btn-primary"
+                >
+                  <IconSparkles size={16} />
+                  {importing
+                    ? `Investigando ${csvRows.length} empresas…`
+                    : `Importar e investigar (${csvRows.length})`}
+                </button>
+              )}
+            </div>
+            {csvError && (
+              <div className="text-sm text-danger-fg flex items-center gap-2">
+                <IconAlertCircle size={14} /> {csvError}
+              </div>
+            )}
+            {importResult && (
+              <div className="text-sm space-y-1">
+                <div className="text-success-fg flex items-center gap-2">
+                  <IconCheck size={14} /> {importResult.inserted} de {importResult.received}{" "}
+                  empresas importadas a Pendientes
+                </div>
+                <div className="text-xs text-ink-muted flex flex-wrap gap-x-3">
+                  {importResult.skipped_duplicates > 0 && (
+                    <span>{importResult.skipped_duplicates} duplicadas omitidas</span>
+                  )}
+                  {importResult.not_found > 0 && (
+                    <span>{importResult.not_found} sin info pública</span>
+                  )}
+                  {importResult.off_target > 0 && (
+                    <span className="text-warning-fg">
+                      {importResult.off_target} marcadas fuera de rubro (revisar)
+                    </span>
+                  )}
+                  {importResult.failed > 0 && (
+                    <span className="text-danger-fg">{importResult.failed} con error</span>
+                  )}
+                </div>
+                {importResult.rows.some(
+                  (r) => r.status !== "inserted" || r.off_target
+                ) && (
+                  <details className="text-xs text-ink-muted">
+                    <summary className="cursor-pointer hover:text-ink">
+                      Ver detalle por empresa
+                    </summary>
+                    <ul className="mt-2 space-y-1">
+                      {importResult.rows.map((r, i) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <span
+                            className={
+                              r.status === "inserted"
+                                ? r.off_target
+                                  ? "text-warning-fg"
+                                  : "text-success-fg"
+                                : r.status === "duplicate"
+                                ? "text-ink-subtle"
+                                : "text-danger-fg"
+                            }
+                          >
+                            {r.status === "inserted"
+                              ? r.off_target
+                                ? "⚠ fuera de rubro"
+                                : "✓ importada"
+                              : r.status === "duplicate"
+                              ? "— duplicada"
+                              : r.status === "not_found"
+                              ? "✗ sin info"
+                              : "✗ error"}
+                          </span>
+                          <span>{r.name}</span>
+                          {r.fit_score && (
+                            <span className="text-ink-subtle">· fit {r.fit_score}</span>
+                          )}
+                          {r.error && <span className="text-danger-fg">· {r.error}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {mode === "ai" && lastRun && (
           <div className="mt-3 space-y-2">
             <div
               className={`text-sm flex flex-wrap items-center gap-2 ${
