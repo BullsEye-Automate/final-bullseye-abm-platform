@@ -13,7 +13,8 @@ import {
   IconArrowUpRight,
   IconChevronRight,
   IconClock,
-  IconUser
+  IconUser,
+  IconBulb
 } from "@tabler/icons-react";
 import { RANGE_LABELS, RANGE_ORDER, type RangeKey } from "@/lib/dashboardRanges";
 
@@ -49,6 +50,7 @@ type CallRow = {
 type Kpis = {
   total_calls: number;
   total_analyzed: number;
+  pending_analysis: number;
   avg_duration_sec: number;
   avg_sdr_score: number | null;
   interested_count: number;
@@ -87,6 +89,8 @@ export default function LlamadasPage() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeMsg, setAnalyzeMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,30 +117,81 @@ export default function LlamadasPage() {
     load();
   }, [load]);
 
+  async function postJson<T>(
+    path: string,
+    body: unknown
+  ): Promise<{ ok: boolean; status: number; data: T | null; raw?: string; error?: string }> {
+    let res: Response;
+    try {
+      res = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body ?? {})
+      });
+    } catch (err) {
+      return { ok: false, status: 0, data: null, error: err instanceof Error ? err.message : "Network error" };
+    }
+    const text = await res.text();
+    try {
+      const json = JSON.parse(text) as T;
+      return { ok: res.ok, status: res.status, data: json };
+    } catch {
+      // El backend devolvió HTML (típicamente Vercel timeout). Surface el snippet.
+      const snippet = text.slice(0, 240).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      return {
+        ok: false,
+        status: res.status,
+        data: null,
+        raw: text,
+        error: snippet || `HTTP ${res.status}`
+      };
+    }
+  }
+
   async function runSync() {
     setSyncing(true);
     setSyncMsg(null);
-    try {
-      const res = await fetch("/api/calls/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ since_days: 30, analyze: true })
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setSyncMsg(`Error sync: ${json.error ?? json.errors?.[0]?.message ?? `HTTP ${res.status}`}`);
-      } else {
-        setSyncMsg(
-          `OK · ${json.scanned} escaneadas · ${json.upserted} guardadas · ${json.analyzed} analizadas` +
-            (json.failed_analysis > 0 ? ` · ${json.failed_analysis} fallaron análisis` : "")
-        );
-        load();
-      }
-    } catch (err) {
-      setSyncMsg(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSyncing(false);
+    const r = await postJson<{
+      ok: boolean;
+      scanned: number;
+      upserted: number;
+      errors?: Array<{ stage: string; message: string }>;
+      error?: string;
+    }>("/api/calls/sync", { since_days: 30, analyze: false });
+    if (!r.ok || !r.data) {
+      setSyncMsg(`Error sync: ${r.error ?? r.data?.error ?? `HTTP ${r.status}`}`);
+    } else {
+      const j = r.data;
+      const errSuffix = j.errors && j.errors.length > 0 ? ` · errores: ${j.errors[0].message}` : "";
+      setSyncMsg(`Sync OK · ${j.scanned} escaneadas · ${j.upserted} guardadas${errSuffix}`);
+      load();
     }
+    setSyncing(false);
+  }
+
+  async function runAnalyze() {
+    setAnalyzing(true);
+    setAnalyzeMsg(null);
+    const r = await postJson<{
+      ok: boolean;
+      processed: number;
+      analyzed: number;
+      failed: number;
+      remaining: number;
+      errors?: Array<{ id: string; message: string }>;
+      error?: string;
+    }>("/api/calls/analyze-pending", { limit: 20, chunk_size: 5 });
+    if (!r.ok || !r.data) {
+      setAnalyzeMsg(`Error análisis: ${r.error ?? r.data?.error ?? `HTTP ${r.status}`}`);
+    } else {
+      const j = r.data;
+      const errSuffix = j.errors && j.errors.length > 0 ? ` · primer error: ${j.errors[0].message}` : "";
+      setAnalyzeMsg(
+        `Análisis · procesadas ${j.processed} · OK ${j.analyzed} · fallaron ${j.failed} · quedan ${j.remaining}${errSuffix}`
+      );
+      load();
+    }
+    setAnalyzing(false);
   }
 
   const grouped = useMemo(() => groupByDay(data?.calls ?? []), [data]);
@@ -150,11 +205,19 @@ export default function LlamadasPage() {
         loading={loading}
         onSync={runSync}
         syncing={syncing}
+        onAnalyze={runAnalyze}
+        analyzing={analyzing}
+        pendingAnalysis={data?.kpis.pending_analysis ?? 0}
       />
 
       {syncMsg && (
         <div className="card text-sm" style={{ borderLeft: "4px solid #185FA5" }}>
           {syncMsg}
+        </div>
+      )}
+      {analyzeMsg && (
+        <div className="card text-sm" style={{ borderLeft: "4px solid #3D2878" }}>
+          {analyzeMsg}
         </div>
       )}
       {error && (
@@ -190,7 +253,10 @@ function Header({
   onRefresh,
   loading,
   onSync,
-  syncing
+  syncing,
+  onAnalyze,
+  analyzing,
+  pendingAnalysis
 }: {
   range: RangeKey | "all";
   onRangeChange: (k: RangeKey | "all") => void;
@@ -198,6 +264,9 @@ function Header({
   loading: boolean;
   onSync: () => void;
   syncing: boolean;
+  onAnalyze: () => void;
+  analyzing: boolean;
+  pendingAnalysis: number;
 }) {
   return (
     <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -230,9 +299,22 @@ function Header({
           <IconRefresh size={14} className={loading ? "animate-spin" : ""} />
           {loading ? "Cargando…" : "Refrescar"}
         </button>
-        <button onClick={onSync} disabled={syncing} className="btn-primary text-sm">
+        <button onClick={onSync} disabled={syncing} className="btn-secondary text-sm">
           <IconCloudDownload size={14} className={syncing ? "animate-spin" : ""} />
           {syncing ? "Sincronizando…" : "Sincronizar HubSpot"}
+        </button>
+        <button
+          onClick={onAnalyze}
+          disabled={analyzing || pendingAnalysis === 0}
+          className="btn-primary text-sm"
+          title={pendingAnalysis === 0 ? "No hay llamadas pendientes de análisis" : "Analiza hasta 20 por tanda"}
+        >
+          <IconBulb size={14} className={analyzing ? "animate-spin" : ""} />
+          {analyzing
+            ? "Analizando…"
+            : pendingAnalysis > 0
+            ? `Analizar pendientes (${pendingAnalysis})`
+            : "Analizar pendientes"}
         </button>
       </div>
     </header>

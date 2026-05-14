@@ -71,6 +71,7 @@ export async function GET(req: NextRequest) {
   const total = allRows?.length ?? 0;
   const analyzedRows = (allRows ?? []).filter((r) => r.analyzed_at);
   const totalAnalyzed = analyzedRows.length;
+  const pendingAnalysis = (allRows ?? []).filter((r) => !r.analyzed_at).length;
   const avgDuration =
     total > 0
       ? Math.round(
@@ -92,6 +93,7 @@ export async function GET(req: NextRequest) {
     kpis: {
       total_calls: total,
       total_analyzed: totalAnalyzed,
+      pending_analysis: pendingAnalysis,
       avg_duration_sec: avgDuration,
       avg_sdr_score: avgScore,
       interested_count: interested,

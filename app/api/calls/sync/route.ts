@@ -8,7 +8,8 @@ export const maxDuration = 300;
 
 // POST /api/calls/sync
 // Body opcional: { since_days?: number, max_results?: number, analyze?: boolean }
-// Defaults: 30 días, 200 calls, analyze=true.
+// Defaults: 30 días, 200 calls, **analyze=false** (el análisis va por su propio
+// endpoint /api/calls/analyze-pending para evitar timeouts de Vercel).
 export async function POST(req: NextRequest) {
   let body: { since_days?: number; max_results?: number; analyze?: boolean } = {};
   try {
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     const result = await syncCalls(db, {
       sinceDays: body.since_days,
       maxResults: body.max_results,
-      analyze: body.analyze
+      analyze: body.analyze ?? false
     });
     return NextResponse.json(result, { status: result.ok ? 200 : 500 });
   } catch (err) {
