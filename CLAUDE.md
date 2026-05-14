@@ -837,91 +837,123 @@ pendientes") para controlar costo.
 - Con fallback Haiku 4.5: ~1/3 del costo.
 - 100 calls ≈ $1-2 USD. 500 calls/mes ≈ $5-10 USD.
 
-### TODO operativo pendiente al cierre (acción del usuario)
+### Configuración HubSpot (decisión final)
 
-**El usuario tiene Service Key (BETA) en HubSpot, no Private App
-legacy.** La Service Key `weCAD4you Prospecting App` está bajo
-**Desarrollo → Claves → Claves de servicio (BETA)**.
+El usuario tiene **Service Key (BETA)** en HubSpot, no Private App
+legacy. Service Keys (BETA) no exponen UI para crear webhook
+subscriptions (solo tienen tab "Monitorización → Webhooks" que
+muestra historial). Por eso usamos **arquitectura híbrida**:
 
-- La Service Key NO tiene UI para configurar webhook subscriptions
-  (solo tiene tab "Monitorización → Webhooks" que muestra historial,
-  no configuración).
-- Plan B (recomendado): crear **Private App "antigua"** dedicada
-  SOLO para webhooks. La Service Key existente sigue dando el
-  `HUBSPOT_ACCESS_TOKEN` para todas las reads/writes — no se toca.
+- **Service Key `weCAD4you Prospecting App`** → da el
+  `HUBSPOT_ACCESS_TOKEN`, se usa para todas las reads/writes
+  (calls, contacts, companies, lists). NO TOCAR.
+- **Private App legacy `weCAD4you Webhooks`** → dedicada solo
+  para mandar webhooks firmados. Su Client Secret está en Vercel
+  como `HUBSPOT_APP_SECRET`. Token de acceso de esta app no se usa.
 
-Pasos del usuario:
-1. HubSpot Settings → Desarrollo → **Aplicaciones anteriores** →
-   botón naranja **"Crear aplicación antigua"**.
-2. Nombre: `weCAD4you Webhooks`.
-3. Scopes: marcar `crm.objects.contacts.read` (mínimo).
-4. Crear → entrar a la app → tab **Auth** → copiar **Client Secret**.
-5. En Vercel agregar env var `HUBSPOT_APP_SECRET` = ese valor.
-6. Tab **Webhooks** → Add subscription:
-   - Target URL: `https://wecad-prospecting.vercel.app/api/hubspot/webhook/calls`
-   - Subscription 1: `Call created` (Object: Call, Event: Object created).
-   - Subscription 2: `Call property change` con properties:
-     `hs_call_body`, `hs_call_disposition`, `hs_call_status`,
-     `hs_call_transcription`, `hs_call_duration`,
-     `hs_call_recording_url`.
-7. Activar subscriptions.
+### Estado de configuración al cierre Sprint 5 fase 5 (sesión 2026-05-14)
 
-Sin esto, el botón "Sincronizar HubSpot" manual en `/llamadas`
-sigue funcionando como fallback.
+**Hecho por el usuario:**
+- ✅ Creada Private App legacy `weCAD4you Webhooks` (vía
+  "Aplicaciones anteriores → Crear aplicación antigua").
+- ✅ Scope mínimo `crm.objects.contacts.read` agregado.
+- ✅ URL de destino configurada:
+  `https://wecad-prospecting.vercel.app/api/hubspot/webhook/calls`.
+- ✅ Client Secret copiado a Vercel env var `HUBSPOT_APP_SECRET`.
+- ✅ Redeploy de Vercel ejecutado.
+
+**Pendiente al cierre (cuando el usuario retome mañana):**
+- ⏸ Crear las **dos subscriptions** en el tab Webhooks de la app
+  (no aparecen porque en el modal "Crear suscripción", el dropdown
+  "¿Qué tipos de objetos?" no incluye "Llamada" por default —
+  hay que activar el toggle BETA **"¿Usar la ampliación de la
+  cantidad de objetos?"** que está arriba del modal para
+  desbloquear más tipos de objeto incluyendo Llamada/Call).
+- ⏸ Subscription 1: Llamada → Creado (object created).
+- ⏸ Subscription 2: Llamada → Cambio de propiedad, con properties:
+  `hs_call_body`, `hs_call_disposition`, `hs_call_status`,
+  `hs_call_transcription`, `hs_call_duration`,
+  `hs_call_recording_url`.
+- ⏸ Activar las dos subscriptions.
+- ⏸ Test end-to-end: registrar call en HubSpot → esperar 10s →
+  refrescar `/llamadas` y confirmar que aparece sin tocar
+  "Sincronizar HubSpot".
+
+Sin las subscriptions creadas/activas, el botón "Sincronizar HubSpot"
+manual en `/llamadas` sigue funcionando como fallback.
 
 ### Variables de entorno en Vercel (estado actual al cierre)
 
-- `HUBSPOT_ACCESS_TOKEN` — set ✅ (de la Service Key)
-- `HUBSPOT_APP_SECRET` — **PENDIENTE** (cuando el usuario cree la Private App legacy)
+- `HUBSPOT_ACCESS_TOKEN` — set ✅ (Service Key, pat-na1-c7cba...)
+- `HUBSPOT_APP_SECRET` — set ✅ (Client Secret de la Private App
+  legacy `weCAD4you Webhooks`)
 - Resto sin cambios respecto al cierre Sprint 4.
 
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
-> Continúo weCAD4you-prospecting. Sprint 5 fase 5 (Webhook HubSpot
-> real-time para llamadas) cerrado y mergeado. **Acción pendiente
-> del usuario**: crear una Private App legacy ("aplicación antigua")
-> en HubSpot dedicada para webhooks + agregar `HUBSPOT_APP_SECRET`
-> en Vercel. Detalles paso a paso en CLAUDE.md sección
-> "Hecho del Sprint 5 fase 5" → "TODO operativo pendiente al cierre".
+> Continúo weCAD4you-prospecting. Última sesión cerró Sprint 5 fases
+> 3, 4 y 5 (PRs #75, #76, #77, #78). Todo mergeado.
 >
-> Antes de codear nada nuevo, leer `CLAUDE.md` completo (especialmente
-> "Sprint 5 fase 5", "Sprint 5 fase 4", "Sprint 5 fase 3", "Sprint 5
-> fase 2"), `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`.
+> ANTES DE CODEAR cualquier cosa nueva, leer CLAUDE.md completo,
+> especialmente las secciones "Hecho del Sprint 5 fase 5", "fase 4"
+> y "fase 3". También docs/contexto_sistema.md y
+> docs/notas_arquitectura.md.
+>
+> SETUP HUBSPOT WEBHOOK EN PROGRESO:
+> - Yo tengo Service Key BETA (no Private App legacy) en HubSpot.
+> - Creé Private App legacy "weCAD4you Webhooks" SOLO para webhooks.
+>   El Token de acceso de esta app no se usa; el HUBSPOT_ACCESS_TOKEN
+>   en Vercel sigue siendo el de la Service Key.
+> - HUBSPOT_APP_SECRET ya está en Vercel (Client Secret de la Private
+>   App nueva). Vercel ya hizo redeploy.
+> - URL de destino configurada: wecad-prospecting.vercel.app/api/hubspot/webhook/calls.
+> - **Falta**: crear las 2 subscriptions (Llamada → Creado + Llamada
+>   → Cambio de propiedad). Para que aparezca "Llamada" en el dropdown
+>   hay que activar el toggle BETA "¿Usar la ampliación de la cantidad
+>   de objetos?" que está arriba del modal de "Crear suscripción".
+>   Properties para la 2da subscription: hs_call_body,
+>   hs_call_disposition, hs_call_status, hs_call_transcription,
+>   hs_call_duration, hs_call_recording_url.
+> - **Falta probar end-to-end**: registrar una call en HubSpot, esperar
+>   ~10s, refrescar /llamadas y confirmar que aparece sin tocar el
+>   botón "Sincronizar".
 >
 > Estado vivo del producto:
-> - Discovery → Empresas: `/empresas` con cards aprobado/rechazado.
-> - Pre-filter Claude → Contactos: `/contactos` con tabs (pendientes,
->   manual review, en campaña, descartados).
-> - App → Lemlist (manual_review approvals): vía Lemlist API direct
->   con sanitizers para em-dash y firmas.
-> - Lemlist enriquece phone+email automático (findPhone=true en push).
-> - Lusha manual: `/telefonos` con dual phone fields.
-> - HubSpot: 7 listas dinámicas SDR creadas.
-> - Dashboard ejecutivo: `/dashboard` con 8 presets de fecha.
-> - Llamadas: `/llamadas` con webhook real-time HubSpot (cuando esté
->   configurado) o sync manual fallback. Filtro SDR + KPIs (contactos
->   únicos, empresas únicas, tasas pickup), análisis IA con
->   "Analizar pendientes" (chunks paralelos de 5, ~$0.01-0.02/call),
->   "Vincular huérfanas" con auto-import desde HubSpot,
->   `/llamadas/reporte` con drilldowns en respuestas/mejoras/sub-scores
+> - /empresas: discovery + cards aprobado/rechazado.
+> - /contactos: pre-filter Claude + tabs (pendientes, manual review,
+>   en campaña, descartados).
+> - /telefonos: Lusha manual con dual phone fields.
+> - /dashboard: ejecutivo con 8 presets de fecha.
+> - /llamadas: webhook HubSpot real-time (en setup) o sync manual
+>   fallback. Filtro SDR + KPIs (contactos únicos, empresas únicas,
+>   tasas pickup), "Analizar pendientes" (chunks paralelos de 5,
+>   ~$0.01-0.02 USD/call), "Vincular huérfanas" con auto-import
+>   desde HubSpot.
+> - /llamadas/[id]: detalle con análisis IA, transcripción,
+>   fortalezas, oportunidades de mejora con citas, "Re-analizar".
+> - /llamadas/reporte: drilldowns en respuestas/mejoras/sub-scores
 >   + hot leads (probabilidad conversión).
+> - App → Lemlist con sanitizers em-dash y firmas (PR #76).
 >
-> Reglas: vos hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist/
-> HubSpot UI. Yo no entro a terminal ni a GitHub. Próximos módulos
-> sugeridos:
-> - Respuestas (Lemlist replies tracking via webhook).
-> - Funnel unificado / Sprint 5 fase 6.
-> - Entrenar modelo (feedback loop ICP usando contact_feedback +
->   sdr_improvements agregados).
+> Reglas:
+> - Vos hacés todo: editar + commit + push + crear PR + mergear (squash).
+> - Yo no entro a terminal ni GitHub.
+> - Yo hago Clay / Vercel / Supabase / Lemlist / HubSpot UI.
+> - Rama base default: claude/wecad4you-prospecting-app-Hltfi.
+> - Si rebase falla post-merge: git fetch origin <base> && git rebase
+>   origin/<base> && git push -f.
 >
-> NO recrear: integración App → Clay vía REST API (no expone CRUD),
-> HubSpot Workflow webhooks (requiere Operations Hub Pro), cron de
-> GitHub Actions (abandonado en PR #62), webhook config en Service
-> Keys BETA (la UI no lo expone todavía, usamos Private App legacy).
+> NO RECREAR (todo intentado y descartado):
+> - App → Clay vía REST API (no expone CRUD de rows).
+> - HubSpot Workflow webhooks (requiere Operations Hub Pro).
+> - Cron GitHub Actions para enrichment (PR #62).
+> - Webhook config en Service Keys BETA (UI no lo expone; usar
+>   Private App legacy).
 >
-> Repo: `wecad4you/wecad-prospecting`. Rama de trabajo asignada por
-> el harness varía por sesión; base por defecto:
-> `claude/wecad4you-prospecting-app-Hltfi`. Squash merges siempre.
-> Si rebase falla con conflicts después de un merge previo,
-> `git fetch origin <base> && git rebase origin/<base> &&
-> git push -f`.
+> Próximos módulos sugeridos:
+> 1. Respuestas (Lemlist replies tracking via webhook).
+> 2. Funnel unificado / Sprint 5 fase 6.
+> 3. Entrenar modelo (feedback loop ICP usando contact_feedback +
+>    sdr_improvements agregados).
+>
+> ¿En qué arrancamos?
