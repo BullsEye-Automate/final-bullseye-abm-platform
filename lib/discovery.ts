@@ -119,7 +119,9 @@ Reglas de extracción:
 - Una empresa califica si: es lab / multi-centro / DSO + tiene evidencia de flujo digital + tiene volumen real (no 1–2 personas).
 - Si la empresa ya externaliza con un competidor (Evident, Full Contour, Aidite, Automate by 3Shape), márcala como "high" y rellena competitor_match.
 - Tener diseñadores propios NO descarta — es señal de que entienden el valor.
-- Tamaño de empresa: estima en empleados. Si la evidencia da un rango, usa el punto medio. Si no hay tamaño, deja null (no descartes por eso). Respeta la banda de tamaño pedida: si la evidencia dice que la empresa es mucho más grande que el rango pedido, probablemente no es nuestro target.
+- Tamaño de empresa: estima en empleados. Si la evidencia da un rango, usa el punto medio. Si no hay tamaño, deja null (no descartes por eso). Respeta la banda de tamaño pedida en ambos extremos:
+  - Si la evidencia dice que la empresa es mucho más grande que el rango pedido, probablemente no es nuestro target.
+  - Si la evidencia indica que es un micro-laboratorio claramente más chico que el rango (badge "2-10 employees" / "1-10 employees" en LinkedIn, "1-2 personas", taller unipersonal) y el rango pedido es mayor, NO lo incluyas: los micro-labs no tienen el volumen ni los buyer personas que necesitamos, y su página de LinkedIn suele estar vacía (sin empleados asociados), así que la búsqueda de contactos posterior rinde cero.
 - company_linkedin_url: si la evidencia trae la URL corporativa de LinkedIn (formato https://www.linkedin.com/company/<slug>), inclúyela LITERAL. Si no la trae, deja null — NO la inventes ni construyas desde el nombre, pero TAMPOCO descartes la empresa por eso.
 - company_country: usa el código ISO de 2 letras cuando puedas inferirlo de la evidencia (US, CA, MX, GB, etc.). Si no puedes inferirlo, deja null (no descartes por eso).
 - company_website: si lo incluyes, debe estar literal en la evidencia. Si dudas, déjalo en null antes que inventar.
@@ -209,7 +211,8 @@ QUÉ NO INCLUIR (importante, ensucia los resultados):
 - Proveedores, consultoras, agencias de marketing dental.
 - Centros de fresado que solo venden o alquilan equipos sin operar como laboratorio.
 - Empresas de OTRAS industrias aunque tengan "lab" en el nombre (biotecnología, agro, farmacéutica, investigación científica, etc.).
-- Empresas muy por fuera de la banda de tamaño pedida (${sizeHint}).
+- Micro-laboratorios de 1-10 empleados (badge "2-10 employees" / "1-10 employees" en LinkedIn) cuando el rango pedido es mayor: no tienen volumen, su página de LinkedIn suele estar vacía y la búsqueda de contactos posterior rinde cero.
+- Empresas muy por fuera de la banda de tamaño pedida (${sizeHint}), por arriba o por abajo.
 
 PRIORIDAD DE SOFTWARE CAD (clave para weCAD4you):
 - Alta prioridad: labs que usan **exocad** o **inLab** (Dentsply Sirona). Son nuestro sweet spot.
@@ -386,13 +389,17 @@ function passesFit(
   // Tipo fuera de target: distribuidores, fabricantes, no-dentales. Claude
   // los debería omitir, pero si igual marca "other", acá los cortamos.
   if (c.company_type === "other") return false;
-  // Tamaño groseramente fuera de banda — solo cuando el tamaño es conocido
-  // (los null pasan, Claude muchas veces no tiene el dato). Tolerancia
-  // generosa (3x el techo) para no perder borderline: un techo de 50 deja
-  // pasar hasta 150, pero descarta el distribuidor de 350.
+  // Tamaño fuera de banda — solo cuando el tamaño es conocido (los null
+  // pasan, Claude muchas veces no tiene el dato).
   if (c.company_size != null) {
+    // Techo generoso (3x) para no perder borderline grande.
     if (sizeMax != null && c.company_size > sizeMax * 3) return false;
-    const floor = Math.max(1, Math.floor(sizeMin / 3));
+    // Piso a 70% del mínimo pedido: un micro-lab "2-10 employees" (≈6) se
+    // descarta cuando se pide 15+, pero un borderline real (12-14 para un
+    // mínimo de 15) sigue pasando para revisión humana. Los micro-labs no
+    // tienen volumen ni buyer personas, y su LinkedIn suele estar vacío
+    // (Clay no encuentra contactos).
+    const floor = Math.max(1, Math.floor(sizeMin * 0.7));
     if (c.company_size < floor) return false;
   }
   return true;
