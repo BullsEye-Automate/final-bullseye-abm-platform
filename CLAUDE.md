@@ -942,51 +942,177 @@ Surfacear el estado de entregabilidad del email en `/contactos` para
 visibilidad desde la app sin entrar a Lemlist. Encaja con el módulo
 de Respuestas / Funnel.
 
+## Hecho del Sprint 5 fase 6 — Discovery: más vías de entrada + calidad + contactos web (sesión 2026-05-14)
+
+Iteración grande sobre `/empresas`. PRs #82 a #85. El objetivo: poder
+avanzar con volúmenes de prospección, porque el discovery broad solo
+rendía poco y con baja calidad.
+
+### PR #82 — Buscar por nombre + Importar CSV
+
+El panel "Recomendar empresas" pasa de 1 a **3 modos** (tabs):
+- **Recomendación IA** — el discovery broad de siempre (por región/tamaño).
+- **Buscar por nombre** — input de texto, la IA investiga esa empresa
+  puntual y la deja en Pendientes.
+- **Importar CSV** — subís un CSV con empresas objetivo, cada fila pasa
+  por research.
+
+Función compartida `lib/companyResearch.ts` → `researchOneCompany(hints, icp)`:
+- Perplexity apuntado a UNA empresa + extracción Claude.
+- **Siempre devuelve una tarjeta**, aunque sea low fit o fuera de rubro
+  — el usuario eligió la empresa, no la silenciamos. El research_summary
+  es honesto (si es un distribuidor o de otra industria, lo dice).
+- Marca `off_target` cuando company_type sale "other".
+- Si el usuario pasó un LinkedIn URL válido y la IA no encontró otro,
+  usa el del usuario.
+
+Endpoints:
+- `POST /api/companies/research-one` — una empresa, dedup por nombre.
+- `POST /api/companies/import` — batch (chunks paralelos de 3, máx 40
+  filas), dedup contra base + dentro del CSV.
+
+UI: parser CSV client-side robusto (comillas, comas embebidas, headers
+normalizados). Columna obligatoria `company_name`; opcionales
+`linkedin_url`, `website`, `city`, `country`. Si solo hay nombre
+alcanza — la IA levanta el resto. Panel de ayuda con el formato +
+ejemplo. Resumen post-import con detalle por empresa.
+
+### PR #83 — Calidad y yield del discovery broad
+
+El bug raíz: el pipeline de filtros NO filtraba por tipo ni tamaño,
+solo nombre/dedup/LinkedIn/región. Por eso pasaban distribuidores y
+empresas no-dentales (ej. "RyD Lab", biotecnología vegetal).
+
+- **Filtro de fit en código** (`passesFit`): descarta `company_type
+  "other"` y tamaños groseramente fuera de banda.
+- **Prompts más estrictos** (Perplexity + Claude): lista explícita de
+  qué NO incluir — distribuidores, fabricantes de equipos/materiales/
+  software, proveedores, consultoras, centros de fresado que solo
+  venden equipos, empresas de otras industrias aunque tengan "lab" en
+  el nombre.
+- **Salvataje de LinkedIn URL**: el mayor asesino de yield era que
+  Claude dejaba `company_linkedin_url` en null porque Perplexity no la
+  traía literal. Ahora, para empresas que pasaron el filtro de fit pero
+  quedaron sin URL, se hace una 2da llamada a Perplexity dedicada solo
+  a resolver esas URLs. Best-effort, matchea por nombre.
+- **overshoot 2 → 3**: Perplexity recibe más pedido (cap sigue en 30).
+- Diagnostics: nuevos pasos del embudo "Pasó filtro de fit" y
+  "LinkedIn salvados".
+
+### PR #84 — Fix micro-labs fuera de banda
+
+"The Dental Lab" se coló: LinkedIn dice "2-10 employees", Claude
+extrajo ~6, y el piso del filtro de fit era `size_min / 3` (=5 para
+banda 15-50), así que un 6 pasaba. Esas páginas son fantasma (3
+followers, 0 associated members → Clay no encuentra contactos).
+
+- `passesFit`: piso de tamaño de `size_min / 3` → `size_min * 0.7`.
+  Para 15-50 el piso pasa de 5 a 10.
+- Prompts (Perplexity + Claude): instrucción explícita de NO incluir
+  micro-labs (badge "2-10 employees", taller unipersonal) cuando el
+  rango pedido es mayor.
+
+**Limitación conocida no resuelta**: el caso "página fantasma con
+tamaño self-reported alto pero 0 empleados reales" no es detectable
+server-side (LinkedIn bloquea scraping, devuelve 999 / login wall).
+El fix de fondo sería un **loop de feedback Clay → app**: cuando Clay
+corre Find People y encuentra 0 contactos, que avise a la app para
+marcar la empresa automáticamente. Requiere config en Clay (webhook
+adicional). Pendiente.
+
+### PR #85 — Contactos desde el sitio web de la empresa
+
+Muchos labs tradicionales / familiares tienen su equipo publicado en
+la web ("Our Team" / "Leadership") pero casi no usan LinkedIn, así que
+Clay rinde cero. Caso real: The Dental Lab tiene COO, CFO y Director
+of Operations con emails en thedentallab.net pero 0 en LinkedIn.
+
+- `lib/websiteContacts.ts` → `scrapeCompanyContacts()`: Perplexity
+  busca y lee la página de equipo del sitio, Claude extrae las
+  personas (nombre, cargo, email, teléfono, linkedin si está linkeado).
+- `POST /api/companies/[id]/scrape-contacts`: scrapea + mete los
+  contactos por el pipeline de siempre (`intakeContactsForCompany` —
+  pre-filter Claude + dedup + insert). Requiere `company_website`.
+- `intakeContactsForCompany` ahora dedup **también por email** (los
+  contactos de web suelen no tener LinkedIn URL pero sí email).
+- UI: botón "Buscar contactos en la web" en la card de empresa
+  (cuando tiene sitio web). Resumen: N encontradas, cuántas pasaron
+  el pre-filtro, descartadas, duplicadas.
+- Los contactos extraídos entran a `/contactos` y siguen el flujo
+  normal. El email viene directo de la web → no gasta créditos Lusha.
+
+### Confirmado: editar el ICP afecta discovery automáticamente
+
+El usuario preguntó si editar el ICP en `/configuracion/icp` se
+refleja en discovery. **Ya funciona así, no hubo que cambiar nada**:
+- `POST /api/icp` crea una versión nueva activa (desactiva la anterior).
+- Cada corrida de discovery (`/api/companies/recommend`) y el dropdown
+  de tamaño leen el ICP activo fresco de la DB (sin caché — el cliente
+  Supabase fuerza `no-store`, las rutas son `force-dynamic`).
+- El ICP controla en discovery: org_types, signals_strong/medium,
+  size_rules, competitors, notes. Lo hardcodeado en `lib/discovery.ts`
+  (no viene del ICP): prioridad exocad/inLab > 3Shape, lista de "qué
+  NO incluir", reglas de scoring high/medium/low.
+
+### Gaps conocidos al cierre Sprint 5 fase 6
+
+1. **Páginas LinkedIn fantasma**: ver PR #84. No detectable server-side;
+   el fix real es el loop Clay → app cuando Find People da 0.
+2. **Dedup del scrape web por email**: si la web no publica emails, los
+   contactos scrapeados no tienen email ni LinkedIn → no hay clave de
+   dedup, se duplican al re-scrapear. En la práctica las páginas de
+   equipo suelen tener email. Si aparece el caso, agregar dedup por
+   nombre completo.
+3. **CSV, no XLSX**: la importación pide CSV (el usuario exporta su
+   Excel como CSV) para no sumar la dependencia `xlsx`.
+
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
-> Continúo weCAD4you-prospecting. Última sesión cerró Sprint 5 fases
-> 3, 4 y 5 (PRs #75, #76, #77, #78). Todo mergeado.
+> Continúo weCAD4you-prospecting. Última sesión cerró Sprint 5 fase 6
+> (PRs #82, #83, #84, #85). Todo mergeado.
 >
 > ANTES DE CODEAR cualquier cosa nueva, leer CLAUDE.md completo,
-> especialmente las secciones "Hecho del Sprint 5 fase 5", "fase 4"
-> y "fase 3". También docs/contexto_sistema.md y
-> docs/notas_arquitectura.md.
+> especialmente las secciones "Hecho del Sprint 5 fase 6" y "fase 5".
+> También docs/contexto_sistema.md y docs/notas_arquitectura.md.
 >
-> SETUP HUBSPOT WEBHOOK EN PROGRESO:
-> - Yo tengo Service Key BETA (no Private App legacy) en HubSpot.
+> SETUP HUBSPOT WEBHOOK — PENDIENTE DE TERMINAR Y PROBAR:
+> - Tengo Service Key BETA (no Private App legacy) en HubSpot.
 > - Creé Private App legacy "weCAD4you Webhooks" SOLO para webhooks.
->   El Token de acceso de esta app no se usa; el HUBSPOT_ACCESS_TOKEN
->   en Vercel sigue siendo el de la Service Key.
-> - HUBSPOT_APP_SECRET ya está en Vercel (Client Secret de la Private
->   App nueva). Vercel ya hizo redeploy.
-> - URL de destino configurada: wecad-prospecting.vercel.app/api/hubspot/webhook/calls.
-> - **Falta**: crear las 2 subscriptions (Llamada → Creado + Llamada
->   → Cambio de propiedad). Para que aparezca "Llamada" en el dropdown
+>   El HUBSPOT_ACCESS_TOKEN en Vercel sigue siendo el de la Service Key.
+> - HUBSPOT_APP_SECRET ya está en Vercel + redeploy hecho.
+> - URL configurada: wecad-prospecting.vercel.app/api/hubspot/webhook/calls.
+> - Falta: crear las 2 subscriptions (Llamada → Creado + Llamada →
+>   Cambio de propiedad). Para que aparezca "Llamada" en el dropdown
 >   hay que activar el toggle BETA "¿Usar la ampliación de la cantidad
->   de objetos?" que está arriba del modal de "Crear suscripción".
->   Properties para la 2da subscription: hs_call_body,
+>   de objetos?". Properties de la 2da: hs_call_body,
 >   hs_call_disposition, hs_call_status, hs_call_transcription,
->   hs_call_duration, hs_call_recording_url.
-> - **Falta probar end-to-end**: registrar una call en HubSpot, esperar
->   ~10s, refrescar /llamadas y confirmar que aparece sin tocar el
->   botón "Sincronizar".
+>   hs_call_duration, hs_call_recording_url. Activar las dos.
+> - Falta probar end-to-end (registrar call → refrescar /llamadas).
+> - Mientras tanto el botón "Sincronizar HubSpot" manual sigue como
+>   fallback.
 >
 > Estado vivo del producto:
-> - /empresas: discovery + cards aprobado/rechazado.
+> - /empresas: 3 modos para sumar empresas — Recomendación IA (discovery
+>   broad), Buscar por nombre, Importar CSV. Discovery con filtro de fit
+>   (descarta distribuidores / no-dentales / micro-labs / fuera de
+>   banda) + salvataje de LinkedIn URL. Botón "Buscar contactos en la
+>   web" en cada card (scrapea la página de equipo del sitio).
 > - /contactos: pre-filter Claude + tabs (pendientes, manual review,
 >   en campaña, descartados).
 > - /telefonos: Lusha manual con dual phone fields.
 > - /dashboard: ejecutivo con 8 presets de fecha.
 > - /llamadas: webhook HubSpot real-time (en setup) o sync manual
 >   fallback. Filtro SDR + KPIs (contactos únicos, empresas únicas,
->   tasas pickup), "Analizar pendientes" (chunks paralelos de 5,
->   ~$0.01-0.02 USD/call), "Vincular huérfanas" con auto-import
->   desde HubSpot.
+>   tasas pickup), "Analizar pendientes" (~$0.01-0.02 USD/call),
+>   "Vincular huérfanas" con auto-import desde HubSpot.
 > - /llamadas/[id]: detalle con análisis IA, transcripción,
 >   fortalezas, oportunidades de mejora con citas, "Re-analizar".
 > - /llamadas/reporte: drilldowns en respuestas/mejoras/sub-scores
 >   + hot leads (probabilidad conversión).
-> - App → Lemlist con sanitizers em-dash y firmas (PR #76).
+> - App → Lemlist con sanitizers em-dash y firmas. Entregabilidad de
+>   email resuelta con bifurcación nativa en la secuencia Lemlist.
+> - El ICP (/configuracion/icp) afecta discovery automáticamente —
+>   cada corrida lee la versión activa fresca.
 >
 > Reglas:
 > - Vos hacés todo: editar + commit + push + crear PR + mergear (squash).
@@ -1004,9 +1130,11 @@ de Respuestas / Funnel.
 >   Private App legacy).
 >
 > Próximos módulos sugeridos:
-> 1. Respuestas (Lemlist replies tracking via webhook).
-> 2. Funnel unificado / Sprint 5 fase 6.
-> 3. Entrenar modelo (feedback loop ICP usando contact_feedback +
+> 1. Loop de feedback Clay → app: cuando Find People da 0 contactos,
+>    marcar la empresa para no re-pushearla (ver gap PR #84).
+> 2. Respuestas (Lemlist replies tracking via webhook).
+> 3. Funnel unificado.
+> 4. Entrenar modelo (feedback loop ICP usando contact_feedback +
 >    sdr_improvements agregados).
 >
 > ¿En qué arrancamos?
