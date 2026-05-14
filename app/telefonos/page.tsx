@@ -13,12 +13,18 @@ import {
 type RefreshPhonesResult = {
   ok: boolean;
   checked: number;
+  lemlist_ok: number;
+  lemlist_failed: number;
   phones_found: number;
   supabase_updated: number;
   hubspot_updated: number;
   not_in_hubspot: number;
   errors: number;
   sample_errors: string[];
+  debug?: {
+    first_failure?: unknown;
+    first_lead_without_phone?: unknown;
+  };
   error?: string;
 };
 
@@ -66,6 +72,8 @@ export default function TelefonosPage() {
       setRefreshResult({
         ok: false,
         checked: 0,
+        lemlist_ok: 0,
+        lemlist_failed: 0,
         phones_found: 0,
         supabase_updated: 0,
         hubspot_updated: 0,
@@ -166,9 +174,11 @@ export default function TelefonosPage() {
                 <ul className="mt-1 space-y-0.5 text-ink">
                   <li>
                     {refreshResult.checked} contactos consultados a Lemlist ·{" "}
-                    {refreshResult.phones_found} con teléfono nuevo
+                    {refreshResult.lemlist_ok} respondieron OK ·{" "}
+                    {refreshResult.lemlist_failed} fallaron
                   </li>
                   <li>
+                    {refreshResult.phones_found} con teléfono nuevo ·{" "}
                     {refreshResult.hubspot_updated} actualizados en HubSpot ·{" "}
                     {refreshResult.supabase_updated} en Supabase
                   </li>
@@ -187,12 +197,34 @@ export default function TelefonosPage() {
                     </li>
                   )}
                 </ul>
-                {refreshResult.checked > 0 &&
+                {refreshResult.lemlist_failed > 0 &&
+                  refreshResult.lemlist_ok === 0 && (
+                    <div className="mt-1 text-danger-fg">
+                      Ninguna consulta a Lemlist respondió OK — puede ser un
+                      problema de API key o de patrón de URL. Mirá el debug
+                      abajo y pasámelo.
+                    </div>
+                  )}
+                {refreshResult.lemlist_ok > 0 &&
                   refreshResult.phones_found === 0 && (
                     <div className="mt-1 text-ink-muted">
-                      Lemlist todavía no tiene teléfonos nuevos para estos
-                      contactos. Probá de nuevo más tarde.
+                      Lemlist respondió OK pero todavía no tiene teléfonos para
+                      estos contactos. Puede ser que el enrichment siga
+                      corriendo (probá más tarde) o que el teléfono venga en un
+                      campo distinto — mirá el debug abajo.
                     </div>
+                  )}
+                {refreshResult.debug &&
+                  (refreshResult.debug.first_failure ||
+                    refreshResult.debug.first_lead_without_phone) && (
+                    <details className="mt-2 text-xs">
+                      <summary className="cursor-pointer text-ink-muted">
+                        Ver debug de Lemlist (muestra)
+                      </summary>
+                      <pre className="text-[10px] bg-ink-muted/10 p-2 rounded mt-1 overflow-auto max-h-72">
+                        {JSON.stringify(refreshResult.debug, null, 2)}
+                      </pre>
+                    </details>
                   )}
               </>
             ) : (

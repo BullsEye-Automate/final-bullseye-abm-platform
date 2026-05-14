@@ -21,12 +21,20 @@ import { ensureContactProperties } from "./hubspotProperties";
 export type RefreshPhonesResult = {
   ok: boolean;
   checked: number; // contactos consultados a Lemlist
+  lemlist_ok: number; // fetches a Lemlist que devolvieron 2xx
+  lemlist_failed: number; // fetches que fallaron en todos los patrones de URL
   phones_found: number; // Lemlist devolvió teléfono
   supabase_updated: number;
   hubspot_updated: number;
   not_in_hubspot: number; // teléfono hallado pero el contacto no está en HubSpot
   errors: number;
   sample_errors: string[];
+  // Muestra para diagnóstico: el primer fetch que falló y el primer lead que
+  // vino sin teléfono (para ver el shape real de la respuesta de Lemlist).
+  debug?: {
+    first_failure?: unknown;
+    first_lead_without_phone?: unknown;
+  };
   error?: string;
 };
 
@@ -42,6 +50,8 @@ function empty(): RefreshPhonesResult {
   return {
     ok: false,
     checked: 0,
+    lemlist_ok: 0,
+    lemlist_failed: 0,
     phones_found: 0,
     supabase_updated: 0,
     hubspot_updated: 0,
@@ -99,9 +109,24 @@ export async function refreshLemlistPhones(
       continue;
     }
     // Lead no está en la campaña, o la API falló: se reintenta el próximo run.
-    if (!lead.ok) continue;
-    // Lemlist todavía no enriqueció el teléfono.
-    if (!lead.phone) continue;
+    if (!lead.ok) {
+      res.lemlist_failed += 1;
+      if (!res.debug) res.debug = {};
+      if (!res.debug.first_failure) {
+        res.debug.first_failure = { email: c.email, status: lead.status, error: lead.error, debug: lead.debug };
+      }
+      continue;
+    }
+    res.lemlist_ok += 1;
+    // Lemlist todavía no enriqueció el teléfono. Guardamos el primer lead
+    // crudo sin phone para poder ver el shape real de la respuesta.
+    if (!lead.phone) {
+      if (!res.debug) res.debug = {};
+      if (!res.debug.first_lead_without_phone) {
+        res.debug.first_lead_without_phone = { email: c.email, lead: lead.lead };
+      }
+      continue;
+    }
 
     const phone = lead.phone;
     res.phones_found += 1;
