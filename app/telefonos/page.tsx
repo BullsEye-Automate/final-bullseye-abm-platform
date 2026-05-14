@@ -6,8 +6,21 @@ import {
   IconAlertCircle,
   IconCheck,
   IconExternalLink,
-  IconSearch
+  IconSearch,
+  IconRefresh
 } from "@tabler/icons-react";
+
+type RefreshPhonesResult = {
+  ok: boolean;
+  checked: number;
+  phones_found: number;
+  supabase_updated: number;
+  hubspot_updated: number;
+  not_in_hubspot: number;
+  errors: number;
+  sample_errors: string[];
+  error?: string;
+};
 
 type LookupResult = {
   ok: boolean;
@@ -39,6 +52,32 @@ export default function TelefonosPage() {
   const [loading, setLoading] = useState(false);
   const [forceLoading, setForceLoading] = useState(false);
   const [result, setResult] = useState<LookupResult | null>(null);
+  const [refreshLoading, setRefreshLoading] = useState(false);
+  const [refreshResult, setRefreshResult] = useState<RefreshPhonesResult | null>(null);
+
+  async function runRefresh() {
+    setRefreshLoading(true);
+    setRefreshResult(null);
+    try {
+      const res = await fetch("/api/lemlist/refresh-phones", { method: "POST" });
+      const data = await res.json();
+      setRefreshResult(data);
+    } catch (err) {
+      setRefreshResult({
+        ok: false,
+        checked: 0,
+        phones_found: 0,
+        supabase_updated: 0,
+        hubspot_updated: 0,
+        not_in_hubspot: 0,
+        errors: 0,
+        sample_errors: [],
+        error: err instanceof Error ? err.message : "Network error"
+      });
+    } finally {
+      setRefreshLoading(false);
+    }
+  }
 
   async function run(force = false) {
     if (!url.trim()) return;
@@ -84,6 +123,87 @@ export default function TelefonosPage() {
           conservamos en una propiedad separada para que puedas comparar.
         </div>
       </header>
+
+      <div className="card p-4 space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="font-medium flex items-center gap-2">
+              <IconRefresh size={16} /> Teléfonos de Lemlist → HubSpot
+            </div>
+            <div className="text-sm text-ink-muted mt-1 max-w-2xl">
+              Todos los contactos que la app empuja a Lemlist ya salen con phone
+              enrichment activado (<code>findPhone</code>), pero Lemlist tarda en
+              levantar el número. Este botón recorre los contactos en campaña
+              que todavía no tienen teléfono de Lemlist, se lo pide a Lemlist y
+              lo escribe en Supabase y en HubSpot (campo <code>phone</code> +{" "}
+              <code>wecad_phone_lemlist</code>). Correlo cada tanto — es
+              idempotente.
+            </div>
+          </div>
+          <button
+            onClick={runRefresh}
+            disabled={refreshLoading}
+            className="btn-primary shrink-0"
+          >
+            <IconRefresh size={16} />
+            {refreshLoading ? "Levantando…" : "Levantar teléfonos de Lemlist"}
+          </button>
+        </div>
+
+        {refreshResult && (
+          <div
+            className={`text-sm rounded-md p-3 ${
+              refreshResult.ok
+                ? "bg-success-bg text-success-fg"
+                : "bg-danger-bg text-danger-fg"
+            }`}
+          >
+            {refreshResult.ok ? (
+              <>
+                <div className="font-medium flex items-center gap-1.5">
+                  <IconCheck size={15} /> Listo
+                </div>
+                <ul className="mt-1 space-y-0.5 text-ink">
+                  <li>
+                    {refreshResult.checked} contactos consultados a Lemlist ·{" "}
+                    {refreshResult.phones_found} con teléfono nuevo
+                  </li>
+                  <li>
+                    {refreshResult.hubspot_updated} actualizados en HubSpot ·{" "}
+                    {refreshResult.supabase_updated} en Supabase
+                  </li>
+                  {refreshResult.not_in_hubspot > 0 && (
+                    <li className="text-warning-fg">
+                      {refreshResult.not_in_hubspot} con teléfono pero sin
+                      contacto en HubSpot (todavía no sincronizados)
+                    </li>
+                  )}
+                  {refreshResult.errors > 0 && (
+                    <li className="text-danger-fg">
+                      {refreshResult.errors} errores
+                      {refreshResult.sample_errors.length > 0 && (
+                        <span>: {refreshResult.sample_errors.join("; ")}</span>
+                      )}
+                    </li>
+                  )}
+                </ul>
+                {refreshResult.checked > 0 &&
+                  refreshResult.phones_found === 0 && (
+                    <div className="mt-1 text-ink-muted">
+                      Lemlist todavía no tiene teléfonos nuevos para estos
+                      contactos. Probá de nuevo más tarde.
+                    </div>
+                  )}
+              </>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <IconAlertCircle size={15} />
+                {refreshResult.error ?? "La sincronización falló"}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="card p-4 space-y-3">
         <label className="text-sm font-medium">LinkedIn URL</label>
