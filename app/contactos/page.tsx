@@ -12,7 +12,10 @@ import {
   IconSend,
   IconThumbUp,
   IconThumbDown,
-  IconTrash
+  IconTrash,
+  IconChevronRight,
+  IconChevronDown,
+  IconSearch
 } from "@tabler/icons-react";
 
 type Contact = {
@@ -89,6 +92,8 @@ export default function ContactosPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [retryingHubspotId, setRetryingHubspotId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
   const [clayDebug, setClayDebug] = useState<{
     label: string;
     payload: unknown;
@@ -361,6 +366,9 @@ export default function ContactosPage() {
 
   useEffect(() => {
     load(bucket);
+    // Al cambiar de bucket reseteamos búsqueda y expansión.
+    setQuery("");
+    setExpandedCompanies(new Set());
   }, [bucket]);
 
   useEffect(() => {
@@ -374,21 +382,64 @@ export default function ContactosPage() {
     ).length;
   }, [contacts, bucket]);
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, Contact[]>();
-    for (const c of contacts) {
-      const arr = map.get(c.company_id) ?? [];
-      arr.push(c);
-      map.set(c.company_id, arr);
-    }
-    return Array.from(map.entries());
-  }, [contacts]);
-
   const companyNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const c of approvedCompanies) m.set(c.id, c.company_name);
     return m;
   }, [approvedCompanies]);
+
+  // Agrupa por empresa, filtra por el buscador (nombre de empresa o de
+  // contacto) y ordena las empresas de más nuevas a más antiguas (por el
+  // contacto más reciente de cada grupo).
+  const grouped = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const map = new Map<string, Contact[]>();
+    for (const c of contacts) {
+      if (q) {
+        const companyName = (companyNameById.get(c.company_id) ?? "").toLowerCase();
+        const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ").toLowerCase();
+        const jobTitle = (c.job_title ?? "").toLowerCase();
+        if (
+          !companyName.includes(q) &&
+          !fullName.includes(q) &&
+          !jobTitle.includes(q)
+        ) {
+          continue;
+        }
+      }
+      const arr = map.get(c.company_id) ?? [];
+      arr.push(c);
+      map.set(c.company_id, arr);
+    }
+    const entries = Array.from(map.entries());
+    entries.sort((a, b) => {
+      const aMax = Math.max(...a[1].map((c) => new Date(c.created_at).getTime()));
+      const bMax = Math.max(...b[1].map((c) => new Date(c.created_at).getTime()));
+      return bMax - aMax;
+    });
+    return entries;
+  }, [contacts, query, companyNameById]);
+
+  // Un grupo se muestra expandido si el usuario lo abrió, O si hay una
+  // búsqueda activa (en ese caso expandimos todos los matches).
+  const searchActive = query.trim() !== "";
+  function isExpanded(companyId: string): boolean {
+    return searchActive || expandedCompanies.has(companyId);
+  }
+  function toggleCompany(companyId: string) {
+    setExpandedCompanies((prev) => {
+      const next = new Set(prev);
+      if (next.has(companyId)) next.delete(companyId);
+      else next.add(companyId);
+      return next;
+    });
+  }
+  function expandAll() {
+    setExpandedCompanies(new Set(grouped.map(([id]) => id)));
+  }
+  function collapseAll() {
+    setExpandedCompanies(new Set());
+  }
 
   return (
     <div className="space-y-6">
@@ -527,44 +578,97 @@ export default function ContactosPage() {
         </div>
       )}
 
+      {!loading && contacts.length > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 justify-between">
+          <div className="relative flex-1 max-w-md">
+            <IconSearch
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none"
+            />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar empresa, contacto o cargo…"
+              className="input pl-9 w-full"
+            />
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-ink-muted">
+              {grouped.length} {grouped.length === 1 ? "empresa" : "empresas"}
+            </span>
+            {!searchActive && grouped.length > 1 && (
+              <>
+                <button onClick={expandAll} className="btn-secondary text-xs">
+                  Expandir todo
+                </button>
+                <button onClick={collapseAll} className="btn-secondary text-xs">
+                  Colapsar todo
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-ink-muted">Cargando…</div>
       ) : grouped.length === 0 ? (
-        <EmptyState bucket={bucket} hasApproved={approvedCompanies.length > 0} />
+        searchActive ? (
+          <div className="card text-ink-muted flex items-center gap-2">
+            <IconSearch size={18} /> Ningún contacto o empresa coincide con "{query}".
+          </div>
+        ) : (
+          <EmptyState bucket={bucket} hasApproved={approvedCompanies.length > 0} />
+        )
       ) : (
-        <div className="space-y-6">
-          {grouped.map(([companyId, items]) => (
-            <section key={companyId} className="space-y-3">
-              <div className="flex items-center gap-2 text-sm text-ink-muted">
-                <IconBuildingFactory2 size={14} />
-                <span className="font-medium text-ink">
-                  {companyNameById.get(companyId) ?? "Empresa"}
-                </span>
-                <span>· {items.length} contactos</span>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {items.map((c) => (
-                  <ContactCard
-                    key={c.id}
-                    c={c}
-                    bucket={bucket}
-                    onPush={pushOne}
-                    isPushing={pushingId === c.id}
-                    onPushLemlist={pushToLemlistDirect}
-                    isPushingLemlist={pushingLemlistId === c.id}
-                    onDecide={decide}
-                    isDeciding={decidingId === c.id}
-                    onDelete={removeContact}
-                    isDeleting={deletingId === c.id}
-                    onRetryLemlist={retryLemlist}
-                    isRetryingLemlist={retryingId === c.id}
-                    onRetryHubspot={retryHubspot}
-                    isRetryingHubspot={retryingHubspotId === c.id}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
+        <div className="space-y-3">
+          {grouped.map(([companyId, items]) => {
+            const expanded = isExpanded(companyId);
+            return (
+              <section key={companyId} className="card p-0 overflow-hidden">
+                <button
+                  onClick={() => toggleCompany(companyId)}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-[#F4F2FB] transition-colors"
+                >
+                  {expanded ? (
+                    <IconChevronDown size={16} className="text-ink-muted shrink-0" />
+                  ) : (
+                    <IconChevronRight size={16} className="text-ink-muted shrink-0" />
+                  )}
+                  <IconBuildingFactory2 size={15} className="text-ink-muted shrink-0" />
+                  <span className="font-semibold text-ink truncate">
+                    {companyNameById.get(companyId) ?? "Empresa"}
+                  </span>
+                  <span className="text-sm text-ink-muted shrink-0">
+                    · {items.length} {items.length === 1 ? "contacto" : "contactos"}
+                  </span>
+                </button>
+                {expanded && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 pt-0">
+                    {items.map((c) => (
+                      <ContactCard
+                        key={c.id}
+                        c={c}
+                        bucket={bucket}
+                        onPush={pushOne}
+                        isPushing={pushingId === c.id}
+                        onPushLemlist={pushToLemlistDirect}
+                        isPushingLemlist={pushingLemlistId === c.id}
+                        onDecide={decide}
+                        isDeciding={decidingId === c.id}
+                        onDelete={removeContact}
+                        isDeleting={deletingId === c.id}
+                        onRetryLemlist={retryLemlist}
+                        isRetryingLemlist={retryingId === c.id}
+                        onRetryHubspot={retryHubspot}
+                        isRetryingHubspot={retryingHubspotId === c.id}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       )}
     </div>
