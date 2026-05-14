@@ -87,6 +87,7 @@ export default function ContactosPage() {
   const [pushingLemlistId, setPushingLemlistId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkSyncingHubspot, setBulkSyncingHubspot] = useState(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -189,6 +190,29 @@ export default function ContactosPage() {
     const pushed = data.pushed ?? 0;
     setPushNotice(
       `${pushed} de ${total} contactos empujados a Clay${errs.length > 0 ? ` · ${errs.length} con error` : ""}.`
+    );
+    await load();
+  }
+
+  // Backfill: sincroniza a HubSpot los contactos que están en campaña o
+  // aprobados FIT pero todavía no están en el CRM. Útil para recuperar los
+  // que se trabajaron antes de que el push automático estuviera activo.
+  async function syncCampaignToHubspot() {
+    setBulkSyncingHubspot(true);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch("/api/hubspot/sync-campaign-contacts", { method: "POST" });
+    const data = await res.json();
+    setBulkSyncingHubspot(false);
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo sincronizar a HubSpot");
+      return;
+    }
+    const errs = (data.errors ?? []) as unknown[];
+    setPushNotice(
+      `${data.synced} de ${data.total} contactos sincronizados a HubSpot${
+        errs.length > 0 ? ` · ${errs.length} con error` : ""
+      }.`
     );
     await load();
   }
@@ -515,6 +539,17 @@ export default function ContactosPage() {
               {bulkPushing
                 ? "Empujando…"
                 : `Prospectar todos en Clay (${pushablePendingCount})`}
+            </button>
+          )}
+          {bucket === "enriched" && (
+            <button
+              onClick={syncCampaignToHubspot}
+              disabled={bulkSyncingHubspot}
+              className="btn-secondary"
+              title="Sincroniza a HubSpot los contactos en campaña o aprobados FIT que todavía no están en el CRM"
+            >
+              <IconRefresh size={14} />
+              {bulkSyncingHubspot ? "Sincronizando…" : "Sincronizar campaña a HubSpot"}
             </button>
           )}
           {counts[bucket] > 0 && (

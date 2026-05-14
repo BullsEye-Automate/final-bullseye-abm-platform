@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { syncContactToHubSpot } from "@/lib/hubspotContactSync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// 300s: si Clay manda un batch grande, el push a HubSpot por contacto suma.
+export const maxDuration = 300;
 
 // Webhook entrante de Clay con el resultado de la columna Lead Scoring AI.
 // Acepta single o array. Cada item identifica el contacto por wecad_contact_id
@@ -128,7 +130,7 @@ export async function POST(req: NextRequest) {
   }
 
   const db = supabaseAdmin();
-  const totals = { received: items.length, updated: 0, skipped: 0 };
+  const totals = { received: items.length, updated: 0, skipped: 0, hubspot_synced: 0 };
   const errors: { wecad_contact_id: string; error: string }[] = [];
 
   for (const it of items) {
@@ -170,6 +172,23 @@ export async function POST(req: NextRequest) {
       continue;
     }
     totals.updated += 1;
+
+    // fit_action='enrich' → Clay corre "Add Lead to Campaign" y el contacto
+    // entra a la campaña de Lemlist. Regla del producto: a HubSpot van los
+    // contactos que entran a campaña, así que lo sincronizamos acá. La app
+    // es la fuente de verdad — no dependemos de la integración nativa de
+    // Lemlist, que sincroniza de forma poco confiable. Idempotente.
+    if (norm.patch.fit_action === "enrich") {
+      const hs = await syncContactToHubSpot(db, norm.wecad_contact_id);
+      if (hs.ok) {
+        totals.hubspot_synced += 1;
+      } else {
+        errors.push({
+          wecad_contact_id: norm.wecad_contact_id,
+          error: `HubSpot sync: ${hs.error}`
+        });
+      }
+    }
   }
 
   return NextResponse.json({ ...totals, errors });
