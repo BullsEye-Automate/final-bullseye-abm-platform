@@ -81,6 +81,7 @@ export default function ContactosPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pushingId, setPushingId] = useState<string | null>(null);
+  const [pushingLemlistId, setPushingLemlistId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
@@ -126,6 +127,37 @@ export default function ContactosPage() {
       return;
     }
     setPushNotice("Contacto empujado a Clay.");
+    await load();
+  }
+
+  async function pushToLemlistDirect(contactId: string, label: string) {
+    setPushingLemlistId(contactId);
+    setPushNotice(null);
+    setError(null);
+    setLemlistDebug(null);
+    const res = await fetch(`/api/contacts/${contactId}/push-to-lemlist`, { method: "POST" });
+    const data = await res.json();
+    setPushingLemlistId(null);
+    if (!res.ok) {
+      setError(data.error ?? "No se pudo empujar a Lemlist");
+      return;
+    }
+    const lp = data.lemlist_push;
+    if (lp?.ok === false) {
+      setLemlistDebug({
+        label: `Push directo a Lemlist falló para ${label}`,
+        payload: lp
+      });
+      setPushNotice(`${label}: Lemlist falló (ver detalle abajo).`);
+    } else {
+      setPushNotice(
+        `${label} empujado directo a Lemlist${
+          lp?.messages_generated
+            ? ` (mensajes generados con ${lp.model_used ?? "Claude"})`
+            : ""
+        }. Pasa a "En campaña".`
+      );
+    }
     await load();
   }
 
@@ -511,6 +543,8 @@ export default function ContactosPage() {
                     bucket={bucket}
                     onPush={pushOne}
                     isPushing={pushingId === c.id}
+                    onPushLemlist={pushToLemlistDirect}
+                    isPushingLemlist={pushingLemlistId === c.id}
                     onDecide={decide}
                     isDeciding={decidingId === c.id}
                     onDelete={removeContact}
@@ -558,6 +592,8 @@ function ContactCard({
   bucket,
   onPush,
   isPushing,
+  onPushLemlist,
+  isPushingLemlist,
   onDecide,
   isDeciding,
   onDelete,
@@ -571,6 +607,8 @@ function ContactCard({
   bucket: Bucket;
   onPush: (id: string) => void | Promise<void>;
   isPushing: boolean;
+  onPushLemlist: (id: string, label: string) => void | Promise<void>;
+  isPushingLemlist: boolean;
   onDecide: (id: string, decision: "approved" | "rejected") => void | Promise<void>;
   isDeciding: boolean;
   onDelete: (id: string, label: string) => void | Promise<void>;
@@ -590,6 +628,15 @@ function ContactCard({
       ? "bg-warning-bg text-warning-fg"
       : "bg-danger-bg text-danger-fg";
   const canPush = c.prefilter_result === "yes" && !c.clay_pushed_at;
+  // Push directo a Lemlist (saltea Clay): para contactos pendientes que ya
+  // tienen email — típicamente scrapeados del sitio web de la empresa.
+  // Clay no aporta sin LinkedIn URL y el email ya lo tenemos.
+  const canPushLemlist =
+    bucket === "pending" &&
+    c.prefilter_result === "yes" &&
+    !!c.email &&
+    !c.clay_pushed_at &&
+    !c.lemlist_pushed_at;
   const canDecide = bucket === "manual_review" && c.human_decision == null;
   // Botón de reintento: el contacto fue aprobado pero el push a Lemlist
   // falló (típicamente por error transitorio del API o URL pattern incorrecto).
@@ -787,6 +834,17 @@ function ContactCard({
           >
             <IconSend size={12} />
             {isPushing ? "Empujando…" : "Prospectar en Clay"}
+          </button>
+        )}
+        {canPushLemlist && (
+          <button
+            onClick={() => onPushLemlist(c.id, fullName)}
+            disabled={isPushingLemlist}
+            className="btn-secondary text-xs"
+            title="Empuja directo a Lemlist sin pasar por Clay. Para contactos que ya tienen email (ej. scrapeados de la web): genera el mensaje con Claude y los manda a la campaña."
+          >
+            <IconSend size={12} />
+            {isPushingLemlist ? "Empujando…" : "Directo a Lemlist"}
           </button>
         )}
         {canRetryLemlist && (
