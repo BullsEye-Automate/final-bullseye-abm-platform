@@ -1066,14 +1066,71 @@ refleja en discovery. **Ya funciona así, no hubo que cambiar nada**:
 3. **CSV, no XLSX**: la importación pide CSV (el usuario exporta su
    Excel como CSV) para no sumar la dependencia `xlsx`.
 
+## Hecho del Sprint 5 fase 7 — Push directo a Lemlist + UX de contactos (sesión 2026-05-14)
+
+PRs #87, #88, #89. Cierra el flujo de los contactos scrapeados de la
+web y mejora la navegación de `/contactos`.
+
+### PR #87 + #88 — Push directo a Lemlist (saltea Clay)
+
+Los contactos scrapeados del sitio web (PR #85) ya tienen email pero
+no LinkedIn URL. Pasarlos por Clay no aporta: Clay no puede Find
+People (ya los tenemos) ni enriquecer (sin LinkedIn URL). Nuevo
+camino directo:
+
+- `POST /api/contacts/[id]/push-to-lemlist`: valida que el contacto
+  sea pre-filter YES, tenga email, no esté ya en Clay ni en Lemlist.
+  1. Reusa `pushApprovedToLemlist` (genera icebreaker + email_subject
+     + email_body con Claude si faltan, pushea con `addLeadToCampaign`).
+  2. Tras push OK marca `fit_action='enrich'` → el contacto pasa de
+     "Pendientes" a "En campaña".
+  3. **También sincroniza a HubSpot** (PR #88): `pushCompanyToHubSpot`
+     (idempotente) para tener el `hubspot_company_id`, recarga el
+     contacto (ya con los mensajes generados persistidos) y
+     `pushContactToHubSpot` asociándolo a la empresa. Independiente
+     del resultado de Lemlist.
+  4. Response incluye `lemlist_push` + `hubspot_push`.
+- UI `/contactos`: botón "Directo a Lemlist" en cards del bucket
+  Pendientes cuando el contacto tiene email y no fue empujado a
+  Clay/Lemlist. Convive con "Prospectar en Clay" — el usuario elige.
+
+Flujo completo nuevo: `/empresas` → "Buscar contactos en la web" →
+contactos entran a `/contactos` Pendientes con email → "Directo a
+Lemlist" → contacto en Lemlist **y** en HubSpot, sin pasar por Clay.
+
+### PR #89 — UX de `/contactos`: empresas colapsables + orden + buscador
+
+- Las secciones por empresa ahora son **colapsables**: header
+  clickable (chevron + nombre + contador), las tarjetas aparecen al
+  expandir. Default colapsado. Botones "Expandir todo" / "Colapsar
+  todo" cuando hay > 1 empresa.
+- Empresas ordenadas de **más nuevas a más antiguas** (por el
+  `created_at` del contacto más reciente de cada grupo).
+- **Buscador** por nombre de empresa, nombre de contacto o cargo.
+  Con búsqueda activa los grupos que matchean se auto-expanden.
+- Búsqueda + estado de expansión se resetean al cambiar de bucket.
+- Aplica a los 4 buckets.
+
+### Gaps conocidos al cierre Sprint 5 fase 7
+
+1. **Contactos pre-PR-#88 sin HubSpot**: los contactos que se
+   empujaron "Directo a Lemlist" antes del PR #88 quedaron sin
+   sincronizar a HubSpot. Se pueden re-sincronizar con el botón
+   "Sincronizar a HubSpot" / "Resync HubSpot" que aparece en la card
+   cuando el contacto está en "En campaña".
+2. Heredados: páginas LinkedIn fantasma (loop Clay → app pendiente),
+   dedup del scrape web sin email.
+
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
-> Continúo weCAD4you-prospecting. Última sesión cerró Sprint 5 fase 6
-> (PRs #82, #83, #84, #85). Todo mergeado.
+> Continúo weCAD4you-prospecting. Última sesión cerró Sprint 5 fase 7
+> (PRs #87, #88, #89 — push directo a Lemlist + UX de contactos).
+> Todo mergeado.
 >
 > ANTES DE CODEAR cualquier cosa nueva, leer CLAUDE.md completo,
-> especialmente las secciones "Hecho del Sprint 5 fase 6" y "fase 5".
-> También docs/contexto_sistema.md y docs/notas_arquitectura.md.
+> especialmente las secciones "Hecho del Sprint 5 fase 7", "fase 6"
+> y "fase 5". También docs/contexto_sistema.md y
+> docs/notas_arquitectura.md.
 >
 > SETUP HUBSPOT WEBHOOK — PENDIENTE DE TERMINAR Y PROBAR:
 > - Tengo Service Key BETA (no Private App legacy) en HubSpot.
@@ -1098,7 +1155,9 @@ refleja en discovery. **Ya funciona así, no hubo que cambiar nada**:
 >   banda) + salvataje de LinkedIn URL. Botón "Buscar contactos en la
 >   web" en cada card (scrapea la página de equipo del sitio).
 > - /contactos: pre-filter Claude + tabs (pendientes, manual review,
->   en campaña, descartados).
+>   en campaña, descartados). Empresas colapsables, ordenadas por
+>   recientes, con buscador. Botón "Directo a Lemlist" para contactos
+>   con email (saltea Clay, también sincroniza a HubSpot).
 > - /telefonos: Lusha manual con dual phone fields.
 > - /dashboard: ejecutivo con 8 presets de fecha.
 > - /llamadas: webhook HubSpot real-time (en setup) o sync manual
