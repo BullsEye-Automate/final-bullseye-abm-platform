@@ -726,32 +726,202 @@ owners.read`.
    `max_results`. Futuro: paralelizar con `Promise.all` en chunks de
    5-10.
 
+## Hecho del Sprint 5 fase 3 — Filtro SDR + KPIs ricos + drilldowns + hot leads (sesión 2026-05-14)
+
+PR #75 mergeado. Iteración grande sobre `/llamadas` y `/llamadas/reporte`.
+
+### Cambios
+
+- **Contactos y empresas únicas en KPIs**: `kpis.unique_contacts` y
+  `kpis.unique_companies` por rango. UI muestra "11 llamadas · 5
+  contactos · 3 empresas".
+- **Tasas de pickup**:
+  - `PICKUP_CATEGORIES` en `lib/callAnalyzer.ts` (interested,
+    objection_*, callback, not_interested, no_engagement).
+  - `NO_PICKUP_CATEGORIES` (voicemail, gatekeeper, wrong_number).
+  - Tasa pickup · llamada = atendidas / (atendidas + no_atendidas).
+  - Tasa pickup · contacto = contactos únicos que atendieron al
+    menos 1 vez / contactos únicos trabajados.
+- **Filtro SDR** (`hubspot_owner_id`, el usuario que registró la
+  call, no el owner del contacto): `GET /api/calls/owners` devuelve
+  lista para el dropdown. Aplica en `/llamadas` y `/llamadas/reporte`.
+- **Drilldown en respuestas del cliente**: cada categoría en
+  `response_distribution` incluye `call_ids[]`. Click expande inline
+  una lista compacta de calls (POST `/api/calls/by-ids` resuelve info
+  ligera).
+- **Drilldown en Top oportunidades de mejora**: `top_improvement_areas`
+  incluye `top_suggestions` (dedup case-insensitive por 40 chars),
+  `example_quotes` (con call_id), y `call_ids`.
+- **Hot leads** (`GET /api/calls/hot-leads`): top 25 contactos
+  rankeados por probabilidad de conversión. Heurística:
+  - signal de respuesta: interested=50, callback=35, objection_timing=20, objection_price=10
+  - + fit_score × 4 (0-40 pts)
+  - + 5 pts cada uno: tiene phone, está en Lemlist, está en HubSpot
+  - Excluye `status=discarded` o `human_decision=rejected`.
+
+## Hecho del Sprint 5 fase 4 — Auto-import huérfanas + sub-scores drilldown + sanitize Lemlist (sesión 2026-05-14)
+
+PR #76 mergeado. Tres cosas:
+
+### 1. Mensajes Lemlist sin guion medio ni firma
+
+- `lib/messageGenerator.ts` actualizado:
+  - Prompt prohíbe explícitamente em-dash (—), en-dash (–) y hyphen
+    como separador. Pedir comas, puntos, dos puntos.
+  - Prompt prohíbe sign-off ("— Team weCAD4you", "Best,", "Saludos,").
+    Lemlist appende firma automática.
+- Defensa en código:
+  - `stripAiDashes()`: reemplaza dashes con espacios alrededor por
+    coma + espacio.
+  - `stripSignature()`: remueve patrones comunes de firma al final
+    del email body.
+
+### 2. Vincular huérfanas ahora AUTO-IMPORTA desde HubSpot
+
+`lib/callsLinkOrphans.ts` extendido con `importUnmatched` (default
+true). Después del matching (wecad_id → hubspot_id → linkedin →
+email), las huérfanas restantes se importan:
+
+- `lib/hubspotContacts.ts`: agregamos `batchReadCompanies()` para
+  traer info de las empresas.
+- Para cada huérfana sin match: pedimos contact + company a
+  HubSpot → creamos row en `companies` (status='approved') con
+  name/domain/city/country/size/linkedin → creamos row en `contacts`
+  (status='contacted') con firstname/lastname/jobtitle/email/phone/
+  linkedin/hubspot_contact_id → vinculamos la call.
+- Si HubSpot no tiene company asociada: creamos placeholder
+  `"(sin empresa en HubSpot)"` para mantener FK NOT NULL de
+  `contacts.company_id`.
+- Mensaje del botón informa: "importados X contactos y Y empresas
+  desde HubSpot".
+
+### 3. Sub-scores drilldown en reportería
+
+`app/api/calls/report/route.ts`: cada sub-score (opening, discovery,
+objection_handling, next_step) ahora devuelve `worst_calls[]` con
+top 5 calls peores en esa dimensión + suggestion + example_quote
+del improvement cuya `area` matchea por keywords (apertura/discovery/
+objec/próximo paso).
+
+UI: sub-scores son clickables. Click expande lista de las 5 peores
+calls con coaching específico para esa dimensión.
+
+## Hecho del Sprint 5 fase 5 — Webhook HubSpot CRM real-time (sesión 2026-05-14)
+
+PR #77 mergeado. Reemplaza el sync manual de calls por webhook
+HubSpot CRM. **Análisis IA sigue manual** (botón "Analizar
+pendientes") para controlar costo.
+
+### Cambios técnicos
+
+- `lib/callsSync.ts`: extraído `processCallIds(db, ids)` reutilizable.
+  Hace el flujo batch read + maps + resolver FKs + upsert para un
+  conjunto de hubspot_call_ids. `syncCalls()` lo llama internamente.
+- `lib/hubspotWebhook.ts`: verifica firma HMAC-SHA256 v3 con
+  timing-safe comparison. Rechaza requests con timestamp > 5 min
+  de antigüedad (anti-replay).
+- `POST /api/hubspot/webhook/calls`:
+  - Lee raw body + headers `x-hubspot-signature-v3` + timestamp.
+  - Reconstruye URL canónica (`x-forwarded-host` + `x-forwarded-proto`).
+  - Verifica firma contra `HUBSPOT_APP_SECRET`. Sin envvar → 500.
+  - Filtra eventos a `call.creation`, `call.propertyChange`,
+    `call.deletion`. Dedup objectIds.
+  - Upsert vía `processCallIds()`. Deletion → DELETE en Supabase.
+  - Responde 200 OK rápido.
+
+### Estimación de costos análisis IA
+
+- Por llamada con transcripción (hasta 16k chars): ~$0.02 USD
+  (Sonnet 4.6, ~4500 in + 500 out tokens).
+- Por llamada sin transcripción (solo metadata + notas): ~$0.01 USD.
+- Con fallback Haiku 4.5: ~1/3 del costo.
+- 100 calls ≈ $1-2 USD. 500 calls/mes ≈ $5-10 USD.
+
+### TODO operativo pendiente al cierre (acción del usuario)
+
+**El usuario tiene Service Key (BETA) en HubSpot, no Private App
+legacy.** La Service Key `weCAD4you Prospecting App` está bajo
+**Desarrollo → Claves → Claves de servicio (BETA)**.
+
+- La Service Key NO tiene UI para configurar webhook subscriptions
+  (solo tiene tab "Monitorización → Webhooks" que muestra historial,
+  no configuración).
+- Plan B (recomendado): crear **Private App "antigua"** dedicada
+  SOLO para webhooks. La Service Key existente sigue dando el
+  `HUBSPOT_ACCESS_TOKEN` para todas las reads/writes — no se toca.
+
+Pasos del usuario:
+1. HubSpot Settings → Desarrollo → **Aplicaciones anteriores** →
+   botón naranja **"Crear aplicación antigua"**.
+2. Nombre: `weCAD4you Webhooks`.
+3. Scopes: marcar `crm.objects.contacts.read` (mínimo).
+4. Crear → entrar a la app → tab **Auth** → copiar **Client Secret**.
+5. En Vercel agregar env var `HUBSPOT_APP_SECRET` = ese valor.
+6. Tab **Webhooks** → Add subscription:
+   - Target URL: `https://wecad-prospecting.vercel.app/api/hubspot/webhook/calls`
+   - Subscription 1: `Call created` (Object: Call, Event: Object created).
+   - Subscription 2: `Call property change` con properties:
+     `hs_call_body`, `hs_call_disposition`, `hs_call_status`,
+     `hs_call_transcription`, `hs_call_duration`,
+     `hs_call_recording_url`.
+7. Activar subscriptions.
+
+Sin esto, el botón "Sincronizar HubSpot" manual en `/llamadas`
+sigue funcionando como fallback.
+
+### Variables de entorno en Vercel (estado actual al cierre)
+
+- `HUBSPOT_ACCESS_TOKEN` — set ✅ (de la Service Key)
+- `HUBSPOT_APP_SECRET` — **PENDIENTE** (cuando el usuario cree la Private App legacy)
+- Resto sin cambios respecto al cierre Sprint 4.
+
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
-> Continúo weCAD4you-prospecting. Sprint 5 fase 2 (Llamadas + transcripciones
-> + coaching IA) cerrado y mergeado.
+> Continúo weCAD4you-prospecting. Sprint 5 fase 5 (Webhook HubSpot
+> real-time para llamadas) cerrado y mergeado. **Acción pendiente
+> del usuario**: crear una Private App legacy ("aplicación antigua")
+> en HubSpot dedicada para webhooks + agregar `HUBSPOT_APP_SECRET`
+> en Vercel. Detalles paso a paso en CLAUDE.md sección
+> "Hecho del Sprint 5 fase 5" → "TODO operativo pendiente al cierre".
 >
 > Antes de codear nada nuevo, leer `CLAUDE.md` completo (especialmente
-> "Hecho del Sprint 5 fase 2", "Hecho del Sprint 5 fase 1" y "Hecho del
-> Sprint 4 fase 2"), `docs/contexto_sistema.md` y
-> `docs/notas_arquitectura.md`.
+> "Sprint 5 fase 5", "Sprint 5 fase 4", "Sprint 5 fase 3", "Sprint 5
+> fase 2"), `docs/contexto_sistema.md` y `docs/notas_arquitectura.md`.
 >
 > Estado vivo del producto:
 > - Discovery → Empresas: `/empresas` con cards aprobado/rechazado.
 > - Pre-filter Claude → Contactos: `/contactos` con tabs (pendientes,
 >   manual review, en campaña, descartados).
-> - App → Lemlist (manual_review approvals): vía Lemlist API direct.
+> - App → Lemlist (manual_review approvals): vía Lemlist API direct
+>   con sanitizers para em-dash y firmas.
 > - Lemlist enriquece phone+email automático (findPhone=true en push).
-> - Lusha manual: `/telefonos` con dual phone fields (Lemlist + Lusha).
-> - HubSpot: 7 listas dinámicas SDR creadas (Hot/Warm/Reintentar/etc.).
+> - Lusha manual: `/telefonos` con dual phone fields.
+> - HubSpot: 7 listas dinámicas SDR creadas.
 > - Dashboard ejecutivo: `/dashboard` con 8 presets de fecha.
-> - Llamadas: `/llamadas` con sync de HubSpot + análisis IA (respuesta
->   cliente + score SDR + mejoras personalizadas) + reportería agregada.
+> - Llamadas: `/llamadas` con webhook real-time HubSpot (cuando esté
+>   configurado) o sync manual fallback. Filtro SDR + KPIs (contactos
+>   únicos, empresas únicas, tasas pickup), análisis IA con
+>   "Analizar pendientes" (chunks paralelos de 5, ~$0.01-0.02/call),
+>   "Vincular huérfanas" con auto-import desde HubSpot,
+>   `/llamadas/reporte` con drilldowns en respuestas/mejoras/sub-scores
+>   + hot leads (probabilidad conversión).
 >
 > Reglas: vos hacés código/PR/merge, yo Clay/Vercel/Supabase/Lemlist/
-> HubSpot UI. Próximos módulos sugeridos: Respuestas (Lemlist replies
-> tracking) → Funnel → Entrenar modelo (feedback loop ICP).
+> HubSpot UI. Yo no entro a terminal ni a GitHub. Próximos módulos
+> sugeridos:
+> - Respuestas (Lemlist replies tracking via webhook).
+> - Funnel unificado / Sprint 5 fase 6.
+> - Entrenar modelo (feedback loop ICP usando contact_feedback +
+>   sdr_improvements agregados).
 >
 > NO recrear: integración App → Clay vía REST API (no expone CRUD),
 > HubSpot Workflow webhooks (requiere Operations Hub Pro), cron de
-> GitHub Actions (abandonado en PR #62).
+> GitHub Actions (abandonado en PR #62), webhook config en Service
+> Keys BETA (la UI no lo expone todavía, usamos Private App legacy).
+>
+> Repo: `wecad4you/wecad-prospecting`. Rama de trabajo asignada por
+> el harness varía por sesión; base por defecto:
+> `claude/wecad4you-prospecting-app-Hltfi`. Squash merges siempre.
+> Si rebase falla con conflicts después de un merge previo,
+> `git fetch origin <base> && git rebase origin/<base> &&
+> git push -f`.
