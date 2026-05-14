@@ -806,10 +806,17 @@ function ContactCard({
     !!c.lemlist_pushed_at &&
     (!c.linkedin_icebreaker || !c.linkedin_icebreaker.trim());
   // HubSpot puede reintentar si nunca se sincronizó O si hay un error
-  // persistido (idempotente: si ya está bien, igual hace update).
+  // persistido (idempotente: si ya está bien, igual hace update). Aplica a
+  // cualquier contacto que sea FIT o esté en campaña — no solo los
+  // aprobados en revisión manual: los que van "Directo a Lemlist" (scrapeo
+  // web) tienen fit_action='enrich' + lemlist_pushed_at pero human_decision
+  // null, y antes se quedaban sin botón de resync.
+  const isFitOrInCampaign =
+    c.human_decision === "approved" ||
+    c.fit_action === "enrich" ||
+    !!c.lemlist_pushed_at;
   const canRetryHubspot =
-    c.human_decision === "approved" &&
-    (!c.hubspot_contact_id || !!c.hubspot_sync_error);
+    isFitOrInCampaign && (!c.hubspot_contact_id || !!c.hubspot_sync_error);
   // En el bucket Descartados ofrecemos solo "Aprobar" (recuperar). Sirve
   // para rescatar false negatives del pre-filter o falsos discard de Clay.
   const canRecover = bucket === "discarded" && c.human_decision !== "approved";
