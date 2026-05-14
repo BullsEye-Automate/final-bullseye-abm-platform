@@ -284,10 +284,13 @@ export async function getLemlistLeadByEmail(
   }
   const id = encodeURIComponent(campaignId);
   const enc = encodeURIComponent(email);
+  // v1 primero — el v2 leads-by-email no es una ruta real (devuelve el HTML
+  // del SPA de Lemlist con 200). Lo dejamos último por si lo habilitan.
   const urls = [
-    `${LEMLIST_API_BASE}/v2/campaigns/${id}/leads/${enc}`,
     `${LEMLIST_API_BASE}/campaigns/${id}/leads/${enc}`,
-    `${LEMLIST_API_BASE}/leads/${enc}`
+    `${LEMLIST_API_BASE}/leads/${enc}`,
+    `${LEMLIST_API_BASE}/leads/${enc}?campaignId=${id}`,
+    `${LEMLIST_API_BASE}/v2/campaigns/${id}/leads/${enc}`
   ];
   return tryGetUrls(urls);
 }
@@ -321,37 +324,45 @@ async function tryGetUrls(urls: string[]): Promise<LemlistGetResult> {
     }
     const raw = await res.text();
     attempts.push({ url, status: res.status, preview: raw.slice(0, 200) });
-    if (res.ok) {
-      let parsed: LemlistLeadFetched = {};
-      try {
-        const json = raw ? JSON.parse(raw) : {};
-        // Lemlist a veces devuelve el lead envuelto ({lead:{...}}, {data:{...}})
-        // o como primer elemento de un array. Desenvolvemos antes de extraer.
-        if (Array.isArray(json)) {
-          parsed = (json[0] ?? {}) as LemlistLeadFetched;
-        } else if (json && typeof json === "object") {
-          const obj = json as Record<string, unknown>;
-          if (obj.lead && typeof obj.lead === "object") {
-            parsed = obj.lead as LemlistLeadFetched;
-          } else if (obj.data && typeof obj.data === "object") {
-            parsed = obj.data as LemlistLeadFetched;
-          } else {
-            parsed = obj as LemlistLeadFetched;
-          }
-        }
-      } catch {
-        parsed = {};
-      }
-      return {
-        ok: true,
-        status: res.status,
-        lead: parsed,
-        phone: extractPhone(parsed),
-        matched_url: url,
-        raw: raw.slice(0, 1500),
-        attempts
-      };
+    if (!res.ok) continue;
+
+    // 200 no garantiza que sea el API: una ruta inexistente de Lemlist cae
+    // en el catch-all del SPA y devuelve el HTML de la web app con 200.
+    // Solo aceptamos JSON real (objeto o array).
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed.startsWith("<")) continue;
+    let json: unknown;
+    try {
+      json = JSON.parse(trimmed);
+    } catch {
+      continue; // no es JSON → no es la respuesta del API, probamos la próxima
     }
+    if (!json || typeof json !== "object") continue;
+
+    // Lemlist a veces devuelve el lead envuelto ({lead:{...}}, {data:{...}})
+    // o como primer elemento de un array. Desenvolvemos antes de extraer.
+    let parsed: LemlistLeadFetched = {};
+    if (Array.isArray(json)) {
+      parsed = (json[0] ?? {}) as LemlistLeadFetched;
+    } else {
+      const obj = json as Record<string, unknown>;
+      if (obj.lead && typeof obj.lead === "object") {
+        parsed = obj.lead as LemlistLeadFetched;
+      } else if (obj.data && typeof obj.data === "object") {
+        parsed = obj.data as LemlistLeadFetched;
+      } else {
+        parsed = obj as LemlistLeadFetched;
+      }
+    }
+    return {
+      ok: true,
+      status: res.status,
+      lead: parsed,
+      phone: extractPhone(parsed),
+      matched_url: url,
+      raw: raw.slice(0, 1500),
+      attempts
+    };
   }
   const last = attempts[attempts.length - 1];
   return {
