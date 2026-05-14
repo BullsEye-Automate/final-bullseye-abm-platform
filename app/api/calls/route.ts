@@ -72,6 +72,14 @@ export async function GET(req: NextRequest) {
   const analyzedRows = (allRows ?? []).filter((r) => r.analyzed_at);
   const totalAnalyzed = analyzedRows.length;
   const pendingAnalysis = (allRows ?? []).filter((r) => !r.analyzed_at).length;
+
+  // Huérfanas globales (no por rango): calls con hubspot_contact_id pero
+  // sin contact_id en Supabase. Se vinculan via /api/calls/link-orphans.
+  const { count: orphanCount } = await db
+    .from("calls")
+    .select("id", { count: "exact", head: true })
+    .is("contact_id", null)
+    .not("hubspot_contact_id", "is", null);
   const avgDuration =
     total > 0
       ? Math.round(
@@ -94,6 +102,7 @@ export async function GET(req: NextRequest) {
       total_calls: total,
       total_analyzed: totalAnalyzed,
       pending_analysis: pendingAnalysis,
+      orphan_calls: orphanCount ?? 0,
       avg_duration_sec: avgDuration,
       avg_sdr_score: avgScore,
       interested_count: interested,

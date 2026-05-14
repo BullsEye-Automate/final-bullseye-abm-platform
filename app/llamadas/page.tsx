@@ -14,7 +14,8 @@ import {
   IconChevronRight,
   IconClock,
   IconUser,
-  IconBulb
+  IconBulb,
+  IconLink
 } from "@tabler/icons-react";
 import { RANGE_LABELS, RANGE_ORDER, type RangeKey } from "@/lib/dashboardRanges";
 
@@ -51,6 +52,7 @@ type Kpis = {
   total_calls: number;
   total_analyzed: number;
   pending_analysis: number;
+  orphan_calls: number;
   avg_duration_sec: number;
   avg_sdr_score: number | null;
   interested_count: number;
@@ -91,6 +93,8 @@ export default function LlamadasPage() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeMsg, setAnalyzeMsg] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [linkMsg, setLinkMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -169,6 +173,40 @@ export default function LlamadasPage() {
     setSyncing(false);
   }
 
+  async function runLinkOrphans() {
+    setLinking(true);
+    setLinkMsg(null);
+    const r = await postJson<{
+      ok: boolean;
+      scanned: number;
+      fetched_from_hubspot: number;
+      linked: number;
+      by_strategy: { wecad_id: number; hubspot_id: number; linkedin: number; email: number };
+      still_orphan: number;
+      errors?: Array<{ stage: string; message: string }>;
+      error?: string;
+    }>("/api/calls/link-orphans", { limit: 200 });
+    if (!r.ok || !r.data) {
+      setLinkMsg(`Error vinculación: ${r.error ?? r.data?.error ?? `HTTP ${r.status}`}`);
+    } else {
+      const j = r.data;
+      const strat = j.by_strategy;
+      const parts = [
+        strat.wecad_id > 0 && `${strat.wecad_id} por wecad_id`,
+        strat.hubspot_id > 0 && `${strat.hubspot_id} por hubspot_id`,
+        strat.linkedin > 0 && `${strat.linkedin} por LinkedIn`,
+        strat.email > 0 && `${strat.email} por email`
+      ].filter(Boolean).join(", ");
+      setLinkMsg(
+        `Vincular · revisé ${j.scanned} huérfanas · vinculadas ${j.linked}` +
+          (parts ? ` (${parts})` : "") +
+          ` · quedan ${j.still_orphan} sin match`
+      );
+      load();
+    }
+    setLinking(false);
+  }
+
   async function runAnalyze() {
     setAnalyzing(true);
     setAnalyzeMsg(null);
@@ -208,11 +246,19 @@ export default function LlamadasPage() {
         onAnalyze={runAnalyze}
         analyzing={analyzing}
         pendingAnalysis={data?.kpis.pending_analysis ?? 0}
+        onLinkOrphans={runLinkOrphans}
+        linking={linking}
+        orphanCount={data?.kpis.orphan_calls ?? 0}
       />
 
       {syncMsg && (
         <div className="card text-sm" style={{ borderLeft: "4px solid #185FA5" }}>
           {syncMsg}
+        </div>
+      )}
+      {linkMsg && (
+        <div className="card text-sm" style={{ borderLeft: "4px solid #0F6E56" }}>
+          {linkMsg}
         </div>
       )}
       {analyzeMsg && (
@@ -256,7 +302,10 @@ function Header({
   syncing,
   onAnalyze,
   analyzing,
-  pendingAnalysis
+  pendingAnalysis,
+  onLinkOrphans,
+  linking,
+  orphanCount
 }: {
   range: RangeKey | "all";
   onRangeChange: (k: RangeKey | "all") => void;
@@ -267,6 +316,9 @@ function Header({
   onAnalyze: () => void;
   analyzing: boolean;
   pendingAnalysis: number;
+  onLinkOrphans: () => void;
+  linking: boolean;
+  orphanCount: number;
 }) {
   return (
     <header className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -303,6 +355,17 @@ function Header({
           <IconCloudDownload size={14} className={syncing ? "animate-spin" : ""} />
           {syncing ? "Sincronizando…" : "Sincronizar HubSpot"}
         </button>
+        {orphanCount > 0 && (
+          <button
+            onClick={onLinkOrphans}
+            disabled={linking}
+            className="btn-secondary text-sm"
+            title="Busca matches contra Supabase por wecad_id → hubspot_id → LinkedIn → email"
+          >
+            <IconLink size={14} className={linking ? "animate-spin" : ""} />
+            {linking ? "Vinculando…" : `Vincular huérfanas (${orphanCount})`}
+          </button>
+        )}
         <button
           onClick={onAnalyze}
           disabled={analyzing || pendingAnalysis === 0}
