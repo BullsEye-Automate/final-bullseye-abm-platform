@@ -51,39 +51,26 @@ function asTimestampOrNull(s: string | null | undefined): string | null {
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
-export async function syncCalls(
+// Procesa un conjunto de hubspot_call_ids: trae detail con associations,
+// resuelve dispositions + owners + FKs Supabase, y upsertea en la tabla
+// calls. Usado por syncCalls (batch desde search) y por el webhook real-time.
+export async function processCallIds(
   db: SupabaseClient,
-  options: { sinceDays?: number; maxResults?: number; analyze?: boolean } = {}
-): Promise<SyncCallsResult> {
-  const sinceDays = options.sinceDays ?? 30;
-  const maxResults = options.maxResults ?? 200;
-  const analyze = options.analyze !== false;
+  callIds: string[]
+): Promise<{
+  ok: boolean;
+  upserted: number;
+  upserted_ids: string[];
+  errors: Array<{ stage: string; message: string; debug?: unknown }>;
+}> {
+  const out = { ok: true, upserted: 0, upserted_ids: [] as string[], errors: [] as Array<{ stage: string; message: string; debug?: unknown }> };
+  if (callIds.length === 0) return out;
 
-  const result: SyncCallsResult = {
-    ok: true,
-    scanned: 0,
-    upserted: 0,
-    analyzed: 0,
-    failed_analysis: 0,
-    errors: []
-  };
-
-  const sinceMs = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
-  const searchRes = await searchCallsSince(sinceMs, maxResults);
-  if (!searchRes.ok) {
-    result.ok = false;
-    result.errors.push({ stage: "search", message: searchRes.error, debug: searchRes.debug });
-    return result;
-  }
-  result.scanned = searchRes.data.length;
-  if (searchRes.data.length === 0) return result;
-
-  const callIds = searchRes.data.map((c) => c.id);
   const assocRes = await batchReadCallAssociations(callIds);
   if (!assocRes.ok) {
-    result.ok = false;
-    result.errors.push({ stage: "associations", message: assocRes.error, debug: assocRes.debug });
-    return result;
+    out.ok = false;
+    out.errors.push({ stage: "associations", message: assocRes.error, debug: assocRes.debug });
+    return out;
   }
   const callsWithAssoc: HubSpotCall[] = assocRes.data;
 
@@ -91,7 +78,6 @@ export async function syncCalls(
   const dispositionMap = dispRes.ok ? dispRes.data : {};
   const ownerMap = ownerRes.ok ? ownerRes.data : {};
 
-  // Resolver hubspot_contact_id → contact.id en Supabase
   const hsContactIds = new Set<string>();
   const hsCompanyIds = new Set<string>();
   for (const c of callsWithAssoc) {
@@ -107,7 +93,7 @@ export async function syncCalls(
       .from("contacts")
       .select("id, hubspot_contact_id")
       .in("hubspot_contact_id", Array.from(hsContactIds));
-    for (const row of data ?? []) {
+    for (const row of (data ?? []) as Array<{ id: string; hubspot_contact_id: string | null }>) {
       if (row.hubspot_contact_id) contactMap[row.hubspot_contact_id] = row.id;
     }
   }
@@ -116,7 +102,7 @@ export async function syncCalls(
       .from("companies")
       .select("id, hubspot_company_id")
       .in("hubspot_company_id", Array.from(hsCompanyIds));
-    for (const row of data ?? []) {
+    for (const row of (data ?? []) as Array<{ id: string; hubspot_company_id: string | null }>) {
       if (row.hubspot_company_id) companyMap[row.hubspot_company_id] = row.id;
     }
   }
@@ -151,17 +137,54 @@ export async function syncCalls(
     });
   }
 
-  // Upsert por hubspot_call_id, conservando los campos de análisis si ya
-  // existen (no los mandamos en el upsert para no nulearlos).
   const { error: upsertErr } = await db
     .from("calls")
     .upsert(rows, { onConflict: "hubspot_call_id", ignoreDuplicates: false });
   if (upsertErr) {
+    out.ok = false;
+    out.errors.push({ stage: "upsert", message: upsertErr.message });
+    return out;
+  }
+  out.upserted = rows.length;
+  out.upserted_ids = rows.map((r) => r.hubspot_call_id as string);
+  return out;
+}
+
+export async function syncCalls(
+  db: SupabaseClient,
+  options: { sinceDays?: number; maxResults?: number; analyze?: boolean } = {}
+): Promise<SyncCallsResult> {
+  const sinceDays = options.sinceDays ?? 30;
+  const maxResults = options.maxResults ?? 200;
+  const analyze = options.analyze !== false;
+
+  const result: SyncCallsResult = {
+    ok: true,
+    scanned: 0,
+    upserted: 0,
+    analyzed: 0,
+    failed_analysis: 0,
+    errors: []
+  };
+
+  const sinceMs = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
+  const searchRes = await searchCallsSince(sinceMs, maxResults);
+  if (!searchRes.ok) {
     result.ok = false;
-    result.errors.push({ stage: "upsert", message: upsertErr.message });
+    result.errors.push({ stage: "search", message: searchRes.error, debug: searchRes.debug });
     return result;
   }
-  result.upserted = rows.length;
+  result.scanned = searchRes.data.length;
+  if (searchRes.data.length === 0) return result;
+
+  const callIds = searchRes.data.map((c) => c.id);
+  const processed = await processCallIds(db, callIds);
+  result.upserted = processed.upserted;
+  result.errors.push(...processed.errors);
+  if (!processed.ok) {
+    result.ok = false;
+    return result;
+  }
 
   if (!analyze) return result;
 
@@ -187,10 +210,7 @@ export async function syncCalls(
       "id, transcription, body, direction, duration_ms, disposition_label, status, " +
         "owner_name, contact_id, company_id, has_transcription"
     )
-    .in(
-      "hubspot_call_id",
-      rows.map((r) => r.hubspot_call_id as string)
-    )
+    .in("hubspot_call_id", processed.upserted_ids)
     .is("analyzed_at", null);
   const pending = (pendingRaw ?? []) as unknown as PendingCall[];
 
