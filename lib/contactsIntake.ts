@@ -110,5 +110,11 @@ export async function intakeContactsForCompany(
   if (insertErr) return { ok: false, status: 500, error: insertErr.message };
 
   summary.inserted = rows.length;
+
+  // Si la empresa estaba marcada como "sin contactos" por el loop de Clay
+  // y ahora le entran contactos (de la web, o de un re-run de Find People),
+  // limpiamos el flag para que el aviso desaparezca de la UI.
+  await db.from("companies").update({ clay_no_contacts_at: null }).eq("id", companyId);
+
   return { ok: true, summary };
 }

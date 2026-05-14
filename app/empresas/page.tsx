@@ -37,6 +37,7 @@ type Company = {
   reject_reason: string | null;
   clay_pushed_at: string | null;
   clay_push_error: string | null;
+  clay_no_contacts_at: string | null;
   hubspot_company_id: string | null;
   hubspot_synced_at: string | null;
   hubspot_sync_error: string | null;
@@ -1113,6 +1114,14 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
                 ya con {c.competitor_match}
               </span>
             )}
+            {c.clay_no_contacts_at && (
+              <span
+                className="badge bg-warning-bg text-warning-fg"
+                title="Clay corrió Find People y no encontró contactos en LinkedIn para esta empresa. Probá 'Buscar contactos en la web' abajo."
+              >
+                Clay: 0 contactos
+              </span>
+            )}
           </div>
           <div className="text-xs text-ink-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
             {c.company_type && <span>{labelType(c.company_type)}</span>}
@@ -1336,6 +1345,15 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
               <IconX size={14} /> Rechazar
             </button>
           )}
+        </div>
+      )}
+      {c.clay_no_contacts_at && !scrapeMsg && (
+        <div className="text-xs bg-warning-bg text-warning-fg rounded-md p-2 flex items-start gap-1.5">
+          <IconAlertCircle size={13} className="shrink-0 mt-0.5" />
+          <span>
+            Clay no encontró contactos en LinkedIn para esta empresa. Probá{" "}
+            <strong>"Buscar contactos en la web"</strong> abajo — extrae el equipo del sitio.
+          </span>
         </div>
       )}
       {scrapeMsg && (
