@@ -234,6 +234,11 @@ export default function EmpresasPage() {
   } | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ pushed: number; total: number; errors: number } | null>(null);
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const [bulkApproveResult, setBulkApproveResult] = useState<{
+    approved: number;
+    hubspot_errors: number;
+  } | null>(null);
 
   // Modo del panel "Recomendar empresas": IA broad / buscar por nombre / importar CSV.
   const [mode, setMode] = useState<"ai" | "search" | "import">("ai");
@@ -374,6 +379,29 @@ export default function EmpresasPage() {
       errors: (data.errors ?? []).length
     });
     load("approved");
+  }
+
+  async function approveAllPending() {
+    if (companies.length === 0) return;
+    const ok = window.confirm(
+      `¿Aprobar las ${companies.length} empresas pendientes?\n\nPasan a Aprobadas y se sincronizan a HubSpot. Después podés prospectarlas en Clay.`
+    );
+    if (!ok) return;
+    setBulkApproving(true);
+    setBulkApproveResult(null);
+    setError(null);
+    const res = await fetch("/api/companies/bulk-approve", { method: "POST" });
+    const data = await res.json();
+    setBulkApproving(false);
+    if (!res.ok) {
+      setError(data.error ?? "Error aprobando empresas");
+      return;
+    }
+    setBulkApproveResult({
+      approved: data.approved ?? 0,
+      hubspot_errors: data.hubspot_errors ?? 0
+    });
+    setTab("approved");
   }
 
   async function load(forStatus: "pending" | "approved" | "rejected" = tab) {
@@ -909,6 +937,17 @@ Smile Designers Lab,,,`}
                 : `Prospectar todas en Clay (${unpushedCount})`}
             </button>
           )}
+          {tab === "pending" && companies.length > 0 && (
+            <button
+              onClick={approveAllPending}
+              disabled={bulkApproving}
+              className="btn-primary"
+              title="Aprueba todas las empresas pendientes y las sincroniza a HubSpot"
+            >
+              <IconCheck size={14} />
+              {bulkApproving ? "Aprobando…" : `Aprobar todas (${companies.length})`}
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => load()} disabled={loading}>
             <IconRefresh size={14} /> Refrescar
           </button>
@@ -921,6 +960,18 @@ Smile Designers Lab,,,`}
           <span>
             {bulkResult.pushed} de {bulkResult.total} empresas empujadas a Clay
             {bulkResult.errors > 0 && ` · ${bulkResult.errors} con error`}
+          </span>
+        </div>
+      )}
+
+      {bulkApproveResult && (
+        <div className="card text-sm flex items-center gap-3">
+          <IconCheck size={16} className="text-success-fg" />
+          <span>
+            {bulkApproveResult.approved} empresas aprobadas
+            {bulkApproveResult.hubspot_errors > 0
+              ? ` · ${bulkApproveResult.hubspot_errors} no se pudieron sincronizar a HubSpot (reintentá desde la card)`
+              : " y sincronizadas a HubSpot"}
           </span>
         </div>
       )}
