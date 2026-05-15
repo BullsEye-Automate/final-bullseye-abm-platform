@@ -66,19 +66,24 @@ type ImportedContact = {
   clay_pushed_at: string | null;
 };
 
-type StagedLead = {
+type PreviewLead = {
+  id: string | null;
   name: string | null;
+  first_name: string | null;
+  last_name: string | null;
   company_name: string | null;
   job_title: string | null;
   linkedin_url: string | null;
+  email: string | null;
 };
 
 type ImportResult = {
   summary: { inserted: number; yes: number; no: number; skipped: number };
   contacts: ImportedContact[];
   staged_total: number;
-  matched: number;
-  staged_leads: StagedLead[];
+  selected_count: number;
+  deleted: number;
+  delete_errors: { lead: string; error: string }[];
   matched_url?: string;
 };
 
@@ -272,6 +277,10 @@ function CompanyCard({
   company: Company;
   onRemoved: () => void;
 }) {
+  const [previewing, setPreviewing] = useState(false);
+  const [preview, setPreview] = useState<PreviewLead[] | null>(null);
+  const [previewMatchedUrl, setPreviewMatchedUrl] = useState<string | undefined>();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
@@ -291,27 +300,87 @@ function CompanyCard({
     company.clay_pushed_at != null &&
     Date.now() - new Date(company.clay_pushed_at).getTime() < 24 * 60 * 60 * 1000;
 
-  async function importFromStaging(all = false) {
+  async function openPreview() {
+    setPreviewing(true);
+    setCardError(null);
+    setResult(null);
+    try {
+      const res = await fetch("/api/sales-navigator/staged-leads", {
+        cache: "no-store"
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setCardError(
+          data.error ?? "No se pudo leer la Campaña puente de Lemlist"
+        );
+        return;
+      }
+      const leads: PreviewLead[] = data.leads ?? [];
+      setPreview(leads);
+      setPreviewMatchedUrl(data.matched_url);
+      // Todos chequeados por default.
+      setSelectedIds(
+        new Set(leads.map((l) => l.id).filter((x): x is string => !!x))
+      );
+    } catch {
+      setCardError("No se pudo leer la Campaña puente (error de red)");
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAll() {
+    if (!preview) return;
+    setSelectedIds(
+      new Set(preview.map((l) => l.id).filter((x): x is string => !!x))
+    );
+  }
+  function selectNone() {
+    setSelectedIds(new Set());
+  }
+  function cancelPreview() {
+    setPreview(null);
+    setSelectedIds(new Set());
+    setCardError(null);
+  }
+
+  async function importSelected() {
+    if (selectedIds.size === 0) return;
     setImporting(true);
     setCardError(null);
     try {
-      const url = `/api/sales-navigator/${company.id}/import${all ? "?all=1" : ""}`;
-      const res = await fetch(url, { method: "POST" });
+      const res = await fetch(`/api/sales-navigator/${company.id}/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lemlist_lead_ids: Array.from(selectedIds) })
+      });
       const data = await res.json();
       if (!res.ok) {
-        setCardError(data.error ?? "No se pudo importar desde la campaña puente");
+        setCardError(data.error ?? "No se pudo importar");
         return;
       }
       setResult({
         summary: data.summary,
         contacts: data.contacts ?? [],
         staged_total: data.staged_total ?? 0,
-        matched: data.matched ?? 0,
-        staged_leads: data.staged_leads ?? [],
+        selected_count: data.selected_count ?? 0,
+        deleted: data.deleted ?? 0,
+        delete_errors: data.delete_errors ?? [],
         matched_url: data.matched_url
       });
+      setPreview(null);
+      setSelectedIds(new Set());
     } catch {
-      setCardError("No se pudo importar desde la campaña puente (error de red)");
+      setCardError("No se pudo importar (error de red)");
     } finally {
       setImporting(false);
     }
@@ -455,89 +524,33 @@ function CompanyCard({
       )}
 
       {result ? (
-        /* Resultado del import desde la campaña puente */
+        /* Resultado del import desde la Campaña puente */
         <div className="border border-divider rounded-md p-3 space-y-2">
           <div className="text-sm">
-            {result.contacts.length > 0 ? (
-              <>
-                <span className="font-medium text-success-fg">
-                  {result.summary.inserted} importados
-                </span>{" "}
-                de{" "}
-                {result.matched > 0
-                  ? `${result.matched} que matchearon`
-                  : `${result.staged_total} en la campaña puente`}
-                {" "}· {result.summary.yes} pasaron el pre-filtro ·{" "}
-                {result.summary.no} descartados
-                {result.summary.skipped > 0
-                  ? ` · ${result.summary.skipped} ya estaban`
-                  : ""}
-              </>
-            ) : result.staged_total === 0 ? (
-              <span className="text-warning-fg">
-                No llegó ningún lead desde la Campaña puente. ¿Los enviaste con
-                la extensión de Lemlist a la campaña (no a una lista)? Si los
-                enviaste y los ves en Lemlist, puede ser un tema del shape del
-                API. URL probada:{" "}
-                <code className="text-[11px]">
-                  {result.matched_url ?? "(sin URL)"}
-                </code>
-              </span>
-            ) : (
-              <span className="text-warning-fg">
-                Hay <strong>{result.staged_total}</strong>{" "}
-                {result.staged_total === 1 ? "lead" : "leads"} en la Campaña
-                puente, pero ninguno matcheó por nombre con esta empresa. Si son
-                de esta empresa, impórtalos igual con el botón de abajo.
-              </span>
-            )}
+            <span className="font-medium text-success-fg">
+              {result.summary.inserted} importados
+            </span>
+            {" "}de {result.selected_count} seleccionados
+            {" "}· {result.summary.yes} pasaron el pre-filtro
+            {" "}· {result.summary.no} descartados
+            {result.summary.skipped > 0
+              ? ` · ${result.summary.skipped} ya estaban`
+              : ""}
           </div>
-
-          {/* Lo que hay en la Campaña puente — visible cuando no se importó
-              nada todavía. Sirve de diagnóstico y permite el "importar igual". */}
-          {result.contacts.length === 0 && result.staged_total > 0 && (
-            <>
-              <div className="space-y-1 text-xs">
-                <div className="label">Leads en la Campaña puente</div>
-                {result.staged_leads.map((l, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-2 flex-wrap border-b border-divider last:border-0 pb-1 last:pb-0"
-                  >
-                    <span className="font-medium text-ink">
-                      {l.name || "(sin nombre)"}
-                    </span>
-                    <span className="text-ink-muted">{l.job_title || "—"}</span>
-                    {l.company_name && (
-                      <span className="badge bg-[#F1EEF7] text-ink-muted">
-                        {l.company_name}
-                      </span>
-                    )}
-                    {l.linkedin_url && (
-                      <a
-                        href={l.linkedin_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-ink-subtle hover:text-brand"
-                        title="LinkedIn"
-                      >
-                        <IconBrandLinkedin size={12} />
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <button
-                className="btn-primary text-xs"
-                onClick={() => importFromStaging(true)}
-                disabled={importing}
-              >
-                <IconDownload size={13} />{" "}
-                {importing
-                  ? "Importando…"
-                  : `Importar ${result.staged_total} ${result.staged_total === 1 ? "lead" : "leads"} de todas formas a esta empresa`}
-              </button>
-            </>
+          <div className="text-xs text-ink-muted">
+            {result.deleted === result.selected_count
+              ? `Campaña puente: ${result.deleted} lead${result.deleted === 1 ? "" : "s"} eliminado${result.deleted === 1 ? "" : "s"} (la puente quedó limpia).`
+              : `Campaña puente: ${result.deleted} de ${result.selected_count} eliminados.`}
+          </div>
+          {result.delete_errors.length > 0 && (
+            <div className="text-xs text-warning-fg space-y-0.5">
+              <div>No se pudieron borrar de la Campaña puente:</div>
+              {result.delete_errors.map((e, i) => (
+                <div key={i} className="pl-2">
+                  · {e.lead}: <span className="text-ink-subtle">{e.error}</span>
+                </div>
+              ))}
+            </div>
           )}
 
           {result.contacts.length > 0 && (
@@ -613,11 +626,11 @@ function CompanyCard({
           <div className="flex items-center gap-3 flex-wrap">
             <button
               className="text-xs text-brand hover:underline inline-flex items-center gap-1"
-              onClick={() => importFromStaging()}
-              disabled={importing}
+              onClick={openPreview}
+              disabled={previewing}
             >
               <IconRefresh size={12} />{" "}
-              {importing ? "Importando…" : "Importar de nuevo desde Campaña puente"}
+              {previewing ? "Cargando…" : "Cargar más desde la Campaña puente"}
             </button>
             {result.contacts.length > 0 && (
               <span className="text-xs text-ink-subtle">
@@ -630,34 +643,159 @@ function CompanyCard({
             )}
           </div>
         </div>
+      ) : preview ? (
+        /* Preview con checkboxes — el usuario elige cuáles importar */
+        <div className="border border-divider rounded-md p-3 space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="label">
+              Leads en la Campaña puente ({preview.length})
+            </div>
+            {preview.length > 0 && (
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  className="text-brand hover:underline"
+                  onClick={selectAll}
+                  disabled={importing}
+                >
+                  Marcar todos
+                </button>
+                <span className="text-ink-subtle">·</span>
+                <button
+                  className="text-brand hover:underline"
+                  onClick={selectNone}
+                  disabled={importing}
+                >
+                  Desmarcar todos
+                </button>
+              </div>
+            )}
+          </div>
+
+          {preview.length === 0 ? (
+            <div className="text-xs text-warning-fg">
+              No hay leads en la Campaña puente. ¿Los enviaste con la extensión
+              de Lemlist a la <em>campaña</em> (no a una lista)?
+              {previewMatchedUrl && (
+                <>
+                  {" "}URL probada:{" "}
+                  <code className="text-[11px]">{previewMatchedUrl}</code>
+                </>
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="text-xs text-ink-muted">
+                Marca solo los leads que pertenecen a{" "}
+                <strong className="text-ink">{company.company_name}</strong>.
+                Los importados se borran automáticamente de la Campaña puente.
+              </div>
+              <div className="space-y-1">
+                {preview.map((l) => {
+                  const checked = l.id ? selectedIds.has(l.id) : false;
+                  return (
+                    <label
+                      key={l.id ?? l.linkedin_url ?? l.email ?? Math.random()}
+                      className="flex items-start gap-2 text-sm cursor-pointer hover:bg-[#F4F2FB] rounded p-1.5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => l.id && toggleSelect(l.id)}
+                        disabled={!l.id || importing}
+                        className="mt-1 shrink-0"
+                      />
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">
+                            {l.name || "(sin nombre)"}
+                          </span>
+                          <span className="text-xs text-ink-muted">
+                            {l.job_title || "—"}
+                          </span>
+                          {l.linkedin_url && (
+                            <a
+                              href={l.linkedin_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-ink-subtle hover:text-brand"
+                              onClick={(e) => e.stopPropagation()}
+                              title="LinkedIn"
+                            >
+                              <IconBrandLinkedin size={13} />
+                            </a>
+                          )}
+                        </div>
+                        <div className="text-xs">
+                          {l.company_name ? (
+                            <span className="badge bg-[#F1EEF7] text-ink-muted">
+                              {l.company_name}
+                            </span>
+                          ) : (
+                            <span className="text-warning-fg italic text-[11px]">
+                              sin nombre de empresa en Lemlist
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <button
+              className="btn-primary text-xs"
+              onClick={importSelected}
+              disabled={importing || selectedIds.size === 0}
+            >
+              <IconDownload size={13} />{" "}
+              {importing
+                ? "Importando…"
+                : `Importar ${selectedIds.size} seleccionado${selectedIds.size === 1 ? "" : "s"}`}
+            </button>
+            <button
+              className="text-xs text-ink-muted hover:text-ink"
+              onClick={cancelPreview}
+              disabled={importing}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
       ) : (
-        /* Instrucciones + importar desde la campaña puente */
+        /* Estado inicial — instrucciones + botón "Importar desde Campaña puente" */
         <div className="border border-divider rounded-md p-3 space-y-2.5 bg-[#FAFAFE]">
           <div className="label">Cómo traer los contactos</div>
           <ol className="text-sm text-ink-muted space-y-1.5 list-decimal pl-4">
             <li>
-              Haz clic en <strong className="text-ink">“Abrir en Sales Navigator”</strong>{" "}
+              Haz clic en{" "}
+              <strong className="text-ink">“Abrir en Sales Navigator”</strong>{" "}
               y busca los decision-makers fit de esta empresa.
             </li>
             <li>
-              Selecciónalos (checkbox) y, con la extensión de Lemlist, mándalos a
-              la campaña <strong className="text-ink">“Campaña puente”</strong> —
-              a la <em>campaña</em>, no a una lista.
+              Selecciónalos (checkbox) y, con la extensión de Lemlist, mándalos
+              a la campaña{" "}
+              <strong className="text-ink">“Campaña puente”</strong> — a la{" "}
+              <em>campaña</em>, no a una lista.
             </li>
             <li>
               Vuelve aquí y haz clic en{" "}
-              <strong className="text-ink">“Importar desde Campaña puente”</strong>.
-              La app los pre-filtra con IA y te los deja listos para mandar a la
-              campaña real.
+              <strong className="text-ink">
+                “Importar desde Campaña puente”
+              </strong>
+              . La app te muestra los leads para que confirmes cuáles son de
+              esta empresa, los pre-filtra con IA, y los borra de la puente.
             </li>
           </ol>
           <button
             className="btn-primary text-xs"
-            onClick={() => importFromStaging()}
-            disabled={importing}
+            onClick={openPreview}
+            disabled={previewing}
           >
             <IconDownload size={13} />{" "}
-            {importing ? "Importando…" : "Importar desde Campaña puente"}
+            {previewing ? "Cargando…" : "Importar desde Campaña puente"}
           </button>
         </div>
       )}
