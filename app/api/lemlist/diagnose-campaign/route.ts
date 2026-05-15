@@ -125,18 +125,54 @@ export async function GET(req: NextRequest) {
   const id = encodeURIComponent(campaignId);
   const LIMIT = 5; // chico — solo para ver el shape
 
-  const probes: Probe[] = await Promise.all([
-    // v1 root, con paginación
+  // Probes a nivel campaña.
+  const campaignProbes: Probe[] = await Promise.all([
     probe(`${LEMLIST_API_BASE}/campaigns/${id}/leads?limit=${LIMIT}&offset=0`),
-    // v2, con paginación
     probe(`${LEMLIST_API_BASE}/v2/campaigns/${id}/leads?limit=${LIMIT}&offset=0`),
-    // v1 sin paginación — algunas versiones devuelven solo si no se pasa limit
     probe(`${LEMLIST_API_BASE}/campaigns/${id}/leads`),
-    // v2 export endpoint (existe en algunas APIs)
     probe(`${LEMLIST_API_BASE}/v2/campaigns/${id}/export/leads`),
-    // info de la campaña — para confirmar que el id es correcto
     probe(`${LEMLIST_API_BASE}/campaigns/${id}`)
   ]);
+
+  // Sacamos el primer leadId + contactId del primer probe exitoso con array
+  // para hacer probes a nivel lead / contact (donde sospechamos que vive el
+  // dato rico: email, linkedinUrl, firstName, etc.).
+  let firstLeadId: string | null = null;
+  let firstContactId: string | null = null;
+  for (const p of campaignProbes) {
+    if (!p.parsed_shape || p.parsed_shape.type !== "array") continue;
+    if (p.parsed_shape.length === 0) continue;
+    try {
+      const arr = JSON.parse(p.body_preview);
+      if (Array.isArray(arr) && arr.length > 0) {
+        const first = arr[0] as Record<string, unknown>;
+        firstLeadId =
+          (typeof first._id === "string" && first._id) ||
+          (typeof first.id === "string" && first.id) ||
+          null;
+        firstContactId =
+          (typeof first.contactId === "string" && first.contactId) || null;
+        break;
+      }
+    } catch {
+      // ignore — el body_preview podría estar truncado
+    }
+  }
+
+  const leadProbes: Probe[] = firstLeadId
+    ? await Promise.all([
+        probe(`${LEMLIST_API_BASE}/leads/${encodeURIComponent(firstLeadId)}`),
+        probe(`${LEMLIST_API_BASE}/v2/leads/${encodeURIComponent(firstLeadId)}`)
+      ])
+    : [];
+
+  const contactProbes: Probe[] = firstContactId
+    ? await Promise.all([
+        probe(`${LEMLIST_API_BASE}/contacts/${encodeURIComponent(firstContactId)}`),
+        probe(`${LEMLIST_API_BASE}/v2/contacts/${encodeURIComponent(firstContactId)}`),
+        probe(`${LEMLIST_API_BASE}/v1/contacts/${encodeURIComponent(firstContactId)}`)
+      ])
+    : [];
 
   return NextResponse.json({
     campaign_id: campaignId,
@@ -147,6 +183,10 @@ export async function GET(req: NextRequest) {
         ? "LEMLIST_STAGING_CAMPAIGN_ID"
         : "(custom from querystring)",
     api_base: LEMLIST_API_BASE,
-    probes
+    sampled_lead_id: firstLeadId,
+    sampled_contact_id: firstContactId,
+    campaign_probes: campaignProbes,
+    lead_probes: leadProbes,
+    contact_probes: contactProbes
   });
 }
