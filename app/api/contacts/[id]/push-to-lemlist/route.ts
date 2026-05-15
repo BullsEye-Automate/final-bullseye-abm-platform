@@ -14,12 +14,16 @@ export const maxDuration = 90;
 
 // POST /api/contacts/[id]/push-to-lemlist
 //
-// Empuja un contacto pendiente DIRECTO a Lemlist, salteando Clay. Pensado
-// para contactos que ya tienen email (típicamente scrapeados del sitio web
-// de la empresa): Clay no aporta nada porque no hay LinkedIn URL para
-// enriquecer y el email ya lo tenemos. La app genera icebreaker + email
-// con Claude y pushea. Después también sincroniza el contacto a HubSpot
-// (y su empresa si hace falta), igual que el flujo de revisión manual.
+// Empuja un contacto pendiente DIRECTO a Lemlist, salteando Clay. Dos casos
+// de uso:
+//   - Contactos scrapeados del sitio web de la empresa: ya tienen email,
+//     no tienen LinkedIn URL — Clay no aporta nada.
+//   - Contactos de Sales Navigator: tienen LinkedIn URL, normalmente sin
+//     email — Lemlist enriquece el email al insertar el lead.
+// Basta con que el contacto tenga email O LinkedIn URL. La app genera
+// icebreaker + email con Claude y pushea. Después también sincroniza el
+// contacto a HubSpot (y su empresa si hace falta), igual que el flujo de
+// revisión manual.
 //
 // Tras un push exitoso marca fit_action='enrich' para que el contacto pase
 // del bucket "Pendientes" a "En campaña".
@@ -65,11 +69,11 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       { status: 400 }
     );
   }
-  if (!contact.email) {
+  if (!contact.email && !contact.linkedin_url) {
     return NextResponse.json(
       {
         error:
-          "Este contacto no tiene email. El push directo a Lemlist necesita email (o usá el flujo de Clay)."
+          "Este contacto no tiene email ni URL de LinkedIn. El push directo a Lemlist necesita al menos uno."
       },
       { status: 400 }
     );

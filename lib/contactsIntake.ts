@@ -127,9 +127,14 @@ export async function intakeContactsForCompany(
   summary.inserted = rows.length;
 
   // Si la empresa estaba marcada como "sin contactos" por el loop de Clay
-  // y ahora le entran contactos (de la web, o de un re-run de Find People),
-  // limpiamos el flag para que el aviso desaparezca de la UI.
-  await db.from("companies").update({ clay_no_contacts_at: null }).eq("id", companyId);
+  // y ahora le entran contactos (de la web, de Sales Navigator, o de un
+  // re-run de Find People), limpiamos el flag para que el aviso desaparezca
+  // de la UI. También limpiamos sales_nav_status para que salga del módulo
+  // /sales-navigator.
+  await db
+    .from("companies")
+    .update({ clay_no_contacts_at: null, sales_nav_status: null })
+    .eq("id", companyId);
 
   return { ok: true, summary };
 }

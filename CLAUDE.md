@@ -1220,6 +1220,107 @@ shapes/URLs y captura el raw response en el debug), igual que `lib/lemlist.ts`.
    botón "Sugerir con IA" queda deshabilitado, pero el SDR puede
    escribir y enviar a mano igual.
 
+## Hecho del Sprint 6 fase 4 — Módulo Sales Navigator (sesión 2026-05-15)
+
+Módulo nuevo `/sales-navigator` (sidebar → Prospección, después de
+Contactos). Junta las empresas que Clay no pudo prospectar (Find People
+= 0 contactos) para que el usuario las busque a mano en LinkedIn Sales
+Navigator, pegue las URLs de los decision-makers fit, y la app las
+importe + pre-filtre + mande directo a Lemlist. Si no hay contactos
+fit, se marca la empresa para que salga de la cola.
+
+### Se apoya en infra que ya existía
+
+- **Loop Clay → app (PR #91)**: `POST /api/clay/company-no-contacts`
+  ya marca `companies.clay_no_contacts_at` cuando Find People da 0.
+  No se recreó nada — el módulo lee ese flag. (Requiere configurar la
+  columna HTTP API en Clay con run condition "Find People result
+  count = 0" — paso del usuario, no código.)
+- **`intakeContactsForCompany`** (lib/contactsIntake.ts): pipeline
+  compartido de pre-filtro Claude + dedup + insert. Al insertar
+  cualquier fila limpia `clay_no_contacts_at` + `sales_nav_status` →
+  la empresa sale del módulo sola.
+- **`/api/contacts/[id]/push-to-lemlist`**: el "Directo a Lemlist" que
+  ya existía. Se relajó: antes exigía email; ahora acepta email **o**
+  LinkedIn URL (los contactos de Sales Nav tienen LinkedIn, sin email;
+  Lemlist enriquece el email al insertar el lead).
+
+### Archivos nuevos
+
+- `supabase/companies_sales_nav_migration.sql` — añade
+  `sales_nav_status` (null = por revisar, 'no_fit' = sin contactos fit)
+  y `sales_nav_checked_at` a `companies`. **Pegar manual en Supabase.**
+- `lib/salesNavContactResearch.ts` — `researchContactFromLinkedin()`:
+  Perplexity + Claude intentan sacar nombre + cargo de una URL de
+  perfil. Best-effort (LinkedIn bloquea scraping); si no encuentra,
+  devuelve el nombre tentativo del slug de la URL con `found=false`
+  para que el usuario complete a mano.
+- `app/api/sales-navigator/route.ts` — GET: empresas con
+  `clay_no_contacts_at` seteado, separadas en `pending` / `no_fit`.
+- `app/api/sales-navigator/research-contacts/route.ts` — POST
+  `{ company_id, linkedin_urls[] }` → devuelve `drafts` (no inserta).
+  Chunks paralelos de 3, cap 12 URLs.
+- `app/api/sales-navigator/[id]/import/route.ts` — POST `{ contacts }`
+  → `intakeContactsForCompany` → devuelve los contactos YES recién
+  importados para mostrarlos inline.
+- `app/api/sales-navigator/[id]/mark/route.ts` — POST `{ status }`:
+  'no_fit' saca la empresa de la cola (sin rechazarla), null la
+  reactiva.
+- `app/sales-navigator/page.tsx` — UI: 2 tabs (Por revisar / Sin
+  contactos fit). Cada card: info de la empresa + "Abrir en Sales
+  Navigator" (deep link a búsqueda de gente por nombre de empresa) +
+  textarea para pegar URLs + "Buscar con IA" → filas editables →
+  "Importar" → contactos inline con "Directo a Lemlist".
+
+### Cambios
+
+- `lib/contactsIntake.ts` — el update post-insert ahora también limpia
+  `sales_nav_status`.
+- `app/api/contacts/[id]/push-to-lemlist/route.ts` — guard relajado
+  (email **o** linkedin_url).
+- `components/Sidebar.tsx` — item "Sales Navigator" (ícono Compass).
+
+### Flujo del usuario
+
+1. Clay corre Find People sobre una empresa aprobada y no encuentra a
+   nadie → webhook marca `clay_no_contacts_at` → la empresa aparece en
+   `/sales-navigator` "Por revisar".
+2. El usuario abre la empresa, click "Abrir en Sales Navigator", busca
+   decision-makers fit en LinkedIn.
+3. Pega las URLs de perfil → "Buscar con IA" → revisa/corrige los
+   nombres y cargos que la IA sacó → "Importar".
+4. Los contactos YES aparecen inline con "Directo a Lemlist" (genera
+   icebreaker + email con Claude, pushea, Lemlist enriquece email +
+   teléfono). También quedan en `/contactos`. La empresa sale de la
+   cola sola.
+5. Si no hay nadie fit → "No hay contactos fit" → la empresa pasa a
+   "Sin contactos fit" (reactivable).
+
+### Para activarlo (pendiente del usuario)
+
+1. Pegar `supabase/companies_sales_nav_migration.sql` en Supabase.
+2. En Clay tabla Companies: columna HTTP API con run condition "Find
+   People result count = 0" → `POST /api/clay/company-no-contacts`,
+   body `{ "wecad_company_id": <chip wecad_company_id> }`, header
+   `x-webhook-secret`. (Si ya estaba configurada del PR #91, nada que
+   hacer.)
+
+### Gaps conocidos al cierre Sprint 6 fase 4
+
+1. **Research de contactos best-effort**: LinkedIn bloquea scraping,
+   así que la IA depende de presencia pública en otras fuentes (sitio
+   de la empresa, prensa). Muchas veces va a devolver solo el nombre
+   del slug y el usuario completa el cargo a mano. Es esperado.
+2. **Deep link a Sales Navigator**: el botón abre una búsqueda de
+   gente filtrada por nombre de empresa
+   (`/sales/search/people?keywords=...`). Si LinkedIn cambia el
+   formato del query string, igual cae en Sales Nav y el usuario
+   busca a mano.
+3. **Sin API de Sales Navigator**: jalar resultados de búsqueda de
+   Sales Nav no tiene API usable (LinkedIn lo bloquea). La búsqueda y
+   el copiar-pegar de URLs los hace el usuario; el módulo solo
+   acelera el resto.
+
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
 > Continúo weCAD4you-prospecting. Última sesión cerró Sprint 5 fase 7

@@ -6,6 +6,7 @@ import {
   IconLayoutDashboard,
   IconBuildingFactory2,
   IconUsers,
+  IconCompass,
   IconMail,
   IconPhone,
   IconPhoneCall,
@@ -25,7 +26,8 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: IconLayoutDashboard },
       { href: "/empresas",  label: "Empresas",  icon: IconBuildingFactory2 },
-      { href: "/contactos", label: "Contactos", icon: IconUsers }
+      { href: "/contactos", label: "Contactos", icon: IconUsers },
+      { href: "/sales-navigator", label: "Sales Navigator", icon: IconCompass }
     ]
   },
   {
