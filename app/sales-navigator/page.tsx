@@ -132,7 +132,7 @@ export default function SalesNavigatorPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Sales Navigator</h1>
           <div className="text-sm text-ink-muted mt-1 max-w-2xl">
             Empresas que Clay no pudo prospectar (Find People no encontró
-            contactos). Buscalas en LinkedIn Sales Navigator, mandá los
+            contactos). Búscalas en LinkedIn Sales Navigator, manda los
             contactos fit a la campaña puente de Lemlist con la extensión, y la
             app los pre-filtra y los suma a la campaña real.
           </div>
@@ -197,7 +197,7 @@ export default function SalesNavigatorPage() {
             </div>
             <div className="text-sm">
               Cuando una empresa que mandaste a Clay no consigue contactos,
-              aparece acá automáticamente: la app lo detecta sola (empresa
+              aparece aquí automáticamente: la app lo detecta sola (empresa
               empujada a Clay hace 24h+ y sin ningún contacto en la base). No
               requiere configuración en Clay.
             </div>
@@ -390,7 +390,7 @@ function CompanyCard({
         <div className="text-xs text-warning-fg flex items-start gap-1">
           <IconAlertCircle size={12} className="mt-0.5 shrink-0" />
           {pushedRecently
-            ? "Recién mandada a Clay (hace menos de 24h) y todavía sin contactos. Puede que Clay siga procesándola — verificá en Clay antes de buscar a mano."
+            ? "Recién mandada a Clay (hace menos de 24h) y todavía sin contactos. Puede que Clay siga procesándola — verifica en Clay antes de buscar a mano."
             : "Pasó por Clay y sigue sin contactos en la base — Clay no encontró a nadie."}
         </div>
       ) : (
@@ -451,7 +451,7 @@ function CompanyCard({
             {result.matched === 0 ? (
               <span className="text-warning-fg">
                 No se encontró ningún contacto en la Campaña puente que matchee
-                esta empresa. ¿Los mandaste con la extensión de Lemlist a la
+                esta empresa. ¿Los enviaste con la extensión de Lemlist a la
                 campaña (no a una lista)?
               </span>
             ) : (
@@ -565,16 +565,16 @@ function CompanyCard({
           <div className="label">Cómo traer los contactos</div>
           <ol className="text-sm text-ink-muted space-y-1.5 list-decimal pl-4">
             <li>
-              Tocá <strong className="text-ink">“Abrir en Sales Navigator”</strong>{" "}
-              y buscá los decision-makers fit de esta empresa.
+              Haz clic en <strong className="text-ink">“Abrir en Sales Navigator”</strong>{" "}
+              y busca los decision-makers fit de esta empresa.
             </li>
             <li>
-              Seleccionálos (checkbox) y, con la extensión de Lemlist, mandalos a
+              Selecciónalos (checkbox) y, con la extensión de Lemlist, mándalos a
               la campaña <strong className="text-ink">“Campaña puente”</strong> —
               a la <em>campaña</em>, no a una lista.
             </li>
             <li>
-              Volvé acá y tocá{" "}
+              Vuelve aquí y haz clic en{" "}
               <strong className="text-ink">“Importar desde Campaña puente”</strong>.
               La app los pre-filtra con IA y te los deja listos para mandar a la
               campaña real.

@@ -318,7 +318,7 @@ export default function LlamadasPage() {
 
       {!loading && data && data.calls.length === 0 && (
         <div className="card text-center py-12 text-ink-muted">
-          No hay llamadas en este rango. Probá <strong>“Sincronizar HubSpot”</strong> arriba.
+          No hay llamadas en este rango. Prueba <strong>“Sincronizar HubSpot”</strong> arriba.
         </div>
       )}
 

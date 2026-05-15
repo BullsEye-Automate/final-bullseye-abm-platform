@@ -607,7 +607,7 @@ export default function ContactosPage() {
           </div>
           <p className="text-xs text-ink-muted">
             La aprobación quedó guardada en la app y los mensajes se generaron, pero Lemlist
-            rechazó el lead. Verificá el contacto en la campaña; este JSON tiene la respuesta
+            rechazó el lead. Verifica el contacto en la campaña; este JSON tiene la respuesta
             cruda de la API para diagnosticar.
           </p>
           <pre className="bg-[#F4F2FB] rounded-md p-3 whitespace-pre-wrap break-words text-[11px] text-ink/80 max-h-96 overflow-auto">
@@ -842,7 +842,7 @@ function ContactCard({
               (!c.linkedin_icebreaker || !c.linkedin_icebreaker.trim()) && (
                 <span
                   className="badge bg-warning-bg text-warning-fg"
-                  title="El lead se empujó a Lemlist sin icebreaker. Usá el botón 'Regenerar icebreaker y re-empujar'."
+                  title="El lead se empujó a Lemlist sin icebreaker. Usa el botón 'Regenerar icebreaker y re-empujar'."
                 >
                   sin icebreaker ⚠
                 </span>

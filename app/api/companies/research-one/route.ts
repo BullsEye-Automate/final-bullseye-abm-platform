@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
   if (result.not_found || !result.company) {
     return NextResponse.json({
       not_found: true,
-      message: `No encontré información pública de "${name}". Probá con el nombre completo o agregá el LinkedIn URL.`,
+      message: `No se encontró información pública de "${name}". Prueba con el nombre completo o agrega el LinkedIn URL.`,
       diagnostics: result.diagnostics
     });
   }

@@ -85,7 +85,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     return NextResponse.json(
       {
         error:
-          "Este contacto ya fue empujado a Clay. Para evitar doble procesamiento, dejá que siga el flujo de Clay."
+          "Este contacto ya fue empujado a Clay. Para evitar doble procesamiento, deja que siga el flujo de Clay."
       },
       { status: 409 }
     );

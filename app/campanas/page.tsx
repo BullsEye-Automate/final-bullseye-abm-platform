@@ -240,9 +240,9 @@ export default function CampanasPage() {
           </div>
           {(!kpis || kpis.total === 0) && (
             <div className="text-sm">
-              Si recién configurás esto: corré la migración{" "}
+              Si recién configuras esto: corre la migración{" "}
               <code className="bg-[#F4F2FB] px-1 rounded">supabase/lemlist_activities_migration.sql</code>{" "}
-              en Supabase y después tocá <strong>Sincronizar con Lemlist</strong> para traer la
+              en Supabase y después haz clic en <strong>Sincronizar con Lemlist</strong> para traer la
               actividad de la campaña.
             </div>
           )}

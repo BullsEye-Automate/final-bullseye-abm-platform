@@ -295,11 +295,11 @@ export default function RespuestasPage() {
           </div>
           {(!kpis || kpis.total === 0) && (
             <div className="text-sm">
-              Si recién configurás esto: corré la migración{" "}
+              Si recién configuras esto: corre la migración{" "}
               <code className="bg-[#F4F2FB] px-1 rounded">
                 supabase/lemlist_activities_replies_migration.sql
               </code>{" "}
-              en Supabase y después tocá <strong>Sincronizar respuestas</strong>.
+              en Supabase y después haz clic en <strong>Sincronizar respuestas</strong>.
             </div>
           )}
         </div>
@@ -476,8 +476,8 @@ function ReplyCard({
         </blockquote>
       ) : (
         <div className="text-xs text-ink-subtle italic">
-          Lemlist no devolvió el texto de la respuesta. Abrí la conversación en Lemlist
-          para leerla, o clasificá manualmente abajo.
+          Lemlist no devolvió el texto de la respuesta. Abre la conversación en Lemlist
+          para leerla, o clasifica manualmente abajo.
         </div>
       )}
 
@@ -540,15 +540,15 @@ function ReplyCard({
             className="input text-sm min-h-[110px] resize-y"
             placeholder={
               r.channel === "linkedin"
-                ? "Escribí tu respuesta de LinkedIn…"
-                : "Escribí tu respuesta de email…"
+                ? "Escribe tu respuesta de LinkedIn…"
+                : "Escribe tu respuesta de email…"
             }
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
           />
           {draftModel && (
             <div className="text-xs text-ink-subtle">
-              Borrador IA · modelo: {draftModel}. Revisalo y editalo antes de
+              Borrador IA · modelo: {draftModel}. Revísalo y edítalo antes de
               enviar.
             </div>
           )}

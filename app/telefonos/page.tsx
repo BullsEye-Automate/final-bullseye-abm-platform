@@ -125,7 +125,7 @@ export default function TelefonosPage() {
           <IconPhone size={22} /> Buscar teléfono con Lusha
         </h1>
         <div className="text-sm text-ink-muted mt-1 max-w-2xl">
-          Pegá el LinkedIn URL del contacto. Lusha intenta levantar el
+          Pega el LinkedIn URL del contacto. Lusha intenta levantar el
           teléfono (~1 crédito si encuentra) y lo escribe directo al contact
           de HubSpot. Si Lemlist ya había devuelto otro teléfono, lo
           conservamos en una propiedad separada para que puedas comparar.
@@ -144,7 +144,7 @@ export default function TelefonosPage() {
               levantar el número. Este botón recorre los contactos en campaña
               que todavía no tienen teléfono de Lemlist, se lo pide a Lemlist y
               lo escribe en Supabase y en HubSpot (campo <code>phone</code> +{" "}
-              <code>wecad_phone_lemlist</code>). Correlo cada tanto — es
+              <code>wecad_phone_lemlist</code>). Córrelo cada tanto — es
               idempotente.
             </div>
           </div>
@@ -201,8 +201,8 @@ export default function TelefonosPage() {
                   refreshResult.lemlist_ok === 0 && (
                     <div className="mt-1 text-danger-fg">
                       Ninguna consulta a Lemlist respondió OK — puede ser un
-                      problema de API key o de patrón de URL. Mirá el debug
-                      abajo y pasámelo.
+                      problema de API key o de patrón de URL. Mira el debug
+                      abajo y pásamelo.
                     </div>
                   )}
                 {refreshResult.lemlist_ok > 0 &&
@@ -210,8 +210,8 @@ export default function TelefonosPage() {
                     <div className="mt-1 text-ink-muted">
                       Lemlist respondió OK pero todavía no tiene teléfonos para
                       estos contactos. Puede ser que el enrichment siga
-                      corriendo (probá más tarde) o que el teléfono venga en un
-                      campo distinto — mirá el debug abajo.
+                      corriendo (prueba más tarde) o que el teléfono venga en un
+                      campo distinto — mira el debug abajo.
                     </div>
                   )}
                 {refreshResult.debug &&
@@ -293,7 +293,7 @@ function ResultPanel({
         </div>
         <div className="text-sm text-ink-muted mt-1">
           {result.error ??
-            "No encontré ese LinkedIn en Supabase ni en HubSpot. Verificá que el contacto haya pasado por la app."}
+            "No encontré ese LinkedIn en Supabase ni en HubSpot. Verifica que el contacto haya pasado por la app."}
         </div>
         <div className="text-xs text-ink-muted mt-2">
           URL probada: <code>{result.linkedin_url}</code>
@@ -323,8 +323,8 @@ function ResultPanel({
               : "Buscar también con Lusha (1 crédito si encuentra)"}
           </button>
           <div className="text-xs text-ink-muted mt-1">
-            El número de arriba probablemente viene de Lemlist. Si querés un
-            segundo número de Lusha para tener fallback, dale al botón.
+            El número de arriba probablemente viene de Lemlist. Si quieres un
+            segundo número de Lusha para tener fallback, haz clic en el botón.
           </div>
         </div>
       </div>

@@ -128,7 +128,7 @@ function parseCsv(text: string): CsvRow[] {
 
   if (nameIdx === -1) {
     throw new Error(
-      'El CSV necesita una columna "company_name" (o "name"). Revisá la primera fila.'
+      'El CSV necesita una columna "company_name" (o "name"). Revisa la primera fila.'
     );
   }
 
@@ -284,7 +284,7 @@ export default function EmpresasPage() {
         setSearchMsg({
           kind: data.off_target ? "warn" : "ok",
           text: data.off_target
-            ? `"${data.inserted?.company_name}" agregada a Pendientes, pero ojo: la IA la marcó como fuera de rubro (${data.inserted?.company_type}). Revisá el razonamiento en la tarjeta.`
+            ? `"${data.inserted?.company_name}" agregada a Pendientes, pero atención: la IA la marcó como fuera de rubro (${data.inserted?.company_type}). Revisa el razonamiento en la tarjeta.`
             : `"${data.inserted?.company_name}" agregada a Pendientes (fit ${data.inserted?.fit_score}).`
         });
         setSearchName("");
@@ -311,7 +311,7 @@ export default function EmpresasPage() {
       try {
         const rows = parseCsv(String(reader.result ?? ""));
         if (rows.length === 0) {
-          setCsvError("El CSV no tiene filas con company_name. Revisá el formato.");
+          setCsvError("El CSV no tiene filas con company_name. Revisa el formato.");
           setCsvRows(null);
           return;
         }
@@ -384,7 +384,7 @@ export default function EmpresasPage() {
   async function approveAllPending() {
     if (companies.length === 0) return;
     const ok = window.confirm(
-      `¿Aprobar las ${companies.length} empresas pendientes?\n\nPasan a Aprobadas y se sincronizan a HubSpot. Después podés prospectarlas en Clay.`
+      `¿Aprobar las ${companies.length} empresas pendientes?\n\nPasan a Aprobadas y se sincronizan a HubSpot. Después puedes prospectarlas en Clay.`
     );
     if (!ok) return;
     setBulkApproving(true);
@@ -599,7 +599,7 @@ export default function EmpresasPage() {
         {mode === "search" && (
           <div className="space-y-3">
             <div className="text-sm text-ink-muted">
-              Investigá una empresa puntual por nombre. La IA busca su LinkedIn, software CAD,
+              Investiga una empresa puntual por nombre. La IA busca su LinkedIn, software CAD,
               tamaño y señales, y la deja en Pendientes para que la revises. Si no es del rubro,
               te lo dice en el razonamiento.
             </div>
@@ -664,7 +664,7 @@ export default function EmpresasPage() {
                 <IconFileText size={14} /> Formato del CSV
               </div>
               <p className="text-ink-muted mb-2">
-                Exportá tu Excel como CSV (Archivo → Guardar como → CSV). La primera fila tiene
+                Exporta tu Excel como CSV (Archivo → Guardar como → CSV). La primera fila tiene
                 que ser el encabezado. La <strong>única columna obligatoria es{" "}
                 <code className="bg-white px-1 rounded">company_name</code></strong>. El resto
                 son opcionales pero mejoran la precisión:
@@ -689,7 +689,7 @@ export default function EmpresasPage() {
                 </li>
               </ul>
               <p className="text-ink-muted">
-                Si solo tenés el nombre, alcanza: la IA va a buscar el LinkedIn y el resto de la
+                Si solo tienes el nombre, alcanza: la IA va a buscar el LinkedIn y el resto de la
                 info por su cuenta. Máximo 40 filas por importación.
               </p>
               <pre className="bg-white rounded-md p-2 mt-2 text-[11px] text-ink/70 overflow-auto">
@@ -970,7 +970,7 @@ Smile Designers Lab,,,`}
           <span>
             {bulkApproveResult.approved} empresas aprobadas
             {bulkApproveResult.hubspot_errors > 0
-              ? ` · ${bulkApproveResult.hubspot_errors} no se pudieron sincronizar a HubSpot (reintentá desde la card)`
+              ? ` · ${bulkApproveResult.hubspot_errors} no se pudieron sincronizar a HubSpot (reinténtalo desde la card)`
               : " y sincronizadas a HubSpot"}
           </span>
         </div>
@@ -1168,7 +1168,7 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
             {c.clay_no_contacts_at && (
               <span
                 className="badge bg-warning-bg text-warning-fg"
-                title="Clay corrió Find People y no encontró contactos en LinkedIn para esta empresa. Probá 'Buscar contactos en la web' abajo."
+                title="Clay corrió Find People y no encontró contactos en LinkedIn para esta empresa. Prueba 'Buscar contactos en la web' abajo."
               >
                 Clay: 0 contactos
               </span>
@@ -1402,7 +1402,7 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
         <div className="text-xs bg-warning-bg text-warning-fg rounded-md p-2 flex items-start gap-1.5">
           <IconAlertCircle size={13} className="shrink-0 mt-0.5" />
           <span>
-            Clay no encontró contactos en LinkedIn para esta empresa. Probá{" "}
+            Clay no encontró contactos en LinkedIn para esta empresa. Prueba{" "}
             <strong>"Buscar contactos en la web"</strong> abajo — extrae el equipo del sitio.
           </span>
         </div>

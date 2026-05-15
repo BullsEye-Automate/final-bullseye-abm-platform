@@ -785,7 +785,7 @@ function ImprovementsCard({
                       </div>
                     )}
                     <div>
-                      <div className="text-xs font-semibold text-ink mb-1">Llamadas que aparecen acá</div>
+                      <div className="text-xs font-semibold text-ink mb-1">Llamadas que aparecen aquí</div>
                       <DrilldownCallList ids={a.call_ids} />
                     </div>
                   </div>
