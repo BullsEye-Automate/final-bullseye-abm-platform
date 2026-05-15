@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { syncContactToHubSpot } from "@/lib/hubspotContactSync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -99,18 +98,19 @@ function normalizeItem(it: IncomingScore): {
   const score = parseFitScore(pickField(it, "fit_score"));
   const fit = parseFit(pickField(it, "fit"));
   const reason = pickField(it, "fit_reason");
-  const icebreaker = pickField(it, "linkedin_icebreaker");
-  const subject = pickField(it, "email_subject");
-  const body = pickField(it, "email_body");
+  // NOTA: ignoramos linkedin_icebreaker, email_subject y email_body de Clay
+  // a propósito. La app es la única fuente de verdad para los mensajes IA
+  // (controlados por el módulo /entrenar-modelo). Cuando un contacto pasa a
+  // enrich, el SDR lo revisa en la app y el push a Lemlist genera los
+  // mensajes con la config activa, NO con los que Clay produjo.
+  // Históricamente esos campos venían en el webhook; los aceptamos pero no
+  // los persistimos, para que cuando se acepte un contacto se regeneren.
 
   const patch: Record<string, any> = {};
   if (score !== null) patch.fit_score = score;
   if (fit !== null) patch.fit = fit;
   if (reason != null && reason !== "") patch.fit_reason = String(reason);
   if (action !== null) patch.fit_action = action;
-  if (icebreaker != null && icebreaker !== "") patch.linkedin_icebreaker = String(icebreaker);
-  if (subject != null && subject !== "") patch.email_subject = String(subject);
-  if (body != null && body !== "") patch.email_body = String(body);
 
   return { wecad_contact_id: wecadId, patch };
 }
@@ -173,22 +173,12 @@ export async function POST(req: NextRequest) {
     }
     totals.updated += 1;
 
-    // fit_action='enrich' → Clay corre "Add Lead to Campaign" y el contacto
-    // entra a la campaña de Lemlist. Regla del producto: a HubSpot van los
-    // contactos que entran a campaña, así que lo sincronizamos acá. La app
-    // es la fuente de verdad — no dependemos de la integración nativa de
-    // Lemlist, que sincroniza de forma poco confiable. Idempotente.
-    if (norm.patch.fit_action === "enrich") {
-      const hs = await syncContactToHubSpot(db, norm.wecad_contact_id);
-      if (hs.ok) {
-        totals.hubspot_synced += 1;
-      } else {
-        errors.push({
-          wecad_contact_id: norm.wecad_contact_id,
-          error: `HubSpot sync: ${hs.error}`
-        });
-      }
-    }
+    // Antes acá hacíamos syncContactToHubSpot cuando fit_action='enrich'
+    // porque Clay pusheaba el contacto a Lemlist automáticamente con la
+    // columna "Add Lead to Campaign". Ahora ese push lo hace la app
+    // cuando el SDR aprueba desde el bucket "Por aprobar" en /contactos.
+    // El sync a HubSpot pasa a ser parte de ese flujo (pushApprovedToLemlist
+    // ya invoca syncContactToHubSpot). Acá solo persistimos el scoring.
   }
 
   return NextResponse.json({ ...totals, errors });

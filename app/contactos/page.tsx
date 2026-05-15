@@ -15,7 +15,8 @@ import {
   IconTrash,
   IconChevronRight,
   IconChevronDown,
-  IconSearch
+  IconSearch,
+  IconSparkles
 } from "@tabler/icons-react";
 
 type Contact = {
@@ -61,10 +62,16 @@ type Contact = {
 
 type Company = { id: string; company_name: string };
 
-type Bucket = "pending" | "manual_review" | "enriched" | "discarded";
+type Bucket =
+  | "pending"
+  | "approved_pending"
+  | "manual_review"
+  | "enriched"
+  | "discarded";
 
 const BUCKET_LABELS: Record<Bucket, string> = {
   pending: "Pendientes",
+  approved_pending: "Por aprobar",
   manual_review: "Revisión manual",
   enriched: "En campaña",
   discarded: "Descartados"
@@ -75,6 +82,7 @@ export default function ContactosPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [counts, setCounts] = useState<Record<Bucket, number>>({
     pending: 0,
+    approved_pending: 0,
     manual_review: 0,
     enriched: 0,
     discarded: 0
@@ -86,6 +94,7 @@ export default function ContactosPage() {
   const [pushingId, setPushingId] = useState<string | null>(null);
   const [pushingLemlistId, setPushingLemlistId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
+  const [bulkApproving, setBulkApproving] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [bulkSyncingHubspot, setBulkSyncingHubspot] = useState(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
@@ -191,6 +200,45 @@ export default function ContactosPage() {
     setPushNotice(
       `${pushed} de ${total} contactos empujados a Clay${errs.length > 0 ? ` · ${errs.length} con error` : ""}.`
     );
+    await load();
+  }
+
+  // Bulk approve del bucket "Por aprobar". Por cada contacto: genera
+  // mensajes con la config activa de /entrenar-modelo, pushea a Lemlist
+  // y sincroniza a HubSpot. Reemplaza el "Add Lead to Campaign" automático
+  // que Clay disparaba antes con la run condition fit_action='enrich'.
+  async function bulkApproveEnrich() {
+    const ok = window.confirm(
+      `¿Aprobar y enviar a Lemlist ${counts.approved_pending} contactos?\n\nGenera los mensajes (icebreaker + email subject + body) con la config activa de /entrenar-modelo, los pushea a Lemlist y sincroniza HubSpot.\n\nProcesa hasta 25 por corrida; si hay más, repite el botón.`
+    );
+    if (!ok) return;
+    setBulkApproving(true);
+    setPushNotice(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/contacts/bulk-approve-enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batch_limit: 25 })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      const s = data.summary ?? {};
+      setPushNotice(
+        `${s.pushed ?? 0} contactos empujados a Lemlist${
+          s.errors > 0 ? ` · ${s.errors} con error` : ""
+        } · ${s.hubspot_synced ?? 0} sincronizados a HubSpot${
+          s.hubspot_errors > 0 ? ` (${s.hubspot_errors} con error)` : ""
+        }.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setBulkApproving(false);
+    }
     await load();
   }
 
@@ -503,7 +551,9 @@ export default function ContactosPage() {
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 flex-wrap">
-          {(["pending", "manual_review", "enriched", "discarded"] as const).map((b) => {
+          {(
+            ["pending", "approved_pending", "manual_review", "enriched", "discarded"] as const
+          ).map((b) => {
             const active = bucket === b;
             return (
               <button
@@ -539,6 +589,19 @@ export default function ContactosPage() {
               {bulkPushing
                 ? "Empujando…"
                 : `Prospectar todos en Clay (${pushablePendingCount})`}
+            </button>
+          )}
+          {bucket === "approved_pending" && counts.approved_pending > 0 && (
+            <button
+              onClick={bulkApproveEnrich}
+              disabled={bulkApproving}
+              className="btn-primary"
+              title="Genera mensajes con la config activa y los empuja a Lemlist + HubSpot"
+            >
+              <IconSend size={14} />
+              {bulkApproving
+                ? "Empujando…"
+                : `Aprobar y enviar a Lemlist (${counts.approved_pending})`}
             </button>
           )}
           {bucket === "enriched" && (
@@ -939,6 +1002,10 @@ function ContactCard({
         </details>
       )}
 
+      {bucket === "approved_pending" && (
+        <PreviewButton contactId={c.id} hasPreview={!!c.linkedin_icebreaker} />
+      )}
+
       {c.clay_push_error && (
         <div className="text-xs text-danger-fg flex items-start gap-2">
           <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
@@ -1194,5 +1261,57 @@ function ImportPanel({
         </>
       )}
     </section>
+  );
+}
+
+// ============================================================================
+// PreviewButton — genera mensajes IA on-demand para revisar antes de aprobar.
+// Recarga la página después para que la card muestre los mensajes recién
+// generados (icebreaker + email subject + body).
+// ============================================================================
+
+function PreviewButton({ contactId, hasPreview }: { contactId: string; hasPreview: boolean }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/preview-message`, {
+        method: "POST"
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+      } else {
+        window.location.reload();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="text-xs">
+      <button
+        onClick={run}
+        disabled={loading}
+        className="text-brand hover:underline disabled:opacity-50 inline-flex items-center gap-1"
+        title={hasPreview ? "Regenera el mensaje con la config activa" : "Genera el mensaje con la config activa de /entrenar-modelo"}
+      >
+        <IconSparkles size={12} />
+        {loading
+          ? "Generando…"
+          : hasPreview
+          ? "Regenerar preview con IA"
+          : "Generar preview de mensaje con IA"}
+      </button>
+      {error && (
+        <div className="mt-1 text-danger-fg">{error}</div>
+      )}
+    </div>
   );
 }
