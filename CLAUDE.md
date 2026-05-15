@@ -1804,3 +1804,212 @@ defecto chequeados también).
 >    reales (probar shape de /inbox/email, ajustar si falla).
 >
 > Avísame qué opción A/B/auto-clear elegís para el match, y arrancamos.
+
+## Hecho del Sprint 8 — Reportería ejecutiva + Dashboard expandido (sesión 2026-05-17)
+
+Sesión larga centrada en visibilidad. PRs #114 a #137 (incluyendo
+fixes y rebases). Nuevo módulo `/reporteria` para mostrarle al
+cliente + ampliación del `/dashboard` con coverage, usage, evolución
+8 meses, embudo Clay, costos por proveedor.
+
+### Sub-sesión 8a — Régimen estricto de evidencia + cleanup (PRs #114-#123)
+
+Ver sección Sprint 7 arriba — esa sesión fue parte de este Sprint 8.
+
+### Sub-sesión 8b — Sales Navigator + tracking de source (PRs #124-#131)
+
+**PR #124 — Sales Nav muestra nombres reales:** swap a
+`getCampaignLeadsWithDetails` en sales-navigator/import. Antes
+mostraba "(sin nombre)" porque el list de Lemlist es minimalista.
+
+**PRs #125, #126 — Diagnóstico Lemlist + helper de detail:**
+descubrimos que `GET /api/leads/{leadId}` devuelve 404 (deprecated)
+pero `GET /api/contacts/{contactId}` devuelve el objeto completo
+(fullName, fields.firstName, fields.lastName, fields.jobTitle,
+fields.companyName, linkedinUrl). `getCampaignLeadsWithDetails`
+reescrito para fetchear del contact endpoint en vez del lead
+endpoint.
+
+**PR #127 — UX empresa: editar size + filtrar preview + auto-delete:**
+- Edición inline del `company_size` en cards de `/empresas` (la IA
+  a veces saca el número de Manta/BBB desactualizado).
+- `PATCH /api/companies/[id]` que valida y persiste.
+- Buscador en preview de Campaña puente (filter por nombre/empresa/
+  cargo).
+- Auto-delete real de leads de la puente post-import: extendido
+  `deleteCampaignLead` para aceptar `contact_id` y probar 3 patterns
+  adicionales (`/campaigns/{id}/leads/{contactId}`,
+  `/campaigns/{id}/contacts/{contactId}`,
+  `/contacts/{contactId}/campaigns/{id}`).
+  Sales-nav import pasa el contact_id desde el snapshot enriquecido.
+
+**PR #128 — LinkedIn employee count autoritativo:**
+- Prompts en `lib/discovery.ts` y `lib/companyResearch.ts` ahora
+  declaran que `company_size` SOLO viene del badge "X employees" de
+  LinkedIn corporativo. NO ACEPTABLE: Manta, BBB, Yelp, ZoomInfo,
+  Hoovers, Crunchbase rangos viejos. Si la única fuente es uno de
+  esos directorios → null. "Mejor null que un número falso".
+- Nuevo helper `salvageEmployeeCounts(items)` en `lib/discovery.ts`:
+  pase dedicado de Perplexity con prompt específico para LinkedIn,
+  prueba a verificar el badge real. Una llamada batch al final del
+  discovery + en el research-one.
+
+**PR #129 — Sales Nav 3 buckets:**
+- `/api/sales-navigator` devuelve `no_contacts` / `one_contact` /
+  `no_fit` con contact counts por empresa.
+- UI con 3 tabs: "Empresas sin contactos" (antes "Por revisar"),
+  "Con solo 1 contacto" (nuevo), "Sin contactos fit".
+- Dashboard panel **CoverageCard** ("Cobertura de empresas totales ·
+  Sales Navigator") con `total_in_clay`, `no_contacts`, `one_contact`,
+  `two_plus_contacts`, `no_fit_marked`, `manually_worked`.
+
+**PR #130, #131 — Source tracking:**
+- Migración `supabase/contacts_source_migration.sql` agrega
+  `contacts.source` (text). Valores: 'clay' | 'sales_navigator' |
+  'web_scrape' | 'manual'.
+- Los 4 callers de `intakeContactsForCompany` pasan el source
+  correcto. Backfill heurístico: contactos en empresas con
+  `clay_no_contacts_at != null` → sales_navigator; el resto → clay
+  (caso dominante).
+- Dashboard usa `source` para los breakdowns de "Uso del equipo"
+  (clay_companies vs sales_nav_companies) y "Evolución mensual".
+
+**Otros paneles del dashboard (Sprint 8b):**
+- **UsageCard** (range-bound): empresas trabajadas, con resultado
+  Clay, contactos por Clay, con resultado Sales Nav, contactos por
+  Sales Nav, promedio por empresa.
+- **EvolutionCard** (8 meses, no range-bound): empresas push a Clay
+  por mes + contactos por fuente (Clay verde + Sales Nav amarillo).
+  Reemplaza el FunnelCard viejo.
+- **ProviderUsageCard** (PR #131): tabla con 6 proveedores externos
+  estimados:
+  - Anthropic: pre-filters + mensajes + análisis llamadas + research.
+  - Perplexity: searches discovery + research one-shot.
+  - Clay: ≈5 créditos/empresa = $0.20.
+  - Lemlist: ver PR #133 abajo.
+  - Lusha: 1 teléfono = 1 crédito ≈ $0.40.
+  - HubSpot: gratis (rate limit).
+  Total estimado al final.
+
+### Sub-sesión 8c — Embudo Clay + Lemlist real + Reportería (PRs #132-#137)
+
+**PR #132 — ClayFunnelCard en dashboard:**
+- 5 pasos del flujo Clay (en `/dashboard`):
+  1. Levantados por Clay (source='clay' en período)
+  2. Marcados fit por Clay AI (fit_action='enrich') · % total
+  3. En revisión manual (fit_action='manual_review') · % total
+  4. Manual review aprobados · % del manual review (no del total)
+  5. En campaña Lemlist · % total
+
+**PR #133 — Lemlist cálculo real:**
+- 27 créditos por contacto: 1 enrich + 1 validar email + 5 levantar
+  email + 20 levantar teléfono.
+- Plan incluye 7,000 créditos/mes gratis.
+- Excedente: $0.01/crédito.
+- Note dinámico en la fila: "X créditos consumidos. Bajo el límite
+  gratis" / "Excede el límite gratis — facturable: Y × $0.01".
+
+**PRs #134-#137 — Módulo /reporteria (vista ejecutiva al cliente):**
+
+Nuevo módulo en sidebar (ANÁLISIS → Reportería). Vista pulida tipo
+agencia, no operacional. Misma data que el dashboard pero curada y
+contada para el cliente. Filtrado por el mismo range selector.
+
+**Estructura final** (top to bottom):
+
+1. **Highlight banner** (gradient morado): frase armada con los
+   números del período. Lista para copiar/pegar al cliente.
+
+2. **Hero KPIs (5 cards con delta)**:
+   - Empresas prospectadas (`clay_pushed_at` en rango).
+   - **Contactos fit generados** (`contacts_yes` = pasaron pre-filtro).
+   - En outreach (Lemlist).
+   - Conversaciones (calls + respuestas).
+   - Hot leads (contactos únicos con engagement real).
+
+3. **Embudo ejecutivo (7 pasos)**:
+   Descubiertas → Aprobadas → **Contactos levantados (Clay, total
+   crudo)** → **Contactos fit (pre-filter YES)** → En outreach →
+   Conversaciones → Interesados/callbacks. Cada paso con % de
+   conversión vs anterior. Números en blanco adentro de barras
+   llenas, dark afuera cuando la barra es chica.
+
+4. **Tres cards lado a lado**:
+   - **Outreach activo**: leads en outreach (Correo + LinkedIn) +
+     breakdown por canal (correos enviados, invitaciones LinkedIn,
+     mensajes LinkedIn). Cuenta vía `lemlist_activities` con types
+     `emailsSent`, `linkedinInvite`, `linkedinSend`.
+   - **Llamadas**: total, conectadas + pickup rate, duración
+     promedio, score SDR promedio.
+   - **Respuestas**: total, positivas (%), negativas (%).
+
+5. **Distribución de respuestas**: bar chart por categoría IA.
+
+6. **Hot leads (top 10, alineado con Hero count)**:
+   Tabla con Contacto · Empresa · Cargo · Señales (badges) · Score
+   · LinkedIn. Solo entran contactos con engagement REAL (call
+   interesado/callback en cualquier momento, o respuesta positiva
+   en el período). El que solo tiene fit alto sin responder NO
+   aparece. `<details>` expandible "¿Cómo se calcula el score?" con
+   el breakdown completo:
+     +50 call interesado, +35 callback, +30 respuesta positiva,
+     +25 callback por respuesta, +20 objection timing,
+     +fit_score × 4 (max 40), +5 c/u phone/Lemlist/HubSpot.
+
+7. **Evolución mensual**: 8 meses de empresas prospectadas (recap,
+   no range-bound).
+
+**Stack técnico:**
+- `lib/reporteriaQueries.ts` — `computeReporteria` reusa
+  `computeDashboard` para datos base + agrega calls + respuestas +
+  hot leads + highlight.
+- `app/api/reporteria/route.ts` — endpoint range-aware.
+- `app/reporteria/page.tsx` — UI ejecutiva (~800 líneas).
+- `components/Sidebar.tsx` — ítem "Reportería" habilitado.
+
+### Gotchas críticos descubiertos en Sprint 8
+
+1. **Always `npx next build` local antes de commitear nuevas pages.**
+   Vercel build es más estricto que `tsc --noEmit` sin
+   `@types/react` instalados; los `JSX key` se trataban como prop
+   extra bajo `exactOptionalPropertyTypes`.
+
+2. **Cast de Supabase joins anidados**: `companies(company_name)` en
+   un select puede ser inferido como `GenericStringError[]`. Cast
+   por `unknown` primero: `(rows ?? []) as unknown as MyType[]`.
+
+3. **Lemlist endpoints minimalistas**: `GET /campaigns/{id}/leads` y
+   `GET /leads/{leadId}` devuelven shapes pobres o 404. SIEMPRE
+   usar `getCampaignLeadsWithDetails` (que hace el fetch al
+   `contact endpoint` por cada lead).
+
+### Estado al cierre Sprint 8
+
+- Rama: `claude/continue-prospecting-dev-QjeVe` (mergeada toda).
+- Producción: Vercel verde.
+- Migraciones pendientes para el usuario (pegar en SQL editor):
+  - `supabase/contacts_source_migration.sql` (con backfill).
+  - Anteriores ya aplicadas según se cerró sesión anterior.
+- Módulos vivos: `/dashboard`, `/reporteria` (nuevo), `/empresas`,
+  `/contactos`, `/sales-navigator` (3 buckets), `/telefonos`,
+  `/llamadas`, `/respuestas`, `/configuracion/icp`,
+  `/diagnostico-empresa`.
+- Módulos disabled en sidebar: `/entrenar-modelo` (próximo
+  Sprint 9).
+
+### Pendiente abierto al cerrar Sprint 8 — módulo /entrenar-modelo
+
+El usuario propuso enfoque distinto al original. Original era
+"feedback loop ICP usando contact_feedback + sdr_improvements
+agregados para refinar el pre-filtro". El usuario ahora plantea:
+
+> "Con que tono debemos generar los mensajes de IA, sobre que
+> escribirle a cada cargo o industria para usar de base, que cosas
+> decir y que cosas nunca se deben decir"
+
+O sea: editor de prompts y reglas para `messageGenerator` (lo que
+hoy está hardcoded en `lib/messageGenerator.ts`). Permitir al
+equipo iterar tono, talking points por rol, frases prohibidas, etc.
+sin tocar código.
+
+Detalles del diseño propuesto: ver respuesta en el chat de Sprint 8c.
