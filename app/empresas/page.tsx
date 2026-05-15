@@ -413,6 +413,54 @@ export default function EmpresasPage() {
     }>
   >([]);
 
+  const [bulkLemlistPushing, setBulkLemlistPushing] = useState(false);
+  const [bulkLemlistResult, setBulkLemlistResult] = useState<{
+    processed: number;
+    pushed: number;
+    errors: number;
+    no_company: number;
+    remaining_in_queue: number;
+  } | null>(null);
+  const [bulkLemlistErrors, setBulkLemlistErrors] = useState<
+    Array<{ contact_name: string; company_name: string | null; error?: string }>
+  >([]);
+
+  async function runBulkLemlistClean() {
+    const ok = window.confirm(
+      `Re-push limpio a Lemlist (lote de 25)?\n\nIMPORTANTE — ANTES de continuar:\n1. Entra a Lemlist UI.\n2. En la campaña, selecciona TODOS los leads (checkbox arriba).\n3. Bulk action → Delete leads. La campaña queda vacía.\n\nLuego este botón empuja a Lemlist todos los contactos aprobados con mensajes generados. Sin DELETE, sin lookup — solo ADD limpio.\n\nSi la campaña no está vacía, los ADDs van a fallar como duplicate y vas a ver el error en el detalle.`
+    );
+    if (!ok) return;
+    setBulkLemlistPushing(true);
+    setBulkLemlistResult(null);
+    setBulkLemlistErrors([]);
+    setError(null);
+    try {
+      const res = await fetch("/api/contacts/bulk-push-to-lemlist-clean", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batch_limit: 25 })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+      } else {
+        setBulkLemlistResult(data.summary);
+        const errs = (data.results ?? [])
+          .filter((r: any) => r.status === "error")
+          .map((r: any) => ({
+            contact_name: r.contact_name,
+            company_name: r.company_name,
+            error: r.error
+          }));
+        setBulkLemlistErrors(errs);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setBulkLemlistPushing(false);
+    }
+  }
+
   async function runBulkReverify() {
     const ok = window.confirm(
       `Re-verificar las empresas con evidencia genérica?\n\nVa a procesar hasta 10 empresas por corrida (≈3-5 min). Si quedan más, repite el botón.\n\nLos datos operativos sin respaldo de fuente específica se reemplazan por null. fit_score baja a "low" en las que no haya evidencia específica nueva.\n\nNo toca estado ni IDs de Clay / HubSpot — esos quedan como están.`
@@ -1148,7 +1196,7 @@ Smile Designers Lab,,,`}
               onClick={runBulkRegenerate}
               disabled={bulkRegenerating}
               className="btn-secondary"
-              title="Después del re-verify de empresas, regenera mensajes (icebreaker + email) de contactos. Refresca Lemlist y HubSpot. Procesa hasta 15 contactos por corrida."
+              title="Después del re-verify de empresas, regenera mensajes (icebreaker + email) de contactos. Procesa hasta 15 contactos por corrida. NO incluye push a Lemlist (usa el botón 'Re-push limpio' después de limpiar manualmente en Lemlist UI)."
             >
               <IconRefresh size={14} />
               {bulkRegenerating
@@ -1156,6 +1204,100 @@ Smile Designers Lab,,,`}
                 : `Regenerar mensajes de contactos (lote de 15)`}
             </button>
           </div>
+        </div>
+      )}
+
+      <div className="card bg-brand-tint border-brand/20 flex flex-col gap-3">
+        <div className="flex items-start gap-3">
+          <IconRocket size={20} className="text-brand shrink-0 mt-0.5" />
+          <div className="text-sm text-ink">
+            <div className="font-semibold text-brand">
+              Re-push limpio a Lemlist (clean slate)
+            </div>
+            <p className="mt-1 text-ink-muted">
+              Si el "Regenerar mensajes" se traba con errores de Lemlist (DELETE + ADD falla
+              por leads duplicados que no podemos identificar), usa este flujo:
+            </p>
+            <ol className="mt-2 list-decimal pl-5 text-ink-muted space-y-1">
+              <li>
+                Entra a Lemlist UI → en la campaña, selecciona TODOS los leads → bulk delete.
+                La campaña queda vacía.
+              </li>
+              <li>
+                Click "Re-push limpio" abajo. Empuja a Lemlist todos los contactos aprobados
+                con mensajes generados (hasta 25 por corrida). Sin DELETE, sin lookup — solo
+                ADD limpio.
+              </li>
+              <li>Re-activa Lemlist.</li>
+            </ol>
+          </div>
+        </div>
+        <div className="pl-8">
+          <button
+            onClick={runBulkLemlistClean}
+            disabled={bulkLemlistPushing}
+            className="btn-primary"
+          >
+            <IconRocket size={14} />
+            {bulkLemlistPushing
+              ? "Empujando…"
+              : "Re-push limpio a Lemlist (lote de 25)"}
+          </button>
+        </div>
+      </div>
+
+      {bulkLemlistResult && (
+        <div className="card text-sm flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <IconCheck size={16} className="text-success-fg" />
+            <span className="font-semibold">
+              Re-push completado: {bulkLemlistResult.processed} contactos
+            </span>
+          </div>
+          <ul className="text-xs text-ink-muted pl-7 list-disc">
+            <li>
+              {bulkLemlistResult.pushed} empujados a Lemlist OK
+              {bulkLemlistResult.errors > 0 && (
+                <span className="text-danger-fg">
+                  {" "}
+                  · {bulkLemlistResult.errors} con error
+                </span>
+              )}
+            </li>
+            {bulkLemlistResult.no_company > 0 && (
+              <li className="text-warning-fg">
+                {bulkLemlistResult.no_company} sin empresa asociada (saltados)
+              </li>
+            )}
+            {bulkLemlistResult.remaining_in_queue > 0 && (
+              <li className="text-warning-fg font-medium">
+                Quedan {bulkLemlistResult.remaining_in_queue} más por procesar — repite el
+                botón.
+              </li>
+            )}
+          </ul>
+          {bulkLemlistErrors.length > 0 && (
+            <details className="pl-7 mt-2">
+              <summary className="cursor-pointer text-xs text-danger-fg hover:text-ink font-medium">
+                Ver detalle de los {bulkLemlistErrors.length} errores
+              </summary>
+              <ul className="mt-2 space-y-2 text-xs">
+                {bulkLemlistErrors.map((e, i) => (
+                  <li key={i} className="border-l-2 border-danger-fg/30 pl-3 py-1">
+                    <div className="font-medium text-ink">
+                      {e.contact_name}
+                      {e.company_name && (
+                        <span className="text-ink-muted"> · {e.company_name}</span>
+                      )}
+                    </div>
+                    {e.error && (
+                      <div className="text-danger-fg mt-1 break-words">{e.error}</div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 

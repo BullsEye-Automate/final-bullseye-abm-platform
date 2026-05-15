@@ -58,10 +58,30 @@ async function hubspotFetch<T = unknown>(
   }
 
   if (!res.ok) {
+    // Extraer el mensaje real de la respuesta de HubSpot. La v3 API
+    // típicamente devuelve { message, correlationId, category, errors: [...] }.
+    // Si el body es opaco, mostramos los primeros 300 chars del JSON crudo
+    // para que el usuario vea qué property está rechazando.
+    const p = parsed as Record<string, unknown> | null;
+    const baseMsg =
+      (typeof p?.message === "string" && p.message) ||
+      JSON.stringify(parsed ?? {}).slice(0, 300);
+    const errorsArr = Array.isArray(p?.errors) ? (p.errors as Array<Record<string, unknown>>) : [];
+    const detail = errorsArr
+      .slice(0, 3)
+      .map((e) => {
+        const m = typeof e.message === "string" ? e.message : "";
+        const ctx = e.context ? ` (${JSON.stringify(e.context).slice(0, 120)})` : "";
+        return `${m}${ctx}`;
+      })
+      .filter(Boolean)
+      .join(" · ");
     return {
       ok: false,
       status: res.status,
-      error: `HubSpot ${res.status}`,
+      error: detail
+        ? `HubSpot ${res.status}: ${baseMsg} · ${detail}`
+        : `HubSpot ${res.status}: ${baseMsg}`,
       debug: { url, method: init.method, response: parsed }
     };
   }
