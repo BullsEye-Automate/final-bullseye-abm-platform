@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCampaignLeads } from "@/lib/lemlist";
+import { getCampaignLeadsWithDetails } from "@/lib/lemlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,7 +27,11 @@ export async function GET() {
     );
   }
 
-  const leadsRes = await getCampaignLeads(stagingId);
+  // getCampaignLeadsWithDetails: lista los leads + para cada uno con
+  // contactId hace GET /api/contacts/{contactId} para traer firstName/
+  // lastName/jobTitle/companyName/linkedinUrl. El list endpoint a nivel
+  // campaña devuelve solo {_id, state, contactId}.
+  const leadsRes = await getCampaignLeadsWithDetails(stagingId);
   if (!leadsRes.ok) {
     return NextResponse.json(
       {

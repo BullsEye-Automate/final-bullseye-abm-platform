@@ -386,6 +386,10 @@ async function tryGetUrls(urls: string[]): Promise<LemlistGetResult> {
 
 export type LemlistCampaignLead = {
   id: string | null;
+  // contactId: la persona cross-campaign en Lemlist (clave para fetchear el
+  // dato rico vía GET /api/contacts/{contactId}). El list endpoint a nivel
+  // campaña devuelve {_id, state, contactId} — el rest hay que ir a buscarlo.
+  contact_id: string | null;
   email: string | null;
   first_name: string | null;
   last_name: string | null;
@@ -410,6 +414,7 @@ function pickStr(obj: Record<string, unknown>, keys: string[]): string | null {
 function normalizeCampaignLead(raw: Record<string, unknown>): LemlistCampaignLead {
   return {
     id: pickStr(raw, ["_id", "id", "leadId"]),
+    contact_id: pickStr(raw, ["contactId", "contact_id", "ContactId"]),
     email: pickStr(raw, ["email", "Email"]),
     first_name: pickStr(raw, ["firstName", "first_name", "FirstName", "firstname"]),
     last_name: pickStr(raw, ["lastName", "last_name", "LastName", "lastname"]),
@@ -549,17 +554,61 @@ export async function getCampaignLeads(
 // getCampaignLeadsWithDetails — versión enriquecida de getCampaignLeads.
 //
 // El endpoint GET /api/campaigns/{id}/leads devuelve solo {_id, state,
-// contactId} por lead (probado vía /api/lemlist/diagnose-campaign).
-// Para tener email + linkedinUrl + nombres, hay que llamar
-// GET /api/leads/{leadId} por cada lead.
+// contactId} por lead. El dato rico (firstName, lastName, jobTitle,
+// companyName, linkedinUrl) NO está en GET /api/leads/{leadId} (devuelve
+// "Lead not found" — endpoint deprecated). Está en
+// GET /api/contacts/{contactId}, que devuelve:
+//
+//   {
+//     "_id": "ctc_...",
+//     "fullName": "Michael Williams",
+//     "fields": {
+//       "firstName": "Michael",
+//       "lastName": "Williams",
+//       "jobTitle": "Owner/Partner",
+//       "companyName": "Cornerstone Dental Arts",
+//       "location": "Knoxville, Tennessee, United States",
+//       ...
+//     },
+//     "linkedinUrl": "https://www.linkedin.com/in/...",
+//     "linkedinUrlSalesNav": "https://www.linkedin.com/sales/lead/...",
+//     ...
+//   }
+//
+// El email NO suele estar en el contact a menos que Lemlist ya lo haya
+// enriquecido. Para la Campaña puente típicamente el email queda null
+// (la enriquece la campaña real al pushear el lead). Eso está OK.
 //
 // Estrategia: lista de leads → enriquecer en paralelo (chunks de 5) →
-// devolver leads con email/linkedinUrl/firstName/lastName/jobTitle/
-// companyName completados. Si el detalle por-lead falla, se conserva
-// el lead con los campos null (no rompemos el batch).
+// devolver leads con campos completados desde el contact. Si el contact
+// falla, se conserva el lead con los campos null (no rompe el batch).
 // ============================================================================
 
 const ENRICH_CONCURRENCY = 5;
+
+async function fetchLemlistContactById(
+  contactId: string
+): Promise<Record<string, unknown> | null> {
+  if (!process.env.LEMLIST_API_KEY) return null;
+  const url = `${LEMLIST_API_BASE}/contacts/${encodeURIComponent(contactId)}`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Authorization: buildAuthHeader(), Accept: "application/json" },
+      cache: "no-store"
+    });
+  } catch {
+    return null;
+  }
+  if (!res.ok) return null;
+  const text = await res.text();
+  if (!text.trim() || text.trim().startsWith("<")) return null;
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
 
 function pickStrFromLead(
   lead: Record<string, unknown>,
@@ -579,10 +628,9 @@ export async function getCampaignLeadsWithDetails(
   const list = await getCampaignLeads(campaignId);
   if (!list.ok) return list;
 
-  // Si todos los leads ya vienen con email O linkedin_url, no hace falta
-  // enriquecer (algunas campañas devuelven shape completo de una).
+  // Si todos los leads ya vienen con datos completos, no hace falta enriquecer.
   const needsEnrichment = list.leads.some(
-    (l) => l.id && !l.email && !l.linkedin_url
+    (l) => l.contact_id && !l.linkedin_url && !l.first_name
   );
   if (!needsEnrichment) return list;
 
@@ -590,40 +638,55 @@ export async function getCampaignLeadsWithDetails(
   for (let i = 0; i < list.leads.length; i += ENRICH_CONCURRENCY) {
     const chunk = list.leads.slice(i, i + ENRICH_CONCURRENCY);
     const detailed = await Promise.all(
-      chunk.map(async (lead, j): Promise<LemlistCampaignLead> => {
+      chunk.map(async (lead): Promise<LemlistCampaignLead> => {
         const out = lead;
-        if (!lead.id || (lead.email && lead.linkedin_url)) return out;
-        const det = await getLemlistLeadById(lead.id);
-        if (!det.ok) return out;
-        const raw = det.lead as Record<string, unknown>;
+        if (!lead.contact_id) return out;
+        if (lead.linkedin_url && lead.first_name) return out;
+        const raw = await fetchLemlistContactById(lead.contact_id);
+        if (!raw) return out;
+        // Los campos del contact en Lemlist viven en raw.fields (nested).
+        const fields =
+          (raw.fields as Record<string, unknown> | undefined) ?? {};
+        // fullName a veces existe top-level — usable si firstName falla.
+        const fullName = pickStrFromLead(raw, ["fullName", "FullName"]);
+        const firstFromFull = fullName ? fullName.split(/\s+/)[0] : null;
+        const lastFromFull =
+          fullName && fullName.includes(" ")
+            ? fullName.split(/\s+/).slice(1).join(" ")
+            : null;
         return {
           id: out.id,
-          email: out.email ?? pickStrFromLead(raw, ["email", "Email"]),
+          contact_id: out.contact_id,
+          email:
+            out.email ??
+            pickStrFromLead(raw, ["email", "Email"]) ??
+            pickStrFromLead(fields, ["email", "Email"]),
           first_name:
             out.first_name ??
-            pickStrFromLead(raw, ["firstName", "first_name", "FirstName", "firstname"]),
+            pickStrFromLead(fields, ["firstName", "first_name", "FirstName"]) ??
+            firstFromFull,
           last_name:
             out.last_name ??
-            pickStrFromLead(raw, ["lastName", "last_name", "LastName", "lastname"]),
+            pickStrFromLead(fields, ["lastName", "last_name", "LastName"]) ??
+            lastFromFull,
           company_name:
             out.company_name ??
-            pickStrFromLead(raw, [
+            pickStrFromLead(fields, [
               "companyName",
               "company_name",
               "company",
-              "Company",
               "organizationName"
             ]),
           job_title:
             out.job_title ??
-            pickStrFromLead(raw, [
+            pickStrFromLead(fields, [
               "jobTitle",
               "job_title",
               "title",
-              "Title",
               "position",
               "headline",
-              "linkedinHeadline"
+              "linkedinHeadline",
+              "tagline"
             ]),
           linkedin_url:
             out.linkedin_url ??
@@ -633,7 +696,8 @@ export async function getCampaignLeadsWithDetails(
               "linkedin",
               "LinkedinUrl",
               "linkedInUrl"
-            ])
+            ]) ??
+            pickStrFromLead(raw, ["linkedinUrlSalesNav"])
         };
       })
     );
