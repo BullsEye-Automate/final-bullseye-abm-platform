@@ -1316,6 +1316,52 @@ fit, se marca la empresa para que salga de la cola.
    columna agrega la señal precisa además de la inferida — pero no es
    necesario.
 
+### Cambio (sesión 2026-05-15b): import vía Campaña puente de Lemlist
+
+Se reemplazó el flujo de "pegar URLs + research IA" por la **extensión de
+Lemlist + una campaña puente**. Motivo: pegar URLs tenía fricción real
+(las URLs de Sales Navigator `/sales/lead/...` no sirven, hay que ir al
+perfil `/in/` — 2 clics extra por contacto) y el research por URL nunca
+conseguía el cargo. La extensión de Lemlist scrapea la página de Sales
+Nav directo, así que captura nombre **y cargo**.
+
+Spike de la API de Lemlist: **no hay endpoint para leer listas**, pero sí
+`GET /api/campaigns/{id}/leads` (documentado, v1). Por eso se usa una
+**campaña** puente, no una lista.
+
+Flujo nuevo:
+1. El usuario crea en Lemlist una campaña SIN secuencia ("Campaña puente",
+   `cam_5rYdqSzz8hvMCp3Ky`) — un buzón. Importante que no tenga pasos, si
+   no empezaría a mandar con `{{icebreaker}}` vacío.
+2. En `/sales-navigator`, por empresa: "Abrir en Sales Navigator" → busca
+   los fit → con la extensión de Lemlist los manda a la Campaña puente.
+3. "Importar desde Campaña puente" en la card → `POST /api/sales-navigator/[id]/import`
+   (sin body) jala los leads de la campaña puente vía `getCampaignLeads`,
+   filtra por match de nombre de empresa, y los pasa por
+   `intakeContactsForCompany`. El dedup por linkedin_url/email hace que
+   re-correrlo solo procese los **nuevos**.
+4. Los contactos YES aparecen inline con "Directo a Lemlist" + botón bulk
+   **"Enviar todos a Lemlist (N)"**.
+
+Cambios de código:
+- `lib/lemlist.ts` — nuevo `getCampaignLeads(campaignId)`: GET paginado,
+  defensivo (rechaza HTML del SPA), normaliza el shape del lead.
+- `app/api/sales-navigator/[id]/import/route.ts` — repurposed: ya no
+  recibe `{ contacts }`, ahora jala de la campaña puente y matchea por
+  nombre de empresa (`namesMatch`, laxo con piso de 4 chars).
+- **Borrados**: `lib/salesNavContactResearch.ts` y
+  `app/api/sales-navigator/research-contacts/route.ts` (el research por
+  URL ya no se usa).
+- `app/sales-navigator/page.tsx` — la card ya no tiene textarea de URLs;
+  tiene instrucciones numeradas + botón "Importar desde Campaña puente" +
+  botón bulk "Enviar todos a Lemlist".
+- Nueva env var **`LEMLIST_STAGING_CAMPAIGN_ID`** (= `cam_5rYdqSzz8hvMCp3Ky`).
+
+Salvedad: el endpoint `getCampaignLeads` no se pudo probar en vivo (no hay
+API key en el entorno de dev). Está construido defensivo (varios patrones
+de URL, captura debug) — el usuario lo prueba en prod y el error del
+endpoint trae el `debug` si el shape no es el esperado.
+
 ### Gaps conocidos al cierre Sprint 6 fase 4
 
 1. **Research de contactos best-effort**: LinkedIn bloquea scraping,

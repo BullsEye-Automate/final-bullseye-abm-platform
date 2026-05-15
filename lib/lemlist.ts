@@ -372,3 +372,175 @@ async function tryGetUrls(urls: string[]): Promise<LemlistGetResult> {
     debug: { attempts }
   };
 }
+
+// ============================================================================
+// GET campaign leads — devuelve todos los leads de una campaña.
+//
+// Usado por el módulo /sales-navigator: el usuario manda perfiles de LinkedIn
+// Sales Navigator a una campaña "puente" de Lemlist (con la extensión de
+// Lemlist), y la app jala esos leads para pre-filtrarlos y mandarlos a la
+// campaña real. La campaña puente NO tiene secuencia — es solo un buzón.
+//
+// Endpoint v1 documentado: GET /api/campaigns/{id}/leads (limit/offset).
+// ============================================================================
+
+export type LemlistCampaignLead = {
+  id: string | null;
+  email: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  company_name: string | null;
+  job_title: string | null;
+  linkedin_url: string | null;
+};
+
+export type GetCampaignLeadsResult =
+  | { ok: true; leads: LemlistCampaignLead[]; pages: number; matched_url: string }
+  | { ok: false; status: number; error: string; debug?: unknown };
+
+function pickStr(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  }
+  return null;
+}
+
+function normalizeCampaignLead(raw: Record<string, unknown>): LemlistCampaignLead {
+  return {
+    id: pickStr(raw, ["_id", "id", "leadId"]),
+    email: pickStr(raw, ["email", "Email"]),
+    first_name: pickStr(raw, ["firstName", "first_name", "FirstName", "firstname"]),
+    last_name: pickStr(raw, ["lastName", "last_name", "LastName", "lastname"]),
+    company_name: pickStr(raw, [
+      "companyName",
+      "company_name",
+      "company",
+      "Company",
+      "organizationName"
+    ]),
+    job_title: pickStr(raw, [
+      "jobTitle",
+      "job_title",
+      "title",
+      "Title",
+      "position",
+      "headline",
+      "linkedinHeadline"
+    ]),
+    linkedin_url: pickStr(raw, [
+      "linkedinUrl",
+      "linkedin_url",
+      "linkedin",
+      "LinkedinUrl",
+      "linkedInUrl"
+    ])
+  };
+}
+
+async function fetchLeadsPage(
+  url: string
+): Promise<{ ok: boolean; status: number; items: unknown[]; preview: string }> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { Authorization: buildAuthHeader(), Accept: "application/json" },
+      cache: "no-store"
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      status: 0,
+      items: [],
+      preview: err instanceof Error ? err.message : "network error"
+    };
+  }
+  const text = await res.text();
+  if (!res.ok) return { ok: false, status: res.status, items: [], preview: text.slice(0, 300) };
+  const trimmed = text.trim();
+  // 200 con HTML del SPA de Lemlist = ruta inexistente; no es la respuesta del API.
+  if (!trimmed || trimmed.startsWith("<")) {
+    return {
+      ok: false,
+      status: res.status,
+      items: [],
+      preview: "non-JSON (SPA HTML?): " + trimmed.slice(0, 150)
+    };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return {
+      ok: false,
+      status: res.status,
+      items: [],
+      preview: "non-JSON: " + trimmed.slice(0, 200)
+    };
+  }
+  const p = parsed as Record<string, unknown>;
+  const items = Array.isArray(parsed)
+    ? (parsed as unknown[])
+    : Array.isArray(p?.leads)
+    ? (p.leads as unknown[])
+    : Array.isArray(p?.data)
+    ? (p.data as unknown[])
+    : [];
+  return { ok: true, status: res.status, items, preview: text.slice(0, 150) };
+}
+
+export async function getCampaignLeads(
+  campaignId: string
+): Promise<GetCampaignLeadsResult> {
+  if (!process.env.LEMLIST_API_KEY) {
+    return { ok: false, status: 500, error: "LEMLIST_API_KEY is not configured" };
+  }
+  if (!campaignId) {
+    return { ok: false, status: 500, error: "campaignId is empty" };
+  }
+  const id = encodeURIComponent(campaignId);
+  const LIMIT = 100;
+  const MAX_PAGES = 50;
+
+  const patterns = [
+    (offset: number) =>
+      `${LEMLIST_API_BASE}/campaigns/${id}/leads?limit=${LIMIT}&offset=${offset}`,
+    (offset: number) =>
+      `${LEMLIST_API_BASE}/v2/campaigns/${id}/leads?limit=${LIMIT}&offset=${offset}`
+  ];
+
+  const attempts: LemlistGetAttempt[] = [];
+  for (const p of patterns) {
+    const first = await fetchLeadsPage(p(0));
+    attempts.push({ url: p(0), status: first.status, preview: first.preview });
+    if (!first.ok) continue;
+
+    const all: LemlistCampaignLead[] = [];
+    for (const it of first.items) {
+      all.push(normalizeCampaignLead(it as Record<string, unknown>));
+    }
+    let offset = first.items.length;
+    let pages = 1;
+    let lastCount = first.items.length;
+    while (lastCount === LIMIT && pages < MAX_PAGES) {
+      const next = await fetchLeadsPage(p(offset));
+      if (!next.ok) break;
+      for (const it of next.items) {
+        all.push(normalizeCampaignLead(it as Record<string, unknown>));
+      }
+      offset += next.items.length;
+      lastCount = next.items.length;
+      pages += 1;
+    }
+    return { ok: true, leads: all, pages, matched_url: p(0) };
+  }
+
+  const last = attempts[attempts.length - 1];
+  return {
+    ok: false,
+    status: last?.status ?? 0,
+    error: `Lemlist GET campaign leads falló en todos los patrones (${attempts.length})`,
+    debug: { attempts }
+  };
+}

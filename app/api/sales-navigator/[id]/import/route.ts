@@ -1,69 +1,111 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { intakeContactsForCompany, type RawContact } from "@/lib/contactsIntake";
+import { getCampaignLeads } from "@/lib/lemlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // Pre-filtro de Claude por cada contacto — puede tardar con varios.
 export const maxDuration = 300;
 
-// POST /api/sales-navigator/[id]/import   ([id] = company id)
-//   body { contacts: [{ first_name?, last_name?, job_title?, linkedin_url?, linkedin_headline?, email? }] }
+// POST /api/sales-navigator/[id]/import   ([id] = company id, sin body)
 //
-// Importa los contactos que el usuario encontró en Sales Navigator. Pasa por
-// el pipeline compartido intakeContactsForCompany (pre-filtro Claude + dedup
-// + insert). Al insertar cualquier fila, ese pipeline limpia
-// clay_no_contacts_at + sales_nav_status → la empresa sale del módulo.
+// Jala los leads de la campaña "puente" de Lemlist (LEMLIST_STAGING_CAMPAIGN_ID),
+// filtra los que matchean el nombre de esta empresa, y los importa por el
+// pipeline compartido intakeContactsForCompany (pre-filtro Claude + dedup +
+// insert). El dedup por linkedin_url / email hace que re-correr esto solo
+// procese los NUEVOS — los ya importados se saltan.
 //
-// Devuelve los contactos YES recién importados (pendientes, sin push) para
-// que el módulo los muestre inline con el botón "Directo a Lemlist".
+// Flujo del usuario: en LinkedIn Sales Navigator selecciona los contactos
+// fit y con la extensión de Lemlist los manda a la campaña puente; después
+// toca "Importar desde Campaña puente" en la card de la empresa.
+
+function normName(s: string | null | undefined): string {
+  return (s ?? "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+// Match laxo por nombre: igual, o uno contiene al otro (con piso de 4 chars
+// para no matchear por fragmentos genéricos tipo "lab").
+function namesMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  return shorter.length >= 4 && longer.includes(shorter);
+}
+
 export async function POST(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const body = await req.json().catch(() => ({}));
-  const rawContacts = (body as { contacts?: unknown }).contacts;
-  if (!Array.isArray(rawContacts) || rawContacts.length === 0) {
-    return NextResponse.json({ error: "No hay contactos para importar" }, { status: 400 });
-  }
-
-  const contacts: RawContact[] = [];
-  for (const c of rawContacts) {
-    if (!c || typeof c !== "object") continue;
-    const o = c as Record<string, unknown>;
-    const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
-    const linkedin = str(o.linkedin_url);
-    const first = str(o.first_name);
-    const last = str(o.last_name);
-    // Cada contacto necesita al menos URL de LinkedIn o un nombre.
-    if (!linkedin && !first && !last) continue;
-    contacts.push({
-      first_name: first || null,
-      last_name: last || null,
-      job_title: str(o.job_title) || null,
-      linkedin_headline: str(o.linkedin_headline) || null,
-      linkedin_url: linkedin || null,
-      email: str(o.email) || null
-    });
-  }
-  if (contacts.length === 0) {
+  const stagingId = process.env.LEMLIST_STAGING_CAMPAIGN_ID;
+  if (!stagingId) {
     return NextResponse.json(
       {
         error:
-          "Los contactos no tienen ni URL de LinkedIn ni nombre — no hay nada para importar."
+          "Falta LEMLIST_STAGING_CAMPAIGN_ID en Vercel — es el ID de la campaña puente de Lemlist."
       },
-      { status: 400 }
+      { status: 500 }
     );
   }
 
   const db = supabaseAdmin();
+  const { data: company, error: cErr } = await db
+    .from("companies")
+    .select("id, company_name")
+    .eq("id", params.id)
+    .maybeSingle();
+  if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
+  if (!company) {
+    return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
+  }
+
+  const leadsRes = await getCampaignLeads(stagingId);
+  if (!leadsRes.ok) {
+    return NextResponse.json(
+      {
+        error: `No se pudieron leer los leads de la campaña puente: ${leadsRes.error}`,
+        debug: leadsRes.debug
+      },
+      { status: 502 }
+    );
+  }
+
+  const target = normName(company.company_name);
+  const matched = leadsRes.leads.filter((l) =>
+    namesMatch(normName(l.company_name), target)
+  );
+
+  if (matched.length === 0) {
+    return NextResponse.json({
+      ok: true,
+      summary: { inserted: 0, yes: 0, no: 0, skipped: 0 },
+      contacts: [],
+      staged_total: leadsRes.leads.length,
+      matched: 0
+    });
+  }
+
+  const contacts: RawContact[] = matched.map((l) => ({
+    first_name: l.first_name,
+    last_name: l.last_name,
+    job_title: l.job_title,
+    linkedin_headline: null,
+    linkedin_url: l.linkedin_url,
+    email: l.email
+  }));
+
   const result = await intakeContactsForCompany(db, params.id, contacts);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
 
-  // Contactos YES recién importados (esta empresa estaba en "Por revisar", o
-  // sea sin contactos previos, así que estos son los de este import).
+  // Contactos YES de esta empresa listos para Lemlist (recién importados o
+  // leftover de un import previo sin pushear todavía).
   const { data: fresh } = await db
     .from("contacts")
     .select(
@@ -77,5 +119,11 @@ export async function POST(
     .order("created_at", { ascending: false })
     .limit(50);
 
-  return NextResponse.json({ ok: true, summary: result.summary, contacts: fresh ?? [] });
+  return NextResponse.json({
+    ok: true,
+    summary: result.summary,
+    contacts: fresh ?? [],
+    staged_total: leadsRes.leads.length,
+    matched: matched.length
+  });
 }
