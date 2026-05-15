@@ -227,7 +227,10 @@ export async function computeReporteria(
 
   const hero = {
     companies_worked: mkDelta(companiesNow, companiesPrev),
-    contacts_generated: dash.pipeline.contacts_imported,
+    // Solo cuenta los contactos fit (pre-filtro YES) — los que valen para
+    // outreach. El crudo de Clay (con la mayoría descartada) sigue visible
+    // en el embudo ejecutivo como paso intermedio.
+    contacts_generated: dash.pipeline.contacts_yes,
     in_outreach: dash.pipeline.contacts_in_lemlist,
     conversations: mkDelta(conversationsNow, conversationsPrev),
     hot_leads: mkDelta(hotNow, hotPrev)

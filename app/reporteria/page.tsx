@@ -230,9 +230,10 @@ function HeroKpiGrid({ hero }: { hero: Snapshot["hero"] }) {
       icon: <IconBuildingFactory2 size={18} />
     },
     {
-      label: "Contactos generados",
+      label: "Contactos fit generados",
       delta: hero.contacts_generated,
-      icon: <IconUsers size={18} />
+      icon: <IconUsers size={18} />,
+      hint: "Pasaron pre-filtro IA"
     },
     {
       label: "En outreach (Lemlist)",
@@ -336,27 +337,38 @@ function ExecutiveFunnel({ funnel }: { funnel: Snapshot["executive_funnel"] }) {
         Conversión etapa a etapa del período seleccionado.
       </p>
       <div className="space-y-2">
-        {funnel.map((s, i) => (
-          <div key={s.step} className="flex items-center gap-3">
-            <div className="w-56 shrink-0 text-sm text-ink">{s.step}</div>
-            <div className="flex-1 relative h-7 bg-[#F1EEF7] rounded overflow-hidden">
-              <div
-                className="absolute inset-y-0 left-0 bg-brand"
-                style={{ width: `${(s.count / top) * 100}%` }}
-              />
-              <div className="absolute inset-0 flex items-center justify-end px-2 text-xs font-medium text-ink tabular-nums">
-                {s.count.toLocaleString("es")}
+        {funnel.map((s, i) => {
+          const pct = (s.count / top) * 100;
+          // Si la barra cubre más del 15% del ancho, mostramos el número
+          // adentro (en blanco). Si no, lo mostramos afuera (dark) para
+          // que se lea bien en el área del fondo claro.
+          const numberInside = pct > 15;
+          return (
+            <div key={s.step} className="flex items-center gap-3">
+              <div className="w-56 shrink-0 text-sm text-ink">{s.step}</div>
+              <div className="flex-1 h-7 bg-[#F1EEF7] rounded overflow-hidden flex items-stretch">
+                <div
+                  className="bg-brand flex items-center justify-end pr-2 text-xs font-medium text-white tabular-nums"
+                  style={{ width: `${pct}%` }}
+                >
+                  {numberInside ? s.count.toLocaleString("es") : ""}
+                </div>
+                {!numberInside && (
+                  <div className="flex items-center pl-2 text-xs font-medium text-ink tabular-nums">
+                    {s.count.toLocaleString("es")}
+                  </div>
+                )}
+              </div>
+              <div className="w-24 text-xs text-ink-muted text-right shrink-0 tabular-nums">
+                {i === 0
+                  ? "—"
+                  : s.rate_from_prev == null
+                  ? "—"
+                  : `${s.rate_from_prev.toFixed(0)}%`}
               </div>
             </div>
-            <div className="w-24 text-xs text-ink-muted text-right shrink-0 tabular-nums">
-              {i === 0
-                ? "—"
-                : s.rate_from_prev == null
-                ? "—"
-                : `${s.rate_from_prev.toFixed(0)}%`}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
