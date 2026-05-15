@@ -16,6 +16,13 @@
 // saludo adicional — ver notas_arquitectura.md §7).
 
 import { createMessageWithFallback } from "./claude";
+import { supabaseAdmin } from "./supabase";
+import {
+  type ModelTrainingConfig,
+  configHasContent,
+  loadActiveModelTrainingConfig,
+  renderConfigInstructions
+} from "./modelTrainingConfig";
 
 export type MessageInput = {
   first_name: string | null;
@@ -44,7 +51,10 @@ Value props: 24h turnaround, compatible with any intraoral scanner, 98.9% of des
 
 You write outreach for ONE prospect at a time. Output JSON only.`;
 
-function buildUserPrompt(input: MessageInput): string {
+function buildUserPrompt(
+  input: MessageInput,
+  config: ModelTrainingConfig | null
+): string {
   const fullName = [input.first_name, input.last_name].filter(Boolean).join(" ").trim();
   const hasOperationalCompanyData =
     Boolean(input.cad_software) ||
@@ -53,6 +63,17 @@ function buildUserPrompt(input: MessageInput): string {
   const hasPersonSignal = Boolean(input.linkedin_headline) || Boolean(input.job_title);
 
   const lines: string[] = [];
+  // Si hay config del equipo, la inyectamos al inicio. Esto le da
+  // precedencia sobre los defaults hardcoded de abajo cuando hay
+  // conflictos. Si no hay config (o todos los campos vacíos), salta
+  // este bloque y el comportamiento es idéntico al original.
+  const configBlock = renderConfigInstructions(config, input.job_title, input.company_type);
+  if (configBlock) {
+    lines.push(configBlock.trim());
+    lines.push("");
+    lines.push("───");
+    lines.push("");
+  }
   lines.push(`PROSPECT (the person you're writing to):`);
   lines.push(`- First name: ${input.first_name ?? "(unknown)"}`);
   lines.push(`- Full name: ${fullName || "(unknown)"}`);
@@ -230,11 +251,46 @@ function sanitizeBody(text: string): string {
   return t.trim();
 }
 
-export async function generateMessages(input: MessageInput): Promise<GeneratedMessages> {
+// Strippea frases prohibidas (case-insensitive). Si la frase aparece
+// dentro de un texto más largo, la reemplaza por su versión maskeada
+// para que sea evidente en el output. Si el sanitizer rompe demasiado
+// (>40% del texto), preferimos dejarlo pasar para que el caller pueda
+// reintentar — vacío es peor que con una palabra prohibida.
+function stripForbiddenPhrases(text: string, phrases: string[]): string {
+  if (phrases.length === 0) return text;
+  let out = text;
+  for (const p of phrases) {
+    const trimmed = p.trim();
+    if (!trimmed) continue;
+    const re = new RegExp(escapeRegex(trimmed), "gi");
+    out = out.replace(re, "");
+  }
+  // Limpiamos doble espacios / signos huérfanos.
+  out = out.replace(/\s{2,}/g, " ").replace(/\s*([.,;])\s*/g, "$1 ").trim();
+  return out.length < text.length * 0.6 ? text : out;
+}
+
+export async function generateMessages(
+  input: MessageInput,
+  config: ModelTrainingConfig | null = null
+): Promise<GeneratedMessages> {
+  // Auto-cargar config si no se pasó. Mantiene a los callers ignorantes
+  // de que existe — si la tabla está vacía o no tiene contenido,
+  // loadActiveModelTrainingConfig devuelve null y el comportamiento es
+  // idéntico al anterior. Best-effort: si la DB falla, seguimos sin config.
+  let activeConfig = config;
+  if (activeConfig === null) {
+    try {
+      activeConfig = await loadActiveModelTrainingConfig(supabaseAdmin());
+    } catch {
+      activeConfig = null;
+    }
+  }
+
   const { message, model_used } = await createMessageWithFallback({
     max_tokens: 2048,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildUserPrompt(input) }]
+    messages: [{ role: "user", content: buildUserPrompt(input, activeConfig) }]
   });
 
   const block = message.content.find((c) => c.type === "text");
@@ -251,10 +307,17 @@ export async function generateMessages(input: MessageInput): Promise<GeneratedMe
     throw new Error("Claude response missing one of icebreaker/subject/body");
   }
 
+  // Lista de palabras a strippear: las que dejó la config. Si la config
+  // está vacía, este array queda vacío y stripForbiddenPhrases es no-op.
+  const forbidden = configHasContent(activeConfig) ? activeConfig!.forbidden_phrases : [];
+
   const result: GeneratedMessages = {
-    linkedin_icebreaker: clampIcebreaker(parsed.linkedin_icebreaker, input.first_name),
-    email_subject: sanitizeSubject(parsed.email_subject),
-    email_body: sanitizeBody(parsed.email_body),
+    linkedin_icebreaker: stripForbiddenPhrases(
+      clampIcebreaker(parsed.linkedin_icebreaker, input.first_name),
+      forbidden
+    ),
+    email_subject: stripForbiddenPhrases(sanitizeSubject(parsed.email_subject), forbidden),
+    email_body: stripForbiddenPhrases(sanitizeBody(parsed.email_body), forbidden),
     model_used
   };
 

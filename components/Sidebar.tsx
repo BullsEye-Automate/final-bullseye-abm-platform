@@ -54,7 +54,7 @@ const SECTIONS: Section[] = [
     label: "Análisis",
     items: [
       { href: "/reporteria",      label: "Reportería",      icon: IconReportAnalytics },
-      { href: "/entrenar-modelo", label: "Entrenar modelo", icon: IconBrain,           disabled: true }
+      { href: "/entrenar-modelo", label: "Entrenar modelo", icon: IconBrain }
     ]
   },
   {
