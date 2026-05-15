@@ -110,7 +110,8 @@ function extractJson(raw: string): unknown {
 // Reemplaza em-dash (—) y en-dash (–) por puntos/comas según contexto.
 // Hyphen (-) entre letras lo dejamos (palabras compuestas como "follow-up").
 // Si el hyphen está rodeado de espacios (" - "), lo tratamos como separador.
-function stripAiDashes(text: string): string {
+// Exportado: lib/replyDrafter.ts lo reusa para los borradores de respuesta.
+export function stripAiDashes(text: string): string {
   let t = text;
   // Em/en dash con espacios alrededor → coma + espacio
   t = t.replace(/\s*[—–]\s*/g, ", ");
@@ -122,7 +123,8 @@ function stripAiDashes(text: string): string {
 }
 
 // Saca cualquier sign-off típico al final del email body (Lemlist agrega el suyo).
-function stripSignature(text: string): string {
+// Exportado: lib/replyDrafter.ts lo reusa para los borradores de respuesta por email.
+export function stripSignature(text: string): string {
   let t = text.trim();
   // Patrones comunes — siempre al final. Recortamos desde el inicio del
   // signoff hasta el final del string.

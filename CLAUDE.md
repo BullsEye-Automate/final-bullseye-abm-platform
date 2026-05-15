@@ -1121,6 +1121,105 @@ Lemlist" → contacto en Lemlist **y** en HubSpot, sin pasar por Clay.
 2. Heredados: páginas LinkedIn fantasma (loop Clay → app pendiente),
    dedup del scrape web sin email.
 
+## Hecho del Sprint 6 fase 3 — Responder desde la app (Lemlist Inbox API) (sesión 2026-05-15)
+
+El SDR ahora puede responder a un lead (LinkedIn o email) directamente
+desde el módulo `/respuestas`, sin entrar a Lemlist ni a LinkedIn. La app
+llama a la **API de Inbox de Lemlist** y Lemlist manda el mensaje por la
+cuenta de LinkedIn / mailbox conectada del usuario. Además, Claude puede
+sugerir un borrador de respuesta con el contexto del prospecto + la
+propuesta de valor de weCAD4you.
+
+### Por qué se pudo (contexto importante)
+
+Sesiones previas concluyeron que la API de Lemlist no daba para mucho,
+pero Lemlist agregó endpoints de **Inbox** que sí permiten esto:
+- `POST /api/inbox/linkedin` — enviar mensaje de LinkedIn (params:
+  `sendUserId`, `leadId`, `contactId`, `message`).
+- `POST /api/inbox/email` — responder un email del hilo.
+- `GET /api/inbox/{contactId}` — traer el hilo completo (no usado todavía).
+
+Esto NO choca con la lista "NO RECREAR" — eso es Clay REST API y webhooks
+de HubSpot, no Lemlist. El portal de docs de Lemlist bloquea fetch
+automático (403), así que el shape exacto del body de `/inbox/email` no
+está 100% confirmado: el cliente se construyó defensivo (prueba varios
+shapes/URLs y captura el raw response en el debug), igual que `lib/lemlist.ts`.
+
+### Archivos nuevos
+
+- `supabase/lemlist_activities_outbound_replies_migration.sql` — añade
+  `reply_sent_text`, `reply_sent_at`, `reply_send_error` a
+  `lemlist_activities`. **Pegar manual en SQL editor de Supabase** una vez.
+- `lib/lemlistInbox.ts` — cliente de la API de Inbox de Lemlist:
+  - `sendLinkedinMessage()` → `POST /api/inbox/linkedin`.
+  - `sendEmailReply()` → `POST /api/inbox/email` (prueba shapes
+    `message` y `text+body`, más fallback `/v2`).
+  - `resolveSendUserId()` — env var `LEMLIST_SEND_USER_ID` primero;
+    fallback de conveniencia `GET /api/team` (si hay 1 usuario lo usa,
+    si hay varios pide setear la env var).
+  - `resolveInboxIds()` — saca `leadId` + `contactId` del payload crudo
+    de la actividad; si falta `contactId`, consulta el lead en Lemlist
+    (`getLemlistLeadById` / `getLemlistLeadByEmail`).
+- `lib/replyDrafter.ts` — `draftReply()`: Claude genera UN borrador de
+  respuesta (Sonnet con fallback Haiku). Adaptado al canal (LinkedIn
+  corto sin saludo; email arranca con "Hi {firstName},"). Reglas por
+  categoría (interested → propone call; objection → reframe; question →
+  responde; not_interested/unsubscribe → 1 frase cortés). Reusa
+  `stripAiDashes` / `stripSignature` (ahora exportados de
+  `lib/messageGenerator.ts`).
+- `app/api/respuestas/[id]/draft/route.ts` — POST: devuelve el borrador
+  IA (no envía nada).
+- `app/api/respuestas/[id]/reply/route.ts` — POST `{ message, subject? }`:
+  envía vía Inbox API. Al OK marca `reply_handled_at` + guarda
+  `reply_sent_text` / `reply_sent_at`. Al fallar persiste
+  `reply_send_error` y devuelve `debug` con los intentos.
+
+### Cambios
+
+- `app/api/respuestas/route.ts` (GET) — expone `reply_sent_text`,
+  `reply_sent_at`, `reply_send_error`.
+- `app/respuestas/page.tsx` — cada card tiene un composer: botón
+  "Responder por LinkedIn/email", textarea, "Sugerir con IA" (llena el
+  textarea con el borrador de Claude), "Enviar". Card muestra
+  "Respondido ✓" con el texto enviado cuando `reply_sent_at` no es null,
+  y panel debug amarillo si el envío falla.
+
+### Variable de entorno nueva en Vercel
+
+- `LEMLIST_SEND_USER_ID` — ID del usuario de Lemlist que envía (cuenta
+  de LinkedIn / mailbox conectada). Si el equipo tiene un solo usuario,
+  la app lo resuelve sola vía `GET /api/team`; si falla o hay varios,
+  hay que setearla a mano. El error del endpoint `reply` incluye el
+  `debug` con la respuesta de `/api/team` para encontrar el ID.
+
+### Para probar end-to-end (pendiente del usuario)
+
+1. Pegar `supabase/lemlist_activities_outbound_replies_migration.sql` en
+   el SQL editor de Supabase.
+2. (Opcional) setear `LEMLIST_SEND_USER_ID` en Vercel + redeploy.
+3. En `/respuestas`, sobre una respuesta real: "Sugerir con IA" →
+   revisar el borrador → "Enviar". Confirmar que el mensaje aparece en
+   la conversación de Lemlist / LinkedIn.
+4. Si falla: el panel amarillo muestra los intentos contra la Inbox API
+   (URL, status, body shape, respuesta cruda) — sirve para confirmar el
+   shape exacto que espera `/inbox/email` y ajustar `lib/lemlistInbox.ts`.
+
+### Gaps conocidos al cierre Sprint 6 fase 3
+
+1. **Shape de `/inbox/email` sin confirmar**: el cliente prueba
+   `message` y `text+body`. Si Lemlist espera otro shape, el debug del
+   panel amarillo lo revela y se ajusta `sendEmailReply()`.
+2. **`sendUserId` con equipo multi-usuario**: si `GET /api/team` no
+   devuelve una lista de usuarios parseable, hay que setear
+   `LEMLIST_SEND_USER_ID` a mano.
+3. **Sin hilo completo**: la app no trae el thread de la conversación
+   (`GET /api/inbox/{contactId}`); el borrador IA usa solo el último
+   mensaje del prospecto (`reply_text`) + contexto del contacto. Si se
+   quiere mejor contexto, agregar el fetch del thread.
+4. **Respuestas sin `reply_text`**: si Lemlist no devolvió el texto, el
+   botón "Sugerir con IA" queda deshabilitado, pero el SDR puede
+   escribir y enviar a mano igual.
+
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
 > Continúo weCAD4you-prospecting. Última sesión cerró Sprint 5 fase 7

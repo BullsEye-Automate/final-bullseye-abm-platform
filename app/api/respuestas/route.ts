@@ -30,6 +30,9 @@ type ActivityRow = {
   reply_analysis_error: string | null;
   reply_triage: string | null;
   reply_handled_at: string | null;
+  reply_sent_text: string | null;
+  reply_sent_at: string | null;
+  reply_send_error: string | null;
 };
 
 type ContactRow = {
@@ -57,7 +60,8 @@ export async function GET(req: NextRequest) {
     .select(
       "id, contact_id, lead_email, channel, type, activity_at, reply_text, " +
         "reply_category, reply_sentiment, reply_summary, reply_suggested_step, " +
-        "reply_analyzed_at, reply_analysis_error, reply_triage, reply_handled_at"
+        "reply_analyzed_at, reply_analysis_error, reply_triage, reply_handled_at, " +
+        "reply_sent_text, reply_sent_at, reply_send_error"
     )
     .or("type.ilike.%replied%,type.ilike.%answer%,type.ilike.%reply%")
     .order("activity_at", { ascending: false })
@@ -116,6 +120,9 @@ export async function GET(req: NextRequest) {
       reply_analysis_error: r.reply_analysis_error,
       reply_triage: r.reply_triage,
       reply_handled_at: r.reply_handled_at,
+      reply_sent_text: r.reply_sent_text,
+      reply_sent_at: r.reply_sent_at,
+      reply_send_error: r.reply_send_error,
       effective_category,
       handled: !!r.reply_handled_at,
       contact: c

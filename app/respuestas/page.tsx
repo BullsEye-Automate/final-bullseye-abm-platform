@@ -10,7 +10,8 @@ import {
   IconExternalLink,
   IconMessage2,
   IconSparkles,
-  IconArrowBackUp
+  IconArrowBackUp,
+  IconSend
 } from "@tabler/icons-react";
 
 // Categorías de respuesta — mismas keys que lib/replyAnalyzer.ts (no se
@@ -65,6 +66,9 @@ type Reply = {
   reply_analysis_error: string | null;
   reply_triage: string | null;
   reply_handled_at: string | null;
+  reply_sent_text: string | null;
+  reply_sent_at: string | null;
+  reply_send_error: string | null;
   effective_category: string | null;
   handled: boolean;
   contact: ReplyContact;
@@ -177,6 +181,26 @@ export default function RespuestasPage() {
     );
   }
 
+  // Tras enviar una respuesta desde la app: actualizamos la card en el lugar
+  // (queda como atendida, con el texto enviado visible).
+  function markReplied(id: string, sentText: string) {
+    const now = new Date().toISOString();
+    setReplies((prev) =>
+      prev.map((r) =>
+        r.id !== id
+          ? r
+          : {
+              ...r,
+              reply_sent_text: sentText,
+              reply_sent_at: now,
+              reply_send_error: null,
+              reply_handled_at: r.reply_handled_at ?? now,
+              handled: true
+            }
+      )
+    );
+  }
+
   return (
     <div className="space-y-6">
       <header className="flex items-end justify-between">
@@ -282,7 +306,7 @@ export default function RespuestasPage() {
       ) : (
         <div className="space-y-3">
           {replies.map((r) => (
-            <ReplyCard key={r.id} r={r} onTriage={triage} />
+            <ReplyCard key={r.id} r={r} onTriage={triage} onReplied={markReplied} />
           ))}
         </div>
       )}
@@ -319,12 +343,75 @@ function Kpi({
 
 function ReplyCard({
   r,
-  onTriage
+  onTriage,
+  onReplied
 }: {
   r: Reply;
   onTriage: (id: string, patch: { triage?: string | null; handled?: boolean }) => void;
+  onReplied: (id: string, sentText: string) => void;
 }) {
   const c = r.contact;
+  const canReply = r.channel === "linkedin" || r.channel === "email";
+
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [subject, setSubject] = useState("");
+  const [drafting, setDrafting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [composerError, setComposerError] = useState<string | null>(null);
+  const [composerDebug, setComposerDebug] = useState<unknown>(null);
+  const [draftModel, setDraftModel] = useState<string | null>(null);
+
+  async function suggest() {
+    setDrafting(true);
+    setComposerError(null);
+    setComposerDebug(null);
+    try {
+      const res = await fetch(`/api/respuestas/${r.id}/draft`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setComposerError(data.error ?? "No se pudo generar el borrador");
+        return;
+      }
+      setDraft(data.draft ?? "");
+      setDraftModel(data.model_used ?? null);
+    } catch {
+      setComposerError("No se pudo generar el borrador (error de red)");
+    } finally {
+      setDrafting(false);
+    }
+  }
+
+  async function send() {
+    if (!draft.trim()) return;
+    setSending(true);
+    setComposerError(null);
+    setComposerDebug(null);
+    try {
+      const res = await fetch(`/api/respuestas/${r.id}/reply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: draft,
+          subject: r.channel === "email" ? subject : undefined
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setComposerError(data.error ?? "No se pudo enviar la respuesta");
+        setComposerDebug(data.debug ?? null);
+        return;
+      }
+      onReplied(r.id, draft);
+      setComposerOpen(false);
+      setComposerDebug(null);
+    } catch {
+      setComposerError("No se pudo enviar la respuesta (error de red)");
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <div className={`card space-y-3 ${r.handled ? "opacity-70" : ""}`}>
       <div className="flex items-start justify-between gap-3">
@@ -411,6 +498,122 @@ function ReplyCard({
           )}
         </div>
       )}
+
+      {/* Responder desde la app (Lemlist Inbox API) */}
+      {r.reply_sent_at && (
+        <div className="bg-success-bg rounded-md p-2.5 text-sm space-y-1">
+          <div className="flex items-center gap-1.5 text-success-fg font-medium">
+            <IconCheck size={14} /> Respondido el{" "}
+            {new Date(r.reply_sent_at).toLocaleString("es", {
+              day: "2-digit",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit"
+            })}
+          </div>
+          {r.reply_sent_text && (
+            <div className="text-ink whitespace-pre-wrap border-l-2 border-success-fg/30 pl-2">
+              {r.reply_sent_text}
+            </div>
+          )}
+        </div>
+      )}
+
+      {r.reply_send_error && !r.reply_sent_at && !composerOpen && (
+        <div className="text-xs text-danger-fg flex items-start gap-1">
+          <IconAlertCircle size={12} className="mt-0.5 shrink-0" /> Último envío
+          falló: {r.reply_send_error}
+        </div>
+      )}
+
+      {composerOpen ? (
+        <div className="border border-divider rounded-md p-3 space-y-2">
+          {r.channel === "email" && (
+            <input
+              className="input text-sm"
+              placeholder="Asunto (opcional — Lemlist mantiene el hilo)"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
+          )}
+          <textarea
+            className="input text-sm min-h-[110px] resize-y"
+            placeholder={
+              r.channel === "linkedin"
+                ? "Escribí tu respuesta de LinkedIn…"
+                : "Escribí tu respuesta de email…"
+            }
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          {draftModel && (
+            <div className="text-xs text-ink-subtle">
+              Borrador IA · modelo: {draftModel}. Revisalo y editalo antes de
+              enviar.
+            </div>
+          )}
+          {composerError && (
+            <div className="text-xs text-danger-fg flex items-start gap-1">
+              <IconAlertCircle size={12} className="mt-0.5 shrink-0" />
+              {composerError}
+            </div>
+          )}
+          {composerDebug != null && (
+            <pre className="text-[11px] bg-warning-bg text-warning-fg rounded p-2 overflow-x-auto max-h-48">
+              {JSON.stringify(composerDebug, null, 2)}
+            </pre>
+          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              className="btn-secondary text-xs"
+              onClick={suggest}
+              disabled={drafting || sending || !r.reply_text}
+              title={
+                !r.reply_text
+                  ? "No hay texto de la respuesta del prospecto para darle contexto a la IA"
+                  : ""
+              }
+            >
+              <IconSparkles size={13} />{" "}
+              {drafting ? "Generando…" : "Sugerir con IA"}
+            </button>
+            <button
+              className="btn-primary text-xs"
+              onClick={send}
+              disabled={sending || drafting || !draft.trim()}
+            >
+              <IconSend size={13} />{" "}
+              {sending
+                ? "Enviando…"
+                : r.channel === "linkedin"
+                ? "Enviar por LinkedIn"
+                : "Enviar por email"}
+            </button>
+            <button
+              className="text-xs text-ink-muted hover:text-ink"
+              onClick={() => {
+                setComposerOpen(false);
+                setComposerError(null);
+                setComposerDebug(null);
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : canReply ? (
+        <button
+          className="btn-secondary text-sm w-fit"
+          onClick={() => setComposerOpen(true)}
+        >
+          <IconArrowBackUp size={14} />{" "}
+          {r.reply_sent_at
+            ? "Responder de nuevo"
+            : r.channel === "linkedin"
+            ? "Responder por LinkedIn"
+            : "Responder por email"}
+        </button>
+      ) : null}
 
       {/* Triage + links */}
       <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-divider">
