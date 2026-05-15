@@ -61,6 +61,22 @@ export type DashboardData = {
     human_agreement_rate: number | null;
     discard_reasons: Array<{ reason: string; count: number }>;
   };
+  // Cobertura del módulo Sales Navigator (estado actual, NO range-bound).
+  // Empresas que pasaron por Clay agrupadas por cuántos contactos
+  // encontramos. Permite ver de un vistazo cuánto trabajo manual queda
+  // (sin contactos + con 1) vs cobertura sana (2+).
+  coverage: {
+    total_in_clay: number;
+    no_contacts: number;
+    one_contact: number;
+    two_plus_contacts: number;
+    no_fit_marked: number;
+    // Empresas que el SDR trabajó manualmente en Sales Nav:
+    // - marcadas como no_fit, O
+    // - Clay no encontró nada (clay_no_contacts_at !== null) pero ahora
+    //   tienen contactos = vinieron del flujo manual de Sales Nav.
+    manually_worked: number;
+  };
   activity: Array<{
     date: string; // YYYY-MM-DD
     companies_approved: number;
@@ -321,6 +337,45 @@ export async function computeDashboard(
     rate_from_top: i === 0 ? null : safePct(f.count, funnelTop)
   }));
 
+  // ---- Cobertura Sales Navigator (estado actual, no range-bound) ----
+  // Empresas que pasaron por Clay agrupadas por cuántos contactos tenemos.
+  const [coverageCompaniesRes, coverageContactsRes] = await Promise.all([
+    db
+      .from("companies")
+      .select("id, sales_nav_status, clay_no_contacts_at")
+      .not("clay_pushed_at", "is", null)
+      .limit(10000),
+    db.from("contacts").select("company_id").limit(50000)
+  ]);
+  const coverageCompanies = (coverageCompaniesRes.data ?? []) as Array<{
+    id: string;
+    sales_nav_status: string | null;
+    clay_no_contacts_at: string | null;
+  }>;
+  const contactCountMap = new Map<string, number>();
+  for (const r of (coverageContactsRes.data ?? []) as Array<{ company_id: string | null }>) {
+    if (!r.company_id) continue;
+    contactCountMap.set(r.company_id, (contactCountMap.get(r.company_id) ?? 0) + 1);
+  }
+  let cov_no_contacts = 0;
+  let cov_one = 0;
+  let cov_two_plus = 0;
+  let cov_no_fit = 0;
+  let cov_manually_worked = 0;
+  for (const co of coverageCompanies) {
+    if (co.sales_nav_status === "no_fit") {
+      cov_no_fit++;
+      cov_manually_worked++;
+      continue;
+    }
+    const n = contactCountMap.get(co.id) ?? 0;
+    if (n === 0) cov_no_contacts++;
+    else if (n === 1) cov_one++;
+    else cov_two_plus++;
+    // Clay no encontró nada pero ahora hay contactos = SDR los agregó manualmente.
+    if (co.clay_no_contacts_at && n > 0) cov_manually_worked++;
+  }
+
   return {
     range: {
       key: rangeKey,
@@ -352,6 +407,14 @@ export async function computeDashboard(
       manual_review_pending: manualReviewPending,
       human_agreement_rate: humanAgreement,
       discard_reasons
+    },
+    coverage: {
+      total_in_clay: coverageCompanies.length,
+      no_contacts: cov_no_contacts,
+      one_contact: cov_one,
+      two_plus_contacts: cov_two_plus,
+      no_fit_marked: cov_no_fit,
+      manually_worked: cov_manually_worked
     },
     activity
   };

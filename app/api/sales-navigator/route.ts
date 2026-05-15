@@ -6,31 +6,18 @@ export const dynamic = "force-dynamic";
 
 // GET /api/sales-navigator
 //
-// Lista las empresas que necesitan revisión manual en LinkedIn Sales
-// Navigator porque Clay no les encontró contactos. Hay DOS señales:
+// Empresas que pasaron por Clay y necesitan revisión manual en LinkedIn
+// Sales Navigator porque Clay encontró pocos contactos. Tres buckets:
 //
-//   1. SEÑAL PRECISA (clay_no_contacts_at): el loop del PR #91 — Clay
-//      avisa por webhook cuando Find People da 0. Requiere una columna
-//      HTTP API en Clay, que ahora quedó detrás del plan Growth (las
-//      columnas viejas siguen andando porque están grandfathered).
+//   - no_contacts : 0 contactos en nuestra base. Clay no encontró a nadie.
+//                   Aplica gracia de 24h si Clay todavía puede estar
+//                   procesando (se puede deshabilitar con ?include_recent=1).
+//   - one_contact : exactamente 1 contacto. Clay encontró solo uno —
+//                   conviene buscar más en Sales Nav.
+//   - no_fit      : sales_nav_status='no_fit' (trabajada y descartada
+//                   porque no había nadie fit en LinkedIn).
 //
-//   2. SEÑAL INFERIDA: como crear esa columna ya no se puede sin upgrade,
-//      la app lo deduce sola — una empresa empujada a Clay hace más de
-//      CLAY_GRACE_HOURS que todavía no tiene NINGÚN contacto en nuestra
-//      base = Clay no encontró a nadie (si hubiera encontrado, el webhook
-//      raw-contacts ya habría creado las filas de contacto).
-//
-// El query param ?include_recent=1 baja la gracia a 0: trae TODAS las
-// empresas que pasaron por Clay y siguen sin contactos, sin esperar las
-// 24h (botón "Incluir las recién mandadas a Clay" en la UI).
-//
-// Buckets:
-//   - pending : sales_nav_status null + (señal precisa O inferida)
-//   - no_fit  : sales_nav_status = 'no_fit'
-//
-// Toda empresa que pasó por el módulo tiene clay_pushed_at seteado
-// (clay_no_contacts_at y sales_nav_status solo se setean sobre empresas
-// que fueron empujadas a Clay), así que con ese filtro alcanza.
+// Universo: empresas con clay_pushed_at != null.
 
 const CLAY_GRACE_HOURS = 24;
 
@@ -62,21 +49,25 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const companies = (data ?? []) as unknown as Row[];
 
-  // company_ids que ya tienen al menos un contacto en nuestra base.
+  // Conteo de contactos por empresa.
   const { data: contactRows, error: cErr } = await db
     .from("contacts")
     .select("company_id");
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
-  const withContacts = new Set(
-    (contactRows ?? []).map((r) => r.company_id as string).filter(Boolean)
-  );
+  const countByCompany = new Map<string, number>();
+  for (const r of contactRows ?? []) {
+    const id = r.company_id as string | null;
+    if (!id) continue;
+    countByCompany.set(id, (countByCompany.get(id) ?? 0) + 1);
+  }
 
-  // include_recent=1 → gracia 0: cualquier empresa que pasó por Clay y
-  // sigue sin contactos, sin importar cuán reciente sea el push.
+  // Para no_contacts aplicamos gracia (Clay puede seguir procesando).
+  // Para one_contact NO aplica gracia: 1 ya significa que Clay devolvió.
   const graceMs = includeRecent ? 0 : CLAY_GRACE_HOURS * 60 * 60 * 1000;
   const now = Date.now();
 
-  const pending: Array<Row & { signal: "clay" | "inferred" }> = [];
+  const no_contacts: Array<Row & { signal: "clay" | "inferred"; contact_count: number }> = [];
+  const one_contact: Array<Row & { contact_count: number }> = [];
   const no_fit: Row[] = [];
 
   for (const c of companies) {
@@ -86,33 +77,50 @@ export async function GET(req: NextRequest) {
     }
     if (c.sales_nav_status) continue; // estado futuro desconocido: ignorar
 
-    // Señal precisa: Clay avisó por webhook.
-    if (c.clay_no_contacts_at) {
-      pending.push({ ...c, signal: "clay" });
+    const count = countByCompany.get(c.id) ?? 0;
+
+    if (count === 1) {
+      one_contact.push({ ...c, contact_count: 1 });
       continue;
     }
-    // Señal inferida: empujada a Clay hace rato y todavía sin contactos.
+    if (count >= 2) {
+      // Ya tiene 2+ contactos — fuera del módulo de revisión manual.
+      continue;
+    }
+
+    // count === 0
+    if (c.clay_no_contacts_at) {
+      // Señal precisa de Clay.
+      no_contacts.push({ ...c, signal: "clay", contact_count: 0 });
+      continue;
+    }
     if (
       c.clay_pushed_at &&
-      now - new Date(c.clay_pushed_at).getTime() > graceMs &&
-      !withContacts.has(c.id)
+      now - new Date(c.clay_pushed_at).getTime() > graceMs
     ) {
-      pending.push({ ...c, signal: "inferred" });
+      // Señal inferida: pasó la gracia y sigue sin contactos.
+      no_contacts.push({ ...c, signal: "inferred", contact_count: 0 });
     }
   }
 
-  // Más recientes primero (por la fecha más relevante de cada una).
-  pending.sort((a, b) => {
+  const sortByMostRecent = <T extends Row>(a: T, b: T) => {
     const at = a.clay_no_contacts_at ?? a.clay_pushed_at ?? "";
     const bt = b.clay_no_contacts_at ?? b.clay_pushed_at ?? "";
     return bt.localeCompare(at);
-  });
+  };
+  no_contacts.sort(sortByMostRecent);
+  one_contact.sort(sortByMostRecent);
 
   return NextResponse.json(
     {
-      pending,
+      no_contacts,
+      one_contact,
       no_fit,
-      counts: { pending: pending.length, no_fit: no_fit.length },
+      counts: {
+        no_contacts: no_contacts.length,
+        one_contact: one_contact.length,
+        no_fit: no_fit.length
+      },
       grace_hours: CLAY_GRACE_HOURS,
       include_recent: includeRecent
     },

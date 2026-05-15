@@ -49,6 +49,9 @@ type Company = {
   // Por qué la empresa está en la cola: 'clay' = Clay avisó por webhook;
   // 'inferred' = la app lo dedujo (pasó por Clay y sigue sin contactos).
   signal?: "clay" | "inferred";
+  // Cuántos contactos hay en nuestra base para esta empresa. 0 en bucket
+  // no_contacts, 1 en bucket one_contact, undefined si no aplica.
+  contact_count?: number;
 };
 
 type ImportedContact = {
@@ -87,18 +90,22 @@ type ImportResult = {
   matched_url?: string;
 };
 
-type Counts = { pending: number; no_fit: number };
+type Counts = { no_contacts: number; one_contact: number; no_fit: number };
+type Tab = "no_contacts" | "one_contact" | "no_fit";
 
 export default function SalesNavigatorPage() {
-  const [tab, setTab] = useState<"pending" | "no_fit">("pending");
-  const [pending, setPending] = useState<Company[]>([]);
+  const [tab, setTab] = useState<Tab>("no_contacts");
+  const [noContacts, setNoContacts] = useState<Company[]>([]);
+  const [oneContact, setOneContact] = useState<Company[]>([]);
   const [noFit, setNoFit] = useState<Company[]>([]);
-  const [counts, setCounts] = useState<Counts>({ pending: 0, no_fit: 0 });
+  const [counts, setCounts] = useState<Counts>({ no_contacts: 0, one_contact: 0, no_fit: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   // Por defecto se esperan 24h tras mandar la empresa a Clay (para no
   // mostrar empresas que Clay todavía está procesando). Este toggle baja
   // esa espera a 0 y trae todas las que pasaron por Clay sin contactos.
+  // Solo aplica al bucket "Sin contactos" — 1 contacto significa que
+  // Clay ya devolvió.
   const [includeRecent, setIncludeRecent] = useState(false);
 
   const load = useCallback(async () => {
@@ -114,9 +121,10 @@ export default function SalesNavigatorPage() {
         setError(data.error ?? "No se pudieron cargar las empresas");
         return;
       }
-      setPending(data.pending ?? []);
+      setNoContacts(data.no_contacts ?? []);
+      setOneContact(data.one_contact ?? []);
       setNoFit(data.no_fit ?? []);
-      setCounts(data.counts ?? { pending: 0, no_fit: 0 });
+      setCounts(data.counts ?? { no_contacts: 0, one_contact: 0, no_fit: 0 });
     } catch {
       setError("No se pudieron cargar las empresas (error de red)");
     } finally {
@@ -128,10 +136,13 @@ export default function SalesNavigatorPage() {
     load();
   }, [load]);
 
-  // La empresa salió de "Por revisar": importó contactos o se marcó no_fit.
-  function dropFromPending(id: string) {
-    setPending((prev) => prev.filter((c) => c.id !== id));
-    setCounts((prev) => ({ ...prev, pending: Math.max(0, prev.pending - 1) }));
+  function dropFromNoContacts(id: string) {
+    setNoContacts((prev) => prev.filter((c) => c.id !== id));
+    setCounts((prev) => ({ ...prev, no_contacts: Math.max(0, prev.no_contacts - 1) }));
+  }
+  function dropFromOneContact(id: string) {
+    setOneContact((prev) => prev.filter((c) => c.id !== id));
+    setCounts((prev) => ({ ...prev, one_contact: Math.max(0, prev.one_contact - 1) }));
   }
   function dropFromNoFit(id: string) {
     setNoFit((prev) => prev.filter((c) => c.id !== id));
@@ -162,14 +173,23 @@ export default function SalesNavigatorPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-1 bg-[#F4F2FB] rounded-lg p-1 w-fit">
+      <div className="flex items-center gap-1 bg-[#F4F2FB] rounded-lg p-1 w-fit flex-wrap">
         <button
-          onClick={() => setTab("pending")}
+          onClick={() => setTab("no_contacts")}
           className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            tab === "pending" ? "bg-white text-brand shadow-sm" : "text-ink-muted hover:text-ink"
+            tab === "no_contacts" ? "bg-white text-brand shadow-sm" : "text-ink-muted hover:text-ink"
           }`}
         >
-          Por revisar ({counts.pending})
+          Empresas sin contactos ({counts.no_contacts})
+        </button>
+        <button
+          onClick={() => setTab("one_contact")}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            tab === "one_contact" ? "bg-white text-brand shadow-sm" : "text-ink-muted hover:text-ink"
+          }`}
+          title="Empresas donde Clay solo encontró 1 contacto — conviene buscar más en Sales Nav"
+        >
+          Con solo 1 contacto ({counts.one_contact})
         </button>
         <button
           onClick={() => setTab("no_fit")}
@@ -181,7 +201,7 @@ export default function SalesNavigatorPage() {
         </button>
       </div>
 
-      {tab === "pending" && (
+      {tab === "no_contacts" && (
         <div className="flex items-start gap-2 flex-wrap">
           <button
             onClick={() => setIncludeRecent((v) => !v)}
@@ -203,8 +223,8 @@ export default function SalesNavigatorPage() {
 
       {loading ? (
         <div className="text-ink-muted">Cargando…</div>
-      ) : tab === "pending" ? (
-        pending.length === 0 ? (
+      ) : tab === "no_contacts" ? (
+        noContacts.length === 0 ? (
           <div className="card text-ink-muted space-y-2">
             <div className="flex items-center gap-2">
               <IconCompass size={18} /> No hay empresas esperando revisión.
@@ -212,20 +232,38 @@ export default function SalesNavigatorPage() {
             <div className="text-sm">
               Cuando una empresa que mandaste a Clay no consigue contactos,
               aparece aquí automáticamente: la app lo detecta sola (empresa
-              empujada a Clay hace 24h+ y sin ningún contacto en la base). No
-              requiere configuración en Clay.
+              empujada a Clay hace 24h+ y sin ningún contacto en la base).
             </div>
           </div>
         ) : (
           <div className="space-y-3">
-            {pending.map((c) => (
-              <CompanyCard key={c.id} company={c} onRemoved={() => dropFromPending(c.id)} />
+            {noContacts.map((c) => (
+              <CompanyCard key={c.id} company={c} onRemoved={() => dropFromNoContacts(c.id)} />
+            ))}
+          </div>
+        )
+      ) : tab === "one_contact" ? (
+        oneContact.length === 0 ? (
+          <div className="card text-ink-muted space-y-2">
+            <div className="flex items-center gap-2">
+              <IconCompass size={18} /> Ninguna empresa con un solo contacto.
+            </div>
+            <div className="text-sm">
+              Cuando Clay devuelve solo 1 contacto para una empresa, aparece
+              aquí — sirve para buscar más decision-makers en Sales Nav y
+              cubrir mejor a la empresa.
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {oneContact.map((c) => (
+              <CompanyCard key={c.id} company={c} onRemoved={() => dropFromOneContact(c.id)} />
             ))}
           </div>
         )
       ) : noFit.length === 0 ? (
         <div className="card text-ink-muted flex items-center gap-2">
-          <IconBan size={18} /> Ninguna empresa marcada como “sin contactos fit”.
+          <IconBan size={18} /> Ninguna empresa marcada como "sin contactos fit".
         </div>
       ) : (
         <div className="space-y-3">
@@ -468,7 +506,13 @@ function CompanyCard({
     <div className="card space-y-3">
       <CompanyHeader company={company} />
 
-      {company.signal === "inferred" ? (
+      {company.contact_count === 1 ? (
+        <div className="text-xs text-warning-fg flex items-start gap-1">
+          <IconAlertCircle size={12} className="mt-0.5 shrink-0" />
+          Clay encontró 1 solo contacto. Conviene buscar más decision-makers
+          en Sales Navigator para cubrir mejor esta empresa.
+        </div>
+      ) : company.signal === "inferred" ? (
         <div className="text-xs text-warning-fg flex items-start gap-1">
           <IconAlertCircle size={12} className="mt-0.5 shrink-0" />
           {pushedRecently

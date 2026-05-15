@@ -17,7 +17,8 @@ import {
   IconTargetArrow,
   IconCheck,
   IconCircleDot,
-  IconClipboardList
+  IconClipboardList,
+  IconCompass
 } from "@tabler/icons-react";
 import { RANGE_LABELS, RANGE_ORDER, type RangeKey } from "@/lib/dashboardRanges";
 
@@ -50,6 +51,14 @@ type Dashboard = {
     manual_review_pending: number;
     human_agreement_rate: number | null;
     discard_reasons: Array<{ reason: string; count: number }>;
+  };
+  coverage: {
+    total_in_clay: number;
+    no_contacts: number;
+    one_contact: number;
+    two_plus_contacts: number;
+    no_fit_marked: number;
+    manually_worked: number;
   };
   activity: Array<{ date: string; companies_approved: number; contacts_imported: number }>;
 };
@@ -107,6 +116,7 @@ export default function DashboardPage() {
           <HeroKpis pipeline={data.pipeline} />
           <ConversionRates pipeline={data.pipeline} />
           <FunnelCard funnel={data.funnel} />
+          <CoverageCard coverage={data.coverage} />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <DistributionCard
               title="Empresas por tipo"
@@ -530,6 +540,90 @@ function FitActionsCard({
       items={items}
       palette={ACTION_PALETTE}
     />
+  );
+}
+
+// ============================================================================
+// Coverage card — cobertura de contactos por empresa + resumen Sales Navigator
+// ============================================================================
+
+function CoverageCard({ coverage }: { coverage: Dashboard["coverage"] }) {
+  const total = coverage.total_in_clay || 1;
+  const bars = [
+    {
+      label: "Sin contactos",
+      count: coverage.no_contacts,
+      cls: "bg-danger-fg/80 text-white",
+      barCls: "bg-danger-fg",
+      hint: "Clay no encontró a nadie — buscar en Sales Nav"
+    },
+    {
+      label: "Con 1 contacto",
+      count: coverage.one_contact,
+      cls: "bg-warning-fg/80 text-white",
+      barCls: "bg-warning-fg",
+      hint: "Solo 1 decision-maker — buscar más en Sales Nav"
+    },
+    {
+      label: "Con 2 o más",
+      count: coverage.two_plus_contacts,
+      cls: "bg-success-fg/80 text-white",
+      barCls: "bg-success-fg",
+      hint: "Cobertura sana — no requiere trabajo manual"
+    },
+    {
+      label: "Marcadas sin contactos fit",
+      count: coverage.no_fit_marked,
+      cls: "bg-ink-muted/80 text-white",
+      barCls: "bg-ink-muted",
+      hint: "Trabajadas en Sales Nav y descartadas"
+    }
+  ];
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2 mb-1 text-brand">
+        <IconCompass size={16} />
+        <h2 className="text-sm font-semibold text-ink">
+          Cobertura de contactos · Sales Navigator
+        </h2>
+      </div>
+      <p className="text-xs text-ink-muted mb-4">
+        Estado actual (no filtrado por rango). Empresas que pasaron por Clay
+        agrupadas por cuántos decision-makers encontramos.
+      </p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        {bars.map((b) => (
+          <div key={b.label} className="space-y-1">
+            <div className="text-2xl font-semibold text-ink tabular-nums">{b.count}</div>
+            <div className="text-xs text-ink-muted">{b.label}</div>
+            <div className="text-[10px] text-ink-subtle leading-tight">{b.hint}</div>
+            <div className="h-1.5 bg-[#F1EEF7] rounded-full overflow-hidden mt-1">
+              <div
+                className={`h-full ${b.barCls}`}
+                style={{ width: `${(b.count / total) * 100}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-3 border-t border-[#EEEDFE] text-xs text-ink-muted">
+        <div>
+          <span className="text-ink-subtle">Total que pasó por Clay:</span>{" "}
+          <span className="text-ink font-semibold tabular-nums">{coverage.total_in_clay}</span>
+        </div>
+        <div>
+          <span className="text-ink-subtle">Trabajadas manualmente en Sales Nav:</span>{" "}
+          <span className="text-ink font-semibold tabular-nums">{coverage.manually_worked}</span>
+          <span className="text-ink-subtle">
+            {" "}
+            ({coverage.total_in_clay
+              ? Math.round((coverage.manually_worked / coverage.total_in_clay) * 100)
+              : 0}
+            %)
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
