@@ -14,6 +14,7 @@ import { perplexitySearch, PerplexityCitation } from "./perplexity";
 import type { IcpConfig } from "./supabase";
 import type { DiscoveredCompany } from "./discovery";
 import { isValidLinkedinCompanyUrl } from "./discovery";
+import { validateCompanyEvidence, evidenceQuality } from "./companyEvidence";
 
 export type CompanyHints = {
   name: string;
@@ -39,26 +40,37 @@ export type ResearchOneResult = {
 
 export const SYSTEM_RESEARCH_ONE = `Eres analista de prospección B2B para weCAD4you, un servicio de outsourcing de diseño CAD/CAM dental (exocad / inLab).
 
-Tu tarea: investigar UNA empresa puntual que el usuario eligió, y devolver una ficha estructurada honesta.
+Tu tarea: investigar UNA empresa puntual que el usuario eligió, y devolver una ficha estructurada HONESTA.
+
+PRINCIPIO RECTOR (no negociable):
+PREFIERO HONESTIDAD SOBRE COMPLETITUD. Si no hay información pública sobre algún campo (software, escáner, externalización), el valor correcto es null y la mejor descripción es "No hay información pública sobre X". NO inventes. NO inferas del contexto general del rubro. NO extrapoles de "es típico que labs de este tamaño usen Y". Una ficha honesta con la mitad de los campos en null y un research_summary que diga "sin info pública" es 1000 veces mejor que una ficha con datos inventados que después rompe el outreach.
+
+REGLA DE EVIDENCIA POR HECHO:
+Cada hecho operativo que reportes (cad_software, scanner_technology, competitor_match, contratación activa, expansión, casos digitales) DEBE estar respaldado por una cita [N] específica del texto de Perplexity que LITERALMENTE nombre a esta empresa Y describa el hecho. Las citas genéricas del rubro (PDFs académicos, guías universitarias, artículos de tendencias) NO sirven como respaldo de hechos operativos — sirven solo para confirmar que el rubro existe.
+
+Si no hay cita específica que nombre a esta empresa Y describa el hecho:
+  → cad_software, scanner_technology, competitor_match → null
+  → fit_signals → no incluir esa señal operativa
+  → fit_score → NUNCA "high"
 
 Reglas:
-- Trabajas SOLO con la evidencia provista por la búsqueda web. No inventes datos. Lo que no esté en la evidencia va en null.
-- El usuario eligió esta empresa, así que SIEMPRE devuelves una ficha — incluso si el fit es bajo o si la empresa NO es del rubro dental. NO la descartes; describí honestamente lo que es.
+- Trabajas SOLO con la evidencia provista por la búsqueda web. Lo que no esté en la evidencia con cita específica de esta empresa, va en null.
+- El usuario eligió esta empresa, así que SIEMPRE devuelves una ficha — incluso si el fit es bajo o si la empresa NO es del rubro dental. NO la descartes; describí honestamente lo que es y qué información hay (o no hay) sobre ella.
 - company_type: clasifícala con honestidad.
   - "lab" = laboratorio dental
   - "multi_clinic" = grupo de clínicas dentales multi-centro
   - "dso" = Dental Service Organization
-  - "other" = CUALQUIER otra cosa (distribuidor, fabricante de equipos, proveedor de insumos, centro de fresado que solo vende equipos, consultora, o una empresa de otra industria que no tiene nada que ver con odontología).
-- Si la empresa NO es un laboratorio dental / clínica multi-centro / DSO, poné company_type="other", fit_score="low", y en research_summary explicá CLARAMENTE qué es realmente y por qué no es fit (ej: "No es un laboratorio dental. Es un distribuidor de insumos dentales / es una empresa de biotecnología vegetal / etc.").
-- company_linkedin_url: si la evidencia trae la URL corporativa de LinkedIn en formato https://www.linkedin.com/company/<slug>, inclúyela LITERAL. Si el usuario ya te dio una URL en los hints y es válida, usá esa. Si no hay ninguna, null — no la inventes.
-- company_country: código ISO de 2 letras (US, CA, MX, GB, ES, etc.) cuando puedas inferirlo. Si no, null.
-- company_size: estima empleados. Si la evidencia da un rango, usa el punto medio. Si no hay dato, null.
-- company_website: literal de la evidencia, o el que vino en hints. Si dudás, null.
+  - "other" = CUALQUIER otra cosa (distribuidor, fabricante de equipos, proveedor de insumos, centro de fresado que solo vende equipos, consultora, o una empresa de otra industria).
+- Si la empresa NO es un laboratorio dental / clínica multi-centro / DSO, poné company_type="other", fit_score="low", y en research_summary explicá CLARAMENTE qué es realmente.
+- company_linkedin_url: literal de la evidencia o del hint del usuario. NUNCA inventes ni construyas desde el nombre. Si no, null.
+- company_country: código ISO de 2 letras solo si la evidencia lo confirma. Si no, null.
+- company_size: empleados solo si la evidencia trae el dato específico de esta empresa (LinkedIn count, página About Us, perfil de directorio con tamaño). NO inferir de "probablemente pequeño". Si no, null.
+- company_website: literal de la evidencia o de hints. Si dudás, null.
 
 Scoring (fit_score):
-- "high": lab con exocad o inLab confirmado, O empresa que ya externaliza diseño con un competidor (Evident, Full Contour, Aidite, Automate by 3Shape).
-- "medium": lab con 3Shape o Dental Wings, O lab con señales digitales fuertes sin software CAD confirmado, O lab exocad/inLab sin evidencia adicional.
-- "low": evidencia digital débil, flujo posiblemente analógico, tamaño fuera de banda, O empresa que no es del rubro dental.
+- "high": lab con exocad o inLab confirmado por cita específica que la nombra, O empresa que ya externaliza con competidor (Evident, Full Contour, Aidite, Automate) confirmado por cita específica que la nombra. Sin cita específica de la empresa, NUNCA "high".
+- "medium": lab con 3Shape o Dental Wings confirmado por cita específica que la nombra, O lab con señales digitales fuertes específicamente nombradas para esta empresa.
+- "low": evidencia digital débil, solo descriptiva (existe, está en tal ciudad, pero sin operativos confirmados), O empresa que no es del rubro dental.
 
 Devuelve SIEMPRE JSON válido con esta forma exacta:
 {
@@ -80,8 +92,16 @@ Devuelve SIEMPRE JSON válido con esta forma exacta:
   }
 }
 "found": false SOLO si la búsqueda web no devolvió nada reconocible de esta empresa (nombre demasiado genérico, sin presencia web). En ese caso "company" puede ser null.
-fit_signals: lista corta separada por " · " de las señales detectadas. Si no es del rubro, poné algo como "Fuera de rubro · <qué es>".
-research_summary: 2-4 frases. Honesto. Si es fit, por qué. Si no, qué es realmente y por qué no.`;
+
+fit_signals (formato exacto):
+- Lista corta separada por " · ". CADA señal operativa (software, escáner, externalización, contratación, expansión, casos) debe terminar con [N] indicando la cita exacta que la respalda. Las descriptivas (tipo, ubicación, tamaño) no requieren [N].
+- Si no hay señales operativas con cita específica, fit_signals puede ser corto (solo descriptivo) o decir explícitamente "Sin información pública sobre software CAD, escáner ni operación digital". NO inventes señales para llenar el campo.
+- Ejemplos válidos:
+  - "Laboratorio dental local · exocad confirmado en página de servicios [2] · contratando CAD designer (job posting) [4]" ← operativas con [N].
+  - "Laboratorio dental local · Sin información pública sobre software CAD ni escáner" ← honesto sin inventos.
+  - "Distribuidor de insumos dentales · Fuera de rubro" ← descriptivo cuando no es target.
+
+research_summary: 2-4 frases. HONESTO. Si hay evidencia específica, decí qué encontraste y cuál es la fuente. Si NO hay evidencia específica, escribí literalmente algo como: "Listada como [tipo] en [fuente]. No hay información pública sobre software CAD, escáner, externalización ni operaciones digitales. Fit incierto sin verificación directa." NUNCA inventes una narrativa optimista para que la ficha parezca completa.`;
 
 export function buildResearchPrompt(hints: CompanyHints): string {
   const lines: string[] = [];
@@ -190,7 +210,7 @@ Devolvé el JSON estricto definido en el sistema para ESTA empresa.`
     linkedinUrl = hints.linkedin_url!.trim();
   }
 
-  const company: DiscoveredCompany = {
+  const rawCompany: DiscoveredCompany = {
     company_name: String(c.company_name ?? hints.name).trim() || hints.name,
     company_website: c.company_website ?? hints.website ?? null,
     company_linkedin_url: linkedinUrl,
@@ -206,8 +226,18 @@ Devolvé el JSON estricto definido en el sistema para ESTA empresa.`
     fit_score: ["high", "medium", "low"].includes(c.fit_score) ? c.fit_score : "low",
     competitor_match: c.competitor_match ?? null,
     research_summary: String(c.research_summary ?? ""),
-    research_sources: research.citations
+    research_sources: research.citations,
+    evidence_quality: evidenceQuality(
+      String(c.company_name ?? hints.name).trim() || hints.name,
+      research.citations
+    )
   };
+
+  // Validación de evidencia (mismo régimen que discovery broad): strippea
+  // señales operativas sin cita específica que nombre la empresa, nulea
+  // campos operativos cuando la evidencia es genérica, degrada fit_score.
+  const { company: validated, outcome } = validateCompanyEvidence(rawCompany);
+  const company: DiscoveredCompany = { ...validated, evidence_quality: outcome.evidence_quality };
 
   const offTarget = company.company_type === "other";
   return { company, not_found: false, off_target: offTarget, diagnostics };

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { evidenceQuality } from "@/lib/companyEvidence";
+import type { PerplexityCitation } from "@/lib/perplexity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +19,18 @@ export async function GET(req: NextRequest) {
     .limit(200);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Calidad de evidencia se computa on-the-fly desde research_sources guardadas.
+  // Una empresa con `generic` o `none` probablemente fue descubierta con el
+  // prompt viejo (pre fix 2026-05-15d) y tiene datos operativos sospechosos.
+  // La UI surfacea esto como badge para que el usuario priorice re-verificarla.
+  const companies = (data ?? []).map((c: any) => ({
+    ...c,
+    evidence_quality: evidenceQuality(
+      c.company_name,
+      (c.research_sources ?? []) as PerplexityCitation[]
+    )
+  }));
+
   const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
     db.from("companies").select("id", { count: "exact", head: true }).eq("status", "pending"),
     db.from("companies").select("id", { count: "exact", head: true }).eq("status", "approved"),
@@ -25,7 +39,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(
     {
-      companies: data ?? [],
+      companies,
       counts: {
         pending: pendingRes.count ?? 0,
         approved: approvedRes.count ?? 0,

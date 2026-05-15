@@ -2,6 +2,11 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { createMessageWithFallback } from "./claude";
 import { perplexitySearch, PerplexityCitation } from "./perplexity";
 import type { IcpConfig } from "./supabase";
+import {
+  evidenceQuality,
+  validateCompanyEvidence,
+  type EvidenceQuality
+} from "./companyEvidence";
 
 export type DiscoveredCompany = {
   company_name: string;
@@ -18,6 +23,10 @@ export type DiscoveredCompany = {
   competitor_match: string | null;
   research_summary: string;
   research_sources: PerplexityCitation[];
+  // Calidad de evidencia post-validación. "specific" = al menos una cita
+  // nombra a la empresa; "generic" = solo contexto del rubro, datos
+  // operativos nuleados por validación; "none" = sin citas.
+  evidence_quality: EvidenceQuality;
 };
 
 type DiscoverOpts = {
@@ -50,8 +59,13 @@ export type DiscoveryDiagnostics = {
   claude_response_chars: number;
   claude_response_preview: string;
   claude_extracted: number;
+  // Calidad de evidencia (post-validación de fuentes):
+  evidence_specific: number; // citas que nombran la empresa
+  evidence_generic_dropped: number; // solo contexto rubro, descartadas
+  evidence_none_dropped: number; // sin citas, descartadas
   passed_name: number;
   passed_dedup: number;
+  passed_evidence: number;
   passed_fit: number;
   salvaged_linkedin: number;
   passed_linkedin_regex: number;
@@ -104,32 +118,58 @@ function renderIcpPrompt(icp: IcpConfig): string {
 }
 
 const SYSTEM_DISCOVERY = `Eres analista de prospección B2B para weCAD4you, un servicio de outsourcing de diseño CAD/CAM dental.
-Tu trabajo es extraer empresas reales que aparezcan en la investigación web entregada, dejando que el sistema posterior filtre las que no cumplen el ICP.
+
+PRINCIPIO RECTOR (no negociable):
+PREFIERO HONESTIDAD SOBRE COMPLETITUD. Una tarjeta que dice "no hay información pública digital sobre esta empresa" es 1000 veces mejor que una tarjeta con datos inventados. Si vas a hacer outreach con datos falsos, la prospección se vuelve MUY MALA. Bajo NINGUNA circunstancia rellenes campos con información de contexto general del rubro y la atribuyas a una empresa específica.
+
+REGLA DE EVIDENCIA POR EMPRESA (la regla más importante):
+Cada hecho que escribas sobre una empresa específica DEBE estar respaldado por una cita [N] que LITERALMENTE nombre a esa empresa. Las citas genéricas del rubro (PDFs académicos sobre CAD/CAM dental, artículos sobre tendencias del sector, guías universitarias, listados de directorios generales) NO sirven como respaldo de hechos operativos de una empresa específica. Sirven solo para confirmar que el rubro existe — nada más.
+
+Si la evidencia provista NO trae una cita que nombre a la empresa Y describa el hecho:
+  → cad_software, scanner_technology, competitor_match → null
+  → fit_signals → no incluir esa señal
+  → fit_score → no puede ser "high"
 
 Reglas de extracción:
-- Trabajas ÚNICAMENTE con la evidencia provista. No inventes empresas ni señales. Si la evidencia no menciona algo, déjalo en null.
-- Extrae empresas que la evidencia mencione como laboratorio dental, clínica multi-centro o DSO, aunque falten campos. El filtrado fino (LinkedIn URL válida, país, tamaño) lo hace el código después; tu trabajo es no perder candidatos válidos en este paso.
+- Trabajas ÚNICAMENTE con la evidencia provista. Si la evidencia no menciona algo de UNA empresa específica, déjalo en null. NO inventes, NO infieras, NO extrapoles del contexto del rubro.
+- Extrae empresas que la evidencia mencione como laboratorio dental, clínica multi-centro o DSO, aunque falten campos. Una empresa puede entrar con datos casi todos en null si la evidencia confirma que existe y es del rubro pero no aporta detalles operativos. Eso es preferible a llenar campos a mojón.
 - **NO extraigas** (estos NO son nuestro target y ensucian la cola de revisión):
   - Distribuidores de insumos o equipos dentales.
   - Fabricantes de equipos, materiales o software dental.
   - Proveedores, mayoristas, consultoras, agencias.
   - Centros de fresado que solo venden equipos sin operar como laboratorio.
   - Empresas de OTRAS industrias (biotecnología, agro, farma, etc.) — aunque el nombre tenga la palabra "lab".
-  Si una empresa NO es claramente un laboratorio dental, una clínica dental multi-centro o un DSO que opera como tal, NO la incluyas en absoluto. No uses "other" como cajón de sastre: si no encaja en lab/multi_clinic/dso, omitila.
-- Una empresa califica si: es lab / multi-centro / DSO + tiene evidencia de flujo digital + tiene volumen real (no 1–2 personas).
-- Si la empresa ya externaliza con un competidor (Evident, Full Contour, Aidite, Automate by 3Shape), márcala como "high" y rellena competitor_match.
-- Tener diseñadores propios NO descarta — es señal de que entienden el valor.
-- Tamaño de empresa: estima en empleados. Si la evidencia da un rango, usa el punto medio. Si no hay tamaño, deja null (no descartes por eso). Respeta la banda de tamaño pedida en ambos extremos:
-  - Si la evidencia dice que la empresa es mucho más grande que el rango pedido, probablemente no es nuestro target.
-  - Si la evidencia indica que es un micro-laboratorio claramente más chico que el rango (badge "2-10 employees" / "1-10 employees" en LinkedIn, "1-2 personas", taller unipersonal) y el rango pedido es mayor, NO lo incluyas: los micro-labs no tienen el volumen ni los buyer personas que necesitamos, y su página de LinkedIn suele estar vacía (sin empleados asociados), así que la búsqueda de contactos posterior rinde cero.
-- company_linkedin_url: si la evidencia trae la URL corporativa de LinkedIn (formato https://www.linkedin.com/company/<slug>), inclúyela LITERAL. Si no la trae, deja null — NO la inventes ni construyas desde el nombre, pero TAMPOCO descartes la empresa por eso.
-- company_country: usa el código ISO de 2 letras cuando puedas inferirlo de la evidencia (US, CA, MX, GB, etc.). Si no puedes inferirlo, deja null (no descartes por eso).
-- company_website: si lo incluyes, debe estar literal en la evidencia. Si dudas, déjalo en null antes que inventar.
+  Si una empresa NO es claramente un laboratorio dental, una clínica dental multi-centro o un DSO que opera como tal, NO la incluyas en absoluto. No uses "other" como cajón de sastre.
+
+Campos operativos (cad_software, scanner_technology, competitor_match):
+- SOLO se incluyen si una cita [N] específica menciona a ESTA empresa Y describe ese hecho.
+- Prohibido inferir de: contexto general del rubro, patrones de la región, "típico de labs de este tamaño", "probablemente usan X".
+- Si la evidencia dice "muchos labs en EE.UU. usan exocad" → eso NO te autoriza a poner cad_software="exocad" en ninguna empresa específica.
+- Si la evidencia solo lista a la empresa (Manta, Yelp, BBB, directorios) sin detalles tecnológicos → todos los campos operativos van en null.
+
+Tamaño de empresa:
+- Solo si la evidencia da el dato para esta empresa específica (LinkedIn employee count, página About Us, perfil de Manta con tamaño). NO inferir de "probablemente pequeño" o del barrio.
+- Si no hay dato → null. Respeta la banda pedida solo para descartar groseros (micro-labs 1-10 cuando piden 30+).
+
+URLs y ubicación:
+- company_linkedin_url: si la evidencia trae la URL corporativa de LinkedIn (formato https://www.linkedin.com/company/<slug>), inclúyela LITERAL. Si no la trae, deja null — NUNCA la inventes ni construyas desde el nombre.
+- company_website: literal de la evidencia. Si dudas, null.
+- company_country: código ISO 2 letras si la evidencia lo confirma. Si no, null.
+
+fit_signals (formato exacto y obligatorio):
+- Lista corta separada por " · ".
+- CADA señal operativa (software, escáner, externalización con competidor, contratación activa, casos digitales, expansión, tutoriales propios, partnerships) DEBE terminar con [N] indicando la cita exacta que la respalda con mención literal de la empresa.
+- Las señales descriptivas (tipo de empresa, ubicación, tamaño aproximado) NO requieren [N].
+- Si una empresa no tiene NINGUNA señal operativa con cita específica, fit_signals puede ser corto (solo descriptivo) o vacío. Vacío es ACEPTABLE. Inventar es INACEPTABLE.
+- Ejemplos válidos:
+  - "Laboratorio dental local · 3Shape inLab confirmado en página de servicios [2] · contratando CAD designer (job posting Indeed) [4]" ← señales operativas tienen [N].
+  - "Laboratorio dental en Salt Lake City · Sin evidencia pública de software CAD ni escáner" ← honesto, sin señales operativas inventadas.
+  - "" ← vacío, mejor que inventar.
 
 Reglas de scoring (fit_score):
-- "high": labs con software exocad o inLab confirmado, O empresas que ya externalizan con un competidor (Evident, Full Contour, Aidite, Automate). Esto es el sweet spot de weCAD4you.
-- "medium": labs con 3Shape o Dental Wings, O labs con señales digitales fuertes pero sin software CAD confirmado, O labs exocad/inLab sin evidencia adicional. 3Shape NO sube a "high" salvo que tenga TRES o más señales adicionales fuertes (competidor en uso, contratación CAD activa, escáner premium, casos digitales publicados).
-- "low": evidencia digital débil, posible flujo analógico, o tamaño fuera de banda.
+- "high": labs con exocad o inLab confirmado por cita específica [N], O empresas que ya externalizan con competidor (Evident, Full Contour, Aidite, Automate by 3Shape) confirmado por cita específica [N]. Sin cita específica de la empresa, NUNCA "high".
+- "medium": labs con 3Shape o Dental Wings confirmado por cita específica [N], O labs con señales digitales fuertes nombradas por cita específica. 3Shape NO sube a "high" salvo que tenga TRES o más señales operativas confirmadas adicionales (todas con [N]).
+- "low": evidencia digital débil, solo descriptiva, O sin citas específicas de la empresa. Si las citas son TODAS genéricas del rubro y ninguna nombra a la empresa, fit_score = "low" SIEMPRE.
 
 Devuelve SIEMPRE JSON válido con esta forma exacta:
 {
@@ -151,8 +191,7 @@ Devuelve SIEMPRE JSON válido con esta forma exacta:
     }
   ]
 }
-fit_signals: una lista corta y concreta de las señales detectadas, separadas por " · ".
-research_summary: 2–3 frases explicando por qué califica esta empresa según el ICP.`;
+research_summary: 2–3 frases honestas. Si hay evidencia específica, decí qué dice. Si NO hay evidencia específica, decilo así: "Listada como [tipo] en [fuente genérica]. No hay información pública sobre software CAD, escáner u operación digital. Fit incierto sin verificación directa." NO inventes una narrativa optimista para llenar el campo.`;
 
 function renderSizeHint(min: number, max: number | null, note?: string | null): string {
   const range = max === null ? `${min}+` : `${min}–${max}`;
@@ -238,6 +277,11 @@ Estrategia de búsqueda (sigue este orden):
 3. Después, si necesitas completar el conteo, agrega labs con 3Shape o Dental Wings que tengan otras señales fuertes.
 4. Diversifica entre varios estados/regiones para no concentrar todo en un solo lugar.
 
+REGLAS DE EVIDENCIA (críticas):
+- Para CADA empresa que devuelvas, las citas deben nombrar específicamente a esa empresa (su sitio web, su perfil de LinkedIn, su listado en directorio, una nota de prensa que la mencione, un job posting suyo, un caso publicado por ella). Las citas genéricas del rubro (PDFs académicos, guías universitarias, artículos de tendencias) NO sirven como respaldo de hechos operativos.
+- Si solo encontrás contexto general del rubro sin fuentes que nombren a la empresa, INCLUILA igual (puede ser real) pero NO inventes software, escáner ni señales operativas — el sistema posterior validará y bajará el score.
+- Para CADA hecho operativo que reportes sobre una empresa (software CAD, escáner, externalización con competidor, contratación activa, expansión, casos digitales), citá la fuente específica que lo respalda con [N]. Si no tenés cita específica, NO reportes el hecho — reportá "sin información pública" honestamente.
+
 Cita la fuente de cada empresa con [N].${excludeBlock}`;
 
   const research = await perplexitySearch({
@@ -280,7 +324,7 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
     .join("\n");
 
   const parsed = extractJson(text);
-  const companies: DiscoveredCompany[] = Array.isArray(parsed?.companies)
+  const rawCompanies: DiscoveredCompany[] = Array.isArray(parsed?.companies)
     ? parsed.companies.map((c: any) => ({
         company_name: String(c.company_name ?? "").trim(),
         company_website: c.company_website ?? null,
@@ -297,9 +341,30 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
         fit_score: ["high", "medium", "low"].includes(c.fit_score) ? c.fit_score : "medium",
         competitor_match: c.competitor_match ?? null,
         research_summary: String(c.research_summary ?? ""),
-        research_sources: research.citations
+        research_sources: research.citations,
+        evidence_quality: evidenceQuality(String(c.company_name ?? "").trim(), research.citations)
       }))
     : [];
+
+  // VALIDACIÓN DE EVIDENCIA — paso crítico.
+  // Para cada empresa, strippea señales operativas que no tengan cita [N]
+  // específica que nombre a la empresa, y degrada fit_score si la empresa
+  // no tiene NINGUNA cita específica. Esto previene el caso Elite Dental
+  // Lab (todas las señales operativas inventadas a partir de PDFs genéricos
+  // del rubro).
+  const companies: DiscoveredCompany[] = rawCompanies.map((c) => {
+    const { company, outcome } = validateCompanyEvidence(c);
+    return { ...company, evidence_quality: outcome.evidence_quality };
+  });
+
+  let evidenceSpecific = 0;
+  let evidenceGenericDropped = 0;
+  let evidenceNoneDropped = 0;
+  for (const c of companies) {
+    if (c.evidence_quality === "specific") evidenceSpecific++;
+    else if (c.evidence_quality === "generic") evidenceGenericDropped++;
+    else evidenceNoneDropped++;
+  }
 
   // Pipeline de filtros — registrar cuántas empresas sobreviven a cada paso
   // para mostrar el funnel en la UI.
@@ -308,10 +373,18 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
   const namedOnly = companies.filter((c) => c.company_name.length > 0);
   const dedupOnly = namedOnly.filter((c) => !excludeSet.has(c.company_name.toLowerCase().trim()));
 
+  // Filtro estricto de evidencia: si la empresa no tiene NINGUNA cita
+  // específica que la nombre, queda fuera del discovery broad. El usuario
+  // todavía puede sumarla manualmente vía "Buscar por nombre" (research-one
+  // hace una búsqueda dirigida y trae citas específicas honestamente).
+  // Esto reemplaza el problema Elite Dental Lab: ahora preferimos perder
+  // candidatos antes que entregar tarjetas con datos inventados.
+  const evidenceOnly = dedupOnly.filter((c) => c.evidence_quality === "specific");
+
   // Filtro de fit: descarta tipos fuera de target (distribuidores, fabricantes,
   // no-dentales que Claude marcó "other") y tamaños groseramente fuera de banda.
   // Esto evita que basura llegue a la cola de revisión humana.
-  const fitOnly = dedupOnly.filter((c) => passesFit(c, size_min, size_max));
+  const fitOnly = evidenceOnly.filter((c) => passesFit(c, size_min, size_max));
 
   // Salvataje de LinkedIn URL: el mayor asesino de yield es que Claude deja
   // company_linkedin_url en null porque Perplexity no la trajo literal. Para
@@ -364,8 +437,12 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
     claude_response_chars: text.length,
     claude_response_preview: text.slice(0, 800),
     claude_extracted: companies.length,
+    evidence_specific: evidenceSpecific,
+    evidence_generic_dropped: evidenceGenericDropped,
+    evidence_none_dropped: evidenceNoneDropped,
     passed_name: namedOnly.length,
     passed_dedup: dedupOnly.length,
+    passed_evidence: evidenceOnly.length,
     passed_fit: fitOnly.length,
     salvaged_linkedin: salvagedCount,
     passed_linkedin_regex: regexOnly.length,

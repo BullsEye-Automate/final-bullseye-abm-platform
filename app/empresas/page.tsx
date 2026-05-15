@@ -14,7 +14,8 @@ import {
   IconTrash,
   IconSearch,
   IconUpload,
-  IconFileText
+  IconFileText,
+  IconShieldCheck
 } from "@tabler/icons-react";
 
 type Company = {
@@ -42,6 +43,11 @@ type Company = {
   hubspot_synced_at: string | null;
   hubspot_sync_error: string | null;
   created_at: string;
+  // Calidad de evidencia computada server-side. "specific" = al menos una
+  // cita de research_sources nombra la empresa. "generic" = solo contexto
+  // del rubro. "none" = sin citas. Las dos últimas son sospechosas (datos
+  // probablemente alucinados por el prompt viejo).
+  evidence_quality?: "specific" | "generic" | "none";
 };
 
 const REGIONS: { value: string; label: string }[] = [
@@ -219,8 +225,12 @@ export default function EmpresasPage() {
       claude_response_chars: number;
       claude_response_preview: string;
       claude_extracted: number;
+      evidence_specific?: number;
+      evidence_generic_dropped?: number;
+      evidence_none_dropped?: number;
       passed_name: number;
       passed_dedup: number;
+      passed_evidence?: number;
       passed_fit: number;
       salvaged_linkedin: number;
       passed_linkedin_regex: number;
@@ -839,6 +849,12 @@ Smile Designers Lab,,,`}
                   <FunnelStep label="Claude extrajo" value={lastRun.diagnostics.claude_extracted} />
                   <FunnelStep label="Con nombre" value={lastRun.diagnostics.passed_name} />
                   <FunnelStep label="No duplicadas" value={lastRun.diagnostics.passed_dedup} />
+                  {typeof lastRun.diagnostics.passed_evidence === "number" && (
+                    <FunnelStep
+                      label="Con evidencia específica"
+                      value={lastRun.diagnostics.passed_evidence}
+                    />
+                  )}
                   <FunnelStep label="Pasó filtro de fit" value={lastRun.diagnostics.passed_fit} />
                   <FunnelStep
                     label="LinkedIn salvados"
@@ -1050,6 +1066,53 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
   const [scrapeMsg, setScrapeMsg] = useState<{ kind: "ok" | "warn" | "err"; text: string } | null>(
     null
   );
+  const [reverifying, setReverifying] = useState(false);
+  const [reverifyMsg, setReverifyMsg] = useState<{
+    kind: "ok" | "warn" | "err";
+    text: string;
+  } | null>(null);
+
+  async function reverify() {
+    const ok = window.confirm(
+      `Re-verificar "${c.company_name}" con IA?\n\nVa a investigar la empresa otra vez usando el prompt estricto (sin invención). Si los datos viejos eran inventados, se reemplazan con la versión honesta (puede quedar sin software CAD ni escáner si no hay info pública).\n\nNo se toca el estado (aprobada / pendiente / rechazada) ni los IDs de Clay / HubSpot.`
+    );
+    if (!ok) return;
+    setReverifying(true);
+    setReverifyMsg(null);
+    try {
+      const res = await fetch(`/api/companies/${c.id}/re-verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apply: true })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReverifyMsg({ kind: "err", text: data.error ?? `HTTP ${res.status}` });
+      } else if (data.not_found) {
+        setReverifyMsg({ kind: "warn", text: data.message ?? "Sin información pública nueva." });
+      } else {
+        const eq = data.evidence_quality;
+        const eqLabel =
+          eq === "specific"
+            ? "evidencia específica"
+            : eq === "generic"
+            ? "solo contexto del rubro"
+            : "sin citas";
+        setReverifyMsg({
+          kind: eq === "specific" ? "ok" : "warn",
+          text: `Re-verificada. Calidad de evidencia: ${eqLabel}. Datos operativos actualizados según las fuentes que nombran a la empresa.`
+        });
+        onChange();
+      }
+    } catch (err) {
+      setReverifyMsg({
+        kind: "err",
+        text: err instanceof Error ? err.message : "Error de red"
+      });
+    } finally {
+      setReverifying(false);
+    }
+  }
 
   async function scrapeWebsite() {
     setScraping(true);
@@ -1171,6 +1234,22 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
                 title="Clay corrió Find People y no encontró contactos en LinkedIn para esta empresa. Prueba 'Buscar contactos en la web' abajo."
               >
                 Clay: 0 contactos
+              </span>
+            )}
+            {c.evidence_quality === "generic" && (
+              <span
+                className="badge bg-warning-bg text-warning-fg"
+                title="Las fuentes guardadas no nombran a esta empresa específicamente — son contexto del rubro. Los datos operativos (software, escáner, externalización) probablemente fueron inferidos del rubro y no son confiables. Recomendado: Re-verificar con IA."
+              >
+                evidencia genérica
+              </span>
+            )}
+            {c.evidence_quality === "none" && (
+              <span
+                className="badge bg-danger-bg text-danger-fg"
+                title="No hay fuentes guardadas para esta empresa. Cualquier dato operativo es sospechoso. Recomendado: Re-verificar con IA."
+              >
+                sin citas
               </span>
             )}
           </div>
@@ -1426,20 +1505,48 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-1">
-        {c.company_website ? (
+      {reverifyMsg && (
+        <div
+          className={`flex items-start gap-2 rounded-md px-3 py-2 text-xs ${
+            reverifyMsg.kind === "ok"
+              ? "bg-success-bg text-success-fg"
+              : reverifyMsg.kind === "warn"
+              ? "bg-warning-bg text-warning-fg"
+              : "bg-danger-bg text-danger-fg"
+          }`}
+        >
+          {reverifyMsg.kind === "ok" ? (
+            <IconCheck size={13} className="shrink-0 mt-0.5" />
+          ) : (
+            <IconAlertCircle size={13} className="shrink-0 mt-0.5" />
+          )}
+          <span>{reverifyMsg.text}</span>
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+        <div className="flex flex-wrap items-center gap-3">
+          {c.company_website && (
+            <button
+              onClick={scrapeWebsite}
+              disabled={scraping}
+              className="text-xs text-ink-muted hover:text-brand inline-flex items-center gap-1"
+              title="Busca la página de equipo del sitio web y extrae contactos (nombre, cargo, email). Útil para labs que tienen su equipo en la web pero no en LinkedIn."
+            >
+              <IconSearch size={12} />
+              {scraping ? "Buscando en la web…" : "Buscar contactos en la web"}
+            </button>
+          )}
           <button
-            onClick={scrapeWebsite}
-            disabled={scraping}
+            onClick={reverify}
+            disabled={reverifying}
             className="text-xs text-ink-muted hover:text-brand inline-flex items-center gap-1"
-            title="Busca la página de equipo del sitio web y extrae contactos (nombre, cargo, email). Útil para labs que tienen su equipo en la web pero no en LinkedIn."
+            title="Re-investiga la empresa con el prompt estricto. Si los datos viejos eran inferidos del rubro, los reemplaza por la versión honesta (puede dejar campos vacíos si no hay info pública)."
           >
-            <IconSearch size={12} />
-            {scraping ? "Buscando en la web…" : "Buscar contactos en la web"}
+            <IconShieldCheck size={12} />
+            {reverifying ? "Re-verificando…" : "Re-verificar con IA"}
           </button>
-        ) : (
-          <span />
-        )}
+        </div>
         <button
           onClick={removeCompany}
           disabled={deleting}
