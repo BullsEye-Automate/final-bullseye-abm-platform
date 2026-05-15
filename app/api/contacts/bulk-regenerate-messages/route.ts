@@ -16,7 +16,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateMessages, type MessageInput } from "@/lib/messageGenerator";
-import { addLeadToCampaign, deleteCampaignLead } from "@/lib/lemlist";
+import {
+  addLeadToCampaign,
+  deleteCampaignLead,
+  getCampaignLeads,
+  type LemlistCampaignLead
+} from "@/lib/lemlist";
 import { syncContactToHubSpot } from "@/lib/hubspotContactSync";
 
 export const runtime = "nodejs";
@@ -81,11 +86,33 @@ function changed(a: string | null, b: string | null): boolean {
   return (a ?? "").trim() !== (b ?? "").trim();
 }
 
+// Resuelve el lead.id en Lemlist usando el mapa precargado de la campaña.
+// Prioriza email (más estable que linkedinUrl en Lemlist), después
+// linkedin_url. Si no encuentra match, devuelve null y el caller decide.
+function findLeadInCampaign(
+  contact: { email: string | null; linkedin_url: string | null },
+  byEmail: Map<string, LemlistCampaignLead>,
+  byLinkedin: Map<string, LemlistCampaignLead>
+): LemlistCampaignLead | null {
+  if (contact.email) {
+    const hit = byEmail.get(contact.email.toLowerCase().trim());
+    if (hit) return hit;
+  }
+  if (contact.linkedin_url) {
+    const normalized = contact.linkedin_url.toLowerCase().trim().replace(/\/$/, "");
+    const hit = byLinkedin.get(normalized);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 async function processOne(
   contact: ContactRow,
   company: CompanyRow | null,
   refreshLemlist: boolean,
   refreshHubspot: boolean,
+  campaignLeadsByEmail: Map<string, LemlistCampaignLead>,
+  campaignLeadsByLinkedin: Map<string, LemlistCampaignLead>,
   db: ReturnType<typeof supabaseAdmin>
 ): Promise<PerContactResult> {
   const fullName = [contact.first_name, contact.last_name].filter(Boolean).join(" ").trim();
@@ -183,17 +210,37 @@ async function processOne(
         result.lemlist = "error";
         result.lemlist_error = "LEMLIST_CAMPAIGN_ID no configurado";
       } else {
-        // 1) DELETE — best-effort. Si falla, igual intentamos ADD (Lemlist
-        // suele aceptar re-creación con el mismo email; si no, devolverá
-        // duplicate y lo registramos en el error.
-        const del = await deleteCampaignLead(campaignId, {
-          id: null,
-          email: contact.email
-        });
-        // 2) ADD.
+        // 1) Resolver el lead.id buscando en el snapshot precargado de la
+        // campaña. Muchos contactos tienen email=null en nuestra DB
+        // (Lemlist enriqueció el email del lado de ellos), así que DELETE
+        // por email solo no alcanza. El mapa por linkedin_url cubre ese
+        // caso. Si tampoco está en el snapshot (lead vivió pero ya no),
+        // el DELETE no se intenta y el ADD funciona como creación normal.
+        const matched = findLeadInCampaign(
+          contact,
+          campaignLeadsByEmail,
+          campaignLeadsByLinkedin
+        );
+
+        let delError: string | null = null;
+        if (matched && (matched.id || matched.email)) {
+          const del = await deleteCampaignLead(campaignId, {
+            id: matched.id,
+            // Lemlist enrich-updated email — usamos el de Lemlist sobre
+            // el nuestro si está, porque su DELETE-by-email matchea por
+            // exact-string del lado de ellos.
+            email: matched.email ?? contact.email
+          });
+          if (!del.ok) delError = del.error;
+        }
+
+        // 2) ADD con los mensajes nuevos.
         const add = await addLeadToCampaign(campaignId, {
           linkedinUrl: contact.linkedin_url,
-          email: contact.email,
+          // Si Lemlist tenía email enriquecido, lo usamos para el ADD
+          // también (mejora la chance de upsert correcto si el lead
+          // no fue borrado).
+          email: matched?.email ?? contact.email,
           firstName: contact.first_name,
           lastName: contact.last_name,
           companyName: company.company_name,
@@ -207,18 +254,23 @@ async function processOne(
           wecad_fit_action: "enrich"
         });
         if (add.ok) {
-          await db
-            .from("contacts")
-            .update({
-              lemlist_pushed_at: new Date().toISOString(),
-              lemlist_push_error: null
-            })
-            .eq("id", contact.id);
+          // Si Lemlist nos enriqueció el email y nuestro DB lo tenía null,
+          // lo guardamos ahora — útil para refreshes futuros sin depender
+          // del snapshot.
+          const updates: Record<string, unknown> = {
+            lemlist_pushed_at: new Date().toISOString(),
+            lemlist_push_error: null
+          };
+          if (!contact.email && matched?.email) updates.email = matched.email;
+          await db.from("contacts").update(updates).eq("id", contact.id);
           result.lemlist = "refreshed";
         } else {
-          const errMsg = `Lemlist ADD falló: ${add.error}${
-            !del.ok ? ` · DELETE previo también falló (${del.error})` : ""
-          }`;
+          const reason = !matched
+            ? "lead no encontrado en snapshot de campaña — DELETE saltado"
+            : delError
+            ? `DELETE falló (${delError})`
+            : "DELETE intentado OK";
+          const errMsg = `Lemlist ADD falló: ${add.error} · ${reason}`;
           await db
             .from("contacts")
             .update({ lemlist_push_error: errMsg })
@@ -331,6 +383,36 @@ export async function POST(req: NextRequest) {
 
   const batch = filtered.slice(0, limit);
 
+  // Snapshot de la campaña en Lemlist (una sola llamada compartida por todo
+  // el batch). Sin esto no podemos resolver el lead.id de contactos cuyo
+  // email nuestra DB tiene en null (Lemlist enriqueció el email del lado de
+  // ellos), y el DELETE-by-email solo falla → el ADD se rechaza como
+  // duplicado. Cargamos una vez upfront, indexamos por email + linkedin_url.
+  const campaignLeadsByEmail = new Map<string, LemlistCampaignLead>();
+  const campaignLeadsByLinkedin = new Map<string, LemlistCampaignLead>();
+  let lemlistSnapshotError: string | null = null;
+  if (refreshLemlist) {
+    const campaignId = process.env.LEMLIST_CAMPAIGN_ID;
+    if (!campaignId) {
+      lemlistSnapshotError = "LEMLIST_CAMPAIGN_ID no configurado";
+    } else {
+      const snap = await getCampaignLeads(campaignId);
+      if (!snap.ok) {
+        lemlistSnapshotError = `getCampaignLeads falló: ${snap.error}`;
+      } else {
+        for (const lead of snap.leads) {
+          if (lead.email) {
+            campaignLeadsByEmail.set(lead.email.toLowerCase().trim(), lead);
+          }
+          if (lead.linkedin_url) {
+            const normalized = lead.linkedin_url.toLowerCase().trim().replace(/\/$/, "");
+            campaignLeadsByLinkedin.set(normalized, lead);
+          }
+        }
+      }
+    }
+  }
+
   const results: PerContactResult[] = [];
   for (let i = 0; i < batch.length; i += CONCURRENCY) {
     const chunk = batch.slice(i, i + CONCURRENCY);
@@ -341,6 +423,8 @@ export async function POST(req: NextRequest) {
           companyById.get(ct.company_id) ?? null,
           refreshLemlist,
           refreshHubspot,
+          campaignLeadsByEmail,
+          campaignLeadsByLinkedin,
           db
         )
       )
@@ -355,6 +439,8 @@ export async function POST(req: NextRequest) {
     regenerated: results.filter((r) => r.status === "regenerated").length,
     skipped_no_change: results.filter((r) => r.status === "skipped_no_change").length,
     no_company: results.filter((r) => r.status === "no_company").length,
+    lemlist_snapshot_size: campaignLeadsByEmail.size + campaignLeadsByLinkedin.size,
+    lemlist_snapshot_error: lemlistSnapshotError,
     lemlist_refreshed: results.filter((r) => r.lemlist === "refreshed").length,
     lemlist_errors: results.filter((r) => r.lemlist === "error").length,
     hubspot_refreshed: results.filter((r) => r.hubspot === "refreshed").length,

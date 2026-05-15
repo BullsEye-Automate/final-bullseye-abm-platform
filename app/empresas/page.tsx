@@ -394,6 +394,8 @@ export default function EmpresasPage() {
     processed: number;
     regenerated: number;
     skipped_no_change: number;
+    lemlist_snapshot_size?: number;
+    lemlist_snapshot_error?: string | null;
     lemlist_refreshed: number;
     lemlist_errors: number;
     hubspot_refreshed: number;
@@ -1206,6 +1208,17 @@ Smile Designers Lab,,,`}
                   {" "}
                   · {bulkRegenerateResult.lemlist_errors} errores
                 </span>
+              )}
+              {typeof bulkRegenerateResult.lemlist_snapshot_size === "number" && (
+                <span className="text-ink-muted">
+                  {" "}
+                  · snapshot de campaña: {bulkRegenerateResult.lemlist_snapshot_size} leads
+                </span>
+              )}
+              {bulkRegenerateResult.lemlist_snapshot_error && (
+                <div className="text-danger-fg mt-0.5">
+                  ⚠ Snapshot de Lemlist falló: {bulkRegenerateResult.lemlist_snapshot_error}
+                </div>
               )}
             </li>
             <li>
