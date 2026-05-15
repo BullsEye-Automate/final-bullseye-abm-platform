@@ -33,6 +33,9 @@ export type ReporteriaSnapshot = {
 
   outreach: {
     leads_in_lemlist: number;
+    emails_sent: number;
+    linkedin_invitations: number;
+    linkedin_messages: number;
     calls_made: number;
     calls_connected: number;
     avg_duration_sec: number | null;
@@ -174,24 +177,53 @@ export async function computeReporteria(
   const conversationsNow = callsNow + repliesNow;
   const conversationsPrev = callsPrev + repliesPrev;
 
-  // Hot leads = calls interested/callback + respuestas positivas.
-  const positiveRepliesNow = await db
-    .from("lemlist_activities")
-    .select("id", { count: "exact", head: true })
-    .eq("type", "repliedTo")
-    .in("reply_category", Array.from(POSITIVE_REPLY_CATEGORIES))
-    .gte("activity_at", start.toISOString())
-    .lt("activity_at", end.toISOString());
-  const positiveRepliesPrev = await db
-    .from("lemlist_activities")
-    .select("id", { count: "exact", head: true })
-    .eq("type", "repliedTo")
-    .in("reply_category", Array.from(POSITIVE_REPLY_CATEGORIES))
-    .gte("activity_at", previous.start.toISOString())
-    .lt("activity_at", previous.end.toISOString());
+  // Hot leads = contactos ÚNICOS con engagement real (call interesado/
+  // callback en cualquier momento + respuesta positiva en período).
+  // Mismo criterio que la tabla de hot leads abajo, para que los números
+  // coincidan.
+  const [positiveRepliesContactsNow, positiveRepliesContactsPrev] = await Promise.all([
+    db
+      .from("lemlist_activities")
+      .select("contact_id")
+      .eq("type", "repliedTo")
+      .in("reply_category", Array.from(POSITIVE_REPLY_CATEGORIES))
+      .gte("activity_at", start.toISOString())
+      .lt("activity_at", end.toISOString()),
+    db
+      .from("lemlist_activities")
+      .select("contact_id")
+      .eq("type", "repliedTo")
+      .in("reply_category", Array.from(POSITIVE_REPLY_CATEGORIES))
+      .gte("activity_at", previous.start.toISOString())
+      .lt("activity_at", previous.end.toISOString())
+  ]);
+  const [interestedCallContactsNow, interestedCallContactsPrev] = await Promise.all([
+    db
+      .from("calls")
+      .select("contact_id")
+      .in("customer_response_category", ["interested", "callback_requested"])
+      .gte("call_timestamp", start.toISOString())
+      .lt("call_timestamp", end.toISOString()),
+    db
+      .from("calls")
+      .select("contact_id")
+      .in("customer_response_category", ["interested", "callback_requested"])
+      .gte("call_timestamp", previous.start.toISOString())
+      .lt("call_timestamp", previous.end.toISOString())
+  ]);
+  const uniqueIdsNow = new Set<string>();
+  for (const r of (positiveRepliesContactsNow.data ?? []) as Array<{ contact_id: string | null }>)
+    if (r.contact_id) uniqueIdsNow.add(r.contact_id);
+  for (const r of (interestedCallContactsNow.data ?? []) as Array<{ contact_id: string | null }>)
+    if (r.contact_id) uniqueIdsNow.add(r.contact_id);
+  const uniqueIdsPrev = new Set<string>();
+  for (const r of (positiveRepliesContactsPrev.data ?? []) as Array<{ contact_id: string | null }>)
+    if (r.contact_id) uniqueIdsPrev.add(r.contact_id);
+  for (const r of (interestedCallContactsPrev.data ?? []) as Array<{ contact_id: string | null }>)
+    if (r.contact_id) uniqueIdsPrev.add(r.contact_id);
 
-  const hotNow = interestedNow + (positiveRepliesNow.count ?? 0);
-  const hotPrev = interestedPrev + (positiveRepliesPrev.count ?? 0);
+  const hotNow = uniqueIdsNow.size;
+  const hotPrev = uniqueIdsPrev.size;
 
   const hero = {
     companies_worked: mkDelta(companiesNow, companiesPrev),
@@ -201,10 +233,11 @@ export async function computeReporteria(
     hot_leads: mkDelta(hotNow, hotPrev)
   };
 
-  // 3) Executive funnel — 5 pasos limpios.
+  // 3) Executive funnel — pasos limpios.
   const baseDiscovered = dash.pipeline.companies_discovered.current;
   const baseApproved = dash.pipeline.companies_approved.current;
-  const baseContacts = dash.pipeline.contacts_imported.current;
+  const baseContactsTotal = dash.pipeline.contacts_imported.current; // total levantado
+  const baseContactsFit = dash.pipeline.contacts_yes.current; // pasaron pre-filter
   const baseLemlist = dash.pipeline.contacts_in_lemlist.current;
   const baseConversations = conversationsNow;
   const baseHot = hotNow;
@@ -218,14 +251,19 @@ export async function computeReporteria(
       rate_from_prev: safeRate(baseApproved, baseDiscovered)
     },
     {
-      step: "Contactos generados",
-      count: baseContacts,
-      rate_from_prev: safeRate(baseContacts, baseApproved)
+      step: "Contactos levantados (Clay)",
+      count: baseContactsTotal,
+      rate_from_prev: null
     },
     {
-      step: "En outreach (Lemlist)",
+      step: "Contactos fit (pasaron pre-filtro)",
+      count: baseContactsFit,
+      rate_from_prev: safeRate(baseContactsFit, baseContactsTotal)
+    },
+    {
+      step: "En outreach (correo + LinkedIn)",
       count: baseLemlist,
-      rate_from_prev: safeRate(baseLemlist, baseContacts)
+      rate_from_prev: safeRate(baseLemlist, baseContactsFit)
     },
     {
       step: "Conversaciones (calls + respuestas)",
@@ -239,13 +277,40 @@ export async function computeReporteria(
     }
   ];
 
-  // 4) Outreach detalle — calls aggregates.
-  const { data: callRowsAgg } = await db
-    .from("calls")
-    .select("duration_ms, sdr_score_overall, customer_response_category")
-    .gte("call_timestamp", start.toISOString())
-    .lt("call_timestamp", end.toISOString())
-    .limit(20000);
+  // 4) Outreach detalle — calls aggregates + breakdown de mensajes
+  // enviados (correos, invitaciones LinkedIn, mensajes LinkedIn).
+  const [callRowsAggRes, outreachActivitiesRes] = await Promise.all([
+    db
+      .from("calls")
+      .select("duration_ms, sdr_score_overall, customer_response_category")
+      .gte("call_timestamp", start.toISOString())
+      .lt("call_timestamp", end.toISOString())
+      .limit(20000),
+    db
+      .from("lemlist_activities")
+      .select("type, channel")
+      .gte("activity_at", start.toISOString())
+      .lt("activity_at", end.toISOString())
+      .limit(50000)
+  ]);
+  const callRowsAgg = callRowsAggRes.data;
+
+  // Contar emails enviados, invitaciones LinkedIn, mensajes LinkedIn.
+  let emails_sent = 0;
+  let linkedin_invitations = 0;
+  let linkedin_messages = 0;
+  for (const a of (outreachActivitiesRes.data ?? []) as Array<{
+    type: string | null;
+    channel: string | null;
+  }>) {
+    const t = (a.type ?? "").toLowerCase();
+    if (t.startsWith("emailssent") || t === "emailsent" || t === "emailsdelivered")
+      emails_sent++;
+    else if (t === "linkedininvite" || t === "linkedininvitedelivered")
+      linkedin_invitations++;
+    else if (t === "linkedinsend" || t === "linkedinmessage" || t === "linkedinchatmessage")
+      linkedin_messages++;
+  }
   const callRows = (callRowsAgg ?? []) as Array<{
     duration_ms: number | null;
     sdr_score_overall: number | null;
@@ -273,6 +338,9 @@ export async function computeReporteria(
   const pickupTotal = pickupYes + pickupNo;
   const outreach = {
     leads_in_lemlist: dash.pipeline.contacts_in_lemlist.current,
+    emails_sent,
+    linkedin_invitations,
+    linkedin_messages,
     calls_made: callRows.length,
     calls_connected: pickupYes,
     avg_duration_sec: durationCount > 0 ? durationSum / durationCount / 1000 : null,
@@ -415,6 +483,12 @@ export async function computeReporteria(
       score += 25;
       signals.push("Pidió callback (vía respuesta)");
     }
+    // Solo incluir si hay UNA señal de engagement real (call interesado/
+    // callback, respuesta positiva o callback por respuesta). Sin señal
+    // de engagement no es un "hot lead" — es solo un fit alto que aún
+    // no respondió. Esto alinea el conteo con el Hero KPI.
+    const hasEngagement = signals.length > 0;
+    if (!hasEngagement) continue;
     if (typeof c.fit_score === "number") {
       score += Math.min(40, c.fit_score * 4);
       if (c.fit_score >= 8) signals.push(`Fit alto (${c.fit_score})`);
@@ -422,7 +496,7 @@ export async function computeReporteria(
     if (c.phone) score += 5;
     if (c.lemlist_pushed_at) score += 5;
     if (c.hubspot_contact_id) score += 5;
-    if (score > 0) ranked.push({ raw: c, score, signals });
+    ranked.push({ raw: c, score, signals });
   }
   ranked.sort((a, b) => b.score - a.score);
   const hot_leads = ranked.slice(0, 10).map((h) => {

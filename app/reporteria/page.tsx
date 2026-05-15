@@ -47,6 +47,9 @@ type Snapshot = {
   }>;
   outreach: {
     leads_in_lemlist: number;
+    emails_sent: number;
+    linkedin_invitations: number;
+    linkedin_messages: number;
     calls_made: number;
     calls_connected: number;
     avg_duration_sec: number | null;
@@ -371,10 +374,21 @@ function OutreachCard({ outreach }: { outreach: Snapshot["outreach"] }) {
         <h3 className="text-sm font-semibold text-ink">Outreach activo</h3>
       </div>
       <p className="text-xs text-ink-muted mb-4">
-        Leads que están recibiendo mensajes en Lemlist en el período.
+        Leads que están recibiendo mensajes por correo y LinkedIn en el
+        período.
       </p>
       <div className="space-y-3">
-        <Stat label="Leads en Lemlist" value={outreach.leads_in_lemlist} />
+        <Stat
+          label="Leads en outreach"
+          value={outreach.leads_in_lemlist}
+          sub="Correo + LinkedIn"
+        />
+        <Stat label="Correos enviados" value={outreach.emails_sent} />
+        <Stat
+          label="Invitaciones LinkedIn"
+          value={outreach.linkedin_invitations}
+        />
+        <Stat label="Mensajes LinkedIn" value={outreach.linkedin_messages} />
       </div>
     </div>
   );
@@ -561,10 +575,50 @@ function HotLeadsTable({ leads }: { leads: Snapshot["hot_leads"] }) {
           Hot leads para seguimiento
         </h3>
       </div>
-      <p className="text-xs text-ink-muted mb-4">
-        Top contactos rankeados por señales recientes (calls interesadas,
-        callbacks, respuestas positivas, fit alto).
+      <p className="text-xs text-ink-muted mb-2">
+        Top contactos con engagement real en el período: llamadas interesadas,
+        callbacks pedidos, o respuestas positivas. Excluye los que solo tienen
+        fit alto sin haber respondido todavía.
       </p>
+      <details className="text-xs text-ink-muted mb-4">
+        <summary className="cursor-pointer hover:text-ink select-none">
+          ¿Cómo se calcula el score?
+        </summary>
+        <div className="mt-2 pl-3 border-l-2 border-[#EEEDFE] space-y-0.5 text-[11px]">
+          <div>
+            <span className="font-medium text-ink">+50</span> · llamada
+            categorizada "interesado" (la más reciente).
+          </div>
+          <div>
+            <span className="font-medium text-ink">+35</span> · llamada
+            categorizada "callback requested".
+          </div>
+          <div>
+            <span className="font-medium text-ink">+30</span> · respuesta
+            positiva (interested, question) en el período.
+          </div>
+          <div>
+            <span className="font-medium text-ink">+25</span> · pidió callback
+            vía respuesta de Lemlist.
+          </div>
+          <div>
+            <span className="font-medium text-ink">+20</span> · objection
+            timing (sigue caliente, retomar después).
+          </div>
+          <div>
+            <span className="font-medium text-ink">+ fit_score × 4</span> ·
+            score del pre-filtro IA (0-40 pts).
+          </div>
+          <div>
+            <span className="font-medium text-ink">+5 c/u</span> · tiene
+            teléfono · está en Lemlist · está en HubSpot.
+          </div>
+          <div className="text-ink-subtle pt-1">
+            Solo entran al top contactos con al menos una señal de engagement
+            (las primeras 5 reglas). Fit alto solo no alcanza.
+          </div>
+        </div>
+      </details>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
