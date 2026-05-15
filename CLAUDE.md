@@ -1362,95 +1362,213 @@ API key en el entorno de dev). Está construido defensivo (varios patrones
 de URL, captura debug) — el usuario lo prueba en prod y el error del
 endpoint trae el `debug` si el shape no es el esperado.
 
+### PR #108 — Botón "Incluir las recién mandadas a Clay"
+
+El módulo espera 24h por defecto antes de mostrar una empresa (para no
+listar las que Clay todavía está procesando). Nuevo toggle en
+`/sales-navigator` → "Por revisar" que baja esa gracia a 0 y trae
+todas las empresas que pasaron por Clay y siguen sin contactos, sin
+importar cuán reciente sea el push. La UI marca con un aviso amarillo
+las cards de empresas mandadas a Clay hace <24h ("puede que Clay siga
+procesándola — verifica antes de buscar a mano"). El endpoint GET
+`/api/sales-navigator` acepta `?include_recent=1`.
+
+### PR #111 — Diagnóstico + escape hatch para el import desde Campaña puente
+
+Iteración sobre el import: el match por nombre de empresa fallaba en
+casos reales (ver "Pendiente abierto al cerrar 2026-05-15c" más abajo).
+Cambios para diagnosticar y desbloquear:
+
+- El endpoint `POST /api/sales-navigator/[id]/import` siempre devuelve
+  `staged_leads` (hasta 30 leads de la Campaña puente con su
+  `company_name` tal como Lemlist lo guarda, `job_title`, `linkedin_url`)
+  y `matched_url` (qué URL del GET de leads efectivamente respondió).
+- La UI, cuando hay leads en la puente pero ninguno matcheó por nombre,
+  muestra la lista de leads + botón "Importar N de todas formas a esta
+  empresa" (`?all=1`) — escape hatch que saltea el match.
+- Si `staged_total === 0` la UI dice "no llegó ningún lead" y muestra
+  el URL probado contra Lemlist, para diagnosticar si el shape del API
+  es distinto al asumido.
+
 ### Gaps conocidos al cierre Sprint 6 fase 4
 
-1. **Research de contactos best-effort**: LinkedIn bloquea scraping,
-   así que la IA depende de presencia pública en otras fuentes (sitio
-   de la empresa, prensa). Muchas veces va a devolver solo el nombre
-   del slug y el usuario completa el cargo a mano. Es esperado.
+1. **Match por nombre de empresa poco confiable** — la extensión de
+   Lemlist no captura `company_name` de forma consistente. Ver
+   "Pendiente abierto al cerrar 2026-05-15c — fix del match en Sales
+   Navigator" más abajo.
 2. **Deep link a Sales Navigator**: el botón abre una búsqueda de
    gente filtrada por nombre de empresa
    (`/sales/search/people?keywords=...`). Si LinkedIn cambia el
    formato del query string, igual cae en Sales Nav y el usuario
    busca a mano.
 3. **Sin API de Sales Navigator**: jalar resultados de búsqueda de
-   Sales Nav no tiene API usable (LinkedIn lo bloquea). La búsqueda y
-   el copiar-pegar de URLs los hace el usuario; el módulo solo
-   acelera el resto.
+   Sales Nav no tiene API usable (LinkedIn lo bloquea). La búsqueda la
+   hace el usuario en Sales Nav y los manda a la Campaña puente con la
+   extensión de Lemlist; la app jala desde ahí.
+
+## Chore — Español neutro LATAM (PR #110, sesión 2026-05-15c)
+
+El equipo es chileno. Se convirtió todo el texto visible para el usuario
+de voseo/rioplatense a tuteo neutro LATAM en 10 archivos (páginas y 2
+mensajes de error de API). Ejemplos: `pegá→pega`, `buscá→busca`,
+`volvé→vuelve`, `tocá→haz clic`, `tenés→tienes`, `querés→quieres`,
+`acá→aquí`, `dale al botón→haz clic en el botón`, `ojo:→atención:`.
+
+**Importante para futuras iteraciones**: cualquier texto NUEVO que se
+agregue a la UI o a mensajes de error debe estar en **tuteo neutro
+LATAM**, no en voseo argentino. Tampoco lenguaje muy regional chileno
+("po", "cachái") — neutro para que sirva si el equipo crece más allá de
+Chile. No se tocaron los comentarios del código (siguen como están).
+
+## Pendiente abierto al cerrar 2026-05-15c — fix del match en Sales Navigator
+
+El usuario testeó en vivo el flujo "Sales Nav → Campaña puente → app".
+Probó con 4 leads y el match por nombre de empresa no funcionó. Mirando
+los leads en la Campaña puente:
+
+| Lead | `company_name` en Lemlist | `job_title` |
+|---|---|---|
+| Jeff Stimpson | **(vacío)** | Dental Laboratory Manager |
+| Susan van Kinsbergen | "Artisan Dental Laboratory" | General Manager |
+| karl koch | "artisan dental lab" (minúsculas, abreviado) | Owner |
+| laurie langley | **(vacío)** | implant manager |
+
+Dos problemas estructurales del match:
+
+1. La extensión de Lemlist NO captura `company_name` de forma confiable
+   (2 de 4 leads quedaron vacíos).
+2. Cuando sí lo captura, hay variantes ("Artisan Dental Laboratory" vs
+   "artisan dental lab" para la misma empresa).
+
+**Decisión pendiente del usuario** (planteada al cierre, sin respuesta):
+
+- **Opción A — Importar todo, sin match (simple):** "Importar desde
+  Campaña puente" trae todos los leads de la puente a esta empresa, sin
+  filtrar. El workflow es per-empresa (procesar una, importar, pasar a
+  la siguiente). Riesgo: leftovers en la puente se asignan a la empresa
+  equivocada. Mitigación manual: borrar contactos mal asignados desde
+  `/contactos`, o limpiar la Campaña puente en Lemlist entre empresas.
+
+- **Opción B — Confirmación con checkboxes (más control):** Click en
+  "Importar desde Campaña puente" abre un preview con los N leads, todos
+  chequeados por default; el usuario desmarca los que no son de esta
+  empresa; click en "Importar N seleccionados". Un clic extra, cero
+  riesgo de cross-contamination.
+
+- **Adicional opcional (encima de A o B) — Auto-limpiar la puente:**
+  Después de importar OK, la app le hace DELETE a esos leads vía la API
+  de Lemlist (`DELETE /api/campaigns/{id}/leads/{email_o_id}`). La
+  Campaña puente queda vacía sola, sin leftovers. Riesgo: si el DELETE
+  falla, simplemente quedan leads en la puente (no rompe nada).
+
+Mi recomendación al usuario fue: **Opción B + auto-limpiar.** Pero
+quedó esperando su elección. **PRIMERA TAREA DE MAÑANA**: confirmar la
+opción y construirla.
+
+Mientras tanto el usuario tiene el escape hatch del PR #111 ("Importar
+de todas formas") — funcional pero requiere 2 clics.
 
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
-> Continúo weCAD4you-prospecting. Última sesión cerró Sprint 5 fase 7
-> (PRs #87, #88, #89 — push directo a Lemlist + UX de contactos).
-> Todo mergeado.
+> Continúo weCAD4you-prospecting. Última sesión (2026-05-15c) cerró
+> Sprint 6 fases 3 y 4 (PRs #105 a #111) + chore de idioma. Todo
+> mergeado. El usuario espera **terminar la app hoy**.
 >
 > ANTES DE CODEAR cualquier cosa nueva, leer CLAUDE.md completo,
-> especialmente las secciones "Hecho del Sprint 5 fase 7", "fase 6"
-> y "fase 5". También docs/contexto_sistema.md y
-> docs/notas_arquitectura.md.
+> especialmente:
+> - "Pendiente abierto al cerrar 2026-05-15c — fix del match en Sales
+>   Navigator" (esta es la TAREA INMEDIATA).
+> - "Hecho del Sprint 6 fase 3 — Responder desde la app (Lemlist Inbox
+>   API)".
+> - "Hecho del Sprint 6 fase 4 — Módulo Sales Navigator" + sus 3 sub-
+>   secciones de iteraciones (Campaña puente, PR #108, PR #111).
+> - "Chore — Español neutro LATAM (PR #110)" — **escribir en tuteo
+>   neutro LATAM, no voseo argentino**, en todo texto nuevo de la UI.
 >
-> SETUP HUBSPOT WEBHOOK — PENDIENTE DE TERMINAR Y PROBAR:
-> - Tengo Service Key BETA (no Private App legacy) en HubSpot.
-> - Creé Private App legacy "weCAD4you Webhooks" SOLO para webhooks.
->   El HUBSPOT_ACCESS_TOKEN en Vercel sigue siendo el de la Service Key.
-> - HUBSPOT_APP_SECRET ya está en Vercel + redeploy hecho.
-> - URL configurada: wecad-prospecting.vercel.app/api/hubspot/webhook/calls.
-> - Falta: crear las 2 subscriptions (Llamada → Creado + Llamada →
->   Cambio de propiedad). Para que aparezca "Llamada" en el dropdown
->   hay que activar el toggle BETA "¿Usar la ampliación de la cantidad
->   de objetos?". Properties de la 2da: hs_call_body,
->   hs_call_disposition, hs_call_status, hs_call_transcription,
->   hs_call_duration, hs_call_recording_url. Activar las dos.
-> - Falta probar end-to-end (registrar call → refrescar /llamadas).
-> - Mientras tanto el botón "Sincronizar HubSpot" manual sigue como
->   fallback.
+> TAREA INMEDIATA al arrancar:
+> - El usuario tiene que elegir Opción A (importar todo sin match) o B
+>   (preview con checkboxes), con o sin auto-limpiar la Campaña puente.
+>   Ver detalle completo en la sección "Pendiente abierto" del CLAUDE.md.
+>   Mi recomendación fue B + auto-limpiar.
+> - Una vez elegido, construirlo y mergear.
+>
+> Otras tareas pendientes (no tan urgentes, pero podrían cerrar la app):
+> - Setup webhook HubSpot Calls — pendiente de hace varias sesiones.
+>   Falta crear 2 subscriptions en la Private App legacy "weCAD4you
+>   Webhooks" (Llamada → Creado + Llamada → Cambio de propiedad,
+>   activando el toggle BETA "¿Usar la ampliación de la cantidad de
+>   objetos?" para que aparezca "Llamada" en el dropdown). Properties
+>   de la 2da: hs_call_body, hs_call_disposition, hs_call_status,
+>   hs_call_transcription, hs_call_duration, hs_call_recording_url.
+>   Mientras tanto, el botón "Sincronizar HubSpot" manual en /llamadas
+>   sigue funcionando como fallback.
+> - Probar end-to-end el flujo Sales Navigator después del fix del
+>   match: ya hay env var LEMLIST_STAGING_CAMPAIGN_ID en Vercel
+>   (cam_5rYdqSzz8hvMCp3Ky) y la migración companies_sales_nav está
+>   aplicada en Supabase.
+> - Probar end-to-end el flujo de respuestas (Lemlist Inbox API): falta
+>   pegar supabase/lemlist_activities_outbound_replies_migration.sql en
+>   Supabase y opcionalmente setear LEMLIST_SEND_USER_ID en Vercel. Si
+>   no hay respuestas reales todavía, el módulo queda armado esperando.
 >
 > Estado vivo del producto:
-> - /empresas: 3 modos para sumar empresas — Recomendación IA (discovery
->   broad), Buscar por nombre, Importar CSV. Discovery con filtro de fit
->   (descarta distribuidores / no-dentales / micro-labs / fuera de
->   banda) + salvataje de LinkedIn URL. Botón "Buscar contactos en la
->   web" en cada card (scrapea la página de equipo del sitio).
-> - /contactos: pre-filter Claude + tabs (pendientes, manual review,
->   en campaña, descartados). Empresas colapsables, ordenadas por
->   recientes, con buscador. Botón "Directo a Lemlist" para contactos
->   con email (saltea Clay, también sincroniza a HubSpot).
-> - /telefonos: Lusha manual con dual phone fields.
 > - /dashboard: ejecutivo con 8 presets de fecha.
+> - /empresas: 3 modos para sumar empresas — Recomendación IA, Buscar
+>   por nombre, Importar CSV. Discovery con filtro de fit + salvataje
+>   de LinkedIn URL. Botón "Buscar contactos en la web" por card.
+> - /contactos: pre-filter Claude + tabs (pendientes, manual review,
+>   en campaña, descartados). Empresas colapsables, con buscador.
+>   Botón "Directo a Lemlist" (acepta email O LinkedIn URL).
+> - /sales-navigator (Sprint 6 fase 4): empresas que Clay no pudo
+>   prospectar — detectadas por inferencia (clay_pushed_at + sin
+>   contactos 24h+) o por webhook precíso de Clay. Importan desde la
+>   Campaña puente de Lemlist (cam_5rYdqSzz8hvMCp3Ky) que el usuario
+>   alimenta con la extensión de Lemlist desde Sales Nav. Botón bulk
+>   "Enviar todos a Lemlist". Match por nombre actualmente roto — ver
+>   "Pendiente abierto".
+> - /telefonos: Lusha manual con dual phone fields.
 > - /llamadas: webhook HubSpot real-time (en setup) o sync manual
->   fallback. Filtro SDR + KPIs (contactos únicos, empresas únicas,
->   tasas pickup), "Analizar pendientes" (~$0.01-0.02 USD/call),
->   "Vincular huérfanas" con auto-import desde HubSpot.
-> - /llamadas/[id]: detalle con análisis IA, transcripción,
->   fortalezas, oportunidades de mejora con citas, "Re-analizar".
-> - /llamadas/reporte: drilldowns en respuestas/mejoras/sub-scores
->   + hot leads (probabilidad conversión).
+>   fallback. Filtro SDR + KPIs + análisis IA + drilldowns + hot leads.
+> - /respuestas (Sprint 6 fase 3): inbox de respuestas de Lemlist
+>   clasificadas con IA. Composer por card para responder desde la app
+>   vía Lemlist Inbox API (LinkedIn + email) con borrador IA opcional.
 > - App → Lemlist con sanitizers em-dash y firmas. Entregabilidad de
 >   email resuelta con bifurcación nativa en la secuencia Lemlist.
-> - El ICP (/configuracion/icp) afecta discovery automáticamente —
->   cada corrida lee la versión activa fresca.
+> - El ICP (/configuracion/icp) afecta discovery + pre-filtro
+>   automáticamente — cada corrida lee la versión activa fresca.
+> - **Idioma**: español neutro LATAM (tuteo). NO voseo argentino. NO
+>   regionalismos chilenos demasiado marcados.
 >
-> Reglas:
-> - Vos hacés todo: editar + commit + push + crear PR + mergear (squash).
-> - Yo no entro a terminal ni GitHub.
-> - Yo hago Clay / Vercel / Supabase / Lemlist / HubSpot UI.
+> Reglas operativas:
+> - Yo (Claude) hago todo el ciclo: editar + commit + push + crear PR +
+>   mergear (squash). El usuario no entra a terminal ni GitHub.
+> - El usuario hace Clay / Vercel / Supabase / Lemlist / HubSpot UI.
 > - Rama base default: claude/wecad4you-prospecting-app-Hltfi.
 > - Si rebase falla post-merge: git fetch origin <base> && git rebase
 >   origin/<base> && git push -f.
+> - Si tengo dudas reales sobre alcance o riesgo, preguntar primero
+>   con AskUserQuestion. Para decisiones obvias y cambios chicos,
+>   shippear directo.
 >
 > NO RECREAR (todo intentado y descartado):
 > - App → Clay vía REST API (no expone CRUD de rows).
 > - HubSpot Workflow webhooks (requiere Operations Hub Pro).
 > - Cron GitHub Actions para enrichment (PR #62).
-> - Webhook config en Service Keys BETA (UI no lo expone; usar
->   Private App legacy).
+> - Webhook config en Service Keys BETA de HubSpot (UI no lo expone;
+>   usar Private App legacy).
+> - **Columnas HTTP API nuevas en Clay** — quedaron detrás del plan
+>   Growth. Las viejas siguen funcionando (grandfathered). Usar
+>   webhooks de Clay → app o señal inferida en la app, NO HTTP API
+>   columns nuevas.
+> - **Listas de Lemlist como fuente** — la API no expone read-list.
+>   Usar campañas (Campaña puente con `GET /api/campaigns/{id}/leads`).
 >
-> Próximos módulos sugeridos:
-> 1. Loop de feedback Clay → app: cuando Find People da 0 contactos,
->    marcar la empresa para no re-pushearla (ver gap PR #84).
-> 2. Respuestas (Lemlist replies tracking via webhook).
-> 3. Funnel unificado.
-> 4. Entrenar modelo (feedback loop ICP usando contact_feedback +
->    sdr_improvements agregados).
+> Próximos módulos sugeridos (post-fix del match):
+> 1. **Funnel unificado** — pipeline visual end-to-end (descubrimiento →
+>    contactos → outreach → respuestas → llamadas → deals).
+> 2. **Entrenar modelo** — feedback loop ICP usando contact_feedback +
+>    sdr_improvements agregados para refinar el pre-filtro.
+> 3. **Mejoras varias en /respuestas** una vez que lleguen respuestas
+>    reales (probar shape de /inbox/email, ajustar si falla).
 >
-> ¿En qué arrancamos?
+> Avísame qué opción A/B/auto-clear elegís para el match, y arrancamos.
