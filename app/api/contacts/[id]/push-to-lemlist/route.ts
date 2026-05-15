@@ -123,8 +123,13 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     company = (data as unknown as CompanyRow) ?? null;
   }
 
-  // 1) Push a Lemlist (genera mensajes con Claude si faltan).
-  const lemlistResult = await pushApprovedToLemlist(db, params.id, contact, company);
+  // 1) Push a Lemlist. force_regenerate=true: ignora mensajes viejos
+  // (legacy de Clay con prompts pre /entrenar-modelo) y regenera con la
+  // config activa. Coherente con el bulk-approve-enrich del bucket
+  // "Por aprobar".
+  const lemlistResult = await pushApprovedToLemlist(db, params.id, contact, company, {
+    force_regenerate: true
+  });
 
   // Tras un push exitoso, marcamos fit_action='enrich' para que el contacto
   // salga de "Pendientes" y aparezca en "En campaña".

@@ -56,8 +56,23 @@ export async function pushApprovedToLemlist(
   db: SupabaseClient,
   contactId: string,
   contact: LemlistPushContact,
-  company: LemlistPushCompany
+  company: LemlistPushCompany,
+  options?: { force_regenerate?: boolean }
 ): Promise<LemlistPushResult> {
+  // Cuando force_regenerate=true, ignoramos los mensajes preexistentes en el
+  // contacto (típicamente generados por Clay con prompts viejos) y forzamos
+  // la regeneración con la config activa de /entrenar-modelo. Default false
+  // para mantener compat con el flujo de manual_review (donde los mensajes
+  // siempre nacen NULL y se generan acá).
+  if (options?.force_regenerate) {
+    contact = {
+      ...contact,
+      linkedin_icebreaker: null,
+      email_subject: null,
+      email_body: null
+    };
+  }
+
   const campaignId = process.env.LEMLIST_CAMPAIGN_ID;
   if (!campaignId) {
     const error = "LEMLIST_CAMPAIGN_ID is not configured";

@@ -113,7 +113,8 @@ export async function POST(req: NextRequest) {
           };
         }
 
-        // 1. Push a Lemlist (genera mensajes si faltan, con la config activa).
+        // 1. Push a Lemlist. force_regenerate=true ignora mensajes viejos
+        // (legacy de Clay) y regenera con la config activa de /entrenar-modelo.
         const lemlist = await pushApprovedToLemlist(
           db,
           c.id,
@@ -139,7 +140,8 @@ export async function POST(req: NextRequest) {
             cad_software: company.cad_software,
             scanner_technology: company.scanner_technology,
             fit_signals: company.fit_signals
-          }
+          },
+          { force_regenerate: true }
         );
 
         const lemlistStatus: PerResult["lemlist"] = lemlist.ok ? "pushed" : "error";

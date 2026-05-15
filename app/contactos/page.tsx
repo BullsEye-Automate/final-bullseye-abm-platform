@@ -810,6 +810,7 @@ export default function ContactosPage() {
                         isRetryingLemlist={retryingId === c.id}
                         onRetryHubspot={retryHubspot}
                         isRetryingHubspot={retryingHubspotId === c.id}
+                        onPreviewSuccess={() => load()}
                       />
                     ))}
                   </div>
@@ -862,7 +863,8 @@ function ContactCard({
   onRetryLemlist,
   isRetryingLemlist,
   onRetryHubspot,
-  isRetryingHubspot
+  isRetryingHubspot,
+  onPreviewSuccess
 }: {
   c: Contact;
   bucket: Bucket;
@@ -880,6 +882,7 @@ function ContactCard({
   isRetryingLemlist: boolean;
   onRetryHubspot: (id: string, label: string) => void | Promise<void>;
   isRetryingHubspot: boolean;
+  onPreviewSuccess: () => void | Promise<void>;
 }) {
   const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
   const scoreClass =
@@ -1048,7 +1051,11 @@ function ContactCard({
       )}
 
       {bucket === "approved_pending" && (
-        <PreviewButton contactId={c.id} hasPreview={!!c.linkedin_icebreaker} />
+        <PreviewButton
+          contactId={c.id}
+          hasPreview={!!c.linkedin_icebreaker}
+          onSuccess={onPreviewSuccess}
+        />
       )}
 
       {c.clay_push_error && (
@@ -1339,7 +1346,15 @@ function ImportPanel({
 // generados (icebreaker + email subject + body).
 // ============================================================================
 
-function PreviewButton({ contactId, hasPreview }: { contactId: string; hasPreview: boolean }) {
+function PreviewButton({
+  contactId,
+  hasPreview,
+  onSuccess
+}: {
+  contactId: string;
+  hasPreview: boolean;
+  onSuccess: () => void | Promise<void>;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1354,7 +1369,7 @@ function PreviewButton({ contactId, hasPreview }: { contactId: string; hasPrevie
       if (!res.ok || !data.ok) {
         setError(data.error ?? `HTTP ${res.status}`);
       } else {
-        window.location.reload();
+        await onSuccess();
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error de red");
