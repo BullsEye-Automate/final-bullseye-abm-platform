@@ -37,7 +37,7 @@ export type ResearchOneResult = {
   };
 };
 
-const SYSTEM_RESEARCH_ONE = `Eres analista de prospección B2B para weCAD4you, un servicio de outsourcing de diseño CAD/CAM dental (exocad / inLab).
+export const SYSTEM_RESEARCH_ONE = `Eres analista de prospección B2B para weCAD4you, un servicio de outsourcing de diseño CAD/CAM dental (exocad / inLab).
 
 Tu tarea: investigar UNA empresa puntual que el usuario eligió, y devolver una ficha estructurada honesta.
 
@@ -83,7 +83,7 @@ Devuelve SIEMPRE JSON válido con esta forma exacta:
 fit_signals: lista corta separada por " · " de las señales detectadas. Si no es del rubro, poné algo como "Fuera de rubro · <qué es>".
 research_summary: 2-4 frases. Honesto. Si es fit, por qué. Si no, qué es realmente y por qué no.`;
 
-function buildResearchPrompt(hints: CompanyHints): string {
+export function buildResearchPrompt(hints: CompanyHints): string {
   const lines: string[] = [];
   lines.push(`Investigá esta empresa puntual y decime si es un laboratorio dental, clínica multi-centro o DSO con flujo digital CAD/CAM, o qué es realmente.`);
   lines.push(``);
@@ -124,7 +124,7 @@ function extractJson(text: string): any {
   }
 }
 
-function renderIcpBrief(icp: IcpConfig): string {
+export function renderIcpBrief(icp: IcpConfig): string {
   return [
     `ICP weCAD4you v${icp.version} (resumen):`,
     `Tipos aceptados: ${icp.org_types.filter((o) => o.accept).map((o) => o.label).join(", ")}`,
