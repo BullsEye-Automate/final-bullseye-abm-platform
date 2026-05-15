@@ -150,9 +150,11 @@ export async function POST(req: NextRequest) {
   if (icpErr) return NextResponse.json({ error: icpErr.message }, { status: 500 });
   if (!icp) return NextResponse.json({ error: "No active ICP configured" }, { status: 400 });
 
-  // Traemos un batch un poco más grande que limit (3x) para filtrar las
+  // Traemos un batch un poco más grande que limit (5x) para filtrar las
   // que ya tienen evidence_quality=specific sin gastar Perplexity en ellas.
-  let query = db
+  // Tipado como `any` para evitar "Type instantiation is excessively deep"
+  // en la cadena de filtros condicional de Supabase.
+  let query: any = db
     .from("companies")
     .select(
       "id, company_name, company_website, company_linkedin_url, company_city, company_country, company_size, cad_software, scanner_technology, fit_signals, fit_score, competitor_match, research_summary, research_sources, updated_at"

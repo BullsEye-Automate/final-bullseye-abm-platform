@@ -269,7 +269,12 @@ export async function POST(req: NextRequest) {
   // scope=stale_only filtra a los que su empresa fue actualizada DESPUÉS
   //   del último update del contacto — el caso típico tras un re-verify
   //   de empresas.
-  let query = db
+  // Tipado como `any`: la cadena de filtros condicionales con `query =
+  // query.not(...)` revienta la inferencia de tipos de Supabase
+  // (Error TS "Type instantiation is excessively deep"). En runtime
+  // Supabase devuelve la misma shape de siempre — el cast solo es para
+  // que TypeScript no entre en bucle.
+  let query: any = db
     .from("contacts")
     .select(
       "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, phone, seniority, fit_score, fit_reason, linkedin_icebreaker, email_subject, email_body, lemlist_pushed_at, hubspot_contact_id, updated_at"
