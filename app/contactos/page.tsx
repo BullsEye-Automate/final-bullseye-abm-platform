@@ -79,9 +79,9 @@ const BUCKET_LABELS: Record<Bucket, string> = {
 
 const BUCKET_DESCRIPTIONS: Record<Bucket, string> = {
   pending:
-    "Contactos que pasaron el pre-filtro de Claude (YES) y esperan ser empujados a Clay para el Find People + Enrich + Lead Scoring. Click 'Prospectar todos en Clay' para enviarlos en bulk.",
+    "Contactos que pasaron el pre-filtro de Claude (YES) y están en proceso en Clay (Lead Scoring corriendo). Se pushean automáticamente — no requieren acción tuya. Cuando Clay termine, saltan a 'Por aprobar', 'Revisión manual' o 'Descartados' según el score. Si quedan más de 15-20 min acá, probablemente algo falló en Clay (mirá clay_push_error en la card o el botón retry).",
   approved_pending:
-    "Contactos que ya pasaron por Clay y la IA marcó como FIT (action=enrich). Esperan tu aprobación humana antes de salir a Lemlist. Click 'Generar preview con IA' para ver el copy que se generaría, y 'Enviar a campaña' para pushearlos.",
+    "Contactos que Clay marcó como FIT (action=enrich). Esperan tu aprobación humana antes de salir a Lemlist. Click 'Generar preview con IA' para ver el copy que se generaría, y 'Enviar a campaña' (individual) o 'Aprobar y enviar a Lemlist' (bulk) para pushearlos. 'Descartar' los manda a Descartados.",
   manual_review:
     "Contactos que Clay marcó como score medio (action=manual_review) — la IA no se decidió y dejó la decisión al humano. Click 'Aprobar' para mandarlos a Lemlist (genera mensaje + push), o 'Rechazar' para descartarlos.",
   enriched:
@@ -917,17 +917,13 @@ function ContactCard({
     !!c.lemlist_pushed_at &&
     (!c.linkedin_icebreaker || !c.linkedin_icebreaker.trim());
   // HubSpot puede reintentar si nunca se sincronizó O si hay un error
-  // persistido (idempotente: si ya está bien, igual hace update). Aplica a
-  // cualquier contacto que sea FIT o esté en campaña — no solo los
-  // aprobados en revisión manual: los que van "Directo a Lemlist" (scrapeo
-  // web) tienen fit_action='enrich' + lemlist_pushed_at pero human_decision
-  // null, y antes se quedaban sin botón de resync.
-  const isFitOrInCampaign =
-    c.human_decision === "approved" ||
-    c.fit_action === "enrich" ||
-    !!c.lemlist_pushed_at;
-  const canRetryHubspot =
-    isFitOrInCampaign && (!c.hubspot_contact_id || !!c.hubspot_sync_error);
+  // El sync a HubSpot es AUTOMÁTICO al pushear a Lemlist (parte del flow
+  // de bulk-approve-enrich, push-to-lemlist, manual review approve, etc.).
+  // El botón "Reintentar HubSpot" solo aparece cuando el sync automático
+  // falló (hubspot_sync_error != null). Caso típico: HubSpot rechazó una
+  // property que no existe, rate limit, token expirado. El SDR ve el error
+  // en la card y puede retentar manualmente.
+  const canRetryHubspot = !!c.hubspot_sync_error;
   // En el bucket Descartados ofrecemos solo "Aprobar" (recuperar). Sirve
   // para rescatar false negatives del pre-filter o falsos discard de Clay.
   const canRecover = bucket === "discarded" && c.human_decision !== "approved";
@@ -1193,15 +1189,11 @@ function ContactCard({
           <button
             onClick={() => onRetryHubspot(c.id, fullName)}
             disabled={isRetryingHubspot}
-            className="btn-primary text-xs"
-            title="Sincronizar el contacto a HubSpot con todo el historial"
+            className="btn-secondary text-xs text-danger-fg"
+            title="El sync automático a HubSpot falló. Click para reintentarlo manualmente."
           >
             <IconRefresh size={12} />
-            {isRetryingHubspot
-              ? "Sincronizando…"
-              : c.hubspot_contact_id
-              ? "Resync HubSpot"
-              : "Sincronizar a HubSpot"}
+            {isRetryingHubspot ? "Reintentando…" : "Reintentar sync HubSpot"}
           </button>
         )}
         <button

@@ -81,15 +81,12 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (contact.lemlist_pushed_at) {
     return NextResponse.json({ error: "El contacto ya está en Lemlist." }, { status: 409 });
   }
-  if (contact.clay_pushed_at) {
-    return NextResponse.json(
-      {
-        error:
-          "Este contacto ya fue empujado a Clay. Para evitar doble procesamiento, deja que siga el flujo de Clay."
-      },
-      { status: 409 }
-    );
-  }
+  // Antes acá había un guard que bloqueaba push si clay_pushed_at != null,
+  // bajo el supuesto de que Clay iba a pushear el lead a Lemlist con su
+  // run condition "Add Lead to Campaign". Desde el cambio de flujo (la app
+  // es la única que pushea a Lemlist), ese guard ya no aplica — al
+  // contrario, los contactos pre-aprobados por Clay AI (fit_action=enrich)
+  // son los que el SDR aprueba desde el bucket "Por aprobar". Removido.
 
   // Snapshot de la empresa para el push a Lemlist + datos para HubSpot.
   type CompanyRow = {

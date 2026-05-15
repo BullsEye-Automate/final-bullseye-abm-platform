@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runPrefilter } from "./prefilter";
 import type { BuyerPersonas } from "./supabase";
+import { pushContactToClay } from "./clayPushContact";
 
 export type RawContact = {
   first_name?: string | null;
@@ -139,6 +140,43 @@ export async function intakeContactsForCompany(
     .from("companies")
     .update({ clay_no_contacts_at: null, sales_nav_status: null })
     .eq("id", companyId);
+
+  // Auto-push a Clay (Sprint 9): los contactos pre-filter YES se envían
+  // automáticamente a la tabla Contacts de Clay para que corra Lead
+  // Scoring. Antes era un paso manual ("Prospectar todos en Clay") pero
+  // en la práctica el SDR siempre lo hacía — un click sin valor.
+  // Ahora "Pendientes" pasa a ser solo un estado transitorio mientras Clay
+  // procesa. Una vez Clay devuelve el scoring vía webhook scored-contacts,
+  // el contacto salta a "Por aprobar" (fit_action='enrich') o "Revisión
+  // manual" / "Descartados".
+  //
+  // Best-effort: si el push falla, el contacto queda en pendientes con
+  // clay_push_error y el SDR lo retrentaría con "Prospectar todos en Clay".
+  // En paralelo de a 5 para no saturar el webhook de Clay.
+  // Saltea contactos que ya fueron pusheados antes (idempotente — dedup
+  // en intake puede actualizar fila vs crear una nueva).
+  const idsToPush = await (async () => {
+    const { data } = await db
+      .from("contacts")
+      .select("id, clay_pushed_at")
+      .eq("company_id", companyId)
+      .eq("prefilter_result", "yes")
+      .is("clay_pushed_at", null);
+    return ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
+  })();
+
+  const CHUNK = 5;
+  for (let i = 0; i < idsToPush.length; i += CHUNK) {
+    const chunk = idsToPush.slice(i, i + CHUNK);
+    await Promise.all(
+      chunk.map((cid) =>
+        pushContactToClay(db, cid).catch(() => {
+          // best-effort: el error queda persistido por pushContactToClay
+          // en contacts.clay_push_error; no rompemos el intake.
+        })
+      )
+    );
+  }
 
   return { ok: true, summary };
 }
