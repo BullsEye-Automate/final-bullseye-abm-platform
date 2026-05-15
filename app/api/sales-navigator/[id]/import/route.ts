@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { intakeContactsForCompany, type RawContact } from "@/lib/contactsIntake";
-import { getCampaignLeads, deleteCampaignLead } from "@/lib/lemlist";
+import { getCampaignLeadsWithDetails, deleteCampaignLead } from "@/lib/lemlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,7 +73,12 @@ export async function POST(
   }
 
   // Re-fetch fresco — la lista del preview puede haber cambiado.
-  const leadsRes = await getCampaignLeads(stagingId);
+  // getCampaignLeadsWithDetails: lista los leads + hace GET /api/leads/{id}
+  // por cada uno para traer email/linkedinUrl/firstName/lastName/jobTitle/
+  // companyName. El GET de lista directo solo devuelve {_id, state,
+  // contactId} (probado vía /api/lemlist/diagnose-campaign) — sin esto, la
+  // UI muestra "(sin nombre)" y el match por nombre de empresa es imposible.
+  const leadsRes = await getCampaignLeadsWithDetails(stagingId);
   if (!leadsRes.ok) {
     return NextResponse.json(
       {

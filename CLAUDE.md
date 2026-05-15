@@ -1468,9 +1468,241 @@ opción y construirla.
 Mientras tanto el usuario tiene el escape hatch del PR #111 ("Importar
 de todas formas") — funcional pero requiere 2 clics.
 
+## Hecho del Sprint 7 — Régimen estricto de evidencia + cleanup completo (sesión 2026-05-16)
+
+Sesión grande. El usuario destapó el caso Elite Dental Lab: una empresa
+"fit high" con 6 señales operativas detalladas (3Shape inLab confirmado,
+Cerec Primescan, ya externaliza con Evident, contratando CAM operator,
+tutoriales en YouTube, 30 empleados) pero las 8 fuentes guardadas eran
+PDFs académicos del rubro — NINGUNA nombraba a Elite. Sospecha confirmada:
+todas las señales operativas estaban alucinadas. El research broad infería
+señales del contexto genérico del rubro y las atribuía a empresas
+específicas. PRs #114 a #123 cerraron este boquete.
+
+### PR #114 — Endpoint diagnóstico (sin escribir nada)
+
+`POST /api/companies/research-diagnostic` — re-corre Perplexity + Claude
+sobre una empresa puntual con los MISMOS prompts de prod y devuelve TODO
+crudo: contenido completo de Perplexity, respuesta completa de Claude,
+citas, y matches de palabras clave dentro del texto de Perplexity (con
+snippets de ±120 chars). No inserta nada.
+
+UI `/diagnostico-empresa` (no en sidebar, URL directa): form con nombre +
+hints opcionales + keywords extra → muestra los matches primero (rojo si
+0 hits, ámbar si 1-2, verde si 3+), después las citas, después el dump
+completo de Perplexity y Claude.
+
+**Diagnóstico de Elite Dental Lab confirmó:** "CAM operator" → 0 hits,
+"hiring" → 2 hits ambos en contexto de "no hay ofertas", todas las
+señales operativas estaban inventadas. Las 6 citas de hoy son específicas
+de Elite (Manta, About Us, Services) pero el contenido literal dice "no
+hay información pública sobre software CAD ni escáner".
+
+### PR #115 — Régimen estricto en discovery + research + outreach
+
+Cero invención. Reescritura de los 3 prompts críticos + validación de
+evidencia post-extracción.
+
+**`lib/companyEvidence.ts` (nuevo helper compartido):**
+- `citationNamesCompany(citation, name)`: una cita "nombra" a la empresa
+  si su title/URL contienen las primeras 2 palabras significativas del
+  nombre.
+- `evidenceQuality(name, citations)`: clasifica `specific` / `generic` /
+  `none`.
+- `cleanFitSignals(fitSignals, name, sources)`: strippea señales
+  operativas sin cita [N] que nombre la empresa específicamente.
+- `validateCompanyEvidence(company)`: aplica todo el régimen — clean
+  signals + nulea cad_software/scanner/competitor cuando no hay evidencia
+  específica + baja fit_score a "low".
+
+**`lib/discovery.ts` (broad):**
+- Prompt reescrito con principio rector "honestidad sobre completitud".
+- Cada hecho operativo requiere cita [N] que nombre a la empresa.
+- Filtrado en código (`passed_evidence`): empresas sin evidencia específica
+  quedan fuera del broad. El usuario puede sumarlas manualmente vía
+  "Buscar por nombre".
+- Priorización: el final ordena por (fit_score desc, signal_depth desc)
+  antes de cortar a limit. Empresas con MÁS info ganan los slots.
+
+**`lib/companyResearch.ts` (single):**
+- Mismas reglas estrictas. Si no hay info pública, research_summary lo
+  dice explícitamente: "Listada como [tipo] en [fuente]. No hay
+  información pública sobre software CAD, escáner ni operación digital."
+
+**`lib/messageGenerator.ts` (outreach):**
+- Jerarquía estricta de personalización:
+  - A) Fit signal operativo confirmado → úsalo.
+  - B) cad_software / scanner_technology confirmado → úsalo.
+  - C) LinkedIn headline con sustancia → úsalo.
+  - D) Solo rol + tipo empresa → opener orientado a propuesta de valor
+    weCAD4you (24h turnaround, exocad/inLab, 98.9% sin ajustes,
+    scanner-agnostic, scale without hiring). Framing como observación del
+    rubro, no como claim sobre la empresa específica. Ejemplos por rol.
+- Prompt prohíbe explícitamente inventar: hiring, growth, expansion,
+  funding, partnerships, software, scanners, customer base. Solo facts
+  LITERAL en el input.
+- Si el input dice "(no public information)", trata como UNKNOWN y pivota
+  al perfil de la persona.
+- Strip de citation markers [N] antes de output al prospecto.
+
+**UI `/empresas`:**
+- Badge "evidencia genérica" / "sin citas" en cards individuales.
+- Botón "Re-verificar con IA" en footer de cada card → re-corre research
+  honesto y reemplaza datos sospechosos. No toca status ni IDs de Clay/HubSpot.
+- Funnel de discovery muestra paso "Con evidencia específica".
+
+### PRs #116, #117, #118 — Bulk cleanup retroactivo
+
+Para limpiar el legado de datos inventados antes de retomar Lemlist:
+
+- `POST /api/companies/bulk-re-verify` (PR #116): itera empresas con
+  evidence_quality != "specific", corre researchOneCompany honesto sobre
+  cada una, reemplaza fit_signals/cad_software/scanner/fit_score con
+  versión honesta. Chunks de 3 paralelos, cap de 10 por request. Repetir
+  hasta `remaining=0`.
+- `POST /api/contacts/bulk-regenerate-messages` (PR #116): regenera
+  icebreaker + email_subject + email_body con el messageGenerator estricto.
+  Cap 15 por request.
+- PR #117: fix de TS "Type instantiation is excessively deep" en las
+  cadenas de filtros de Supabase. Cast a `any`.
+- PR #118: surface per-contact errors en el panel (antes solo decía
+  "9 errores" sin detalle).
+
+Resultado del usuario: del 100% de empresas con evidencia genérica, **97%
+mejoraron a evidencia específica** después del bulk re-verify. Las 3
+restantes son labs reales sin presencia digital pública — quedan con su
+badge marcado.
+
+### PRs #119, #120, #121 — Intentos fallidos de DELETE+ADD en Lemlist
+
+Después del bulk regenerate, los mensajes nuevos están en Supabase pero
+los leads viejos siguen en Lemlist con mensajes obsoletos. El plan
+original era hacer DELETE + ADD para refrescar. Múltiples obstáculos:
+
+1. **PR #119**: contactos con email=null no se pueden DELETE-by-email.
+   Fix: precargar `getCampaignLeads(campaignId)` y buscar el lead.id en
+   un mapa indexado por email + linkedin_url. Pero el snapshot devolvió 0
+   leads — el parser no reconoció el shape.
+
+2. **PR #120**: endpoint `GET /api/lemlist/diagnose-campaign` para
+   inspeccionar la respuesta cruda de Lemlist. **Descubrimiento crítico:
+   `GET /api/campaigns/{id}/leads` devuelve solo `{_id, state, contactId}`
+   por lead** — NO trae email, linkedinUrl, firstName, etc. La campaña
+   real tenía 16 leads pero todos minimalistas.
+
+3. **PR #121**: nuevo helper `getCampaignLeadsWithDetails(campaignId)` en
+   lib/lemlist.ts: lista los leads → para cada uno con `_id`, hace
+   `GET /api/leads/{leadId}` en paralelo (chunks de 5) → mergea
+   email/linkedinUrl/firstName/lastName/jobTitle/companyName. Si el
+   detalle individual falla, conserva el lead con campos null sin romper.
+
+Aun así seguía fallando para los contactos específicos del usuario —
+posiblemente porque la detail call también devuelve shape minimalista en
+algunos casos, o porque la campaña tiene leads "huérfanos" que ni el
+detail API resuelve. **Después de 4-5 iteraciones, cambio de estrategia.**
+
+### PR #122 — Clean slate path (la solución que funcionó)
+
+En vez de seguir peleando con DELETE+ADD, plan de 3 pasos:
+1. **Usuario** entra a Lemlist UI → selecciona TODOS los leads de la
+   campaña → bulk delete (30 segundos, 1 click). Campaña queda vacía.
+2. **App** corre `POST /api/contacts/bulk-push-to-lemlist-clean` que
+   solo hace ADD (sin DELETE, sin lookup, sin snapshots). Selecciona
+   contactos con icebreaker generado + human_decision='approved' OR
+   fit_action='enrich' + status!='discarded'. Cap de 25 por request,
+   paralelo en chunks de 3.
+3. **Usuario** re-activa Lemlist.
+
+Bonus: `lib/hubspot.ts` ahora extrae el mensaje real de error de HubSpot
+(parsed.message + parsed.errors[].message + context). Antes solo decía
+"HubSpot 400" sin detalle.
+
+**Resultado: funcionó.** Los 16 leads viejos se borraron del lado de
+Lemlist UI, el bulk push limpio empujó todos los contactos aprobados con
+los mensajes nuevos sin errores. Lemlist ahora tiene la versión honesta.
+
+### PR #123 — UI cleanup post-mortem
+
+Borrados de `/empresas`:
+- Banner amarillo "X empresas con evidencia genérica" + sus 2 botones bulk.
+- Banner morado "Re-push limpio a Lemlist (clean slate)" + su botón.
+- Summary panels asociados.
+- State + funciones JS (runBulkReverify, runBulkRegenerate, runBulkLemlistClean).
+
+Reemplazado por una nota chica recordando que la re-verificación
+individual está disponible desde cada card.
+
+Lo que se mantiene en UI:
+- Badge "evidencia genérica" / "sin citas" en cards individuales.
+- Botón "Re-verificar con IA" en footer de cada card.
+
+Lo que se mantiene como endpoints dormant (no UI, accesibles vía curl):
+- `/api/companies/bulk-re-verify`
+- `/api/contacts/bulk-regenerate-messages`
+- `/api/contacts/bulk-push-to-lemlist-clean`
+- `/api/companies/research-diagnostic` + UI `/diagnostico-empresa`
+- `/api/lemlist/diagnose-campaign`
+
+### Endpoint nuevo `POST /api/companies/[id]/re-verify` (PR #115)
+
+Re-verifica UNA empresa ya guardada usando researchOneCompany honesto.
+Reemplaza fit_signals/cad_software/scanner/etc con la versión honesta.
+No toca status ni IDs de integraciones. Idempotente. Es lo que llama
+el botón "Re-verificar con IA" de cada card individual.
+
+### Gotchas críticos descubiertos en esta sesión
+
+1. **Lemlist's `GET /campaigns/{id}/leads` es minimalista.** Solo devuelve
+   `{_id, state, contactId}` por lead. Para tener email/linkedinUrl/etc.,
+   hay que hacer `GET /api/leads/{leadId}` por cada uno. **SIEMPRE usar
+   `getCampaignLeadsWithDetails(campaignId)`, NO `getCampaignLeads(...)`
+   directo** — la versión bare quedó solo para uso interno.
+
+2. **Supabase TS type inference revienta con cadenas de filtros condicionales.**
+   `let query = db.from(...).select(...); if (cond) query = query.not(...)`
+   genera "Type instantiation is excessively deep". Workaround: `let query:
+   any = ...`. En runtime es idéntico, solo destraba el build.
+
+3. **Citas genéricas del rubro NO sirven como respaldo.** Una empresa
+   puede tener 8 citas en `research_sources` pero si ninguna nombra a la
+   empresa específicamente, todos los datos operativos son sospechosos.
+   El régimen estricto los nulea por default y baja fit_score a "low".
+
+4. **HubSpot v3 API devuelve errores detallados en `parsed.errors[]`.**
+   No conformarse con `HubSpot ${status}` — extraer `parsed.message` +
+   `parsed.errors[].message` + `context`.
+
+### Estado al cierre de la sesión 2026-05-16
+
+- Rama: `claude/continue-prospecting-dev-QjeVe` (mergeada toda).
+- Producción: PR #123 mergeado, Vercel verde.
+- Empresas: 97% con evidencia específica. 3 con evidencia genérica (sin
+  presencia digital pública, no hay nada que recuperar).
+- Lemlist: campaña limpia con leads nuevos (mensajes honestos generados
+  por messageGenerator estricto).
+- HubSpot: contactos sincronizados con las custom properties wecad_*
+  actualizadas.
+
+### Fix Sales Navigator import al cierre (PR #124)
+
+Sales Navigator mostraba todos los leads de la Campaña puente como
+"(sin nombre)" + "sin nombre de empresa en Lemlist" — el match por
+nombre era imposible. Mismo issue raíz: `app/api/sales-navigator/[id]/
+import/route.ts` usaba `getCampaignLeads(stagingId)` directo, que
+devuelve solo `{_id, state, contactId}`. Swap a
+`getCampaignLeadsWithDetails(stagingId)` y los leads vuelven con
+firstName/lastName/company/linkedinUrl/jobTitle. El match por nombre
+de empresa vuelve a funcionar (y los checkboxes del preview por
+defecto chequeados también).
+
 ## Para retomar en una nueva sesión (prompt de arranque actualizado)
 
-> Continúo weCAD4you-prospecting. Última sesión (2026-05-15c) cerró
+> Continúo weCAD4you-prospecting. Última sesión (2026-05-16) cerró
+> Sprint 7 — Régimen estricto de evidencia (PRs #114 a #123) + cleanup
+> retroactivo completo (97% de empresas mejoradas, Lemlist limpio con
+> mensajes honestos, HubSpot resyncedo). Todo mergeado.
+>
+> Anteriormente (sesión 2026-05-15c) cerró
 > Sprint 6 fases 3 y 4 (PRs #105 a #111) + chore de idioma. Todo
 > mergeado. El usuario espera **terminar la app hoy**.
 >
