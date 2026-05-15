@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const runtime = "nodejs";
@@ -19,6 +19,10 @@ export const dynamic = "force-dynamic";
 //      CLAY_GRACE_HOURS que todavía no tiene NINGÚN contacto en nuestra
 //      base = Clay no encontró a nadie (si hubiera encontrado, el webhook
 //      raw-contacts ya habría creado las filas de contacto).
+//
+// El query param ?include_recent=1 baja la gracia a 0: trae TODAS las
+// empresas que pasaron por Clay y siguen sin contactos, sin esperar las
+// 24h (botón "Incluir las recién mandadas a Clay" en la UI).
 //
 // Buckets:
 //   - pending : sales_nav_status null + (señal precisa O inferida)
@@ -44,7 +48,8 @@ type Row = {
   [k: string]: unknown;
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const includeRecent = req.nextUrl.searchParams.get("include_recent") === "1";
   const db = supabaseAdmin();
 
   // Universo: empresas que pasaron por Clay.
@@ -66,7 +71,9 @@ export async function GET() {
     (contactRows ?? []).map((r) => r.company_id as string).filter(Boolean)
   );
 
-  const graceMs = CLAY_GRACE_HOURS * 60 * 60 * 1000;
+  // include_recent=1 → gracia 0: cualquier empresa que pasó por Clay y
+  // sigue sin contactos, sin importar cuán reciente sea el push.
+  const graceMs = includeRecent ? 0 : CLAY_GRACE_HOURS * 60 * 60 * 1000;
   const now = Date.now();
 
   const pending: Array<Row & { signal: "clay" | "inferred" }> = [];
@@ -106,7 +113,8 @@ export async function GET() {
       pending,
       no_fit,
       counts: { pending: pending.length, no_fit: no_fit.length },
-      grace_hours: CLAY_GRACE_HOURS
+      grace_hours: CLAY_GRACE_HOURS,
+      include_recent: includeRecent
     },
     { headers: { "Cache-Control": "no-store, max-age=0" } }
   );

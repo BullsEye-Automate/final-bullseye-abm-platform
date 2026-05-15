@@ -86,12 +86,19 @@ export default function SalesNavigatorPage() {
   const [counts, setCounts] = useState<Counts>({ pending: 0, no_fit: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Por defecto se esperan 24h tras mandar la empresa a Clay (para no
+  // mostrar empresas que Clay todavía está procesando). Este toggle baja
+  // esa espera a 0 y trae todas las que pasaron por Clay sin contactos.
+  const [includeRecent, setIncludeRecent] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/sales-navigator", { cache: "no-store" });
+      const res = await fetch(
+        `/api/sales-navigator${includeRecent ? "?include_recent=1" : ""}`,
+        { cache: "no-store" }
+      );
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "No se pudieron cargar las empresas");
@@ -105,7 +112,7 @@ export default function SalesNavigatorPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [includeRecent]);
 
   useEffect(() => {
     load();
@@ -163,6 +170,26 @@ export default function SalesNavigatorPage() {
           Sin contactos fit ({counts.no_fit})
         </button>
       </div>
+
+      {tab === "pending" && (
+        <div className="flex items-start gap-2 flex-wrap">
+          <button
+            onClick={() => setIncludeRecent((v) => !v)}
+            className={`text-xs px-2.5 py-1 rounded-md border transition-colors shrink-0 ${
+              includeRecent
+                ? "border-brand bg-[#EEEDFE] text-brand"
+                : "border-divider text-ink-muted hover:text-ink"
+            }`}
+          >
+            {includeRecent ? "✓ " : ""}Incluir las recién mandadas a Clay
+          </button>
+          <span className="text-xs text-ink-subtle">
+            {includeRecent
+              ? "Mostrando todas las que pasaron por Clay y siguen sin contactos, sin esperar 24h. Las recién mandadas pueden estar todavía en proceso en Clay."
+              : "Por defecto se esperan 24h desde que la empresa fue a Clay, para no mostrar las que Clay todavía está procesando."}
+          </span>
+        </div>
+      )}
 
       {loading ? (
         <div className="text-ink-muted">Cargando…</div>
@@ -260,6 +287,12 @@ function CompanyCard({
   const salesNavUrl = `https://www.linkedin.com/sales/search/people?keywords=${encodeURIComponent(
     company.company_name
   )}`;
+
+  // Inferida pero mandada a Clay hace poco: Clay capaz sigue procesándola.
+  const pushedRecently =
+    company.signal === "inferred" &&
+    company.clay_pushed_at != null &&
+    Date.now() - new Date(company.clay_pushed_at).getTime() < 24 * 60 * 60 * 1000;
 
   async function research() {
     const urls = urlsText.split(/[\s,]+/).map((u) => u.trim()).filter(Boolean);
@@ -393,8 +426,9 @@ function CompanyCard({
       {company.signal === "inferred" ? (
         <div className="text-xs text-warning-fg flex items-start gap-1">
           <IconAlertCircle size={12} className="mt-0.5 shrink-0" />
-          Pasó por Clay y sigue sin contactos en la base — Clay no encontró a
-          nadie.
+          {pushedRecently
+            ? "Recién mandada a Clay (hace menos de 24h) y todavía sin contactos. Puede que Clay siga procesándola — verificá en Clay antes de buscar a mano."
+            : "Pasó por Clay y sigue sin contactos en la base — Clay no encontró a nadie."}
         </div>
       ) : (
         <div className="text-xs text-ink-muted flex items-start gap-1">
