@@ -401,6 +401,15 @@ export default function EmpresasPage() {
     errors: number;
     remaining_in_queue: number;
   } | null>(null);
+  const [bulkRegenerateErrors, setBulkRegenerateErrors] = useState<
+    Array<{
+      contact_name: string;
+      company_name: string | null;
+      lemlist_error?: string;
+      hubspot_error?: string;
+      error?: string;
+    }>
+  >([]);
 
   async function runBulkReverify() {
     const ok = window.confirm(
@@ -458,6 +467,22 @@ export default function EmpresasPage() {
         setError(data.error ?? `HTTP ${res.status}`);
       } else {
         setBulkRegenerateResult(data.summary);
+        // Coleccionamos los errores por contacto para que el usuario los pueda
+        // diagnosticar sin tocar la consola del browser. Filtramos solo los
+        // que tienen algún error real (Lemlist o HubSpot o generación).
+        const errs = (data.results ?? [])
+          .filter(
+            (r: any) =>
+              r.lemlist_error || r.hubspot_error || r.error
+          )
+          .map((r: any) => ({
+            contact_name: r.contact_name,
+            company_name: r.company_name,
+            lemlist_error: r.lemlist_error,
+            hubspot_error: r.hubspot_error,
+            error: r.error
+          }));
+        setBulkRegenerateErrors(errs);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error de red");
@@ -1202,6 +1227,40 @@ Smile Designers Lab,,,`}
               </li>
             )}
           </ul>
+          {bulkRegenerateErrors.length > 0 && (
+            <details className="pl-7 mt-2">
+              <summary className="cursor-pointer text-xs text-danger-fg hover:text-ink font-medium">
+                Ver detalle de los {bulkRegenerateErrors.length} errores
+              </summary>
+              <ul className="mt-2 space-y-2 text-xs">
+                {bulkRegenerateErrors.map((e, i) => (
+                  <li key={i} className="border-l-2 border-danger-fg/30 pl-3 py-1">
+                    <div className="font-medium text-ink">
+                      {e.contact_name}
+                      {e.company_name && (
+                        <span className="text-ink-muted"> · {e.company_name}</span>
+                      )}
+                    </div>
+                    {e.error && (
+                      <div className="text-danger-fg mt-1">
+                        <span className="font-medium">Generación:</span> {e.error}
+                      </div>
+                    )}
+                    {e.lemlist_error && (
+                      <div className="text-danger-fg mt-1 break-words">
+                        <span className="font-medium">Lemlist:</span> {e.lemlist_error}
+                      </div>
+                    )}
+                    {e.hubspot_error && (
+                      <div className="text-danger-fg mt-1 break-words">
+                        <span className="font-medium">HubSpot:</span> {e.hubspot_error}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 
