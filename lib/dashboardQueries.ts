@@ -599,6 +599,25 @@ export async function computeDashboard(
   // Estimación cruda: 2 searches por empresa descubierta.
   const perplexityEstimate = cDiscovered * 2 * 0.005;
 
+  // Lemlist: cada contacto que entra a campaña consume 27 créditos:
+  //   1 enriquecer + 1 validar correo + 5 levantar correo + 20 levantar
+  //   teléfono. El plan del usuario incluye 7,000 créditos/mes gratis;
+  //   excedente se paga a $0.01 por crédito.
+  const LEMLIST_CREDITS_PER_CONTACT = 27;
+  const LEMLIST_FREE_CREDITS_PER_MONTH = 7000;
+  const LEMLIST_USD_PER_CREDIT = 0.01;
+  const lemlistCreditsUsed = numLemlist * LEMLIST_CREDITS_PER_CONTACT;
+  // Asumimos que el período es ~1 mes (caso típico del dashboard). Si el
+  // período es más largo, esto subestima el costo. Si es más corto,
+  // sobrestima la cobertura gratis. Para mediciones precisas el usuario
+  // verifica en lemlist.com.
+  const lemlistBillableCredits = Math.max(0, lemlistCreditsUsed - LEMLIST_FREE_CREDITS_PER_MONTH);
+  const lemlistEstimate = lemlistBillableCredits * LEMLIST_USD_PER_CREDIT;
+  const lemlistNote =
+    lemlistCreditsUsed <= LEMLIST_FREE_CREDITS_PER_MONTH
+      ? `${lemlistCreditsUsed.toLocaleString("es")} créditos consumidos (27 × ${numLemlist}). Bajo el límite gratis de 7,000/mes incluido en el plan.`
+      : `${lemlistCreditsUsed.toLocaleString("es")} créditos consumidos (27 × ${numLemlist}). Excede el límite gratis de 7,000/mes — facturable: ${lemlistBillableCredits.toLocaleString("es")} × $0.01.`;
+
   const provider_usage = [
     {
       name: "Anthropic (Claude)",
@@ -627,8 +646,8 @@ export async function computeDashboard(
       name: "Lemlist",
       operations_label: "leads añadidos a la campaña",
       operations: numLemlist,
-      estimated_cost_usd: numLemlist * 0.5,
-      note: "1 lead = 1 crédito (varía según plan). Verificar en lemlist.com."
+      estimated_cost_usd: lemlistEstimate,
+      note: lemlistNote
     },
     {
       name: "Lusha",
