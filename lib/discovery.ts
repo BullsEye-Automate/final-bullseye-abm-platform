@@ -147,9 +147,14 @@ Campos operativos (cad_software, scanner_technology, competitor_match):
 - Si la evidencia dice "muchos labs en EE.UU. usan exocad" → eso NO te autoriza a poner cad_software="exocad" en ninguna empresa específica.
 - Si la evidencia solo lista a la empresa (Manta, Yelp, BBB, directorios) sin detalles tecnológicos → todos los campos operativos van en null.
 
-Tamaño de empresa:
-- Solo si la evidencia da el dato para esta empresa específica (LinkedIn employee count, página About Us, perfil de Manta con tamaño). NO inferir de "probablemente pequeño" o del barrio.
-- Si no hay dato → null. Respeta la banda pedida solo para descartar groseros (micro-labs 1-10 cuando piden 30+).
+Tamaño de empresa (company_size, en número de empleados):
+- FUENTE AUTORITATIVA: el contador "X employees" / "X empleados" de la página corporativa de LinkedIn (https://www.linkedin.com/company/...). Es lo único realmente actualizado.
+- Aceptable también: una página oficial reciente de la empresa que diga literalmente el número (About Us, Team, Careers, comunicado de prensa con fecha del último año).
+- NO ACEPTABLE como dato de tamaño (suelen estar desactualizados 5-10 años o son estimaciones inventadas): Manta, BBB, Yelp, ZoomInfo, Hoovers, Crunchbase rangos viejos, "rangos típicos del rubro", "probablemente N empleados", directorios genéricos sin fecha visible.
+- Si la única fuente disponible es uno de esos directorios desactualizados → company_size=null. NO copies el número que dice ahí.
+- MEJOR NULL QUE UN NÚMERO FALSO. El usuario corrige a mano si hace falta — un número inventado rompe la personalización del outreach (un lab que tiene 90 empleados pero ponemos 20 recibe un mensaje pensado para un lab chico).
+- Si la evidencia te da un rango ("11-50 employees", "50-100"), usá el punto medio SOLO si la fuente es LinkedIn. Si es Manta/BBB, null.
+- Si no hay dato confiable → null. Respeta la banda pedida solo para descartar groseros (micro-labs 1-10 cuando piden 30+).
 
 URLs y ubicación:
 - company_linkedin_url: si la evidencia trae la URL corporativa de LinkedIn (formato https://www.linkedin.com/company/<slug>), inclúyela LITERAL. Si no la trae, deja null — NUNCA la inventes ni construyas desde el nombre.
@@ -446,7 +451,27 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
   });
 
   // Cortamos a `limit` tras priorizar (el overshoot solo era buffer).
-  const final = ranked.slice(0, limit);
+  let final = ranked.slice(0, limit);
+
+  // Pase dedicado: confirmar/sacar el employee count desde LinkedIn para
+  // todas las empresas que tienen LinkedIn URL válido. Sobreescribe el
+  // company_size con el dato del LinkedIn cuando lo encuentra. Si no lo
+  // encuentra, deja lo que ya había (que puede ser null).
+  if (final.length > 0) {
+    const items = final
+      .filter((c) => c.company_linkedin_url)
+      .map((c) => ({ name: c.company_name, linkedin_url: c.company_linkedin_url! }));
+    if (items.length > 0) {
+      const sizes = await salvageEmployeeCounts(items);
+      final = final.map((c) => {
+        const fromLinkedin = sizes.get(c.company_name.toLowerCase().trim());
+        if (typeof fromLinkedin === "number") {
+          return { ...c, company_size: fromLinkedin };
+        }
+        return c;
+      });
+    }
+  }
 
   const diagnostics: DiscoveryDiagnostics = {
     perplexity_asked: ask,
@@ -539,6 +564,64 @@ Reglas:
     const url = r?.linkedin_url;
     if (name && typeof url === "string" && isValidLinkedinCompanyUrl(url)) {
       out.set(name, url.trim());
+    }
+  }
+  return out;
+}
+
+// Pase dedicado a confirmar/sacar el employee count desde LinkedIn.
+// Disparador: Perplexity en la corrida principal acepta números de Manta/
+// BBB que están desactualizados (caso real: lab con 90 empleados en
+// LinkedIn, Perplexity reportó 20 de Manta y el icebreaker salió
+// personalizado para un lab chico). Este pase es dedicado y específico:
+// le pide a Perplexity que mire el "X employees" badge de la página de
+// LinkedIn. Si no puede verificarlo (login wall, página privada), devuelve
+// null y respetamos el valor original.
+//
+// Devuelve un Map<nombreLowerCase, number>. Solo incluye matches positivos.
+export async function salvageEmployeeCounts(
+  items: Array<{ name: string; linkedin_url: string }>
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (items.length === 0) return out;
+
+  const list = items
+    .map((i) => `- ${i.name} (LinkedIn: ${i.linkedin_url})`)
+    .join("\n");
+
+  let research;
+  try {
+    research = await perplexitySearch({
+      system:
+        "Sos un asistente que extrae employee count de páginas de LinkedIn corporativo. Devolvés solo números verificados del badge 'X employees' de LinkedIn. NUNCA inventás números ni copiás de Manta/BBB/Yelp/ZoomInfo/Hoovers (esos están desactualizados).",
+      user: `Para cada empresa de la lista, decime cuántos empleados tiene SEGÚN LA PÁGINA DE LINKEDIN CORPORATIVO (el badge "X employees" o "X empleados" que aparece al lado del nombre de la empresa o en la sección "Company info"). Si la página de LinkedIn no se puede leer, está privada, requiere login, o el badge no es visible, devolvé null para esa empresa. NO uses Manta, BBB, Yelp, ZoomInfo, Hoovers ni directorios desactualizados — solo LinkedIn.
+
+Empresas:
+${list}
+
+Regla crucial: si NO podés verificar el número en LinkedIn, devolvé null. Es 1000 veces mejor null que un número falso.
+
+Devolvé SOLO JSON válido, sin texto alrededor:
+{ "results": [ { "name": "<nombre exacto como te lo pasé>", "employees_on_linkedin": number | null } ] }`
+    });
+  } catch {
+    return out;
+  }
+
+  const parsed = extractJson(research.content);
+  if (!parsed || !Array.isArray(parsed.results)) return out;
+  for (const r of parsed.results) {
+    const name = String(r?.name ?? "").toLowerCase().trim();
+    const raw = r?.employees_on_linkedin;
+    if (!name) continue;
+    const n =
+      typeof raw === "number"
+        ? raw
+        : typeof raw === "string"
+        ? parseInt(raw.replace(/[^0-9]/g, ""), 10)
+        : NaN;
+    if (Number.isFinite(n) && n >= 1) {
+      out.set(name, n);
     }
   }
   return out;

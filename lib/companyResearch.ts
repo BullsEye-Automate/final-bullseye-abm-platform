@@ -13,7 +13,7 @@ import { createMessageWithFallback } from "./claude";
 import { perplexitySearch, PerplexityCitation } from "./perplexity";
 import type { IcpConfig } from "./supabase";
 import type { DiscoveredCompany } from "./discovery";
-import { isValidLinkedinCompanyUrl } from "./discovery";
+import { isValidLinkedinCompanyUrl, salvageEmployeeCounts } from "./discovery";
 import { validateCompanyEvidence, evidenceQuality } from "./companyEvidence";
 
 export type CompanyHints = {
@@ -64,7 +64,7 @@ Reglas:
 - Si la empresa NO es un laboratorio dental / clínica multi-centro / DSO, poné company_type="other", fit_score="low", y en research_summary explicá CLARAMENTE qué es realmente.
 - company_linkedin_url: literal de la evidencia o del hint del usuario. NUNCA inventes ni construyas desde el nombre. Si no, null.
 - company_country: código ISO de 2 letras solo si la evidencia lo confirma. Si no, null.
-- company_size: empleados solo si la evidencia trae el dato específico de esta empresa (LinkedIn count, página About Us, perfil de directorio con tamaño). NO inferir de "probablemente pequeño". Si no, null.
+- company_size (número de empleados): SOLO desde el contador "X employees" / "X empleados" de la página corporativa de LinkedIn — es lo único actualizado. Aceptable también una página oficial reciente de la empresa que diga el número literal (About Us, Team, Careers, comunicado de prensa último año). NO ACEPTABLE: Manta, BBB, Yelp, ZoomInfo, Hoovers, Crunchbase rangos viejos, directorios sin fecha — están sistemáticamente desactualizados 5-10 años. Si la única fuente disponible es uno de esos directorios → null. MEJOR NULL QUE UN NÚMERO FALSO (un número malo rompe la personalización del outreach).
 - company_website: literal de la evidencia o de hints. Si dudás, null.
 
 Scoring (fit_score):
@@ -237,7 +237,27 @@ Devolvé el JSON estricto definido en el sistema para ESTA empresa.`
   // señales operativas sin cita específica que nombre la empresa, nulea
   // campos operativos cuando la evidencia es genérica, degrada fit_score.
   const { company: validated, outcome } = validateCompanyEvidence(rawCompany);
-  const company: DiscoveredCompany = { ...validated, evidence_quality: outcome.evidence_quality };
+  let company: DiscoveredCompany = {
+    ...validated,
+    evidence_quality: outcome.evidence_quality
+  };
+
+  // Pase dedicado: confirmar el employee count desde LinkedIn cuando hay
+  // URL válida. Sobreescribe si encuentra un número en LinkedIn (que es la
+  // fuente más actualizada). Si no encuentra nada, deja lo que ya había.
+  if (company.company_linkedin_url) {
+    try {
+      const sizes = await salvageEmployeeCounts([
+        { name: company.company_name, linkedin_url: company.company_linkedin_url }
+      ]);
+      const fromLinkedin = sizes.get(company.company_name.toLowerCase().trim());
+      if (typeof fromLinkedin === "number") {
+        company = { ...company, company_size: fromLinkedin };
+      }
+    } catch {
+      // best-effort; no rompemos el research si Perplexity falla acá.
+    }
+  }
 
   const offTarget = company.company_type === "other";
   return { company, not_found: false, off_target: offTarget, diagnostics };
