@@ -281,6 +281,9 @@ function CompanyCard({
   const [preview, setPreview] = useState<PreviewLead[] | null>(null);
   const [previewMatchedUrl, setPreviewMatchedUrl] = useState<string | undefined>();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Buscador del preview: filtra leads por nombre/empresa/cargo para encontrar
+  // los de UNA empresa cuando la Campaña puente acumula muchos contactos.
+  const [previewQuery, setPreviewQuery] = useState("");
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
@@ -689,8 +692,42 @@ function CompanyCard({
                 <strong className="text-ink">{company.company_name}</strong>.
                 Los importados se borran automáticamente de la Campaña puente.
               </div>
+              <input
+                type="search"
+                value={previewQuery}
+                onChange={(e) => setPreviewQuery(e.target.value)}
+                placeholder={`Filtrar por nombre, empresa o cargo (ej: "${company.company_name.split(/\s+/)[0]}")`}
+                className="w-full px-2 py-1.5 border border-zinc-300 rounded text-sm"
+              />
               <div className="space-y-1">
-                {preview.map((l) => {
+                {(() => {
+                  const q = previewQuery.trim().toLowerCase();
+                  const filtered = q
+                    ? preview.filter((l) => {
+                        const hay = [
+                          l.name,
+                          l.first_name,
+                          l.last_name,
+                          l.company_name,
+                          l.job_title,
+                          l.email
+                        ]
+                          .filter(Boolean)
+                          .join(" ")
+                          .toLowerCase();
+                        return hay.includes(q);
+                      })
+                    : preview;
+                  if (filtered.length === 0 && q) {
+                    return (
+                      <div className="text-xs text-ink-muted py-3 text-center">
+                        Ningún lead matchea "{q}". Probá con menos palabras o
+                        sin el sufijo (ej. "artisan" en vez de "Artisan Dental
+                        Lab").
+                      </div>
+                    );
+                  }
+                  return filtered.map((l) => {
                   const checked = l.id ? selectedIds.has(l.id) : false;
                   return (
                     <label
@@ -739,7 +776,8 @@ function CompanyCard({
                       </div>
                     </label>
                   );
-                })}
+                  });
+                })()}
               </div>
             </>
           )}

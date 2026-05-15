@@ -1091,6 +1091,42 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
     text: string;
   } | null>(null);
 
+  // Edición inline del tamaño de la empresa. La IA a veces saca el número
+  // de fuentes secundarias (Manta, BBB) que están desactualizadas vs el
+  // LinkedIn real. Botón rápido para corregir a mano.
+  const [editingSize, setEditingSize] = useState(false);
+  const [sizeDraft, setSizeDraft] = useState(c.company_size?.toString() ?? "");
+  const [savingSize, setSavingSize] = useState(false);
+  const [displaySize, setDisplaySize] = useState<number | null>(c.company_size);
+
+  async function saveSize() {
+    const trimmed = sizeDraft.trim();
+    const value = trimmed === "" ? null : Number(trimmed);
+    if (value !== null && (!Number.isFinite(value) || value < 1)) {
+      alert("Tamaño inválido. Usá un número entero positivo o vacío para borrarlo.");
+      return;
+    }
+    setSavingSize(true);
+    try {
+      const res = await fetch(`/api/companies/${c.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company_size: value })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? "No se pudo actualizar");
+      } else {
+        setDisplaySize(data.company?.company_size ?? null);
+        setEditingSize(false);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setSavingSize(false);
+    }
+  }
+
   async function reverify() {
     const ok = window.confirm(
       `Re-verificar "${c.company_name}" con IA?\n\nVa a investigar la empresa otra vez usando el prompt estricto (sin invención). Si los datos viejos eran inventados, se reemplazan con la versión honesta (puede quedar sin software CAD ni escáner si no hay info pública).\n\nNo se toca el estado (aprobada / pendiente / rechazada) ni los IDs de Clay / HubSpot.`
@@ -1274,7 +1310,61 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
           </div>
           <div className="text-xs text-ink-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
             {c.company_type && <span>{labelType(c.company_type)}</span>}
-            {c.company_size && <span>· {c.company_size} empleados</span>}
+            <span className="inline-flex items-center gap-1">
+              <span>·</span>
+              {editingSize ? (
+                <>
+                  <input
+                    type="number"
+                    min={1}
+                    value={sizeDraft}
+                    onChange={(e) => setSizeDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveSize();
+                      if (e.key === "Escape") {
+                        setSizeDraft(displaySize?.toString() ?? "");
+                        setEditingSize(false);
+                      }
+                    }}
+                    autoFocus
+                    disabled={savingSize}
+                    className="w-16 px-1 py-0.5 border border-zinc-300 rounded text-xs"
+                    placeholder="—"
+                  />
+                  <span>empleados</span>
+                  <button
+                    onClick={saveSize}
+                    disabled={savingSize}
+                    className="text-success-fg hover:text-ink"
+                    title="Guardar"
+                  >
+                    <IconCheck size={12} />
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSizeDraft(displaySize?.toString() ?? "");
+                      setEditingSize(false);
+                    }}
+                    disabled={savingSize}
+                    className="text-ink-muted hover:text-danger-fg"
+                    title="Cancelar"
+                  >
+                    <IconX size={12} />
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => {
+                    setSizeDraft(displaySize?.toString() ?? "");
+                    setEditingSize(true);
+                  }}
+                  className="hover:text-brand underline decoration-dotted underline-offset-2"
+                  title="Click para corregir manualmente (la IA a veces se queda corta vs LinkedIn real)"
+                >
+                  {displaySize ? `${displaySize} empleados` : "sin tamaño"}
+                </button>
+              )}
+            </span>
             {(c.company_city || c.company_country) && (
               <span>
                 · {[c.company_city, c.company_country].filter(Boolean).join(", ")}

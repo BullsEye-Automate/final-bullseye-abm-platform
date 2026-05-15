@@ -733,7 +733,7 @@ export type DeleteLeadResult =
 
 export async function deleteCampaignLead(
   campaignId: string,
-  lead: { id?: string | null; email?: string | null }
+  lead: { id?: string | null; email?: string | null; contact_id?: string | null }
 ): Promise<DeleteLeadResult> {
   if (!process.env.LEMLIST_API_KEY) {
     return { ok: false, status: 500, error: "LEMLIST_API_KEY is not configured" };
@@ -741,8 +741,8 @@ export async function deleteCampaignLead(
   if (!campaignId) {
     return { ok: false, status: 500, error: "campaignId is empty" };
   }
-  if (!lead.id && !lead.email) {
-    return { ok: false, status: 400, error: "lead needs id or email" };
+  if (!lead.id && !lead.email && !lead.contact_id) {
+    return { ok: false, status: 400, error: "lead needs id, email or contact_id" };
   }
   const cid = encodeURIComponent(campaignId);
   const candidates: string[] = [];
@@ -751,11 +751,27 @@ export async function deleteCampaignLead(
       `${LEMLIST_API_BASE}/campaigns/${cid}/leads/${encodeURIComponent(lead.email)}`
     );
   }
+  // El contactId es el resource real del lead en Lemlist nueva (probado vía
+  // diagnose-campaign: GET /api/contacts/{contactId} devuelve el lead completo,
+  // GET /api/leads/{leadId} devuelve 404). Intentamos primero por contact id
+  // contra el endpoint dentro de la campaña + global.
+  if (lead.contact_id) {
+    candidates.push(
+      `${LEMLIST_API_BASE}/campaigns/${cid}/leads/${encodeURIComponent(lead.contact_id)}`
+    );
+    candidates.push(
+      `${LEMLIST_API_BASE}/campaigns/${cid}/contacts/${encodeURIComponent(lead.contact_id)}`
+    );
+    candidates.push(
+      `${LEMLIST_API_BASE}/contacts/${encodeURIComponent(lead.contact_id)}/campaigns/${cid}`
+    );
+  }
   if (lead.id) {
     candidates.push(
       `${LEMLIST_API_BASE}/campaigns/${cid}/leads/${encodeURIComponent(lead.id)}`
     );
-    // Algunas versiones aceptan /api/leads/{id} sin campaña — fallback.
+    // Algunas versiones aceptan /api/leads/{id} sin campaña — fallback (sabemos
+    // que devuelve 404 en muchos casos, pero lo dejamos como red de seguridad).
     candidates.push(`${LEMLIST_API_BASE}/leads/${encodeURIComponent(lead.id)}`);
   }
 

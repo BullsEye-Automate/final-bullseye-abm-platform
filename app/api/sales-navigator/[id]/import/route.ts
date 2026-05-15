@@ -123,10 +123,14 @@ export async function POST(
   let deleted = 0;
   const delete_errors: { lead: string; error: string }[] = [];
   for (const l of selected) {
-    if (!l.id && !l.email) continue;
+    if (!l.id && !l.email && !l.contact_id) continue;
     const del = await deleteCampaignLead(stagingId, {
       id: l.id,
-      email: l.email
+      email: l.email,
+      // contactId es el resource principal en Lemlist nuevo. Sin esto,
+      // DELETE /campaigns/{id}/leads/{lea_xxx} y /leads/{lea_xxx} fallan
+      // y los leads quedan acumulándose en la Campaña puente.
+      contact_id: l.contact_id
     });
     if (del.ok) {
       deleted += 1;

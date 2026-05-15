@@ -4,6 +4,37 @@ import { supabaseAdmin } from "@/lib/supabase";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Edita campos editables de la empresa. Hoy soporta solo company_size
+// (la IA a veces lo saca de fuentes secundarias y no del LinkedIn real),
+// pero está armado para extender a más campos si hace falta.
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const body = (await req.json().catch(() => ({}))) as {
+    company_size?: number | null;
+  };
+
+  const updates: Record<string, unknown> = {};
+  if (body.company_size === null) {
+    updates.company_size = null;
+  } else if (typeof body.company_size === "number" && Number.isFinite(body.company_size)) {
+    const v = Math.max(1, Math.min(100000, Math.floor(body.company_size)));
+    updates.company_size = v;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "No hay campos válidos para actualizar" }, { status: 400 });
+  }
+
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from("companies")
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq("id", params.id)
+    .select("id, company_size")
+    .single();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true, company: data });
+}
+
 // Hard delete de una empresa. Cascade en FKs:
 //  - contacts.company_id (on delete cascade) → se borran los contactos
 //  - company_feedback.company_id (on delete cascade) → se borra el feedback
