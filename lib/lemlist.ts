@@ -544,3 +544,78 @@ export async function getCampaignLeads(
     debug: { attempts }
   };
 }
+
+// ============================================================================
+// DELETE campaign lead — saca un lead de una campaña.
+//
+// Usado por la auto-limpieza de la Campaña puente: después de importar
+// leads del módulo /sales-navigator, los borramos de la campaña puente
+// en Lemlist para que la puente quede vacía entre empresas. Best-effort:
+// si la DELETE falla, no rompe la importación (el contacto ya está en
+// Supabase). Devolvemos el detalle de los intentos para diagnosticar.
+//
+// Probamos por email primero (más estable según docs v1) y por _id como
+// fallback.
+// ============================================================================
+
+export type DeleteLeadResult =
+  | { ok: true; status: number; matched_url: string }
+  | { ok: false; status: number; error: string; debug?: unknown };
+
+export async function deleteCampaignLead(
+  campaignId: string,
+  lead: { id?: string | null; email?: string | null }
+): Promise<DeleteLeadResult> {
+  if (!process.env.LEMLIST_API_KEY) {
+    return { ok: false, status: 500, error: "LEMLIST_API_KEY is not configured" };
+  }
+  if (!campaignId) {
+    return { ok: false, status: 500, error: "campaignId is empty" };
+  }
+  if (!lead.id && !lead.email) {
+    return { ok: false, status: 400, error: "lead needs id or email" };
+  }
+  const cid = encodeURIComponent(campaignId);
+  const candidates: string[] = [];
+  if (lead.email) {
+    candidates.push(
+      `${LEMLIST_API_BASE}/campaigns/${cid}/leads/${encodeURIComponent(lead.email)}`
+    );
+  }
+  if (lead.id) {
+    candidates.push(
+      `${LEMLIST_API_BASE}/campaigns/${cid}/leads/${encodeURIComponent(lead.id)}`
+    );
+    // Algunas versiones aceptan /api/leads/{id} sin campaña — fallback.
+    candidates.push(`${LEMLIST_API_BASE}/leads/${encodeURIComponent(lead.id)}`);
+  }
+
+  const attempts: { url: string; status: number; preview: string }[] = [];
+  for (const url of candidates) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "DELETE",
+        headers: { Authorization: buildAuthHeader(), Accept: "application/json" },
+        cache: "no-store"
+      });
+    } catch (err) {
+      attempts.push({
+        url,
+        status: 0,
+        preview: err instanceof Error ? err.message : "network error"
+      });
+      continue;
+    }
+    const text = await res.text();
+    attempts.push({ url, status: res.status, preview: text.slice(0, 200) });
+    if (res.ok) return { ok: true, status: res.status, matched_url: url };
+  }
+  const last = attempts[attempts.length - 1];
+  return {
+    ok: false,
+    status: last?.status ?? 0,
+    error: `Lemlist DELETE falló en los ${attempts.length} intento(s)`,
+    debug: { attempts }
+  };
+}

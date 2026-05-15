@@ -1,45 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { intakeContactsForCompany, type RawContact } from "@/lib/contactsIntake";
-import { getCampaignLeads } from "@/lib/lemlist";
+import { getCampaignLeads, deleteCampaignLead } from "@/lib/lemlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Pre-filtro de Claude por cada contacto — puede tardar con varios.
+// Pre-filtro de Claude por cada contacto + DELETEs a Lemlist al final.
 export const maxDuration = 300;
 
-// POST /api/sales-navigator/[id]/import   ([id] = company id, sin body)
-//   ?all=1 → importa TODOS los leads de la campaña puente a esta empresa,
-//            sin filtrar por nombre (escape hatch para cuando el match por
-//            nombre falla — la campaña puente se trabaja una empresa a la vez).
+// POST /api/sales-navigator/[id]/import
+//   body { lemlist_lead_ids: string[] }
 //
-// Jala los leads de la campaña "puente" de Lemlist (LEMLIST_STAGING_CAMPAIGN_ID),
-// por defecto filtra los que matchean el nombre de esta empresa, y los importa
-// por el pipeline compartido intakeContactsForCompany (pre-filtro Claude +
-// dedup + insert). El dedup por linkedin_url / email hace que re-correr esto
-// solo procese los NUEVOS.
+// Importa los leads SELECCIONADOS de la Campaña puente a esta empresa.
+// La UI le pasa los lemlist `_id`s que el usuario marcó en el preview con
+// checkboxes. Luego de un intake exitoso, borra esos mismos leads de la
+// Campaña puente en Lemlist (DELETE) para que la puente quede limpia
+// entre empresas — los unselected quedan en la puente para procesarlos
+// con otra empresa después.
 //
-// Devuelve siempre `staged_leads` (muestra de lo que hay en la campaña puente)
-// y `matched_url` para diagnosticar si el match o el fetch fallan.
-
-function normName(s: string | null | undefined): string {
-  return (s ?? "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
-// Match laxo por nombre: igual, o uno contiene al otro (con piso de 4 chars
-// para no matchear por fragmentos genéricos tipo "lab").
-function namesMatch(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  const shorter = a.length <= b.length ? a : b;
-  const longer = a.length <= b.length ? b : a;
-  return shorter.length >= 4 && longer.includes(shorter);
-}
-
+// El dedup por linkedin_url/email a nivel empresa (intakeContactsForCompany)
+// hace que re-importar el mismo lead a la misma empresa no duplique.
+//
+// Los DELETEs son best-effort: si fallan, el contacto ya quedó en Supabase
+// y la respuesta incluye delete_errors para que la UI los muestre.
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -55,7 +38,28 @@ export async function POST(
     );
   }
 
-  const importAll = req.nextUrl.searchParams.get("all") === "1";
+  const body = await req.json().catch(() => ({}));
+  const rawIds = (body as { lemlist_lead_ids?: unknown }).lemlist_lead_ids;
+  if (!Array.isArray(rawIds) || rawIds.length === 0) {
+    return NextResponse.json(
+      {
+        error:
+          "Falta lemlist_lead_ids — ningún lead seleccionado para importar."
+      },
+      { status: 400 }
+    );
+  }
+  const wantedIds = new Set(
+    rawIds.filter(
+      (x): x is string => typeof x === "string" && x.trim().length > 0
+    )
+  );
+  if (wantedIds.size === 0) {
+    return NextResponse.json(
+      { error: "lemlist_lead_ids vacío después de validar." },
+      { status: 400 }
+    );
+  }
 
   const db = supabaseAdmin();
   const { data: company, error: cErr } = await db
@@ -68,6 +72,7 @@ export async function POST(
     return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
   }
 
+  // Re-fetch fresco — la lista del preview puede haber cambiado.
   const leadsRes = await getCampaignLeads(stagingId);
   if (!leadsRes.ok) {
     return NextResponse.json(
@@ -79,36 +84,21 @@ export async function POST(
     );
   }
 
-  const allStaged = leadsRes.leads;
-  const target = normName(company.company_name);
-  const nameMatched = allStaged.filter((l) =>
-    namesMatch(normName(l.company_name), target)
-  );
-
-  // Muestra de lo que hay en la campaña puente — para que la UI lo muestre y
-  // para diagnosticar si el fetch o el match fallan.
-  const stagedLeads = allStaged.slice(0, 30).map((l) => ({
-    name: [l.first_name, l.last_name].filter(Boolean).join(" ") || null,
-    company_name: l.company_name,
-    job_title: l.job_title,
-    linkedin_url: l.linkedin_url
-  }));
-
-  const toImport = importAll ? allStaged : nameMatched;
-
-  if (toImport.length === 0) {
+  const selected = leadsRes.leads.filter((l) => l.id && wantedIds.has(l.id));
+  if (selected.length === 0) {
     return NextResponse.json({
       ok: true,
       summary: { inserted: 0, yes: 0, no: 0, skipped: 0 },
       contacts: [],
-      staged_total: allStaged.length,
-      matched: nameMatched.length,
-      staged_leads: stagedLeads,
+      staged_total: leadsRes.leads.length,
+      selected_count: 0,
+      deleted: 0,
+      delete_errors: [],
       matched_url: leadsRes.matched_url
     });
   }
 
-  const contacts: RawContact[] = toImport.map((l) => ({
+  const contacts: RawContact[] = selected.map((l) => ({
     first_name: l.first_name,
     last_name: l.last_name,
     job_title: l.job_title,
@@ -120,6 +110,29 @@ export async function POST(
   const result = await intakeContactsForCompany(db, params.id, contacts);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+
+  // Auto-limpiar la Campaña puente: DELETE de cada lead seleccionado.
+  // Best-effort — errores se devuelven en delete_errors pero no rompen
+  // la respuesta (el contacto ya quedó en Supabase).
+  let deleted = 0;
+  const delete_errors: { lead: string; error: string }[] = [];
+  for (const l of selected) {
+    if (!l.id && !l.email) continue;
+    const del = await deleteCampaignLead(stagingId, {
+      id: l.id,
+      email: l.email
+    });
+    if (del.ok) {
+      deleted += 1;
+    } else {
+      const who =
+        [l.first_name, l.last_name].filter(Boolean).join(" ") ||
+        l.email ||
+        l.id ||
+        "(sin id)";
+      delete_errors.push({ lead: who, error: del.error });
+    }
   }
 
   // Contactos YES de esta empresa listos para Lemlist (recién importados o
@@ -141,10 +154,10 @@ export async function POST(
     ok: true,
     summary: result.summary,
     contacts: fresh ?? [],
-    staged_total: allStaged.length,
-    matched: nameMatched.length,
-    imported_from: importAll ? "all" : "name_match",
-    staged_leads: stagedLeads,
+    staged_total: leadsRes.leads.length,
+    selected_count: selected.length,
+    deleted,
+    delete_errors,
     matched_url: leadsRes.matched_url
   });
 }
