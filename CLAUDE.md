@@ -1232,10 +1232,12 @@ fit, se marca la empresa para que salga de la cola.
 ### Se apoya en infra que ya existía
 
 - **Loop Clay → app (PR #91)**: `POST /api/clay/company-no-contacts`
-  ya marca `companies.clay_no_contacts_at` cuando Find People da 0.
-  No se recreó nada — el módulo lee ese flag. (Requiere configurar la
-  columna HTTP API en Clay con run condition "Find People result
-  count = 0" — paso del usuario, no código.)
+  marca `companies.clay_no_contacts_at` cuando Find People da 0. Sigue
+  vivo como SEÑAL PRECISA, pero **crear la columna HTTP API en Clay que
+  lo dispara quedó detrás del plan Growth** (las columnas HTTP API
+  viejas — raw-contacts, scored-contacts — siguen andando porque están
+  grandfathered del trial; columnas nuevas ya no se pueden sin upgrade).
+  Por eso el módulo NO depende de eso — ver "Señal inferida" abajo.
 - **`intakeContactsForCompany`** (lib/contactsIntake.ts): pipeline
   compartido de pre-filtro Claude + dedup + insert. Al insertar
   cualquier fila limpia `clay_no_contacts_at` + `sales_nav_status` →
@@ -1255,8 +1257,15 @@ fit, se marca la empresa para que salga de la cola.
   perfil. Best-effort (LinkedIn bloquea scraping); si no encuentra,
   devuelve el nombre tentativo del slug de la URL con `found=false`
   para que el usuario complete a mano.
-- `app/api/sales-navigator/route.ts` — GET: empresas con
-  `clay_no_contacts_at` seteado, separadas en `pending` / `no_fit`.
+- `app/api/sales-navigator/route.ts` — GET: empresas que necesitan
+  revisión en Sales Navigator, separadas en `pending` / `no_fit`. Dos
+  señales para `pending` (cada empresa trae `signal`):
+  - `signal='clay'`: Clay avisó por webhook (`clay_no_contacts_at`).
+  - `signal='inferred'`: la app lo dedujo — empresa empujada a Clay hace
+    más de `CLAY_GRACE_HOURS` (24h) que sigue sin NINGÚN contacto en la
+    base. Si Clay hubiera encontrado gente, el webhook raw-contacts ya
+    habría creado las filas. Esto hace que el módulo funcione SIN
+    necesidad de la columna HTTP API en Clay (que quedó plan-gated).
 - `app/api/sales-navigator/research-contacts/route.ts` — POST
   `{ company_id, linkedin_urls[] }` → devuelve `drafts` (no inserta).
   Chunks paralelos de 3, cap 12 URLs.
@@ -1298,12 +1307,14 @@ fit, se marca la empresa para que salga de la cola.
 
 ### Para activarlo (pendiente del usuario)
 
-1. Pegar `supabase/companies_sales_nav_migration.sql` en Supabase.
-2. En Clay tabla Companies: columna HTTP API con run condition "Find
-   People result count = 0" → `POST /api/clay/company-no-contacts`,
-   body `{ "wecad_company_id": <chip wecad_company_id> }`, header
-   `x-webhook-secret`. (Si ya estaba configurada del PR #91, nada que
-   hacer.)
+1. Pegar `supabase/companies_sales_nav_migration.sql` en Supabase. ✅
+   (hecho por el usuario en la sesión 2026-05-15).
+2. **Nada en Clay.** Se intentó crear la columna HTTP API
+   `company-no-contacts` pero las HTTP API Integrations de Clay quedaron
+   detrás del plan Growth. El módulo funciona igual gracias a la señal
+   inferida (ver arriba). Si en el futuro suben de plan, crear esa
+   columna agrega la señal precisa además de la inferida — pero no es
+   necesario.
 
 ### Gaps conocidos al cierre Sprint 6 fase 4
 

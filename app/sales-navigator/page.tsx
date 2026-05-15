@@ -42,10 +42,14 @@ type Company = {
   fit_signals: string | null;
   fit_score: string | null;
   research_summary: string | null;
+  clay_pushed_at: string | null;
   clay_no_contacts_at: string | null;
   sales_nav_status: string | null;
   sales_nav_checked_at: string | null;
   created_at: string;
+  // Por qué la empresa está en la cola: 'clay' = Clay avisó por webhook;
+  // 'inferred' = la app lo dedujo (pasó por Clay y sigue sin contactos).
+  signal?: "clay" | "inferred";
 };
 
 type ContactDraft = {
@@ -169,10 +173,10 @@ export default function SalesNavigatorPage() {
               <IconCompass size={18} /> No hay empresas esperando revisión.
             </div>
             <div className="text-sm">
-              Cuando Clay Find People no encuentre contactos para una empresa,
-              va a aparecer acá. Requiere la columna HTTP API en Clay con run
-              condition <code className="bg-[#F4F2FB] px-1 rounded">Find People result count = 0</code>{" "}
-              apuntando a <code className="bg-[#F4F2FB] px-1 rounded">/api/clay/company-no-contacts</code>.
+              Cuando una empresa que mandaste a Clay no consigue contactos,
+              aparece acá automáticamente: la app lo detecta sola (empresa
+              empujada a Clay hace 24h+ y sin ningún contacto en la base). No
+              requiere configuración en Clay.
             </div>
           </div>
         ) : (
@@ -385,6 +389,19 @@ function CompanyCard({
   return (
     <div className="card space-y-3">
       <CompanyHeader company={company} />
+
+      {company.signal === "inferred" ? (
+        <div className="text-xs text-warning-fg flex items-start gap-1">
+          <IconAlertCircle size={12} className="mt-0.5 shrink-0" />
+          Pasó por Clay y sigue sin contactos en la base — Clay no encontró a
+          nadie.
+        </div>
+      ) : (
+        <div className="text-xs text-ink-muted flex items-start gap-1">
+          <IconCheck size={12} className="mt-0.5 shrink-0 text-success-fg" />
+          Clay avisó: Find People no encontró contactos.
+        </div>
+      )}
 
       {company.fit_signals && (
         <div className="text-sm text-ink">{company.fit_signals}</div>
