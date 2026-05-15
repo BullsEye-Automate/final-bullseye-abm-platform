@@ -371,6 +371,101 @@ export default function EmpresasPage() {
     [tab, companies]
   );
 
+  // Cuántas empresas (del tab actual) tienen evidencia no-específica —
+  // sospechosa de tener datos inventados por el prompt loose viejo.
+  const nonSpecificCount = useMemo(
+    () => companies.filter((c) => c.evidence_quality && c.evidence_quality !== "specific").length,
+    [companies]
+  );
+
+  const [bulkReverifying, setBulkReverifying] = useState(false);
+  const [bulkReverifyResult, setBulkReverifyResult] = useState<{
+    processed: number;
+    updated: number;
+    quality_improved: number;
+    quality_still_generic: number;
+    fit_score_downgraded: number;
+    errors: number;
+    remaining_in_queue: number;
+  } | null>(null);
+
+  const [bulkRegenerating, setBulkRegenerating] = useState(false);
+  const [bulkRegenerateResult, setBulkRegenerateResult] = useState<{
+    processed: number;
+    regenerated: number;
+    skipped_no_change: number;
+    lemlist_refreshed: number;
+    lemlist_errors: number;
+    hubspot_refreshed: number;
+    hubspot_errors: number;
+    errors: number;
+    remaining_in_queue: number;
+  } | null>(null);
+
+  async function runBulkReverify() {
+    const ok = window.confirm(
+      `Re-verificar las empresas con evidencia genérica?\n\nVa a procesar hasta 10 empresas por corrida (≈3-5 min). Si quedan más, repite el botón.\n\nLos datos operativos sin respaldo de fuente específica se reemplazan por null. fit_score baja a "low" en las que no haya evidencia específica nueva.\n\nNo toca estado ni IDs de Clay / HubSpot — esos quedan como están.`
+    );
+    if (!ok) return;
+    setBulkReverifying(true);
+    setBulkReverifyResult(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/companies/bulk-re-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: tab,
+          only_non_specific: true,
+          batch_limit: 10
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+      } else {
+        setBulkReverifyResult(data.summary);
+        load(tab);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setBulkReverifying(false);
+    }
+  }
+
+  async function runBulkRegenerate() {
+    const ok = window.confirm(
+      `Regenerar mensajes (icebreaker + email subject + email body) de contactos cuya empresa fue re-verificada?\n\nVa a procesar hasta 15 contactos por corrida (≈2-5 min). Si quedan más, repite el botón.\n\nPara contactos ya en Lemlist: borra el lead viejo y agrega uno nuevo con los mensajes frescos (la campaña debe estar pausada).\nPara contactos ya en HubSpot: re-pushea para actualizar las custom properties.\n\nLos contactos cuyos mensajes no cambian se saltan sin tocarlos.`
+    );
+    if (!ok) return;
+    setBulkRegenerating(true);
+    setBulkRegenerateResult(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/contacts/bulk-regenerate-messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "all_with_messages",
+          refresh_lemlist: true,
+          refresh_hubspot: true,
+          batch_limit: 15
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+      } else {
+        setBulkRegenerateResult(data.summary);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setBulkRegenerating(false);
+    }
+  }
+
   async function pushAllToClay() {
     if (unpushedCount === 0) return;
     setBulkPushing(true);
@@ -989,6 +1084,124 @@ Smile Designers Lab,,,`}
               ? ` · ${bulkApproveResult.hubspot_errors} no se pudieron sincronizar a HubSpot (reinténtalo desde la card)`
               : " y sincronizadas a HubSpot"}
           </span>
+        </div>
+      )}
+
+      {nonSpecificCount > 0 && (
+        <div className="card bg-warning-bg border-warning-fg/30 flex flex-col gap-3">
+          <div className="flex items-start gap-3">
+            <IconAlertCircle size={20} className="text-warning-fg shrink-0 mt-0.5" />
+            <div className="text-sm text-ink">
+              <div className="font-semibold text-warning-fg">
+                {nonSpecificCount}{" "}
+                {nonSpecificCount === 1 ? "empresa tiene" : "empresas tienen"} evidencia
+                genérica o sin citas
+              </div>
+              <p className="mt-1 text-ink-muted">
+                Los datos operativos (software CAD, escáner, externalización, contratación)
+                probablemente fueron inferidos del contexto del rubro y no del análisis
+                específico de cada empresa. Re-verificar para reemplazarlos por la versión
+                honesta antes de retomar la campaña.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 items-center pl-8">
+            <button
+              onClick={runBulkReverify}
+              disabled={bulkReverifying}
+              className="btn-primary"
+              title="Procesa hasta 10 empresas por corrida (≈3-5 min). Repite el botón si quedan más."
+            >
+              <IconShieldCheck size={14} />
+              {bulkReverifying
+                ? "Re-verificando…"
+                : `Re-verificar empresas con IA (lote de 10)`}
+            </button>
+            <button
+              onClick={runBulkRegenerate}
+              disabled={bulkRegenerating}
+              className="btn-secondary"
+              title="Después del re-verify de empresas, regenera mensajes (icebreaker + email) de contactos. Refresca Lemlist y HubSpot. Procesa hasta 15 contactos por corrida."
+            >
+              <IconRefresh size={14} />
+              {bulkRegenerating
+                ? "Regenerando…"
+                : `Regenerar mensajes de contactos (lote de 15)`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {bulkReverifyResult && (
+        <div className="card text-sm flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <IconCheck size={16} className="text-success-fg" />
+            <span className="font-semibold">
+              Re-verify completado: {bulkReverifyResult.processed} empresas procesadas
+            </span>
+          </div>
+          <ul className="text-xs text-ink-muted pl-7 list-disc">
+            <li>{bulkReverifyResult.updated} actualizadas</li>
+            <li>
+              {bulkReverifyResult.quality_improved} ahora con evidencia específica ·{" "}
+              {bulkReverifyResult.quality_still_generic} todavía sin evidencia específica
+              (sin info pública nueva)
+            </li>
+            <li>{bulkReverifyResult.fit_score_downgraded} bajaron de "high" a "medium" o "low"</li>
+            {bulkReverifyResult.errors > 0 && (
+              <li className="text-danger-fg">{bulkReverifyResult.errors} errores</li>
+            )}
+            {bulkReverifyResult.remaining_in_queue > 0 && (
+              <li className="text-warning-fg font-medium">
+                Quedan {bulkReverifyResult.remaining_in_queue} más por procesar — repite el botón.
+              </li>
+            )}
+          </ul>
+        </div>
+      )}
+
+      {bulkRegenerateResult && (
+        <div className="card text-sm flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <IconCheck size={16} className="text-success-fg" />
+            <span className="font-semibold">
+              Regeneración de mensajes completada: {bulkRegenerateResult.processed} contactos
+            </span>
+          </div>
+          <ul className="text-xs text-ink-muted pl-7 list-disc">
+            <li>
+              {bulkRegenerateResult.regenerated} con mensajes nuevos ·{" "}
+              {bulkRegenerateResult.skipped_no_change} sin cambios
+            </li>
+            <li>
+              Lemlist: {bulkRegenerateResult.lemlist_refreshed} leads refrescados (DELETE +
+              ADD)
+              {bulkRegenerateResult.lemlist_errors > 0 && (
+                <span className="text-danger-fg">
+                  {" "}
+                  · {bulkRegenerateResult.lemlist_errors} errores
+                </span>
+              )}
+            </li>
+            <li>
+              HubSpot: {bulkRegenerateResult.hubspot_refreshed} contactos re-sync
+              {bulkRegenerateResult.hubspot_errors > 0 && (
+                <span className="text-danger-fg">
+                  {" "}
+                  · {bulkRegenerateResult.hubspot_errors} errores
+                </span>
+              )}
+            </li>
+            {bulkRegenerateResult.errors > 0 && (
+              <li className="text-danger-fg">{bulkRegenerateResult.errors} errores de generación</li>
+            )}
+            {bulkRegenerateResult.remaining_in_queue > 0 && (
+              <li className="text-warning-fg font-medium">
+                Quedan {bulkRegenerateResult.remaining_in_queue} más por procesar — repite el
+                botón.
+              </li>
+            )}
+          </ul>
         </div>
       )}
 

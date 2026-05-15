@@ -426,8 +426,27 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
     liveOnly = regionOnly;
   }
 
-  // Cortamos a `limit` tras filtrar (el overshoot solo era buffer).
-  const final = liveOnly.slice(0, limit);
+  // Priorización: dentro de las que pasaron todos los filtros, ordenamos
+  // por (fit_score desc, riqueza de fit_signals desc). Más señales
+  // operativas confirmadas = más material para personalizar el outreach.
+  // El usuario explícitamente pidió priorizar las que tienen info útil
+  // para personalización.
+  const scoreRank: Record<string, number> = { high: 3, medium: 2, low: 1 };
+  const signalDepth = (s: string): number =>
+    s
+      .split("·")
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0).length;
+
+  const ranked = [...liveOnly].sort((a, b) => {
+    const aScore = scoreRank[a.fit_score] ?? 0;
+    const bScore = scoreRank[b.fit_score] ?? 0;
+    if (aScore !== bScore) return bScore - aScore;
+    return signalDepth(b.fit_signals) - signalDepth(a.fit_signals);
+  });
+
+  // Cortamos a `limit` tras priorizar (el overshoot solo era buffer).
+  const final = ranked.slice(0, limit);
 
   const diagnostics: DiscoveryDiagnostics = {
     perplexity_asked: ask,

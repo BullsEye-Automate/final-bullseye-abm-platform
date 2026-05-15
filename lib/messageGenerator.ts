@@ -98,9 +98,15 @@ function buildUserPrompt(input: MessageInput): string {
   lines.push(`A. If "Fit signals" contains an OPERATIONAL fact about this company (specific software mentioned, scanner mentioned, competitor relationship, public hiring activity, public case study), reference exactly that fact.`);
   lines.push(`B. Else if CAD software OR Scanner technology is set (not "(no public information)"), reference exactly that.`);
   lines.push(`C. Else if LinkedIn headline contains a substantive statement (a focus, a passion, a tagline beyond just the job title), reference exactly what they say in their own headline.`);
-  lines.push(`D. Else anchor on the prospect's ROLE + COMPANY TYPE only, with a generic-but-honest industry framing. Phrase it so it would feel relevant to any person with that role at a company of that type — no claims about THIS specific company. Examples:`);
-  lines.push(`   - "Curious how labs your size are handling overflow CAD design lately?"`);
-  lines.push(`   - "Most Dental Lab Managers I talk to lately are weighing in-house designers vs outsourcing. What's your read?"`);
+  lines.push(`D. Else (no specific company info, no person-specific signals): anchor on the prospect's ROLE + COMPANY TYPE only. The opener should highlight a value proposition of weCAD4you that is RELEVANT to people in that role at that company type, without claiming anything about THIS specific company. The framing should feel like an observation about labs of their type, not an assertion about them. Examples (adapt to the role):`);
+  lines.push(`   - To a Lab Manager / Owner at a small lab: "Most lab owners I talk to are surprised that outsourcing CAD design with 24h turnaround actually costs less than hiring a designer. Worth a quick look?"`);
+  lines.push(`   - To a Production / Operations Manager: "Curious how your team handles CAD overflow when scan volume spikes. Most labs your size are weighing in-house designers vs outsourcing."`);
+  lines.push(`   - To a CAD Technician / Designer: "Mostly reaching out to CAD folks at labs running exocad or inLab to see how they handle overflow. Open to a quick chat?"`);
+  lines.push(`   - To an Owner / Founder: "Most lab owners we work with were stuck choosing between turning down cases or hiring designers. We design crowns and bridges in 24h in exocad and inLab — no hire needed."`);
+  lines.push(`   Notes for D:`);
+  lines.push(`   - Lead with a relevant value prop of weCAD4you (24h turnaround, exocad/inLab specialty, 98.9% no-adjustment rate, scanner-agnostic, scale without hiring designers).`);
+  lines.push(`   - Frame as an observation about labs of their type — NOT as a claim about THIS company specifically.`);
+  lines.push(`   - Always end with a low-commitment open question.`);
   lines.push(``);
   lines.push(`RULES for linkedin_icebreaker:`);
   lines.push(`- MAX 180 characters total (counted strictly).`);
