@@ -546,6 +546,111 @@ export async function getCampaignLeads(
 }
 
 // ============================================================================
+// getCampaignLeadsWithDetails — versión enriquecida de getCampaignLeads.
+//
+// El endpoint GET /api/campaigns/{id}/leads devuelve solo {_id, state,
+// contactId} por lead (probado vía /api/lemlist/diagnose-campaign).
+// Para tener email + linkedinUrl + nombres, hay que llamar
+// GET /api/leads/{leadId} por cada lead.
+//
+// Estrategia: lista de leads → enriquecer en paralelo (chunks de 5) →
+// devolver leads con email/linkedinUrl/firstName/lastName/jobTitle/
+// companyName completados. Si el detalle por-lead falla, se conserva
+// el lead con los campos null (no rompemos el batch).
+// ============================================================================
+
+const ENRICH_CONCURRENCY = 5;
+
+function pickStrFromLead(
+  lead: Record<string, unknown>,
+  keys: string[]
+): string | null {
+  for (const k of keys) {
+    const v = lead[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  }
+  return null;
+}
+
+export async function getCampaignLeadsWithDetails(
+  campaignId: string
+): Promise<GetCampaignLeadsResult> {
+  const list = await getCampaignLeads(campaignId);
+  if (!list.ok) return list;
+
+  // Si todos los leads ya vienen con email O linkedin_url, no hace falta
+  // enriquecer (algunas campañas devuelven shape completo de una).
+  const needsEnrichment = list.leads.some(
+    (l) => l.id && !l.email && !l.linkedin_url
+  );
+  if (!needsEnrichment) return list;
+
+  const enriched: LemlistCampaignLead[] = new Array(list.leads.length);
+  for (let i = 0; i < list.leads.length; i += ENRICH_CONCURRENCY) {
+    const chunk = list.leads.slice(i, i + ENRICH_CONCURRENCY);
+    const detailed = await Promise.all(
+      chunk.map(async (lead, j): Promise<LemlistCampaignLead> => {
+        const out = lead;
+        if (!lead.id || (lead.email && lead.linkedin_url)) return out;
+        const det = await getLemlistLeadById(lead.id);
+        if (!det.ok) return out;
+        const raw = det.lead as Record<string, unknown>;
+        return {
+          id: out.id,
+          email: out.email ?? pickStrFromLead(raw, ["email", "Email"]),
+          first_name:
+            out.first_name ??
+            pickStrFromLead(raw, ["firstName", "first_name", "FirstName", "firstname"]),
+          last_name:
+            out.last_name ??
+            pickStrFromLead(raw, ["lastName", "last_name", "LastName", "lastname"]),
+          company_name:
+            out.company_name ??
+            pickStrFromLead(raw, [
+              "companyName",
+              "company_name",
+              "company",
+              "Company",
+              "organizationName"
+            ]),
+          job_title:
+            out.job_title ??
+            pickStrFromLead(raw, [
+              "jobTitle",
+              "job_title",
+              "title",
+              "Title",
+              "position",
+              "headline",
+              "linkedinHeadline"
+            ]),
+          linkedin_url:
+            out.linkedin_url ??
+            pickStrFromLead(raw, [
+              "linkedinUrl",
+              "linkedin_url",
+              "linkedin",
+              "LinkedinUrl",
+              "linkedInUrl"
+            ])
+        };
+      })
+    );
+    for (let k = 0; k < detailed.length; k++) {
+      enriched[i + k] = detailed[k];
+    }
+  }
+
+  return {
+    ok: true,
+    leads: enriched,
+    pages: list.pages,
+    matched_url: list.matched_url
+  };
+}
+
+// ============================================================================
 // DELETE campaign lead — saca un lead de una campaña.
 //
 // Usado por la auto-limpieza de la Campaña puente: después de importar

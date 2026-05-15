@@ -19,7 +19,7 @@ import { generateMessages, type MessageInput } from "@/lib/messageGenerator";
 import {
   addLeadToCampaign,
   deleteCampaignLead,
-  getCampaignLeads,
+  getCampaignLeadsWithDetails,
   type LemlistCampaignLead
 } from "@/lib/lemlist";
 import { syncContactToHubSpot } from "@/lib/hubspotContactSync";
@@ -396,7 +396,7 @@ export async function POST(req: NextRequest) {
     if (!campaignId) {
       lemlistSnapshotError = "LEMLIST_CAMPAIGN_ID no configurado";
     } else {
-      const snap = await getCampaignLeads(campaignId);
+      const snap = await getCampaignLeadsWithDetails(campaignId);
       if (!snap.ok) {
         lemlistSnapshotError = `getCampaignLeads falló: ${snap.error}`;
       } else {
