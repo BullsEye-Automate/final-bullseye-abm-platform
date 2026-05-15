@@ -100,6 +100,14 @@ export type DashboardData = {
     estimated_cost_usd: number | null;
     note: string;
   }>;
+  /** Embudo de contactos levantados por Clay (range-bound). */
+  clay_funnel: {
+    total_from_clay: number;
+    fit: number;
+    manual_review: number;
+    manual_review_approved: number;
+    in_lemlist: number;
+  };
   // Cobertura del módulo Sales Navigator (estado actual, NO range-bound).
   // Empresas que pasaron por Clay agrupadas por cuántos contactos
   // encontramos. Permite ver de un vistazo cuánto trabajo manual queda
@@ -478,6 +486,40 @@ export async function computeDashboard(
     contacts_total: totalContactsByMonth.get(m.key) ?? 0
   }));
 
+  // ---- Embudo Clay (range-bound) ----
+  // Contactos cuyo source='clay' creados en el rango, agrupados por su
+  // estado del pipeline:
+  //   - levantados por Clay (total)
+  //   - fit auto (fit_action='enrich' decidido por Clay AI)
+  //   - manual_review (Clay AI lo dejó para revisión humana)
+  //   - manual_review aprobados por el humano
+  //   - en Lemlist (lemlist_pushed_at no null, por cualquier camino)
+  const { data: clayFunnelRows } = await db
+    .from("contacts")
+    .select("fit_action, human_decision, lemlist_pushed_at")
+    .eq("source", "clay")
+    .gte("created_at", start.toISOString())
+    .lt("created_at", end.toISOString())
+    .limit(50000);
+  let cf_total = 0;
+  let cf_fit = 0;
+  let cf_mr = 0;
+  let cf_mr_approved = 0;
+  let cf_lemlist = 0;
+  for (const r of (clayFunnelRows ?? []) as Array<{
+    fit_action: string | null;
+    human_decision: string | null;
+    lemlist_pushed_at: string | null;
+  }>) {
+    cf_total++;
+    if (r.fit_action === "enrich") cf_fit++;
+    if (r.fit_action === "manual_review") {
+      cf_mr++;
+      if (r.human_decision === "approved") cf_mr_approved++;
+    }
+    if (r.lemlist_pushed_at) cf_lemlist++;
+  }
+
   // ---- Uso estimado por proveedor (range-bound) ----
   // Estimaciones basadas en counters de operaciones × costo aproximado por
   // operación. NO son números de billing reales (cada proveedor tiene su
@@ -693,6 +735,13 @@ export async function computeDashboard(
     },
     evolution_8mo,
     provider_usage,
+    clay_funnel: {
+      total_from_clay: cf_total,
+      fit: cf_fit,
+      manual_review: cf_mr,
+      manual_review_approved: cf_mr_approved,
+      in_lemlist: cf_lemlist
+    },
     activity
   };
 }

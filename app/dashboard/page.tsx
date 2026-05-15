@@ -83,6 +83,13 @@ type Dashboard = {
     estimated_cost_usd: number | null;
     note: string;
   }>;
+  clay_funnel: {
+    total_from_clay: number;
+    fit: number;
+    manual_review: number;
+    manual_review_approved: number;
+    in_lemlist: number;
+  };
   activity: Array<{ date: string; companies_approved: number; contacts_imported: number }>;
 };
 
@@ -141,6 +148,7 @@ export default function DashboardPage() {
           <CoverageCard coverage={data.coverage} />
           <UsageCard usage={data.usage} rangeLabel={data.range.label} />
           <EvolutionCard months={data.evolution_8mo} />
+          <ClayFunnelCard funnel={data.clay_funnel} rangeLabel={data.range.label} />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <DistributionCard
               title="Empresas por tipo"
@@ -805,6 +813,103 @@ function EvolutionCard({ months }: { months: Dashboard["evolution_8mo"] }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Clay funnel card — embudo de contactos levantados por Clay (range-bound)
+// ============================================================================
+
+function ClayFunnelCard({
+  funnel,
+  rangeLabel
+}: {
+  funnel: Dashboard["clay_funnel"];
+  rangeLabel: string;
+}) {
+  const top = funnel.total_from_clay || 1;
+  const pct = (n: number) => (n / top) * 100;
+  const fmtPct = (n: number, d: number) =>
+    d === 0 ? "—" : `${Math.round((n / d) * 100)}%`;
+  const steps = [
+    {
+      label: "Levantados por Clay",
+      count: funnel.total_from_clay,
+      subtitle: "Find People + Enrich Person",
+      rate: "100%",
+      cls: "bg-brand"
+    },
+    {
+      label: "Marcados fit por Clay AI",
+      count: funnel.fit,
+      subtitle: "Lead Scoring action = enrich",
+      rate: fmtPct(funnel.fit, funnel.total_from_clay) + " del total",
+      cls: "bg-success-fg"
+    },
+    {
+      label: "En revisión manual",
+      count: funnel.manual_review,
+      subtitle: "Lead Scoring action = manual_review",
+      rate: fmtPct(funnel.manual_review, funnel.total_from_clay) + " del total",
+      cls: "bg-warning-fg"
+    },
+    {
+      label: "Manual review aprobados",
+      count: funnel.manual_review_approved,
+      subtitle: "Aprobados manualmente del bucket anterior",
+      rate:
+        funnel.manual_review > 0
+          ? fmtPct(funnel.manual_review_approved, funnel.manual_review) +
+            " del manual review"
+          : "—",
+      cls: "bg-warning-fg/70"
+    },
+    {
+      label: "En campaña Lemlist",
+      count: funnel.in_lemlist,
+      subtitle: "lemlist_pushed_at — outreach activo",
+      rate: fmtPct(funnel.in_lemlist, funnel.total_from_clay) + " del total",
+      cls: "bg-brand-soft"
+    }
+  ];
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2 mb-1 text-brand">
+        <IconChartBar size={16} />
+        <h2 className="text-sm font-semibold text-ink">
+          Embudo de contactos levantados por Clay · {rangeLabel}
+        </h2>
+      </div>
+      <p className="text-xs text-ink-muted mb-4">
+        Solo contactos con <code className="text-[11px]">source=&apos;clay&apos;</code>{" "}
+        creados en el período. Permite ver dónde se está perdiendo volumen en
+        el pipeline.
+      </p>
+      <div className="space-y-2">
+        {steps.map((s) => (
+          <div key={s.label} className="flex items-center gap-3">
+            <div className="w-48 shrink-0">
+              <div className="text-sm font-medium text-ink">{s.label}</div>
+              <div className="text-[10px] text-ink-subtle leading-tight">
+                {s.subtitle}
+              </div>
+            </div>
+            <div className="flex-1 relative h-7 bg-[#F1EEF7] rounded overflow-hidden">
+              <div
+                className={`absolute inset-y-0 left-0 ${s.cls}`}
+                style={{ width: `${pct(s.count)}%` }}
+              />
+              <div className="absolute inset-0 flex items-center justify-end px-2 text-xs font-medium text-ink tabular-nums">
+                {s.count}
+              </div>
+            </div>
+            <div className="w-32 text-xs text-ink-muted text-right shrink-0">
+              {s.rate}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
