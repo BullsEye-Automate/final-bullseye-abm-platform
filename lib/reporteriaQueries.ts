@@ -350,7 +350,7 @@ export async function computeReporteria(
     companies: { company_name: string | null } | null;
   };
   const contactById = new Map<string, HotRaw>();
-  for (const c of (hotCandidates ?? []) as HotRaw[]) {
+  for (const c of (hotCandidates ?? []) as unknown as HotRaw[]) {
     contactById.set(c.id, c);
   }
   // Última call por contacto.

@@ -4,7 +4,7 @@
 // Resumen consolidado de prospección + outreach + llamadas + respuestas
 // con range selector compartido con /dashboard.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   IconChartBar,
   IconTrendingUp,
@@ -215,7 +215,12 @@ function HighlightBanner({ text }: { text: string }) {
 // ============================================================================
 
 function HeroKpiGrid({ hero }: { hero: Snapshot["hero"] }) {
-  const items = [
+  const items: Array<{
+    label: string;
+    delta: Delta;
+    icon: ReactNode;
+    hint?: string;
+  }> = [
     {
       label: "Empresas prospectadas",
       delta: hero.companies_worked,
@@ -246,9 +251,24 @@ function HeroKpiGrid({ hero }: { hero: Snapshot["hero"] }) {
   ];
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-      {items.map((it) => (
-        <KpiCard key={it.label} {...it} />
-      ))}
+      {items.map((it) =>
+        it.hint ? (
+          <KpiCard
+            key={it.label}
+            label={it.label}
+            delta={it.delta}
+            icon={it.icon}
+            hint={it.hint}
+          />
+        ) : (
+          <KpiCard
+            key={it.label}
+            label={it.label}
+            delta={it.delta}
+            icon={it.icon}
+          />
+        )
+      )}
     </div>
   );
 }
@@ -261,7 +281,7 @@ function KpiCard({
 }: {
   label: string;
   delta: Delta;
-  icon: React.ReactNode;
+  icon: ReactNode;
   hint?: string;
 }) {
   const sign =
