@@ -25,10 +25,13 @@ export type IntakeResult =
   | { ok: true; summary: IntakeSummary }
   | { ok: false; status: number; error: string };
 
+export type ContactSource = "clay" | "sales_navigator" | "web_scrape" | "manual";
+
 export async function intakeContactsForCompany(
   db: SupabaseClient,
   companyId: string,
-  raws: RawContact[]
+  raws: RawContact[],
+  source: ContactSource = "manual"
 ): Promise<IntakeResult> {
   const { data: company, error: cErr } = await db
     .from("companies")
@@ -115,7 +118,8 @@ export async function intakeContactsForCompany(
       seniority: c.seniority ?? null,
       tenure: c.tenure ?? null,
       prefilter_result: prefilter,
-      status: prefilter === "yes" ? "pending" : "discarded"
+      status: prefilter === "yes" ? "pending" : "discarded",
+      source
     });
   }
 

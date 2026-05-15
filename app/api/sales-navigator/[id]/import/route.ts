@@ -112,7 +112,7 @@ export async function POST(
     email: l.email
   }));
 
-  const result = await intakeContactsForCompany(db, params.id, contacts);
+  const result = await intakeContactsForCompany(db, params.id, contacts, "sales_navigator");
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }

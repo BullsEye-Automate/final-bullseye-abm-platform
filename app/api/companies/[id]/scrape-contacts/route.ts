@@ -60,7 +60,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     });
   }
 
-  const intake = await intakeContactsForCompany(db, params.id, scrape.contacts);
+  const intake = await intakeContactsForCompany(db, params.id, scrape.contacts, "web_scrape");
   if (!intake.ok) {
     return NextResponse.json({ error: intake.error }, { status: intake.status });
   }

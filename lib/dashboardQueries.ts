@@ -61,6 +61,36 @@ export type DashboardData = {
     human_agreement_rate: number | null;
     discard_reasons: Array<{ reason: string; count: number }>;
   };
+  // Métricas de uso del equipo (range-bound). Para medir gestión mensual.
+  usage: {
+    /** Empresas que entraron al sistema en el rango (clay_pushed_at en rango). */
+    total_companies_worked: number;
+    /** Empresas únicas con ≥1 contacto source='clay' creado en el rango. */
+    clay_companies: number;
+    /** Contactos source='clay' creados en el rango. */
+    clay_contacts: number;
+    /** Empresas únicas con ≥1 contacto source='sales_navigator' creado en el rango. */
+    sales_nav_companies: number;
+    /** Contactos source='sales_navigator' creados en el rango. */
+    sales_nav_contacts: number;
+    /** Promedio contactos por empresa (total contactos / empresas únicas con ≥1). */
+    avg_contacts_per_company: number | null;
+  };
+  /** Evolución últimos 8 meses (no range-bound). Mes a mes. */
+  evolution_8mo: Array<{
+    /** YYYY-MM */
+    month: string;
+    /** "Abr 2026" o similar. */
+    label: string;
+    /** Empresas con clay_pushed_at en ese mes. */
+    companies_clay_push: number;
+    /** Contactos source='clay' creados en ese mes. */
+    contacts_from_clay: number;
+    /** Contactos source='sales_navigator' creados en ese mes. */
+    contacts_from_sales_nav: number;
+    /** Total contactos creados en ese mes (todas las fuentes). */
+    contacts_total: number;
+  }>;
   // Cobertura del módulo Sales Navigator (estado actual, NO range-bound).
   // Empresas que pasaron por Clay agrupadas por cuántos contactos
   // encontramos. Permite ver de un vistazo cuánto trabajo manual queda
@@ -337,6 +367,108 @@ export async function computeDashboard(
     rate_from_top: i === 0 ? null : safePct(f.count, funnelTop)
   }));
 
+  // ---- Usage range-bound (medición de gestión del equipo) ----
+  const [usageCompaniesRes, usageContactsRes] = await Promise.all([
+    db
+      .from("companies")
+      .select("id, clay_pushed_at")
+      .gte("clay_pushed_at", start.toISOString())
+      .lt("clay_pushed_at", end.toISOString())
+      .limit(20000),
+    db
+      .from("contacts")
+      .select("id, company_id, source, created_at")
+      .gte("created_at", start.toISOString())
+      .lt("created_at", end.toISOString())
+      .limit(50000)
+  ]);
+  const usageCompanies = (usageCompaniesRes.data ?? []) as Array<{ id: string }>;
+  const usageContacts = (usageContactsRes.data ?? []) as Array<{
+    company_id: string | null;
+    source: string | null;
+  }>;
+  const clayCompanySet = new Set<string>();
+  const snCompanySet = new Set<string>();
+  const anyCompanySet = new Set<string>();
+  let clayContactsCount = 0;
+  let snContactsCount = 0;
+  for (const c of usageContacts) {
+    if (c.company_id) anyCompanySet.add(c.company_id);
+    if (c.source === "clay") {
+      clayContactsCount++;
+      if (c.company_id) clayCompanySet.add(c.company_id);
+    } else if (c.source === "sales_navigator") {
+      snContactsCount++;
+      if (c.company_id) snCompanySet.add(c.company_id);
+    }
+  }
+  const avgContacts =
+    anyCompanySet.size > 0 ? usageContacts.length / anyCompanySet.size : null;
+
+  // ---- Evolution últimos 8 meses (no range-bound) ----
+  // Generamos los 8 meses (incluyendo el actual) en orden cronológico ascendente.
+  const monthBuckets: Array<{ key: string; label: string; start: Date; end: Date }> = [];
+  const nowMonthRef = new Date();
+  nowMonthRef.setUTCDate(1);
+  nowMonthRef.setUTCHours(0, 0, 0, 0);
+  for (let i = 7; i >= 0; i--) {
+    const s = new Date(nowMonthRef);
+    s.setUTCMonth(s.getUTCMonth() - i);
+    const e = new Date(s);
+    e.setUTCMonth(e.getUTCMonth() + 1);
+    const key = `${s.getUTCFullYear()}-${String(s.getUTCMonth() + 1).padStart(2, "0")}`;
+    const monthName = s.toLocaleString("es", { month: "short", timeZone: "UTC" });
+    const label = `${monthName.charAt(0).toUpperCase()}${monthName.slice(1).replace(".", "")} ${s.getUTCFullYear()}`;
+    monthBuckets.push({ key, label, start: s, end: e });
+  }
+  const evoStart = monthBuckets[0].start;
+  const evoEnd = monthBuckets[monthBuckets.length - 1].end;
+
+  const [evoCompaniesRes, evoContactsRes] = await Promise.all([
+    db
+      .from("companies")
+      .select("clay_pushed_at")
+      .gte("clay_pushed_at", evoStart.toISOString())
+      .lt("clay_pushed_at", evoEnd.toISOString())
+      .limit(50000),
+    db
+      .from("contacts")
+      .select("source, created_at")
+      .gte("created_at", evoStart.toISOString())
+      .lt("created_at", evoEnd.toISOString())
+      .limit(100000)
+  ]);
+
+  function monthKeyOf(iso: string): string {
+    return iso.slice(0, 7);
+  }
+  const pushByMonth = new Map<string, number>();
+  for (const r of (evoCompaniesRes.data ?? []) as Array<{ clay_pushed_at: string }>) {
+    const k = monthKeyOf(r.clay_pushed_at);
+    pushByMonth.set(k, (pushByMonth.get(k) ?? 0) + 1);
+  }
+  const clayContactsByMonth = new Map<string, number>();
+  const snContactsByMonth = new Map<string, number>();
+  const totalContactsByMonth = new Map<string, number>();
+  for (const r of (evoContactsRes.data ?? []) as Array<{
+    source: string | null;
+    created_at: string;
+  }>) {
+    const k = monthKeyOf(r.created_at);
+    totalContactsByMonth.set(k, (totalContactsByMonth.get(k) ?? 0) + 1);
+    if (r.source === "clay") clayContactsByMonth.set(k, (clayContactsByMonth.get(k) ?? 0) + 1);
+    else if (r.source === "sales_navigator")
+      snContactsByMonth.set(k, (snContactsByMonth.get(k) ?? 0) + 1);
+  }
+  const evolution_8mo = monthBuckets.map((m) => ({
+    month: m.key,
+    label: m.label,
+    companies_clay_push: pushByMonth.get(m.key) ?? 0,
+    contacts_from_clay: clayContactsByMonth.get(m.key) ?? 0,
+    contacts_from_sales_nav: snContactsByMonth.get(m.key) ?? 0,
+    contacts_total: totalContactsByMonth.get(m.key) ?? 0
+  }));
+
   // ---- Cobertura Sales Navigator (estado actual, no range-bound) ----
   // Empresas que pasaron por Clay agrupadas por cuántos contactos tenemos.
   const [coverageCompaniesRes, coverageContactsRes] = await Promise.all([
@@ -416,6 +548,15 @@ export async function computeDashboard(
       no_fit_marked: cov_no_fit,
       manually_worked: cov_manually_worked
     },
+    usage: {
+      total_companies_worked: usageCompanies.length,
+      clay_companies: clayCompanySet.size,
+      clay_contacts: clayContactsCount,
+      sales_nav_companies: snCompanySet.size,
+      sales_nav_contacts: snContactsCount,
+      avg_contacts_per_company: avgContacts
+    },
+    evolution_8mo,
     activity
   };
 }

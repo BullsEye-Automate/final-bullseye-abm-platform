@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
   const errors: { wecad_company_id: string; error: string }[] = [];
 
   for (const [companyId, contacts] of byCompany) {
-    const r = await intakeContactsForCompany(db, companyId, contacts);
+    const r = await intakeContactsForCompany(db, companyId, contacts, "clay");
     if (!r.ok) {
       errors.push({ wecad_company_id: companyId, error: r.error });
       continue;

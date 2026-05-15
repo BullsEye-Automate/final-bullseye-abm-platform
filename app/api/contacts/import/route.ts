@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   }
 
   const db = supabaseAdmin();
-  const result = await intakeContactsForCompany(db, body.company_id, body.contacts);
+  const result = await intakeContactsForCompany(db, body.company_id, body.contacts, "manual");
 
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });

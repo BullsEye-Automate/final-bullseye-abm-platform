@@ -60,6 +60,22 @@ type Dashboard = {
     no_fit_marked: number;
     manually_worked: number;
   };
+  usage: {
+    total_companies_worked: number;
+    clay_companies: number;
+    clay_contacts: number;
+    sales_nav_companies: number;
+    sales_nav_contacts: number;
+    avg_contacts_per_company: number | null;
+  };
+  evolution_8mo: Array<{
+    month: string;
+    label: string;
+    companies_clay_push: number;
+    contacts_from_clay: number;
+    contacts_from_sales_nav: number;
+    contacts_total: number;
+  }>;
   activity: Array<{ date: string; companies_approved: number; contacts_imported: number }>;
 };
 
@@ -115,8 +131,9 @@ export default function DashboardPage() {
         <>
           <HeroKpis pipeline={data.pipeline} />
           <ConversionRates pipeline={data.pipeline} />
-          <FunnelCard funnel={data.funnel} />
           <CoverageCard coverage={data.coverage} />
+          <UsageCard usage={data.usage} rangeLabel={data.range.label} />
+          <EvolutionCard months={data.evolution_8mo} />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <DistributionCard
               title="Empresas por tipo"
@@ -544,6 +561,174 @@ function FitActionsCard({
 }
 
 // ============================================================================
+// Usage card — métricas mensuales del equipo (range-bound)
+// ============================================================================
+
+function UsageCard({
+  usage,
+  rangeLabel
+}: {
+  usage: Dashboard["usage"];
+  rangeLabel: string;
+}) {
+  const items: Array<{
+    label: string;
+    value: string | number;
+    hint?: string;
+  }> = [
+    {
+      label: "Empresas trabajadas",
+      value: usage.total_companies_worked,
+      hint: "Empresas que se mandaron a Clay en el período"
+    },
+    {
+      label: "Empresas con resultado Clay",
+      value: usage.clay_companies,
+      hint: "Únicas con ≥1 contacto encontrado por Clay en el período"
+    },
+    {
+      label: "Contactos encontrados por Clay",
+      value: usage.clay_contacts
+    },
+    {
+      label: "Empresas con resultado Sales Nav",
+      value: usage.sales_nav_companies,
+      hint: "Únicas con ≥1 contacto importado manualmente en el período"
+    },
+    {
+      label: "Contactos encontrados por Sales Nav",
+      value: usage.sales_nav_contacts
+    },
+    {
+      label: "Promedio contactos por empresa",
+      value:
+        usage.avg_contacts_per_company == null
+          ? "—"
+          : usage.avg_contacts_per_company.toFixed(1),
+      hint: "Total contactos / empresas únicas con ≥1 contacto"
+    }
+  ];
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2 mb-1 text-brand">
+        <IconChartBar size={16} />
+        <h2 className="text-sm font-semibold text-ink">
+          Uso del equipo · {rangeLabel}
+        </h2>
+      </div>
+      <p className="text-xs text-ink-muted mb-4">
+        Para medir gestión mensual del equipo de prospección. Filtrado por el
+        rango seleccionado arriba.
+      </p>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {items.map((it) => (
+          <div key={it.label} className="space-y-0.5">
+            <div className="text-2xl font-semibold text-ink tabular-nums">
+              {it.value}
+            </div>
+            <div className="text-xs text-ink-muted">{it.label}</div>
+            {it.hint && (
+              <div className="text-[10px] text-ink-subtle leading-tight">
+                {it.hint}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Evolution card — últimos 8 meses, empresas trabajadas + contactos por fuente
+// ============================================================================
+
+function EvolutionCard({ months }: { months: Dashboard["evolution_8mo"] }) {
+  const maxCompanies = Math.max(1, ...months.map((m) => m.companies_clay_push));
+  const maxContacts = Math.max(
+    1,
+    ...months.map((m) => m.contacts_from_clay + m.contacts_from_sales_nav)
+  );
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2 mb-1 text-brand">
+        <IconCalendarStats size={16} />
+        <h2 className="text-sm font-semibold text-ink">
+          Evolución mensual · últimos 8 meses
+        </h2>
+      </div>
+      <p className="text-xs text-ink-muted mb-4">
+        Empresas que entraron al sistema (push a Clay) y contactos encontrados
+        cada mes, separados por fuente. No filtrado por rango — siempre los
+        últimos 8 meses calendario.
+      </p>
+      <div className="flex items-center gap-4 mb-4 text-xs">
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm bg-brand" />
+          <span className="text-ink-muted">Empresas (push a Clay)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm bg-success-fg" />
+          <span className="text-ink-muted">Contactos de Clay</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-3 h-3 rounded-sm bg-warning-fg" />
+          <span className="text-ink-muted">Contactos de Sales Nav</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-8 gap-2">
+        {months.map((m) => {
+          const totalContacts = m.contacts_from_clay + m.contacts_from_sales_nav;
+          const companiesPct = (m.companies_clay_push / maxCompanies) * 100;
+          const clayPct = (m.contacts_from_clay / maxContacts) * 100;
+          const snPct = (m.contacts_from_sales_nav / maxContacts) * 100;
+          return (
+            <div key={m.month} className="flex flex-col items-center gap-1.5">
+              <div className="text-[10px] text-ink-subtle tabular-nums">
+                {totalContacts > 0 ? `${totalContacts}c` : ""}
+              </div>
+              <div className="w-full h-32 flex items-end gap-1">
+                {/* Barra empresas */}
+                <div className="flex-1 flex flex-col justify-end">
+                  <div
+                    className="bg-brand rounded-t"
+                    style={{ height: `${companiesPct}%` }}
+                    title={`${m.companies_clay_push} empresas pushed a Clay`}
+                  />
+                </div>
+                {/* Barra contactos apilada (Clay verde abajo, SN amarillo arriba) */}
+                <div className="flex-1 flex flex-col justify-end">
+                  <div
+                    className="bg-warning-fg"
+                    style={{ height: `${snPct}%` }}
+                    title={`${m.contacts_from_sales_nav} contactos de Sales Nav`}
+                  />
+                  <div
+                    className="bg-success-fg rounded-t"
+                    style={{
+                      height: `${clayPct}%`,
+                      borderTopLeftRadius: snPct > 0 ? 0 : 2,
+                      borderTopRightRadius: snPct > 0 ? 0 : 2
+                    }}
+                    title={`${m.contacts_from_clay} contactos de Clay`}
+                  />
+                </div>
+              </div>
+              <div className="text-[10px] text-ink-muted text-center leading-tight">
+                <div className="font-medium tabular-nums">
+                  {m.companies_clay_push}
+                </div>
+                <div>{m.label}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // Coverage card — cobertura de contactos por empresa + resumen Sales Navigator
 // ============================================================================
 
@@ -584,7 +769,7 @@ function CoverageCard({ coverage }: { coverage: Dashboard["coverage"] }) {
       <div className="flex items-center gap-2 mb-1 text-brand">
         <IconCompass size={16} />
         <h2 className="text-sm font-semibold text-ink">
-          Cobertura de contactos · Sales Navigator
+          Cobertura de empresas totales · Sales Navigator
         </h2>
       </div>
       <p className="text-xs text-ink-muted mb-4">
