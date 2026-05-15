@@ -77,6 +77,19 @@ const BUCKET_LABELS: Record<Bucket, string> = {
   discarded: "Descartados"
 };
 
+const BUCKET_DESCRIPTIONS: Record<Bucket, string> = {
+  pending:
+    "Contactos que pasaron el pre-filtro de Claude (YES) y esperan ser empujados a Clay para el Find People + Enrich + Lead Scoring. Click 'Prospectar todos en Clay' para enviarlos en bulk.",
+  approved_pending:
+    "Contactos que ya pasaron por Clay y la IA marcó como FIT (action=enrich). Esperan tu aprobación humana antes de salir a Lemlist. Click 'Generar preview con IA' para ver el copy que se generaría, y 'Enviar a campaña' para pushearlos.",
+  manual_review:
+    "Contactos que Clay marcó como score medio (action=manual_review) — la IA no se decidió y dejó la decisión al humano. Click 'Aprobar' para mandarlos a Lemlist (genera mensaje + push), o 'Rechazar' para descartarlos.",
+  enriched:
+    "Contactos que ya fueron pusheados a Lemlist y están recibiendo mensajes (correo + LinkedIn). Si no aparecen en Lemlist UI, mirá el campo lemlist_push_error en la card.",
+  discarded:
+    "Contactos descartados en algún paso del pipeline: el pre-filtro Claude los rechazó (no eran decisores), Clay los marcó como action=discard, o un humano los rechazó manualmente. Pueden recuperarse al bucket Pendientes con 'Aprobar'."
+};
+
 export default function ContactosPage() {
   const [bucket, setBucket] = useState<Bucket>("pending");
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -99,6 +112,7 @@ export default function ContactosPage() {
   const [bulkSyncingHubspot, setBulkSyncingHubspot] = useState(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
   const [decidingId, setDecidingId] = useState<string | null>(null);
+  const [discardingId, setDiscardingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [retryingHubspotId, setRetryingHubspotId] = useState<string | null>(null);
@@ -391,6 +405,27 @@ export default function ContactosPage() {
     await load();
   }
 
+  // Descarta un contacto del bucket "Por aprobar" — pasa a Descartados
+  // sin borrarlo. Persiste feedback (claude action vs human action) para
+  // entrenamiento futuro.
+  async function discardContact(contactId: string) {
+    setDiscardingId(contactId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/discard`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo descartar");
+        return;
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setDiscardingId(null);
+    }
+  }
+
   async function removeContact(contactId: string, label: string) {
     const ok = window.confirm(
       `¿Eliminar a ${label} de la base? Esta acción no se puede deshacer. El feedback histórico en contact_feedback se conserva.`
@@ -632,6 +667,10 @@ export default function ContactosPage() {
         </div>
       </div>
 
+      <div className="card bg-[#FAFAFE] text-xs text-ink-muted leading-relaxed">
+        {BUCKET_DESCRIPTIONS[bucket]}
+      </div>
+
       {error && (
         <div className="card border border-danger-bg text-danger-fg flex items-center gap-2">
           <IconAlertCircle size={16} /> {error}
@@ -763,6 +802,8 @@ export default function ContactosPage() {
                         isPushingLemlist={pushingLemlistId === c.id}
                         onDecide={decide}
                         isDeciding={decidingId === c.id}
+                        onDiscard={discardContact}
+                        isDiscarding={discardingId === c.id}
                         onDelete={removeContact}
                         isDeleting={deletingId === c.id}
                         onRetryLemlist={retryLemlist}
@@ -814,6 +855,8 @@ function ContactCard({
   isPushingLemlist,
   onDecide,
   isDeciding,
+  onDiscard,
+  isDiscarding,
   onDelete,
   isDeleting,
   onRetryLemlist,
@@ -829,6 +872,8 @@ function ContactCard({
   isPushingLemlist: boolean;
   onDecide: (id: string, decision: "approved" | "rejected") => void | Promise<void>;
   isDeciding: boolean;
+  onDiscard: (id: string) => void | Promise<void>;
+  isDiscarding: boolean;
   onDelete: (id: string, label: string) => void | Promise<void>;
   isDeleting: boolean;
   onRetryLemlist: (id: string, label: string, force?: boolean) => void | Promise<void>;
@@ -1037,6 +1082,30 @@ function ContactCard({
       )}
 
       <div className="flex flex-wrap justify-end gap-2">
+        {bucket === "approved_pending" && (
+          <>
+            <button
+              onClick={() => onDiscard(c.id)}
+              disabled={isDiscarding}
+              className="btn-secondary text-xs"
+              title="Descartar — pasa a Descartados (no se envía a Lemlist)"
+            >
+              <IconThumbDown size={12} />
+              {isDiscarding ? "Descartando…" : "Descartar"}
+            </button>
+            <button
+              onClick={() =>
+                onPushLemlist(c.id, `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.id)
+              }
+              disabled={isPushingLemlist}
+              className="btn-primary text-xs"
+              title="Genera mensaje con la config activa y empuja a Lemlist + HubSpot"
+            >
+              <IconSend size={12} />
+              {isPushingLemlist ? "Enviando…" : "Enviar a campaña"}
+            </button>
+          </>
+        )}
         {canDecide && (
           <>
             <button
