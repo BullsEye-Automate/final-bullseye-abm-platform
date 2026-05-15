@@ -91,6 +91,15 @@ export type DashboardData = {
     /** Total contactos creados en ese mes (todas las fuentes). */
     contacts_total: number;
   }>;
+  /** Uso estimado por proveedor (range-bound). */
+  provider_usage: Array<{
+    name: string;
+    operations_label: string;
+    operations: number;
+    /** Estimación en USD. null si no se puede estimar. */
+    estimated_cost_usd: number | null;
+    note: string;
+  }>;
   // Cobertura del módulo Sales Navigator (estado actual, NO range-bound).
   // Empresas que pasaron por Clay agrupadas por cuántos contactos
   // encontramos. Permite ver de un vistazo cuánto trabajo manual queda
@@ -469,6 +478,132 @@ export async function computeDashboard(
     contacts_total: totalContactsByMonth.get(m.key) ?? 0
   }));
 
+  // ---- Uso estimado por proveedor (range-bound) ----
+  // Estimaciones basadas en counters de operaciones × costo aproximado por
+  // operación. NO son números de billing reales (cada proveedor tiene su
+  // dashboard); sirven para tener una orden de magnitud y detectar picos.
+  //
+  // Costos por operación (USD, aproximaciones a 2026-05):
+  //   Anthropic (Sonnet 4.6): pre-filter ~$0.002, message gen ~$0.005,
+  //     research/analysis ~$0.02. Promedio ponderado ~$0.008/op.
+  //   Perplexity (sonar-pro): ~$0.005 por search.
+  //   Clay: ~5 créditos por empresa (Find People + Enrich Person).
+  //     Plan típico ~$0.04/crédito → ~$0.20 por empresa.
+  //   Lemlist: ~$0.50 por lead añadido (varía según plan).
+  //   Lusha: ~$0.40 por teléfono encontrado (plan típico).
+  //   HubSpot: API gratis dentro del rate limit; reportamos solo el conteo.
+
+  const [
+    contactsCreatedRes,
+    callsAnalyzedRes,
+    companiesPushedClayRes,
+    contactsLemlistRes,
+    contactsLushaRes,
+    hubspotPushesRes
+  ] = await Promise.all([
+    db
+      .from("contacts")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", start.toISOString())
+      .lt("created_at", end.toISOString()),
+    db
+      .from("calls")
+      .select("id", { count: "exact", head: true })
+      .not("analyzed_at", "is", null)
+      .gte("analyzed_at", start.toISOString())
+      .lt("analyzed_at", end.toISOString()),
+    db
+      .from("companies")
+      .select("id", { count: "exact", head: true })
+      .gte("clay_pushed_at", start.toISOString())
+      .lt("clay_pushed_at", end.toISOString()),
+    db
+      .from("contacts")
+      .select("id", { count: "exact", head: true })
+      .gte("lemlist_pushed_at", start.toISOString())
+      .lt("lemlist_pushed_at", end.toISOString()),
+    db
+      .from("contacts")
+      .select("id", { count: "exact", head: true })
+      .eq("phone_source", "lusha")
+      .gte("updated_at", start.toISOString())
+      .lt("updated_at", end.toISOString()),
+    db
+      .from("contacts")
+      .select("id", { count: "exact", head: true })
+      .gte("hubspot_synced_at", start.toISOString())
+      .lt("hubspot_synced_at", end.toISOString())
+  ]);
+
+  const numContacts = contactsCreatedRes.count ?? 0;
+  const numCallsAnalyzed = callsAnalyzedRes.count ?? 0;
+  const numCompaniesPushed = companiesPushedClayRes.count ?? 0;
+  const numLemlist = contactsLemlistRes.count ?? 0;
+  const numLusha = contactsLushaRes.count ?? 0;
+  const numHubspot = hubspotPushesRes.count ?? 0;
+
+  // Anthropic: pre-filter por contacto (~$0.002) + message gen por contacto en
+  // Lemlist (~$0.005) + research/análisis por empresa+call (~$0.02 c/u).
+  // (Sumamos también discovery: pero discovery es 1 batch por corrida → no
+  // tenemos un counter limpio. Aproximación: cDiscovered ~ 1 call per 10 empresas.)
+  const anthropicEstimate =
+    numContacts * 0.002 +
+    numLemlist * 0.005 +
+    cDiscovered * 0.025 +
+    numCallsAnalyzed * 0.02;
+
+  // Perplexity: discovery (1 search principal + 1 size salvage + 1 linkedin
+  // salvage por corrida) + research one-shot (2 searches por empresa).
+  // Estimación cruda: 2 searches por empresa descubierta.
+  const perplexityEstimate = cDiscovered * 2 * 0.005;
+
+  const provider_usage = [
+    {
+      name: "Anthropic (Claude)",
+      operations_label:
+        "pre-filtros + mensajes + análisis de llamadas + research",
+      operations:
+        numContacts + numLemlist + cDiscovered + numCallsAnalyzed,
+      estimated_cost_usd: anthropicEstimate,
+      note: "Estimación a partir de operaciones contadas. Verificar en console.anthropic.com."
+    },
+    {
+      name: "Perplexity",
+      operations_label: "searches durante discovery + research one-shot",
+      operations: cDiscovered * 2,
+      estimated_cost_usd: perplexityEstimate,
+      note: "Cap aproximado de 2 searches por empresa descubierta."
+    },
+    {
+      name: "Clay",
+      operations_label: "empresas pushed (Find People + Enrich Person)",
+      operations: numCompaniesPushed,
+      estimated_cost_usd: numCompaniesPushed * 0.2,
+      note: "≈5 créditos por empresa. Verificar consumo real en clay.com."
+    },
+    {
+      name: "Lemlist",
+      operations_label: "leads añadidos a la campaña",
+      operations: numLemlist,
+      estimated_cost_usd: numLemlist * 0.5,
+      note: "1 lead = 1 crédito (varía según plan). Verificar en lemlist.com."
+    },
+    {
+      name: "Lusha",
+      operations_label: "teléfonos enriquecidos",
+      operations: numLusha,
+      estimated_cost_usd: numLusha * 0.4,
+      note: "1 teléfono = 1 crédito Lusha. Verificar en lusha.com."
+    },
+    {
+      name: "HubSpot",
+      operations_label: "syncs de contacto (push o update)",
+      operations: numHubspot,
+      estimated_cost_usd: null,
+      note: "API gratis dentro del rate limit (100 req/10s, 250k/día)."
+    }
+  ];
+
   // ---- Cobertura Sales Navigator (estado actual, no range-bound) ----
   // Empresas que pasaron por Clay agrupadas por cuántos contactos tenemos.
   const [coverageCompaniesRes, coverageContactsRes] = await Promise.all([
@@ -557,6 +692,7 @@ export async function computeDashboard(
       avg_contacts_per_company: avgContacts
     },
     evolution_8mo,
+    provider_usage,
     activity
   };
 }

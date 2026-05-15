@@ -76,6 +76,13 @@ type Dashboard = {
     contacts_from_sales_nav: number;
     contacts_total: number;
   }>;
+  provider_usage: Array<{
+    name: string;
+    operations_label: string;
+    operations: number;
+    estimated_cost_usd: number | null;
+    note: string;
+  }>;
   activity: Array<{ date: string; companies_approved: number; contacts_imported: number }>;
 };
 
@@ -156,6 +163,10 @@ export default function DashboardPage() {
             <DiscardReasonsCard reasons={data.quality.discard_reasons} />
           </div>
           <ActivityCard activity={data.activity} />
+          <ProviderUsageCard
+            providers={data.provider_usage}
+            rangeLabel={data.range.label}
+          />
         </>
       ) : !loading && !error ? (
         <div className="card text-center py-12 text-ink-muted">
@@ -634,6 +645,77 @@ function UsageCard({
             )}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Provider usage card — uso estimado de APIs externas (range-bound)
+// ============================================================================
+
+function ProviderUsageCard({
+  providers,
+  rangeLabel
+}: {
+  providers: Dashboard["provider_usage"];
+  rangeLabel: string;
+}) {
+  const totalCost = providers.reduce(
+    (acc, p) => acc + (p.estimated_cost_usd ?? 0),
+    0
+  );
+  return (
+    <div className="card">
+      <div className="flex items-center gap-2 mb-1 text-brand">
+        <IconChartBar size={16} />
+        <h2 className="text-sm font-semibold text-ink">
+          Uso de APIs externas (estimado) · {rangeLabel}
+        </h2>
+      </div>
+      <p className="text-xs text-ink-muted mb-4">
+        Estimaciones a partir de operaciones contadas en la app, multiplicadas
+        por costo aproximado por operación. NO son números de billing reales —
+        verificar en cada proveedor para confirmación.
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-ink-muted border-b border-[#EEEDFE]">
+              <th className="text-left py-2 pr-4 font-medium">Proveedor</th>
+              <th className="text-left py-2 pr-4 font-medium">Operación contada</th>
+              <th className="text-right py-2 pr-4 font-medium">Cantidad</th>
+              <th className="text-right py-2 font-medium">Estimación USD</th>
+            </tr>
+          </thead>
+          <tbody>
+            {providers.map((p) => (
+              <tr key={p.name} className="border-b border-[#F4F2FB] last:border-0">
+                <td className="py-2 pr-4 font-medium text-ink">{p.name}</td>
+                <td className="py-2 pr-4 text-ink-muted text-xs">
+                  <div>{p.operations_label}</div>
+                  <div className="text-ink-subtle text-[10px] leading-tight mt-0.5">
+                    {p.note}
+                  </div>
+                </td>
+                <td className="py-2 pr-4 text-right tabular-nums text-ink">
+                  {p.operations.toLocaleString("es")}
+                </td>
+                <td className="py-2 text-right tabular-nums text-ink">
+                  {p.estimated_cost_usd == null
+                    ? "—"
+                    : `$${p.estimated_cost_usd.toFixed(2)}`}
+                </td>
+              </tr>
+            ))}
+            <tr className="font-semibold text-ink">
+              <td className="py-2 pr-4">Total estimado</td>
+              <td></td>
+              <td></td>
+              <td className="py-2 text-right tabular-nums">${totalCost.toFixed(2)}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );
