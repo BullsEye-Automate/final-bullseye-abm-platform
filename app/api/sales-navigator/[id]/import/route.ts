@@ -9,16 +9,18 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 // POST /api/sales-navigator/[id]/import   ([id] = company id, sin body)
+//   ?all=1 → importa TODOS los leads de la campaña puente a esta empresa,
+//            sin filtrar por nombre (escape hatch para cuando el match por
+//            nombre falla — la campaña puente se trabaja una empresa a la vez).
 //
 // Jala los leads de la campaña "puente" de Lemlist (LEMLIST_STAGING_CAMPAIGN_ID),
-// filtra los que matchean el nombre de esta empresa, y los importa por el
-// pipeline compartido intakeContactsForCompany (pre-filtro Claude + dedup +
-// insert). El dedup por linkedin_url / email hace que re-correr esto solo
-// procese los NUEVOS — los ya importados se saltan.
+// por defecto filtra los que matchean el nombre de esta empresa, y los importa
+// por el pipeline compartido intakeContactsForCompany (pre-filtro Claude +
+// dedup + insert). El dedup por linkedin_url / email hace que re-correr esto
+// solo procese los NUEVOS.
 //
-// Flujo del usuario: en LinkedIn Sales Navigator selecciona los contactos
-// fit y con la extensión de Lemlist los manda a la campaña puente; después
-// toca "Importar desde Campaña puente" en la card de la empresa.
+// Devuelve siempre `staged_leads` (muestra de lo que hay en la campaña puente)
+// y `matched_url` para diagnosticar si el match o el fetch fallan.
 
 function normName(s: string | null | undefined): string {
   return (s ?? "")
@@ -39,7 +41,7 @@ function namesMatch(a: string, b: string): boolean {
 }
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const stagingId = process.env.LEMLIST_STAGING_CAMPAIGN_ID;
@@ -52,6 +54,8 @@ export async function POST(
       { status: 500 }
     );
   }
+
+  const importAll = req.nextUrl.searchParams.get("all") === "1";
 
   const db = supabaseAdmin();
   const { data: company, error: cErr } = await db
@@ -75,22 +79,36 @@ export async function POST(
     );
   }
 
+  const allStaged = leadsRes.leads;
   const target = normName(company.company_name);
-  const matched = leadsRes.leads.filter((l) =>
+  const nameMatched = allStaged.filter((l) =>
     namesMatch(normName(l.company_name), target)
   );
 
-  if (matched.length === 0) {
+  // Muestra de lo que hay en la campaña puente — para que la UI lo muestre y
+  // para diagnosticar si el fetch o el match fallan.
+  const stagedLeads = allStaged.slice(0, 30).map((l) => ({
+    name: [l.first_name, l.last_name].filter(Boolean).join(" ") || null,
+    company_name: l.company_name,
+    job_title: l.job_title,
+    linkedin_url: l.linkedin_url
+  }));
+
+  const toImport = importAll ? allStaged : nameMatched;
+
+  if (toImport.length === 0) {
     return NextResponse.json({
       ok: true,
       summary: { inserted: 0, yes: 0, no: 0, skipped: 0 },
       contacts: [],
-      staged_total: leadsRes.leads.length,
-      matched: 0
+      staged_total: allStaged.length,
+      matched: nameMatched.length,
+      staged_leads: stagedLeads,
+      matched_url: leadsRes.matched_url
     });
   }
 
-  const contacts: RawContact[] = matched.map((l) => ({
+  const contacts: RawContact[] = toImport.map((l) => ({
     first_name: l.first_name,
     last_name: l.last_name,
     job_title: l.job_title,
@@ -123,7 +141,10 @@ export async function POST(
     ok: true,
     summary: result.summary,
     contacts: fresh ?? [],
-    staged_total: leadsRes.leads.length,
-    matched: matched.length
+    staged_total: allStaged.length,
+    matched: nameMatched.length,
+    imported_from: importAll ? "all" : "name_match",
+    staged_leads: stagedLeads,
+    matched_url: leadsRes.matched_url
   });
 }

@@ -66,11 +66,20 @@ type ImportedContact = {
   clay_pushed_at: string | null;
 };
 
+type StagedLead = {
+  name: string | null;
+  company_name: string | null;
+  job_title: string | null;
+  linkedin_url: string | null;
+};
+
 type ImportResult = {
   summary: { inserted: number; yes: number; no: number; skipped: number };
   contacts: ImportedContact[];
   staged_total: number;
   matched: number;
+  staged_leads: StagedLead[];
+  matched_url?: string;
 };
 
 type Counts = { pending: number; no_fit: number };
@@ -282,13 +291,12 @@ function CompanyCard({
     company.clay_pushed_at != null &&
     Date.now() - new Date(company.clay_pushed_at).getTime() < 24 * 60 * 60 * 1000;
 
-  async function importFromStaging() {
+  async function importFromStaging(all = false) {
     setImporting(true);
     setCardError(null);
     try {
-      const res = await fetch(`/api/sales-navigator/${company.id}/import`, {
-        method: "POST"
-      });
+      const url = `/api/sales-navigator/${company.id}/import${all ? "?all=1" : ""}`;
+      const res = await fetch(url, { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
         setCardError(data.error ?? "No se pudo importar desde la campaña puente");
@@ -298,7 +306,9 @@ function CompanyCard({
         summary: data.summary,
         contacts: data.contacts ?? [],
         staged_total: data.staged_total ?? 0,
-        matched: data.matched ?? 0
+        matched: data.matched ?? 0,
+        staged_leads: data.staged_leads ?? [],
+        matched_url: data.matched_url
       });
     } catch {
       setCardError("No se pudo importar desde la campaña puente (error de red)");
@@ -448,26 +458,87 @@ function CompanyCard({
         /* Resultado del import desde la campaña puente */
         <div className="border border-divider rounded-md p-3 space-y-2">
           <div className="text-sm">
-            {result.matched === 0 ? (
-              <span className="text-warning-fg">
-                No se encontró ningún contacto en la Campaña puente que matchee
-                esta empresa. ¿Los enviaste con la extensión de Lemlist a la
-                campaña (no a una lista)?
-              </span>
-            ) : (
+            {result.contacts.length > 0 ? (
               <>
                 <span className="font-medium text-success-fg">
                   {result.summary.inserted} importados
                 </span>{" "}
-                de {result.matched} encontrados en la campaña puente ·{" "}
-                {result.summary.yes} pasaron el pre-filtro · {result.summary.no}{" "}
-                descartados
+                de{" "}
+                {result.matched > 0
+                  ? `${result.matched} que matchearon`
+                  : `${result.staged_total} en la campaña puente`}
+                {" "}· {result.summary.yes} pasaron el pre-filtro ·{" "}
+                {result.summary.no} descartados
                 {result.summary.skipped > 0
                   ? ` · ${result.summary.skipped} ya estaban`
                   : ""}
               </>
+            ) : result.staged_total === 0 ? (
+              <span className="text-warning-fg">
+                No llegó ningún lead desde la Campaña puente. ¿Los enviaste con
+                la extensión de Lemlist a la campaña (no a una lista)? Si los
+                enviaste y los ves en Lemlist, puede ser un tema del shape del
+                API. URL probada:{" "}
+                <code className="text-[11px]">
+                  {result.matched_url ?? "(sin URL)"}
+                </code>
+              </span>
+            ) : (
+              <span className="text-warning-fg">
+                Hay <strong>{result.staged_total}</strong>{" "}
+                {result.staged_total === 1 ? "lead" : "leads"} en la Campaña
+                puente, pero ninguno matcheó por nombre con esta empresa. Si son
+                de esta empresa, impórtalos igual con el botón de abajo.
+              </span>
             )}
           </div>
+
+          {/* Lo que hay en la Campaña puente — visible cuando no se importó
+              nada todavía. Sirve de diagnóstico y permite el "importar igual". */}
+          {result.contacts.length === 0 && result.staged_total > 0 && (
+            <>
+              <div className="space-y-1 text-xs">
+                <div className="label">Leads en la Campaña puente</div>
+                {result.staged_leads.map((l, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 flex-wrap border-b border-divider last:border-0 pb-1 last:pb-0"
+                  >
+                    <span className="font-medium text-ink">
+                      {l.name || "(sin nombre)"}
+                    </span>
+                    <span className="text-ink-muted">{l.job_title || "—"}</span>
+                    {l.company_name && (
+                      <span className="badge bg-[#F1EEF7] text-ink-muted">
+                        {l.company_name}
+                      </span>
+                    )}
+                    {l.linkedin_url && (
+                      <a
+                        href={l.linkedin_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-ink-subtle hover:text-brand"
+                        title="LinkedIn"
+                      >
+                        <IconBrandLinkedin size={12} />
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <button
+                className="btn-primary text-xs"
+                onClick={() => importFromStaging(true)}
+                disabled={importing}
+              >
+                <IconDownload size={13} />{" "}
+                {importing
+                  ? "Importando…"
+                  : `Importar ${result.staged_total} ${result.staged_total === 1 ? "lead" : "leads"} de todas formas a esta empresa`}
+              </button>
+            </>
+          )}
 
           {result.contacts.length > 0 && (
             <>
@@ -542,7 +613,7 @@ function CompanyCard({
           <div className="flex items-center gap-3 flex-wrap">
             <button
               className="text-xs text-brand hover:underline inline-flex items-center gap-1"
-              onClick={importFromStaging}
+              onClick={() => importFromStaging()}
               disabled={importing}
             >
               <IconRefresh size={12} />{" "}
@@ -582,7 +653,7 @@ function CompanyCard({
           </ol>
           <button
             className="btn-primary text-xs"
-            onClick={importFromStaging}
+            onClick={() => importFromStaging()}
             disabled={importing}
           >
             <IconDownload size={13} />{" "}
