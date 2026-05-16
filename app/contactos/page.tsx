@@ -405,6 +405,48 @@ export default function ContactosPage() {
     await load();
   }
 
+  // Bulk approve solo de los contactos de UNA empresa específica. Usa el
+  // mismo endpoint que bulkApproveEnrich pero pasando contact_ids.
+  async function bulkApproveCompany(
+    _companyId: string,
+    contactIds: string[],
+    companyLabel: string
+  ) {
+    if (contactIds.length === 0) return;
+    const ok = window.confirm(
+      `¿Aprobar y enviar a Lemlist los ${contactIds.length} contactos de ${companyLabel}?\n\nGenera los mensajes (icebreaker + email subject + body) con la config activa de /entrenar-modelo, los pushea a Lemlist y sincroniza HubSpot.`
+    );
+    if (!ok) return;
+    setBulkApproving(true);
+    setPushNotice(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/contacts/bulk-approve-enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contact_ids: contactIds })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      const s = data.summary ?? {};
+      setPushNotice(
+        `${companyLabel}: ${s.pushed ?? 0} contactos empujados a Lemlist${
+          s.errors > 0 ? ` · ${s.errors} con error` : ""
+        } · ${s.hubspot_synced ?? 0} sincronizados a HubSpot${
+          s.hubspot_errors > 0 ? ` (${s.hubspot_errors} con error)` : ""
+        }.`
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setBulkApproving(false);
+    }
+    await load();
+  }
+
   // Descarta un contacto del bucket "Por aprobar" — pasa a Descartados
   // sin borrarlo. Persiste feedback (claude action vs human action) para
   // entrenamiento futuro.
@@ -772,23 +814,44 @@ export default function ContactosPage() {
             const expanded = isExpanded(companyId);
             return (
               <section key={companyId} className="card p-0 overflow-hidden">
-                <button
-                  onClick={() => toggleCompany(companyId)}
-                  className="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-[#F4F2FB] transition-colors"
-                >
-                  {expanded ? (
-                    <IconChevronDown size={16} className="text-ink-muted shrink-0" />
-                  ) : (
-                    <IconChevronRight size={16} className="text-ink-muted shrink-0" />
+                <div className="w-full flex items-center gap-2 px-4 py-3 hover:bg-[#F4F2FB] transition-colors">
+                  <button
+                    onClick={() => toggleCompany(companyId)}
+                    className="flex items-center gap-2 text-left flex-1 min-w-0"
+                  >
+                    {expanded ? (
+                      <IconChevronDown size={16} className="text-ink-muted shrink-0" />
+                    ) : (
+                      <IconChevronRight size={16} className="text-ink-muted shrink-0" />
+                    )}
+                    <IconBuildingFactory2 size={15} className="text-ink-muted shrink-0" />
+                    <span className="font-semibold text-ink truncate">
+                      {companyNameById.get(companyId) ?? "Empresa"}
+                    </span>
+                    <span className="text-sm text-ink-muted shrink-0">
+                      · {items.length} {items.length === 1 ? "contacto" : "contactos"}
+                    </span>
+                  </button>
+                  {bucket === "approved_pending" && items.length > 0 && (
+                    <button
+                      onClick={() =>
+                        bulkApproveCompany(
+                          companyId,
+                          items.map((it) => it.id),
+                          companyNameById.get(companyId) ?? "esta empresa"
+                        )
+                      }
+                      disabled={bulkApproving}
+                      className="btn-primary text-xs shrink-0"
+                      title={`Genera mensajes y envía a Lemlist los ${items.length} contactos de esta empresa`}
+                    >
+                      <IconSend size={12} />
+                      {bulkApproving
+                        ? "Enviando…"
+                        : `Enviar ${items.length} a Lemlist`}
+                    </button>
                   )}
-                  <IconBuildingFactory2 size={15} className="text-ink-muted shrink-0" />
-                  <span className="font-semibold text-ink truncate">
-                    {companyNameById.get(companyId) ?? "Empresa"}
-                  </span>
-                  <span className="text-sm text-ink-muted shrink-0">
-                    · {items.length} {items.length === 1 ? "contacto" : "contactos"}
-                  </span>
-                </button>
+                </div>
                 {expanded && (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 pt-0">
                     {items.map((c) => (
