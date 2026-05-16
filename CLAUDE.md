@@ -2012,4 +2012,349 @@ hoy está hardcoded en `lib/messageGenerator.ts`). Permitir al
 equipo iterar tono, talking points por rol, frases prohibidas, etc.
 sin tocar código.
 
-Detalles del diseño propuesto: ver respuesta en el chat de Sprint 8c.
+(Resuelto en Sprint 9 abajo.)
+
+## Hecho del Sprint 9 — Entrenar modelo + flujo unificado de copy (sesión 2026-05-18)
+
+Sesión grande. PRs #139 a #144. Cerró el módulo `/entrenar-modelo` y
+unificó el flow de copy IA (Clay deja de generar mensajes; la app es la
+única fuente). El SDR ahora tiene un único punto de aprobación humana
+("Por aprobar") y los mensajes salen siempre con la config controlada
+desde el módulo nuevo.
+
+### PR #139 — /entrenar-modelo (Fase 1)
+
+Editor de la config del messageGenerator. Sin tocar código, el equipo
+ajusta:
+
+- **Idioma** (en / es / mix) y **registro** (formal / casual /
+  peer_industry).
+- **Length limits** opcionales (icebreaker chars, subject words, body
+  words). Vacío = defaults hardcodeados.
+- **Frases prohibidas** (textarea, una por línea) — la IA evita usarlas,
+  y un sanitizer post-process las strippea como red de seguridad si
+  igual se cuelan (cap: no borra más del 40% del texto).
+- **Frases preferidas** — la IA las usa cuando son relevantes.
+- **Talking points por rol × tipo de empresa** — lista editable con
+  dropdown de roles (incluye custom) + dropdown de tipos
+  (lab/multi_clinic/dso/any). `"any"` funciona como fallback.
+- **Propuesta de valor** ordenada (drag con flechas) — la IA elige
+  cuál mencionar según prioridad.
+- **Notas adicionales** — texto libre inyectado al final del prompt.
+- **Preview en vivo** — botón "Generar ejemplo" usa la config draft
+  (sin guardar) sobre un contacto sample (Sarah Johnson, Lab Manager
+  en Bright Dental Lab con exocad).
+
+Stack:
+- Migración `supabase/model_training_config_migration.sql` — tabla
+  con todos los campos opcionales + índice + trigger updated_at.
+  Una sola fila activa a la vez (single-row pattern).
+- `lib/modelTrainingConfig.ts` — types + `loadActiveModelTrainingConfig`
+  + `configHasContent` + `matchTalkingPoints` (match laxo role × tipo
+  con fallback `any`) + `renderConfigInstructions` (arma el bloque
+  que se inyecta al prompt).
+- `lib/messageGenerator.ts` — `generateMessages` ahora **auto-carga**
+  la config activa cuando no se le pasa explícita. Si la config está
+  vacía o no existe, comportamiento idéntico al anterior (defaults
+  hardcoded). Sanitiza `forbidden_phrases` del output como red de
+  seguridad.
+- `/api/model-training` (GET + PATCH) — validación de enums/ranges
+  server-side.
+- `/api/model-training/preview` (POST) — genera con un draft de
+  config sin guardar.
+
+**Principio rector**: si los campos quedan en blanco, todo funciona
+como antes. Solo cuando hay valor se aplica. Cero riesgo de romper
+nada al activar el módulo sin configurarlo.
+
+### PR #140 — Flujo unificado de copy IA (Clay deja de generar)
+
+Hasta este sprint los mensajes auto-enrich (~80% del volumen) los
+generaba **Clay** con sus AI columns; los manual_review (~20%) los
+generaba la **app** con messageGenerator. El módulo /entrenar-modelo
+solo afectaba al 20%.
+
+Decisión: unificar. La app pasa a ser la **única** fuente de copy IA.
+Clay sigue haciendo su valor real (Find People, Enrich Person, Lead
+Scoring) pero no genera mensajes ni pushea a Lemlist.
+
+Cambios:
+
+1. **Webhook `/api/clay/scored-contacts`** ya no persiste
+   `linkedin_icebreaker`/`email_subject`/`email_body` que vienen del
+   payload de Clay. Los acepta pero los ignora. La app regenera al
+   aprobar con la config activa.
+2. **Webhook ya no sincroniza HubSpot** automáticamente al recibir
+   `action='enrich'`. Eso ahora lo hace el bulk-approve-enrich
+   junto con el push a Lemlist.
+3. **Bucket nuevo "Por aprobar"** en `/contactos`:
+   - Filtro: `fit_action='enrich' AND lemlist_pushed_at IS NULL AND
+     status != 'discarded'`.
+   - Aparece entre "Pendientes" y "Revisión manual".
+   - Botón **"Aprobar y enviar a Lemlist (N)"** bulk arriba.
+   - Cada card: botón "Generar preview con IA" para QC antes del bulk.
+4. **Bucket "En campaña" refinado**: ahora solo cuenta
+   `lemlist_pushed_at NOT NULL`. Antes incluía los enrich sin push,
+   lo cual confundía con el bucket nuevo.
+5. **Endpoint `/api/contacts/[id]/preview-message`**: genera +
+   persiste mensajes IA on-demand para un contacto puntual.
+6. **Endpoint `/api/contacts/bulk-approve-enrich`**: bulk approve
+   del bucket "Por aprobar". Por cada contacto: push a Lemlist via
+   `pushApprovedToLemlist` + sync a HubSpot (empresa + contacto).
+   Cap 25 por corrida, paralelo en chunks de 3.
+
+**Acción que hizo el usuario en Clay UI**: pausar "Add Lead to
+Campaign" en tabla Contacts (run condition vacía). Las columnas
+`LinkedIn Icebreaker` y `Email Personalizer` quedan vivas pero su
+output se ignora (gasta créditos Clay innecesarios — el usuario
+puede borrarlas cuando confirme que el flow nuevo funciona).
+
+### PR #141 — Botones por card + descripciones por bucket
+
+1. Cada card del bucket "Por aprobar" tiene 2 botones individuales
+   además del bulk:
+   - **"Enviar a campaña"** → push individual a Lemlist (mismo flow
+     que el bulk, pero 1 contacto).
+   - **"Descartar"** → marca `status='discarded'` +
+     `human_decision='rejected'` + persiste en `contact_feedback`
+     (claude_action vs human_action). Nuevo endpoint
+     `/api/contacts/[id]/discard`.
+2. **Descripciones contextuales** debajo de los tabs en `/contactos`.
+   Mapa `BUCKET_DESCRIPTIONS` con explicación del flujo de cada bucket.
+   Cambia según el tab activo. Útil para onboarding del equipo.
+
+### PR #142 — force_regenerate + preview sin reload total
+
+1. **`pushApprovedToLemlist` acepta `options.force_regenerate`**:
+   cuando true, ignora los mensajes preexistentes (legacy de Clay
+   con prompts pre /entrenar-modelo) y regenera con la config activa.
+   `bulk-approve-enrich` y `push-to-lemlist` (per-contact) pasan
+   true. El flow de manual_review NO lo pasa (sus mensajes siempre
+   nacen NULL, el comportamiento default ya regenera ahí).
+2. **`PreviewButton`** ya no usa `window.location.reload()` (reseteaba
+   el bucket a "pending"). Acepta `onSuccess` callback. El parent
+   pasa `() => load()` que re-fetchea sin tocar el state global.
+   La pestaña se mantiene.
+
+### PR #143 — Auto-push a Clay (Opción A) + cleanup de guards y botones
+
+1. **Auto-push a Clay**: `intakeContactsForCompany` pushea
+   automáticamente los contactos `prefilter_result='yes'` y sin
+   `clay_pushed_at` a Clay's Lead Scoring. Best-effort, paralelo en
+   chunks de 5. Si Clay falla, queda con `clay_push_error` y el SDR
+   retrenta.
+   - El bucket **"Pendientes" pasa a ser TRANSITORIO** (~15-20 min
+     mientras Clay procesa). Una vez Clay devuelve scoring → salta a
+     "Por aprobar", "Revisión manual" o "Descartados".
+   - **1 punto de aprobación humana** ("Por aprobar") en vez de 2.
+   - El botón manual "Prospectar todos en Clay" sigue funcionando
+     por si el SDR quiere forzar retry.
+2. **Removido guard "ya fue empujado a Clay"** en
+   `/api/contacts/[id]/push-to-lemlist`. Tenía sentido cuando Clay
+   pusheaba a Lemlist (run condition "Add Lead to Campaign"). Ahora
+   bloqueaba justo el caso que necesitamos (contactos en "Por aprobar"
+   tienen `clay_pushed_at != null`).
+3. **Botón "Sincronizar a HubSpot"** por card solo aparece cuando
+   `hubspot_sync_error != null` (retry de error). El sync automático
+   corre al pushear a Lemlist. Antes el botón se mostraba en
+   cualquier contacto fit/en-campaña, lo que confundía
+   ("¿esto no debería ser automático?"). Texto: "Reintentar sync
+   HubSpot", color rojo.
+
+### PR #144 — Bulk approve por empresa
+
+Tercer nivel de granularidad en "Por aprobar":
+
+| Nivel | Botón | Dónde |
+|---|---|---|
+| Bulk total | "Aprobar y enviar a Lemlist (N)" | Arriba de los tabs |
+| **Por empresa** | "Enviar N a Lemlist" | Header de cada empresa (nuevo) |
+| Individual | "Enviar a campaña" | Card de cada contacto |
+
+Reusa el endpoint `bulk-approve-enrich` pasando `contact_ids` del
+grupo. Confirm dialog nombra la empresa.
+
+### Flujo end-to-end actual (post Sprint 9)
+
+```
+Empresa aprobada → push a Clay → Clay Find People (a nivel empresa)
+       ↓
+Webhook raw-contacts: contactos crudos → pre-filter Claude
+       ↓                                          ↓
+   prefilter=YES                            prefilter=NO
+       ↓                                          ↓
+Bucket "Pendientes" (transitorio)              Descartados
+       ↓ auto-push a Clay
+       ↓
+Clay Lead Scoring AI corre
+       ↓
+Webhook scored-contacts (ignora mensajes de Clay, solo persist score)
+       ↓
+   action=enrich              action=manual_review        action=discard
+       ↓                              ↓                          ↓
+"Por aprobar"                 "Revisión manual"             Descartados
+   ↓ SDR aprueba (3 niveles)      ↓ SDR aprueba
+   ↓                              ↓
+   ↓ messageGenerator (con config activa de /entrenar-modelo)
+   ↓ pushApprovedToLemlist + syncContactToHubSpot
+       ↓
+   "En campaña" (lemlist_pushed_at != null)
+       ↓ ↓
+   Lemlist: Day 3 invite + Day 5 email + ...
+   HubSpot: lead + listas dinámicas
+```
+
+### Configuración pendiente del usuario (Sprint 9 cierre)
+
+1. **Migración** `supabase/model_training_config_migration.sql` —
+   pegar en SQL editor de Supabase (idempotente).
+2. **Clay UI** — opcional pero recomendado para ahorrar créditos:
+   borrar las columnas `LinkedIn Icebreaker` y `Email Personalizer`
+   de la tabla Contacts. Ya no se usan (el output se ignora).
+   - NO TOCAR `Push score to App` (HTTP API hacia
+     `/api/clay/scored-contacts`) — la app la necesita.
+   - "Add Lead to Campaign" ya está pausada (run condition vacía).
+
+### Estado al cierre Sprint 9
+
+- Rama: `claude/continue-prospecting-dev-QjeVe` (mergeada toda).
+- Producción: Vercel verde.
+- Migraciones pendientes (pegar en SQL editor):
+  - `supabase/contacts_source_migration.sql` (con backfill).
+  - `supabase/model_training_config_migration.sql` (Sprint 9).
+- Módulos vivos: `/dashboard`, `/reporteria`, `/empresas`,
+  `/contactos` (5 buckets), `/sales-navigator` (3 buckets),
+  `/telefonos`, `/llamadas`, `/respuestas`, `/configuracion/icp`,
+  `/diagnostico-empresa`, **`/entrenar-modelo`** (nuevo).
+- App **operativa end-to-end** según el usuario ("la app esta
+  funcionando increible hasta aca").
+
+### Lo que ya NO está en uso y NO recrear (estado actual)
+
+1. **Clay AI columns para generar mensajes** (`LinkedIn Icebreaker`,
+   `Email Personalizer`) — siguen vivas en Clay pero la app ignora
+   su output. El usuario las puede borrar para ahorrar créditos.
+2. **Clay "Add Lead to Campaign"** — pausada. La app pushea a
+   Lemlist. NO RECREAR la run condition `Lead Scoring action = "enrich"`.
+3. **Guard "Este contacto ya fue empujado a Clay"** en
+   `/api/contacts/[id]/push-to-lemlist` — removido. Era del flujo
+   viejo donde Clay pusheaba.
+4. **Botón manual "Prospectar todos en Clay"** — sigue visible en el
+   bucket "Pendientes" como retry de fallos, pero el flow normal ya
+   no lo necesita (auto-push).
+5. **Sincronización manual de HubSpot por card** — el botón solo
+   aparece como retry de error. El sync es automático al pushear a
+   Lemlist.
+
+### Endpoints dormant (siguen ahí, no se usan en UI normal)
+
+- `/api/companies/bulk-re-verify` — re-verify masivo de empresas
+  con evidence_quality != "specific" (Sprint 7).
+- `/api/contacts/bulk-regenerate-messages` — bulk regen + refresh
+  Lemlist + HubSpot (Sprint 7).
+- `/api/contacts/bulk-push-to-lemlist-clean` — clean-slate push a
+  Lemlist (Sprint 7).
+- `/api/companies/research-diagnostic` + UI `/diagnostico-empresa`
+  — auditoría de origen de fit_signals (Sprint 7).
+- `/api/lemlist/diagnose-campaign` — probes de shape del Lemlist
+  API (Sprint 7).
+- `/api/clay/push-contacts` — bulk push manual a Clay. Sigue
+  funcional pero raramente necesario (auto-push hace el trabajo).
+
+Accesibles vía curl o reactivando el botón en la UI si se necesitan.
+
+## Para retomar en una nueva sesión (prompt de arranque actualizado)
+
+> Continúo weCAD4you-prospecting. Última sesión cerró Sprint 9 —
+> módulo `/entrenar-modelo` + flujo unificado de copy IA + auto-push
+> a Clay. La app está operativa end-to-end (PRs #139-#144).
+> El usuario confirmó "la app esta funcionando increible".
+>
+> ANTES DE CODEAR cualquier cosa nueva, leer CLAUDE.md completo,
+> especialmente las secciones "Hecho del Sprint 9" y "Flujo
+> end-to-end actual (post Sprint 9)".
+>
+> Reglas vivas:
+> - Yo (Claude) hago todo el ciclo: editar + commit + push + crear
+>   PR + mergear (squash). El usuario no entra a terminal ni GitHub.
+> - **`npx next build` LOCAL antes de commitear nuevas pages** —
+>   Vercel build es más estricto que el TS local sin types
+>   instalados.
+> - **Idioma**: español neutro LATAM (tuteo). NO voseo argentino. NO
+>   regionalismos chilenos muy marcados.
+> - Si rebase falla post-merge: `git fetch origin <base> && git
+>   rebase origin/<base> && git push -f`.
+> - Para dudas reales sobre alcance, preguntar con AskUserQuestion.
+>   Para fixes obvios y cambios chicos, shippear directo.
+>
+> Estado vivo del producto (10 módulos en producción):
+> - **`/dashboard`** — operacional, range-bound, 8 paneles
+>   (HeroKPIs, ConversionRates, Cobertura SalesNav, Uso del equipo,
+>   Evolución 8 meses, Embudo Clay, distribuciones, calidad,
+>   ProviderUsage estimado, Activity).
+> - **`/reporteria`** — vista ejecutiva curada para el cliente.
+>   Highlight banner + Hero KPIs con delta + embudo 7 pasos +
+>   outreach/calls/respuestas + distribución respuestas + hot leads
+>   top 10 + evolución 8 meses.
+> - **`/empresas`** — 3 modos de discovery (IA broad, buscar por
+>   nombre, importar CSV) con régimen estricto de evidencia.
+>   Edición inline de tamaño. Re-verificar por card.
+> - **`/contactos`** — 5 buckets:
+>   - **Pendientes** (transitorio, Clay procesando).
+>   - **Por aprobar** (Clay enrich, esperan SDR — 3 niveles de
+>     aprobación: total, por empresa, individual).
+>   - **Revisión manual** (Clay score medio).
+>   - **En campaña** (en Lemlist).
+>   - **Descartados** (recuperables).
+>   Empresas colapsables con buscador. Auto-push pre-filter YES a
+>   Clay.
+> - **`/sales-navigator`** — 3 buckets (Sin contactos / Con 1 /
+>   Sin contactos fit). Import desde Campaña puente Lemlist.
+> - **`/telefonos`** — Lusha lookup manual con dual phone fields.
+> - **`/llamadas`** — webhook HubSpot real-time (o sync manual
+>   fallback), análisis IA, sub-scores drilldown, hot leads.
+> - **`/respuestas`** — inbox de respuestas Lemlist clasificadas IA
+>   + composer para responder vía Lemlist Inbox API.
+> - **`/entrenar-modelo`** — editor de config del messageGenerator
+>   (tono, talking points, frases prohibidas, value props). Vacío =
+>   defaults hardcoded.
+> - **`/configuracion/icp`** — editor del ICP que alimenta
+>   discovery + pre-filter.
+>
+> Toda generación de copy IA es centralizada en la app vía
+> `messageGenerator` que respeta la config de `/entrenar-modelo`.
+> Clay ya NO genera mensajes ni pushea a Lemlist.
+>
+> NO RECREAR (probado y descartado):
+> - App → Clay vía REST API (no expone CRUD de rows).
+> - HubSpot Workflow webhooks (requiere Operations Hub Pro).
+> - Webhook config en Service Keys BETA de HubSpot.
+> - Columnas HTTP API nuevas en Clay (plan Growth).
+> - Listas de Lemlist como fuente (API no expone read-list).
+> - Clay generando icebreaker / subject / body — la app es la
+>   única fuente.
+> - Clay "Add Lead to Campaign" — pausado, la app pushea.
+> - Guard "ya fue empujado a Clay" en push-to-lemlist — removido.
+>
+> Gotchas críticos:
+> 1. `getCampaignLeadsWithDetails(campaignId)` SIEMPRE para leads
+>    de Lemlist — el list endpoint es minimalista.
+> 2. Cast por `unknown` intermedio en Supabase joins anidados.
+> 3. HubSpot v3 API: errores detallados en `parsed.errors[]`.
+> 4. Citas genéricas del rubro NO respaldan hechos operativos de
+>    una empresa específica — el régimen estricto los nulea.
+> 5. `npx next build` LOCAL antes de commitear pages.
+>
+> Próximos módulos sugeridos:
+> 1. **Funnel unificado / Funnel page** — pipeline visual end-to-end
+>    (descubrimiento → contactos → outreach → respuestas → llamadas
+>    → deals).
+> 2. **Few-shot examples** (Fase 2 de /entrenar-modelo) — marcar
+>    mensajes ganadores como referencia.
+> 3. **A/B testing de copy** — versionar configs y medir response
+>    rate por versión.
+> 4. **Backfill de source para contactos pre-migración** — algunos
+>    quedaron en null o asignados al guess incorrecto.
+>
+> Si tenés preferencia clara de algo, decímela. Si no, recomiéndame
+> tu cuál de los 4 te parece más impactante para el negocio.
