@@ -143,6 +143,7 @@ export default function DashboardPage() {
 
       {data ? (
         <>
+          <PhoneRefreshBanner pipeline={data.pipeline} onRefreshed={() => load(range)} />
           <HeroKpis pipeline={data.pipeline} />
           <ConversionRates pipeline={data.pipeline} />
           <CoverageCard coverage={data.coverage} />
@@ -251,6 +252,80 @@ function RangeSelector({
         size={14}
         className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none"
       />
+    </div>
+  );
+}
+
+// ============================================================================
+// Banner para refrescar teléfonos cuando hay gap evidente entre Lemlist y phone
+// ============================================================================
+
+function PhoneRefreshBanner({
+  pipeline,
+  onRefreshed
+}: {
+  pipeline: Dashboard["pipeline"];
+  onRefreshed: () => void;
+}) {
+  const inLemlist = pipeline.contacts_in_lemlist.current;
+  const withPhone = pipeline.contacts_with_phone.current;
+  const gap = inLemlist - withPhone;
+  // Surface solo cuando hay > 5 leads en Lemlist sin phone sincronizado.
+  // Lemlist enriquece async — la app necesita pullear con un endpoint.
+  const showBanner = inLemlist >= 5 && (withPhone / inLemlist) < 0.5;
+
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function refresh() {
+    setBusy(true);
+    setMsg(null);
+    setErr(null);
+    try {
+      const res = await fetch("/api/lemlist/refresh-phones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 200 })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErr(data.error ?? `HTTP ${res.status}`);
+      } else {
+        const found = data.phones_found ?? 0;
+        const checked = data.checked ?? 0;
+        setMsg(
+          `${found} teléfono${found === 1 ? "" : "s"} encontrado${found === 1 ? "" : "s"} de ${checked} contactos consultados a Lemlist.`
+        );
+        onRefreshed();
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Error de red");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!showBanner && !msg && !err) return null;
+
+  return (
+    <div className="card border-l-4 border-warning-fg flex items-start gap-3 flex-wrap">
+      <IconPhone size={18} className="text-warning-fg mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-ink">
+          {gap} contacto{gap === 1 ? "" : "s"} en Lemlist sin teléfono sincronizado
+        </div>
+        <div className="text-sm text-ink-muted mt-0.5">
+          Lemlist enriquece teléfonos async — pueden tardar minutos u horas
+          después del push. Pulsa el botón para traerlos a la app y a HubSpot.
+        </div>
+        {msg && <div className="text-sm text-success-fg mt-1">{msg}</div>}
+        {err && <div className="text-sm text-danger-fg mt-1">{err}</div>}
+      </div>
+      <button onClick={refresh} disabled={busy} className="btn-primary text-sm shrink-0">
+        <IconRefresh size={14} />
+        {busy ? "Buscando…" : "Buscar teléfonos en Lemlist"}
+      </button>
     </div>
   );
 }
