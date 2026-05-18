@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { pushCompanyToHubSpot, type HubSpotCompanyInput } from "@/lib/hubspotPush";
+import { pushCompanyToClay } from "@/lib/clayPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,8 +78,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     | { ok: true; hubspot_id: string; created: boolean }
     | { ok: false; error: string; status?: number; debug?: unknown }
     | null = null;
+  // Auto-push a Clay al aprobar: el SDR ya decidió que la empresa entra
+  // al funnel, no tiene sentido un segundo clic manual ("Prospectar en
+  // Clay"). Best-effort: si Clay falla, queda con clay_push_error y la
+  // UI muestra el botón retry.
+  let clay_push:
+    | { ok: true; company_id: string }
+    | { ok: false; error: string; status?: number; skipped?: string }
+    | null = null;
   if (body.decision === "approved") {
-    hubspot_push = await pushCompanyToHubSpot(db, updated as HubSpotCompanyInput);
+    const [hsRes, clayRes] = await Promise.all([
+      pushCompanyToHubSpot(db, updated as HubSpotCompanyInput),
+      pushCompanyToClay(db, params.id)
+    ]);
+    hubspot_push = hsRes;
+    clay_push = clayRes.ok
+      ? { ok: true, company_id: params.id }
+      : { ok: false, error: clayRes.error, status: clayRes.status, skipped: clayRes.skipped };
   }
 
   // Re-fetch para devolver el estado actualizado de HubSpot a la UI.
@@ -90,5 +106,5 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     .eq("id", params.id)
     .single();
 
-  return NextResponse.json({ company: refetched ?? updated, hubspot_push });
+  return NextResponse.json({ company: refetched ?? updated, hubspot_push, clay_push });
 }
