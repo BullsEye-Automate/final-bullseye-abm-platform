@@ -244,6 +244,7 @@ export default function EmpresasPage() {
       passed_linkedin_regex: number;
       passed_region: number;
       passed_linkedin_live: number;
+      passed_honest?: number;
       final: number;
       verify_linkedin_live: boolean;
       strict_region: boolean;
@@ -946,6 +947,12 @@ Smile Designers Lab,,,`}
                     <FunnelStep
                       label="Con evidencia específica"
                       value={lastRun.diagnostics.passed_evidence}
+                    />
+                  )}
+                  {typeof lastRun.diagnostics.passed_honest === "number" && (
+                    <FunnelStep
+                      label="Honesto vs ICP"
+                      value={lastRun.diagnostics.passed_honest}
                     />
                   )}
                   <FunnelStep label="Pasó filtro de fit" value={lastRun.diagnostics.passed_fit} />

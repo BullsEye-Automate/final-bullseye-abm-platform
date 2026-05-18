@@ -72,6 +72,7 @@ export type DiscoveryDiagnostics = {
   passed_name: number;
   passed_dedup: number;
   passed_evidence: number;
+  passed_honest: number; // sin contradicción en research_summary
   passed_fit: number;
   salvaged_linkedin: number;
   passed_linkedin_regex: number;
@@ -145,7 +146,15 @@ Reglas de extracción:
   - Proveedores, mayoristas, consultoras, agencias.
   - Centros de fresado que solo venden equipos sin operar como laboratorio.
   - Empresas de OTRAS industrias (biotecnología, agro, farma, etc.) — aunque el nombre tenga la palabra "lab".
-  Si una empresa NO es claramente un laboratorio dental, una clínica dental multi-centro o un DSO que opera como tal, NO la incluyas en absoluto. No uses "other" como cajón de sastre.
+  - **Clínicas dentales PRIVADAS / single practice** (1 ubicación, dueño dentista, operación clínica solamente sin laboratorio interno). Eso NO es ni "lab" ni "multi_clinic" — es UNA clínica.
+  - Páginas LinkedIn "por reclamar" o fantasmas (pocos seguidores, 0 empleados listados, página corporativa que claramente nadie mantiene).
+  Si una empresa NO es claramente un laboratorio dental, una clínica dental multi-centro (≥3 ubicaciones operadas por el mismo dueño) o un DSO que opera como tal, NO la incluyas en absoluto. No uses "other" como cajón de sastre, y NO inventes que una single practice es "multi_clinic".
+
+REGLA CRÍTICA DE company_type:
+- "lab" → laboratorio dental con producción de prótesis (propio, no terciariza todo). Operación de laboratorio = lab.
+- "multi_clinic" → grupo de 3+ clínicas dentales operadas centralizadamente bajo un mismo dueño/management. Una clínica sola = NO entra.
+- "dso" → Dental Service Organization (corporativo, multi-clínica con management profesional, generalmente backed por private equity).
+- "other" → CUALQUIER otra cosa (single practice, distribuidor, fabricante, etc.). Si marcas "other" la empresa se descarta automáticamente. Sé honesto.
 
 Campos operativos (cad_software, scanner_technology, competitor_match):
 - SOLO se incluyen si una cita [N] específica menciona a ESTA empresa Y describe ese hecho.
@@ -395,10 +404,16 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
     ? dedupOnly.filter((c) => c.evidence_quality === "specific")
     : dedupOnly.filter((c) => c.evidence_quality !== "none");
 
+  // Filtro de "honestidad": si Claude clasificó la empresa como lab/multi_clinic/dso
+  // PERO su propio research_summary dice "no es un laboratorio", "clínica privada",
+  // "queda fuera del ICP", etc., la rechazamos. Es señal de que Claude está
+  // siendo deshonesto con company_type para incluir la empresa, contradiciendo
+  // su propia evidencia. Aplica en ambos modos (estricto y permisivo).
+  const honestOnly = evidenceOnly.filter((c) => !summaryFlagsOutOfIcp(c.research_summary));
   // Filtro de fit: descarta tipos fuera de target (distribuidores, fabricantes,
   // no-dentales que Claude marcó "other") y tamaños groseramente fuera de banda.
   // Esto evita que basura llegue a la cola de revisión humana.
-  const fitOnly = evidenceOnly.filter((c) => passesFit(c, size_min, size_max));
+  const fitOnly = honestOnly.filter((c) => passesFit(c, size_min, size_max));
 
   // Salvataje de LinkedIn URL: el mayor asesino de yield es que Claude deja
   // company_linkedin_url en null porque Perplexity no la trajo literal. Para
@@ -496,6 +511,7 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
     passed_name: namedOnly.length,
     passed_dedup: dedupOnly.length,
     passed_evidence: evidenceOnly.length,
+    passed_honest: honestOnly.length,
     passed_fit: fitOnly.length,
     salvaged_linkedin: salvagedCount,
     passed_linkedin_regex: regexOnly.length,
@@ -511,6 +527,41 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
 
 // Filtro de fit aplicado en código (no en el prompt — el prompt ya pide a
 // Claude que no extraiga basura, pero esto es la red de seguridad).
+// Detecta cuando el propio research_summary de Claude desmiente el
+// company_type asignado. Patrones que vimos en producción: clínicas
+// privadas que Claude marcó como "lab" para no descartarlas.
+// Apply MUY laxo — solo capturamos contradicciones explícitas.
+function summaryFlagsOutOfIcp(summary: string | null | undefined): boolean {
+  if (!summary) return false;
+  const t = summary.toLowerCase();
+  // "No es un laboratorio" / "no es una DSO" / "no es lab" / "no es multi-sede".
+  if (
+    /\bno es un(?:a)?\s+(laboratorio|dso|grupo|multi)/i.test(t) ||
+    /\bno constituye\s+(?:un|una)/i.test(t) ||
+    /\bno califica\s+(?:como|para)/i.test(t)
+  ) {
+    return true;
+  }
+  // "Queda fuera del ICP" / "fuera del ICP" / "out of scope".
+  if (/\b(queda\s+)?fuera del icp\b/.test(t) || /\bout of (?:scope|icp)\b/.test(t)) {
+    return true;
+  }
+  // "Clínica dental privada" / "single dental practice" / "private dental practice"
+  // — son single-practice, no multi_clinic. Si Claude lo dijo, hay que respetar.
+  if (
+    /\bcl[íi]nica\s+(?:dental\s+)?privada\b/.test(t) ||
+    /\bconsulta\s+(?:dental\s+)?privada\b/.test(t) ||
+    /\bsingle\s+(?:dental\s+)?(?:practice|office|clinic)\b/.test(t) ||
+    /\bprivate\s+(?:dental\s+)?practice\b/.test(t)
+  ) {
+    // Solo descartar si NO menciona ser parte de un grupo más grande.
+    if (!/(grupo|chain|dso|multi-?(clinic|sede|location)|sucursales)/i.test(t)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function passesFit(
   c: DiscoveredCompany,
   sizeMin: number,
