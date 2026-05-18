@@ -2612,3 +2612,457 @@ Ambos son also reachable vía curl/POST si hace falta.
 >
 > Si Cote tiene preferencia, le hago caso. Si no, recomiendar por
 > impacto vs esfuerzo.
+
+## Hecho del Sprint 11 — Polish operativo (sesión 2026-05-19)
+
+Sesión larga centrada en pulir todos los flujos para uso diario.
+PRs #151 a #165. La app pasa de "funcionando" a "pulida". Los temas
+principales: Sales Nav directo a Lemlist sin pasar por Clay, fix de
+HubSpot duplicates, detección de mismatch nombre/email enriquecido,
+fallback automático en discovery, deep re-verify automático,
+auto-push Clay al aprobar, auto-promote de decisores top, fix de
+cobertura de teléfonos.
+
+### PR #151 — Sales Nav: import directo a Lemlist + HubSpot
+
+Los contactos curados en Sales Navigator ya están validados por el
+SDR — no tiene sentido pasarlos por Clay's Lead Scoring otra vez
+(redundante, suma latencia y créditos). Nuevo flujo opt-in:
+
+- `IntakeOptions.auto_push_clay` en `lib/contactsIntake.ts` (default
+  true, preserva comportamiento). Cuando `false`, los contactos YES
+  entran a la base pero NO se pushean a Clay.
+- `POST /api/sales-navigator/[id]/import` acepta
+  `body.auto_push_lemlist`. Cuando `true`:
+  1. Intake con `auto_push_clay: false`.
+  2. Para cada contacto YES recién importado (chunks paralelos de 3):
+     - Marca `fit_action='enrich'`.
+     - `pushApprovedToLemlist(..., { force_regenerate: true })` —
+       fit_score fallback (Sprint 10) + messageGenerator con config
+       de /entrenar-modelo corren acá.
+     - `pushCompanyToHubSpot` + `pushContactToHubSpot`.
+  3. Re-fetch al final para que la UI vea `lemlist_pushed_at` actualizado.
+  4. Devuelve `auto_push_results[]` con detalle por contacto.
+- UI: dos botones en el preview (después simplificado en PR #152).
+
+### PR #152 — Sales Nav: un solo botón + selección respeta filtro
+
+- Eliminado el botón "Solo importar". Queda solo "Importar y enviar
+  directo a Lemlist" — Sales Nav contactos siempre van directo.
+- Bug del contador: cuando filtras "abso" → 3 leads visibles + 11
+  chequeados, antes el botón decía "Importar 11" y mandaba los 11.
+  Ahora usa la intersección de seleccionados ∩ visibles. Solo importa
+  los 3.
+- "Marcar todos" / "Desmarcar todos" cambian a "Marcar/Desmarcar
+  visibles" cuando hay filtro activo. Las selecciones de otros
+  filtros se preservan por si se hacen múltiples búsquedas.
+- Hint contextual: "Con el filtro activo se importan solo los
+  visibles (X de Y marcados)".
+
+### PR #153 — HubSpot 409 Contact already exists → PATCH
+
+Cuando otro pipeline (Lemlist sync nativa, import manual en HubSpot
+UI) creó el contacto con el mismo email entre nuestra search y el
+create, HubSpot devolvía 409 "Contact already exists. Existing ID:
+NNNN" y el push fallaba.
+
+- Nuevo helper `extractExistingHubSpotId(error)` parsea el ID del
+  mensaje con regex `/Existing\s*ID:\s*(\d+)/i`.
+- En el paso 5 (create) de `pushContactToHubSpot`: si status === 409
+  y se puede extraer el ID, hace PATCH al contacto existente con todas
+  nuestras properties wecad_* y lo asocia con la empresa.
+- Mismo fix aplicado a `pushCompanyToHubSpot` por simetría
+  defensiva (menos común porque companies no tienen unique constraint
+  estricta por domain).
+- Sin esto, contactos con email pre-existente nunca subían
+  `wecad_fit_score` ni `wecad_engagement_score` y no caían a las
+  listas Hot/Warm.
+
+### PR #154 — Detección mismatch nombre / email enriquecido
+
+Bug raro de Lemlist: leads con foto + email + teléfono de OTRA
+persona (mismo rol + empresa) pero con el nombre original. Ejemplo
+real: Ignacio Montiel (VP of Lab Innovation @ Hybridge) terminó con
+email `cfarner@hybridgeimplants.com` y foto de Christina Farner
+(también VP of Lab Innovation en la misma empresa). Lemlist
+enriqueció mal — probablemente buscó por rol + empresa y devolvió
+al match equivocado.
+
+- `lib/contactValidation.ts` nuevo: `detectNameEmailMismatch(first,
+  last, email)`. Heurística laxa — el local-part del email debe
+  contener:
+  - first_name (≥3 chars), o
+  - last_name (≥3 chars), o
+  - inicial + last (`jsmith` para John Smith), o
+  - first + inicial (`johns` para John Smith), o
+  - primeros 3 chars del first o last.
+
+  Si nada matchea → mismatch. Falsos positivos esperados: emails
+  genéricos (info@, sales@) y nicknames (Bob para Robert). El SDR
+  confirma a mano.
+- `/api/contacts` y `/api/sales-navigator/[id]/import` inyectan
+  `name_email_mismatch` + `name_email_mismatch_reason` (computado,
+  sin migración).
+- `/contactos`: badge "⚠ email no coincide" con tooltip en cards
+  afectadas.
+- `/sales-navigator`: badge en la lista inline + bloque amarillo
+  resumen en el panel de auto-push.
+- Sales Nav auto-push: si se detecta mismatch, NO se pushea a Lemlist
+  (los mensajes IA usarían el nombre equivocado). El SDR corrige en
+  Lemlist (edita email o nombre) y reimporta.
+
+### PR #155 — Discovery: modo permisivo
+
+Cote intentó 4 corridas seguidas con 0 resultados. El embudo:
+"Con evidencia específica: 0" — Perplexity devuelve 25 candidatos pero
+ninguno tiene info operativa específica (común en bandas chicas de
+labs sin presencia digital comercial).
+
+- `discoverCompanies` acepta `opts.require_specific_evidence` (default
+  true). Cuando false, también dejan pasar empresas con citas
+  genéricas del rubro (las que no tienen ninguna cita siguen fuera).
+- `/api/companies/recommend` acepta `body.require_specific_evidence` y
+  lo propaga a las dos pasadas (estricta + relajada por región).
+- UI `/empresas`: checkbox "Modo permisivo — incluye empresas sin info
+  CAD/CAM pública específica (siempre que sean laboratorios fit por
+  tipo y tamaño). Útil cuando el filtro estricto no devuelve nada."
+
+### PR #156 — Discovery: auto re-verify post-broad para todas
+
+Cote vio que clickear "Re-verificar con IA" en una card individual
+levantaba MUCHA info (CAD, escáner, signals operativos). Preguntó por
+qué no se hace automático para todas las del lote. Sí se puede:
+
+- `discoverCompanies` retorna ahora. Después, en `/api/companies/recommend`,
+  para cada candidato (paralelo, chunks de 3), se corre
+  `researchOneCompany` (búsqueda dedicada).
+- `mergeBroadAndReverify(broad, reverify)`: merge campo a campo
+  prefiriendo el reverify cuando trae más info (fit_signals más
+  largo, CAD/escáner no null, más sources).
+- Fallback al broad si reverify falla o `not_found`.
+- Diagnostics expone `reverify_ok` / `reverify_fail`.
+- UI: checkbox "Re-verificar cada empresa con IA" (default ON) con
+  explicación del trade-off (~30-60s + ~$0.50 USD extra por corrida
+  de 12 empresas).
+- Cost: ~$0.04 USD por empresa adicional. Cabe dentro del
+  `maxDuration: 300s`.
+
+### PR #157 — Aprobar empresa = push a Clay automático
+
+Antes: aprobar en Pendientes → empresa va a Aprobadas → SDR clickea
+"Prospectar en Clay" manualmente.
+
+Ahora: aprobar dispara en PARALELO `pushCompanyToHubSpot` +
+`pushCompanyToClay`. Best-effort: si Clay falla, queda
+`clay_push_error` y el botón retry sigue visible. Para empresas
+aprobadas pre-cambio el botón manual sigue disponible.
+
+`/api/companies/[id]/decision` devuelve `clay_push` junto a
+`hubspot_push` en el response.
+
+### PR #158 — Auto-promote decisores top + mapeo wecad_company_type
+
+Dos arreglos en uno:
+
+**1) Auto-promote en `/api/clay/scored-contacts`:** Cote vio 30
+contactos en revisión manual con cargos 100% fit (CEO, President,
+Regional Operations Manager, Director of Operations) que Clay mandó
+a manual_review porque "el perfil no muestra afinidad técnica
+explícita con CAD/CAM". Pero esa afinidad NO se requiere a nivel
+CEO/Operations — la empresa ya fue aprobada como digital.
+
+Si Clay devuelve `fit_action='manual_review'` Y el `job_title`
+matchea un patrón de decisor fuerte, lo promovemos automático a
+`enrich`. El `fit_reason` se anexa con la nota del auto-promote
+para trazabilidad.
+
+`STRONG_DECISION_MAKER_PATTERNS` (regex array): CEO, COO, Chief
+Executive/Operating/Dental/Clinical Officer, President, Owner,
+Founder, Managing Partner, General Manager, VP/Director of
+Operations, Regional Operations Director/Manager, Director of
+Lab/Production, Lab Director, Practice Owner, Production Manager.
+
+`EXCLUDE_PATTERNS`: marketing, finance, CFO, HR, talent, legal,
+software engineer, data, patient services. Defensive — el pre-filter
+Claude ya los filtró.
+
+**2) HubSpot `wecad_company_type` mapping:** Cote vio error
+`dso was not one of the allowed options: [lab, clinic, DSO]`. La
+property en HubSpot tiene opciones `[lab, clinic, DSO]` pero nuestro
+`company_type` interno usa `[lab, multi_clinic, dso]`. Agregado
+`mapCompanyTypeForHubSpot`: `multi_clinic→clinic`, `dso→DSO`.
+Aplicado a empresas y contactos. `hubspotProperties.ts` actualizado
+para reflejar el shape real.
+
+### PR #159 — Bulk approve por empresa en Revisión manual
+
+Cote pidió el patrón de "Por aprobar" replicado al bucket "Revisión
+manual": botón "Aprobar N y enviar a Lemlist" en el header de cada
+empresa.
+
+- `/api/contacts/bulk-approve-enrich` extendido: con `contact_ids`
+  explícitos acepta `fit_action IN (enrich, manual_review)`. Para
+  manual_review sin human_decision, aplica la transición ANTES del
+  push: marca `human_decision='approved'` + `fit_action='enrich'` +
+  inserta `contact_feedback` con `human_reason='bulk-approve desde
+  Revisión manual'` para trazabilidad.
+- Después sigue el flow normal (genera mensajes con config + push
+  Lemlist + sync HubSpot).
+- Sin contact_ids el filtro queda igual (`fit_action='enrich'`) por
+  backward compat.
+- UI: botón "Aprobar N y enviar a Lemlist" en el header de cada
+  empresa cuando bucket es manual_review. Reusa `bulkApproveCompany`.
+
+### PR #160 — Dashboard: banner sincronizar teléfonos
+
+Cote vio "0 Contactos con teléfono" en el dashboard aunque Lemlist
+había enriquecido casi todos. Lemlist enriquece async después del
+push — la app necesita pullear via `/api/lemlist/refresh-phones`.
+Antes solo había botón en `/telefonos`; si Cote no entraba ahí, el
+dashboard quedaba con phone=0.
+
+- `PhoneRefreshBanner` en el dashboard: aparece cuando hay >5 leads
+  en Lemlist y <50% tienen teléfono sincronizado.
+- Botón "Buscar teléfonos en Lemlist" dispara el endpoint. Al terminar
+  refresca el dashboard.
+
+### PR #161 — Phone refresh: bulk + match por LinkedIn
+
+Después del PR #160, Cote vio "17/77" sincronizados aunque Lemlist
+tenía 65+. Dos bugs combinados:
+
+1. **Filtro restrictivo** `.not("email", "is", null)` excluía
+   contactos de Sales Nav (sin email originalmente). Cuando Lemlist
+   enriquece el email después, esos contactos nunca eran consultados.
+2. **Lookup lead-por-lead por email**: `getLemlistLeadByEmail` hace
+   una API call por contacto. Frágil si nuestro email no matchea
+   exactamente el de Lemlist.
+
+Solución:
+- `LemlistCampaignLead` ahora incluye `phone`.
+  `getCampaignLeadsWithDetails` lo extrae de la respuesta del contact
+  endpoint.
+- `refreshLemlistPhones` reescrito para fetchar TODA la campaña una
+  vez con `getCampaignLeadsWithDetails`, indexar por email y LinkedIn
+  URL normalizado, matchear cada contacto contra ambos.
+- Sin filtro por email — los Sales Nav pegan.
+- Cuando Lemlist enriqueció el email del lead pero nuestro contacto
+  no tenía, lo persistimos también en Supabase.
+- Cap subido 100→500.
+
+### PR #162 — Phone enrichment siempre + auto-sync en dashboard
+
+Cote vio que el refresh seguía dejando muchos sin sincronizar.
+Diagnosticadas 3 causas:
+
+1. **`getCampaignLeadsWithDetails` short-circuiteaba la enrichment**
+   cuando los leads ya tenían `linkedin_url` + `first_name` del list
+   endpoint. PERO el list endpoint NO devuelve `phone`. Resultado: se
+   perdían phones. Ahora `needsEnrichment` también requiere phone.
+2. **Extracción de phone muy estricta**. `extractPhoneDeep`: búsqueda
+   recursiva del phone dentro del objeto (max 4 niveles). Cubre nested
+   objects, arrays, patterns adicionales (`mobile`, `tel`, `phone1`,
+   `phone_e164`). Acepta strings que parezcan teléfono (7-16 dígitos).
+3. **Cero automatización**. El `PhoneRefreshBanner` ahora dispara
+   automáticamente el refresh una vez por sesión cuando detecta el
+   gap. Dashboard carga rápido (sin esperar), sync corre detrás.
+   Cuando termina, si encontró nuevos, refresca el dashboard solo.
+   Botón manual "Sincronizar ahora" sigue disponible.
+
+### PR #163 — Sales Nav: lista con scroll interno
+
+Cote: cuando la Campaña puente tiene 30+ leads, el botón "Importar"
+queda muy abajo y hay que scrollear toda la página. Fix: lista de
+leads con `max-h-[420px] overflow-y-auto`. El botón queda
+inmediatamente debajo, siempre visible. Marcas dentro del scroll
+interno.
+
+### PR #164 — Discovery: fallback automático a modo permisivo
+
+Cote tuvo el caso repetido: discovery con modo estricto devuelve 0.
+Modo permisivo (checkbox) existe pero requiere descubrirlo y activarlo.
+
+Tercer escalón automático en `/api/companies/recommend`:
+1. Estricto + región estricta.
+2. Si 0 → relajar región.
+3. **NUEVO**: si 0 y el usuario tenía `require_specific_evidence=true`,
+   relajar también evidencia (modo permisivo automático).
+
+Mejor entregar empresas con badge "evidencia genérica" que devolver 0.
+Diagnostic incluye `evidence_relaxed_auto` para que la UI muestre
+"modo permisivo activado automáticamente (cero resultados estrictos)".
+
+### PR #165 — Botón "Re-verificar todas con IA"
+
+Cote pidió un atajo: discovery permisivo (rápido) → bulk re-verify
+con IA para profundizar todas las cards antes de aprobar.
+
+El endpoint `/api/companies/bulk-re-verify` ya existía desde Sprint 7
+como dormant. Ahora expuesto:
+
+- Botón secundario "Re-verificar todas con IA" en la toolbar de
+  `/empresas`.
+- Llama con `status: tab` (respeta bucket activo) y
+  `only_non_specific: true` (no gasta créditos en las que ya están
+  bien).
+- Procesa hasta 25 por corrida.
+- Confirm dialog con costo estimado (~$0.04 por empresa, ~30-60s).
+- Panel de resultados: procesadas, cuántas subieron a evidencia
+  específica, cuántas siguen genéricas, cuántas bajaron de fit alto,
+  errores, cuántas quedan en cola si hay más de 25.
+
+### Costos estimados para 200 empresas/mes (calculados en sesión)
+
+| Línea | Total |
+|---|---|
+| Discovery + deep re-verify | $10 |
+| Clay Find People (200 × $0.20) | $40 |
+| Pre-filter Claude (~1,000 contactos) | $2 |
+| Clay Lead Scoring (~500 YES) | ~$50 |
+| Generación mensajes (~150 leads) | $1 |
+| Lemlist (4,050 créditos < free 7,000) | $0 |
+| Lusha (~30 phone lookups) | $12 |
+| HubSpot | $0 |
+| **TOTAL** | **~$115/mes** |
+
+Clay representa ~78% del costo. Lemlist está cubierto bajo el free
+tier mientras estés bajo ~260 leads/mes. Costo por empresa
+end-to-end: ~$0.58 USD.
+
+### Flujo end-to-end actual (post Sprint 11)
+
+```
+/empresas → Discovery (broad + deep re-verify auto + fallback permisivo)
+  → empresa entra a Pendientes
+  → SDR aprueba → push automático HubSpot + Clay (paralelo)
+  → Clay corre Find People
+  → webhook raw-contacts → contactos crudos → pre-filter Claude
+  → contactos YES → auto-push a Clay Lead Scoring
+  → webhook scored-contacts → action enrich/manual_review/discard
+       (auto-promote decisores top → enrich)
+  → bucket "Por aprobar" o "Revisión manual"
+  → SDR aprueba (3 niveles: total, por empresa, individual)
+    → genera mensajes con messageGenerator (config /entrenar-modelo)
+    → push a Lemlist (force_regenerate)
+    → sync a HubSpot (con fit_score fallback + engagement_score)
+  → "En campaña" → Lemlist enriquece phone async
+  → dashboard auto-sync phones (background) cuando hay gap
+  → SDR llama → HubSpot Calls API → webhook calls → análisis IA
+  → respuesta del lead → /respuestas → SDR responde via Inbox API
+```
+
+### Estado al cierre Sprint 11
+
+- Rama: `claude/continue-prospecting-dev-QjeVe` (mergeada toda).
+- Producción: Vercel verde.
+- Migraciones aplicadas: todas las anteriores siguen igual. Sprint 11
+  no agrega migraciones (todos los cambios son código + UI + flags
+  computados al vuelo).
+- App **operativa end-to-end** según el usuario. Cote dice
+  "estamos ok con esta app por ahora".
+- 11 módulos vivos: `/dashboard`, `/reporteria`, `/empresas`,
+  `/contactos` (5 buckets), `/sales-navigator` (3 buckets),
+  `/telefonos`, `/llamadas`, `/respuestas`, `/entrenar-modelo`,
+  `/configuracion/icp`, `/configuracion/hubspot`,
+  `/diagnostico-empresa`.
+
+### Lo que ya NO está en uso y NO recrear (estado actual final)
+
+1. **Clay AI columns para generar mensajes** (`LinkedIn Icebreaker`,
+   `Email Personalizer`) — siguen vivas en Clay pero la app ignora
+   su output. Borrarlas en Clay UI para ahorrar créditos.
+2. **Clay "Add Lead to Campaign"** — pausada. La app pushea a Lemlist.
+3. **Guard "Este contacto ya fue empujado a Clay"** en
+   `/api/contacts/[id]/push-to-lemlist` — removido (Sprint 9 PR #143).
+4. **Doble botón de import en Sales Nav** — removido PR #152, queda
+   solo "Importar y enviar directo a Lemlist".
+
+### Endpoints dormant (accesibles vía curl, sin UI dedicada)
+
+- `/api/companies/bulk-re-verify` — ahora SÍ tiene UI (botón en
+  `/empresas`, PR #165).
+- `/api/contacts/bulk-regenerate-messages` — bulk regen Lemlist.
+- `/api/contacts/bulk-push-to-lemlist-clean` — clean-slate push.
+- `/api/companies/research-diagnostic` + UI `/diagnostico-empresa`.
+- `/api/lemlist/diagnose-campaign` — probes shape Lemlist API.
+- `/api/clay/push-contacts` — bulk push manual a Clay.
+- `/api/contacts/backfill-fit-score` — ya tiene UI en `/configuracion/hubspot`.
+- `/api/contacts/backfill-engagement` — ya tiene UI en `/configuracion/hubspot`.
+
+## Para retomar en una nueva sesión (prompt de arranque actualizado tras Sprint 11)
+
+> Continúo weCAD4you-prospecting. Última sesión cerró Sprint 11 —
+> polish operativo end-to-end (PRs #151-#165). Sales Nav directo a
+> Lemlist, fix HubSpot 409, detección mismatch nombre/email,
+> fallback discovery permisivo automático, deep re-verify auto, auto
+> push Clay al aprobar, auto-promote decisores top, fix cobertura
+> teléfonos con auto-sync. Usuario es **Cote**. App "ok" según ella.
+>
+> ANTES DE CODEAR cualquier cosa nueva, leer CLAUDE.md completo,
+> especialmente Sprints 9, 10 y 11.
+>
+> Reglas vivas:
+> - Yo (Claude) hago todo el ciclo: editar + commit + push + crear
+>   PR + mergear (squash). El usuario no entra a terminal ni GitHub.
+> - **`npx next build` LOCAL antes de commitear nuevas pages**.
+> - **Idioma**: español neutro LATAM (tuteo). NO voseo. NO
+>   regionalismos chilenos.
+> - Rebase con `git fetch origin <base> && git rebase
+>   origin/<base> && git push -f`.
+>
+> Estado vivo del producto (11 módulos):
+> - `/dashboard` — Hero KPIs + Coverage + Usage + Evolution 8mo +
+>   Clay Funnel + Activity. **PhoneRefreshBanner auto-sync** cuando
+>   hay gap.
+> - `/reporteria` — vista ejecutiva. Hot leads ordenable por
+>   Engagement / Fit.
+> - `/empresas` — 3 modos discovery (IA, nombre, CSV). **Deep
+>   re-verify auto post-broad**. **Modo permisivo + fallback auto si
+>   0 resultados**. **Botón "Re-verificar todas con IA"**.
+>   **Aprobación dispara HubSpot + Clay en paralelo**.
+> - `/contactos` — 5 buckets. Bulk approve por empresa en Por aprobar
+>   Y Revisión manual. **Auto-promote decisores top desde
+>   manual_review a enrich**. Badge ⚠ email no coincide.
+> - `/sales-navigator` — Importar y enviar directo a Lemlist (skip
+>   Clay). Lista con scroll interno. Filtro respeta selección.
+> - `/telefonos` — Lusha manual + Lemlist refresh.
+> - `/llamadas` — webhook HubSpot + análisis IA.
+> - `/respuestas` — inbox + composer.
+> - `/entrenar-modelo` — editor de messageGenerator.
+> - `/configuracion/icp` y `/configuracion/hubspot`.
+>
+> NO RECREAR:
+> - App → Clay vía REST API.
+> - HubSpot Workflow webhooks (Operations Hub Pro+).
+> - Webhook config en Service Keys BETA de HubSpot.
+> - Columnas HTTP API nuevas en Clay (plan Growth).
+> - Listas de Lemlist como fuente.
+> - Clay generando icebreaker/subject/body.
+> - Clay "Add Lead to Campaign".
+> - Guard "ya fue empujado a Clay" en push-to-lemlist.
+> - Doble botón import en Sales Nav.
+>
+> Gotchas críticos vigentes:
+> 1. `getCampaignLeadsWithDetails(campaignId)` SIEMPRE para leads
+>    de Lemlist (list endpoint es minimalista).
+> 2. Cast por `unknown` intermedio en Supabase joins anidados.
+> 3. HubSpot v3 API: errores detallados en `parsed.errors[]`.
+> 4. HubSpot wecad_company_type usa values [lab, clinic, DSO] —
+>    mapear con mapCompanyTypeForHubSpot.
+> 5. HubSpot 409 sobre create: parsear "Existing ID: NNNN" y PATCH.
+> 6. Régimen estricto + permisivo + fallback ladder en discovery.
+> 7. needsEnrichment en getCampaignLeadsWithDetails también
+>    requiere phone (sin esto se pierden phones).
+> 8. `npx next build` LOCAL antes de commitear pages.
+>
+> Próximos módulos sugeridos:
+> 1. **Vercel Cron** para auto-sync phones cada 2-4h sin depender
+>    del dashboard (requiere plan Pro).
+> 2. **Chat IA in-app** (Nivel 2 — Cote preguntó por esto):
+>    permite ajustar config como decisores fuertes, talking points
+>    desde el chat sin tocar código.
+> 3. **Funnel unificado** — pipeline visual end-to-end.
+> 4. **Few-shot examples** en /entrenar-modelo (mensajes ganadores
+>    como referencia).
+> 5. **A/B testing de copy** — versionar configs y medir response
+>    rate.
