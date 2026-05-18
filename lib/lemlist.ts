@@ -396,6 +396,9 @@ export type LemlistCampaignLead = {
   company_name: string | null;
   job_title: string | null;
   linkedin_url: string | null;
+  // Phone enriquecido por Lemlist (puede ser null si no encontró todavía).
+  // Solo se llena cuando se usa getCampaignLeadsWithDetails().
+  phone: string | null;
 };
 
 export type GetCampaignLeadsResult =
@@ -440,7 +443,8 @@ function normalizeCampaignLead(raw: Record<string, unknown>): LemlistCampaignLea
       "linkedin",
       "LinkedinUrl",
       "linkedInUrl"
-    ])
+    ]),
+    phone: pickStr(raw, ["phone", "phoneNumber", "mobilePhone", "directPhone", "workPhone"])
   };
 }
 
@@ -697,7 +701,11 @@ export async function getCampaignLeadsWithDetails(
               "LinkedinUrl",
               "linkedInUrl"
             ]) ??
-            pickStrFromLead(raw, ["linkedinUrlSalesNav"])
+            pickStrFromLead(raw, ["linkedinUrlSalesNav"]),
+          phone:
+            out.phone ??
+            pickStrFromLead(raw, ["phone", "phoneNumber", "mobilePhone", "directPhone", "workPhone"]) ??
+            pickStrFromLead(fields, ["phone", "phoneNumber", "mobilePhone", "directPhone"])
         };
       })
     );

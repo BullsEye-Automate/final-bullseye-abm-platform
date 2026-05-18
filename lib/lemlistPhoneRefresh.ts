@@ -14,7 +14,7 @@
 // que un contacto tiene phone_lemlist deja de consultarse.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getLemlistLeadByEmail } from "./lemlist";
+import { getCampaignLeadsWithDetails } from "./lemlist";
 import { searchByProperty, updateObject } from "./hubspot";
 import { ensureContactProperties } from "./hubspotProperties";
 
@@ -61,6 +61,18 @@ function empty(): RefreshPhonesResult {
   };
 }
 
+type ContactRowExt = ContactRow & { linkedin_url: string | null };
+
+function normalizeLinkedin(url: string | null | undefined): string {
+  if (!url) return "";
+  return url
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/$/, "")
+    .trim();
+}
+
 export async function refreshLemlistPhones(
   db: SupabaseClient,
   opts: { limit?: number } = {}
@@ -69,27 +81,26 @@ export async function refreshLemlistPhones(
   if (!campaignId) {
     return { ...empty(), error: "LEMLIST_CAMPAIGN_ID is not configured" };
   }
-  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 300);
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
 
   // Asegura que wecad_phone_* existan en HubSpot (idempotente, cached).
   await ensureContactProperties();
 
   // Contactos en campaña: fit_action='enrich' cubre tanto los que empujó la
   // app (push-to-lemlist / manual_review approve) como los auto-enrich de
-  // Clay. Filtramos a los que tienen email y todavía no tienen un teléfono
-  // de Lemlist registrado.
+  // Clay. NO filtramos por email — los contactos de Sales Nav pushean solo
+  // con linkedin_url y Lemlist los enriquece con email + phone después.
   const { data: rows, error } = await db
     .from("contacts")
-    .select("id, email, phone, phone_source, hubspot_contact_id")
+    .select("id, email, linkedin_url, phone, phone_source, hubspot_contact_id")
     .eq("fit_action", "enrich")
-    .not("email", "is", null)
     .is("phone_lemlist", null)
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) {
     return { ...empty(), error: error.message };
   }
-  const contacts = (rows ?? []) as unknown as ContactRow[];
+  const contacts = (rows ?? []) as unknown as ContactRowExt[];
 
   const res: RefreshPhonesResult = { ...empty(), ok: true };
   const pushErr = (m: string) => {
@@ -97,40 +108,49 @@ export async function refreshLemlistPhones(
     if (res.sample_errors.length < 5) res.sample_errors.push(m);
   };
 
+  if (contacts.length === 0) return res;
+
+  // Una sola fetch a Lemlist para TODOS los leads de la campaña (con
+  // detalles). Mucho más eficiente que llamar lead por lead — y matchea
+  // contactos que no tenían email a push time (Sales Nav).
+  const all = await getCampaignLeadsWithDetails(campaignId);
+  if (!all.ok) {
+    res.lemlist_failed = contacts.length;
+    res.debug = { first_failure: { error: all.error, debug: all.debug } };
+    return res;
+  }
+  res.lemlist_ok = all.leads.length;
+
+  // Index por email y por linkedin_url normalizado para match cruzado.
+  const byEmail = new Map<string, (typeof all.leads)[number]>();
+  const byLinkedin = new Map<string, (typeof all.leads)[number]>();
+  for (const lead of all.leads) {
+    if (lead.email) byEmail.set(lead.email.toLowerCase().trim(), lead);
+    const lk = normalizeLinkedin(lead.linkedin_url);
+    if (lk) byLinkedin.set(lk, lead);
+  }
+
   for (const c of contacts) {
-    if (!c.email) continue;
     res.checked += 1;
 
-    let lead;
-    try {
-      lead = await getLemlistLeadByEmail(campaignId, c.email);
-    } catch (err) {
-      pushErr(`${c.email}: ${err instanceof Error ? err.message : "fetch error"}`);
+    let lead: (typeof all.leads)[number] | undefined;
+    if (c.email) lead = byEmail.get(c.email.toLowerCase().trim());
+    if (!lead && c.linkedin_url) lead = byLinkedin.get(normalizeLinkedin(c.linkedin_url));
+
+    if (!lead) {
+      // Contacto no está en la campaña — Lemlist aún no lo enroló o la
+      // extensión usó otra cuenta. No es un error blocking.
       continue;
     }
-    // Lead no está en la campaña, o la API falló: se reintenta el próximo run.
-    if (!lead.ok) {
-      res.lemlist_failed += 1;
-      if (!res.debug) res.debug = {};
-      if (!res.debug.first_failure) {
-        res.debug.first_failure = { email: c.email, status: lead.status, error: lead.error, debug: lead.debug };
-      }
-      continue;
-    }
-    res.lemlist_ok += 1;
-    // Lemlist todavía no enriqueció el teléfono. Guardamos el primer lead
-    // crudo sin phone (con la respuesta HTTP cruda y las URLs probadas) para
-    // poder ver el shape real de la respuesta de Lemlist.
     if (!lead.phone) {
       if (!res.debug) res.debug = {};
       if (!res.debug.first_lead_without_phone) {
         res.debug.first_lead_without_phone = {
+          contact_id: c.id,
           email: c.email,
-          matched_url: lead.matched_url,
-          status: lead.status,
-          raw: lead.raw,
-          parsed_lead: lead.lead,
-          attempts: lead.attempts
+          linkedin_url: c.linkedin_url,
+          lead_email: lead.email,
+          lead_linkedin: lead.linkedin_url
         };
       }
       continue;
@@ -139,10 +159,11 @@ export async function refreshLemlistPhones(
     const phone = lead.phone;
     res.phones_found += 1;
     const hadPhone = !!(c.phone && c.phone.trim().length > 4);
+    const enrichedEmail = c.email ?? lead.email ?? null;
 
     // 1) Supabase. phone_lemlist siempre. El principal solo si estaba vacío
-    //    — no pisamos un teléfono de Lusha (Lusha es el fallback de mayor
-    //    calidad y manda como principal cuando existe).
+    //    — no pisamos un teléfono de Lusha. Si el contacto no tenía email
+    //    pero Lemlist lo enriqueció, también persistimos email.
     const supFields: Record<string, unknown> = { phone_lemlist: phone };
     if (!hadPhone) {
       supFields.phone = phone;
@@ -150,15 +171,17 @@ export async function refreshLemlistPhones(
       supFields.phone_enrichment_status = "done_lemlist";
       supFields.phone_enriched_at = new Date().toISOString();
     }
+    if (!c.email && lead.email) {
+      supFields.email = lead.email;
+    }
     const { error: supErr } = await db.from("contacts").update(supFields).eq("id", c.id);
-    if (supErr) pushErr(`${c.email} supabase: ${supErr.message}`);
+    if (supErr) pushErr(`${c.id} supabase: ${supErr.message}`);
     else res.supabase_updated += 1;
 
-    // 2) HubSpot. Resolvemos el id: el guardado, o search por email (la sync
-    //    nativa de Lemlist pudo haber creado el contacto por email).
+    // 2) HubSpot. Resolvemos el id: el guardado, o search por email.
     let hsId = c.hubspot_contact_id;
-    if (!hsId) {
-      const s = await searchByProperty("contacts", "email", c.email);
+    if (!hsId && enrichedEmail) {
+      const s = await searchByProperty("contacts", "email", enrichedEmail);
       if (s.ok && s.data && s.data.total > 0) {
         hsId = s.data.results[0].id;
         await db.from("contacts").update({ hubspot_contact_id: hsId }).eq("id", c.id);
@@ -177,7 +200,7 @@ export async function refreshLemlistPhones(
     }
     const upd = await updateObject("contacts", hsId, hsProps);
     if (upd.ok) res.hubspot_updated += 1;
-    else pushErr(`${c.email} hubspot: ${upd.error}`);
+    else pushErr(`${c.id} hubspot: ${upd.error}`);
   }
 
   return res;
