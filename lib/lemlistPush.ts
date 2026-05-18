@@ -10,6 +10,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { addLeadToCampaign } from "./lemlist";
 import { generateMessages, type MessageInput } from "./messageGenerator";
+import { computeContactFitScore, type ScoreInput } from "./contactScoring";
 
 export type LemlistPushOk = {
   ok: true;
@@ -71,6 +72,43 @@ export async function pushApprovedToLemlist(
       email_subject: null,
       email_body: null
     };
+  }
+
+  // Fallback de fit_score: si el contacto no tiene score (típicamente vino
+  // por Sales Nav, web scrape o manual import — bypasea Clay's Lead Scoring),
+  // lo calculamos con Claude usando los mismos criterios que Clay. Resultado
+  // queda persistido en contacts.fit_score y de ahí HubSpot lo pickea via
+  // syncContactToHubSpot que corre después del push. Best-effort: si falla,
+  // seguimos sin score (mejor un push sin score que romper el flow).
+  if (contact.fit_score == null && company) {
+    try {
+      const scoreInput: ScoreInput = {
+        first_name: contact.first_name,
+        last_name: contact.last_name,
+        job_title: contact.job_title,
+        linkedin_headline: contact.linkedin_headline,
+        seniority: contact.seniority,
+        company_name: company.company_name,
+        company_type: company.company_type,
+        company_size: company.company_size,
+        cad_software: company.cad_software,
+        scanner_technology: company.scanner_technology,
+        fit_signals: company.fit_signals
+      };
+      const scored = await computeContactFitScore(scoreInput);
+      // Solo persistimos campos críticos. NO sobreescribimos fit_action si
+      // ya existe (puede haber sido seteado por Clay) — el scoring de la
+      // app es solo fallback de fit_score cuando Clay no opinó.
+      const patch: Record<string, unknown> = {
+        fit_score: scored.fit_score,
+        fit_reason: scored.fit_reason,
+        fit: scored.fit
+      };
+      await db.from("contacts").update(patch).eq("id", contactId);
+      contact = { ...contact, fit_score: scored.fit_score, fit_reason: scored.fit_reason };
+    } catch {
+      // ignore — el push sigue sin score.
+    }
   }
 
   const campaignId = process.env.LEMLIST_CAMPAIGN_ID;
