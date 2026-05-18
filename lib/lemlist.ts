@@ -275,6 +275,53 @@ function extractPhone(lead: LemlistLeadFetched): string | null {
   return null;
 }
 
+// Búsqueda recursiva de un teléfono dentro de un objeto. Lemlist a veces
+// devuelve los phones nested (enrichmentData.phone, phones[0], etc.) y el
+// shape exacto varía por versión del API. Esto se queda con cualquier
+// string que parezca teléfono en cualquier nivel — más laxo que extractPhone.
+function extractPhoneDeep(obj: unknown, depth = 0): string | null {
+  if (!obj || depth > 4) return null;
+  // Strings sueltos: si parece teléfono (≥7 dígitos), lo aceptamos.
+  if (typeof obj === "string") {
+    const digits = obj.replace(/\D/g, "");
+    if (digits.length >= 7 && digits.length <= 16) return obj.trim();
+    return null;
+  }
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const v = extractPhoneDeep(item, depth + 1);
+      if (v) return v;
+    }
+    return null;
+  }
+  if (typeof obj !== "object") return null;
+  const rec = obj as Record<string, unknown>;
+  // Primero los keys más típicos.
+  const phoneKeys = [
+    "phone",
+    "phoneNumber",
+    "mobilePhone",
+    "directPhone",
+    "workPhone",
+    "mobile",
+    "tel",
+    "phone1",
+    "phone_e164"
+  ];
+  for (const k of phoneKeys) {
+    const v = rec[k];
+    if (typeof v === "string" && v.trim().length > 4) return v.trim();
+  }
+  // Si no, recursión por todos los valores.
+  for (const v of Object.values(rec)) {
+    if (typeof v === "object" && v !== null) {
+      const found = extractPhoneDeep(v, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export async function getLemlistLeadByEmail(
   campaignId: string,
   email: string
@@ -632,9 +679,12 @@ export async function getCampaignLeadsWithDetails(
   const list = await getCampaignLeads(campaignId);
   if (!list.ok) return list;
 
-  // Si todos los leads ya vienen con datos completos, no hace falta enriquecer.
+  // Si todos los leads ya vienen con datos completos (incluyendo phone),
+  // no hace falta enriquecer. Nota: el list endpoint NO devuelve phone
+  // típicamente, así que esto casi siempre dispara enrichment — pero el
+  // chequeo está bien por defensiva.
   const needsEnrichment = list.leads.some(
-    (l) => l.contact_id && !l.linkedin_url && !l.first_name
+    (l) => l.contact_id && (!l.linkedin_url || !l.first_name || !l.phone)
   );
   if (!needsEnrichment) return list;
 
@@ -704,8 +754,8 @@ export async function getCampaignLeadsWithDetails(
             pickStrFromLead(raw, ["linkedinUrlSalesNav"]),
           phone:
             out.phone ??
-            pickStrFromLead(raw, ["phone", "phoneNumber", "mobilePhone", "directPhone", "workPhone"]) ??
-            pickStrFromLead(fields, ["phone", "phoneNumber", "mobilePhone", "directPhone"])
+            extractPhoneDeep(raw) ??
+            extractPhoneDeep(fields)
         };
       })
     );

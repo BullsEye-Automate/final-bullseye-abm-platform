@@ -270,43 +270,61 @@ function PhoneRefreshBanner({
   const inLemlist = pipeline.contacts_in_lemlist.current;
   const withPhone = pipeline.contacts_with_phone.current;
   const gap = inLemlist - withPhone;
-  // Surface solo cuando hay > 5 leads en Lemlist sin phone sincronizado.
-  // Lemlist enriquece async — la app necesita pullear con un endpoint.
-  const showBanner = inLemlist >= 5 && (withPhone / inLemlist) < 0.5;
+  const hasGap = inLemlist >= 1 && gap >= 1;
 
   const [busy, setBusy] = useState(false);
+  const [autoRan, setAutoRan] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  async function refresh() {
-    setBusy(true);
-    setMsg(null);
-    setErr(null);
-    try {
-      const res = await fetch("/api/lemlist/refresh-phones", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: 200 })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setErr(data.error ?? `HTTP ${res.status}`);
-      } else {
-        const found = data.phones_found ?? 0;
-        const checked = data.checked ?? 0;
-        setMsg(
-          `${found} teléfono${found === 1 ? "" : "s"} encontrado${found === 1 ? "" : "s"} de ${checked} contactos consultados a Lemlist.`
-        );
-        onRefreshed();
+  const refresh = useCallback(
+    async (silent = false) => {
+      if (!silent) {
+        setBusy(true);
+        setMsg(null);
+        setErr(null);
       }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Error de red");
-    } finally {
-      setBusy(false);
-    }
-  }
+      try {
+        const res = await fetch("/api/lemlist/refresh-phones", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit: 500 })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (!silent) setErr(data.error ?? `HTTP ${res.status}`);
+        } else {
+          const found = data.phones_found ?? 0;
+          const checked = data.checked ?? 0;
+          if (!silent) {
+            setMsg(
+              `${found} teléfono${found === 1 ? "" : "s"} encontrado${found === 1 ? "" : "s"} de ${checked} contactos consultados.`
+            );
+          }
+          // Solo refrescamos el dashboard si encontramos algo nuevo, para no
+          // recargar todo el dashboard sin razón en cada visita.
+          if (found > 0) onRefreshed();
+        }
+      } catch (e) {
+        if (!silent) setErr(e instanceof Error ? e.message : "Error de red");
+      } finally {
+        if (!silent) setBusy(false);
+      }
+    },
+    [onRefreshed]
+  );
 
-  if (!showBanner && !msg && !err) return null;
+  // Auto-trigger en background una vez por sesión cuando se detecta el gap.
+  // No bloquea la UI: la primera vez muestra los counts actuales y dispara
+  // el refresh detrás. Cuando termina, el dashboard se re-fetchea sola.
+  useEffect(() => {
+    if (hasGap && !autoRan) {
+      setAutoRan(true);
+      refresh(true);
+    }
+  }, [hasGap, autoRan, refresh]);
+
+  if (!hasGap && !msg && !err) return null;
 
   return (
     <div className="card border-l-4 border-warning-fg flex items-start gap-3 flex-wrap">
@@ -317,14 +335,14 @@ function PhoneRefreshBanner({
         </div>
         <div className="text-sm text-ink-muted mt-0.5">
           Lemlist enriquece teléfonos async — pueden tardar minutos u horas
-          después del push. Pulsa el botón para traerlos a la app y a HubSpot.
+          después del push. La app está intentando sincronizarlos en background.
         </div>
         {msg && <div className="text-sm text-success-fg mt-1">{msg}</div>}
         {err && <div className="text-sm text-danger-fg mt-1">{err}</div>}
       </div>
-      <button onClick={refresh} disabled={busy} className="btn-primary text-sm shrink-0">
+      <button onClick={() => refresh(false)} disabled={busy} className="btn-secondary text-sm shrink-0">
         <IconRefresh size={14} />
-        {busy ? "Buscando…" : "Buscar teléfonos en Lemlist"}
+        {busy ? "Buscando…" : "Sincronizar ahora"}
       </button>
     </div>
   );
