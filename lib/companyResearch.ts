@@ -57,11 +57,11 @@ Reglas:
 - Trabajas SOLO con la evidencia provista por la búsqueda web. Lo que no esté en la evidencia con cita específica de esta empresa, va en null.
 - El usuario eligió esta empresa, así que SIEMPRE devuelves una ficha — incluso si el fit es bajo o si la empresa NO es del rubro dental. NO la descartes; describí honestamente lo que es y qué información hay (o no hay) sobre ella.
 - company_type: clasifícala con honestidad.
-  - "lab" = laboratorio dental
-  - "multi_clinic" = grupo de clínicas dentales multi-centro
-  - "dso" = Dental Service Organization
-  - "other" = CUALQUIER otra cosa (distribuidor, fabricante de equipos, proveedor de insumos, centro de fresado que solo vende equipos, consultora, o una empresa de otra industria).
-- Si la empresa NO es un laboratorio dental / clínica multi-centro / DSO, poné company_type="other", fit_score="low", y en research_summary explicá CLARAMENTE qué es realmente.
+  - "lab" = laboratorio dental con producción propia.
+  - "multi_clinic" = grupo de **2 o más** clínicas dentales operadas centralizadamente bajo un mismo dueño/management. Una clínica privada de UNA sola sede = NO entra acá (es "other").
+  - "dso" = Dental Service Organization (corporativo multi-clínica con management profesional, generalmente backed por PE).
+  - "other" = CUALQUIER otra cosa: clínica privada single-practice, distribuidor, fabricante de equipos, proveedor de insumos, centro de fresado que solo vende equipos, consultora, empresa de otra industria.
+- Si la empresa NO es un laboratorio dental / clínica multi-centro (2+ sedes) / DSO, poné company_type="other", fit_score="low", y en research_summary explicá CLARAMENTE qué es realmente.
 - company_linkedin_url: literal de la evidencia o del hint del usuario. NUNCA inventes ni construyas desde el nombre. Si no, null.
 - company_country: código ISO de 2 letras solo si la evidencia lo confirma. Si no, null.
 - company_size (número de empleados): SOLO desde el contador "X employees" / "X empleados" de la página corporativa de LinkedIn — es lo único actualizado. Aceptable también una página oficial reciente de la empresa que diga el número literal (About Us, Team, Careers, comunicado de prensa último año). NO ACEPTABLE: Manta, BBB, Yelp, ZoomInfo, Hoovers, Crunchbase rangos viejos, directorios sin fecha — están sistemáticamente desactualizados 5-10 años. Si la única fuente disponible es uno de esos directorios → null. MEJOR NULL QUE UN NÚMERO FALSO (un número malo rompe la personalización del outreach).

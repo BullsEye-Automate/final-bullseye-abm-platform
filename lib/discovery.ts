@@ -146,13 +146,13 @@ Reglas de extracción:
   - Proveedores, mayoristas, consultoras, agencias.
   - Centros de fresado que solo venden equipos sin operar como laboratorio.
   - Empresas de OTRAS industrias (biotecnología, agro, farma, etc.) — aunque el nombre tenga la palabra "lab".
-  - **Clínicas dentales PRIVADAS / single practice** (1 ubicación, dueño dentista, operación clínica solamente sin laboratorio interno). Eso NO es ni "lab" ni "multi_clinic" — es UNA clínica.
+  - **Clínicas dentales PRIVADAS de UNA SOLA sede** (1 ubicación, dueño dentista, sin más sucursales). Eso NO es ni "lab" ni "multi_clinic" — es UNA clínica privada. **Una clínica con 2+ sucursales SÍ entra como multi_clinic.**
   - Páginas LinkedIn "por reclamar" o fantasmas (pocos seguidores, 0 empleados listados, página corporativa que claramente nadie mantiene).
-  Si una empresa NO es claramente un laboratorio dental, una clínica dental multi-centro (≥3 ubicaciones operadas por el mismo dueño) o un DSO que opera como tal, NO la incluyas en absoluto. No uses "other" como cajón de sastre, y NO inventes que una single practice es "multi_clinic".
+  Si una empresa NO es claramente un laboratorio dental, una clínica dental multi-centro (2+ ubicaciones operadas por el mismo dueño/management) o un DSO que opera como tal, NO la incluyas en absoluto. No uses "other" como cajón de sastre, y NO inventes que una single practice es "multi_clinic".
 
 REGLA CRÍTICA DE company_type:
 - "lab" → laboratorio dental con producción de prótesis (propio, no terciariza todo). Operación de laboratorio = lab.
-- "multi_clinic" → grupo de 3+ clínicas dentales operadas centralizadamente bajo un mismo dueño/management. Una clínica sola = NO entra.
+- "multi_clinic" → grupo de **2 o más clínicas** dentales operadas centralizadamente bajo un mismo dueño/management. Una sola clínica = NO entra. Idealmente con flujo digital confirmado (escáner intraoral, exocad / 3Shape / inLab, impresión 3D, casos digitales o externalización), pero no es requisito duro — la revisión humana valida después.
 - "dso" → Dental Service Organization (corporativo, multi-clínica con management profesional, generalmente backed por private equity).
 - "other" → CUALQUIER otra cosa (single practice, distribuidor, fabricante, etc.). Si marcas "other" la empresa se descarta automáticamente. Sé honesto.
 
@@ -548,16 +548,21 @@ function summaryFlagsOutOfIcp(summary: string | null | undefined): boolean {
   }
   // "Clínica dental privada" / "single dental practice" / "private dental practice"
   // — son single-practice, no multi_clinic. Si Claude lo dijo, hay que respetar.
+  // PERO: una clínica privada con 2+ sucursales SÍ es multi_clinic y entra.
   if (
     /\bcl[íi]nica\s+(?:dental\s+)?privada\b/.test(t) ||
     /\bconsulta\s+(?:dental\s+)?privada\b/.test(t) ||
     /\bsingle\s+(?:dental\s+)?(?:practice|office|clinic)\b/.test(t) ||
     /\bprivate\s+(?:dental\s+)?practice\b/.test(t)
   ) {
-    // Solo descartar si NO menciona ser parte de un grupo más grande.
-    if (!/(grupo|chain|dso|multi-?(clinic|sede|location)|sucursales)/i.test(t)) {
-      return true;
-    }
+    // Excepciones: si menciona ser parte de grupo / multi-sede / cadena.
+    const isMulti =
+      /(grupo|chain|dso|multi-?(clinic|sede|location)|sucursal(es)?|sedes)/i.test(t) ||
+      // Numérico explícito: "2 clínicas", "two locations", "tres centros".
+      /\b([2-9]|10|dos|tres|cuatro|cinco|two|three|four|five)\s+(cl[íi]nica|cl[íi]nicas|centros?|sucursales?|sedes?|locations?|offices?|practices?|consultas?)\b/i.test(
+        t
+      );
+    if (!isMulti) return true;
   }
   return false;
 }
