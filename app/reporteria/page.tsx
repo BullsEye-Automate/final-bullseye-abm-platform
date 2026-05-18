@@ -619,17 +619,20 @@ function HotLeadsTable({ leads }: { leads: Snapshot["hot_leads"] }) {
         <summary className="cursor-pointer hover:text-ink select-none">
           ¿Cómo se calcula el Engagement Score?
         </summary>
-        <div className="mt-2 pl-3 border-l-2 border-[#EEEDFE] space-y-0.5 text-[11px]">
+        <div className="mt-2 pl-3 border-l-2 border-[#EEEDFE] space-y-1 text-[11px]">
           <div>
-            <span className="font-medium text-ink">Email (max 50)</span>: +5
-            abierto · +15 click · +25 respuesta.
+            <span className="font-medium text-ink">Email (max 50)</span>
+            <span className="text-ink-subtle"> · fuente: Lemlist</span>:
+            +5 abierto · +15 click · +25 respuesta.
           </div>
           <div>
-            <span className="font-medium text-ink">LinkedIn (max 50)</span>:
+            <span className="font-medium text-ink">LinkedIn (max 50)</span>
+            <span className="text-ink-subtle"> · fuente: Lemlist</span>:
             +15 invitación aceptada · +30 respuesta.
           </div>
           <div>
-            <span className="font-medium text-ink">Llamadas (max 50)</span>:
+            <span className="font-medium text-ink">Llamadas (max 50)</span>
+            <span className="text-ink-subtle"> · fuente: HubSpot</span>:
             +50 interesado · +40 callback · +25 objeción timing · +15 objeción
             precio.
           </div>

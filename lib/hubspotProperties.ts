@@ -221,22 +221,22 @@ const CONTACT_PROPERTIES: PropertyDef[] = [
     type: "number",
     fieldType: "number",
     groupName: GROUP_NAME,
-    description: `Score 0-100 de interacción del contacto con nuestras campañas (Lemlist + llamadas). Cuanto más alto, más cercano está el contacto a convertirse en cliente.
+    description: `Score 0-100 de interacción del contacto con nuestras campañas. Cuanto más alto, más cercano está el contacto a convertirse en cliente.
 
-Cómo se calcula (suma con tope de 100):
+Cada canal usa SU fuente real de datos:
 
-EMAIL (max 50)
+EMAIL (max 50) — fuente: Lemlist (sync vía webhook)
   +1   Email enviado (prueba que está en campaña activa)
   +5   Email abierto (max 15, hasta 3 aperturas)
   +15  Email con click (max 30, hasta 2 clicks)
   +25  Email respondido (max 50, hasta 2 respuestas)
 
-LINKEDIN (max 50)
+LINKEDIN (max 50) — fuente: Lemlist (Lemlist gestiona los touches LinkedIn)
   +1   Mensaje LinkedIn enviado
   +15  Invitación LinkedIn aceptada (señal grande de warm)
   +30  Respuesta en LinkedIn (max 60, hasta 2 respuestas)
 
-LLAMADAS (max 50)
+LLAMADAS (max 50) — fuente: HubSpot (sync vía webhook real-time + categorización IA Claude)
   +50  Llamada categorizada "Interesado"
   +40  Llamada "Pidió callback"
   +25  Objeción de timing (sigue caliente)
@@ -247,7 +247,7 @@ LLAMADAS (max 50)
 BOOST DE RECIENCIA
   +10  Si hay actividad en los últimos 7 días
 
-Se recalcula automáticamente cada vez que el contacto se sincroniza a HubSpot.`
+Se recalcula automáticamente cada vez que el contacto se sincroniza a HubSpot. Las llamadas se traen desde HubSpot (webhook /api/hubspot/webhook/calls) y se analizan con IA antes de afectar el score.`
   },
   {
     name: "wecad_last_engagement_at",
