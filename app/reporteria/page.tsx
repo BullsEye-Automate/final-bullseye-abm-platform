@@ -69,9 +69,12 @@ type Snapshot = {
     company_name: string | null;
     job_title: string | null;
     signals: string[];
-    score: number;
+    fit_score: number | null;
+    engagement_score: number;
+    last_activity_at: string | null;
     linkedin_url: string | null;
     hubspot_contact_id: string | null;
+    score: number;
   }>;
   highlight: string;
   evolution_8mo: Array<{
@@ -565,7 +568,11 @@ function ResponsesDistribution({
 // Hot leads table — top 10 contactos rankeados por señales
 // ============================================================================
 
+type SortKey = "engagement" | "fit";
+
 function HotLeadsTable({ leads }: { leads: Snapshot["hot_leads"] }) {
+  const [sortKey, setSortKey] = useState<SortKey>("engagement");
+
   if (leads.length === 0) {
     return (
       <div className="card text-ink-muted text-sm">
@@ -575,59 +582,65 @@ function HotLeadsTable({ leads }: { leads: Snapshot["hot_leads"] }) {
             Hot leads para seguimiento
           </h3>
         </div>
-        Sin hot leads identificados en el período.
+        Sin hot leads con interacción todavía. Las campañas necesitan algunos
+        días para acumular opens, clicks y respuestas.
       </div>
     );
   }
+
+  // Sort en cliente. Engagement DESC + fit DESC, o fit DESC + engagement DESC,
+  // según qué columna haya clickeado el usuario.
+  const sorted = [...leads].sort((a, b) => {
+    if (sortKey === "engagement") {
+      if (b.engagement_score !== a.engagement_score)
+        return b.engagement_score - a.engagement_score;
+      return (b.fit_score ?? 0) - (a.fit_score ?? 0);
+    }
+    // fit primero
+    if ((b.fit_score ?? 0) !== (a.fit_score ?? 0))
+      return (b.fit_score ?? 0) - (a.fit_score ?? 0);
+    return b.engagement_score - a.engagement_score;
+  });
+
   return (
     <div className="card">
       <div className="flex items-center gap-2 mb-1 text-brand">
         <IconFlame size={16} />
         <h3 className="text-sm font-semibold text-ink">
-          Hot leads para seguimiento
+          Hot leads para seguimiento ({leads.length})
         </h3>
       </div>
       <p className="text-xs text-ink-muted mb-2">
-        Top contactos con engagement real en el período: llamadas interesadas,
-        callbacks pedidos, o respuestas positivas. Excluye los que solo tienen
-        fit alto sin haber respondido todavía.
+        Contactos en outreach activo con interacción real (opens, clicks,
+        respuestas, invitaciones aceptadas, calls). Ordenable por Engagement
+        Score (interacción Lemlist) o Fit Score (pre-filtro IA).
       </p>
       <details className="text-xs text-ink-muted mb-4">
         <summary className="cursor-pointer hover:text-ink select-none">
-          ¿Cómo se calcula el score?
+          ¿Cómo se calcula el Engagement Score?
         </summary>
         <div className="mt-2 pl-3 border-l-2 border-[#EEEDFE] space-y-0.5 text-[11px]">
           <div>
-            <span className="font-medium text-ink">+50</span> · llamada
-            categorizada "interesado" (la más reciente).
+            <span className="font-medium text-ink">Email (max 50)</span>: +5
+            abierto · +15 click · +25 respuesta.
           </div>
           <div>
-            <span className="font-medium text-ink">+35</span> · llamada
-            categorizada "callback requested".
+            <span className="font-medium text-ink">LinkedIn (max 50)</span>:
+            +15 invitación aceptada · +30 respuesta.
           </div>
           <div>
-            <span className="font-medium text-ink">+30</span> · respuesta
-            positiva (interested, question) en el período.
+            <span className="font-medium text-ink">Llamadas (max 50)</span>:
+            +50 interesado · +40 callback · +25 objeción timing · +15 objeción
+            precio.
           </div>
           <div>
-            <span className="font-medium text-ink">+25</span> · pidió callback
-            vía respuesta de Lemlist.
-          </div>
-          <div>
-            <span className="font-medium text-ink">+20</span> · objection
-            timing (sigue caliente, retomar después).
-          </div>
-          <div>
-            <span className="font-medium text-ink">+ fit_score × 4</span> ·
-            score del pre-filtro IA (0-40 pts).
-          </div>
-          <div>
-            <span className="font-medium text-ink">+5 c/u</span> · tiene
-            teléfono · está en Lemlist · está en HubSpot.
+            <span className="font-medium text-ink">+10 boost</span> si hubo
+            actividad en los últimos 7 días.
           </div>
           <div className="text-ink-subtle pt-1">
-            Solo entran al top contactos con al menos una señal de engagement
-            (las primeras 5 reglas). Fit alto solo no alcanza.
+            Cap total 100. Mismo cálculo que la property
+            <code className="text-[10px]"> wecad_engagement_score</code> en
+            HubSpot.
           </div>
         </div>
       </details>
@@ -639,12 +652,21 @@ function HotLeadsTable({ leads }: { leads: Snapshot["hot_leads"] }) {
               <th className="text-left py-2 pr-4 font-medium">Empresa</th>
               <th className="text-left py-2 pr-4 font-medium">Cargo</th>
               <th className="text-left py-2 pr-4 font-medium">Señales</th>
-              <th className="text-right py-2 pr-4 font-medium">Score</th>
-              <th className="text-right py-2 font-medium">Links</th>
+              <SortableHeader
+                label="Engagement"
+                active={sortKey === "engagement"}
+                onClick={() => setSortKey("engagement")}
+              />
+              <SortableHeader
+                label="Fit"
+                active={sortKey === "fit"}
+                onClick={() => setSortKey("fit")}
+              />
+              <th className="text-right py-2 font-medium">LinkedIn</th>
             </tr>
           </thead>
           <tbody>
-            {leads.map((l) => (
+            {sorted.map((l) => (
               <tr
                 key={l.contact_id}
                 className="border-b border-[#F4F2FB] last:border-0"
@@ -670,8 +692,15 @@ function HotLeadsTable({ leads }: { leads: Snapshot["hot_leads"] }) {
                     ))}
                   </div>
                 </td>
-                <td className="py-2 pr-4 text-right tabular-nums font-medium text-ink">
-                  {l.score}
+                <td className="py-2 pr-4 text-right tabular-nums">
+                  <ScoreBadge value={l.engagement_score} max={100} highlight />
+                </td>
+                <td className="py-2 pr-4 text-right tabular-nums">
+                  {l.fit_score != null ? (
+                    <ScoreBadge value={l.fit_score} max={10} />
+                  ) : (
+                    <span className="text-ink-subtle">—</span>
+                  )}
                 </td>
                 <td className="py-2 text-right">
                   {l.linkedin_url && (
@@ -692,6 +721,59 @@ function HotLeadsTable({ leads }: { leads: Snapshot["hot_leads"] }) {
         </table>
       </div>
     </div>
+  );
+}
+
+function SortableHeader({
+  label,
+  active,
+  onClick
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <th className="text-right py-2 pr-4 font-medium">
+      <button
+        onClick={onClick}
+        className={`inline-flex items-center gap-1 hover:text-ink transition-colors ${
+          active ? "text-brand font-semibold" : ""
+        }`}
+        title="Ordenar de mayor a menor"
+      >
+        {label}
+        <span className="text-[10px]">{active ? "↓" : "↕"}</span>
+      </button>
+    </th>
+  );
+}
+
+function ScoreBadge({
+  value,
+  max,
+  highlight = false
+}: {
+  value: number;
+  max: number;
+  highlight?: boolean;
+}) {
+  const pct = max === 10 ? value * 10 : value;
+  const cls =
+    pct >= 70
+      ? "bg-success-fg text-white"
+      : pct >= 40
+      ? "bg-warning-fg text-white"
+      : "bg-ink-muted/20 text-ink-muted";
+  return (
+    <span
+      className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold ${cls} ${
+        highlight ? "min-w-[32px]" : "min-w-[28px]"
+      } text-center`}
+    >
+      {value}
+      {max === 10 ? "/10" : ""}
+    </span>
   );
 }
 

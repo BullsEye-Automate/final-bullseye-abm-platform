@@ -189,3 +189,147 @@ export async function computeEngagementScore(
     }
   };
 }
+
+// Versión batch para múltiples contactos. Hace 2 queries (una de
+// lemlist_activities y una de calls) y agrupa en memoria, mucho más
+// eficiente que llamar computeEngagementScore N veces (que haría 2N
+// queries). Usado por la reportería ejecutiva donde necesitamos
+// engagement para top 50-200 contactos a la vez.
+export async function computeEngagementScoresBatch(
+  db: SupabaseClient,
+  contactIds: string[]
+): Promise<Map<string, EngagementResult>> {
+  const out = new Map<string, EngagementResult>();
+  if (contactIds.length === 0) return out;
+
+  const [actsRes, callsRes] = await Promise.all([
+    db
+      .from("lemlist_activities")
+      .select("contact_id, type, channel, activity_at, reply_category, reply_triage")
+      .in("contact_id", contactIds)
+      .order("activity_at", { ascending: false })
+      .limit(50000),
+    db
+      .from("calls")
+      .select("contact_id, customer_response_category, call_timestamp")
+      .in("contact_id", contactIds)
+      .order("call_timestamp", { ascending: false })
+      .limit(10000)
+  ]);
+
+  const actsByContact = new Map<string, Array<any>>();
+  for (const a of (actsRes.data ?? []) as any[]) {
+    if (!a.contact_id) continue;
+    const arr = actsByContact.get(a.contact_id) ?? [];
+    arr.push(a);
+    actsByContact.set(a.contact_id, arr);
+  }
+  const callsByContact = new Map<string, Array<any>>();
+  for (const c of (callsRes.data ?? []) as any[]) {
+    if (!c.contact_id) continue;
+    const arr = callsByContact.get(c.contact_id) ?? [];
+    arr.push(c);
+    callsByContact.set(c.contact_id, arr);
+  }
+
+  for (const id of contactIds) {
+    const activities = actsByContact.get(id) ?? [];
+    const calls = callsByContact.get(id) ?? [];
+    out.set(id, scoreFromAggregates(activities, calls));
+  }
+  return out;
+}
+
+// Helper extraído para reuso entre el modo single y el batch.
+function scoreFromAggregates(
+  activities: Array<{
+    type: string | null;
+    channel: string | null;
+    activity_at: string | null;
+    reply_category: string | null;
+    reply_triage: string | null;
+  }>,
+  calls: Array<{
+    customer_response_category: string | null;
+    call_timestamp: string | null;
+  }>
+): EngagementResult {
+  let email = 0;
+  let linkedin = 0;
+  let callsScore = 0;
+  let lastActivityAt: string | null = null;
+  let emailOpens = 0;
+  let emailClicks = 0;
+  let emailReplies = 0;
+  let linkedinReplies = 0;
+  let linkedinAccepted = false;
+
+  for (const a of activities) {
+    const t = normalizeType(a.type);
+    const isReply = t === "repliedto";
+    const ch = (a.channel ?? "").toLowerCase();
+    if (a.activity_at) {
+      if (!lastActivityAt || a.activity_at > lastActivityAt) {
+        lastActivityAt = a.activity_at;
+      }
+    }
+    if (isReply) {
+      if (ch === "email") emailReplies++;
+      else if (ch === "linkedin") linkedinReplies++;
+      continue;
+    }
+    if (t === "invitationaccepted" || t === "linkedininviteaccepted") {
+      linkedinAccepted = true;
+      continue;
+    }
+    if (ch === "email") {
+      const pts = EMAIL_POINTS[t];
+      if (typeof pts === "number") {
+        if (t.includes("opened")) emailOpens++;
+        else if (t.includes("clicked")) emailClicks++;
+        else email += pts;
+      }
+    } else if (ch === "linkedin") {
+      const pts = LINKEDIN_POINTS[t];
+      if (typeof pts === "number") linkedin += pts;
+    }
+  }
+
+  email += Math.min(15, emailOpens * 5);
+  email += Math.min(30, emailClicks * 15);
+  email += Math.min(50, emailReplies * EMAIL_REPLY_POINTS);
+  email = Math.min(EMAIL_CAP, email);
+
+  if (linkedinAccepted) linkedin += LINKEDIN_ACCEPTED_POINTS;
+  linkedin += Math.min(60, linkedinReplies * LINKEDIN_REPLY_POINTS);
+  linkedin = Math.min(LINKEDIN_CAP, linkedin);
+
+  for (const c of calls) {
+    const cat = (c.customer_response_category ?? "").toLowerCase().replace(/[\s_-]/g, "");
+    for (const [key, pts] of Object.entries(CALL_POINTS)) {
+      if (cat === key.replace(/_/g, "")) {
+        callsScore = Math.max(callsScore, pts);
+        break;
+      }
+    }
+    if (c.call_timestamp) {
+      if (!lastActivityAt || c.call_timestamp > lastActivityAt) {
+        lastActivityAt = c.call_timestamp;
+      }
+    }
+  }
+  callsScore = Math.min(CALLS_CAP, callsScore);
+
+  let recencyBoost = 0;
+  if (lastActivityAt) {
+    const diffDays = (Date.now() - new Date(lastActivityAt).getTime()) / (1000 * 60 * 60 * 24);
+    if (diffDays <= RECENCY_DAYS) recencyBoost = RECENCY_BOOST;
+  }
+
+  const total = Math.min(100, email + linkedin + callsScore + recencyBoost);
+  return {
+    score: Math.round(total),
+    last_activity_at: lastActivityAt,
+    breakdown: { email, linkedin, calls: callsScore, recency_boost: recencyBoost }
+  };
+}

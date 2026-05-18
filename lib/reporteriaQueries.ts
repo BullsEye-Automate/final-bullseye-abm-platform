@@ -10,6 +10,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DateRange } from "./dashboardRanges";
 import { computeDashboard, type Delta, type DashboardData } from "./dashboardQueries";
 import { PICKUP_CATEGORIES, NO_PICKUP_CATEGORIES } from "./callAnalyzer";
+import { computeEngagementScoresBatch } from "./contactEngagement";
 
 const PICKUP_ARR = Array.from(PICKUP_CATEGORIES);
 const NO_PICKUP_ARR = Array.from(NO_PICKUP_CATEGORIES);
@@ -57,9 +58,13 @@ export type ReporteriaSnapshot = {
     company_name: string | null;
     job_title: string | null;
     signals: string[];
-    score: number;
+    fit_score: number | null;
+    engagement_score: number;
+    last_activity_at: string | null;
     linkedin_url: string | null;
     hubspot_contact_id: string | null;
+    /** Score combinado para el orden por defecto. */
+    score: number;
   }>;
 
   highlight: string;
@@ -388,15 +393,12 @@ export async function computeReporteria(
         : 0
   };
 
-  // 6) Hot leads — top contactos rankeados por señales recientes.
-  // Score:
-  //   +50 si la última call dio 'interested'
-  //   +35 si 'callback_requested'
-  //   +30 si respuesta categoría positiva en período
-  //   +20 si objection_timing en call (sigue caliente)
-  //   + fit_score × 4 (0-40 pts)
-  //   +5 si tiene teléfono, +5 si está en Lemlist, +5 si está en HubSpot
-  // Excluye status=discarded o human_decision=rejected.
+  // 6) Hot leads — basado en engagement score de Lemlist (alta interacción).
+  // Filtro: contactos con engagement >= 20 (alguna señal real de interacción:
+  // open, click, invite aceptada, respuesta, o call con resultado).
+  // Sort: engagement DESC primero (interacción manda), fit_score DESC después
+  // como desempate.
+  // El frontend permite cambiar el orden a fit_score primario.
   const { data: hotCandidates } = await db
     .from("contacts")
     .select(
@@ -406,6 +408,7 @@ export async function computeReporteria(
     )
     .neq("status", "discarded")
     .neq("human_decision", "rejected")
+    .not("lemlist_pushed_at", "is", null) // tiene que estar en outreach
     .limit(2000);
   type HotRaw = {
     id: string;
@@ -420,15 +423,19 @@ export async function computeReporteria(
     company_id: string | null;
     companies: { company_name: string | null } | null;
   };
-  const contactById = new Map<string, HotRaw>();
-  for (const c of (hotCandidates ?? []) as unknown as HotRaw[]) {
-    contactById.set(c.id, c);
-  }
-  // Última call por contacto.
+  const candidates = (hotCandidates ?? []) as unknown as HotRaw[];
+
+  // Calculamos engagement en batch (2 queries totales para todos los
+  // contactos, no 2N).
+  const engagementMap = await computeEngagementScoresBatch(
+    db,
+    candidates.map((c) => c.id)
+  );
+
+  // Última call por contacto (para mostrar señal en la tabla).
   const { data: callRowsForHot } = await db
     .from("calls")
     .select("contact_id, customer_response_category, call_timestamp")
-    .gte("call_timestamp", previous.start.toISOString())
     .order("call_timestamp", { ascending: false })
     .limit(5000);
   const lastCallByContact = new Map<string, string>();
@@ -440,13 +447,12 @@ export async function computeReporteria(
     if (r.customer_response_category)
       lastCallByContact.set(r.contact_id, r.customer_response_category);
   }
-  // Respuestas positivas en período por contacto.
+  // Última respuesta positiva por contacto.
   const { data: repliesForHot } = await db
     .from("lemlist_activities")
-    .select("contact_id, reply_category, reply_triage")
+    .select("contact_id, reply_category, reply_triage, activity_at")
     .eq("type", "repliedTo")
-    .gte("activity_at", start.toISOString())
-    .lt("activity_at", end.toISOString())
+    .order("activity_at", { ascending: false })
     .limit(5000);
   const recentReplyByContact = new Map<string, string>();
   for (const r of (repliesForHot ?? []) as Array<{
@@ -461,48 +467,45 @@ export async function computeReporteria(
 
   const ranked: Array<{
     raw: HotRaw;
-    score: number;
+    engagement: number;
+    last_activity_at: string | null;
     signals: string[];
   }> = [];
-  for (const c of contactById.values()) {
+  for (const c of candidates) {
+    const eng = engagementMap.get(c.id);
+    if (!eng || eng.score < 20) continue; // solo los que tuvieron alguna interacción real
+
+    const signals: string[] = [];
     const lastCall = lastCallByContact.get(c.id);
     const lastReply = recentReplyByContact.get(c.id);
-    let score = 0;
-    const signals: string[] = [];
-    if (lastCall === "interested") {
-      score += 50;
-      signals.push("Llamada interesado");
-    } else if (lastCall === "callback_requested") {
-      score += 35;
-      signals.push("Pidió callback");
-    } else if (lastCall === "objection_timing") {
-      score += 20;
-      signals.push("Objeción timing (sigue caliente)");
-    }
-    if (lastReply && POSITIVE_REPLY_CATEGORIES.has(lastReply)) {
-      score += 30;
-      signals.push("Respuesta positiva en período");
-    } else if (lastReply === "callback_requested") {
-      score += 25;
-      signals.push("Pidió callback (vía respuesta)");
-    }
-    // Solo incluir si hay UNA señal de engagement real (call interesado/
-    // callback, respuesta positiva o callback por respuesta). Sin señal
-    // de engagement no es un "hot lead" — es solo un fit alto que aún
-    // no respondió. Esto alinea el conteo con el Hero KPI.
-    const hasEngagement = signals.length > 0;
-    if (!hasEngagement) continue;
-    if (typeof c.fit_score === "number") {
-      score += Math.min(40, c.fit_score * 4);
-      if (c.fit_score >= 8) signals.push(`Fit alto (${c.fit_score})`);
-    }
-    if (c.phone) score += 5;
-    if (c.lemlist_pushed_at) score += 5;
-    if (c.hubspot_contact_id) score += 5;
-    ranked.push({ raw: c, score, signals });
+
+    if (lastCall === "interested") signals.push("Llamada interesado");
+    else if (lastCall === "callback_requested") signals.push("Pidió callback");
+    else if (lastCall === "objection_timing") signals.push("Objeción timing");
+
+    if (lastReply && POSITIVE_REPLY_CATEGORIES.has(lastReply))
+      signals.push("Respuesta positiva");
+    else if (lastReply === "callback_requested")
+      signals.push("Callback vía respuesta");
+
+    if (eng.breakdown.email >= 30) signals.push("Alto engagement email");
+    if (eng.breakdown.linkedin >= 30) signals.push("Alto engagement LinkedIn");
+    if (typeof c.fit_score === "number" && c.fit_score >= 8)
+      signals.push(`Fit alto (${c.fit_score})`);
+
+    ranked.push({
+      raw: c,
+      engagement: eng.score,
+      last_activity_at: eng.last_activity_at,
+      signals: signals.length > 0 ? signals : ["Engagement Lemlist"]
+    });
   }
-  ranked.sort((a, b) => b.score - a.score);
-  const hot_leads = ranked.slice(0, 10).map((h) => {
+  // Orden default: engagement DESC, fit_score DESC. El frontend reordena.
+  ranked.sort((a, b) => {
+    if (b.engagement !== a.engagement) return b.engagement - a.engagement;
+    return (b.raw.fit_score ?? 0) - (a.raw.fit_score ?? 0);
+  });
+  const hot_leads = ranked.slice(0, 25).map((h) => {
     const name =
       [h.raw.first_name, h.raw.last_name].filter(Boolean).join(" ").trim() ||
       "(sin nombre)";
@@ -512,7 +515,10 @@ export async function computeReporteria(
       company_name: h.raw.companies?.company_name ?? null,
       job_title: h.raw.job_title,
       signals: h.signals,
-      score: h.score,
+      fit_score: h.raw.fit_score,
+      engagement_score: h.engagement,
+      last_activity_at: h.last_activity_at,
+      score: h.engagement + (h.raw.fit_score ?? 0) * 2, // combinado, para compat
       linkedin_url: h.raw.linkedin_url,
       hubspot_contact_id: h.raw.hubspot_contact_id
     };
