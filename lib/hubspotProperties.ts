@@ -214,6 +214,48 @@ const CONTACT_PROPERTIES: PropertyDef[] = [
     fieldType: "phonenumber",
     groupName: GROUP_NAME,
     description: "Teléfono que devolvió Lusha (lookup manual). Se conserva aunque Lemlist haya devuelto otro."
+  },
+  {
+    name: "wecad_engagement_score",
+    label: "weCAD Engagement Score",
+    type: "number",
+    fieldType: "number",
+    groupName: GROUP_NAME,
+    description: `Score 0-100 de interacción del contacto con nuestras campañas (Lemlist + llamadas). Cuanto más alto, más cercano está el contacto a convertirse en cliente.
+
+Cómo se calcula (suma con tope de 100):
+
+EMAIL (max 50)
+  +1   Email enviado (prueba que está en campaña activa)
+  +5   Email abierto (max 15, hasta 3 aperturas)
+  +15  Email con click (max 30, hasta 2 clicks)
+  +25  Email respondido (max 50, hasta 2 respuestas)
+
+LINKEDIN (max 50)
+  +1   Mensaje LinkedIn enviado
+  +15  Invitación LinkedIn aceptada (señal grande de warm)
+  +30  Respuesta en LinkedIn (max 60, hasta 2 respuestas)
+
+LLAMADAS (max 50)
+  +50  Llamada categorizada "Interesado"
+  +40  Llamada "Pidió callback"
+  +25  Objeción de timing (sigue caliente)
+  +15  Objeción de precio
+  +5   Objeción otra (sin necesidad, autoridad, solución actual)
+  +3   Voicemail / gatekeeper (intento sin diálogo)
+
+BOOST DE RECIENCIA
+  +10  Si hay actividad en los últimos 7 días
+
+Se recalcula automáticamente cada vez que el contacto se sincroniza a HubSpot.`
+  },
+  {
+    name: "wecad_last_engagement_at",
+    label: "weCAD Last Engagement At",
+    type: "datetime",
+    fieldType: "date",
+    groupName: GROUP_NAME,
+    description: "Fecha de la última interacción del contacto (email open, reply, llamada, etc.). Se actualiza junto con el engagement score."
   }
 ];
 

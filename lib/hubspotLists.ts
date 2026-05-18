@@ -276,5 +276,21 @@ export const LIST_DEFINITIONS: ListDef[] = [
     filterBranch: andOnly([
       enumIn("hs_lead_status", ["CONNECTED", "IN_PROGRESS", "OPEN_DEAL"])
     ])
+  },
+  {
+    name: "weCAD · Alta interacción (priorizar)",
+    description:
+      "Contactos con engagement score ≥ 60. Reaccionaron a nuestros mensajes (aperturas, clicks, invitaciones LinkedIn aceptadas, respuestas, o calls positivas). Ordenar por engagement DESC + fit_score DESC para llamar primero a los más calientes.",
+    filterBranch: andOnly([
+      numberGte("wecad_engagement_score", 60),
+      enumIn("hs_lead_status", [
+        "NEW",
+        "ATTEMPTED_TO_CONTACT",
+        "BAD_TIMING",
+        "CONNECTED",
+        "IN_PROGRESS",
+        "OPEN_DEAL"
+      ])
+    ])
   }
 ];

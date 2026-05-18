@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { IconCloudUpload, IconCheck, IconAlertCircle } from "@tabler/icons-react";
+import {
+  IconCloudUpload,
+  IconCheck,
+  IconAlertCircle,
+  IconTargetArrow,
+  IconActivity
+} from "@tabler/icons-react";
 
 type SetupResult = {
   properties: {
@@ -24,10 +30,26 @@ type SetupResult = {
   };
 };
 
+type BackfillSummary = {
+  processed: number;
+  scored?: number;
+  synced?: number;
+  hubspot_synced?: number;
+  errors: number;
+  remaining_in_queue?: number;
+};
+
 export default function HubspotConfigPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<SetupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [backfillFitLoading, setBackfillFitLoading] = useState(false);
+  const [backfillFitResult, setBackfillFitResult] = useState<BackfillSummary | null>(null);
+  const [backfillEngagementLoading, setBackfillEngagementLoading] = useState(false);
+  const [backfillEngagementResult, setBackfillEngagementResult] = useState<BackfillSummary | null>(
+    null
+  );
 
   async function runSetup() {
     setLoading(true);
@@ -45,6 +67,50 @@ export default function HubspotConfigPage() {
       setError(err instanceof Error ? err.message : "Network error");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function runBackfillFit() {
+    setBackfillFitLoading(true);
+    setBackfillFitResult(null);
+    try {
+      const res = await fetch("/api/contacts/backfill-fit-score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+      } else {
+        setBackfillFitResult(data.summary);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setBackfillFitLoading(false);
+    }
+  }
+
+  async function runBackfillEngagement() {
+    setBackfillEngagementLoading(true);
+    setBackfillEngagementResult(null);
+    try {
+      const res = await fetch("/api/contacts/backfill-engagement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}"
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? `HTTP ${res.status}`);
+      } else {
+        setBackfillEngagementResult(data.summary);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setBackfillEngagementLoading(false);
     }
   }
 
@@ -74,6 +140,104 @@ export default function HubspotConfigPage() {
         {error && (
           <div className="text-sm text-danger-fg flex items-center gap-2">
             <IconAlertCircle size={14} /> {error}
+          </div>
+        )}
+      </div>
+
+      {/* Backfill: fit_score con Claude para contactos sin scoring de Clay. */}
+      <div className="card p-4 space-y-3">
+        <div className="flex items-start gap-2">
+          <IconTargetArrow size={18} className="text-brand shrink-0 mt-0.5" />
+          <div>
+            <h2 className="font-semibold">Backfill: fit_score con IA</h2>
+            <div className="text-sm text-ink-muted mt-1">
+              Los contactos que vinieron por Sales Nav / web scrape / manual
+              import bypasean el Lead Scoring de Clay y quedan sin fit_score
+              → no matchean las listas Hot/Warm. Este botón los recorre y
+              les asigna score con Claude (mismos criterios que Clay), luego
+              re-sincroniza a HubSpot.
+              <br />
+              <span className="text-ink-subtle text-xs">
+                Procesa hasta 25 por corrida. Si remaining &gt; 0, repite.
+              </span>
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={runBackfillFit}
+          disabled={backfillFitLoading}
+          className="btn-primary"
+        >
+          <IconTargetArrow size={16} />
+          {backfillFitLoading ? "Scoring…" : "Calcular fit_score faltante"}
+        </button>
+        {backfillFitResult && (
+          <div className="text-sm bg-success-bg/30 rounded-md p-2">
+            <strong>Procesados:</strong> {backfillFitResult.processed} ·{" "}
+            <strong>Scoreados:</strong> {backfillFitResult.scored ?? 0} ·{" "}
+            <strong>Sincronizados a HubSpot:</strong>{" "}
+            {backfillFitResult.hubspot_synced ?? 0}
+            {backfillFitResult.errors > 0 && (
+              <span className="text-danger-fg">
+                {" "}
+                · {backfillFitResult.errors} errores
+              </span>
+            )}
+            {backfillFitResult.remaining_in_queue! > 0 && (
+              <div className="text-warning-fg mt-1">
+                Quedan {backfillFitResult.remaining_in_queue} más — repite el botón.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Backfill: engagement_score para contactos ya en HubSpot. */}
+      <div className="card p-4 space-y-3">
+        <div className="flex items-start gap-2">
+          <IconActivity size={18} className="text-brand shrink-0 mt-0.5" />
+          <div>
+            <h2 className="font-semibold">Backfill: engagement_score</h2>
+            <div className="text-sm text-ink-muted mt-1">
+              Re-sincroniza a HubSpot todos los contactos para poblar la
+              nueva property <code>wecad_engagement_score</code> (0-100,
+              calculado desde lemlist_activities + calls). Necesario una
+              sola vez después de crear la property nueva. Los pushes
+              normales (al aprobar a Lemlist) ya incluyen el score
+              actualizado.
+              <br />
+              <span className="text-ink-subtle text-xs">
+                Procesa hasta 30 por corrida. Si remaining &gt; 0, repite.
+              </span>
+            </div>
+          </div>
+        </div>
+        <button
+          onClick={runBackfillEngagement}
+          disabled={backfillEngagementLoading}
+          className="btn-primary"
+        >
+          <IconActivity size={16} />
+          {backfillEngagementLoading
+            ? "Sincronizando…"
+            : "Recalcular engagement de todos"}
+        </button>
+        {backfillEngagementResult && (
+          <div className="text-sm bg-success-bg/30 rounded-md p-2">
+            <strong>Procesados:</strong> {backfillEngagementResult.processed} ·{" "}
+            <strong>Sincronizados:</strong> {backfillEngagementResult.synced ?? 0}
+            {backfillEngagementResult.errors > 0 && (
+              <span className="text-danger-fg">
+                {" "}
+                · {backfillEngagementResult.errors} errores
+              </span>
+            )}
+            {backfillEngagementResult.remaining_in_queue! > 0 && (
+              <div className="text-warning-fg mt-1">
+                Quedan {backfillEngagementResult.remaining_in_queue} más — repite el
+                botón.
+              </div>
+            )}
           </div>
         )}
       </div>

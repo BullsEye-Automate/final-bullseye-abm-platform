@@ -22,6 +22,7 @@ import {
   type HubSpotProperties
 } from "./hubspot";
 import { ensureCompanyProperties, ensureContactProperties } from "./hubspotProperties";
+import { computeEngagementScore } from "./contactEngagement";
 
 export type HubSpotPushOk = {
   ok: true;
@@ -214,6 +215,19 @@ export async function pushContactToHubSpot(
   }
 
   const properties = buildContactProperties(contact, companySnapshot);
+
+  // Engagement score (0-100) calculado on the fly desde lemlist_activities
+  // + calls. Best-effort: si falla, no rompemos el push. Ver
+  // lib/contactEngagement.ts para la fórmula.
+  try {
+    const eng = await computeEngagementScore(db, contact.id);
+    properties.wecad_engagement_score = eng.score;
+    if (eng.last_activity_at) {
+      properties.wecad_last_engagement_at = eng.last_activity_at;
+    }
+  } catch {
+    // ignore — el push sigue sin score actualizado.
+  }
 
   // 1) hubspot_contact_id ya conocido → PATCH directo.
   if (contact.hubspot_contact_id) {
