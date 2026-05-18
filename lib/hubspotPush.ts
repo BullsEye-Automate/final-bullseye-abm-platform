@@ -105,6 +105,18 @@ export async function pushCompanyToHubSpot(
   // 4) No existe → create.
   const c = await createObject("companies", properties);
   if (!c.ok) {
+    if (c.status === 409) {
+      const existingId = extractExistingHubSpotId(c.error);
+      if (existingId) {
+        const r = await updateObject("companies", existingId, properties);
+        if (!r.ok) {
+          await persistCompanyError(db, company.id, `update-after-409: ${r.error}`);
+          return { ok: false, error: r.error, status: r.status, debug: r.debug };
+        }
+        await persistCompanySuccess(db, company.id, existingId);
+        return { ok: true, hubspot_id: existingId, created: false };
+      }
+    }
     await persistCompanyError(db, company.id, `create: ${c.error}`);
     return { ok: false, error: c.error, status: c.status, debug: c.debug };
   }
@@ -280,6 +292,24 @@ export async function pushContactToHubSpot(
   // para no pisar el progreso que el SDR ya hizo sobre el contacto.
   const c = await createObject("contacts", { ...properties, hs_lead_status: "NEW" });
   if (!c.ok) {
+    // 409 Conflict: HubSpot devuelve "Contact already exists. Existing ID: NNNN"
+    // cuando otro pipeline (Lemlist sync nativa, import manual, etc.) creó el
+    // contacto con el mismo email entre nuestra search del paso 3 y el create
+    // de acá. En vez de fallar, parseamos el ID y hacemos PATCH para
+    // sincronizar nuestras properties wecad_* en el contacto existente.
+    if (c.status === 409) {
+      const existingId = extractExistingHubSpotId(c.error);
+      if (existingId) {
+        const r = await updateObject("contacts", existingId, properties);
+        if (!r.ok) {
+          await persistContactError(db, contact.id, `update-after-409: ${r.error}`);
+          return { ok: false, error: r.error, status: r.status, debug: r.debug };
+        }
+        await persistContactSuccess(db, contact.id, existingId);
+        if (hubspotCompanyId) await associateContactCompany(existingId, hubspotCompanyId);
+        return { ok: true, hubspot_id: existingId, created: false };
+      }
+    }
     await persistContactError(db, contact.id, `create: ${c.error}`);
     return { ok: false, error: c.error, status: c.status, debug: c.debug };
   }
@@ -291,6 +321,12 @@ export async function pushContactToHubSpot(
   await persistContactSuccess(db, contact.id, newId);
   if (hubspotCompanyId) await associateContactCompany(newId, hubspotCompanyId);
   return { ok: true, hubspot_id: newId, created: true };
+}
+
+// Parsea "Existing ID: 1447457" del mensaje de error 409 de HubSpot.
+function extractExistingHubSpotId(error: string): string | null {
+  const m = /Existing\s*ID:\s*(\d+)/i.exec(error);
+  return m ? m[1] : null;
 }
 
 function buildContactProperties(
