@@ -258,6 +258,16 @@ export default function EmpresasPage() {
     approved: number;
     hubspot_errors: number;
   } | null>(null);
+  const [bulkReverifying, setBulkReverifying] = useState(false);
+  const [bulkReverifyResult, setBulkReverifyResult] = useState<{
+    processed: number;
+    updated: number;
+    quality_improved: number;
+    quality_still_generic: number;
+    fit_score_downgraded: number;
+    errors: number;
+    remaining_in_queue: number;
+  } | null>(null);
 
   // Modo del panel "Recomendar empresas": IA broad / buscar por nombre / importar CSV.
   const [mode, setMode] = useState<"ai" | "search" | "import">("ai");
@@ -428,6 +438,39 @@ export default function EmpresasPage() {
       hubspot_errors: data.hubspot_errors ?? 0
     });
     setTab("approved");
+  }
+
+  // Bulk re-verify de las empresas del bucket actual con evidencia
+  // genérica/sin citas. Corre researchOneCompany (dedicado) por cada
+  // empresa para subir la calidad de signals/CAD/escáner. Útil después
+  // de un discovery permisivo donde las cards entran con evidencia
+  // genérica y queremos profundizarlas antes de aprobar.
+  async function bulkReverify() {
+    const ok = window.confirm(
+      `¿Re-verificar con IA las empresas del bucket "${tab}" con evidencia genérica/sin citas?\n\nCorre research dedicado por empresa (mismo que el botón "Re-verificar con IA" de cada card). Procesa hasta 25 por corrida — si quedan más, vuelve a clickear el botón.\n\nTarda ~30-60s y cuesta ~$0.04 por empresa.`
+    );
+    if (!ok) return;
+    setBulkReverifying(true);
+    setBulkReverifyResult(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/companies/bulk-re-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: tab, only_non_specific: true, batch_limit: 25 })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Error re-verificando");
+        return;
+      }
+      setBulkReverifyResult(data.summary);
+      load(tab);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error de red");
+    } finally {
+      setBulkReverifying(false);
+    }
   }
 
   async function load(forStatus: "pending" | "approved" | "rejected" = tab) {
@@ -1014,6 +1057,17 @@ Smile Designers Lab,,,`}
               {bulkApproving ? "Aprobando…" : `Aprobar todas (${companies.length})`}
             </button>
           )}
+          {companies.length > 0 && (
+            <button
+              onClick={bulkReverify}
+              disabled={bulkReverifying}
+              className="btn-secondary"
+              title="Re-verifica con IA todas las empresas con evidencia genérica/sin citas. Usalo después de un discovery permisivo para profundizar los datos antes de aprobar."
+            >
+              <IconSparkles size={14} />
+              {bulkReverifying ? "Re-verificando…" : "Re-verificar todas con IA"}
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => load()} disabled={loading}>
             <IconRefresh size={14} /> Refrescar
           </button>
@@ -1039,6 +1093,48 @@ Smile Designers Lab,,,`}
               ? ` · ${bulkApproveResult.hubspot_errors} no se pudieron sincronizar a HubSpot (reinténtalo desde la card)`
               : " y sincronizadas a HubSpot"}
           </span>
+        </div>
+      )}
+
+      {bulkReverifyResult && (
+        <div className="card text-sm flex items-start gap-3">
+          <IconSparkles size={16} className="text-brand mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <div>
+              <strong>{bulkReverifyResult.processed}</strong> empresas re-verificadas
+              {bulkReverifyResult.quality_improved > 0 && (
+                <span className="text-success-fg">
+                  {" · "}
+                  {bulkReverifyResult.quality_improved} subieron a evidencia específica ✓
+                </span>
+              )}
+              {bulkReverifyResult.quality_still_generic > 0 && (
+                <span className="text-ink-muted">
+                  {" · "}
+                  {bulkReverifyResult.quality_still_generic} siguen con evidencia genérica
+                </span>
+              )}
+              {bulkReverifyResult.fit_score_downgraded > 0 && (
+                <span className="text-warning-fg">
+                  {" · "}
+                  {bulkReverifyResult.fit_score_downgraded} bajaron de fit alto
+                </span>
+              )}
+              {bulkReverifyResult.errors > 0 && (
+                <span className="text-danger-fg">
+                  {" · "}
+                  {bulkReverifyResult.errors} con error
+                </span>
+              )}
+            </div>
+            {bulkReverifyResult.remaining_in_queue > 0 && (
+              <div className="text-xs text-ink-muted mt-1">
+                Quedan {bulkReverifyResult.remaining_in_queue} empresas sin re-verificar
+                — vuelve a clickear "Re-verificar todas con IA" para procesar el siguiente
+                batch.
+              </div>
+            )}
+          </div>
         </div>
       )}
 
