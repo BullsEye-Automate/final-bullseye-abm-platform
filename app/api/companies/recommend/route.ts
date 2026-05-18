@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
 
   let discoveredResult;
   let retried = false;
+  let evidenceRelaxedAuto = false;
   try {
     discoveredResult = await discoverCompanies({
       icp: icp as IcpConfig,
@@ -108,6 +109,28 @@ export async function POST(req: NextRequest) {
       });
       discoveredResult = relaxed;
     }
+
+    // Si la pasada relajada por región tampoco dejó nada y el usuario tenía
+    // el régimen estricto activo, hacemos un último intento relajando ADEMÁS
+    // el filtro de evidencia. Mejor entregar empresas con evidencia genérica
+    // (badge visible en cada card) que devolver 0 al SDR.
+    if (discoveredResult.companies.length === 0 && requireSpecific) {
+      evidenceRelaxedAuto = true;
+      const evidenceRelaxed = await discoverCompanies({
+        icp: icp as IcpConfig,
+        region,
+        size_min: sizeRule.min,
+        size_max: sizeRule.max ?? null,
+        size_note: sizeRule.note ?? null,
+        limit,
+        exclude,
+        overshoot: 3,
+        verify_linkedin_live: true,
+        strict_region: false,
+        require_specific_evidence: false
+      });
+      discoveredResult = evidenceRelaxed;
+    }
   } catch (err) {
     const raw = err instanceof Error ? err.message : "Discovery failed";
     // Detect Anthropic's transient overload (the SDK already retries 5
@@ -124,6 +147,7 @@ export async function POST(req: NextRequest) {
   const diagnostics: Record<string, unknown> = {
     ...discoveredResult.diagnostics,
     retried,
+    evidence_relaxed_auto: evidenceRelaxedAuto,
     deep_reverify: deepReverify
   };
 

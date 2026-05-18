@@ -248,6 +248,7 @@ export default function EmpresasPage() {
       verify_linkedin_live: boolean;
       strict_region: boolean;
       retried: boolean;
+      evidence_relaxed_auto?: boolean;
     };
   } | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
@@ -873,6 +874,8 @@ Smile Designers Lab,,,`}
               <IconCheck size={14} /> {lastRun.inserted} nuevas insertadas
               {lastRun.skipped > 0 && ` · ${lastRun.skipped} duplicadas omitidas`}
               {lastRun.diagnostics?.retried && " · reintento relajado activado"}
+              {lastRun.diagnostics?.evidence_relaxed_auto &&
+                " · modo permisivo activado automáticamente (cero resultados estrictos)"}
               {lastRun.diagnostics?.claude_model_used && (
                 <span
                   className={`badge ${
