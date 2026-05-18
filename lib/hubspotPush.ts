@@ -129,6 +129,17 @@ export async function pushCompanyToHubSpot(
   return { ok: true, hubspot_id: hubspotId, created: true };
 }
 
+// La property wecad_company_type en HubSpot tiene opciones [lab, clinic, DSO].
+// Nuestro company_type interno usa [lab, multi_clinic, dso]. Mapeamos antes
+// de mandar para evitar el 400 INVALID_OPTION.
+function mapCompanyTypeForHubSpot(t: string | null): string | null {
+  if (!t) return null;
+  if (t === "lab") return "lab";
+  if (t === "multi_clinic") return "clinic";
+  if (t === "dso") return "DSO";
+  return null;
+}
+
 function buildCompanyProperties(c: HubSpotCompanyInput): HubSpotProperties {
   const props: HubSpotProperties = {
     name: c.company_name,
@@ -142,7 +153,8 @@ function buildCompanyProperties(c: HubSpotCompanyInput): HubSpotProperties {
   if (c.company_city) props.city = c.company_city;
   if (c.company_country) props.country = c.company_country;
   if (c.company_size != null) props.numberofemployees = c.company_size;
-  if (c.company_type) props.wecad_company_type = c.company_type;
+  const hubspotType = mapCompanyTypeForHubSpot(c.company_type);
+  if (hubspotType) props.wecad_company_type = hubspotType;
   if (c.cad_software) props.wecad_cad_software = c.cad_software;
   if (c.scanner_technology) props.wecad_scanner_technology = c.scanner_technology;
   if (c.fit_signals) props.wecad_fit_signals = c.fit_signals;
@@ -337,7 +349,8 @@ function buildContactProperties(
     wecad_contact_id: c.id
   };
   if (company?.cad_software) props.wecad_cad_software = company.cad_software;
-  if (company?.company_type) props.wecad_company_type = company.company_type;
+  const hubspotType = mapCompanyTypeForHubSpot(company?.company_type ?? null);
+  if (hubspotType) props.wecad_company_type = hubspotType;
   if (company?.scanner_technology) {
     props.wecad_scanner_technology = company.scanner_technology;
   }

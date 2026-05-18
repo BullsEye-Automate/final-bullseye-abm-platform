@@ -135,8 +135,8 @@ const CONTACT_PROPERTIES: PropertyDef[] = [
     description: "Tipo de empresa asociada (denormalizado).",
     options: [
       { label: "Dental laboratory", value: "lab" },
-      { label: "Multi-location clinic", value: "multi_clinic" },
-      { label: "DSO", value: "dso" }
+      { label: "Multi-location clinic", value: "clinic" },
+      { label: "DSO", value: "DSO" }
     ]
   },
   {
@@ -276,8 +276,8 @@ const COMPANY_PROPERTIES: PropertyDef[] = [
     groupName: GROUP_NAME,
     options: [
       { label: "Dental laboratory", value: "lab" },
-      { label: "Multi-location clinic", value: "multi_clinic" },
-      { label: "DSO", value: "dso" }
+      { label: "Multi-location clinic", value: "clinic" },
+      { label: "DSO", value: "DSO" }
     ]
   },
   {

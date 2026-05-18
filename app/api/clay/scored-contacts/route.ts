@@ -36,6 +36,50 @@ type IncomingScore = {
 
 const ACTION_VALUES = new Set(["enrich", "manual_review", "discard"]);
 
+// Si Clay dice "manual_review" pero el cargo es uno de los decisores fuertes
+// (CEO, COO, President, Owner, Director of Operations, Lab Director, etc.) Y
+// la empresa ya fue aprobada por el SDR, lo promovemos a "enrich" automático.
+// La empresa ya pasó el filtro de fit; un cargo top como CEO/Director de
+// Operaciones de un lab/DSO aprobado es decisor por definición. Sin esto,
+// Clay deja en revisión manual a decenas de cargos 100% fit porque "el perfil
+// no muestra afinidad técnica con CAD/CAM" — pero esa afinidad no se
+// requiere a nivel de CEO/Operations.
+const STRONG_DECISION_MAKER_PATTERNS: RegExp[] = [
+  /\bceo\b/,
+  /\bchief executive\b/,
+  /\bcoo\b/,
+  /\bchief operating\b/,
+  /\bchief dental officer\b/,
+  /\bchief clinical officer\b/,
+  /\bpresident\b/,
+  /\bowner\b/,
+  /\bfounder\b/,
+  /\bmanaging partner\b/,
+  /\bgeneral manager\b/,
+  /\b(vp|vice president)( of)? operations\b/,
+  /\b(director|head) of operations\b/,
+  /\boperations director\b/,
+  /\bregional (director|manager) of operations\b/,
+  /\bregional operations (director|manager)\b/,
+  /\bdirector of (laboratory|lab|production)\b/,
+  /\b(laboratory|lab) director\b/,
+  /\b(production|lab|laboratory) manager\b/,
+  /\bpractice owner\b/
+];
+
+// Exclusiones: roles que aunque sean senior NO son decisores del flujo CAD/CAM
+// (no tienen autoridad sobre outsourcing de diseño). El pre-filter Claude ya
+// debería haberlos descartado, pero defensive matching.
+const EXCLUDE_PATTERNS = /\b(marketing|finance|financial|cfo|hr|human resources|talent|legal|compliance|software engineer|data|patient services)\b/;
+
+function isStrongDecisionMakerRole(jobTitle: string | null): boolean {
+  if (!jobTitle) return false;
+  const t = jobTitle.toLowerCase().trim();
+  if (!t) return false;
+  if (EXCLUDE_PATTERNS.test(t)) return false;
+  return STRONG_DECISION_MAKER_PATTERNS.some((r) => r.test(t));
+}
+
 function checkAuth(req: NextRequest): { ok: true } | { ok: false; error: string } {
   const expected = process.env.CLAY_WEBHOOK_SECRET;
   if (!expected) return { ok: true };
@@ -147,7 +191,7 @@ export async function POST(req: NextRequest) {
 
     const { data: existing, error: fetchErr } = await db
       .from("contacts")
-      .select("id, status")
+      .select("id, status, job_title")
       .eq("id", norm.wecad_contact_id)
       .maybeSingle();
     if (fetchErr) {
@@ -158,6 +202,23 @@ export async function POST(req: NextRequest) {
       errors.push({ wecad_contact_id: norm.wecad_contact_id, error: "Contact not found" });
       totals.skipped += 1;
       continue;
+    }
+
+    // Auto-promote a enrich si Clay dejó en manual_review pero el cargo es
+    // decisor fuerte (CEO/COO/President/Owner/Operations leadership). La
+    // empresa ya fue aprobada por el SDR — un cargo top no necesita "afinidad
+    // CAD" explícita en su LinkedIn para ser fit.
+    if (
+      norm.patch.fit_action === "manual_review" &&
+      isStrongDecisionMakerRole(existing.job_title)
+    ) {
+      norm.patch.fit_action = "enrich";
+      if (norm.patch.fit_reason) {
+        norm.patch.fit_reason =
+          norm.patch.fit_reason + " · Auto-promovido a enrich por cargo decisor en empresa aprobada.";
+      } else {
+        norm.patch.fit_reason = "Auto-promovido a enrich por cargo decisor en empresa aprobada.";
+      }
     }
 
     const finalStatus = statusFor(norm.patch.fit_action ?? null, existing.status);
