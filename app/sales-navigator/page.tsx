@@ -864,7 +864,7 @@ function CompanyCard({
                 placeholder={`Filtrar por nombre, empresa o cargo (ej: "${company.company_name.split(/\s+/)[0]}")`}
                 className="w-full px-2 py-1.5 border border-zinc-300 rounded text-sm"
               />
-              <div className="space-y-1">
+              <div className="space-y-1 max-h-[420px] overflow-y-auto pr-1 border border-divider rounded bg-white">
                 {visibleLeads.length === 0 && previewQuery.trim() ? (
                   <div className="text-xs text-ink-muted py-3 text-center">
                     Ningún lead matchea "{previewQuery.trim()}". Prueba con
