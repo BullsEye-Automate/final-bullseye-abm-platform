@@ -11,12 +11,17 @@ type Body = {
   size_min?: number;
   size_max?: number | null;
   limit?: number;
+  // Cuando true (default), solo entran empresas con cita específica que las
+  // nombre. Cuando false, también entran "generic" (citas del rubro sin
+  // nombrar a la empresa) — útil cuando el régimen estricto descarta todo.
+  require_specific_evidence?: boolean;
 };
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Body;
   const region = body.region ?? "US";
   const limit = Math.min(Math.max(body.limit ?? 8, 1), 15);
+  const requireSpecific = body.require_specific_evidence !== false;
 
   const db = supabaseAdmin();
 
@@ -69,7 +74,8 @@ export async function POST(req: NextRequest) {
       exclude,
       overshoot: 3,
       verify_linkedin_live: true,
-      strict_region: true
+      strict_region: true,
+      require_specific_evidence: requireSpecific
     });
 
     // Si la pasada estricta no dejó nada, reintentamos UNA vez relajando
@@ -88,7 +94,8 @@ export async function POST(req: NextRequest) {
         exclude,
         overshoot: 3,
         verify_linkedin_live: true,
-        strict_region: false
+        strict_region: false,
+        require_specific_evidence: requireSpecific
       });
       discoveredResult = relaxed;
     }

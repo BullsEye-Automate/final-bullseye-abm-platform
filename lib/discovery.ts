@@ -49,6 +49,12 @@ type DiscoverOpts = {
   // Cuando es true (default), corre un paso extra de Perplexity para
   // resolver LinkedIn URLs de empresas buen-fit que Claude dejó sin URL.
   salvage_linkedin?: boolean;
+  // Cuando es true (default), solo dejan pasar empresas con evidencia
+  // específica (cita que nombra a la empresa). Cuando es false, también
+  // dejan pasar las que tienen citas pero NINGUNA las nombra ("generic")
+  // — útil cuando el régimen estricto descarta todo y necesitamos yield.
+  // Las que no tienen NINGUNA cita ("none") siguen fuera.
+  require_specific_evidence?: boolean;
 };
 
 export type DiscoveryDiagnostics = {
@@ -232,6 +238,7 @@ export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoverRes
   const verifyLinkedinLive = opts.verify_linkedin_live ?? true;
   const strictRegion = opts.strict_region ?? true;
   const salvageLinkedin = opts.salvage_linkedin ?? true;
+  const requireSpecific = opts.require_specific_evidence ?? true;
   const ask = Math.min(limit * overshoot, 30);
 
   // 1) Perplexity research
@@ -378,13 +385,15 @@ A partir de esa evidencia, extrae hasta ${ask} empresas que cumplan el ICP vigen
   const namedOnly = companies.filter((c) => c.company_name.length > 0);
   const dedupOnly = namedOnly.filter((c) => !excludeSet.has(c.company_name.toLowerCase().trim()));
 
-  // Filtro estricto de evidencia: si la empresa no tiene NINGUNA cita
-  // específica que la nombre, queda fuera del discovery broad. El usuario
-  // todavía puede sumarla manualmente vía "Buscar por nombre" (research-one
-  // hace una búsqueda dirigida y trae citas específicas honestamente).
-  // Esto reemplaza el problema Elite Dental Lab: ahora preferimos perder
-  // candidatos antes que entregar tarjetas con datos inventados.
-  const evidenceOnly = dedupOnly.filter((c) => c.evidence_quality === "specific");
+  // Filtro de evidencia. Modo estricto (default): solo "specific" pasa —
+  // se rechaza todo lo que no tenga cita que nombre a la empresa. Reemplaza
+  // el problema Elite Dental Lab (datos inventados). Modo permisivo
+  // (require_specific_evidence=false): también dejan pasar "generic"
+  // (tiene citas, pero ninguna la nombra directamente). En ambos modos las
+  // que no tienen NINGUNA cita ("none") quedan fuera.
+  const evidenceOnly = requireSpecific
+    ? dedupOnly.filter((c) => c.evidence_quality === "specific")
+    : dedupOnly.filter((c) => c.evidence_quality !== "none");
 
   // Filtro de fit: descarta tipos fuera de target (distribuidores, fabricantes,
   // no-dentales que Claude marcó "other") y tamaños groseramente fuera de banda.

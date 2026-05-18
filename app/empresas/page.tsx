@@ -204,6 +204,10 @@ export default function EmpresasPage() {
   const [sizeOptions, setSizeOptions] = useState<SizeOption[]>([]);
   const [sizeKey, setSizeKey] = useState<string>("");
   const [limit, setLimit] = useState(8);
+  // Modo permisivo: deja pasar empresas sin info CAD pública específica.
+  // Útil cuando el régimen estricto rechaza todas (típico en bandas chicas
+  // donde los labs no tienen presencia digital).
+  const [requireSpecific, setRequireSpecific] = useState(true);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [statusCounts, setStatusCounts] = useState<{ pending: number; approved: number; rejected: number }>({
@@ -478,7 +482,8 @@ export default function EmpresasPage() {
           region,
           size_min: selected.min,
           size_max: selected.max,
-          limit
+          limit,
+          require_specific_evidence: requireSpecific
         }),
         signal: controller.signal
       });
@@ -610,6 +615,20 @@ export default function EmpresasPage() {
             </button>
           </div>
         </div>
+        <label className="flex items-start gap-2 text-xs text-ink-muted cursor-pointer mt-2">
+          <input
+            type="checkbox"
+            checked={!requireSpecific}
+            onChange={(e) => setRequireSpecific(!e.target.checked)}
+            className="mt-0.5 shrink-0"
+          />
+          <span>
+            <strong className="text-ink">Modo permisivo</strong> — incluye
+            empresas sin info CAD/CAM pública específica (siempre que sean
+            laboratorios fit por tipo y tamaño). Útil cuando el filtro estricto
+            no devuelve nada. El SDR valida después en LinkedIn/web.
+          </span>
+        </label>
           </>
         )}
 
