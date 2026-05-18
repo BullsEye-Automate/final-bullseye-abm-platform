@@ -58,6 +58,11 @@ type Contact = {
   human_decision_reason: string | null;
   human_decision_by: string | null;
   created_at: string;
+  // Computado server-side (no persistido). True cuando el local-part del
+  // email no contiene el first_name ni el last_name — síntoma del bug de
+  // enrichment de Lemlist.
+  name_email_mismatch?: boolean;
+  name_email_mismatch_reason?: string | null;
 };
 
 type Company = { id: string; company_name: string };
@@ -1017,6 +1022,17 @@ function ContactCard({
                   sin icebreaker ⚠
                 </span>
               )}
+            {c.name_email_mismatch && (
+              <span
+                className="badge bg-warning-bg text-warning-fg"
+                title={
+                  (c.name_email_mismatch_reason ?? "") +
+                  " — Síntoma del bug de enrichment de Lemlist (foto/email de otra persona vs el nombre del lead). Corrige el lead en Lemlist o descártalo."
+                }
+              >
+                ⚠ email no coincide
+              </span>
+            )}
             {c.hubspot_contact_id && (
               <span className="badge bg-success-bg text-success-fg">en HubSpot ✓</span>
             )}

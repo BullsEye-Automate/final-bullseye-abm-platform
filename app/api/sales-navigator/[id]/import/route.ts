@@ -9,6 +9,7 @@ import {
   type HubSpotCompanyInput,
   type HubSpotContactInput
 } from "@/lib/hubspotPush";
+import { detectNameEmailMismatch } from "@/lib/contactValidation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -195,6 +196,8 @@ export async function POST(
     lemlist_error?: string;
     hubspot: "synced" | "error" | "skipped";
     hubspot_error?: string;
+    name_email_mismatch?: boolean;
+    name_email_mismatch_reason?: string;
   }> = [];
 
   if (autoPushLemlist && fresh && fresh.length > 0) {
@@ -216,6 +219,22 @@ export async function POST(
         chunk.map(async (c: any) => {
           const fullName =
             [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || "(sin nombre)";
+
+          // Guard contra bug de enrichment de Lemlist: si el email no
+          // matchea el nombre, NO pusheamos (los mensajes IA usarían el
+          // nombre equivocado). El SDR corrige en Lemlist y reintenta.
+          const mismatch = detectNameEmailMismatch(c.first_name, c.last_name, c.email);
+          if (mismatch.mismatch) {
+            return {
+              id: c.id,
+              contact_name: fullName,
+              lemlist: "skipped" as const,
+              hubspot: "skipped" as const,
+              name_email_mismatch: true,
+              name_email_mismatch_reason: mismatch.reason
+            };
+          }
+
           // Marcar fit_action='enrich' (Sales Nav contacts ya curados).
           await db.from("contacts").update({ fit_action: "enrich" }).eq("id", c.id);
 
@@ -320,10 +339,20 @@ export async function POST(
     if (refetched) finalContacts = refetched as typeof finalContacts;
   }
 
+  // Inyectar bandera name_email_mismatch en cada contacto para la UI.
+  const contactsWithFlag = (finalContacts as any[]).map((c) => {
+    const m = detectNameEmailMismatch(c.first_name, c.last_name, c.email);
+    return {
+      ...c,
+      name_email_mismatch: m.mismatch,
+      name_email_mismatch_reason: m.reason ?? null
+    };
+  });
+
   return NextResponse.json({
     ok: true,
     summary: result.summary,
-    contacts: finalContacts,
+    contacts: contactsWithFlag,
     staged_total: leadsRes.leads.length,
     selected_count: selected.length,
     deleted,

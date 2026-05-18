@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { detectNameEmailMismatch } from "@/lib/contactValidation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +57,17 @@ export async function GET(req: NextRequest) {
     .limit(500);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Inyectar bandera computada name_email_mismatch para detectar el bug del
+  // enrichment de Lemlist (foto/email de otra persona vs nombre del lead).
+  const contacts = (data ?? []).map((c: any) => {
+    const m = detectNameEmailMismatch(c.first_name, c.last_name, c.email);
+    return {
+      ...c,
+      name_email_mismatch: m.mismatch,
+      name_email_mismatch_reason: m.reason ?? null
+    };
+  });
+
   const [pending, approvedPending, manual, enriched, discarded] = await Promise.all([
     db
       .from("contacts")
@@ -76,7 +88,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(
     {
-      contacts: data ?? [],
+      contacts,
       counts: {
         pending: pending.count ?? 0,
         approved_pending: approvedPending.count ?? 0,

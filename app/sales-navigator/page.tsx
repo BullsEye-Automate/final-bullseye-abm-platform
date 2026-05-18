@@ -67,6 +67,8 @@ type ImportedContact = {
   lemlist_pushed_at: string | null;
   lemlist_push_error: string | null;
   clay_pushed_at: string | null;
+  name_email_mismatch?: boolean;
+  name_email_mismatch_reason?: string | null;
 };
 
 type PreviewLead = {
@@ -87,6 +89,8 @@ type AutoPushResult = {
   lemlist_error?: string;
   hubspot: "synced" | "error" | "skipped";
   hubspot_error?: string;
+  name_email_mismatch?: boolean;
+  name_email_mismatch_reason?: string;
 };
 
 type ImportResult = {
@@ -660,23 +664,44 @@ function CompanyCard({
                 const errL = result.auto_push_results.filter((r) => r.lemlist === "error").length;
                 const okH = result.auto_push_results.filter((r) => r.hubspot === "synced").length;
                 const errH = result.auto_push_results.filter((r) => r.hubspot === "error").length;
+                const mismatchCount = result.auto_push_results.filter(
+                  (r) => r.name_email_mismatch
+                ).length;
                 return (
-                  <div className="text-xs text-ink-muted">
-                    Lemlist: <span className="text-success-fg font-medium">{okL} enviados</span>
-                    {errL > 0 && <span className="text-danger-fg"> · {errL} con error</span>}
-                    {" · "}
-                    HubSpot: <span className="text-success-fg font-medium">{okH} sincronizados</span>
-                    {errH > 0 && <span className="text-danger-fg"> · {errH} con error</span>}
-                  </div>
+                  <>
+                    <div className="text-xs text-ink-muted">
+                      Lemlist: <span className="text-success-fg font-medium">{okL} enviados</span>
+                      {errL > 0 && <span className="text-danger-fg"> · {errL} con error</span>}
+                      {" · "}
+                      HubSpot: <span className="text-success-fg font-medium">{okH} sincronizados</span>
+                      {errH > 0 && <span className="text-danger-fg"> · {errH} con error</span>}
+                    </div>
+                    {mismatchCount > 0 && (
+                      <div className="text-xs text-warning-fg pt-0.5">
+                        ⚠ {mismatchCount} contacto{mismatchCount === 1 ? "" : "s"} sin
+                        enviar — el email enriquecido por Lemlist no coincide con el
+                        nombre. Corrige el lead en Lemlist (edita el email o el nombre)
+                        y vuelve a importar.
+                      </div>
+                    )}
+                  </>
                 );
               })()}
-              {result.auto_push_results.some((r) => r.lemlist === "error" || r.hubspot === "error") && (
+              {result.auto_push_results.some(
+                (r) => r.lemlist === "error" || r.hubspot === "error" || r.name_email_mismatch
+              ) && (
                 <div className="text-xs space-y-0.5 pt-1">
                   {result.auto_push_results
-                    .filter((r) => r.lemlist === "error" || r.hubspot === "error")
+                    .filter((r) => r.lemlist === "error" || r.hubspot === "error" || r.name_email_mismatch)
                     .map((r) => (
-                      <div key={r.id} className="text-danger-fg pl-2">
+                      <div
+                        key={r.id}
+                        className={r.name_email_mismatch ? "text-warning-fg pl-2" : "text-danger-fg pl-2"}
+                      >
                         · {r.contact_name}:
+                        {r.name_email_mismatch && (
+                          <> nombre/email no coinciden — {r.name_email_mismatch_reason}</>
+                        )}
                         {r.lemlist === "error" && <> Lemlist {r.lemlist_error}</>}
                         {r.hubspot === "error" && <> · HubSpot {r.hubspot_error}</>}
                       </div>
@@ -704,6 +729,14 @@ function CompanyCard({
                       <span className="text-xs text-ink-muted truncate">
                         {ct.job_title || "—"}
                       </span>
+                      {ct.name_email_mismatch && (
+                        <span
+                          className="badge bg-warning-bg text-warning-fg"
+                          title={ct.name_email_mismatch_reason ?? ""}
+                        >
+                          ⚠ email no coincide
+                        </span>
+                      )}
                       {ct.linkedin_url && (
                         <a
                           href={ct.linkedin_url}
