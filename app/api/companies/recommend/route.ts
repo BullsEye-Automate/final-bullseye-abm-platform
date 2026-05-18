@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, IcpConfig } from "@/lib/supabase";
-import { discoverCompanies } from "@/lib/discovery";
+import { discoverCompanies, type DiscoveredCompany } from "@/lib/discovery";
+import { researchOneCompany } from "@/lib/companyResearch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,13 @@ type Body = {
   // nombre. Cuando false, también entran "generic" (citas del rubro sin
   // nombrar a la empresa) — útil cuando el régimen estricto descarta todo.
   require_specific_evidence?: boolean;
+  // Cuando true (default), después del discovery broad cada candidato se
+  // re-investiga con researchOneCompany (búsqueda dedicada por empresa).
+  // El broad es ancho pero superficial; el deep trae cad_software,
+  // scanner, fit_signals con citas específicas. Costo: ~$0.04 USD por
+  // empresa + ~30s extra para 12 empresas. Cuando false, se inserta con
+  // los datos del broad directo (más rápido, más barato, menos calidad).
+  deep_reverify?: boolean;
 };
 
 export async function POST(req: NextRequest) {
@@ -22,6 +30,7 @@ export async function POST(req: NextRequest) {
   const region = body.region ?? "US";
   const limit = Math.min(Math.max(body.limit ?? 8, 1), 15);
   const requireSpecific = body.require_specific_evidence !== false;
+  const deepReverify = body.deep_reverify !== false;
 
   const db = supabaseAdmin();
 
@@ -111,14 +120,67 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: overloaded ? 503 : 500 });
   }
 
-  const discovered = discoveredResult.companies;
-  const diagnostics = { ...discoveredResult.diagnostics, retried };
+  const discoveredBroad = discoveredResult.companies;
+  const diagnostics: Record<string, unknown> = {
+    ...discoveredResult.diagnostics,
+    retried,
+    deep_reverify: deepReverify
+  };
 
-  if (discovered.length === 0) {
+  if (discoveredBroad.length === 0) {
     return NextResponse.json({ inserted: [], skipped: 0, diagnostics });
   }
 
-  const rows = discovered.map((c) => ({
+  // ── Paso 2 opcional: deep re-verify ─────────────────────────────
+  // Por cada candidato del broad, una segunda pasada con
+  // researchOneCompany (Perplexity dedicado por empresa + Claude). La
+  // calidad de los signals / cad_software / scanner sube de manera
+  // notoria — el broad es ancho pero superficial. Si el reverify falla
+  // o no encuentra nada, se mantiene la versión del broad como fallback.
+  let polished: DiscoveredCompany[] = discoveredBroad;
+  let reverifyOk = 0;
+  let reverifyFail = 0;
+  if (deepReverify) {
+    polished = [];
+    const CHUNK = 3;
+    for (let i = 0; i < discoveredBroad.length; i += CHUNK) {
+      const chunk = discoveredBroad.slice(i, i + CHUNK);
+      const results = await Promise.all(
+        chunk.map(async (c) => {
+          try {
+            const r = await researchOneCompany(
+              {
+                name: c.company_name,
+                linkedin_url: c.company_linkedin_url,
+                website: c.company_website,
+                city: c.company_city,
+                country: c.company_country
+              },
+              icp as IcpConfig
+            );
+            if (r.company && !r.not_found) {
+              reverifyOk++;
+              // El reverify es estrictamente más informado. Mantenemos el
+              // evidence_quality del broad (cómputo idéntico) y mergeamos
+              // preferiendo el reverify campo a campo cuando trae valor
+              // y el broad no, o cuando el reverify es más sustancioso.
+              return mergeBroadAndReverify(c, r.company);
+            }
+            reverifyFail++;
+            return c;
+          } catch {
+            reverifyFail++;
+            return c;
+          }
+        })
+      );
+      polished.push(...results);
+    }
+    diagnostics.reverify_ok = reverifyOk;
+    diagnostics.reverify_fail = reverifyFail;
+  }
+
+  const rows = polished.map((c) => ({
     company_name: c.company_name,
     company_website: c.company_website,
     company_linkedin_url: c.company_linkedin_url,
@@ -161,4 +223,48 @@ export async function POST(req: NextRequest) {
     skipped: rows.length - (inserted?.length ?? 0),
     diagnostics
   });
+}
+
+// Mergea broad + reverify campo a campo, prefiriendo el valor más útil:
+// - Para campos null/string: reverify gana si tiene valor y el broad no, o
+//   si su string es más sustancioso (más caracteres).
+// - Para citas: reverify gana si tiene MÁS.
+// - Para fit_score: gana el más permisivo del reverify (que ya aplicó el
+//   régimen estricto sobre data más profunda).
+function mergeBroadAndReverify(
+  broad: DiscoveredCompany,
+  reverify: DiscoveredCompany
+): DiscoveredCompany {
+  const pickStr = (a: string | null, b: string | null) => {
+    if (b && (!a || b.length > a.length)) return b;
+    return a;
+  };
+  const pickNum = (a: number | null, b: number | null) => (b != null ? b : a);
+  return {
+    company_name: broad.company_name,
+    company_website: pickStr(broad.company_website, reverify.company_website),
+    company_linkedin_url: pickStr(broad.company_linkedin_url, reverify.company_linkedin_url),
+    company_city: pickStr(broad.company_city, reverify.company_city),
+    company_country: pickStr(broad.company_country, reverify.company_country),
+    company_size: pickNum(broad.company_size, reverify.company_size),
+    company_type: reverify.company_type !== "other" ? reverify.company_type : broad.company_type,
+    cad_software: pickStr(broad.cad_software, reverify.cad_software),
+    scanner_technology: pickStr(broad.scanner_technology, reverify.scanner_technology),
+    fit_signals:
+      reverify.fit_signals && reverify.fit_signals.length > broad.fit_signals.length
+        ? reverify.fit_signals
+        : broad.fit_signals,
+    fit_score: reverify.fit_score,
+    competitor_match: pickStr(broad.competitor_match, reverify.competitor_match),
+    research_summary:
+      reverify.research_summary &&
+      reverify.research_summary.length > broad.research_summary.length
+        ? reverify.research_summary
+        : broad.research_summary,
+    research_sources:
+      reverify.research_sources.length > broad.research_sources.length
+        ? reverify.research_sources
+        : broad.research_sources,
+    evidence_quality: reverify.evidence_quality
+  };
 }

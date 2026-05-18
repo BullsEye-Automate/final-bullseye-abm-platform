@@ -208,6 +208,10 @@ export default function EmpresasPage() {
   // Útil cuando el régimen estricto rechaza todas (típico en bandas chicas
   // donde los labs no tienen presencia digital).
   const [requireSpecific, setRequireSpecific] = useState(true);
+  // Después del discovery broad, profundiza cada candidato con una búsqueda
+  // dedicada. Default on — la calidad es muy superior. Trade-off: ~30-60s
+  // y ~$0.50 USD adicionales por corrida.
+  const [deepReverify, setDeepReverify] = useState(true);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [statusCounts, setStatusCounts] = useState<{ pending: number; approved: number; rejected: number }>({
@@ -483,7 +487,8 @@ export default function EmpresasPage() {
           size_min: selected.min,
           size_max: selected.max,
           limit,
-          require_specific_evidence: requireSpecific
+          require_specific_evidence: requireSpecific,
+          deep_reverify: deepReverify
         }),
         signal: controller.signal
       });
@@ -616,6 +621,22 @@ export default function EmpresasPage() {
           </div>
         </div>
         <label className="flex items-start gap-2 text-xs text-ink-muted cursor-pointer mt-2">
+          <input
+            type="checkbox"
+            checked={deepReverify}
+            onChange={(e) => setDeepReverify(e.target.checked)}
+            className="mt-0.5 shrink-0"
+          />
+          <span>
+            <strong className="text-ink">Re-verificar cada empresa con IA</strong>{" "}
+            — después del discovery, profundiza cada candidato con una búsqueda
+            dedicada. Sube mucho la calidad de los signals/CAD/escáner (es lo
+            mismo que el botón "Re-verificar con IA" de cada card, pero
+            aplicado a todo el lote). Trade-off: ~30-60s y ~$0.50 USD extra
+            por corrida.
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-xs text-ink-muted cursor-pointer mt-1">
           <input
             type="checkbox"
             checked={!requireSpecific}
