@@ -837,25 +837,32 @@ export default function ContactosPage() {
                       · {items.length} {items.length === 1 ? "contacto" : "contactos"}
                     </span>
                   </button>
-                  {bucket === "approved_pending" && items.length > 0 && (
-                    <button
-                      onClick={() =>
-                        bulkApproveCompany(
-                          companyId,
-                          items.map((it) => it.id),
-                          companyNameById.get(companyId) ?? "esta empresa"
-                        )
-                      }
-                      disabled={bulkApproving}
-                      className="btn-primary text-xs shrink-0"
-                      title={`Genera mensajes y envía a Lemlist los ${items.length} contactos de esta empresa`}
-                    >
-                      <IconSend size={12} />
-                      {bulkApproving
-                        ? "Enviando…"
-                        : `Enviar ${items.length} a Lemlist`}
-                    </button>
-                  )}
+                  {(bucket === "approved_pending" || bucket === "manual_review") &&
+                    items.length > 0 && (
+                      <button
+                        onClick={() =>
+                          bulkApproveCompany(
+                            companyId,
+                            items.map((it) => it.id),
+                            companyNameById.get(companyId) ?? "esta empresa"
+                          )
+                        }
+                        disabled={bulkApproving}
+                        className="btn-primary text-xs shrink-0"
+                        title={
+                          bucket === "manual_review"
+                            ? `Aprueba y envía a Lemlist los ${items.length} contactos de esta empresa (saltea la revisión individual)`
+                            : `Genera mensajes y envía a Lemlist los ${items.length} contactos de esta empresa`
+                        }
+                      >
+                        <IconSend size={12} />
+                        {bulkApproving
+                          ? "Enviando…"
+                          : bucket === "manual_review"
+                          ? `Aprobar ${items.length} y enviar a Lemlist`
+                          : `Enviar ${items.length} a Lemlist`}
+                      </button>
+                    )}
                 </div>
                 {expanded && (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 p-4 pt-0">

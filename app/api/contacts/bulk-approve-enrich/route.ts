@@ -1,11 +1,15 @@
-// Bulk approve de contactos del bucket "Por aprobar". Por cada uno:
-//   1. Generar mensajes si no hay (config activa aplica).
-//   2. Push a Lemlist via pushApprovedToLemlist.
-//   3. Sync a HubSpot.
+// Bulk approve de contactos del bucket "Por aprobar" o "Revisión manual".
+// Por cada uno:
+//   1. Si viene de manual_review (fit_action='manual_review' y human_decision=null):
+//      marca human_decision='approved' + fit_action='enrich' + persiste
+//      en contact_feedback (loop de entrenamiento).
+//   2. Generar mensajes si no hay (config activa aplica).
+//   3. Push a Lemlist via pushApprovedToLemlist.
+//   4. Sync a HubSpot.
 //
-// Es el flujo que reemplaza al "Add Lead to Campaign" que Clay corría
-// automático con la run condition fit_action='enrich'. Ahora el SDR
-// revisa los contactos y los pushea desde la app.
+// Cuando se llama sin contact_ids agarra solo el bucket "Por aprobar"
+// (fit_action='enrich', backward compat). Cuando se llama con
+// contact_ids explícitos, acepta también manual_review.
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
@@ -57,21 +61,22 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Selección: si llegan ids explícitos los usamos, si no agarramos el
-  // bucket entero (cap).
+  // Selección: si llegan ids explícitos aceptamos enrich + manual_review
+  // (el caller sabe qué pidió). Si no llegan ids, solo bucket "Por aprobar"
+  // (fit_action='enrich') con cap.
+  const hasExplicitIds = Array.isArray(body.contact_ids) && body.contact_ids.length > 0;
   let query: any = db
     .from("contacts")
     .select(CONTACT_COLS)
-    .eq("fit_action", "enrich")
     .is("lemlist_pushed_at", null)
     .neq("status", "discarded")
     .order("fit_score", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
 
-  if (Array.isArray(body.contact_ids) && body.contact_ids.length > 0) {
-    query = query.in("id", body.contact_ids);
+  if (hasExplicitIds) {
+    query = query.in("id", body.contact_ids!).in("fit_action", ["enrich", "manual_review"]);
   } else {
-    query = query.limit(limit);
+    query = query.eq("fit_action", "enrich").limit(limit);
   }
 
   const { data: contactsRaw, error } = await query;
@@ -111,6 +116,40 @@ export async function POST(req: NextRequest) {
             lemlist_error: "Sin empresa asociada",
             hubspot: "skipped"
           };
+        }
+
+        // Si el contacto viene de Revisión manual y no fue decidido, aplicar
+        // la transición manual_review → enrich + persistir feedback. Equivale
+        // a llamar /api/contacts/[id]/decision con approved en bulk.
+        if (c.fit_action === "manual_review" && c.human_decision == null) {
+          const nowIso = new Date().toISOString();
+          await db
+            .from("contacts")
+            .update({
+              fit_action: "enrich",
+              human_decision: "approved",
+              human_decision_at: nowIso,
+              human_decision_by: process.env.APP_DEFAULT_REVIEWER_EMAIL ?? "system"
+            })
+            .eq("id", c.id);
+          await db.from("contact_feedback").insert({
+            contact_id: c.id,
+            company_name: company.company_name,
+            job_title: c.job_title,
+            linkedin_headline: c.linkedin_headline,
+            company_size: company.company_size ?? null,
+            company_type: company.company_type ?? null,
+            claude_score: c.fit_score ?? null,
+            claude_reason: c.fit_reason ?? null,
+            claude_action: "manual_review",
+            human_action: "approved",
+            human_reason: "bulk-approve desde Revisión manual",
+            reviewer: process.env.APP_DEFAULT_REVIEWER_EMAIL ?? "system",
+            decided_at: nowIso
+          });
+          // Reflejar el cambio in-memory antes del push.
+          c.fit_action = "enrich";
+          c.human_decision = "approved";
         }
 
         // 1. Push a Lemlist. force_regenerate=true ignora mensajes viejos
