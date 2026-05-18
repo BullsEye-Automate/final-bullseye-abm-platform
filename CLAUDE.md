@@ -2358,3 +2358,257 @@ Accesibles vía curl o reactivando el botón en la UI si se necesitan.
 >
 > Si tenés preferencia clara de algo, decímela. Si no, recomiéndame
 > tu cuál de los 4 te parece más impactante para el negocio.
+
+## Hecho del Sprint 10 — Fit score fallback + engagement score + hot leads ranqueados (sesión 2026-05-18b)
+
+Sesión corta pero potente. PRs #146 a #149. Resolvió el problema de
+los **15 contactos huérfanos** que estaban en HubSpot pero no
+aparecían en ninguna lista (porque no tenían fit_score), y agregó
+una segunda dimensión de scoring basada en engagement real con las
+campañas.
+
+**Usuario es Cote** (no Daslav — error de la sesión anterior).
+
+### PR #146 — fit_score automático para contactos sin scoring de Clay
+
+Problema: contactos que vinieron por Sales Nav / web scrape / manual
+import bypasean Clay's Lead Scoring AI y quedaban con
+`fit_score=null`. Si después se pusheaban a Lemlist + HubSpot, no
+matcheaban ningún filtro de las listas Hot/Warm (que filtran por
+`wecad_fit_score >= 8` o `5-7`). Total: 15 contactos invisibles
+para el SDR.
+
+Solución:
+- **`lib/contactScoring.ts`** (nuevo): `computeContactFitScore(input)`
+  llama a Claude con prompt equivalente al de Clay's Lead Scoring AI:
+  - Decisor en CAD/CAM + empresa fit alto → 8-10
+  - Decisor en empresa fit medio → 5-7
+  - Role tangencial → 3-4
+  - No decisor → 1-2
+  - Mapea score a action (enrich/manual_review/discard).
+  - Output JSON estricto en español. Sonnet con fallback Haiku 4.5.
+- **`lib/lemlistPush.ts`**: antes de pushear a Lemlist, si
+  `fit_score==null` Y hay company, calcula score con el scorer y
+  persiste. `syncContactToHubSpot` que corre después en la misma
+  función lo recoge y lo manda a HubSpot. → Nuevos contactos por
+  Sales Nav o web scrape ya entran a las listas Hot/Warm directo.
+  Best-effort: si el scorer falla, el push sigue sin score.
+- **`POST /api/contacts/backfill-fit-score`**: scorea + re-sync de
+  los huérfanos actuales. Cap 25 por corrida, paralelo en chunks
+  de 5. Idempotente.
+
+### PR #147 — Engagement score + lista Alta interacción + botones backfill
+
+**Nueva property HubSpot `wecad_engagement_score` (0-100)** que mide
+qué tan caliente está un contacto basado en interacciones reales.
+
+Fórmula (sumas con tope 100):
+- **Email (max 50, fuente Lemlist)**: +1 enviado · +5 abierto
+  (max 15) · +15 click (max 30) · +25 respuesta (max 50).
+- **LinkedIn (max 50, fuente Lemlist)**: +1 enviado · +15
+  invitación aceptada · +30 respuesta (max 60).
+- **Llamadas (max 50, fuente HubSpot via webhook calls)**:
+  +50 interesado · +40 callback · +25 objection timing · +15
+  objection precio · +5 otra objeción · +3 voicemail/gatekeeper.
+- **+10 boost** si actividad en últimos 7 días.
+
+Plus `wecad_last_engagement_at` (datetime de la última interacción).
+
+**Nueva lista HubSpot `weCAD · Alta interacción (priorizar)`**:
+filtro `engagement_score >= 60 AND lead_status` activo. El SDR
+ordena por engagement DESC + fit_score DESC en HubSpot UI.
+
+Implementación:
+- **`lib/contactEngagement.ts`** (nuevo): `computeEngagementScore(db,
+  contactId)` agrega lemlist_activities + calls del contacto y
+  calcula score.
+- **`lib/hubspotPush.ts`**: invoca el scorer en cada
+  `pushContactToHubSpot` y setea `wecad_engagement_score` +
+  `wecad_last_engagement_at`. Cero acción manual. Best-effort.
+- **`POST /api/contacts/backfill-engagement`**: re-sync de todos
+  los contactos en HubSpot para poblar la property nueva. Cap 30
+  por corrida.
+- **UI `/configuracion/hubspot`**: dos botones nuevos:
+  - "Calcular fit_score faltante" → corre backfill-fit-score
+    (resuelve los huérfanos del PR #146).
+  - "Recalcular engagement de todos" → corre backfill-engagement
+    (pueba la property nueva en contactos existentes).
+
+### PR #148 — Hot leads basados en engagement Lemlist + sort por columna
+
+**Cambio en `/reporteria`**: la tabla de hot leads ahora usa
+engagement como criterio principal en vez de solo señales de call.
+
+Antes: filtraba a contactos con call interesado/callback o
+respuesta positiva en período. Excluía contactos con opens / clicks /
+invitaciones aceptadas pero sin call ni reply.
+
+Ahora:
+- Filtro: contactos en outreach activo (`lemlist_pushed_at != null`)
+  con `engagement_score >= 20`.
+- Incluye opens, clicks, invites aceptadas, replies y calls.
+- **Sort default**: engagement DESC, fit_score DESC.
+- **Cap 25 leads** (antes 10).
+
+UI:
+- Columnas **Engagement** y **Fit** clickables (SortableHeader).
+- ScoreBadge con color por umbral (verde ≥70, amarillo ≥40, gris).
+- Empty state explica que las campañas necesitan tiempo para
+  acumular interacción.
+
+Performance:
+- **`computeEngagementScoresBatch(db, contactIds)`** en
+  `lib/contactEngagement.ts`: 2 queries totales (lemlist_activities
+  + calls) y agrupa en memoria. Mucho más eficiente que llamar al
+  single N veces (2N queries).
+- Extraído `scoreFromAggregates` para reuso entre el modo single y
+  batch.
+
+### PR #149 — Aclarar fuente de cada canal (doc only)
+
+El comportamiento ya era correcto (email/linkedin de Lemlist,
+llamadas de HubSpot vía webhook `/api/hubspot/webhook/calls`), pero
+las descripciones no lo decían explícito. Cote preguntó si las
+llamadas venían de HubSpot — sí.
+
+Wording actualizado en dos lugares:
+- Property `wecad_engagement_score` en HubSpot (description larga
+  con "fuente: Lemlist" / "fuente: HubSpot" por canal).
+- Expandible "¿Cómo se calcula?" en `/reporteria`.
+
+### Estado al cierre Sprint 10
+
+- Rama: `claude/continue-prospecting-dev-QjeVe` (mergeada toda).
+- Producción: Vercel verde.
+- Acciones del usuario (en orden) cuando termine el redeploy:
+  1. `/configuracion/hubspot` → "Crear properties + listas" → crea
+     `wecad_engagement_score` + `wecad_last_engagement_at` + la
+     lista "weCAD · Alta interacción".
+  2. Click "Calcular fit_score faltante" → resuelve los 6-15
+     huérfanos. Repetir hasta `remaining_in_queue=0`.
+  3. Click "Recalcular engagement de todos" → pueba la property
+     nueva en todos los contactos sincronizados. Repetir hasta
+     `remaining=0`.
+- App **operativa end-to-end** con dos scores complementarios:
+  - **Fit score** (1-10): pre-filtro IA — qué tan probable es que
+    sea un buen prospecto.
+  - **Engagement score** (0-100): interacción real con campañas —
+    qué tan caliente está hoy.
+
+### Cómo se actualiza el engagement score
+
+**Automático.** Cada vez que un contacto se sincroniza a HubSpot
+(al pushear a Lemlist, al re-sync por error, etc.), el score se
+recalcula on-the-fly desde `lemlist_activities` + `calls`. Sin
+cron, sin trigger separado.
+
+Para refrescar todos en bulk (típicamente después de días de
+actividad), corre el botón "Recalcular engagement de todos" en
+`/configuracion/hubspot`.
+
+### Endpoints dormant agregados en Sprint 10
+
+- `/api/contacts/backfill-fit-score` — re-corre el scorer sobre
+  contactos sin fit_score. Reachable vía botón en
+  `/configuracion/hubspot`.
+- `/api/contacts/backfill-engagement` — re-sync de contactos en
+  HubSpot para poblar `wecad_engagement_score`. Reachable vía
+  botón en `/configuracion/hubspot`.
+
+Ambos son also reachable vía curl/POST si hace falta.
+
+## Para retomar en una nueva sesión (prompt de arranque actualizado tras Sprint 10)
+
+> Continúo weCAD4you-prospecting. Última sesión cerró Sprint 10 —
+> fit_score automático + engagement score 0-100 + hot leads
+> ranqueados por engagement + lista nueva en HubSpot. PRs #146-#149.
+> Usuario es **Cote** (no Daslav). App operativa end-to-end.
+>
+> ANTES DE CODEAR cualquier cosa nueva, leer CLAUDE.md completo,
+> especialmente Sprint 9 + Sprint 10.
+>
+> Reglas vivas:
+> - Yo (Claude) hago todo el ciclo: editar + commit + push + crear
+>   PR + mergear (squash). El usuario no entra a terminal ni GitHub.
+> - **`npx next build` LOCAL antes de commitear nuevas pages** —
+>   Vercel build es más estricto que el TS local sin types
+>   instalados.
+> - **Idioma**: español neutro LATAM (tuteo). NO voseo argentino. NO
+>   regionalismos chilenos muy marcados.
+> - Si rebase falla post-merge: `git fetch origin <base> && git
+>   rebase origin/<base> && git push -f`.
+> - Para dudas reales sobre alcance, preguntar con AskUserQuestion.
+>   Para fixes obvios y cambios chicos, shippear directo.
+> - El container NO tiene acceso de red a producción. Para hits
+>   HTTP a vercel app, instruir al usuario a clickear en la UI.
+>
+> Estado vivo del producto (10 módulos en producción):
+> - **`/dashboard`** — operacional, range-bound, 8 paneles.
+> - **`/reporteria`** — vista ejecutiva para el cliente. **Hot leads
+>   ahora ordenable por Engagement o Fit** (Sprint 10).
+> - **`/empresas`** — 3 modos de discovery + régimen estricto de
+>   evidencia + edición inline de tamaño + re-verificar por card.
+> - **`/contactos`** — 5 buckets (Pendientes transitorio · Por
+>   aprobar · Revisión manual · En campaña · Descartados).
+>   Auto-push pre-filter YES a Clay. 3 niveles de bulk approve.
+> - **`/sales-navigator`** — 3 buckets. Import desde Campaña puente
+>   de Lemlist.
+> - **`/telefonos`** — Lusha lookup manual con dual phone fields.
+> - **`/llamadas`** — webhook HubSpot real-time + análisis IA.
+> - **`/respuestas`** — inbox Lemlist + composer respuestas.
+> - **`/entrenar-modelo`** — editor del messageGenerator. Vacío =
+>   defaults hardcoded.
+> - **`/configuracion/icp`** — editor ICP.
+> - **`/configuracion/hubspot`** — setup + botones backfill nuevos
+>   (Sprint 10).
+>
+> Toda generación de copy IA es centralizada en la app. Clay NO
+> genera mensajes ni pushea a Lemlist. **Cada contacto tiene 2
+> scores complementarios:**
+> - **fit_score (1-10)**: pre-filtro IA. Calculado por Clay's Lead
+>   Scoring O por la app vía `lib/contactScoring.ts` si llegó por
+>   Sales Nav / web scrape / manual.
+> - **engagement_score (0-100)**: interacción real. Calculado en
+>   cada sync a HubSpot por `lib/contactEngagement.ts`. Email +
+>   LinkedIn desde Lemlist, llamadas desde HubSpot.
+>
+> NO RECREAR:
+> - App → Clay vía REST API (no expone CRUD de rows).
+> - HubSpot Workflow webhooks (requiere Operations Hub Pro).
+> - Webhook config en Service Keys BETA de HubSpot.
+> - Columnas HTTP API nuevas en Clay (plan Growth).
+> - Listas de Lemlist como fuente (API no expone read-list).
+> - Clay generando icebreaker / subject / body — la app es la
+>   única fuente.
+> - Clay "Add Lead to Campaign" — pausado, la app pushea.
+> - Guard "ya fue empujado a Clay" en push-to-lemlist — removido.
+>
+> Gotchas críticos:
+> 1. `getCampaignLeadsWithDetails(campaignId)` SIEMPRE para leads
+>    de Lemlist — el list endpoint es minimalista.
+> 2. Cast por `unknown` intermedio en Supabase joins anidados.
+> 3. HubSpot v3 API: errores detallados en `parsed.errors[]`.
+> 4. Citas genéricas del rubro NO respaldan hechos operativos de
+>    una empresa específica.
+> 5. `npx next build` LOCAL antes de commitear pages.
+> 6. **Engagement por canal usa la fuente correcta**: email/linkedin
+>    de `lemlist_activities`, calls de tabla `calls` que sincroniza
+>    HubSpot via `/api/hubspot/webhook/calls`.
+> 7. **Batch processing**: para scoring de N contactos, usar
+>    `computeEngagementScoresBatch` (2 queries) en vez de N llamadas
+>    a `computeEngagementScore` (2N queries).
+>
+> Próximos módulos sugeridos:
+> 1. **Funnel unificado** — pipeline visual end-to-end
+>    (descubrimiento → contactos → outreach → respuestas → llamadas
+>    → deals).
+> 2. **Few-shot examples** (Fase 2 de /entrenar-modelo) — marcar
+>    mensajes ganadores como referencia para el copy.
+> 3. **A/B testing de copy** — versionar configs y medir response
+>    rate por versión.
+> 4. **Cron de re-scoring** — actualizar engagement_score de todos
+>    los contactos cada N horas sin necesidad de push individual.
+> 5. **Backfill de source** para contactos pre-migración.
+>
+> Si Cote tiene preferencia, le hago caso. Si no, recomiendar por
+> impacto vs esfuerzo.
