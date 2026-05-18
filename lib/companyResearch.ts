@@ -67,10 +67,24 @@ Reglas:
 - company_size (número de empleados): SOLO desde el contador "X employees" / "X empleados" de la página corporativa de LinkedIn — es lo único actualizado. Aceptable también una página oficial reciente de la empresa que diga el número literal (About Us, Team, Careers, comunicado de prensa último año). NO ACEPTABLE: Manta, BBB, Yelp, ZoomInfo, Hoovers, Crunchbase rangos viejos, directorios sin fecha — están sistemáticamente desactualizados 5-10 años. Si la única fuente disponible es uno de esos directorios → null. MEJOR NULL QUE UN NÚMERO FALSO (un número malo rompe la personalización del outreach).
 - company_website: literal de la evidencia o de hints. Si dudás, null.
 
-Scoring (fit_score):
-- "high": lab con exocad o inLab confirmado por cita específica que la nombra, O empresa que ya externaliza con competidor (Evident, Full Contour, Aidite, Automate) confirmado por cita específica que la nombra. Sin cita específica de la empresa, NUNCA "high".
-- "medium": lab con 3Shape o Dental Wings confirmado por cita específica que la nombra, O lab con señales digitales fuertes específicamente nombradas para esta empresa.
-- "low": evidencia digital débil, solo descriptiva (existe, está en tal ciudad, pero sin operativos confirmados), O empresa que no es del rubro dental.
+Scoring (fit_score) — escala por niveles de evidencia:
+
+- "low" (default para empresas del rubro): es claramente lab/multi_clinic(2+ sedes)/DSO con flujo digital base asumido. NO requiere cita de software/escáner — alcanza con que esté establecida con web propia o LinkedIn corporativo válido.
+
+- "medium" (low + AL MENOS UNA señal operativa adicional, con cita específica que nombre la empresa):
+  - Contratando CAD designer / 3D designer / dental technician CAD (job posting).
+  - Web menciona aceptar múltiples scanners intraorales (multi-scanner support).
+  - Usa exocad confirmado.
+  - Usa Dentsply Sirona stack (DS Core, Primescan, CEREC, inLab) confirmado.
+  - Otra tecnología CAD/CAM confirmada (3Shape, Dental Wings, Formlabs, NextDent, 3D Systems).
+  - Tutoriales o contenido educativo propio sobre workflow digital.
+
+- "high" (medium + externalización CAD confirmada): ya externaliza diseños CAD a freelance, empresa de diseño, o competidor nuestro (Evident, Full Contour, Aidite, Automate by 3Shape, NDX, Drake Labs). Requiere cita específica que nombre la empresa Y mencione la externalización.
+
+Reglas:
+- Si NO hay AL MENOS UNA cita específica que nombre la empresa Y describa una señal operativa → fit_score = "low".
+- Si la empresa NO es del rubro dental → company_type="other" + fit_score="low".
+- NO inventes señales. Sin cita → no upgrade.
 
 Devuelve SIEMPRE JSON válido con esta forma exacta:
 {

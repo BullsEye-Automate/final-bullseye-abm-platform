@@ -186,10 +186,28 @@ fit_signals (formato exacto y obligatorio):
   - "Laboratorio dental en Salt Lake City · Sin evidencia pública de software CAD ni escáner" ← honesto, sin señales operativas inventadas.
   - "" ← vacío, mejor que inventar.
 
-Reglas de scoring (fit_score):
-- "high": labs con exocad o inLab confirmado por cita específica [N], O empresas que ya externalizan con competidor (Evident, Full Contour, Aidite, Automate by 3Shape) confirmado por cita específica [N]. Sin cita específica de la empresa, NUNCA "high".
-- "medium": labs con 3Shape o Dental Wings confirmado por cita específica [N], O labs con señales digitales fuertes nombradas por cita específica. 3Shape NO sube a "high" salvo que tenga TRES o más señales operativas confirmadas adicionales (todas con [N]).
-- "low": evidencia digital débil, solo descriptiva, O sin citas específicas de la empresa. Si las citas son TODAS genéricas del rubro y ninguna nombra a la empresa, fit_score = "low" SIEMPRE.
+Reglas de scoring (fit_score) — escala calibrada por niveles de evidencia:
+
+- "low" (default para empresas del rubro):
+  - La empresa es claramente un laboratorio dental, multi-clínica (2+ sedes) o DSO.
+  - Asumimos flujo digital base (todos los labs/multi-clinics modernos lo tienen).
+  - NO requiere cita específica de software/escáner — alcanza con que esté establecida como lab/multi_clinic/DSO con web propia o LinkedIn corporativo válido.
+
+- "medium" (low + AL MENOS UNA señal operativa adicional, todas con cita [N] que nombre la empresa):
+  - Contratación activa de CAD designer / 3D designer / dental technician CAD (job posting con cita).
+  - Web propia menciona aceptar trabajos / archivos STL de múltiples escáneres intraorales (multi-scanner support).
+  - Uso de exocad confirmado [N].
+  - Uso de Dentsply Sirona stack (DS Core, Primescan, CEREC, inLab) confirmado [N].
+  - Otra tecnología CAD/CAM confirmada por cita: 3Shape, Dental Wings, Formlabs, NextDent, 3D Systems, etc.
+  - Tutoriales / contenido educativo propio sobre workflow digital con cita.
+
+- "high" (medium + externalización de diseño CAD confirmada):
+  - La empresa ya externaliza diseños CAD a un freelance, empresa especializada en diseño, o competidor nuestro (Evident, Full Contour, Aidite, Automate by 3Shape, NDX, Drake Labs, etc.) — confirmado con cita [N] que nombre la empresa Y mencione la externalización.
+
+Reglas de honestidad:
+- Sin AT LEAST UNA cita específica de algo operativo concreto → fit_score = "low" (no upgrade a medium/high).
+- Si el upgrade a medium/high se basa en inferencia ("seguramente usan X") en vez de cita literal → fit_score = "low".
+- NO inventes señales. Si no hay evidencia, dejá fit_signals corto y fit_score="low".
 
 Devuelve SIEMPRE JSON válido con esta forma exacta:
 {
