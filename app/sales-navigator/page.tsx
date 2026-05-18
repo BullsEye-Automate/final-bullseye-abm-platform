@@ -334,9 +334,6 @@ function CompanyCard({
   // los de UNA empresa cuando la Campaña puente acumula muchos contactos.
   const [previewQuery, setPreviewQuery] = useState("");
   const [importing, setImporting] = useState(false);
-  // Cuando el SDR usa "Importar y enviar directo a Lemlist", marcamos cuál botón
-  // estaba activo para el spinner correcto.
-  const [importMode, setImportMode] = useState<"import" | "auto" | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [marking, setMarking] = useState(false);
@@ -393,33 +390,67 @@ function CompanyCard({
     });
   }
 
-  function selectAll() {
+  // Leads que matchean el filtro actual del buscador. Cuando no hay filtro,
+  // visibleLeads === preview.
+  const visibleLeads: PreviewLead[] = (() => {
+    if (!preview) return [];
+    const q = previewQuery.trim().toLowerCase();
+    if (!q) return preview;
+    return preview.filter((l) => {
+      const hay = [l.name, l.first_name, l.last_name, l.company_name, l.job_title, l.email]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  })();
+
+  // IDs efectivos a importar: intersección de seleccionados y visibles. Si
+  // el SDR filtra a 3 y hay 11 chequeados, solo importamos los 3 visibles.
+  const effectiveSelectedIds: string[] = visibleLeads
+    .map((l) => l.id)
+    .filter((x): x is string => !!x && selectedIds.has(x));
+
+  function selectAllVisible() {
     if (!preview) return;
-    setSelectedIds(
-      new Set(preview.map((l) => l.id).filter((x): x is string => !!x))
-    );
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const l of visibleLeads) {
+        if (l.id) next.add(l.id);
+      }
+      return next;
+    });
   }
-  function selectNone() {
-    setSelectedIds(new Set());
+  function deselectAllVisible() {
+    if (!preview) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const l of visibleLeads) {
+        if (l.id) next.delete(l.id);
+      }
+      return next;
+    });
   }
   function cancelPreview() {
     setPreview(null);
     setSelectedIds(new Set());
+    setPreviewQuery("");
     setCardError(null);
   }
 
-  async function importSelected(autoPushLemlist: boolean) {
-    if (selectedIds.size === 0) return;
+  async function importSelected() {
+    if (effectiveSelectedIds.length === 0) return;
     setImporting(true);
-    setImportMode(autoPushLemlist ? "auto" : "import");
     setCardError(null);
     try {
       const res = await fetch(`/api/sales-navigator/${company.id}/import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          lemlist_lead_ids: Array.from(selectedIds),
-          auto_push_lemlist: autoPushLemlist
+          lemlist_lead_ids: effectiveSelectedIds,
+          // Sales Nav contactos ya curados manualmente — siempre van directo
+          // a Lemlist + HubSpot sin pasar por Clay.
+          auto_push_lemlist: true
         })
       });
       const data = await res.json();
@@ -440,11 +471,11 @@ function CompanyCard({
       });
       setPreview(null);
       setSelectedIds(new Set());
+      setPreviewQuery("");
     } catch {
       setCardError("No se pudo importar (error de red)");
     } finally {
       setImporting(false);
-      setImportMode(null);
     }
   }
 
@@ -756,18 +787,20 @@ function CompanyCard({
               <div className="flex items-center gap-2 text-xs">
                 <button
                   className="text-brand hover:underline"
-                  onClick={selectAll}
+                  onClick={selectAllVisible}
                   disabled={importing}
+                  title={previewQuery ? "Marca solo los que matchean el filtro" : "Marca todos"}
                 >
-                  Marcar todos
+                  {previewQuery ? "Marcar visibles" : "Marcar todos"}
                 </button>
                 <span className="text-ink-subtle">·</span>
                 <button
                   className="text-brand hover:underline"
-                  onClick={selectNone}
+                  onClick={deselectAllVisible}
                   disabled={importing}
+                  title={previewQuery ? "Desmarca solo los que matchean el filtro" : "Desmarca todos"}
                 >
-                  Desmarcar todos
+                  {previewQuery ? "Desmarcar visibles" : "Desmarcar todos"}
                 </button>
               </div>
             )}
@@ -799,84 +832,64 @@ function CompanyCard({
                 className="w-full px-2 py-1.5 border border-zinc-300 rounded text-sm"
               />
               <div className="space-y-1">
-                {(() => {
-                  const q = previewQuery.trim().toLowerCase();
-                  const filtered = q
-                    ? preview.filter((l) => {
-                        const hay = [
-                          l.name,
-                          l.first_name,
-                          l.last_name,
-                          l.company_name,
-                          l.job_title,
-                          l.email
-                        ]
-                          .filter(Boolean)
-                          .join(" ")
-                          .toLowerCase();
-                        return hay.includes(q);
-                      })
-                    : preview;
-                  if (filtered.length === 0 && q) {
+                {visibleLeads.length === 0 && previewQuery.trim() ? (
+                  <div className="text-xs text-ink-muted py-3 text-center">
+                    Ningún lead matchea "{previewQuery.trim()}". Prueba con
+                    menos palabras o sin el sufijo (ej. "artisan" en vez de
+                    "Artisan Dental Lab").
+                  </div>
+                ) : (
+                  visibleLeads.map((l) => {
+                    const checked = l.id ? selectedIds.has(l.id) : false;
                     return (
-                      <div className="text-xs text-ink-muted py-3 text-center">
-                        Ningún lead matchea "{q}". Probá con menos palabras o
-                        sin el sufijo (ej. "artisan" en vez de "Artisan Dental
-                        Lab").
-                      </div>
+                      <label
+                        key={l.id ?? l.linkedin_url ?? l.email ?? Math.random()}
+                        className="flex items-start gap-2 text-sm cursor-pointer hover:bg-[#F4F2FB] rounded p-1.5"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => l.id && toggleSelect(l.id)}
+                          disabled={!l.id || importing}
+                          className="mt-1 shrink-0"
+                        />
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium">
+                              {l.name || "(sin nombre)"}
+                            </span>
+                            <span className="text-xs text-ink-muted">
+                              {l.job_title || "—"}
+                            </span>
+                            {l.linkedin_url && (
+                              <a
+                                href={l.linkedin_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-ink-subtle hover:text-brand"
+                                onClick={(e) => e.stopPropagation()}
+                                title="LinkedIn"
+                              >
+                                <IconBrandLinkedin size={13} />
+                              </a>
+                            )}
+                          </div>
+                          <div className="text-xs">
+                            {l.company_name ? (
+                              <span className="badge bg-[#F1EEF7] text-ink-muted">
+                                {l.company_name}
+                              </span>
+                            ) : (
+                              <span className="text-warning-fg italic text-[11px]">
+                                sin nombre de empresa en Lemlist
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </label>
                     );
-                  }
-                  return filtered.map((l) => {
-                  const checked = l.id ? selectedIds.has(l.id) : false;
-                  return (
-                    <label
-                      key={l.id ?? l.linkedin_url ?? l.email ?? Math.random()}
-                      className="flex items-start gap-2 text-sm cursor-pointer hover:bg-[#F4F2FB] rounded p-1.5"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => l.id && toggleSelect(l.id)}
-                        disabled={!l.id || importing}
-                        className="mt-1 shrink-0"
-                      />
-                      <div className="flex-1 min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">
-                            {l.name || "(sin nombre)"}
-                          </span>
-                          <span className="text-xs text-ink-muted">
-                            {l.job_title || "—"}
-                          </span>
-                          {l.linkedin_url && (
-                            <a
-                              href={l.linkedin_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-ink-subtle hover:text-brand"
-                              onClick={(e) => e.stopPropagation()}
-                              title="LinkedIn"
-                            >
-                              <IconBrandLinkedin size={13} />
-                            </a>
-                          )}
-                        </div>
-                        <div className="text-xs">
-                          {l.company_name ? (
-                            <span className="badge bg-[#F1EEF7] text-ink-muted">
-                              {l.company_name}
-                            </span>
-                          ) : (
-                            <span className="text-warning-fg italic text-[11px]">
-                              sin nombre de empresa en Lemlist
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </label>
-                  );
-                  });
-                })()}
+                  })
+                )}
               </div>
             </>
           )}
@@ -884,25 +897,14 @@ function CompanyCard({
           <div className="flex items-center gap-2 flex-wrap pt-1">
             <button
               className="btn-primary text-xs"
-              onClick={() => importSelected(true)}
-              disabled={importing || selectedIds.size === 0}
+              onClick={importSelected}
+              disabled={importing || effectiveSelectedIds.length === 0}
               title="Importa, genera icebreaker + email con IA, y los envía a Lemlist + HubSpot en un solo paso."
             >
               <IconSend size={13} />{" "}
-              {importing && importMode === "auto"
+              {importing
                 ? "Importando y enviando…"
-                : `Importar y enviar directo a Lemlist (${selectedIds.size})`}
-            </button>
-            <button
-              className="btn-secondary text-xs"
-              onClick={() => importSelected(false)}
-              disabled={importing || selectedIds.size === 0}
-              title="Solo importa al app — los contactos pasan por Clay y van al bucket 'Por aprobar' para revisión."
-            >
-              <IconDownload size={13} />{" "}
-              {importing && importMode === "import"
-                ? "Importando…"
-                : `Solo importar (${selectedIds.size})`}
+                : `Importar y enviar directo a Lemlist (${effectiveSelectedIds.length})`}
             </button>
             <button
               className="text-xs text-ink-muted hover:text-ink"
@@ -913,9 +915,14 @@ function CompanyCard({
             </button>
           </div>
           <div className="text-xs text-ink-subtle">
-            <strong className="text-ink">Importar y enviar directo a Lemlist</strong>{" "}
-            es lo recomendado: los contactos de Sales Nav ya están curados por
-            ti, no necesitan pasar por Clay otra vez.
+            Los contactos de Sales Nav ya están curados por ti — entran directo
+            a Lemlist + HubSpot sin pasar por Clay.
+            {previewQuery.trim() && selectedIds.size > effectiveSelectedIds.length && (
+              <>
+                {" "}Con el filtro activo se importan solo los visibles
+                ({effectiveSelectedIds.length} de {selectedIds.size} marcados).
+              </>
+            )}
           </div>
         </div>
       ) : (
