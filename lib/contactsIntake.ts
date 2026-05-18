@@ -28,11 +28,23 @@ export type IntakeResult =
 
 export type ContactSource = "clay" | "sales_navigator" | "web_scrape" | "manual";
 
+export type IntakeOptions = {
+  /**
+   * Si auto_push_clay=true (default), los contactos pre-filter YES se
+   * pushean automáticamente a Clay para Lead Scoring. Si false, se
+   * insertan en la base pero NO van a Clay (el caller decide qué hacer
+   * después — típicamente push directo a Lemlist sin pasar por Clay,
+   * para sources que ya curan manualmente como sales_navigator).
+   */
+  auto_push_clay?: boolean;
+};
+
 export async function intakeContactsForCompany(
   db: SupabaseClient,
   companyId: string,
   raws: RawContact[],
-  source: ContactSource = "manual"
+  source: ContactSource = "manual",
+  options: IntakeOptions = {}
 ): Promise<IntakeResult> {
   const { data: company, error: cErr } = await db
     .from("companies")
@@ -155,15 +167,22 @@ export async function intakeContactsForCompany(
   // En paralelo de a 5 para no saturar el webhook de Clay.
   // Saltea contactos que ya fueron pusheados antes (idempotente — dedup
   // en intake puede actualizar fila vs crear una nueva).
-  const idsToPush = await (async () => {
-    const { data } = await db
-      .from("contacts")
-      .select("id, clay_pushed_at")
-      .eq("company_id", companyId)
-      .eq("prefilter_result", "yes")
-      .is("clay_pushed_at", null);
-    return ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
-  })();
+  //
+  // Si auto_push_clay=false (caller pide skip), no pushea — caso típico
+  // de Sales Nav imports donde el contacto ya está curado y va directo
+  // a Lemlist sin pasar por el Lead Scoring de Clay.
+  const autoPushClay = options.auto_push_clay !== false;
+  const idsToPush = autoPushClay
+    ? await (async () => {
+        const { data } = await db
+          .from("contacts")
+          .select("id, clay_pushed_at")
+          .eq("company_id", companyId)
+          .eq("prefilter_result", "yes")
+          .is("clay_pushed_at", null);
+        return ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
+      })()
+    : [];
 
   const CHUNK = 5;
   for (let i = 0; i < idsToPush.length; i += CHUNK) {

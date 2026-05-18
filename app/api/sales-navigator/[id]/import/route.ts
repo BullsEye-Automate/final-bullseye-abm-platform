@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { intakeContactsForCompany, type RawContact } from "@/lib/contactsIntake";
 import { getCampaignLeadsWithDetails, deleteCampaignLead } from "@/lib/lemlist";
+import { pushApprovedToLemlist } from "@/lib/lemlistPush";
+import {
+  pushCompanyToHubSpot,
+  pushContactToHubSpot,
+  type HubSpotCompanyInput,
+  type HubSpotContactInput
+} from "@/lib/hubspotPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +47,13 @@ export async function POST(
 
   const body = await req.json().catch(() => ({}));
   const rawIds = (body as { lemlist_lead_ids?: unknown }).lemlist_lead_ids;
+  // Si auto_push_lemlist=true, los contactos importados saltean Clay's
+  // Lead Scoring y van DIRECTO a Lemlist (con scoring/messages generados
+  // por la app). Pensado para Sales Nav imports donde el SDR ya curó
+  // manualmente los contactos en LinkedIn — no tiene sentido hacerlos
+  // pasar por Clay AI otra vez.
+  const autoPushLemlist =
+    (body as { auto_push_lemlist?: boolean }).auto_push_lemlist === true;
   if (!Array.isArray(rawIds) || rawIds.length === 0) {
     return NextResponse.json(
       {
@@ -112,7 +126,12 @@ export async function POST(
     email: l.email
   }));
 
-  const result = await intakeContactsForCompany(db, params.id, contacts, "sales_navigator");
+  // Si auto_push_lemlist, le decimos al intake que NO pushee a Clay
+  // (esos contactos ya están manualmente curados por el SDR — Clay sería
+  // un paso innecesario que solo agrega latencia y créditos).
+  const result = await intakeContactsForCompany(db, params.id, contacts, "sales_navigator", {
+    auto_push_clay: !autoPushLemlist
+  });
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
@@ -149,24 +168,168 @@ export async function POST(
   const { data: fresh } = await db
     .from("contacts")
     .select(
-      "id, first_name, last_name, job_title, linkedin_url, email, prefilter_result, " +
-        "status, fit_action, lemlist_pushed_at, lemlist_push_error, clay_pushed_at, created_at"
+      "id, company_id, first_name, last_name, job_title, linkedin_headline, " +
+        "linkedin_url, email, phone, seniority, prefilter_result, status, " +
+        "fit_action, fit_score, fit_reason, linkedin_icebreaker, email_subject, " +
+        "email_body, lemlist_pushed_at, lemlist_push_error, hubspot_contact_id, " +
+        "clay_pushed_at, created_at"
     )
     .eq("company_id", params.id)
     .eq("prefilter_result", "yes")
     .is("lemlist_pushed_at", null)
-    .is("clay_pushed_at", null)
     .order("created_at", { ascending: false })
     .limit(50);
+
+  // ── Auto-push a Lemlist (Sales Nav directo, skipea Clay) ──
+  // Si auto_push_lemlist=true, para cada contacto YES recién importado:
+  //   1. fit_score calculado por contactScoring si está null (ya integrado
+  //      en pushApprovedToLemlist desde Sprint 10).
+  //   2. fit_action='enrich' marcado (los contactos de Sales Nav ya están
+  //      curados — no necesitan revisión de Clay).
+  //   3. Push a Lemlist con messageGenerator (config /entrenar-modelo).
+  //   4. Sync a HubSpot (empresa + contacto).
+  const auto_push_results: Array<{
+    id: string;
+    contact_name: string;
+    lemlist: "pushed" | "error" | "skipped";
+    lemlist_error?: string;
+    hubspot: "synced" | "error" | "skipped";
+    hubspot_error?: string;
+  }> = [];
+
+  if (autoPushLemlist && fresh && fresh.length > 0) {
+    // Necesitamos la empresa completa para el push.
+    const { data: companyFull } = await db
+      .from("companies")
+      .select(
+        "id, company_name, company_website, company_linkedin_url, company_city, " +
+          "company_country, company_size, company_type, cad_software, scanner_technology, " +
+          "fit_signals, fit_score, approved_at, clay_pushed_at, hubspot_company_id"
+      )
+      .eq("id", params.id)
+      .maybeSingle();
+
+    const CHUNK = 3;
+    for (let i = 0; i < fresh.length; i += CHUNK) {
+      const chunk = fresh.slice(i, i + CHUNK);
+      const chunkResults = await Promise.all(
+        chunk.map(async (c: any) => {
+          const fullName =
+            [c.first_name, c.last_name].filter(Boolean).join(" ").trim() || "(sin nombre)";
+          // Marcar fit_action='enrich' (Sales Nav contacts ya curados).
+          await db.from("contacts").update({ fit_action: "enrich" }).eq("id", c.id);
+
+          // Push a Lemlist (genera mensajes con config + scoring fallback).
+          const lemlistRes = await pushApprovedToLemlist(
+            db,
+            c.id,
+            {
+              first_name: c.first_name,
+              last_name: c.last_name,
+              job_title: c.job_title,
+              linkedin_headline: c.linkedin_headline,
+              linkedin_url: c.linkedin_url,
+              email: c.email,
+              phone: c.phone,
+              seniority: c.seniority,
+              fit_score: c.fit_score,
+              fit_reason: c.fit_reason,
+              linkedin_icebreaker: c.linkedin_icebreaker,
+              email_subject: c.email_subject,
+              email_body: c.email_body
+            },
+            companyFull
+              ? {
+                  company_name: (companyFull as any).company_name,
+                  company_size: (companyFull as any).company_size,
+                  company_type: (companyFull as any).company_type,
+                  cad_software: (companyFull as any).cad_software,
+                  scanner_technology: (companyFull as any).scanner_technology,
+                  fit_signals: (companyFull as any).fit_signals
+                }
+              : null,
+            { force_regenerate: true }
+          );
+          const lemlist = lemlistRes.ok ? ("pushed" as const) : ("error" as const);
+          const lemlist_error = !lemlistRes.ok ? lemlistRes.error : undefined;
+
+          // Sync a HubSpot (empresa primero, luego contacto).
+          let hubspot: "synced" | "error" | "skipped" = "skipped";
+          let hubspot_error: string | undefined;
+          if (companyFull) {
+            try {
+              const cRes = await pushCompanyToHubSpot(
+                db,
+                companyFull as unknown as HubSpotCompanyInput
+              );
+              const hsCompanyId = cRes.ok ? cRes.hubspot_id : null;
+              // Recargamos el contacto para tener los mensajes recién persistidos.
+              const { data: cFresh } = await db
+                .from("contacts")
+                .select(
+                  "id, company_id, first_name, last_name, job_title, linkedin_headline, " +
+                    "linkedin_url, email, phone, seniority, fit_score, fit_reason, fit_action, " +
+                    "linkedin_icebreaker, email_subject, email_body, human_decision, " +
+                    "human_decision_reason, clay_pushed_at, lemlist_pushed_at, " +
+                    "phone_enrichment_status, phone_source, hubspot_contact_id"
+                )
+                .eq("id", c.id)
+                .maybeSingle();
+              const hsRes = await pushContactToHubSpot(
+                db,
+                (cFresh ?? c) as unknown as HubSpotContactInput,
+                hsCompanyId,
+                {
+                  company_type: (companyFull as any).company_type ?? null,
+                  cad_software: (companyFull as any).cad_software ?? null,
+                  scanner_technology: (companyFull as any).scanner_technology ?? null
+                }
+              );
+              if (hsRes.ok) hubspot = "synced";
+              else {
+                hubspot = "error";
+                hubspot_error = hsRes.error;
+              }
+            } catch (err) {
+              hubspot = "error";
+              hubspot_error = err instanceof Error ? err.message : "HubSpot sync failed";
+            }
+          }
+
+          return { id: c.id, contact_name: fullName, lemlist, lemlist_error, hubspot, hubspot_error };
+        })
+      );
+      auto_push_results.push(...chunkResults);
+    }
+  }
+
+  // Si hubo auto-push, re-fetch para que la UI vea lemlist_pushed_at actualizado.
+  let finalContacts = fresh ?? [];
+  if (autoPushLemlist && auto_push_results.length > 0) {
+    const ids = auto_push_results.map((r) => r.id);
+    const { data: refetched } = await db
+      .from("contacts")
+      .select(
+        "id, company_id, first_name, last_name, job_title, linkedin_headline, " +
+          "linkedin_url, email, phone, seniority, prefilter_result, status, " +
+          "fit_action, fit_score, fit_reason, linkedin_icebreaker, email_subject, " +
+          "email_body, lemlist_pushed_at, lemlist_push_error, hubspot_contact_id, " +
+          "clay_pushed_at, created_at"
+      )
+      .in("id", ids);
+    if (refetched) finalContacts = refetched as typeof finalContacts;
+  }
 
   return NextResponse.json({
     ok: true,
     summary: result.summary,
-    contacts: fresh ?? [],
+    contacts: finalContacts,
     staged_total: leadsRes.leads.length,
     selected_count: selected.length,
     deleted,
     delete_errors,
-    matched_url: leadsRes.matched_url
+    matched_url: leadsRes.matched_url,
+    auto_pushed_lemlist: autoPushLemlist,
+    auto_push_results
   });
 }

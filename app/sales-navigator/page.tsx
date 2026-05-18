@@ -80,6 +80,15 @@ type PreviewLead = {
   email: string | null;
 };
 
+type AutoPushResult = {
+  id: string;
+  contact_name: string;
+  lemlist: "pushed" | "error" | "skipped";
+  lemlist_error?: string;
+  hubspot: "synced" | "error" | "skipped";
+  hubspot_error?: string;
+};
+
 type ImportResult = {
   summary: { inserted: number; yes: number; no: number; skipped: number };
   contacts: ImportedContact[];
@@ -88,6 +97,8 @@ type ImportResult = {
   deleted: number;
   delete_errors: { lead: string; error: string }[];
   matched_url?: string;
+  auto_pushed_lemlist?: boolean;
+  auto_push_results?: AutoPushResult[];
 };
 
 type Counts = { no_contacts: number; one_contact: number; no_fit: number };
@@ -323,6 +334,9 @@ function CompanyCard({
   // los de UNA empresa cuando la Campaña puente acumula muchos contactos.
   const [previewQuery, setPreviewQuery] = useState("");
   const [importing, setImporting] = useState(false);
+  // Cuando el SDR usa "Importar y enviar directo a Lemlist", marcamos cuál botón
+  // estaba activo para el spinner correcto.
+  const [importMode, setImportMode] = useState<"import" | "auto" | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [marking, setMarking] = useState(false);
@@ -394,15 +408,19 @@ function CompanyCard({
     setCardError(null);
   }
 
-  async function importSelected() {
+  async function importSelected(autoPushLemlist: boolean) {
     if (selectedIds.size === 0) return;
     setImporting(true);
+    setImportMode(autoPushLemlist ? "auto" : "import");
     setCardError(null);
     try {
       const res = await fetch(`/api/sales-navigator/${company.id}/import`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lemlist_lead_ids: Array.from(selectedIds) })
+        body: JSON.stringify({
+          lemlist_lead_ids: Array.from(selectedIds),
+          auto_push_lemlist: autoPushLemlist
+        })
       });
       const data = await res.json();
       if (!res.ok) {
@@ -416,7 +434,9 @@ function CompanyCard({
         selected_count: data.selected_count ?? 0,
         deleted: data.deleted ?? 0,
         delete_errors: data.delete_errors ?? [],
-        matched_url: data.matched_url
+        matched_url: data.matched_url,
+        auto_pushed_lemlist: data.auto_pushed_lemlist,
+        auto_push_results: data.auto_push_results
       });
       setPreview(null);
       setSelectedIds(new Set());
@@ -424,6 +444,7 @@ function CompanyCard({
       setCardError("No se pudo importar (error de red)");
     } finally {
       setImporting(false);
+      setImportMode(null);
     }
   }
 
@@ -597,6 +618,40 @@ function CompanyCard({
                   · {e.lead}: <span className="text-ink-subtle">{e.error}</span>
                 </div>
               ))}
+            </div>
+          )}
+
+          {result.auto_pushed_lemlist && result.auto_push_results && result.auto_push_results.length > 0 && (
+            <div className="border border-divider rounded-md p-2 bg-[#FAFAFE] space-y-1">
+              <div className="label">Envío automático a Lemlist + HubSpot</div>
+              {(() => {
+                const okL = result.auto_push_results.filter((r) => r.lemlist === "pushed").length;
+                const errL = result.auto_push_results.filter((r) => r.lemlist === "error").length;
+                const okH = result.auto_push_results.filter((r) => r.hubspot === "synced").length;
+                const errH = result.auto_push_results.filter((r) => r.hubspot === "error").length;
+                return (
+                  <div className="text-xs text-ink-muted">
+                    Lemlist: <span className="text-success-fg font-medium">{okL} enviados</span>
+                    {errL > 0 && <span className="text-danger-fg"> · {errL} con error</span>}
+                    {" · "}
+                    HubSpot: <span className="text-success-fg font-medium">{okH} sincronizados</span>
+                    {errH > 0 && <span className="text-danger-fg"> · {errH} con error</span>}
+                  </div>
+                );
+              })()}
+              {result.auto_push_results.some((r) => r.lemlist === "error" || r.hubspot === "error") && (
+                <div className="text-xs space-y-0.5 pt-1">
+                  {result.auto_push_results
+                    .filter((r) => r.lemlist === "error" || r.hubspot === "error")
+                    .map((r) => (
+                      <div key={r.id} className="text-danger-fg pl-2">
+                        · {r.contact_name}:
+                        {r.lemlist === "error" && <> Lemlist {r.lemlist_error}</>}
+                        {r.hubspot === "error" && <> · HubSpot {r.hubspot_error}</>}
+                      </div>
+                    ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -829,13 +884,25 @@ function CompanyCard({
           <div className="flex items-center gap-2 flex-wrap pt-1">
             <button
               className="btn-primary text-xs"
-              onClick={importSelected}
+              onClick={() => importSelected(true)}
               disabled={importing || selectedIds.size === 0}
+              title="Importa, genera icebreaker + email con IA, y los envía a Lemlist + HubSpot en un solo paso."
+            >
+              <IconSend size={13} />{" "}
+              {importing && importMode === "auto"
+                ? "Importando y enviando…"
+                : `Importar y enviar directo a Lemlist (${selectedIds.size})`}
+            </button>
+            <button
+              className="btn-secondary text-xs"
+              onClick={() => importSelected(false)}
+              disabled={importing || selectedIds.size === 0}
+              title="Solo importa al app — los contactos pasan por Clay y van al bucket 'Por aprobar' para revisión."
             >
               <IconDownload size={13} />{" "}
-              {importing
+              {importing && importMode === "import"
                 ? "Importando…"
-                : `Importar ${selectedIds.size} seleccionado${selectedIds.size === 1 ? "" : "s"}`}
+                : `Solo importar (${selectedIds.size})`}
             </button>
             <button
               className="text-xs text-ink-muted hover:text-ink"
@@ -844,6 +911,11 @@ function CompanyCard({
             >
               Cancelar
             </button>
+          </div>
+          <div className="text-xs text-ink-subtle">
+            <strong className="text-ink">Importar y enviar directo a Lemlist</strong>{" "}
+            es lo recomendado: los contactos de Sales Nav ya están curados por
+            ti, no necesitan pasar por Clay otra vez.
           </div>
         </div>
       ) : (
