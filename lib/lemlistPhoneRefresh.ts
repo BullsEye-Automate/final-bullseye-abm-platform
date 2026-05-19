@@ -14,9 +14,10 @@
 // que un contacto tiene phone_lemlist deja de consultarse.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getCampaignLeadsWithDetails } from "./lemlist";
+import { getCampaignLeadsWithDetails, type LemlistCampaignLead } from "./lemlist";
 import { searchByProperty, updateObject } from "./hubspot";
 import { ensureContactProperties } from "./hubspotProperties";
+import { getLemlistCampaignIds } from "./lemlistCampaigns";
 
 export type RefreshPhonesResult = {
   ok: boolean;
@@ -77,8 +78,8 @@ export async function refreshLemlistPhones(
   db: SupabaseClient,
   opts: { limit?: number } = {}
 ): Promise<RefreshPhonesResult> {
-  const campaignId = process.env.LEMLIST_CAMPAIGN_ID;
-  if (!campaignId) {
+  const campaignIds = getLemlistCampaignIds();
+  if (campaignIds.length === 0) {
     return { ...empty(), error: "LEMLIST_CAMPAIGN_ID is not configured" };
   }
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
@@ -110,21 +111,32 @@ export async function refreshLemlistPhones(
 
   if (contacts.length === 0) return res;
 
-  // Una sola fetch a Lemlist para TODOS los leads de la campaña (con
-  // detalles). Mucho más eficiente que llamar lead por lead — y matchea
-  // contactos que no tenían email a push time (Sales Nav).
-  const all = await getCampaignLeadsWithDetails(campaignId);
-  if (!all.ok) {
+  // Fetch a Lemlist para los leads de TODAS las campañas configuradas
+  // (v1 vieja + v2 nueva). Mucho más eficiente que llamar lead por lead.
+  type LemlistLead = LemlistCampaignLead;
+  const allLeads: LemlistLead[] = [];
+  let firstFailureDebug: unknown = null;
+  for (const cid of campaignIds) {
+    const got = await getCampaignLeadsWithDetails(cid);
+    if (!got.ok) {
+      if (!firstFailureDebug) {
+        firstFailureDebug = { campaign_id: cid, error: got.error, debug: got.debug };
+      }
+      continue;
+    }
+    allLeads.push(...(got.leads as LemlistLead[]));
+  }
+  if (allLeads.length === 0 && firstFailureDebug) {
     res.lemlist_failed = contacts.length;
-    res.debug = { first_failure: { error: all.error, debug: all.debug } };
+    res.debug = { first_failure: firstFailureDebug };
     return res;
   }
-  res.lemlist_ok = all.leads.length;
+  res.lemlist_ok = allLeads.length;
 
   // Index por email y por linkedin_url normalizado para match cruzado.
-  const byEmail = new Map<string, (typeof all.leads)[number]>();
-  const byLinkedin = new Map<string, (typeof all.leads)[number]>();
-  for (const lead of all.leads) {
+  const byEmail = new Map<string, LemlistLead>();
+  const byLinkedin = new Map<string, LemlistLead>();
+  for (const lead of allLeads) {
     if (lead.email) byEmail.set(lead.email.toLowerCase().trim(), lead);
     const lk = normalizeLinkedin(lead.linkedin_url);
     if (lk) byLinkedin.set(lk, lead);
@@ -133,7 +145,7 @@ export async function refreshLemlistPhones(
   for (const c of contacts) {
     res.checked += 1;
 
-    let lead: (typeof all.leads)[number] | undefined;
+    let lead: LemlistLead | undefined;
     if (c.email) lead = byEmail.get(c.email.toLowerCase().trim());
     if (!lead && c.linkedin_url) lead = byLinkedin.get(normalizeLinkedin(c.linkedin_url));
 

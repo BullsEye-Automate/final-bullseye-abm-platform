@@ -23,6 +23,7 @@ import {
 } from "./hubspot";
 import { ensureCompanyProperties, ensureContactProperties } from "./hubspotProperties";
 import { computeEngagementScore } from "./contactEngagement";
+import { getPrimaryLemlistCampaignId } from "./lemlistCampaigns";
 
 export type HubSpotPushOk = {
   ok: true;
@@ -375,8 +376,9 @@ function buildContactProperties(
   }
   if (c.phone_source) props.wecad_phone_source = c.phone_source;
   if (c.phone) props.phone = c.phone;
-  if (process.env.LEMLIST_CAMPAIGN_ID) {
-    props.wecad_lemlist_campaign = process.env.LEMLIST_CAMPAIGN_ID;
+  const primaryCampaignId = getPrimaryLemlistCampaignId();
+  if (primaryCampaignId) {
+    props.wecad_lemlist_campaign = primaryCampaignId;
   }
   return props;
 }

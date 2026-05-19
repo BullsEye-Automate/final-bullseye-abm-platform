@@ -21,6 +21,7 @@ import {
   getLemlistLeadByEmail,
   type LemlistGetResult
 } from "./lemlist";
+import { getLemlistCampaignIds } from "./lemlistCampaigns";
 
 const LEMLIST_API_BASE = process.env.LEMLIST_API_BASE_URL || "https://api.lemlist.com/api";
 
@@ -192,15 +193,13 @@ export async function resolveInboxIds(activity: {
   if (!contactId || !leadId) {
     let lookup: LemlistGetResult | null = null;
     if (leadId) lookup = await getLemlistLeadById(leadId);
-    if (
-      (!lookup || !lookup.ok) &&
-      activity.lead_email &&
-      process.env.LEMLIST_CAMPAIGN_ID
-    ) {
-      lookup = await getLemlistLeadByEmail(
-        process.env.LEMLIST_CAMPAIGN_ID,
-        activity.lead_email
-      );
+    if ((!lookup || !lookup.ok) && activity.lead_email) {
+      // Probamos en cada campaña configurada — el lead puede estar en la
+      // v1 vieja o en la v2 nueva (Email First).
+      for (const cid of getLemlistCampaignIds()) {
+        lookup = await getLemlistLeadByEmail(cid, activity.lead_email);
+        if (lookup && lookup.ok) break;
+      }
     }
     if (lookup && lookup.ok) {
       const lead = lookup.lead as Record<string, any>;

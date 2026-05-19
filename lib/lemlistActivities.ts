@@ -8,6 +8,7 @@
 // versiones: probamos patrones de URL y parseamos defensivo.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getLemlistCampaignIds } from "./lemlistCampaigns";
 
 const LEMLIST_API_BASE = process.env.LEMLIST_API_BASE_URL || "https://api.lemlist.com/api";
 
@@ -207,8 +208,8 @@ export type SyncActivitiesResult = {
 export async function syncLemlistActivities(
   db: SupabaseClient
 ): Promise<SyncActivitiesResult> {
-  const campaignId = process.env.LEMLIST_CAMPAIGN_ID;
-  if (!campaignId) {
+  const campaignIds = getLemlistCampaignIds();
+  if (campaignIds.length === 0) {
     return {
       ok: false,
       fetched: 0,
@@ -218,17 +219,37 @@ export async function syncLemlistActivities(
     };
   }
 
-  const fetched = await fetchCampaignActivities(campaignId);
-  if (!fetched.ok) {
+  // Pulleamos actividad de TODAS las campañas configuradas (v1 vieja + v2
+  // nueva). Cada lemlist_activity_id es único, el upsert dedupea.
+  const activities: LemlistActivity[] = [];
+  let totalPages = 0;
+  const perCampaignErrors: Array<{ campaign_id: string; error: string; debug?: unknown }> = [];
+  for (const cid of campaignIds) {
+    const fetched = await fetchCampaignActivities(cid);
+    if (!fetched.ok) {
+      perCampaignErrors.push({
+        campaign_id: cid,
+        error: fetched.error ?? "unknown error",
+        debug: fetched.debug
+      });
+      continue;
+    }
+    activities.push(...fetched.activities);
+    totalPages += fetched.pages;
+  }
+  // Si TODAS las campañas fallaron, devolvemos error. Si al menos una
+  // funcionó, continuamos con la actividad parcial.
+  if (activities.length === 0 && perCampaignErrors.length > 0) {
     return {
       ok: false,
       fetched: 0,
       upserted: 0,
       matched: 0,
-      error: fetched.error,
-      debug: fetched.debug
+      error: perCampaignErrors.map((e) => `${e.campaign_id}: ${e.error}`).join(" | "),
+      debug: perCampaignErrors
     };
   }
+  const fetched = { activities, pages: totalPages };
 
   // Mapa email → contact_id para matchear las actividades a nuestra DB.
   const { data: contactRows, error: cErr } = await db
