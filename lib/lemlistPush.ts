@@ -11,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { addLeadToCampaign } from "./lemlist";
 import { generateMessages, type MessageInput } from "./messageGenerator";
 import { computeContactFitScore, type ScoreInput } from "./contactScoring";
+import { getPrimaryLemlistCampaignId } from "./lemlistCampaigns";
 
 export type LemlistPushOk = {
   ok: true;
@@ -111,7 +112,7 @@ export async function pushApprovedToLemlist(
     }
   }
 
-  const campaignId = process.env.LEMLIST_CAMPAIGN_ID;
+  const campaignId = getPrimaryLemlistCampaignId();
   if (!campaignId) {
     const error = "LEMLIST_CAMPAIGN_ID is not configured";
     await db.from("contacts").update({ lemlist_push_error: error }).eq("id", contactId);

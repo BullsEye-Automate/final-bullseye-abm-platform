@@ -23,6 +23,7 @@ import {
   type LemlistCampaignLead
 } from "@/lib/lemlist";
 import { syncContactToHubSpot } from "@/lib/hubspotContactSync";
+import { getLemlistCampaignIds, getPrimaryLemlistCampaignId } from "@/lib/lemlistCampaigns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -205,7 +206,7 @@ async function processOne(
     if (!contact.lemlist_pushed_at) {
       result.lemlist = "not_in_lemlist";
     } else {
-      const campaignId = process.env.LEMLIST_CAMPAIGN_ID;
+      const campaignId = getPrimaryLemlistCampaignId();
       if (!campaignId) {
         result.lemlist = "error";
         result.lemlist_error = "LEMLIST_CAMPAIGN_ID no configurado";
@@ -392,14 +393,21 @@ export async function POST(req: NextRequest) {
   const campaignLeadsByLinkedin = new Map<string, LemlistCampaignLead>();
   let lemlistSnapshotError: string | null = null;
   if (refreshLemlist) {
-    const campaignId = process.env.LEMLIST_CAMPAIGN_ID;
-    if (!campaignId) {
+    const campaignIds = getLemlistCampaignIds();
+    if (campaignIds.length === 0) {
       lemlistSnapshotError = "LEMLIST_CAMPAIGN_ID no configurado";
     } else {
-      const snap = await getCampaignLeadsWithDetails(campaignId);
-      if (!snap.ok) {
-        lemlistSnapshotError = `getCampaignLeads falló: ${snap.error}`;
-      } else {
+      // Cargamos el snapshot de TODAS las campañas configuradas — el
+      // lead a borrar puede estar en cualquiera de ellas (v1 vieja o v2
+      // nueva). El DELETE individual abajo prueba contra todas las
+      // campañas hasta encontrarlo.
+      const errs: string[] = [];
+      for (const cid of campaignIds) {
+        const snap = await getCampaignLeadsWithDetails(cid);
+        if (!snap.ok) {
+          errs.push(`${cid}: ${snap.error}`);
+          continue;
+        }
         for (const lead of snap.leads) {
           if (lead.email) {
             campaignLeadsByEmail.set(lead.email.toLowerCase().trim(), lead);
@@ -409,6 +417,9 @@ export async function POST(req: NextRequest) {
             campaignLeadsByLinkedin.set(normalized, lead);
           }
         }
+      }
+      if (campaignLeadsByEmail.size === 0 && campaignLeadsByLinkedin.size === 0 && errs.length > 0) {
+        lemlistSnapshotError = `getCampaignLeads falló: ${errs.join(" | ")}`;
       }
     }
   }

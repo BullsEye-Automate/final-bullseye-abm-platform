@@ -12,6 +12,7 @@
 // lib/lemlist.ts (probablemente la key es distinta a "leads"/"data").
 
 import { NextRequest, NextResponse } from "next/server";
+import { getLemlistCampaignIds, getPrimaryLemlistCampaignId } from "@/lib/lemlistCampaigns";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -107,10 +108,11 @@ async function probe(url: string): Promise<Probe> {
 }
 
 export async function GET(req: NextRequest) {
-  const campaignId =
-    req.nextUrl.searchParams.get("campaign_id") ||
-    process.env.LEMLIST_CAMPAIGN_ID ||
-    "";
+  // LEMLIST_CAMPAIGN_ID puede ser CSV (varias campañas activas). Si no se
+  // pasa explícito por querystring, usamos la primaria (la primera del CSV).
+  const explicit = req.nextUrl.searchParams.get("campaign_id");
+  const fromEnv = getPrimaryLemlistCampaignId();
+  const campaignId = explicit || fromEnv || "";
 
   if (!campaignId) {
     return NextResponse.json(
@@ -177,7 +179,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     campaign_id: campaignId,
     env_var_used:
-      campaignId === process.env.LEMLIST_CAMPAIGN_ID
+      getLemlistCampaignIds().includes(campaignId)
         ? "LEMLIST_CAMPAIGN_ID"
         : campaignId === process.env.LEMLIST_STAGING_CAMPAIGN_ID
         ? "LEMLIST_STAGING_CAMPAIGN_ID"
