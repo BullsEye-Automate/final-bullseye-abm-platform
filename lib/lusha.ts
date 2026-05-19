@@ -19,6 +19,10 @@ export type LushaPersonResult =
       mobile: string | null;
       direct: string | null;
       email: string | null;
+      first_name: string | null;
+      last_name: string | null;
+      job_title: string | null;
+      company_name: string | null;
       raw: unknown;
     }
   | { ok: false; status: number; error: string; debug?: unknown };
@@ -155,6 +159,7 @@ export async function lookupLushaPerson(
     // 2xx — extraemos phone. Si encontramos algo, devolvemos.
     const phones = extractPhones(parsed);
     if (phones.bestPhone) {
+      const profile = extractProfile(parsed);
       return {
         ok: true,
         status: res.status,
@@ -162,6 +167,10 @@ export async function lookupLushaPerson(
         mobile: phones.mobile,
         direct: phones.direct,
         email: extractEmail(parsed),
+        first_name: profile.first_name,
+        last_name: profile.last_name,
+        job_title: profile.job_title,
+        company_name: profile.company_name,
         raw: parsed
       };
     }
@@ -171,6 +180,7 @@ export async function lookupLushaPerson(
   // el SDR vea qué dijo Lusha.
   const phones = extractPhones(lastParsed);
   const email = extractEmail(lastParsed);
+  const profile = extractProfile(lastParsed);
   return {
     ok: true,
     status: lastStatus || 200,
@@ -178,8 +188,95 @@ export async function lookupLushaPerson(
     mobile: phones.mobile,
     direct: phones.direct,
     email,
+    first_name: profile.first_name,
+    last_name: profile.last_name,
+    job_title: profile.job_title,
+    company_name: profile.company_name,
     raw: { attempts, last_response: lastParsed }
   };
+}
+
+// Extrae nombre/apellido/cargo/empresa del response de Lusha. Defensivo
+// con múltiples paths (mismo patrón que extractPhones).
+function extractProfile(raw: unknown): {
+  first_name: string | null;
+  last_name: string | null;
+  job_title: string | null;
+  company_name: string | null;
+} {
+  const empty = {
+    first_name: null,
+    last_name: null,
+    job_title: null,
+    company_name: null
+  };
+  if (!raw || typeof raw !== "object") return empty;
+
+  const contacts = (raw as { contacts?: Record<string, { data?: unknown }> }).contacts;
+  const candidates: Array<Record<string, unknown>> = [];
+  if (contacts) {
+    for (const key of Object.keys(contacts)) {
+      const entry = contacts[key];
+      const data = (entry?.data ?? entry) as Record<string, unknown> | undefined;
+      if (data && typeof data === "object") candidates.push(data);
+    }
+  }
+  const top = (raw as { data?: unknown }).data ?? raw;
+  if (top && typeof top === "object") candidates.push(top as Record<string, unknown>);
+
+  for (const data of candidates) {
+    const first = pickProfileField(data, ["firstName", "first_name", "FirstName"]);
+    const last = pickProfileField(data, ["lastName", "last_name", "LastName"]);
+    // fullName fallback
+    const full = pickProfileField(data, ["fullName", "name", "displayName"]);
+    let f = first;
+    let l = last;
+    if (!f && full) f = full.split(/\s+/)[0] ?? null;
+    if (!l && full && full.includes(" ")) {
+      l = full.split(/\s+/).slice(1).join(" ");
+    }
+    const title = pickProfileField(data, [
+      "jobTitle",
+      "job_title",
+      "title",
+      "position",
+      "headline"
+    ]);
+    // companyName puede estar nested en data.company.{name,companyName}
+    let company = pickProfileField(data, [
+      "companyName",
+      "company_name",
+      "organization",
+      "organizationName"
+    ]);
+    if (!company) {
+      const co = (data as { company?: unknown }).company;
+      if (co && typeof co === "object") {
+        company = pickProfileField(co as Record<string, unknown>, [
+          "name",
+          "companyName",
+          "displayName"
+        ]);
+      }
+    }
+    if (f || l || title || company) {
+      return {
+        first_name: f,
+        last_name: l,
+        job_title: title,
+        company_name: company
+      };
+    }
+  }
+  return empty;
+}
+
+function pickProfileField(obj: Record<string, unknown>, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
 }
 
 // Lusha v2 devuelve { contacts: { "1": { data: { phoneNumbers: [...], emailAddresses: [...] } } } }

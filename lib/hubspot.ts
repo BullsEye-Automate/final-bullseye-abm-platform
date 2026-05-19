@@ -169,8 +169,12 @@ type HubSpotObject = {
 export async function searchByProperty(
   objectType: "contacts" | "companies",
   property: string,
-  value: string
+  value: string,
+  extraProperties: string[] = []
 ): Promise<HubSpotApiResult<{ total: number; results: HubSpotObject[] }>> {
+  const properties = Array.from(
+    new Set([property, "createdate", ...extraProperties])
+  );
   return hubspotFetch(`/crm/v3/objects/${objectType}/search`, {
     method: "POST",
     body: JSON.stringify({
@@ -179,7 +183,7 @@ export async function searchByProperty(
           filters: [{ propertyName: property, operator: "EQ", value }]
         }
       ],
-      properties: [property, "createdate"],
+      properties,
       limit: 1
     })
   });
