@@ -15,11 +15,13 @@ export const maxDuration = 30;
 // contacto:
 //   - Si ya tiene phone y force=false → devolvemos already_has_phone.
 //   - Si force=true o sin phone → llamamos Lusha. Si Lusha devuelve
-//     phone, lo escribimos a HubSpot (wecad_phone_lusha + phone
-//     principal) y a Supabase (phone_lusha + phone principal). Si el
-//     contacto ya tenía phone (de Lemlist), también guardamos ese
-//     valor en wecad_phone_lemlist / phone_lemlist como snapshot
-//     para que no se pierda.
+//     phone, lo escribimos SOLO en wecad_phone_lusha (HubSpot) y
+//     phone_lusha (Supabase). El campo principal "Número de teléfono"
+//     (phone / hubspot.phone) NO se toca: si Lemlist ya lo había
+//     llenado, queda intacto; si estaba vacío, queda vacío. Esa es la
+//     decisión del usuario (sesión 2026-05-19): siempre tener las dos
+//     vistas lado a lado en HubSpot sin que Lusha pise lo que vino de
+//     Lemlist.
 //
 // Resultado: el SDR puede ver ambos teléfonos lado a lado en HubSpot.
 
@@ -136,7 +138,6 @@ export async function POST(req: NextRequest) {
   const existingPhone = supabaseContact?.phone ?? null;
   const existingPhoneLemlist = supabaseContact?.phone_lemlist ?? null;
   const existingPhoneLusha = supabaseContact?.phone_lusha ?? null;
-  const existingSource = supabaseContact?.phone_source ?? null;
   const contactName = supabaseContact
     ? `${supabaseContact.first_name ?? ""} ${supabaseContact.last_name ?? ""}`.trim() || null
     : hubspotName;
@@ -189,32 +190,16 @@ export async function POST(req: NextRequest) {
 
   const lushaPhone = lusha.phone;
 
-  // 5) Decidir si rescatamos el phone existente como "Lemlist phone".
-  // Si el phone actual no es de Lusha (= probablemente vino de Lemlist
-  // o de la sync nativa) Y todavía no tenemos phone_lemlist guardado,
-  // lo snapshotteamos antes de sobreescribir.
-  const shouldSnapshotLemlist =
-    !!existingPhone &&
-    existingPhone.trim().length > 4 &&
-    existingSource !== "lusha" &&
-    !existingPhoneLemlist;
-  const newPhoneLemlist = shouldSnapshotLemlist
-    ? existingPhone
-    : existingPhoneLemlist;
-
-  // 6) PATCH a HubSpot.
+  // 5) PATCH a HubSpot — SOLO wecad_phone_lusha. NO tocamos `phone` ni
+  // `wecad_phone_source` para preservar lo que Lemlist haya escrito (o
+  // dejar el principal vacío si nunca se llenó). El SDR ve ambos lados.
   let hubspotUpdated = false;
   let hubspotDebug: unknown = undefined;
   if (hubspotContactId) {
     const props: Record<string, string> = {
-      phone: lushaPhone,
       wecad_phone_lusha: lushaPhone,
-      wecad_phone_source: "lusha",
       wecad_phone_enrichment_status: "done_lusha"
     };
-    if (shouldSnapshotLemlist && existingPhone) {
-      props.wecad_phone_lemlist = existingPhone;
-    }
     const upd = await updateObject("contacts", hubspotContactId, props);
     if (upd.ok) {
       hubspotUpdated = true;
@@ -223,20 +208,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 7) Update Supabase.
+  // 6) Update Supabase — mismo principio: solo phone_lusha + tracking
+  // de Lusha. No tocamos phone / phone_source.
   let supabaseUpdated = false;
   if (supabaseContact) {
     const updFields: Record<string, unknown> = {
-      phone: lushaPhone,
       phone_lusha: lushaPhone,
-      phone_source: "lusha",
-      phone_enriched_at: new Date().toISOString(),
       phone_enrichment_status: "done_lusha",
       lusha_lookup_at: new Date().toISOString()
     };
-    if (shouldSnapshotLemlist && existingPhone) {
-      updFields.phone_lemlist = existingPhone;
-    }
     const { error: updErr } = await db
       .from("contacts")
       .update(updFields)
@@ -254,7 +234,7 @@ export async function POST(req: NextRequest) {
       hubspot_contact_id: hubspotContactId,
       supabase_contact_id: supabaseContact?.id ?? null,
       existing_phone: existingPhone,
-      phone_lemlist: newPhoneLemlist,
+      phone_lemlist: existingPhoneLemlist,
       phone_lusha: lushaPhone
     },
     phone: lushaPhone,

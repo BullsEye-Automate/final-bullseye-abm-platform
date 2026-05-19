@@ -124,7 +124,14 @@ export async function POST(req: NextRequest) {
   }
 
   const db = supabaseAdmin();
-  const totals = { received: items.length, inserted: 0, yes: 0, no: 0, skipped: 0 };
+  const totals = {
+    received: items.length,
+    inserted: 0,
+    yes: 0,
+    no: 0,
+    skipped: 0,
+    skipped_no_linkedin: 0
+  };
   const errors: { wecad_company_id: string; error: string }[] = [];
 
   for (const [companyId, contacts] of byCompany) {
@@ -137,6 +144,7 @@ export async function POST(req: NextRequest) {
     totals.yes += r.summary.yes;
     totals.no += r.summary.no;
     totals.skipped += r.summary.skipped;
+    totals.skipped_no_linkedin += r.summary.skipped_no_linkedin;
   }
 
   if (noCompany.length > 0) {
