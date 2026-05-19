@@ -20,6 +20,11 @@ export type IntakeSummary = {
   yes: number;
   no: number;
   skipped: number;
+  /**
+   * Cantidad descartada por falta de linkedin_url cuando la fuente lo exige
+   * (clay / sales_navigator). Web scrape y manual permiten null.
+   */
+  skipped_no_linkedin: number;
 };
 
 export type IntakeResult =
@@ -86,12 +91,27 @@ export async function intakeContactsForCompany(
       .filter(Boolean)
   );
 
-  const summary: IntakeSummary = { inserted: 0, yes: 0, no: 0, skipped: 0 };
+  const summary: IntakeSummary = {
+    inserted: 0,
+    yes: 0,
+    no: 0,
+    skipped: 0,
+    skipped_no_linkedin: 0
+  };
   const rows: any[] = [];
+
+  // Fuentes que exigen LinkedIn URL sí o sí. Web scrape y manual lo
+  // permiten en null (las páginas "Our Team" a menudo no linkean perfiles
+  // personales).
+  const requiresLinkedin = source === "clay" || source === "sales_navigator";
 
   for (const c of raws) {
     const linkedin = (c.linkedin_url ?? "").toLowerCase().trim();
     const email = (c.email ?? "").toLowerCase().trim();
+    if (requiresLinkedin && !linkedin) {
+      summary.skipped_no_linkedin += 1;
+      continue;
+    }
     if (linkedin && seen.has(linkedin)) {
       summary.skipped += 1;
       continue;

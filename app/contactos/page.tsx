@@ -53,6 +53,7 @@ type Contact = {
     | "not_found"
     | null;
   phone_source: "lemlist" | "lusha" | null;
+  source: "clay" | "sales_navigator" | "web_scrape" | "manual" | null;
   human_decision: "approved" | "rejected" | null;
   human_decision_at: string | null;
   human_decision_reason: string | null;
@@ -80,6 +81,13 @@ const BUCKET_LABELS: Record<Bucket, string> = {
   manual_review: "Revisión manual",
   enriched: "En campaña",
   discarded: "Descartados"
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  clay: "clay",
+  sales_navigator: "sales nav",
+  web_scrape: "web",
+  manual: "manual"
 };
 
 const BUCKET_DESCRIPTIONS: Record<Bucket, string> = {
@@ -1008,6 +1016,14 @@ function ContactCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-semibold truncate">{fullName}</h3>
+            {c.source && (
+              <span
+                className="badge bg-brand-tint text-brand"
+                title={`Origen del contacto: ${SOURCE_LABELS[c.source] ?? c.source}`}
+              >
+                {SOURCE_LABELS[c.source] ?? c.source}
+              </span>
+            )}
             {c.prefilter_result === "yes" && (
               <span className="badge bg-success-bg text-success-fg">pre-filter ✓</span>
             )}
