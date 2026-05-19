@@ -7,7 +7,8 @@ import {
   IconCheck,
   IconExternalLink,
   IconSearch,
-  IconRefresh
+  IconRefresh,
+  IconUserPlus
 } from "@tabler/icons-react";
 
 type RefreshPhonesResult = {
@@ -31,19 +32,26 @@ type RefreshPhonesResult = {
 type LookupResult = {
   ok: boolean;
   status:
-    | "not_found"
+    | "not_in_system_no_phone"
+    | "not_in_system_with_phone"
     | "phone_not_found"
     | "already_has_phone"
     | "enriched";
   linkedin_url: string;
+  not_in_system?: boolean;
   contact?: {
-    source: "supabase" | "hubspot";
+    source: "supabase" | "hubspot" | "lusha";
     name: string | null;
     hubspot_contact_id: string | null;
     supabase_contact_id: string | null;
     existing_phone: string | null;
     phone_lemlist: string | null;
     phone_lusha: string | null;
+    suggested_first_name?: string | null;
+    suggested_last_name?: string | null;
+    suggested_email?: string | null;
+    suggested_job_title?: string | null;
+    suggested_company_name?: string | null;
   };
   phone?: string | null;
   hubspot_updated?: boolean;
@@ -103,7 +111,7 @@ export default function TelefonosPage() {
     } catch (err) {
       setResult({
         ok: false,
-        status: "not_found",
+        status: "not_in_system_no_phone",
         linkedin_url: url,
         error: err instanceof Error ? err.message : "Network error"
       });
@@ -125,10 +133,11 @@ export default function TelefonosPage() {
           <IconPhone size={22} /> Buscar teléfono con Lusha
         </h1>
         <div className="text-sm text-ink-muted mt-1 max-w-2xl">
-          Pega el LinkedIn URL del contacto. Lusha intenta levantar el
-          teléfono (~1 crédito si encuentra) y lo escribe directo al contact
-          de HubSpot. Si Lemlist ya había devuelto otro teléfono, lo
-          conservamos en una propiedad separada para que puedas comparar.
+          Pega el LinkedIn URL del contacto. Si está en weCAD-prospecting o
+          HubSpot, te muestro el teléfono de Lemlist (si lo tenemos) y
+          consulto Lusha para el otro número. Si NO está en sistema, te
+          muestro lo que Lusha levantó y puedes crearlo en HubSpot con un
+          click. Lusha cobra ~1 crédito solo si devuelve teléfono.
         </div>
       </header>
 
@@ -285,21 +294,11 @@ function ResultPanel({
   onForce: () => void;
   forceLoading: boolean;
 }) {
-  if (result.status === "not_found") {
-    return (
-      <div className="card p-4 border-l-4 border-danger-fg">
-        <div className="flex items-center gap-2 font-medium text-danger-fg">
-          <IconAlertCircle size={16} /> Contacto no encontrado
-        </div>
-        <div className="text-sm text-ink-muted mt-1">
-          {result.error ??
-            "No encontré ese LinkedIn en Supabase ni en HubSpot. Verifica que el contacto haya pasado por la app."}
-        </div>
-        <div className="text-xs text-ink-muted mt-2">
-          URL probada: <code>{result.linkedin_url}</code>
-        </div>
-      </div>
-    );
+  if (
+    result.status === "not_in_system_with_phone" ||
+    result.status === "not_in_system_no_phone"
+  ) {
+    return <NotInSystemPanel result={result} />;
   }
 
   if (result.status === "already_has_phone") {
@@ -458,12 +457,18 @@ function PhoneRow({
 
 function ContactInfo({ result }: { result: LookupResult }) {
   if (!result.contact) return null;
+  const sourceLabel =
+    result.contact.source === "supabase"
+      ? "weCAD-prospecting"
+      : result.contact.source === "hubspot"
+      ? "HubSpot"
+      : "Lusha";
   return (
     <div className="text-sm">
       <div>
         <strong>{result.contact.name ?? "(sin nombre)"}</strong>{" "}
         <span className="text-ink-muted text-xs">
-          (encontrado en {result.contact.source === "supabase" ? "weCAD-prospecting" : "HubSpot"})
+          (encontrado en {sourceLabel})
         </span>
       </div>
       <div className="text-xs text-ink-muted mt-0.5 space-y-0.5">
@@ -473,6 +478,189 @@ function ContactInfo({ result }: { result: LookupResult }) {
         {result.contact.supabase_contact_id && (
           <div>Supabase ID: {result.contact.supabase_contact_id}</div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function NotInSystemPanel({ result }: { result: LookupResult }) {
+  const c = result.contact;
+  const phoneFromLusha = c?.phone_lusha ?? null;
+  const hasPhone = result.status === "not_in_system_with_phone" && !!phoneFromLusha;
+
+  const [firstName, setFirstName] = useState(c?.suggested_first_name ?? "");
+  const [lastName, setLastName] = useState(c?.suggested_last_name ?? "");
+  const [email, setEmail] = useState(c?.suggested_email ?? "");
+  const [jobTitle, setJobTitle] = useState(c?.suggested_job_title ?? "");
+  const [companyName, setCompanyName] = useState(c?.suggested_company_name ?? "");
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState<{ hubspot_id: string; created: boolean } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function createInHubSpot() {
+    if (!firstName.trim() && !lastName.trim()) {
+      setError("Necesito al menos nombre o apellido.");
+      return;
+    }
+    setError(null);
+    setCreating(true);
+    try {
+      const res = await fetch("/api/hubspot/create-from-lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linkedin_url: result.linkedin_url,
+          first_name: firstName.trim() || null,
+          last_name: lastName.trim() || null,
+          email: email.trim() || null,
+          phone_lusha: phoneFromLusha,
+          job_title: jobTitle.trim() || null,
+          company_name: companyName.trim() || null
+        })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setCreated({ hubspot_id: data.hubspot_contact_id, created: !!data.created });
+      } else {
+        setError(data.error ?? "Falló la creación en HubSpot");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Network error");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="card p-4 border-l-4 border-warning-fg space-y-3">
+      <div className="flex items-center gap-2 font-medium text-warning-fg">
+        <IconAlertCircle size={16} />
+        {hasPhone
+          ? "Contacto fuera del sistema — pero Lusha lo encontró"
+          : "Contacto fuera del sistema — y Lusha no devolvió teléfono"}
+      </div>
+      <div className="text-sm text-ink-muted">
+        Este LinkedIn no está en weCAD-prospecting ni en HubSpot. Te muestro
+        los datos que Lusha pudo levantar (~1 crédito consumido si encontró
+        teléfono). Si querés tenerlo en HubSpot para futuras llamadas,
+        completá los campos y haz clic en "Crear en HubSpot".
+      </div>
+
+      {hasPhone && phoneFromLusha && (
+        <div className="rounded-md bg-success-bg/40 p-3">
+          <div className="text-xs text-ink-muted mb-1">Teléfono de Lusha</div>
+          <div className="font-semibold text-lg">📞 {phoneFromLusha}</div>
+        </div>
+      )}
+
+      {created ? (
+        <div className="rounded-md bg-success-bg p-3 text-sm text-success-fg space-y-1">
+          <div className="font-medium flex items-center gap-1.5">
+            <IconCheck size={15} />
+            {created.created
+              ? "Creado en HubSpot"
+              : "Ya existía en HubSpot — actualizado"}
+          </div>
+          <a
+            href={`https://app.hubspot.com/contacts/contacts/${created.hubspot_id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-brand"
+          >
+            Abrir en HubSpot <IconExternalLink size={11} />
+          </a>
+        </div>
+      ) : (
+        <div className="border-t border-divider pt-3 space-y-2">
+          <div className="text-sm font-medium">Crear en HubSpot</div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label">Nombre</label>
+              <input
+                type="text"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                className="input w-full"
+                placeholder="(requerido si no hay apellido)"
+              />
+            </div>
+            <div>
+              <label className="label">Apellido</label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                className="input w-full"
+              />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="input w-full"
+                placeholder="opcional"
+              />
+            </div>
+            <div>
+              <label className="label">Cargo</label>
+              <input
+                type="text"
+                value={jobTitle}
+                onChange={(e) => setJobTitle(e.target.value)}
+                className="input w-full"
+                placeholder="opcional"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="label">Empresa</label>
+              <input
+                type="text"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                className="input w-full"
+                placeholder="opcional"
+              />
+            </div>
+          </div>
+
+          {error && (
+            <div className="text-sm text-danger-fg flex items-center gap-1.5">
+              <IconAlertCircle size={14} /> {error}
+            </div>
+          )}
+
+          <button
+            onClick={createInHubSpot}
+            disabled={creating || (!firstName.trim() && !lastName.trim())}
+            className="btn-primary"
+          >
+            <IconUserPlus size={14} />
+            {creating ? "Creando…" : "Crear en HubSpot"}
+          </button>
+          <div className="text-xs text-ink-muted">
+            Se va a crear con el LinkedIn URL, los datos arriba y el teléfono
+            de Lusha (en la propiedad <code>wecad_phone_lusha</code>). No se
+            guarda en weCAD-prospecting — si querés tenerlo en la app también,
+            agrégalo via Sales Navigator después.
+          </div>
+        </div>
+      )}
+
+      {!hasPhone && result.lusha_debug !== undefined && (
+        <details className="text-xs">
+          <summary className="cursor-pointer text-ink-muted">
+            Ver respuesta cruda de Lusha
+          </summary>
+          <pre className="text-[10px] bg-ink-muted/10 p-2 rounded mt-1 overflow-auto max-h-72">
+            {JSON.stringify(result.lusha_debug, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      <div className="text-xs text-ink-muted">
+        URL probada: <code>{result.linkedin_url}</code>
       </div>
     </div>
   );
