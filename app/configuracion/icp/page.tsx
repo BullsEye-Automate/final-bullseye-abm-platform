@@ -25,26 +25,116 @@ type IcpDoc = {
   uploaded_at: string;
 };
 
-type Section = {
+type FieldDef = {
+  key: string;
+  label: string;
+  rows: number;
+  placeholder?: string;
+};
+
+type SectionDef = {
   id: string;
   title: string;
-  content: string;
+  matchKeywords: string[];   // palabras clave para matching flexible
+  fields: FieldDef[];
+};
+
+type SectionState = {
+  def: SectionDef;
+  values: Record<string, string>;
   collapsed: boolean;
 };
 
-// ── Canonical sections (orden fijo) ───────────────────────────────────
-const KNOWN_SECTIONS: { id: string; title: string }[] = [
-  { id: "datos_cliente",       title: "DATOS DEL CLIENTE" },
-  { id: "perfil_empresa",      title: "PERFIL DE EMPRESA OBJETIVO" },
-  { id: "senales_fit",         title: "SEÑALES DE FIT" },
-  { id: "buyer_persona",       title: "BUYER PERSONA" },
-  { id: "propuesta_valor",     title: "PROPUESTA DE VALOR" },
-  { id: "outreach_tono",       title: "OUTREACH Y TONO" },
-  { id: "clientes_referencia", title: "CLIENTES DE REFERENCIA" },
+// ── Definición de secciones y campos ──────────────────────────────────
+const SECTION_DEFS: SectionDef[] = [
+  {
+    id: "datos_cliente",
+    title: "DATOS DEL CLIENTE",
+    matchKeywords: ["datos", "cliente"],
+    fields: [
+      { key: "nombre_empresa",  label: "Nombre de la empresa",       rows: 1 },
+      { key: "contacto",        label: "Nombre del contacto",        rows: 1 },
+      { key: "industria",       label: "Industria / Sector",         rows: 1 },
+      { key: "descripcion",     label: "Descripción del negocio",    rows: 3 },
+      { key: "otros",           label: "Otros datos relevantes",     rows: 2 },
+    ],
+  },
+  {
+    id: "perfil_empresa",
+    title: "PERFIL DE EMPRESA OBJETIVO",
+    matchKeywords: ["perfil", "empresa", "objetivo"],
+    fields: [
+      { key: "tipo_empresa",  label: "Tipo de empresa objetivo",          rows: 2 },
+      { key: "tamano",        label: "Tamaño (empleados / revenue)",      rows: 1 },
+      { key: "industrias",    label: "Industrias objetivo",               rows: 2 },
+      { key: "geografias",    label: "Geografías prioritarias",           rows: 2 },
+      { key: "tecnologias",   label: "Tecnologías / Stack que usa",       rows: 2 },
+    ],
+  },
+  {
+    id: "senales_fit",
+    title: "SEÑALES DE FIT",
+    matchKeywords: ["señal", "fit"],
+    fields: [
+      { key: "senales_positivas",    label: "Señales positivas de fit",             rows: 4 },
+      { key: "senales_negativas",    label: "Señales negativas / descalificadores", rows: 3 },
+      { key: "tech_stack",           label: "Tech stack del cliente ideal",          rows: 3 },
+      { key: "eventos_disparadores", label: "Eventos disparadores de compra",        rows: 3 },
+    ],
+  },
+  {
+    id: "buyer_persona",
+    title: "BUYER PERSONA",
+    matchKeywords: ["buyer", "persona"],
+    fields: [
+      { key: "cargos_decisores",       label: "Cargos decisores (quien aprueba)",          rows: 2 },
+      { key: "cargos_influenciadores", label: "Cargos influenciadores (quien recomienda)", rows: 2 },
+      { key: "cargos_evitar",          label: "Cargos a evitar",                           rows: 2 },
+      { key: "departamentos",          label: "Departamentos objetivo",                     rows: 2 },
+      { key: "seniority",              label: "Seniority mínimo",                          rows: 1 },
+      { key: "psicografico",           label: "Perfil psicográfico",                       rows: 3 },
+    ],
+  },
+  {
+    id: "propuesta_valor",
+    title: "PROPUESTA DE VALOR",
+    matchKeywords: ["propuesta", "valor"],
+    fields: [
+      { key: "propuesta_core",  label: "Propuesta de valor en 1-2 oraciones",  rows: 3 },
+      { key: "problemas",       label: "Top 3 problemas que resuelves",         rows: 3 },
+      { key: "resultados",      label: "Top 3 resultados que entregas",         rows: 3 },
+      { key: "competidores",    label: "Competidores principales",              rows: 2 },
+      { key: "diferenciador",   label: "Por qué te eligen vs competencia",      rows: 3 },
+    ],
+  },
+  {
+    id: "outreach_tono",
+    title: "OUTREACH Y TONO",
+    matchKeywords: ["outreach", "tono"],
+    fields: [
+      { key: "tono",       label: "Tono de comunicación",                         rows: 2 },
+      { key: "canales",    label: "Canales prioritarios",                          rows: 2 },
+      { key: "hook",       label: "Mensaje de apertura / hook principal",          rows: 3 },
+      { key: "objeciones", label: "Objeciones comunes y cómo responderlas",        rows: 4 },
+      { key: "cta",        label: "CTA / llamada a la acción preferida",           rows: 2 },
+    ],
+  },
+  {
+    id: "clientes_referencia",
+    title: "CLIENTES DE REFERENCIA",
+    matchKeywords: ["clientes", "referencia"],
+    fields: [
+      { key: "clientes_actuales", label: "Clientes actuales de referencia",             rows: 4 },
+      { key: "casos_exito",       label: "Casos de éxito / resultados reales",          rows: 4 },
+      { key: "patron_comun",      label: "Patrón común entre los mejores clientes",     rows: 3 },
+    ],
+  },
 ];
 
-function emptySection(ks: { id: string; title: string }): Section {
-  return { ...ks, content: "", collapsed: false };
+function emptySection(def: SectionDef): SectionState {
+  const values: Record<string, string> = {};
+  def.fields.forEach((f) => (values[f.key] = ""));
+  return { def, values, collapsed: false };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -53,96 +143,122 @@ function formatBytes(n: number) {
   return `${(n / 1000).toFixed(1)}k chars`;
 }
 
-function normalizeTitle(s: string): string {
+function normalizeStr(s: string): string {
   return s
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[̀-ͯ]/g, "")  // elimina diacríticos (tildes, ñ→n, etc.)
     .replace(/[^a-z0-9]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-// Es título si la línea es todo mayúsculas y contiene al menos una letra
+// Devuelve true si el chunk es un título de sección (todo mayúsculas)
 function looksLikeTitle(line: string): boolean {
   const t = line.trim();
-  return t.length > 1 && t === t.toUpperCase() && /[A-ZÁÉÍÓÚÑÜ]/.test(t);
+  return t.length > 1 && t === t.toUpperCase() && /[A-ZÀ-Ü]/.test(t);
 }
 
-// ── Parser: plain text → sections ─────────────────────────────────────
-// Soporta separadores de cualquier longitud (---, -----, ---...----)
-function parseIcp(text: string): Section[] {
-  if (!text.trim()) return KNOWN_SECTIONS.map(emptySection);
+// Matching flexible: todos los matchKeywords deben aparecer en el título normalizado
+function matchesDef(fileTitle: string, def: SectionDef): boolean {
+  const norm = normalizeStr(fileTitle);
+  return def.matchKeywords.every((kw) => norm.includes(normalizeStr(kw)));
+}
 
-  // Dividir por líneas que sean solo guiones (3 o más)
+// ── Parser de campos dentro de una sección ────────────────────────────
+// Formato estructurado: [Label del campo]\ncontenido\n\n[Siguiente campo]...
+// Si no tiene esa estructura, vuelca todo en el primer campo
+function parseFieldValues(sectionText: string, fields: FieldDef[]): Record<string, string> {
+  const values: Record<string, string> = {};
+  fields.forEach((f) => (values[f.key] = ""));
+
+  const FIELD_TAG = /^\[(.+)\]\s*$/m;
+
+  if (FIELD_TAG.test(sectionText)) {
+    // Formato estructurado — dividir por [etiqueta]
+    const parts = sectionText.split(/^\[(.+)\]\s*$/m);
+    // parts = ['prelude', 'label1', 'content1', 'label2', 'content2', ...]
+    for (let i = 1; i < parts.length; i += 2) {
+      const label = parts[i]?.trim() ?? "";
+      const content = parts[i + 1]?.trim() ?? "";
+      const field = fields.find(
+        (f) => normalizeStr(f.label) === normalizeStr(label)
+      );
+      if (field) values[field.key] = content;
+    }
+  } else if (sectionText.trim()) {
+    // Texto libre — volcar todo en el primer campo
+    values[fields[0].key] = sectionText.trim();
+  }
+
+  return values;
+}
+
+// ── Parser principal: texto plano → secciones ─────────────────────────
+function parseIcp(text: string): SectionState[] {
+  if (!text.trim()) return SECTION_DEFS.map(emptySection);
+
+  // Dividir por líneas de 3 o más guiones
   const chunks = text
     .split(/^-{3,}\s*$/m)
     .map((c) => c.trim())
     .filter(Boolean);
 
-  // Emparejar: título → contenido siguiente (si no es título)
-  const parsed: { title: string; content: string }[] = [];
+  // Emparejar título → contenido siguiente
+  const rawSections: { title: string; content: string }[] = [];
   let i = 0;
   while (i < chunks.length) {
     const firstLine = chunks[i].split("\n")[0].trim();
     if (looksLikeTitle(firstLine)) {
       const title = firstLine;
       const next = chunks[i + 1];
-      const content = next && !looksLikeTitle(next.split("\n")[0].trim()) ? next : "";
-      parsed.push({ title, content });
+      const content =
+        next && !looksLikeTitle(next.split("\n")[0].trim()) ? next : "";
+      rawSections.push({ title, content });
       i += content ? 2 : 1;
     } else {
-      // Bloque de contenido huérfano — anexar al último título si existe
-      if (parsed.length > 0) {
-        parsed[parsed.length - 1].content += "\n\n" + chunks[i];
+      if (rawSections.length > 0) {
+        rawSections[rawSections.length - 1].content +=
+          "\n\n" + chunks[i];
       }
       i++;
     }
   }
 
-  // Mapear a secciones canónicas (mantiene orden fijo)
-  const sections: Section[] = KNOWN_SECTIONS.map((ks) => {
-    const match = parsed.find(
-      (p) => normalizeTitle(p.title) === normalizeTitle(ks.title)
-    );
-    return { id: ks.id, title: ks.title, content: match?.content ?? "", collapsed: false };
+  // Mapear cada sección rawSection → SectionDef por matching flexible
+  return SECTION_DEFS.map((def) => {
+    const raw = rawSections.find((rs) => matchesDef(rs.title, def));
+    const values = raw
+      ? parseFieldValues(raw.content, def.fields)
+      : Object.fromEntries(def.fields.map((f) => [f.key, ""]));
+    return { def, values, collapsed: false };
   });
-
-  // Añadir secciones extras no canónicas
-  for (const p of parsed) {
-    const isKnown = KNOWN_SECTIONS.some(
-      (ks) => normalizeTitle(ks.title) === normalizeTitle(p.title)
-    );
-    if (!isKnown) {
-      sections.push({
-        id: normalizeTitle(p.title).replace(/\s+/g, "_") || "extra",
-        title: p.title,
-        content: p.content,
-        collapsed: false,
-      });
-    }
-  }
-
-  return sections;
 }
 
-// ── Serializer: sections → plain text ─────────────────────────────────
-function serializeIcp(sections: Section[]): string {
+// ── Serializador: secciones → texto plano ─────────────────────────────
+function serializeIcp(sections: SectionState[]): string {
   return sections
-    .filter((s) => s.content.trim())
-    .map((s) => `---\n${s.title}\n---\n${s.content.trim()}`)
+    .filter((s) => s.def.fields.some((f) => s.values[f.key]?.trim()))
+    .map((s) => {
+      const sep = "-".repeat(42);
+      const fieldsText = s.def.fields
+        .filter((f) => s.values[f.key]?.trim())
+        .map((f) => `[${f.label}]\n${s.values[f.key].trim()}`)
+        .join("\n\n");
+      return `${sep}\n${s.def.title}\n${sep}\n\n${fieldsText}`;
+    })
     .join("\n\n");
 }
 
-// ── Main component ─────────────────────────────────────────────────────
+// ── Componente principal ───────────────────────────────────────────────
 export default function IcpPage() {
   const { currentClient } = useClient();
-  const [doc, setDoc]       = useState<IcpDoc | null>(null);
-  const [rawText, setRawText] = useState("");
-  const [sections, setSections] = useState<Section[]>(() =>
-    KNOWN_SECTIONS.map(emptySection)
+  const [doc, setDoc]         = useState<IcpDoc | null>(null);
+  const [sections, setSections] = useState<SectionState[]>(() =>
+    SECTION_DEFS.map(emptySection)
   );
-  const [mode, setMode]     = useState<"form" | "text">("form");
+  const [rawText, setRawText] = useState("");
+  const [mode, setMode]       = useState<"form" | "text">("form");
   const [fileName, setFileName] = useState("ICP");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving]   = useState(false);
@@ -161,7 +277,9 @@ export default function IcpPage() {
     if (!currentClient) return;
     setLoading(true);
     setError(null);
-    const r = await fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" });
+    const r = await fetch(`/api/clients/${currentClient.id}/context`, {
+      cache: "no-store",
+    });
     const j = await r.json();
     setLoading(false);
     if (j.error) { setError(j.error); return; }
@@ -175,20 +293,15 @@ export default function IcpPage() {
       applyContent(icpDoc.content);
     } else {
       setRawText("");
-      setSections(KNOWN_SECTIONS.map(emptySection));
+      setSections(SECTION_DEFS.map(emptySection));
     }
   }
 
   useEffect(() => { load(); }, [currentClient?.id]);
 
-  // Sincronizar al cambiar de vista
   function switchMode(next: "form" | "text") {
-    if (next === "text" && mode === "form") {
-      setRawText(serializeIcp(sections));
-    }
-    if (next === "form" && mode === "text") {
-      setSections(parseIcp(rawText));
-    }
+    if (next === "text" && mode === "form") setRawText(serializeIcp(sections));
+    if (next === "form" && mode === "text") setSections(parseIcp(rawText));
     setMode(next);
   }
 
@@ -225,7 +338,8 @@ export default function IcpPage() {
 
   async function save() {
     if (!currentClient) return;
-    const content = mode === "form" ? serializeIcp(sections) : rawText;
+    const content =
+      mode === "form" ? serializeIcp(sections) : rawText;
     if (!content.trim()) return;
     setSaving(true);
     setError(null);
@@ -234,12 +348,12 @@ export default function IcpPage() {
       ? await fetch(`/api/clients/${currentClient.id}/context/${doc.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file_name: fileName, content })
+          body: JSON.stringify({ file_name: fileName, content }),
         })
       : await fetch(`/api/clients/${currentClient.id}/context`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file_name: fileName, file_type: "icp", content })
+          body: JSON.stringify({ file_name: fileName, file_type: "icp", content }),
         });
 
     const j = await r.json();
@@ -253,14 +367,15 @@ export default function IcpPage() {
   async function remove() {
     if (!currentClient || !doc) return;
     setDeleting(true);
-    const r = await fetch(`/api/clients/${currentClient.id}/context/${doc.id}`, {
-      method: "DELETE"
-    });
+    const r = await fetch(
+      `/api/clients/${currentClient.id}/context/${doc.id}`,
+      { method: "DELETE" }
+    );
     setDeleting(false);
     if (r.ok) {
       setDoc(null);
       setRawText("");
-      setSections(KNOWN_SECTIONS.map(emptySection));
+      setSections(SECTION_DEFS.map(emptySection));
       setFileName("ICP");
       setSavedAt(null);
     }
@@ -268,20 +383,28 @@ export default function IcpPage() {
 
   function toggleSection(id: string) {
     setSections((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, collapsed: !s.collapsed } : s))
+      prev.map((s) =>
+        s.def.id === id ? { ...s, collapsed: !s.collapsed } : s
+      )
     );
   }
 
-  function updateSection(id: string, content: string) {
+  function updateField(sectionId: string, fieldKey: string, value: string) {
     setSections((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, content } : s))
+      prev.map((s) =>
+        s.def.id === sectionId
+          ? { ...s, values: { ...s.values, [fieldKey]: value } }
+          : s
+      )
     );
     setSavedAt(null);
   }
 
   const hasContent =
     mode === "form"
-      ? sections.some((s) => s.content.trim().length > 0)
+      ? sections.some((s) =>
+          s.def.fields.some((f) => s.values[f.key]?.trim())
+        )
       : rawText.trim().length > 0;
 
   if (!currentClient) {
@@ -294,7 +417,7 @@ export default function IcpPage() {
   }
 
   return (
-    <div className="space-y-5 max-w-2xl">
+    <div className="space-y-5 max-w-3xl">
       {/* ── Header ── */}
       <header className="flex items-start justify-between gap-4">
         <div>
@@ -322,7 +445,7 @@ export default function IcpPage() {
             </span>
           )}
 
-          {/* Toggle vista formulario / texto */}
+          {/* Toggle vista */}
           <div
             className="flex rounded-lg overflow-hidden"
             style={{ border: "1px solid #E5E2F0" }}
@@ -332,9 +455,8 @@ export default function IcpPage() {
               className="flex items-center gap-1 px-2.5 py-1.5 text-xs transition"
               style={{
                 background: mode === "form" ? "#251762" : "transparent",
-                color:      mode === "form" ? "#fff"    : undefined
+                color: mode === "form" ? "#fff" : undefined,
               }}
-              title="Vista formulario"
             >
               <IconLayoutList size={13} /> Formulario
             </button>
@@ -343,9 +465,8 @@ export default function IcpPage() {
               className="flex items-center gap-1 px-2.5 py-1.5 text-xs transition"
               style={{
                 background: mode === "text" ? "#251762" : "transparent",
-                color:      mode === "text" ? "#fff"    : undefined
+                color: mode === "text" ? "#fff" : undefined,
               }}
-              title="Vista texto plano"
             >
               <IconCode size={13} /> Texto
             </button>
@@ -410,9 +531,9 @@ export default function IcpPage() {
           <IconLoader2 size={18} className="animate-spin" /> Cargando ICP…
         </div>
       ) : mode === "form" ? (
-        // ── Vista formulario ───────────────────────────────────────────
+        // ── Vista formulario ──────────────────────────────────────────
         <div className="space-y-3">
-          {/* Nombre del documento */}
+          {/* Nombre */}
           <div className="card py-3">
             <div className="flex items-center gap-3">
               <IconFileText size={15} className="text-ink-subtle shrink-0" />
@@ -420,7 +541,7 @@ export default function IcpPage() {
                 className="input flex-1"
                 value={fileName}
                 onChange={(e) => setFileName(e.target.value)}
-                placeholder="Nombre del documento"
+                placeholder="Nombre del documento ICP"
               />
               {hasContent && (
                 <span className="text-xs text-ink-subtle whitespace-nowrap">
@@ -437,20 +558,24 @@ export default function IcpPage() {
               className="w-full border-2 border-dashed border-[#E5E2F0] rounded-xl p-10 text-center hover:border-brand transition-colors"
             >
               <IconUpload size={28} className="mx-auto mb-2 text-ink-subtle" />
-              <p className="font-medium text-ink">Sube el archivo ICP del cliente</p>
+              <p className="font-medium text-ink">
+                Sube el archivo ICP del cliente
+              </p>
               <p className="text-sm text-ink-muted mt-1">
-                .txt · .md · .docx · .pdf — o escribe directamente en cada sección
+                .txt · .md · .docx · .pdf — o completa las secciones directamente
               </p>
             </button>
           )}
 
-          {/* Secciones colapsables */}
+          {/* Secciones */}
           {sections.map((section) => (
             <SectionBlock
-              key={section.id}
+              key={section.def.id}
               section={section}
-              onToggle={() => toggleSection(section.id)}
-              onChange={(v) => updateSection(section.id, v)}
+              onToggle={() => toggleSection(section.def.id)}
+              onFieldChange={(key, val) =>
+                updateField(section.def.id, key, val)
+              }
             />
           ))}
 
@@ -460,13 +585,13 @@ export default function IcpPage() {
               {new Date(doc.uploaded_at).toLocaleDateString("es", {
                 day: "2-digit",
                 month: "short",
-                year: "numeric"
+                year: "numeric",
               })}
             </p>
           )}
         </div>
       ) : (
-        // ── Vista texto plano ──────────────────────────────────────────
+        // ── Vista texto plano ─────────────────────────────────────────
         <div className="card space-y-4">
           <div className="flex items-center gap-3">
             <IconFileText size={15} className="text-ink-subtle shrink-0" />
@@ -483,26 +608,25 @@ export default function IcpPage() {
             )}
           </div>
 
-          {!rawText && (
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="w-full border-2 border-dashed border-[#E5E2F0] rounded-xl p-8 text-center hover:border-brand transition-colors"
-            >
-              <IconUpload size={24} className="mx-auto mb-2 text-ink-subtle" />
-              <p className="font-medium text-ink">Sube o pega el ICP aquí</p>
-            </button>
-          )}
-
           <textarea
-            className="input min-h-[520px] font-mono text-xs leading-relaxed"
+            className="input min-h-[560px] font-mono text-xs leading-relaxed"
             placeholder={
               "Pega el contenido del ICP o sube un archivo.\n\n" +
               "Formato esperado:\n" +
-              "---\nDATOS DEL CLIENTE\n---\ncontenido...\n\n" +
-              "---\nPERFIL DE EMPRESA OBJETIVO\n---\ncontenido..."
+              "------------------------------------------\n" +
+              "DATOS DEL CLIENTE\n" +
+              "------------------------------------------\n" +
+              "contenido...\n\n" +
+              "------------------------------------------\n" +
+              "BUYER PERSONA\n" +
+              "------------------------------------------\n" +
+              "contenido..."
             }
             value={rawText}
-            onChange={(e) => { setRawText(e.target.value); setSavedAt(null); }}
+            onChange={(e) => {
+              setRawText(e.target.value);
+              setSavedAt(null);
+            }}
           />
 
           {doc && (
@@ -511,7 +635,7 @@ export default function IcpPage() {
               {new Date(doc.uploaded_at).toLocaleDateString("es", {
                 day: "2-digit",
                 month: "short",
-                year: "numeric"
+                year: "numeric",
               })}
             </p>
           )}
@@ -525,55 +649,88 @@ export default function IcpPage() {
 function SectionBlock({
   section,
   onToggle,
-  onChange
+  onFieldChange,
 }: {
-  section: Section;
+  section: SectionState;
   onToggle: () => void;
-  onChange: (v: string) => void;
+  onFieldChange: (key: string, val: string) => void;
 }) {
-  const hasContent = section.content.trim().length > 0;
+  const filledCount = section.def.fields.filter(
+    (f) => section.values[f.key]?.trim()
+  ).length;
+  const totalCount = section.def.fields.length;
 
   return (
-    <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #E5E2F0" }}>
-      {/* Header de sección */}
+    <div
+      className="rounded-xl overflow-hidden"
+      style={{ border: "1px solid #E5E2F0" }}
+    >
+      {/* Header */}
       <button
         className="w-full flex items-center justify-between px-4 py-3 text-left"
         style={{ background: "#251762" }}
         onClick={onToggle}
       >
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-3">
           <span className="font-semibold text-sm text-white tracking-wide">
-            {section.title}
+            {section.def.title}
           </span>
-          {hasContent && (
-            <span
-              className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
-              style={{ background: "rgba(98,224,216,0.2)", color: "#62E0D8" }}
-            >
-              {formatBytes(section.content.length)}
-            </span>
-          )}
+          <span
+            className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+            style={{
+              background:
+                filledCount === totalCount
+                  ? "rgba(98,224,216,0.25)"
+                  : "rgba(255,255,255,0.12)",
+              color: filledCount === totalCount ? "#62E0D8" : "rgba(255,255,255,0.5)",
+            }}
+          >
+            {filledCount}/{totalCount} campos
+          </span>
         </div>
         <IconChevronDown
           size={16}
           style={{
             color: "#62E0D8",
             transform: section.collapsed ? "rotate(-90deg)" : "rotate(0deg)",
-            transition: "transform 0.2s"
+            transition: "transform 0.2s",
           }}
         />
       </button>
 
-      {/* Contenido editable */}
+      {/* Campos */}
       {!section.collapsed && (
-        <div className="p-4 bg-white">
-          <textarea
-            className="input w-full text-sm leading-relaxed"
-            style={{ minHeight: hasContent ? "140px" : "80px" }}
-            placeholder={`Contenido de ${section.title.toLowerCase()}…`}
-            value={section.content}
-            onChange={(e) => onChange(e.target.value)}
-          />
+        <div className="divide-y divide-[#F0EDF8]">
+          {section.def.fields.map((field) => (
+            <div key={field.key} className="px-5 py-4">
+              <label
+                className="block text-xs font-semibold text-ink mb-1.5"
+                style={{ letterSpacing: "0.01em" }}
+              >
+                {field.label}
+              </label>
+              <textarea
+                rows={field.rows}
+                className="w-full rounded-lg px-3 py-2 text-sm leading-relaxed resize-y outline-none transition-colors"
+                style={{
+                  background: "#FAFAF9",
+                  border: "1px solid #E5E2F0",
+                  color: "#1a1a2e",
+                }}
+                onFocus={(e) =>
+                  (e.currentTarget.style.borderColor = "#62E0D8")
+                }
+                onBlur={(e) =>
+                  (e.currentTarget.style.borderColor = "#E5E2F0")
+                }
+                placeholder={
+                  field.placeholder ?? `${field.label.toLowerCase()}…`
+                }
+                value={section.values[field.key] ?? ""}
+                onChange={(e) => onFieldChange(field.key, e.target.value)}
+              />
+            </div>
+          ))}
         </div>
       )}
     </div>
