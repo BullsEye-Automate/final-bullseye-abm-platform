@@ -32,7 +32,7 @@ function renderIcpPrompt(icp: IcpConfig): string {
   const acceptedOrgs = icp.org_types.filter((o) => o.accept);
   const rejectedOrgs = icp.org_types.filter((o) => !o.accept);
   return [
-    "# weCAD4you · ICP vigente",
+    "# BullsEye · ICP vigente",
     "",
     `Versión del ICP: ${icp.version}`,
     "",
@@ -64,7 +64,7 @@ function renderIcpPrompt(icp: IcpConfig): string {
   ].join("\n");
 }
 
-const SYSTEM_DISCOVERY = `Eres analista de prospección B2B para weCAD4you, un servicio de outsourcing de diseño CAD/CAM dental.
+const SYSTEM_DISCOVERY = `Eres analista de prospección B2B para BullsEye, una agencia especializada en prospección B2B.
 Tu trabajo es identificar empresas reales que cumplen el ICP, basándote en la investigación web que se te entregará.
 
 Reglas:

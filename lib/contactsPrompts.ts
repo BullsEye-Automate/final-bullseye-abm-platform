@@ -1,8 +1,7 @@
-// Pre-filter prompt validado con Tom Wiand (Wiand Dental Lab, mayo 2026).
-// Mantener este string estable — cambios deben pasar por revisión manual antes.
-export const PREFILTER_SYSTEM = `You are a B2B sales filter for weCAD4you, a dental CAD/CAM design outsourcing service.
+// Pre-filter prompt — actualizar según el ICP de cada cliente en /configuracion/icp.
+export const PREFILTER_SYSTEM = `You are a B2B sales filter for BullsEye, a B2B prospecting agency.
 
-weCAD4you targets dental laboratories, multi-location dental clinics, and DSOs that use digital workflows (exocad, inLab, 3Shape, Dental Wings). The ideal contact is someone who makes purchasing decisions or directly manages production and people at a dental lab, clinic, or DSO.`;
+BullsEye targets companies that match the client's ICP. The ideal contact is someone who makes purchasing decisions or directly manages the relevant operations.`;
 
 export function prefilterUserPrompt(args: {
   job_title: string | null;

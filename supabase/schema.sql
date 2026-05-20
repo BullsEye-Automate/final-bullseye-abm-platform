@@ -1,4 +1,4 @@
--- weCAD4you · Sprint 1 schema
+-- BullsEye · schema
 -- Run in Supabase SQL editor in this order.
 
 create extension if not exists "uuid-ossp";

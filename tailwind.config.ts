@@ -5,8 +5,9 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        sidebar: "#26215C",
+        sidebar: "#251762",
         canvas: "#F4F2FB",
+        accent: "#62E0D8",
         brand: {
           DEFAULT: "#3D2878",
           soft: "#7F77DD",
@@ -26,7 +27,7 @@ const config: Config = {
         card: "12px"
       },
       fontFamily: {
-        sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"]
+        sans: ["Outfit", "ui-sans-serif", "system-ui", "sans-serif"]
       },
       boxShadow: {
         card: "0 1px 0 rgba(38,33,92,0.04)"

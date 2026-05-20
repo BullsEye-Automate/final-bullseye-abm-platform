@@ -1,4 +1,4 @@
--- ICP inicial v1 — basado en weCAD4you_ICP_v3.docx
+-- ICP inicial v1 — configurar en /configuracion/icp según el cliente
 insert into icp_config (
   version, is_active, org_types,
   signals_strong, signals_medium, signals_weak,

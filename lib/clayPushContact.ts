@@ -114,8 +114,8 @@ export async function pushContactToClay(
     cad_software: company.cad_software ?? "",
     scanner_technology: company.scanner_technology ?? "",
     fit_signals: company.fit_signals ?? "",
-    wecad_company_id: company.id,
-    wecad_contact_id: contact.id
+    bullseye_company_id: company.id,
+    bullseye_contact_id: contact.id
   };
 
   let clayRes: Response;

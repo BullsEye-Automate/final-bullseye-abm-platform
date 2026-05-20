@@ -90,7 +90,7 @@ export default function IcpPage() {
           <div>
             <div className="font-medium">No hay ICP configurado todavía.</div>
             <div className="text-sm text-ink-muted mt-1">
-              Crea la versión v1 con los valores por defecto del documento weCAD4you_ICP. Después
+              Crea la versión v1 con los valores por defecto del ICP. Después
               podrás editarla y guardar versiones nuevas desde esta misma pantalla.
             </div>
           </div>

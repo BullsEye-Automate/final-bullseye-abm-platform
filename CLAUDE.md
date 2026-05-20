@@ -1,4 +1,4 @@
-# weCAD4you — Contexto Maestro para Claude Code
+# BullsEye — Contexto Maestro para Claude Code
 
 > Este archivo es leído automáticamente por Claude Code en cada sesión.
 > Mantenlo actualizado a medida que el proyecto evoluciona.
@@ -7,66 +7,9 @@
 
 ## Quiénes somos
 
-**weCAD4you** (wecad4you.com) es una empresa americana de outsourcing de diseño CAD dental para laboratorios y clínicas en USA, Canadá y Europa. Diseñamos prótesis dentales digitales con una tasa de remake <3% y entrega en 6h (rush) o 24h (estándar). Software principal: **Exocad** (mayoría de casos) + InLab.
+**BullsEye** es una agencia de prospección B2B. La plataforma orquesta todo el pipeline de prospección: discovery de empresas, curación humana, búsqueda de contactos, pre-filtro IA, lead scoring, generación de copy personalizado, outreach multicanal y análisis de resultados.
 
-El dueño del proyecto **no tiene conocimientos de programación** — explicar conceptos con claridad, justificar decisiones técnicas y recomendar el camino más simple y robusto en cada paso.
-
----
-
-## Flujo operacional actual
-
-```
-Cliente envía caso
-      ↓
-[⚠ QC ENTRADA — hoy manual, objetivo: automatizar]
-      ↓
-Asignación a diseñador (por complejidad, producto, software, experiencia, capacidad)
-      ↓
-Diseño en Exocad / InLab
-      ↓
-[⚠ QC SALIDA — hoy manual, objetivo: automatizar]
-      ↓
-Entrega al cliente
-```
-
----
-
-## Plataformas por donde recibimos casos
-
-| Plataforma | Estado API | Notas |
-|---|---|---|
-| **Vevi Dental** | ✅ Lista | API REST activa. Ver sección de credenciales. |
-| **DS Core** (Dentsply Sirona) | 🟡 Requiere registro partner | ~40% de casos. API en open.dscore.com. URGENTE: Connect Case Center cierra 15 mayo 2026. |
-| **Medit Link** | 🟡 Requiere registro partner | OpenAPI documentada, OAuth 2.0. |
-| **Exocad DentalShare** | ⏳ Fase posterior | Por investigar. |
-| **Dropbox** | ✅ Lista | Usamos Dropbox como respaldo de todos los casos. API bien documentada. |
-
----
-
-## API Vevi Dental
-
-```
-Base URL:  https://portal.wecad4you.com/api/services/v1/
-Auth:      Header → X-Session-Token: 5Wj5Y850N52n0ekJ0ZdJsfkYZNkUDIoR98QJ-Fnnpbg
-Método:    HTTP GET para todos los endpoints
-Paginación: parámetro `page` (0,1,2...) — máx 50 items por página, campo `has_more`
-Delta sync: parámetro `updated_since` en ISO 8601
-```
-
-**Endpoints relevantes:**
-
-| Endpoint | Descripción |
-|---|---|
-| `/works` | Lista de trabajos/casos |
-| `/works/:id` | Detalle completo de un trabajo (productos, trazabilidad, tareas) |
-| `/clinics` | Clientes (laboratorios/clínicas) |
-| `/products` | Productos configurados |
-| `/technicians` | Diseñadores / técnicos |
-| `/stages` | Fases del flujo |
-| `/tasks` | Tareas realizadas o pendientes |
-| `/work_products` | Productos vendidos por trabajo |
-| `/delivery_notes` | Albaranes |
-| `/invoices` | Facturas |
+**Arquitectura multi-tenant:** la app sirve a múltiples clientes (cada uno con su propio ICP, campañas de Lemlist, tablas de Clay y pipeline de HubSpot).
 
 ---
 
@@ -75,56 +18,17 @@ Delta sync: parámetro `updated_since` en ISO 8601
 **Entorno local (Mac):**
 - Node.js v20.20
 - npm v11.11
-- Vercel CLI v53 (ya instalado — deploy con un comando)
+- Vercel CLI v53
 - Git v2.39
-- VS Code + extensión Claude Code
 
-**Stack del portal (acordado):**
-- **Framework:** Next.js 14+ (App Router)
-- **Base de datos:** Supabase (PostgreSQL gestionado, gratuito para empezar)
-- **ORM:** Prisma
+**Stack:**
+- **Framework:** Next.js 14 (App Router)
+- **Base de datos:** Supabase (PostgreSQL)
 - **Deploy:** Vercel
-- **Estilos:** Tailwind CSS
+- **Estilos:** Tailwind CSS + Outfit (Google Fonts)
 - **Lenguaje:** TypeScript
 
-**Por qué este stack:** Node ya instalado, Vercel ya instalado (deploy = `vercel --prod`), Supabase no requiere instalar nada localmente, Next.js es el estándar actual para portales web con APIs integradas.
-
----
-
-## Proyectos y estado actual
-
-### PROYECTO 1 — Portal weCAD4you ← ACTIVO
-
-**Objetivo:** Reemplazar Vevi Dental con un portal 100% propio. Columna vertebral del negocio.
-
-**Fases:**
-
-- [x] Arquitectura definida
-- [ ] **FASE 1 ← AQUÍ ESTAMOS:** Crear proyecto Next.js + Supabase + sincronizar trabajos desde API Vevi Dental
-- [ ] FASE 2: Integrar DS Core + Medit Link
-- [ ] FASE 3: Panel interno — vista unificada de todos los casos
-- [ ] FASE 4: Sincronización automática con Dropbox (carpeta por caso)
-- [ ] FASE 5+: Portal para clientes, pagos, mensajería, asignación de diseñadores, QC integrado
-
-**Referencia competitiva:** Tenemos acceso al portal de **Evident** (competidor directo) — revisar su UX para inspiración al diseñar las vistas del portal.
-
----
-
-### PROYECTO 2 — Agente QC de Entrada ← PENDIENTE (después de Fase 1)
-
-Automatizar revisión de casos recibidos: calidad de escaneos, archivos STL, checklist de entrada. Documentación de buenos vs malos escaneos disponible para entrenamiento.
-
----
-
-### PROYECTO 3 — Agente QC de Salida ← PENDIENTE
-
-Revisión automática del diseño terminado: parámetros técnicos, configuración del cliente, fases administrativas completadas.
-
----
-
-### PROYECTO 4 — Asistente IA de Diseño Dental ← LARGO PLAZO
-
-Copiloto dentro de Exocad para asistir a diseñadores. No reemplaza — potencia. Entrenado con documentación de buenos/malos diseños.
+**Producción:** https://bullseye-abm-platform-eq6f.vercel.app
 
 ---
 
@@ -134,55 +38,145 @@ Copiloto dentro de Exocad para asistir a diseñadores. No reemplaza — potencia
 - Comentarios en **español**
 - Variables y funciones en **inglés** (estándar de código)
 - Commits en español, descriptivos
-- Nunca hardcodear credenciales — siempre usar `.env.local`
-- Siempre explicar qué hace cada bloque de código importante
+- Nunca hardcodear credenciales — siempre usar `.env.local` o variables Vercel
+- Propiedades HubSpot usan prefijo `bullseye_` (no `wecad_`)
+- IDs de Clay usan `bullseye_company_id` y `bullseye_contact_id`
 
 ---
 
-## Estructura de carpetas objetivo (Fase 1)
+## Variables de entorno configuradas en Vercel
 
 ```
-wecad-portal/
-├── CLAUDE.md                  ← este archivo
-├── .env.local                 ← credenciales (nunca a Git)
-├── .gitignore
-├── prisma/
-│   └── schema.prisma          ← modelos de base de datos
-├── src/
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── sync/
-│   │   │       └── vevi/
-│   │   │           └── route.ts   ← endpoint que sincroniza con Vevi
-│   │   └── dashboard/
-│   │       └── page.tsx           ← primera vista de casos
-│   ├── lib/
-│   │   ├── vevi.ts            ← cliente API Vevi Dental
-│   │   ├── supabase.ts        ← cliente Supabase
-│   │   └── prisma.ts          ← cliente Prisma
-│   └── types/
-│       └── vevi.ts            ← tipos TypeScript de la API Vevi
-└── package.json
+SUPABASE_URL=https://ihxjjbbwldrdjhlvzkix.supabase.co
+ANTHROPIC_API_KEY=configurada
+PERPLEXITY_API_KEY=configurada
+LEMLIST_API_KEY=configurada
+HUBSPOT_ACCESS_TOKEN=configurada
+LUSHA_API_KEY=configurada
+CLAY_WEBHOOK_SECRET=bullseye-clay-2026
 ```
 
 ---
 
-## Próximo paso inmediato
+## ARQUITECTURA MULTI-TENANT
 
-Ejecutar en orden en la terminal de VS Code:
+La app es usada por BullsEye para gestionar múltiples clientes (empresas que contratan prospección B2B).
 
-```bash
-# 1. Crear el proyecto Next.js
-npx create-next-app@latest wecad-portal --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"
+### Tabla `clients` (a crear en Supabase)
 
-# 2. Entrar al proyecto
-cd wecad-portal
-
-# 3. Instalar dependencias del portal
-npm install @prisma/client prisma @supabase/supabase-js
-
-# 4. Abrir en VS Code
-code .
+```sql
+create table clients (
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  slug text not null unique,           -- para URLs amigables
+  logo_url text,
+  is_active boolean default true,
+  created_at timestamptz default now()
+);
 ```
 
-Luego crear cuenta en **supabase.com** (gratuita) y configurar las variables de entorno.
+### Configuración por cliente (tabla `client_configs`)
+
+```sql
+create table client_configs (
+  id uuid primary key default uuid_generate_v4(),
+  client_id uuid references clients(id) not null,
+  lemlist_campaign_id text,            -- campaña principal de outreach
+  lemlist_staging_campaign_id text,    -- campaña puente Sales Nav
+  clay_companies_table_id text,        -- tabla Companies en Clay
+  clay_contacts_table_id text,         -- tabla Contacts en Clay
+  hubspot_pipeline_id text,            -- pipeline de HubSpot asignado
+  hubspot_owner_id text,               -- SDR asignado (owner HubSpot)
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+```
+
+### Columna `client_id` en tablas existentes
+
+Agregar `client_id uuid references clients(id)` a:
+- `companies`
+- `contacts`
+- `icp_config`
+
+### Contexto IA por cliente (tabla `client_ai_context`)
+
+```sql
+create table client_ai_context (
+  id uuid primary key default uuid_generate_v4(),
+  client_id uuid references clients(id) not null,
+  file_name text not null,
+  file_type text,                      -- pdf, docx, txt, etc.
+  content text,                        -- texto extraído
+  storage_path text,                   -- path en Supabase Storage
+  uploaded_at timestamptz default now()
+);
+```
+
+---
+
+## Branding
+
+- **Colores sidebar:** fondo `#251762`, acento `#62E0D8`
+- **Tipografía:** Outfit (Google Fonts) — weights 300, 400, 500, 600, 700
+- **Logo:** "Bulls" en blanco + "Eye" en `#62E0D8`
+- **Active nav item:** fondo `rgba(98,224,216,0.15)` + texto `#62E0D8`
+
+---
+
+## Lo que se intentó y NO funcionó
+
+_(Sección para registrar aprendizajes negativos — no recrear estas rutas)_
+
+- Clay REST API no expone CRUD de rows — solo usamos webhooks entrantes y salientes.
+- Las properties de HubSpot deben crearse como `bullseye_*` (no `wecad_*`).
+
+---
+
+## Integraciones
+
+### Clay
+
+- IDs de reconciliación: `bullseye_company_id` y `bullseye_contact_id` en todos los payloads.
+- Clay serializa campos usando el display name (ej. "Bullseye Company Id") — la app normaliza keys en `raw-contacts/route.ts`.
+- Webhooks de Clay usan header `x-webhook-secret: bullseye-clay-2026`.
+
+### HubSpot
+
+- Propiedades custom con prefijo `bullseye_`.
+- Webhook de calls: `/api/hubspot/webhook/calls`.
+
+### Lemlist
+
+- Campaña principal: `LEMLIST_CAMPAIGN_ID` (por cliente en `client_configs`).
+- Campaña puente: `LEMLIST_STAGING_CAMPAIGN_ID` (por cliente en `client_configs`).
+
+---
+
+## Estructura de carpetas
+
+```
+bullseye-abm-platform/
+├── CLAUDE.md
+├── REPLICATE.md
+├── app/
+│   ├── api/
+│   │   ├── clay/
+│   │   ├── companies/
+│   │   ├── contacts/
+│   │   ├── icp/
+│   │   └── clientes/          ← (a crear)
+│   ├── clientes/              ← (a crear — CRUD de clientes)
+│   ├── configuracion/
+│   │   ├── icp/
+│   │   └── cliente/           ← (a crear — config por cliente)
+│   ├── empresas/
+│   ├── contactos/
+│   └── layout.tsx
+├── components/
+│   └── Sidebar.tsx
+├── lib/
+└── supabase/
+    ├── schema.sql
+    └── *_migration.sql
+```

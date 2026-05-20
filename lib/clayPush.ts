@@ -92,7 +92,7 @@ export async function pushCompanyToClay(
     approved_by: company.approved_by ?? "",
     approved_at: company.approved_at ?? "",
     status: "approved",
-    wecad_company_id: company.id
+    bullseye_company_id: company.id
   };
 
   let clayRes: Response;

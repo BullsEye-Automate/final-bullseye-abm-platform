@@ -9,28 +9,28 @@ export const maxDuration = 300;
 // Webhook entrante de Clay con contactos crudos de "Find people at company".
 // Formatos aceptados:
 //   1) Un solo contacto:
-//      { wecad_company_id, first_name, last_name, job_title, ... }
-//      o { company_table_data: { wecad_company_id, ... }, first_name, ... }
+//      { bullseye_company_id, first_name, last_name, job_title, ... }
+//      o { company_table_data: { bullseye_company_id, ... }, first_name, ... }
 //   2) Lote para una empresa:
-//      { wecad_company_id, contacts: [ {first_name,...}, ... ] }
-//      o { wecad_company_id, people: [...] }
-//   3) Lote mixto (cada item con su propio wecad_company_id):
-//      [ { wecad_company_id, ... }, { wecad_company_id, ... } ]
-// El id de empresa se busca primero en wecad_company_id (flat). Si no está,
-// se intenta extraer de company_table_data.wecad_company_id (objeto o JSON string).
+//      { bullseye_company_id, contacts: [ {first_name,...}, ... ] }
+//      o { bullseye_company_id, people: [...] }
+//   3) Lote mixto (cada item con su propio bullseye_company_id):
+//      [ { bullseye_company_id, ... }, { bullseye_company_id, ... } ]
+// El id de empresa se busca primero en bullseye_company_id (flat). Si no está,
+// se intenta extraer de company_table_data.bullseye_company_id (objeto o JSON string).
 
 type IncomingContact = RawContact & {
-  wecad_company_id?: string;
+  bullseye_company_id?: string;
   company_table_data?: any;
   "Company Table Data"?: any;
 };
 
 // Clay serializa los sub-campos de "Company Table Data" usando el display name
-// (ej. "Wecad Company Id") en vez del internal name (wecad_company_id).
+// (ej. "Bullseye Company Id") en vez del internal name (bullseye_company_id).
 // Esta búsqueda normaliza keys ignorando espacios, underscores y mayúsculas.
-function pickWecadCompanyId(obj: Record<string, any>): string {
+function pickBullseyeCompanyId(obj: Record<string, any>): string {
   for (const [k, v] of Object.entries(obj)) {
-    if (k.replace(/[\s_]/g, "").toLowerCase() === "wecadcompanyid") {
+    if (k.replace(/[\s_]/g, "").toLowerCase() === "bullseyecompanyid") {
       const s = (v ?? "").toString().trim();
       if (s) return s;
     }
@@ -39,18 +39,18 @@ function pickWecadCompanyId(obj: Record<string, any>): string {
 }
 
 function extractCompanyId(item: IncomingContact): string {
-  const direct = (item.wecad_company_id ?? "").toString().trim();
+  const direct = (item.bullseye_company_id ?? "").toString().trim();
   if (direct) return direct;
   const ctd = item.company_table_data ?? item["Company Table Data"];
   if (ctd && typeof ctd === "object") {
-    const fromObj = pickWecadCompanyId(ctd);
+    const fromObj = pickBullseyeCompanyId(ctd);
     if (fromObj) return fromObj;
   }
   if (typeof ctd === "string") {
     try {
       const parsed = JSON.parse(ctd);
       if (parsed && typeof parsed === "object") {
-        const fromStr = pickWecadCompanyId(parsed);
+        const fromStr = pickBullseyeCompanyId(parsed);
         if (fromStr) return fromStr;
       }
     } catch {
@@ -76,13 +76,13 @@ function normalize(body: any): IncomingContact[] {
   if (Array.isArray(body.contacts)) {
     return (body.contacts as RawContact[]).map((c) => ({
       ...c,
-      wecad_company_id: body.wecad_company_id ?? (c as any).wecad_company_id
+      bullseye_company_id: body.bullseye_company_id ?? (c as any).bullseye_company_id
     }));
   }
   if (Array.isArray(body.people)) {
     return (body.people as RawContact[]).map((c) => ({
       ...c,
-      wecad_company_id: body.wecad_company_id ?? (c as any).wecad_company_id
+      bullseye_company_id: body.bullseye_company_id ?? (c as any).bullseye_company_id
     }));
   }
   // single contact
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
     }
     const arr = byCompany.get(cid) ?? [];
     const {
-      wecad_company_id: _omit,
+      bullseye_company_id: _omit,
       company_table_data: _omit2,
       "Company Table Data": _omit3,
       ...rest
@@ -125,12 +125,12 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
   const totals = { received: items.length, inserted: 0, yes: 0, no: 0, skipped: 0 };
-  const errors: { wecad_company_id: string; error: string }[] = [];
+  const errors: { bullseye_company_id: string; error: string }[] = [];
 
   for (const [companyId, contacts] of byCompany) {
     const r = await intakeContactsForCompany(db, companyId, contacts);
     if (!r.ok) {
-      errors.push({ wecad_company_id: companyId, error: r.error });
+      errors.push({ bullseye_company_id: companyId, error: r.error });
       continue;
     }
     totals.inserted += r.summary.inserted;
@@ -141,8 +141,8 @@ export async function POST(req: NextRequest) {
 
   if (noCompany.length > 0) {
     errors.push({
-      wecad_company_id: "",
-      error: `${noCompany.length} contact(s) sin wecad_company_id — no se persistieron`
+      bullseye_company_id: "",
+      error: `${noCompany.length} contact(s) sin bullseye_company_id — no se persistieron`
     });
   }
 

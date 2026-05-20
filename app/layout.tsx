@@ -3,16 +3,17 @@ import type { Metadata } from "next";
 import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
-  title: "weCAD4you — Prospecting",
-  description: "B2B prospecting cockpit for weCAD4you"
+  title: "BullsEye — Prospecting",
+  description: "B2B prospecting cockpit for BullsEye"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
       <head>
-        <link rel="preconnect" href="https://rsms.me/" />
-        <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body className="min-h-screen flex">
         <Sidebar />

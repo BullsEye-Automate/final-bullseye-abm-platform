@@ -11,7 +11,7 @@ html, body {
   background: #F4F2FB;
   color: #1A1733;
   -webkit-font-smoothing: antialiased;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer components {
@@ -58,7 +58,7 @@ html, body {
   transition: background 0.15s, color 0.15s;
 }
 .sb-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
-.sb-item[data-active="true"] { background: rgba(255,255,255,0.12); color: #fff; }
+.sb-item[data-active="true"] { background: rgba(98,224,216,0.15); color: #62E0D8; }
 .sb-section-label {
   font-size: 10px;
   text-transform: uppercase;

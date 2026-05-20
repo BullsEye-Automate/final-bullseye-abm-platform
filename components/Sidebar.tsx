@@ -70,25 +70,15 @@ export default function Sidebar() {
   return (
     <aside
       className="w-[230px] shrink-0 min-h-screen text-white px-3 py-5 sticky top-0"
-      style={{ background: "#26215C" }}
+      style={{ background: "#251762" }}
     >
       <div className="px-3 mb-6">
-        <div className="flex items-center gap-1 text-[20px] font-semibold tracking-tight leading-none">
-          <span style={{ color: "rgba(255,255,255,0.9)" }}>we</span>
-          <span
-            style={{
-              color: "#26215C",
-              background: "#fff",
-              padding: "1px 6px",
-              borderRadius: 5
-            }}
-          >
-            CAD
-          </span>
-          <span style={{ color: "rgba(255,255,255,0.9)" }}>4you</span>
+        <div className="text-[22px] font-bold tracking-tight leading-none">
+          <span style={{ color: "#fff" }}>Bulls</span>
+          <span style={{ color: "#62E0D8" }}>Eye</span>
         </div>
         <div className="text-[10px] mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
-          by SOi Digital
+          B2B Prospecting Platform
         </div>
       </div>
 
