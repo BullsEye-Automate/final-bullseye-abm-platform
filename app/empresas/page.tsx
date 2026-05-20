@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useClient } from "@/lib/clientContext";
 import {
   IconSparkles,
   IconCheck,
@@ -50,6 +51,7 @@ const SIZES: { value: "small" | "medium" | "large"; label: string }[] = [
 ];
 
 export default function EmpresasPage() {
+  const { currentClient } = useClient();
   const [region, setRegion] = useState("US");
   const [size, setSize] = useState<"small" | "medium" | "large">("small");
   const [limit, setLimit] = useState(8);
@@ -97,7 +99,8 @@ export default function EmpresasPage() {
 
   async function load(forStatus: "pending" | "approved" | "rejected" = tab) {
     setLoading(true);
-    const res = await fetch(`/api/companies?status=${forStatus}`, { cache: "no-store" });
+    const clientParam = currentClient ? `&client_id=${currentClient.id}` : "";
+    const res = await fetch(`/api/companies?status=${forStatus}${clientParam}`, { cache: "no-store" });
     const data = await res.json();
     setLoading(false);
     if (!res.ok) {
@@ -110,7 +113,7 @@ export default function EmpresasPage() {
 
   useEffect(() => {
     load();
-  }, [tab]);
+  }, [tab, currentClient?.id]);
 
   async function discover() {
     setDiscovering(true);
@@ -119,7 +122,7 @@ export default function EmpresasPage() {
     const res = await fetch("/api/companies/recommend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ region, size, limit })
+      body: JSON.stringify({ region, size, limit, client_id: currentClient?.id ?? null })
     });
     const data = await res.json();
     setDiscovering(false);
@@ -142,6 +145,12 @@ export default function EmpresasPage() {
 
   return (
     <div className="space-y-6">
+      {!currentClient && (
+        <div className="card flex items-center gap-3 border border-warning-bg bg-warning-bg/40 text-warning-fg text-sm">
+          <IconAlertCircle size={16} className="shrink-0" />
+          Selecciona un cliente en el sidebar para ver y gestionar sus empresas.
+        </div>
+      )}
       <header className="flex items-end justify-between">
         <div>
           <div className="label">Prospección</div>

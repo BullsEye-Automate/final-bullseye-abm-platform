@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useClient } from "@/lib/clientContext";
 import {
   IconUsers,
   IconUpload,
@@ -48,6 +49,7 @@ const BUCKET_LABELS: Record<Bucket, string> = {
 };
 
 export default function ContactosPage() {
+  const { currentClient } = useClient();
   const [bucket, setBucket] = useState<Bucket>("pending");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [counts, setCounts] = useState<Record<Bucket, number>>({
@@ -66,7 +68,8 @@ export default function ContactosPage() {
 
   async function load(forBucket: Bucket = bucket) {
     setLoading(true);
-    const res = await fetch(`/api/contacts?bucket=${forBucket}`, { cache: "no-store" });
+    const clientParam = currentClient ? `&client_id=${currentClient.id}` : "";
+    const res = await fetch(`/api/contacts?bucket=${forBucket}${clientParam}`, { cache: "no-store" });
     const data = await res.json();
     setLoading(false);
     if (!res.ok) {
@@ -117,7 +120,8 @@ export default function ContactosPage() {
   }
 
   async function loadApprovedCompanies() {
-    const res = await fetch("/api/companies?status=approved", { cache: "no-store" });
+    const clientParam = currentClient ? `&client_id=${currentClient.id}` : "";
+    const res = await fetch(`/api/companies?status=approved${clientParam}`, { cache: "no-store" });
     const data = await res.json();
     if (res.ok) {
       setApprovedCompanies(
@@ -128,11 +132,11 @@ export default function ContactosPage() {
 
   useEffect(() => {
     load(bucket);
-  }, [bucket]);
+  }, [bucket, currentClient?.id]);
 
   useEffect(() => {
     loadApprovedCompanies();
-  }, []);
+  }, [currentClient?.id]);
 
   const pushablePendingCount = useMemo(() => {
     if (bucket !== "pending") return 0;
@@ -159,6 +163,12 @@ export default function ContactosPage() {
 
   return (
     <div className="space-y-6">
+      {!currentClient && (
+        <div className="card flex items-center gap-3 border border-warning-bg bg-warning-bg/40 text-warning-fg text-sm">
+          <IconAlertCircle size={16} className="shrink-0" />
+          Selecciona un cliente en el sidebar para ver y gestionar sus contactos.
+        </div>
+      )}
       <header className="flex items-end justify-between">
         <div>
           <div className="label">Prospección</div>

@@ -31,7 +31,7 @@ export async function intakeContactsForCompany(
 ): Promise<IntakeResult> {
   const { data: company, error: cErr } = await db
     .from("companies")
-    .select("id, company_type, company_name")
+    .select("id, company_type, company_name, client_id")
     .eq("id", companyId)
     .maybeSingle();
   if (cErr) return { ok: false, status: 500, error: cErr.message };
@@ -74,18 +74,19 @@ export async function intakeContactsForCompany(
     else summary.no += 1;
 
     rows.push({
-      company_id: companyId,
-      first_name: c.first_name ?? null,
-      last_name: c.last_name ?? null,
-      job_title: c.job_title ?? null,
+      company_id:       companyId,
+      client_id:        (company as any).client_id ?? null,
+      first_name:       c.first_name       ?? null,
+      last_name:        c.last_name        ?? null,
+      job_title:        c.job_title        ?? null,
       linkedin_headline: c.linkedin_headline ?? null,
-      linkedin_url: c.linkedin_url ?? null,
-      email: c.email ?? null,
-      phone: c.phone ?? null,
-      seniority: c.seniority ?? null,
-      tenure: c.tenure ?? null,
+      linkedin_url:     c.linkedin_url     ?? null,
+      email:            c.email            ?? null,
+      phone:            c.phone            ?? null,
+      seniority:        c.seniority        ?? null,
+      tenure:           c.tenure           ?? null,
       prefilter_result: prefilter,
-      status: prefilter === "yes" ? "pending" : "discarded"
+      status:           prefilter === "yes" ? "pending" : "discarded"
     });
   }
 

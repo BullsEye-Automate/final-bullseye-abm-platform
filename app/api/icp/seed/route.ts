@@ -1,19 +1,19 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { ICP_V1_DEFAULTS } from "@/lib/icpDefaults";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST() {
+export async function POST(req: NextRequest) {
+  const body     = await req.json().catch(() => ({}));
+  const clientId = body.client_id ?? req.nextUrl.searchParams.get("client_id") ?? null;
   const db = supabaseAdmin();
 
-  const { data: active, error: activeErr } = await db
-    .from("icp_config")
-    .select("id")
-    .eq("is_active", true)
-    .limit(1)
-    .maybeSingle();
+  // Verifica que no exista ya un ICP activo para este cliente
+  let activeQ = db.from("icp_config").select("id").eq("is_active", true).limit(1);
+  if (clientId) activeQ = activeQ.eq("client_id", clientId);
+  const { data: active, error: activeErr } = await activeQ.maybeSingle();
   if (activeErr) return NextResponse.json({ error: activeErr.message }, { status: 500 });
   if (active) {
     return NextResponse.json(
@@ -22,12 +22,13 @@ export async function POST() {
     );
   }
 
-  const { data: latest, error: latestErr } = await db
+  let latestQ = db
     .from("icp_config")
     .select("version")
     .order("version", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  if (clientId) latestQ = latestQ.eq("client_id", clientId);
+  const { data: latest, error: latestErr } = await latestQ.maybeSingle();
   if (latestErr) return NextResponse.json({ error: latestErr.message }, { status: 500 });
   const nextVersion = (latest?.version ?? 0) + 1;
 
@@ -35,8 +36,9 @@ export async function POST() {
   const { data: inserted, error: insertErr } = await db
     .from("icp_config")
     .insert({
-      version: nextVersion,
+      version:   nextVersion,
       is_active: true,
+      client_id: clientId,
       ...ICP_V1_DEFAULTS,
       created_by: reviewer
     })
