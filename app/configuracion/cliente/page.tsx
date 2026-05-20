@@ -8,7 +8,7 @@ import {
   IconLoader2,
   IconMail,
   IconDatabase,
-  IconFunnel
+  IconChartFunnel
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -211,7 +211,7 @@ export default function ConfigClientePage() {
           {/* HubSpot */}
           <section className="card space-y-4">
             <h2 className="font-semibold flex items-center gap-2">
-              <IconFunnel size={18} className="text-brand" /> HubSpot
+              <IconChartFunnel size={18} className="text-brand" /> HubSpot
             </h2>
             <Field
               label="Pipeline ID"
