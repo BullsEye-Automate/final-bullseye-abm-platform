@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRef, useState, useEffect } from "react";
 import {
   IconLayoutDashboard,
   IconBuildingFactory2,
@@ -14,8 +15,13 @@ import {
   IconChartFunnel,
   IconReportAnalytics,
   IconBrain,
-  IconSettings
+  IconSettings,
+  IconBuilding,
+  IconChevronDown,
+  IconCheck,
+  IconPlus
 } from "@tabler/icons-react";
+import { useClient } from "@/lib/clientContext";
 
 type Item = { href: string; label: string; icon: any; disabled?: boolean };
 type Section = { label: string; items: Item[] };
@@ -33,7 +39,7 @@ const SECTIONS: Section[] = [
   {
     label: "Outreach",
     items: [
-      { href: "/campanas",  label: "Campañas email", icon: IconMail,         disabled: true },
+      { href: "/campanas",  label: "Campañas email", icon: IconMail,          disabled: true },
       { href: "/linkedin",  label: "LinkedIn",       icon: IconBrandLinkedin, disabled: true }
     ]
   },
@@ -60,19 +66,103 @@ const SECTIONS: Section[] = [
   {
     label: "Sistema",
     items: [
+      { href: "/clientes",          label: "Clientes",      icon: IconBuilding },
       { href: "/configuracion/icp", label: "Configuración", icon: IconSettings }
     ]
   }
 ];
 
+function ClientSelector() {
+  const { clients, currentClient, setCurrentClient, loading } = useClient();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative px-3 mb-5">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition"
+        style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.9)" }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <IconBuilding size={14} className="shrink-0" style={{ color: "#62E0D8" }} />
+          <span className="truncate text-[12px]">
+            {loading ? "Cargando..." : (currentClient?.name ?? "Seleccionar cliente")}
+          </span>
+        </div>
+        <IconChevronDown
+          size={13}
+          className="shrink-0 transition-transform"
+          style={{ opacity: 0.5, transform: open ? "rotate(180deg)" : "rotate(0deg)" }}
+        />
+      </button>
+
+      {open && (
+        <div
+          className="absolute left-3 right-3 top-full mt-1 rounded-lg py-1 z-50"
+          style={{
+            background: "#160e3a",
+            border: "1px solid rgba(255,255,255,0.1)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4)"
+          }}
+        >
+          {clients.length === 0 ? (
+            <p className="px-3 py-2 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+              Sin clientes aún
+            </p>
+          ) : (
+            clients.map((c) => {
+              const active = currentClient?.id === c.id;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => { setCurrentClient(c); setOpen(false); }}
+                  className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-left transition hover:bg-white/10"
+                  style={{ color: active ? "#62E0D8" : "rgba(255,255,255,0.8)" }}
+                >
+                  <span className="truncate">{c.name}</span>
+                  {active && <IconCheck size={13} className="shrink-0" />}
+                </button>
+              );
+            })
+          )}
+
+          <div className="mt-1 pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+            <Link
+              href="/clientes"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-1.5 px-3 py-2 text-[11px] transition hover:bg-white/10"
+              style={{ color: "rgba(255,255,255,0.4)" }}
+            >
+              <IconPlus size={12} />
+              Gestionar clientes
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const pathname = usePathname();
   return (
     <aside
-      className="w-[230px] shrink-0 min-h-screen text-white px-3 py-5 sticky top-0"
+      className="w-[230px] shrink-0 min-h-screen text-white px-3 py-5 sticky top-0 flex flex-col"
       style={{ background: "#251762" }}
     >
-      <div className="px-3 mb-6">
+      {/* Logo */}
+      <div className="px-3 mb-5">
         <div className="text-[22px] font-bold tracking-tight leading-none">
           <span style={{ color: "#fff" }}>Bulls</span>
           <span style={{ color: "#62E0D8" }}>Eye</span>
@@ -82,7 +172,11 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav>
+      {/* Selector de cliente */}
+      <ClientSelector />
+
+      {/* Navegación */}
+      <nav className="flex-1">
         {SECTIONS.map((section) => (
           <div key={section.label}>
             <div className="sb-section-label">{section.label}</div>
@@ -93,7 +187,7 @@ export default function Sidebar() {
                 return (
                   <div
                     key={item.href}
-                    className="sb-item opacity-60 cursor-not-allowed"
+                    className="sb-item opacity-40 cursor-not-allowed"
                     title="Próximamente"
                   >
                     <Icon size={16} stroke={1.5} />
