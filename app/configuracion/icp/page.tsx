@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useClient } from "@/lib/clientContext";
 import {
   IconDeviceFloppy,
   IconPlus,
@@ -29,6 +30,7 @@ type Icp = {
 };
 
 export default function IcpPage() {
+  const { currentClient } = useClient();
   const [icp, setIcp] = useState<Icp | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -37,7 +39,9 @@ export default function IcpPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/icp", { cache: "no-store" })
+    setLoading(true);
+    const clientParam = currentClient ? `?client_id=${currentClient.id}` : "";
+    fetch(`/api/icp${clientParam}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         setIcp(d.icp);
@@ -47,12 +51,16 @@ export default function IcpPage() {
         setError(e.message);
         setLoading(false);
       });
-  }, []);
+  }, [currentClient?.id]);
 
   async function seed() {
     setSeeding(true);
     setError(null);
-    const res = await fetch("/api/icp/seed", { method: "POST" });
+    const res = await fetch("/api/icp/seed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient?.id ?? null })
+    });
     const data = await res.json();
     setSeeding(false);
     if (!res.ok) {
@@ -69,7 +77,7 @@ export default function IcpPage() {
     const res = await fetch("/api/icp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(icp)
+      body: JSON.stringify({ ...icp, client_id: currentClient?.id ?? null })
     });
     const data = await res.json();
     setSaving(false);

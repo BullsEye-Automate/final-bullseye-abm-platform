@@ -19,7 +19,8 @@ import {
   IconBuilding,
   IconChevronDown,
   IconCheck,
-  IconPlus
+  IconPlus,
+  IconAdjustments
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -66,8 +67,9 @@ const SECTIONS: Section[] = [
   {
     label: "Sistema",
     items: [
-      { href: "/clientes",          label: "Clientes",      icon: IconBuilding },
-      { href: "/configuracion/icp", label: "Configuración", icon: IconSettings }
+      { href: "/clientes",                label: "Clientes",         icon: IconBuilding },
+      { href: "/configuracion/cliente",   label: "Config. cliente",  icon: IconAdjustments },
+      { href: "/configuracion/icp",       label: "ICP",              icon: IconSettings }
     ]
   }
 ];
