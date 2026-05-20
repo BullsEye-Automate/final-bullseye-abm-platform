@@ -161,7 +161,7 @@ export default function Sidebar() {
   const pathname = usePathname();
   return (
     <aside
-      className="w-[230px] shrink-0 min-h-screen text-white px-3 py-5 sticky top-0 flex flex-col"
+      className="w-[230px] shrink-0 h-screen overflow-y-auto text-white px-3 py-5 sticky top-0 flex flex-col"
       style={{ background: "#251762" }}
     >
       {/* Logo */}

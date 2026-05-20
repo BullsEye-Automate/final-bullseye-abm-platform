@@ -67,3 +67,7 @@ html, body {
   padding: 0 12px;
   margin: 16px 0 6px;
 }
+
+/* Sidebar scroll — ocultar scrollbar pero mantener funcionalidad */
+aside::-webkit-scrollbar { width: 0; }
+aside { scrollbar-width: none; }
