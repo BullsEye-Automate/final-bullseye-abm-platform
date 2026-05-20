@@ -1,457 +1,268 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useClient } from "@/lib/clientContext";
+import { useEffect, useRef, useState } from "react";
 import {
-  IconDeviceFloppy,
-  IconPlus,
-  IconTrash,
   IconAlertCircle,
-  IconCheck
+  IconLoader2,
+  IconUpload,
+  IconDeviceFloppy,
+  IconTrash,
+  IconCheck,
+  IconFileText,
+  IconX
 } from "@tabler/icons-react";
+import { useClient } from "@/lib/clientContext";
 
-type OrgType = { key: string; label: string; accept: boolean; note?: string };
-type SizeRule = { min: number; max: number | null; decision: "approve" | "reject"; note?: string };
-type Competitor = { name: string; note?: string };
-type PipelineMix = { label: string; share: number; velocity: string };
-
-type Icp = {
+type IcpDoc = {
   id: string;
-  version: number;
-  org_types: OrgType[];
-  signals_strong: string[];
-  signals_medium: string[];
-  signals_weak: string[];
-  size_rules: SizeRule[];
-  pipeline_mix: PipelineMix[];
-  competitors: Competitor[];
-  geographies: { region: string; priority: string; note?: string }[];
-  notes: string;
+  file_name: string;
+  file_type: string;
+  content: string;
+  uploaded_at: string;
 };
+
+function formatBytes(n: number) {
+  if (n < 1000) return `${n} chars`;
+  return `${(n / 1000).toFixed(1)}k chars`;
+}
 
 export default function IcpPage() {
   const { currentClient } = useClient();
-  const [icp, setIcp] = useState<Icp | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [seeding, setSeeding] = useState(false);
+  const [doc, setDoc]         = useState<IcpDoc | null>(null);
+  const [content, setContent] = useState("");
+  const [fileName, setFileName] = useState("ICP");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [parsing, setParsing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  async function load() {
+    if (!currentClient) return;
     setLoading(true);
-    const clientParam = currentClient ? `?client_id=${currentClient.id}` : "";
-    fetch(`/api/icp${clientParam}`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => {
-        setIcp(d.icp);
-        setLoading(false);
-      })
-      .catch((e) => {
-        setError(e.message);
-        setLoading(false);
-      });
-  }, [currentClient?.id]);
-
-  async function seed() {
-    setSeeding(true);
     setError(null);
-    const res = await fetch("/api/icp/seed", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: currentClient?.id ?? null })
-    });
-    const data = await res.json();
-    setSeeding(false);
-    if (!res.ok) {
-      setError(data.error ?? "No se pudo crear el ICP v1");
+    const r = await fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" });
+    const j = await r.json();
+    setLoading(false);
+    if (j.error) { setError(j.error); return; }
+    const icpDoc = (j.items ?? []).find((i: IcpDoc) => i.file_type === "icp") ?? null;
+    setDoc(icpDoc);
+    setContent(icpDoc?.content ?? "");
+    setFileName(icpDoc?.file_name ?? "ICP");
+    setSavedAt(null);
+  }
+
+  useEffect(() => { load(); }, [currentClient?.id]);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+
+    if (ext === "txt" || ext === "md" || ext === "markdown") {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setContent((ev.target?.result as string) ?? "");
+        setFileName(baseName);
+        setSavedAt(null);
+      };
+      reader.readAsText(file, "utf-8");
       return;
     }
-    setIcp(data.icp);
+
+    // DOCX o PDF → parseo servidor
+    setParsing(true);
+    setError(null);
+    const form = new FormData();
+    form.append("file", file);
+    const r = await fetch("/api/parse-document", { method: "POST", body: form });
+    const j = await r.json();
+    setParsing(false);
+    if (j.error) { setError(`Error al leer el archivo: ${j.error}`); return; }
+    setContent(j.text ?? "");
+    setFileName(baseName);
+    setSavedAt(null);
   }
 
   async function save() {
-    if (!icp) return;
+    if (!currentClient || !content.trim()) return;
     setSaving(true);
     setError(null);
-    const res = await fetch("/api/icp", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...icp, client_id: currentClient?.id ?? null })
-    });
-    const data = await res.json();
-    setSaving(false);
-    if (!res.ok) {
-      setError(data.error ?? "Save failed");
-      return;
+
+    let r: Response;
+    if (doc) {
+      r = await fetch(`/api/clients/${currentClient.id}/context/${doc.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_name: fileName, content })
+      });
+    } else {
+      r = await fetch(`/api/clients/${currentClient.id}/context`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_name: fileName, file_type: "icp", content })
+      });
     }
-    setIcp(data.icp);
+
+    const j = await r.json();
+    setSaving(false);
+    if (j.error) { setError(j.error); return; }
+    const saved = j.item;
+    setDoc(saved);
+    setContent(saved.content);
+    setFileName(saved.file_name);
     setSavedAt(new Date().toLocaleTimeString());
   }
 
-  if (loading) return <div className="text-ink-muted">Cargando ICP…</div>;
-  if (!icp) {
+  async function remove() {
+    if (!currentClient || !doc) return;
+    setDeleting(true);
+    const r = await fetch(`/api/clients/${currentClient.id}/context/${doc.id}`, { method: "DELETE" });
+    setDeleting(false);
+    if (r.ok) { setDoc(null); setContent(""); setFileName("ICP"); setSavedAt(null); }
+  }
+
+  if (!currentClient) {
     return (
-      <div className="card space-y-4">
-        <div className="text-ink flex items-start gap-2">
-          <IconAlertCircle size={18} className="mt-0.5 text-danger-fg" />
-          <div>
-            <div className="font-medium">No hay ICP configurado todavía.</div>
-            <div className="text-sm text-ink-muted mt-1">
-              Crea la versión v1 con los valores por defecto del ICP. Después
-              podrás editarla y guardar versiones nuevas desde esta misma pantalla.
-            </div>
-          </div>
-        </div>
-        {error && (
-          <div className="text-danger-fg text-sm flex items-center gap-2">
-            <IconAlertCircle size={14} /> {error}
-          </div>
-        )}
-        <button onClick={seed} disabled={seeding} className="btn-primary">
-          <IconPlus size={16} /> {seeding ? "Creando…" : "Crear ICP v1 con valores por defecto"}
-        </button>
+      <div className="card flex items-center gap-3 text-warning-fg border border-warning-bg bg-warning-bg/40 text-sm max-w-xl">
+        <IconAlertCircle size={18} className="shrink-0" />
+        Selecciona un cliente en el sidebar para gestionar su ICP.
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-2xl">
+      {/* Header */}
       <header className="flex items-end justify-between">
         <div>
           <div className="label">Sistema · Configuración</div>
           <h1 className="text-2xl font-semibold tracking-tight">ICP — Ideal Customer Profile</h1>
-          <div className="text-sm text-ink-muted mt-1">
-            Versión activa: <span className="font-medium text-ink">v{icp.version}</span>. Cada
-            cambio guarda una versión nueva.
+          <div className="flex items-center gap-2 mt-1">
+            <div
+              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
+              style={{ background: "#251762" }}
+            >
+              {currentClient.name}
+            </div>
+            <span className="text-sm text-ink-muted">
+              Documento base que el agente IA usa para calificar empresas.
+            </span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex items-center gap-2">
           {savedAt && (
-            <div className="text-xs text-success-fg flex items-center gap-1">
-              <IconCheck size={14} /> Guardado {savedAt}
-            </div>
+            <span className="text-xs text-success-fg flex items-center gap-1">
+              <IconCheck size={13} /> Guardado {savedAt}
+            </span>
           )}
-          <button onClick={save} disabled={saving} className="btn-primary">
-            <IconDeviceFloppy size={16} /> {saving ? "Guardando…" : "Guardar nueva versión"}
+          {doc && (
+            <button
+              className="btn-secondary py-1.5 px-3 text-danger-fg"
+              onClick={remove}
+              disabled={deleting}
+              title="Eliminar ICP"
+            >
+              {deleting ? <IconLoader2 size={14} className="animate-spin" /> : <IconTrash size={14} />}
+            </button>
+          )}
+          <button
+            className="btn-secondary py-1.5 px-3"
+            onClick={() => fileRef.current?.click()}
+            disabled={parsing}
+          >
+            {parsing
+              ? <IconLoader2 size={15} className="animate-spin" />
+              : <IconUpload size={15} />}
+            {parsing ? "Leyendo…" : "Subir archivo"}
+          </button>
+          <button
+            className="btn-primary"
+            onClick={save}
+            disabled={saving || !content.trim()}
+          >
+            {saving ? <IconLoader2 size={15} className="animate-spin" /> : <IconDeviceFloppy size={15} />}
+            {saving ? "Guardando…" : "Guardar"}
           </button>
         </div>
       </header>
 
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".txt,.md,.markdown,.docx,.doc,.pdf"
+        className="hidden"
+        onChange={handleFile}
+      />
+
       {error && (
-        <div className="card border border-danger-bg text-danger-fg flex items-center gap-2">
-          <IconAlertCircle size={16} /> {error}
+        <div className="card border border-danger-bg text-danger-fg flex items-center gap-2 text-sm">
+          <IconAlertCircle size={16} className="shrink-0" /> {error}
+          <button className="ml-auto" onClick={() => setError(null)}><IconX size={14} /></button>
         </div>
       )}
 
-      <section className="card">
-        <h2 className="font-semibold mb-3">Filtro 1 · Tipos de organización</h2>
-        <div className="space-y-2">
-          {icp.org_types.map((o, i) => (
-            <div key={i} className="flex items-center gap-3 text-sm">
-              <input
-                type="checkbox"
-                checked={o.accept}
-                onChange={(e) => {
-                  const next = [...icp.org_types];
-                  next[i] = { ...o, accept: e.target.checked };
-                  setIcp({ ...icp, org_types: next });
-                }}
-              />
-              <input
-                className="input flex-1"
-                value={o.label}
-                onChange={(e) => {
-                  const next = [...icp.org_types];
-                  next[i] = { ...o, label: e.target.value };
-                  setIcp({ ...icp, org_types: next });
-                }}
-              />
-              <input
-                className="input flex-1"
-                placeholder="Nota (opcional)"
-                value={o.note ?? ""}
-                onChange={(e) => {
-                  const next = [...icp.org_types];
-                  next[i] = { ...o, note: e.target.value };
-                  setIcp({ ...icp, org_types: next });
-                }}
-              />
-              <button
-                className="btn-secondary text-danger-fg"
-                onClick={() => {
-                  setIcp({ ...icp, org_types: icp.org_types.filter((_, idx) => idx !== i) });
-                }}
-              >
-                <IconTrash size={14} />
-              </button>
-            </div>
-          ))}
-          <button
-            className="btn-secondary"
-            onClick={() => {
-              setIcp({
-                ...icp,
-                org_types: [
-                  ...icp.org_types,
-                  { key: `custom_${Date.now()}`, label: "Nuevo tipo", accept: true }
-                ]
-              });
-            }}
-          >
-            <IconPlus size={14} /> Añadir tipo
-          </button>
+      {loading ? (
+        <div className="card flex items-center gap-3 text-ink-muted">
+          <IconLoader2 size={18} className="animate-spin" /> Cargando ICP…
         </div>
-      </section>
-
-      <SignalList
-        title="Señales digitales fuertes"
-        helper="Una sola es suficiente para aprobar la empresa."
-        items={icp.signals_strong}
-        onChange={(v) => setIcp({ ...icp, signals_strong: v })}
-      />
-      <SignalList
-        title="Señales digitales medias"
-        helper="Se necesitan 2 o más para aprobar."
-        items={icp.signals_medium}
-        onChange={(v) => setIcp({ ...icp, signals_medium: v })}
-      />
-      <SignalList
-        title="No es suficiente"
-        helper="No aprobar solo por esto."
-        items={icp.signals_weak}
-        onChange={(v) => setIcp({ ...icp, signals_weak: v })}
-      />
-
-      <section className="card">
-        <h2 className="font-semibold mb-1">Filtro 3 · Reglas de volumen</h2>
-        <p className="text-xs text-ink-muted mb-3">Rangos por número de empleados.</p>
-        <div className="space-y-2">
-          {icp.size_rules.map((r, i) => (
-            <div key={i} className="flex items-center gap-3 text-sm">
-              <input
-                type="number"
-                className="input w-24"
-                value={r.min}
-                onChange={(e) => {
-                  const next = [...icp.size_rules];
-                  next[i] = { ...r, min: Number(e.target.value) };
-                  setIcp({ ...icp, size_rules: next });
-                }}
-              />
-              <span className="text-ink-muted">→</span>
-              <input
-                type="number"
-                className="input w-24"
-                placeholder="∞"
-                value={r.max ?? ""}
-                onChange={(e) => {
-                  const next = [...icp.size_rules];
-                  const v = e.target.value;
-                  next[i] = { ...r, max: v === "" ? null : Number(v) };
-                  setIcp({ ...icp, size_rules: next });
-                }}
-              />
-              <select
-                className="input w-36"
-                value={r.decision}
-                onChange={(e) => {
-                  const next = [...icp.size_rules];
-                  next[i] = { ...r, decision: e.target.value as SizeRule["decision"] };
-                  setIcp({ ...icp, size_rules: next });
-                }}
-              >
-                <option value="approve">approve</option>
-                <option value="reject">reject</option>
-              </select>
-              <input
-                className="input flex-1"
-                placeholder="Nota"
-                value={r.note ?? ""}
-                onChange={(e) => {
-                  const next = [...icp.size_rules];
-                  next[i] = { ...r, note: e.target.value };
-                  setIcp({ ...icp, size_rules: next });
-                }}
-              />
-              <button
-                className="btn-secondary text-danger-fg"
-                onClick={() =>
-                  setIcp({ ...icp, size_rules: icp.size_rules.filter((_, idx) => idx !== i) })
-                }
-              >
-                <IconTrash size={14} />
-              </button>
-            </div>
-          ))}
-          <button
-            className="btn-secondary"
-            onClick={() =>
-              setIcp({
-                ...icp,
-                size_rules: [...icp.size_rules, { min: 0, max: null, decision: "approve" }]
-              })
-            }
-          >
-            <IconPlus size={14} /> Añadir regla
-          </button>
-        </div>
-      </section>
-
-      <section className="card">
-        <h2 className="font-semibold mb-1">Mix recomendado de pipeline</h2>
-        <p className="text-xs text-ink-muted mb-3">Distribución por tamaño en cada batch.</p>
-        <div className="space-y-2">
-          {icp.pipeline_mix.map((m, i) => (
-            <div key={i} className="flex items-center gap-3 text-sm">
-              <input
-                className="input flex-1"
-                value={m.label}
-                onChange={(e) => {
-                  const next = [...icp.pipeline_mix];
-                  next[i] = { ...m, label: e.target.value };
-                  setIcp({ ...icp, pipeline_mix: next });
-                }}
-              />
-              <input
-                type="number"
-                className="input w-24"
-                value={m.share}
-                onChange={(e) => {
-                  const next = [...icp.pipeline_mix];
-                  next[i] = { ...m, share: Number(e.target.value) };
-                  setIcp({ ...icp, pipeline_mix: next });
-                }}
-              />
-              <span className="text-ink-muted text-xs">%</span>
-              <input
-                className="input w-40"
-                placeholder="velocidad"
-                value={m.velocity}
-                onChange={(e) => {
-                  const next = [...icp.pipeline_mix];
-                  next[i] = { ...m, velocity: e.target.value };
-                  setIcp({ ...icp, pipeline_mix: next });
-                }}
-              />
-              <button
-                className="btn-secondary text-danger-fg"
-                onClick={() =>
-                  setIcp({ ...icp, pipeline_mix: icp.pipeline_mix.filter((_, idx) => idx !== i) })
-                }
-              >
-                <IconTrash size={14} />
-              </button>
-            </div>
-          ))}
-          <button
-            className="btn-secondary"
-            onClick={() =>
-              setIcp({
-                ...icp,
-                pipeline_mix: [...icp.pipeline_mix, { label: "", share: 0, velocity: "" }]
-              })
-            }
-          >
-            <IconPlus size={14} /> Añadir banda
-          </button>
-        </div>
-      </section>
-
-      <section className="card">
-        <h2 className="font-semibold mb-1">Competidores a monitorear</h2>
-        <p className="text-xs text-ink-muted mb-3">
-          Si un prospecto ya externaliza con uno de ellos, fit inmediato.
-        </p>
-        <div className="space-y-2">
-          {icp.competitors.map((c, i) => (
-            <div key={i} className="flex items-center gap-3 text-sm">
-              <input
-                className="input flex-1"
-                value={c.name}
-                onChange={(e) => {
-                  const next = [...icp.competitors];
-                  next[i] = { ...c, name: e.target.value };
-                  setIcp({ ...icp, competitors: next });
-                }}
-              />
-              <input
-                className="input flex-1"
-                placeholder="Nota"
-                value={c.note ?? ""}
-                onChange={(e) => {
-                  const next = [...icp.competitors];
-                  next[i] = { ...c, note: e.target.value };
-                  setIcp({ ...icp, competitors: next });
-                }}
-              />
-              <button
-                className="btn-secondary text-danger-fg"
-                onClick={() =>
-                  setIcp({ ...icp, competitors: icp.competitors.filter((_, idx) => idx !== i) })
-                }
-              >
-                <IconTrash size={14} />
-              </button>
-            </div>
-          ))}
-          <button
-            className="btn-secondary"
-            onClick={() =>
-              setIcp({ ...icp, competitors: [...icp.competitors, { name: "", note: "" }] })
-            }
-          >
-            <IconPlus size={14} /> Añadir competidor
-          </button>
-        </div>
-      </section>
-
-      <section className="card">
-        <h2 className="font-semibold mb-3">Notas adicionales</h2>
-        <textarea
-          className="input min-h-[100px]"
-          value={icp.notes}
-          onChange={(e) => setIcp({ ...icp, notes: e.target.value })}
-        />
-      </section>
-    </div>
-  );
-}
-
-function SignalList(props: {
-  title: string;
-  helper: string;
-  items: string[];
-  onChange: (next: string[]) => void;
-}) {
-  return (
-    <section className="card">
-      <h2 className="font-semibold mb-1">{props.title}</h2>
-      <p className="text-xs text-ink-muted mb-3">{props.helper}</p>
-      <div className="space-y-2">
-        {props.items.map((s, i) => (
-          <div key={i} className="flex items-center gap-3 text-sm">
+      ) : (
+        <div className="card space-y-4">
+          {/* Nombre del documento */}
+          <div className="flex items-center gap-3">
+            <IconFileText size={16} className="text-ink-subtle shrink-0" />
             <input
               className="input flex-1"
-              value={s}
-              onChange={(e) => {
-                const next = [...props.items];
-                next[i] = e.target.value;
-                props.onChange(next);
-              }}
+              value={fileName}
+              onChange={(e) => setFileName(e.target.value)}
+              placeholder="Nombre del documento"
             />
-            <button
-              className="btn-secondary text-danger-fg"
-              onClick={() => props.onChange(props.items.filter((_, idx) => idx !== i))}
-            >
-              <IconTrash size={14} />
-            </button>
+            {content && (
+              <span className="text-xs text-ink-subtle whitespace-nowrap">
+                {formatBytes(content.length)}
+              </span>
+            )}
           </div>
-        ))}
-        <button className="btn-secondary" onClick={() => props.onChange([...props.items, ""])}>
-          <IconPlus size={14} /> Añadir
-        </button>
-      </div>
-    </section>
+
+          {/* Zona de carga si no hay contenido */}
+          {!content && !parsing && (
+            <button
+              onClick={() => fileRef.current?.click()}
+              className="w-full border-2 border-dashed border-[#E5E2F0] rounded-xl p-10 text-center hover:border-brand transition-colors"
+            >
+              <IconUpload size={28} className="mx-auto mb-2 text-ink-subtle" />
+              <p className="font-medium text-ink">Sube el archivo ICP del cliente</p>
+              <p className="text-sm text-ink-muted mt-1">
+                .txt, .md, .docx o .pdf — o pega el contenido directamente abajo
+              </p>
+            </button>
+          )}
+
+          {/* Textarea editable */}
+          <div>
+            <label className="label block mb-1">Contenido del ICP</label>
+            <textarea
+              className="input min-h-[480px] font-mono text-xs leading-relaxed"
+              placeholder={`Pega aquí o sube el ICP del cliente.\n\nEjemplo de estructura:\n- Tipos de organización objetivo\n- Señales digitales de fit\n- Tamaños de empresa ideales\n- Geografías prioritarias\n- Competidores a monitorear\n- Notas adicionales`}
+              value={content}
+              onChange={(e) => { setContent(e.target.value); setSavedAt(null); }}
+            />
+          </div>
+
+          {doc && (
+            <p className="text-xs text-ink-subtle">
+              Última actualización: {new Date(doc.uploaded_at).toLocaleDateString("es", {
+                day: "2-digit", month: "short", year: "numeric"
+              })}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
