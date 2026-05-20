@@ -1,0 +1,388 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  IconPlus,
+  IconBuilding,
+  IconPencil,
+  IconCheck,
+  IconX,
+  IconToggleLeft,
+  IconToggleRight,
+  IconLoader2
+} from "@tabler/icons-react";
+import { useClient } from "@/lib/clientContext";
+
+type Client = {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+type FormState = {
+  name: string;
+  slug: string;
+  logo_url: string;
+};
+
+const EMPTY_FORM: FormState = { name: "", slug: "", logo_url: "" };
+
+function slugify(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "");
+}
+
+function ClientForm({
+  initial,
+  onSave,
+  onCancel,
+  saving
+}: {
+  initial: FormState;
+  onSave: (f: FormState) => void;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState(initial);
+  const [slugTouched, setSlugTouched] = useState(!!initial.slug);
+
+  function handleName(val: string) {
+    setForm((f) => ({
+      ...f,
+      name: val,
+      slug: slugTouched ? f.slug : slugify(val)
+    }));
+  }
+
+  function handleSlug(val: string) {
+    setSlugTouched(true);
+    setForm((f) => ({ ...f, slug: slugify(val) }));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="label block mb-1">Nombre del cliente *</label>
+        <input
+          className="input"
+          placeholder="Ej. Acme Corp"
+          value={form.name}
+          onChange={(e) => handleName(e.target.value)}
+          autoFocus
+        />
+      </div>
+
+      <div>
+        <label className="label block mb-1">Slug (URL)</label>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-ink-muted select-none">/clientes/</span>
+          <input
+            className="input"
+            placeholder="acme-corp"
+            value={form.slug}
+            onChange={(e) => handleSlug(e.target.value)}
+          />
+        </div>
+        <p className="text-xs text-ink-subtle mt-1">Solo letras, números y guiones.</p>
+      </div>
+
+      <div>
+        <label className="label block mb-1">Logo (URL) — opcional</label>
+        <input
+          className="input"
+          placeholder="https://..."
+          value={form.logo_url}
+          onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
+        />
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <button
+          className="btn-primary flex-1"
+          onClick={() => onSave(form)}
+          disabled={saving || !form.name.trim() || !form.slug.trim()}
+        >
+          {saving ? <IconLoader2 size={15} className="animate-spin" /> : <IconCheck size={15} />}
+          {saving ? "Guardando..." : "Guardar"}
+        </button>
+        <button className="btn-secondary" onClick={onCancel}>
+          <IconX size={15} />
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function ClientesPage() {
+  const { setCurrentClient } = useClient();
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // null = cerrado, "new" = nuevo, string = id del cliente en edición
+  const [editing, setEditing] = useState<"new" | string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    const r = await fetch("/api/clients");
+    const j = await r.json();
+    if (j.error) { setError(j.error); setLoading(false); return; }
+    setClients(j.clients ?? []);
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleCreate(form: FormState) {
+    setSaving(true);
+    setFormError(null);
+    const r = await fetch("/api/clients", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form)
+    });
+    const j = await r.json();
+    if (j.error) { setFormError(j.error); setSaving(false); return; }
+    setClients((prev) => [...prev, j.client].sort((a, b) => a.name.localeCompare(b.name)));
+    setEditing(null);
+    setSaving(false);
+  }
+
+  async function handleEdit(id: string, form: FormState) {
+    setSaving(true);
+    setFormError(null);
+    const r = await fetch(`/api/clients/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form)
+    });
+    const j = await r.json();
+    if (j.error) { setFormError(j.error); setSaving(false); return; }
+    setClients((prev) =>
+      prev.map((c) => (c.id === id ? j.client : c)).sort((a, b) => a.name.localeCompare(b.name))
+    );
+    setEditing(null);
+    setSaving(false);
+  }
+
+  async function toggleActive(client: Client) {
+    const r = await fetch(`/api/clients/${client.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active: !client.is_active })
+    });
+    const j = await r.json();
+    if (!j.error) {
+      setClients((prev) => prev.map((c) => (c.id === client.id ? j.client : c)));
+    }
+  }
+
+  const activeClients   = clients.filter((c) => c.is_active);
+  const inactiveClients = clients.filter((c) => !c.is_active);
+
+  return (
+    <div className="max-w-2xl">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-ink">Clientes</h1>
+          <p className="text-sm text-ink-muted mt-1">
+            Cada cliente tiene su propio ICP, campañas y pipeline.
+          </p>
+        </div>
+        <button
+          className="btn-primary"
+          onClick={() => { setEditing("new"); setFormError(null); }}
+          disabled={editing === "new"}
+        >
+          <IconPlus size={16} />
+          Nuevo cliente
+        </button>
+      </div>
+
+      {/* Formulario de creación */}
+      {editing === "new" && (
+        <div className="card mb-6 border-2" style={{ borderColor: "#62E0D8" }}>
+          <h2 className="font-semibold text-ink mb-4 flex items-center gap-2">
+            <IconBuilding size={18} style={{ color: "#62E0D8" }} />
+            Nuevo cliente
+          </h2>
+          {formError && (
+            <p className="text-danger-fg text-sm mb-3 bg-danger-bg rounded-lg px-3 py-2">{formError}</p>
+          )}
+          <ClientForm
+            initial={EMPTY_FORM}
+            onSave={handleCreate}
+            onCancel={() => { setEditing(null); setFormError(null); }}
+            saving={saving}
+          />
+        </div>
+      )}
+
+      {/* Estado de carga */}
+      {loading && (
+        <div className="card flex items-center gap-3 text-ink-muted">
+          <IconLoader2 size={18} className="animate-spin" />
+          Cargando clientes...
+        </div>
+      )}
+      {error && (
+        <div className="card text-danger-fg bg-danger-bg">{error}</div>
+      )}
+
+      {/* Lista de clientes activos */}
+      {!loading && !error && (
+        <>
+          {activeClients.length === 0 && editing !== "new" && (
+            <div className="card text-center py-10">
+              <IconBuilding size={32} className="mx-auto mb-3 text-ink-subtle" />
+              <p className="text-ink-muted font-medium">Sin clientes todavía</p>
+              <p className="text-sm text-ink-subtle mt-1">
+                Crea el primer cliente con el botón de arriba.
+              </p>
+            </div>
+          )}
+
+          {activeClients.map((client) => (
+            <ClientCard
+              key={client.id}
+              client={client}
+              editing={editing === client.id}
+              saving={saving}
+              formError={formError}
+              onEdit={() => { setEditing(client.id); setFormError(null); }}
+              onCancelEdit={() => { setEditing(null); setFormError(null); }}
+              onSaveEdit={(form) => handleEdit(client.id, form)}
+              onToggle={() => toggleActive(client)}
+              onSelect={() => setCurrentClient(client)}
+            />
+          ))}
+
+          {/* Clientes inactivos */}
+          {inactiveClients.length > 0 && (
+            <div className="mt-8">
+              <p className="label mb-3">Inactivos</p>
+              {inactiveClients.map((client) => (
+                <ClientCard
+                  key={client.id}
+                  client={client}
+                  editing={editing === client.id}
+                  saving={saving}
+                  formError={formError}
+                  onEdit={() => { setEditing(client.id); setFormError(null); }}
+                  onCancelEdit={() => { setEditing(null); setFormError(null); }}
+                  onSaveEdit={(form) => handleEdit(client.id, form)}
+                  onToggle={() => toggleActive(client)}
+                  onSelect={() => setCurrentClient(client)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ClientCard({
+  client,
+  editing,
+  saving,
+  formError,
+  onEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onToggle,
+  onSelect
+}: {
+  client: Client;
+  editing: boolean;
+  saving: boolean;
+  formError: string | null;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveEdit: (f: FormState) => void;
+  onToggle: () => void;
+  onSelect: () => void;
+}) {
+  return (
+    <div
+      className="card mb-3"
+      style={{ opacity: client.is_active ? 1 : 0.55 }}
+    >
+      {editing ? (
+        <>
+          <h2 className="font-semibold text-ink mb-4">Editar cliente</h2>
+          {formError && (
+            <p className="text-danger-fg text-sm mb-3 bg-danger-bg rounded-lg px-3 py-2">{formError}</p>
+          )}
+          <ClientForm
+            initial={{ name: client.name, slug: client.slug, logo_url: client.logo_url ?? "" }}
+            onSave={onSaveEdit}
+            onCancel={onCancelEdit}
+            saving={saving}
+          />
+        </>
+      ) : (
+        <div className="flex items-center gap-3">
+          {/* Avatar / logo */}
+          {client.logo_url ? (
+            <img
+              src={client.logo_url}
+              alt={client.name}
+              className="w-10 h-10 rounded-lg object-cover shrink-0"
+            />
+          ) : (
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-white font-bold text-sm"
+              style={{ background: "#251762" }}
+            >
+              {client.name[0]?.toUpperCase()}
+            </div>
+          )}
+
+          {/* Info */}
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-ink truncate">{client.name}</p>
+            <p className="text-xs text-ink-subtle">/{client.slug}</p>
+          </div>
+
+          {/* Acciones */}
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              className="btn-secondary text-xs py-1.5 px-3"
+              onClick={onSelect}
+              title="Seleccionar como cliente activo"
+            >
+              Seleccionar
+            </button>
+            <button
+              className="btn-secondary py-1.5 px-2"
+              onClick={onEdit}
+              title="Editar"
+            >
+              <IconPencil size={14} />
+            </button>
+            <button
+              className="btn-secondary py-1.5 px-2"
+              onClick={onToggle}
+              title={client.is_active ? "Desactivar" : "Activar"}
+            >
+              {client.is_active
+                ? <IconToggleRight size={18} style={{ color: "#62E0D8" }} />
+                : <IconToggleLeft  size={18} className="text-ink-subtle" />}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
