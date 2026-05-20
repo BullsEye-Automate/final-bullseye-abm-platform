@@ -21,8 +21,42 @@ export function supabaseAdmin(): SupabaseClient {
   return _admin;
 }
 
+export type Client = {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClientConfig = {
+  id: string;
+  client_id: string;
+  lemlist_campaign_id: string | null;
+  lemlist_staging_campaign_id: string | null;
+  clay_companies_table_id: string | null;
+  clay_contacts_table_id: string | null;
+  hubspot_pipeline_id: string | null;
+  hubspot_owner_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ClientAiContext = {
+  id: string;
+  client_id: string;
+  file_name: string;
+  file_type: string | null;
+  content: string | null;
+  storage_path: string | null;
+  uploaded_at: string;
+};
+
 export type IcpConfig = {
   id: string;
+  client_id: string | null;
   version: number;
   is_active: boolean;
   org_types: OrgType[];
@@ -46,6 +80,7 @@ export type Geography  = { region: string; priority: string; note?: string };
 
 export type Contact = {
   id: string;
+  client_id: string | null;
   company_id: string;
   first_name: string | null;
   last_name: string | null;
@@ -75,6 +110,7 @@ export type Contact = {
 
 export type Company = {
   id: string;
+  client_id: string | null;
   company_name: string;
   company_website: string | null;
   company_linkedin_url: string | null;
