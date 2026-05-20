@@ -20,8 +20,7 @@ import {
   IconChevronDown,
   IconCheck,
   IconPlus,
-  IconAdjustments,
-  IconBrain
+  IconAdjustments
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 

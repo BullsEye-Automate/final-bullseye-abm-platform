@@ -7,7 +7,6 @@ import {
   IconCheck,
   IconLoader2,
   IconMail,
-  IconBrandLinkedin,
   IconDatabase,
   IconFunnel
 } from "@tabler/icons-react";
