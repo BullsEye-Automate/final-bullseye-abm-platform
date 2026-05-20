@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ClientProvider>
           <Sidebar />
           <main className="flex-1 min-h-screen overflow-y-auto">
-            <div className="max-w-[1280px] mx-auto p-8">{children}</div>
+            <div className="p-8">{children}</div>
           </main>
         </ClientProvider>
       </body>

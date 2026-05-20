@@ -63,30 +63,40 @@ function normalizeTitle(s: string): string {
     .trim();
 }
 
+// Es título si la línea es todo mayúsculas y contiene al menos una letra
+function looksLikeTitle(line: string): boolean {
+  const t = line.trim();
+  return t.length > 1 && t === t.toUpperCase() && /[A-ZÁÉÍÓÚÑÜ]/.test(t);
+}
+
 // ── Parser: plain text → sections ─────────────────────────────────────
+// Soporta separadores de cualquier longitud (---, -----, ---...----)
 function parseIcp(text: string): Section[] {
   if (!text.trim()) return KNOWN_SECTIONS.map(emptySection);
 
-  // Divide en bloques usando líneas "---" como separadores
-  const blocks = text.split(/\n?^---$/m).map((b) => b.trim()).filter(Boolean);
+  // Dividir por líneas que sean solo guiones (3 o más)
+  const chunks = text
+    .split(/^-{3,}\s*$/m)
+    .map((c) => c.trim())
+    .filter(Boolean);
 
+  // Emparejar: título → contenido siguiente (si no es título)
   const parsed: { title: string; content: string }[] = [];
-  for (const block of blocks) {
-    const lines = block.split("\n");
-    const firstLine = lines[0].trim();
-    // Es título si está en mayúsculas (acepta Ñ, tildes, espacios y guiones)
-    const isTitle =
-      firstLine.length > 1 &&
-      firstLine === firstLine.toUpperCase() &&
-      /[A-ZÁÉÍÓÚÑÜ]/.test(firstLine);
-
-    if (isTitle) {
-      parsed.push({ title: firstLine, content: lines.slice(1).join("\n").trim() });
-    } else if (parsed.length > 0) {
-      // Bloque sin título → anexar al anterior
-      parsed[parsed.length - 1].content += "\n\n" + block;
+  let i = 0;
+  while (i < chunks.length) {
+    const firstLine = chunks[i].split("\n")[0].trim();
+    if (looksLikeTitle(firstLine)) {
+      const title = firstLine;
+      const next = chunks[i + 1];
+      const content = next && !looksLikeTitle(next.split("\n")[0].trim()) ? next : "";
+      parsed.push({ title, content });
+      i += content ? 2 : 1;
     } else {
-      parsed.push({ title: "GENERAL", content: block });
+      // Bloque de contenido huérfano — anexar al último título si existe
+      if (parsed.length > 0) {
+        parsed[parsed.length - 1].content += "\n\n" + chunks[i];
+      }
+      i++;
     }
   }
 
