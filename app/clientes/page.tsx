@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IconPlus,
   IconBuilding,
@@ -9,7 +9,9 @@ import {
   IconX,
   IconToggleLeft,
   IconToggleRight,
-  IconLoader2
+  IconLoader2,
+  IconUpload,
+  IconPhoto
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -29,6 +31,7 @@ type FormState = {
 };
 
 const EMPTY_FORM: FormState = { name: "", slug: "", logo_url: "" };
+const MAX_BYTES = 500 * 1024; // 500 KB
 
 function slugify(text: string) {
   return text
@@ -48,8 +51,10 @@ function ClientForm({
   onCancel: () => void;
   saving: boolean;
 }) {
-  const [form, setForm] = useState(initial);
+  const [form, setForm]           = useState(initial);
   const [slugTouched, setSlugTouched] = useState(!!initial.slug);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   function handleName(val: string) {
     setForm((f) => ({
@@ -62,6 +67,24 @@ function ClientForm({
   function handleSlug(val: string) {
     setSlugTouched(true);
     setForm((f) => ({ ...f, slug: slugify(val) }));
+  }
+
+  function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (file.size > MAX_BYTES) {
+      setLogoError(`El archivo pesa ${(file.size / 1024).toFixed(0)} KB — máximo 500 KB.`);
+      return;
+    }
+    setLogoError(null);
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setForm((f) => ({ ...f, logo_url: (ev.target?.result as string) ?? "" }));
+    };
+    reader.readAsDataURL(file);
   }
 
   return (
@@ -91,13 +114,53 @@ function ClientForm({
         <p className="text-xs text-ink-subtle mt-1">Solo letras, números y guiones.</p>
       </div>
 
+      {/* Logo por archivo */}
       <div>
-        <label className="label block mb-1">Logo (URL) — opcional</label>
+        <label className="label block mb-1">Logo — opcional</label>
+        <div className="flex items-center gap-3">
+          {/* Preview */}
+          <div
+            className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
+            style={{ background: form.logo_url ? "transparent" : "rgba(37,23,98,0.08)", border: "1px dashed #c8c3dc" }}
+          >
+            {form.logo_url ? (
+              <img src={form.logo_url} alt="Logo" className="w-full h-full object-cover" />
+            ) : (
+              <IconPhoto size={20} className="text-ink-subtle" />
+            )}
+          </div>
+
+          <div className="flex-1 space-y-1">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="btn-secondary py-1.5 px-3 text-sm flex items-center gap-1.5"
+                onClick={() => fileRef.current?.click()}
+              >
+                <IconUpload size={14} /> Subir PNG / JPG
+              </button>
+              {form.logo_url && (
+                <button
+                  type="button"
+                  className="btn-secondary py-1.5 px-2 text-danger-fg"
+                  onClick={() => { setForm((f) => ({ ...f, logo_url: "" })); setLogoError(null); }}
+                  title="Quitar logo"
+                >
+                  <IconX size={14} />
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-ink-subtle">Máximo 500 KB.</p>
+            {logoError && <p className="text-xs text-danger-fg">{logoError}</p>}
+          </div>
+        </div>
+
         <input
-          className="input"
-          placeholder="https://..."
-          value={form.logo_url}
-          onChange={(e) => setForm((f) => ({ ...f, logo_url: e.target.value }))}
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg"
+          className="hidden"
+          onChange={handleLogoFile}
         />
       </div>
 
@@ -125,7 +188,6 @@ export default function ClientesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // null = cerrado, "new" = nuevo, string = id del cliente en edición
   const [editing, setEditing] = useState<"new" | string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -190,7 +252,6 @@ export default function ClientesPage() {
 
   return (
     <div className="max-w-2xl">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-ink">Clientes</h1>
@@ -208,7 +269,6 @@ export default function ClientesPage() {
         </button>
       </div>
 
-      {/* Formulario de creación */}
       {editing === "new" && (
         <div className="card mb-6 border-2" style={{ borderColor: "#62E0D8" }}>
           <h2 className="font-semibold text-ink mb-4 flex items-center gap-2">
@@ -227,18 +287,14 @@ export default function ClientesPage() {
         </div>
       )}
 
-      {/* Estado de carga */}
       {loading && (
         <div className="card flex items-center gap-3 text-ink-muted">
           <IconLoader2 size={18} className="animate-spin" />
           Cargando clientes...
         </div>
       )}
-      {error && (
-        <div className="card text-danger-fg bg-danger-bg">{error}</div>
-      )}
+      {error && <div className="card text-danger-fg bg-danger-bg">{error}</div>}
 
-      {/* Lista de clientes activos */}
       {!loading && !error && (
         <>
           {activeClients.length === 0 && editing !== "new" && (
@@ -266,7 +322,6 @@ export default function ClientesPage() {
             />
           ))}
 
-          {/* Clientes inactivos */}
           {inactiveClients.length > 0 && (
             <div className="mt-8">
               <p className="label mb-3">Inactivos</p>
@@ -314,10 +369,7 @@ function ClientCard({
   onSelect: () => void;
 }) {
   return (
-    <div
-      className="card mb-3"
-      style={{ opacity: client.is_active ? 1 : 0.55 }}
-    >
+    <div className="card mb-3" style={{ opacity: client.is_active ? 1 : 0.55 }}>
       {editing ? (
         <>
           <h2 className="font-semibold text-ink mb-4">Editar cliente</h2>
@@ -333,7 +385,6 @@ function ClientCard({
         </>
       ) : (
         <div className="flex items-center gap-3">
-          {/* Avatar / logo */}
           {client.logo_url ? (
             <img
               src={client.logo_url}
@@ -349,13 +400,11 @@ function ClientCard({
             </div>
           )}
 
-          {/* Info */}
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-ink truncate">{client.name}</p>
             <p className="text-xs text-ink-subtle">/{client.slug}</p>
           </div>
 
-          {/* Acciones */}
           <div className="flex items-center gap-2 shrink-0">
             <button
               className="btn-secondary text-xs py-1.5 px-3"
@@ -364,11 +413,7 @@ function ClientCard({
             >
               Seleccionar
             </button>
-            <button
-              className="btn-secondary py-1.5 px-2"
-              onClick={onEdit}
-              title="Editar"
-            >
+            <button className="btn-secondary py-1.5 px-2" onClick={onEdit} title="Editar">
               <IconPencil size={14} />
             </button>
             <button

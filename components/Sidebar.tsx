@@ -77,23 +77,38 @@ const SECTIONS: Section[] = [
 
 function ClientSelector() {
   const { clients, currentClient, setCurrentClient, loading } = useClient();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState("");
+  const ref      = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
+        setQuery("");
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  function toggleOpen() {
+    setOpen((v) => {
+      if (!v) setTimeout(() => inputRef.current?.focus(), 50);
+      else setQuery("");
+      return !v;
+    });
+  }
+
+  const filtered = query.trim()
+    ? clients.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()))
+    : clients;
+
   return (
     <div ref={ref} className="relative px-3 mb-5">
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition"
         style={{ background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.9)" }}
       >
@@ -119,31 +134,49 @@ function ClientSelector() {
             boxShadow: "0 8px 24px rgba(0,0,0,0.4)"
           }}
         >
-          {clients.length === 0 ? (
-            <p className="px-3 py-2 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
-              Sin clientes aún
-            </p>
-          ) : (
-            clients.map((c) => {
-              const active = currentClient?.id === c.id;
-              return (
-                <button
-                  key={c.id}
-                  onClick={() => { setCurrentClient(c); setOpen(false); }}
-                  className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-left transition hover:bg-white/10"
-                  style={{ color: active ? "#62E0D8" : "rgba(255,255,255,0.8)" }}
-                >
-                  <span className="truncate">{c.name}</span>
-                  {active && <IconCheck size={13} className="shrink-0" />}
-                </button>
-              );
-            })
-          )}
+          {/* Buscador */}
+          <div className="px-2 pt-1 pb-1">
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar cliente…"
+              className="w-full rounded-md px-2.5 py-1.5 text-[12px] outline-none"
+              style={{
+                background: "rgba(255,255,255,0.08)",
+                color: "rgba(255,255,255,0.9)",
+                border: "1px solid rgba(255,255,255,0.12)"
+              }}
+            />
+          </div>
+
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }} className="mt-1">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-2 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+                {clients.length === 0 ? "Sin clientes aún" : "Sin resultados"}
+              </p>
+            ) : (
+              filtered.map((c) => {
+                const active = currentClient?.id === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => { setCurrentClient(c); setOpen(false); setQuery(""); }}
+                    className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-left transition hover:bg-white/10"
+                    style={{ color: active ? "#62E0D8" : "rgba(255,255,255,0.8)" }}
+                  >
+                    <span className="truncate">{c.name}</span>
+                    {active && <IconCheck size={13} className="shrink-0" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
 
           <div className="mt-1 pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
             <Link
               href="/clientes"
-              onClick={() => setOpen(false)}
+              onClick={() => { setOpen(false); setQuery(""); }}
               className="flex items-center gap-1.5 px-3 py-2 text-[11px] transition hover:bg-white/10"
               style={{ color: "rgba(255,255,255,0.4)" }}
             >
