@@ -38,10 +38,13 @@ type Company = {
 };
 
 const REGIONS: { value: string; label: string }[] = [
-  { value: "US",    label: "Estados Unidos" },
-  { value: "CA",    label: "Canadá" },
-  { value: "EU",    label: "Europa" },
-  { value: "LATAM", label: "LATAM" }
+  { value: "LATAM",     label: "LATAM" },
+  { value: "CL",        label: "Chile" },
+  { value: "MX",        label: "México" },
+  { value: "PE",        label: "Perú" },
+  { value: "CO",        label: "Colombia" },
+  { value: "AR",        label: "Argentina" },
+  { value: "US",        label: "Estados Unidos" },
 ];
 
 const SIZES: { value: "small" | "medium" | "large"; label: string }[] = [
@@ -59,13 +62,23 @@ function extractIcpField(text: string, label: string): string {
 }
 
 // Infiere la región del ICP a partir del campo "Geografías prioritarias".
-// LATAM se chequea antes que US para que "Estados Unidos con expansión en Latam" → LATAM.
+// Orden: países específicos primero; si hay mix LATAM/US, LATAM gana.
 function inferRegionFromIcp(icpContent: string): string | null {
   const geo = extractIcpField(icpContent, "Geografías prioritarias").toLowerCase();
   if (!geo) return null;
-  if (/latam|latinoam[eé]rica|am[eé]rica latina|hispanohablante|chile|colombia|per[uú]|m[eé]xico|argentina|centroam[eé]rica|brasil|venezuela|ecuador|bolivia/.test(geo)) return "LATAM";
-  if (/canad[aá]/.test(geo)) return "CA";
-  if (/europa|europe|\beu\b/.test(geo)) return "EU";
+  // País único → valor específico
+  const onlyChile     = /chile/.test(geo) && !/colombia|per[uú]|m[eé]xico|argentina|latam/.test(geo);
+  const onlyMexico    = /m[eé]xico/.test(geo) && !/chile|colombia|per[uú]|argentina|latam/.test(geo);
+  const onlyPeru      = /per[uú]/.test(geo) && !/chile|colombia|m[eé]xico|argentina|latam/.test(geo);
+  const onlyColombia  = /colombia/.test(geo) && !/chile|per[uú]|m[eé]xico|argentina|latam/.test(geo);
+  const onlyArgentina = /argentina/.test(geo) && !/chile|colombia|per[uú]|m[eé]xico|latam/.test(geo);
+  if (onlyChile)     return "CL";
+  if (onlyMexico)    return "MX";
+  if (onlyPeru)      return "PE";
+  if (onlyColombia)  return "CO";
+  if (onlyArgentina) return "AR";
+  // Multi-país o LATAM genérico → LATAM
+  if (/latam|latinoam[eé]rica|am[eé]rica latina|hispanohablante|chile|colombia|per[uú]|m[eé]xico|argentina|centroam[eé]rica/.test(geo)) return "LATAM";
   if (/estados unidos|united states|\bus\b|usa/.test(geo)) return "US";
   return null;
 }
@@ -98,7 +111,7 @@ function inferSizeFromIcp(icpContent: string): "small" | "medium" | "large" | nu
 
 export default function EmpresasPage() {
   const { currentClient } = useClient();
-  const [region, setRegion] = useState("US");
+  const [region, setRegion] = useState("LATAM");
   const [size, setSize] = useState<"small" | "medium" | "large">("small");
   const [limit, setLimit] = useState(8);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
