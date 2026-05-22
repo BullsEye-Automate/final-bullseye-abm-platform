@@ -45,9 +45,9 @@ const REGIONS: { value: string; label: string }[] = [
 ];
 
 const SIZES: { value: "small" | "medium" | "large"; label: string }[] = [
-  { value: "small",  label: "5–30 empleados (sweet spot)" },
-  { value: "medium", label: "31–100 empleados" },
-  { value: "large",  label: "100+ empleados / DSOs" }
+  { value: "small",  label: "1–50 empleados" },
+  { value: "medium", label: "51–500 empleados" },
+  { value: "large",  label: "500+ empleados" }
 ];
 
 // Extrae el valor de un campo [Etiqueta] del texto del ICP serializado
@@ -58,27 +58,30 @@ function extractIcpField(text: string, label: string): string {
   return m ? m[1].trim() : "";
 }
 
-// Infere la región del ICP a partir del campo "Geografías prioritarias"
+// Infiere la región del ICP a partir del campo "Geografías prioritarias".
+// LATAM se chequea antes que US para que "Estados Unidos con expansión en Latam" → LATAM.
 function inferRegionFromIcp(icpContent: string): string | null {
   const geo = extractIcpField(icpContent, "Geografías prioritarias").toLowerCase();
   if (!geo) return null;
-  if (/estados unidos|united states|\bus\b|usa/.test(geo)) return "US";
+  if (/latam|latinoam[eé]rica|am[eé]rica latina|hispanohablante|chile|colombia|per[uú]|m[eé]xico|argentina|centroam[eé]rica|brasil|venezuela|ecuador|bolivia/.test(geo)) return "LATAM";
   if (/canad[aá]/.test(geo)) return "CA";
   if (/europa|europe|\beu\b/.test(geo)) return "EU";
-  if (/latam|latin|am[eé]rica latina|latinoam[eé]rica/.test(geo)) return "LATAM";
+  if (/estados unidos|united states|\bus\b|usa/.test(geo)) return "US";
   return null;
 }
 
-// Infere el tamaño objetivo del ICP a partir del campo "Tamaño (empleados / revenue)"
-// Compatible con el nuevo formulario ICP que usa chips como "1–10", "11–50", "51–200", etc.
+// Infiere el tamaño objetivo desde el campo "Tamaño (empleados / revenue)".
+// Devuelve la categoría más baja presente para no sobre-estimar el segmento.
 function inferSizeFromIcp(icpContent: string): "small" | "medium" | "large" | null {
   const tamano = extractIcpField(icpContent, "Tamaño (empleados / revenue)").toLowerCase();
   if (!tamano) return null;
-  // Chips del nuevo formulario
-  if (/1\.000\+|1000\+|501/.test(tamano)) return "large";
-  if (/201|500/.test(tamano) && !/1\.000/.test(tamano)) return "medium";
-  if (/51|100|200/.test(tamano)) return "medium";
-  if (/1.{0,3}10\b|11.{0,3}50/.test(tamano)) return "small";
+  // Chips del nuevo formulario: detectamos cuáles están seleccionados
+  const hasSmall  = /\b1[–\-]10\b|11[–\-]50\b/.test(tamano);
+  const hasMedium = /51[–\-]200|201[–\-]500/.test(tamano);
+  const hasLarge  = /501|1\.000\+|1000\+/.test(tamano);
+  if (hasSmall) return "small";
+  if (hasMedium) return "medium";
+  if (hasLarge) return "large";
   // Texto libre (formato antiguo)
   const nums = (tamano.match(/\d+/g) ?? []).map(Number).filter((n) => n > 0);
   if (nums.length === 0) {
