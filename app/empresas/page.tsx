@@ -38,9 +38,9 @@ type Company = {
 };
 
 const REGIONS: { value: string; label: string }[] = [
-  { value: "US", label: "Estados Unidos" },
-  { value: "CA", label: "Canadá" },
-  { value: "EU", label: "Europa" },
+  { value: "US",    label: "Estados Unidos" },
+  { value: "CA",    label: "Canadá" },
+  { value: "EU",    label: "Europa" },
   { value: "LATAM", label: "LATAM" }
 ];
 
@@ -49,6 +49,42 @@ const SIZES: { value: "small" | "medium" | "large"; label: string }[] = [
   { value: "medium", label: "31–100 empleados" },
   { value: "large",  label: "100+ empleados / DSOs" }
 ];
+
+// Extrae el valor de un campo [Etiqueta] del texto del ICP serializado
+function extractIcpField(text: string, label: string): string {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`\\[${escaped}\\]\\s*([\\s\\S]*?)(?=\\n\\[|\\n-{3,}|$)`, "i");
+  const m = text.match(re);
+  return m ? m[1].trim() : "";
+}
+
+// Infere la región del ICP a partir del campo "Geografías prioritarias"
+function inferRegionFromIcp(icpContent: string): string | null {
+  const geo = extractIcpField(icpContent, "Geografías prioritarias").toLowerCase();
+  if (!geo) return null;
+  if (/estados unidos|united states|\bus\b|usa/.test(geo)) return "US";
+  if (/canad[aá]/.test(geo)) return "CA";
+  if (/europa|europe|\beu\b/.test(geo)) return "EU";
+  if (/latam|latin|am[eé]rica latina|latinoam[eé]rica/.test(geo)) return "LATAM";
+  return null;
+}
+
+// Infere el tamaño objetivo del ICP a partir del campo "Tamaño (empleados / revenue)"
+function inferSizeFromIcp(icpContent: string): "small" | "medium" | "large" | null {
+  const tamano = extractIcpField(icpContent, "Tamaño (empleados / revenue)").toLowerCase();
+  if (!tamano) return null;
+  const nums = (tamano.match(/\d+/g) ?? []).map(Number).filter((n) => n > 0);
+  if (nums.length === 0) {
+    if (/pequeñ|startup|micro/.test(tamano)) return "small";
+    if (/medi/.test(tamano)) return "medium";
+    if (/grand|enterprise|corp/.test(tamano)) return "large";
+    return null;
+  }
+  const max = Math.max(...nums);
+  if (max <= 30) return "small";
+  if (max <= 100) return "medium";
+  return "large";
+}
 
 export default function EmpresasPage() {
   const { currentClient } = useClient();
@@ -68,6 +104,22 @@ export default function EmpresasPage() {
   const [lastRun, setLastRun] = useState<{ inserted: number; skipped: number } | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ pushed: number; total: number; errors: number } | null>(null);
+
+  // Precarga región y tamaño desde el ICP del cliente activo
+  useEffect(() => {
+    if (!currentClient) return;
+    fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((data) => {
+        const icpDoc = (data.items ?? []).find((i: { file_type: string }) => i.file_type === "icp");
+        if (!icpDoc?.content) return;
+        const inferredRegion = inferRegionFromIcp(icpDoc.content);
+        const inferredSize   = inferSizeFromIcp(icpDoc.content);
+        if (inferredRegion) setRegion(inferredRegion);
+        if (inferredSize)   setSize(inferredSize);
+      })
+      .catch(() => {});
+  }, [currentClient?.id]);
 
   const unpushedCount = useMemo(
     () =>

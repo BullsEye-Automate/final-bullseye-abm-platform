@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin, IcpConfig } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 import { discoverCompanies } from "@/lib/discovery";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export const runtime    = "nodejs";
+export const dynamic    = "force-dynamic";
 export const maxDuration = 120;
 
 type Body = {
@@ -15,36 +15,61 @@ type Body = {
 
 export async function POST(req: NextRequest) {
   const body     = (await req.json().catch(() => ({}))) as Body;
-  const region   = body.region   ?? "US";
-  const size     = body.size     ?? "small";
+  const region   = body.region ?? "US";
+  const size     = body.size   ?? "small";
   const limit    = Math.min(Math.max(body.limit ?? 8, 1), 15);
   const clientId = body.client_id ?? null;
 
+  if (!clientId) {
+    return NextResponse.json(
+      { error: "Se requiere client_id. Selecciona un cliente en el sidebar." },
+      { status: 400 }
+    );
+  }
+
   const db = supabaseAdmin();
 
-  // Busca el ICP activo del cliente (o global si no hay client_id)
-  let icpQ = db
-    .from("icp_config")
-    .select("*")
-    .eq("is_active", true)
-    .order("version", { ascending: false })
-    .limit(1);
-  if (clientId) icpQ = icpQ.eq("client_id", clientId);
+  // Lee el ICP del cliente desde client_ai_context (texto libre, guardado en /configuracion/icp)
+  const { data: icpCtx, error: icpErr } = await db
+    .from("client_ai_context")
+    .select("content")
+    .eq("client_id", clientId)
+    .eq("file_type", "icp")
+    .order("uploaded_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  const { data: icp, error: icpErr } = await icpQ.maybeSingle();
   if (icpErr) return NextResponse.json({ error: icpErr.message }, { status: 500 });
-  if (!icp)   return NextResponse.json({ error: "No hay ICP activo configurado para este cliente" }, { status: 400 });
+
+  if (!icpCtx?.content?.trim()) {
+    return NextResponse.json(
+      {
+        error:
+          "Este cliente no tiene ICP configurado. Ve a SISTEMA → ICP para configurarlo antes de buscar empresas."
+      },
+      { status: 400 }
+    );
+  }
 
   // Empresas ya existentes del cliente para excluir duplicados
-  let exQ = db.from("companies").select("company_name").limit(1000);
-  if (clientId) exQ = exQ.eq("client_id", clientId);
-  const { data: existing, error: exErr } = await exQ;
+  const { data: existing, error: exErr } = await db
+    .from("companies")
+    .select("company_name")
+    .eq("client_id", clientId)
+    .limit(1000);
+
   if (exErr) return NextResponse.json({ error: exErr.message }, { status: 500 });
-  const exclude = (existing ?? []).map((r) => r.company_name);
+  const exclude = (existing ?? []).map((r: { company_name: string }) => r.company_name);
 
   let discovered;
   try {
-    discovered = await discoverCompanies({ icp: icp as IcpConfig, region, size, limit, exclude });
+    discovered = await discoverCompanies({
+      icpContent: icpCtx.content,
+      region,
+      size,
+      limit,
+      exclude
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Discovery failed";
     return NextResponse.json({ error: msg }, { status: 500 });
@@ -55,26 +80,26 @@ export async function POST(req: NextRequest) {
   }
 
   const rows = discovered.map((c) => ({
-    company_name:        c.company_name,
-    company_website:     c.company_website,
+    company_name:         c.company_name,
+    company_website:      c.company_website,
     company_linkedin_url: c.company_linkedin_url,
-    company_city:        c.company_city,
-    company_country:     c.company_country,
-    company_size:        c.company_size,
-    company_type:        c.company_type,
-    cad_software:        c.cad_software,
-    scanner_technology:  c.scanner_technology,
-    fit_signals:         c.fit_signals,
-    fit_score:           c.fit_score,
-    research_summary:    c.research_summary,
-    research_sources:    c.research_sources,
-    competitor_match:    c.competitor_match,
-    status:              "pending" as const,
-    icp_version:         icp.version,
-    client_id:           clientId
+    company_city:         c.company_city,
+    company_country:      c.company_country,
+    company_size:         c.company_size,
+    company_type:         c.company_type,
+    cad_software:         c.cad_software,
+    scanner_technology:   c.scanner_technology,
+    fit_signals:          c.fit_signals,
+    fit_score:            c.fit_score,
+    research_summary:     c.research_summary,
+    research_sources:     c.research_sources,
+    competitor_match:     c.competitor_match,
+    status:               "pending" as const,
+    icp_version:          null,
+    client_id:            clientId
   }));
 
-  const existingLower = new Set(exclude.map((n) => n.toLowerCase()));
+  const existingLower = new Set(exclude.map((n: string) => n.toLowerCase()));
   const seenLower     = new Set<string>();
   const dedupedRows   = rows.filter((r) => {
     const k = r.company_name.toLowerCase();
@@ -91,6 +116,7 @@ export async function POST(req: NextRequest) {
     .from("companies")
     .insert(dedupedRows)
     .select("id, company_name, status, fit_score");
+
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
 
   return NextResponse.json({
