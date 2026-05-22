@@ -1,7 +1,6 @@
 import "./globals.css";
 import type { Metadata } from "next";
-import Sidebar from "@/components/Sidebar";
-import { ClientProvider } from "@/lib/clientContext";
+import AppShell from "@/components/AppShell";
 
 export const metadata: Metadata = {
   title: "BullsEye — Prospecting",
@@ -17,12 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body className="min-h-screen flex">
-        <ClientProvider>
-          <Sidebar />
-          <main className="flex-1 min-h-screen overflow-y-auto">
-            <div className="p-8">{children}</div>
-          </main>
-        </ClientProvider>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

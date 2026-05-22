@@ -10,12 +10,18 @@ import {
   IconCheck,
   IconFileText,
   IconX,
-  IconDownload,
   IconFileImport,
-  IconLink,
-  IconChevronDown
+  IconChevronDown,
+  IconSparkles
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
+import {
+  IcpFormData,
+  EMPTY_FORM,
+  TAMANO_OPTS, FACTURACION_OPTS, MODELO_OPTS, ETAPA_OPTS,
+  DEPTO_OPTS, SENIORITY_OPTS, TONO_OPTS, IDIOMA_OPTS, CTA_OPTS, CANALES_OPTS,
+  serializeIcpForm, deserializeIcpForm, parseFormJson
+} from "@/lib/icp-form";
 
 // ── Types ──────────────────────────────────────────────────────────────
 type IcpDoc = {
@@ -25,259 +31,6 @@ type IcpDoc = {
   content: string;
   uploaded_at: string;
 };
-
-type IcpFormData = {
-  // 1. Datos del cliente
-  nombre_empresa: string;
-  nombre_contacto: string;
-  cargo: string;
-  email: string;
-  descripcion_negocio: string;
-  // 2. Perfil de empresa objetivo
-  industrias_objetivo: string;
-  industrias_excluidas: string;
-  tamano_empresa: string[];
-  facturacion: string[];
-  geografias: string;
-  modelo_empresa: string[];
-  etapa_empresa: string[];
-  // 3. Señales de fit
-  senales_positivas: string;
-  senales_negativas: string;
-  tech_stack: string;
-  eventos_disparadores: string;
-  // 4. Buyer persona
-  cargos_decisores: string;
-  cargos_influenciadores: string;
-  cargos_evitar: string;
-  departamentos: string[];
-  seniority: string[];
-  perfil_psicografico: string;
-  // 5. Propuesta de valor
-  propuesta_valor: string;
-  problemas: string;
-  resultados: string;
-  competidores: string;
-  diferenciadores: string;
-  // 6. Outreach
-  tono: string[];
-  idioma: string[];
-  cta_primer_contacto: string[];
-  canales: string[];
-  mensajes_exitosos: string;
-  objeciones: string;
-  // 7. Clientes de referencia
-  mejores_clientes: string;
-  peores_clientes: string;
-  ticket_acv: string;
-};
-
-const EMPTY_FORM: IcpFormData = {
-  nombre_empresa: "", nombre_contacto: "", cargo: "", email: "", descripcion_negocio: "",
-  industrias_objetivo: "", industrias_excluidas: "", tamano_empresa: [], facturacion: [],
-  geografias: "", modelo_empresa: [], etapa_empresa: [],
-  senales_positivas: "", senales_negativas: "", tech_stack: "", eventos_disparadores: "",
-  cargos_decisores: "", cargos_influenciadores: "", cargos_evitar: "",
-  departamentos: [], seniority: [], perfil_psicografico: "",
-  propuesta_valor: "", problemas: "", resultados: "", competidores: "", diferenciadores: "",
-  tono: [], idioma: [], cta_primer_contacto: [], canales: [],
-  mensajes_exitosos: "", objeciones: "",
-  mejores_clientes: "", peores_clientes: "", ticket_acv: ""
-};
-
-// Opciones de chips
-const TAMANO_OPTS    = ["1–10", "11–50", "51–200", "201–500", "501–1.000", "1.000+"];
-const FACTURACION_OPTS = ["< $500K", "$500K–$2M", "$2–10M", "$10–50M", "$50M+"];
-const MODELO_OPTS    = ["B2B", "B2B2C", "SaaS", "Marketplace", "Servicios"];
-const ETAPA_OPTS     = ["Startup", "Scale-up", "Empresa establecida", "Corporativo"];
-const DEPTO_OPTS     = ["Ventas", "Marketing", "Operaciones", "C-Suite", "Revenue Ops", "Producto", "Tecnología", "RRHH"];
-const SENIORITY_OPTS = ["Manager", "Senior Manager", "Director", "VP / Head of", "C-Level", "Founder / Owner"];
-const TONO_OPTS      = ["Formal / corporativo", "Profesional amigable", "Casual / directo", "Consultivo / experto", "Challenger (provocador)"];
-const IDIOMA_OPTS    = ["Español", "Inglés", "Portugués", "Mixto por mercado"];
-const CTA_OPTS       = ["Agendar demo (30 min)", "Llamada rápida (15 min)", "Ver caso de estudio", "Responder pregunta simple", "Diagnóstico gratuito"];
-const CANALES_OPTS   = ["Email frío", "LinkedIn conexión", "LinkedIn mensaje directo", "WhatsApp", "Llamada en frío"];
-
-// ── Serialización a texto (formato compatible con discovery.ts) ────────
-function serializeIcpForm(d: IcpFormData): string {
-  function f(label: string, value: string | string[]): string | null {
-    const v = Array.isArray(value) ? value.join(", ") : value;
-    return v?.trim() ? `[${label}]\n${v.trim()}` : null;
-  }
-  function section(title: string, fields: (string | null)[]): string | null {
-    const body = fields.filter(Boolean).join("\n\n");
-    if (!body) return null;
-    const sep = "-".repeat(42);
-    return `${sep}\n${title}\n${sep}\n\n${body}`;
-  }
-  return [
-    section("DATOS DEL CLIENTE", [
-      f("Nombre de la empresa", d.nombre_empresa),
-      f("Nombre del contacto", d.nombre_contacto),
-      f("Cargo", d.cargo),
-      f("Email de contacto", d.email),
-      f("Descripción del negocio", d.descripcion_negocio),
-    ]),
-    section("PERFIL DE EMPRESA OBJETIVO", [
-      f("Industrias objetivo", d.industrias_objetivo),
-      f("Industrias excluidas", d.industrias_excluidas),
-      f("Tamaño (empleados / revenue)", d.tamano_empresa),
-      f("Facturación anual estimada", d.facturacion),
-      f("Geografías prioritarias", d.geografias),
-      f("Modelo de empresa", d.modelo_empresa),
-      f("Etapa de la empresa", d.etapa_empresa),
-    ]),
-    section("SEÑALES DE FIT", [
-      f("Señales positivas de fit", d.senales_positivas),
-      f("Señales negativas / descalificadores", d.senales_negativas),
-      f("Tecnologías / Stack que usa", d.tech_stack),
-      f("Eventos disparadores de compra", d.eventos_disparadores),
-    ]),
-    section("BUYER PERSONA", [
-      f("Cargos decisores (quien aprueba)", d.cargos_decisores),
-      f("Cargos influenciadores (quien recomienda)", d.cargos_influenciadores),
-      f("Cargos a evitar", d.cargos_evitar),
-      f("Departamentos objetivo", d.departamentos),
-      f("Seniority mínimo", d.seniority),
-      f("Perfil psicográfico", d.perfil_psicografico),
-    ]),
-    section("PROPUESTA DE VALOR", [
-      f("Propuesta de valor en 1-2 oraciones", d.propuesta_valor),
-      f("Top 3 problemas que resuelves", d.problemas),
-      f("Top 3 resultados que entregas", d.resultados),
-      f("Competidores principales", d.competidores),
-      f("Por qué te eligen vs competencia", d.diferenciadores),
-    ]),
-    section("OUTREACH Y TONO", [
-      f("Tono de comunicación", d.tono),
-      f("Idioma del outreach", d.idioma),
-      f("CTA del primer contacto", d.cta_primer_contacto),
-      f("Canales preferidos", d.canales),
-      f("Mensajes que han funcionado", d.mensajes_exitosos),
-      f("Objeciones frecuentes y cómo responder", d.objeciones),
-    ]),
-    section("CLIENTES DE REFERENCIA", [
-      f("Mejores clientes actuales o pasados", d.mejores_clientes),
-      f("Peores clientes / mal fit", d.peores_clientes),
-      f("Ticket / ACV y ciclo de venta", d.ticket_acv),
-    ]),
-  ].filter(Boolean).join("\n\n");
-}
-
-// ── Deserialización desde texto ────────────────────────────────────────
-function extractField(text: string, label: string): string {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`\\[${escaped}\\]\\s*([\\s\\S]*?)(?=\\n\\[|\\n-{3,}|$)`, "i");
-  const m = text.match(re);
-  return m ? m[1].trim() : "";
-}
-
-function chipsFrom(text: string, label: string): string[] {
-  const val = extractField(text, label);
-  return val ? val.split(",").map((s) => s.trim()).filter(Boolean) : [];
-}
-
-function deserializeIcpForm(text: string): IcpFormData {
-  return {
-    nombre_empresa:         extractField(text, "Nombre de la empresa"),
-    nombre_contacto:        extractField(text, "Nombre del contacto"),
-    cargo:                  extractField(text, "Cargo"),
-    email:                  extractField(text, "Email de contacto"),
-    descripcion_negocio:    extractField(text, "Descripción del negocio"),
-    industrias_objetivo:    extractField(text, "Industrias objetivo"),
-    industrias_excluidas:   extractField(text, "Industrias excluidas"),
-    tamano_empresa:         chipsFrom(text, "Tamaño (empleados / revenue)"),
-    facturacion:            chipsFrom(text, "Facturación anual estimada"),
-    geografias:             extractField(text, "Geografías prioritarias"),
-    modelo_empresa:         chipsFrom(text, "Modelo de empresa"),
-    etapa_empresa:          chipsFrom(text, "Etapa de la empresa"),
-    senales_positivas:      extractField(text, "Señales positivas de fit"),
-    senales_negativas:      extractField(text, "Señales negativas / descalificadores"),
-    tech_stack:             extractField(text, "Tecnologías / Stack que usa"),
-    eventos_disparadores:   extractField(text, "Eventos disparadores de compra"),
-    cargos_decisores:       extractField(text, "Cargos decisores (quien aprueba)"),
-    cargos_influenciadores: extractField(text, "Cargos influenciadores (quien recomienda)"),
-    cargos_evitar:          extractField(text, "Cargos a evitar"),
-    departamentos:          chipsFrom(text, "Departamentos objetivo"),
-    seniority:              chipsFrom(text, "Seniority mínimo"),
-    perfil_psicografico:    extractField(text, "Perfil psicográfico"),
-    propuesta_valor:        extractField(text, "Propuesta de valor en 1-2 oraciones"),
-    problemas:              extractField(text, "Top 3 problemas que resuelves"),
-    resultados:             extractField(text, "Top 3 resultados que entregas"),
-    competidores:           extractField(text, "Competidores principales"),
-    diferenciadores:        extractField(text, "Por qué te eligen vs competencia"),
-    tono:                   chipsFrom(text, "Tono de comunicación"),
-    idioma:                 chipsFrom(text, "Idioma del outreach"),
-    cta_primer_contacto:    chipsFrom(text, "CTA del primer contacto"),
-    canales:                chipsFrom(text, "Canales preferidos"),
-    mensajes_exitosos:      extractField(text, "Mensajes que han funcionado"),
-    objeciones:             extractField(text, "Objeciones frecuentes y cómo responder"),
-    mejores_clientes:       extractField(text, "Mejores clientes actuales o pasados"),
-    peores_clientes:        extractField(text, "Peores clientes / mal fit"),
-    ticket_acv:             extractField(text, "Ticket / ACV y ciclo de venta"),
-  };
-}
-
-// ── Parser de JSON exportado desde el formulario HTML del cliente ──────
-function parseFormJson(json: Record<string, unknown>): IcpFormData {
-  function str(sec: string, key: string): string {
-    const section = json[sec] as Record<string, unknown> | undefined;
-    if (!section) return "";
-    const val = section[key];
-    if (typeof val === "string") return val;
-    if (Array.isArray(val)) return val.join(", ");
-    return "";
-  }
-  function arr(sec: string, key: string, filter?: string[]): string[] {
-    const section = json[sec] as Record<string, unknown> | undefined;
-    if (!section) return [];
-    const val = section[key];
-    const list: string[] = Array.isArray(val)
-      ? val
-      : typeof val === "string"
-      ? val.split(",").map((s) => s.trim()).filter(Boolean)
-      : [];
-    return filter ? list.filter((v) => filter.includes(v)) : list;
-  }
-  const allModeloEtapa = arr("perfil_empresa", "Modelo y etapa de la empresa");
-  return {
-    nombre_empresa:         str("datos_cliente", "Nombre de la empresa"),
-    nombre_contacto:        str("datos_cliente", "Nombre del contacto"),
-    cargo:                  str("datos_cliente", "Cargo"),
-    email:                  str("datos_cliente", "Email de contacto"),
-    descripcion_negocio:    str("datos_cliente", "Descripción breve del negocio"),
-    industrias_objetivo:    str("perfil_empresa", "Industrias objetivo"),
-    industrias_excluidas:   str("perfil_empresa", "Industrias excluidas"),
-    tamano_empresa:         arr("perfil_empresa", "Tamaño de empresa (empleados)"),
-    facturacion:            arr("perfil_empresa", "Facturación anual estimada"),
-    geografias:             str("perfil_empresa", "Geografías objetivo"),
-    modelo_empresa:         allModeloEtapa.filter((v) => MODELO_OPTS.includes(v)),
-    etapa_empresa:          allModeloEtapa.filter((v) => ETAPA_OPTS.includes(v)),
-    senales_positivas:      str("senales_fit", "Señales positivas de fit"),
-    senales_negativas:      str("senales_fit", "Señales negativas / descalificadores"),
-    tech_stack:             str("senales_fit", "Tech stack / herramientas que usa tu cliente ideal"),
-    eventos_disparadores:   str("senales_fit", "Eventos disparadores de compra"),
-    cargos_decisores:       str("buyer_persona", "Cargos decisores (quien aprueba)"),
-    cargos_influenciadores: str("buyer_persona", "Cargos influenciadores (quien recomienda)"),
-    cargos_evitar:          str("buyer_persona", "Cargos a evitar"),
-    departamentos:          arr("buyer_persona", "Departamentos objetivo"),
-    seniority:              arr("buyer_persona", "Seniority mínimo"),
-    perfil_psicografico:    str("buyer_persona", "Perfil psicográfico del buyer"),
-    propuesta_valor:        str("propuesta_valor", "Propuesta de valor en 1–2 oraciones"),
-    problemas:              str("propuesta_valor", "Top 3 problemas que resuelves"),
-    resultados:             str("propuesta_valor", "Top 3 resultados que entregas"),
-    competidores:           str("propuesta_valor", "Principales competidores"),
-    diferenciadores:        str("propuesta_valor", "Por qué te eligen vs. la competencia"),
-    tono:                   arr("outreach", "Tono de comunicación"),
-    idioma:                 arr("outreach", "Idioma principal del outreach"),
-    cta_primer_contacto:    arr("outreach", "CTA del primer contacto"),
-    canales:                arr("outreach", "Canales preferidos"),
-    mensajes_exitosos:      str("outreach", "Mensajes que han funcionado (ejemplos reales)"),
-    objeciones:             str("outreach", "Objeciones frecuentes y cómo las manejas"),
-    mejores_clientes:       str("clientes_referencia", "Top 3–5 mejores clientes actuales o pasados"),
-    peores_clientes:        str("clientes_referencia", "Peores clientes / mal fit"),
-    ticket_acv:             str("clientes_referencia", "Ticket / ACV y ciclo de venta"),
-  };
-}
 
 // ── Componente principal ───────────────────────────────────────────────
 export default function IcpPage() {
@@ -290,7 +43,9 @@ export default function IcpPage() {
   const [deleting, setDeleting] = useState(false);
   const [savedAt,  setSavedAt]  = useState<string | null>(null);
   const [error,    setError]    = useState<string | null>(null);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const [magicLink,        setMagicLink]        = useState<string | null>(null);
+  const [magicLinkLoading, setMagicLinkLoading] = useState(false);
+  const [linkCopied,       setLinkCopied]       = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
 
@@ -412,11 +167,18 @@ export default function IcpPage() {
     reader.readAsText(file, "utf-8");
   }
 
-  function copyFormLink() {
-    const url = `${window.location.origin}/forms/bullseye-icp-form.html?client=${encodeURIComponent(currentClient?.name ?? "")}`;
+  async function generateMagicLink() {
+    if (!currentClient) return;
+    setMagicLinkLoading(true);
+    const r = await fetch(`/api/clients/${currentClient.id}/form-token`);
+    const j = await r.json();
+    setMagicLinkLoading(false);
+    if (j.error) { setError(j.error); return; }
+    const url: string = j.url;
+    setMagicLink(url);
     navigator.clipboard.writeText(url).then(() => {
       setLinkCopied(true);
-      setTimeout(() => setLinkCopied(false), 2000);
+      setTimeout(() => setLinkCopied(false), 2500);
     });
   }
 
@@ -462,16 +224,19 @@ export default function IcpPage() {
             </span>
           )}
 
-          {/* Compartir link del formulario */}
+          {/* Link mágico para que el cliente rellene el formulario directamente */}
           <button
             className="btn-secondary py-1.5 px-3"
-            onClick={copyFormLink}
-            title="Copia el link del formulario para enviar al cliente"
+            onClick={generateMagicLink}
+            disabled={magicLinkLoading}
+            title="Genera un link único para que el cliente rellene el ICP. Al guardar, se actualiza directamente en la app."
           >
-            {linkCopied ? (
-              <><IconCheck size={15} /> ¡Copiado!</>
+            {magicLinkLoading ? (
+              <><IconLoader2 size={15} className="animate-spin" /> Generando…</>
+            ) : linkCopied ? (
+              <><IconCheck size={15} /> ¡Link copiado!</>
             ) : (
-              <><IconLink size={15} /> Link para cliente</>
+              <><IconSparkles size={15} /> Link mágico</>
             )}
           </button>
 
@@ -535,24 +300,33 @@ export default function IcpPage() {
       )}
 
       {/* Banner explicativo de las dos opciones */}
-      <div className="card py-3 px-4 flex items-start gap-3 text-sm" style={{ background: "rgba(37,23,98,0.04)", border: "1px solid rgba(37,23,98,0.1)" }}>
-        <div className="space-y-1 flex-1">
-          <p className="font-medium text-ink">Dos maneras de completar el ICP:</p>
-          <p className="text-ink-muted text-xs">
-            <span className="font-semibold text-ink">① Directo aquí</span> — Completa las secciones abajo y haz clic en Guardar.
-          </p>
-          <p className="text-ink-muted text-xs">
-            <span className="font-semibold text-ink">② El cliente lo rellena</span> — Copia el link (botón arriba), envíalo al cliente. Cuando termine, pídele que exporte el JSON con el botón verde del formulario e impórtalo aquí con "Importar respuestas".
-          </p>
-        </div>
-        <a
-          href={`/forms/bullseye-icp-form.html?client=${encodeURIComponent(currentClient.name)}`}
-          target="_blank"
-          rel="noreferrer"
-          className="btn-secondary py-1 px-2 text-xs shrink-0"
-        >
-          <IconDownload size={13} /> Ver formulario
-        </a>
+      <div className="card py-3 px-4 space-y-2 text-sm" style={{ background: "rgba(37,23,98,0.04)", border: "1px solid rgba(37,23,98,0.1)" }}>
+        <p className="font-medium text-ink">Dos maneras de completar el ICP:</p>
+        <p className="text-ink-muted text-xs">
+          <span className="font-semibold text-ink">① Directo aquí</span> — Completa las secciones abajo y haz clic en Guardar.
+        </p>
+        <p className="text-ink-muted text-xs">
+          <span className="font-semibold text-ink">② Link mágico</span> — Haz clic en{" "}
+          <span className="font-semibold text-ink">Link mágico</span> (arriba), el link se copia automáticamente. Envíaselo al cliente. Cuando haga clic en{" "}
+          <span className="font-semibold text-ink">Guardar</span> en el formulario, el ICP se actualiza aquí directamente, sin exportar nada.
+        </p>
+        {magicLink && (
+          <div className="mt-1 flex items-center gap-2 flex-wrap">
+            <code className="text-[11px] bg-white border border-[rgba(37,23,98,0.15)] rounded px-2 py-0.5 text-ink-muted break-all">
+              {magicLink}
+            </code>
+            <button
+              className="text-[11px] text-accent hover:underline shrink-0"
+              onClick={() => {
+                navigator.clipboard.writeText(magicLink);
+                setLinkCopied(true);
+                setTimeout(() => setLinkCopied(false), 2500);
+              }}
+            >
+              {linkCopied ? "¡Copiado!" : "Copiar"}
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (
