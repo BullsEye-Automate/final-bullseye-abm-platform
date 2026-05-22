@@ -70,9 +70,16 @@ function inferRegionFromIcp(icpContent: string): string | null {
 }
 
 // Infere el tamaño objetivo del ICP a partir del campo "Tamaño (empleados / revenue)"
+// Compatible con el nuevo formulario ICP que usa chips como "1–10", "11–50", "51–200", etc.
 function inferSizeFromIcp(icpContent: string): "small" | "medium" | "large" | null {
   const tamano = extractIcpField(icpContent, "Tamaño (empleados / revenue)").toLowerCase();
   if (!tamano) return null;
+  // Chips del nuevo formulario
+  if (/1\.000\+|1000\+|501/.test(tamano)) return "large";
+  if (/201|500/.test(tamano) && !/1\.000/.test(tamano)) return "medium";
+  if (/51|100|200/.test(tamano)) return "medium";
+  if (/1.{0,3}10\b|11.{0,3}50/.test(tamano)) return "small";
+  // Texto libre (formato antiguo)
   const nums = (tamano.match(/\d+/g) ?? []).map(Number).filter((n) => n > 0);
   if (nums.length === 0) {
     if (/pequeñ|startup|micro/.test(tamano)) return "small";
@@ -81,8 +88,8 @@ function inferSizeFromIcp(icpContent: string): "small" | "medium" | "large" | nu
     return null;
   }
   const max = Math.max(...nums);
-  if (max <= 30) return "small";
-  if (max <= 100) return "medium";
+  if (max <= 50) return "small";
+  if (max <= 500) return "medium";
   return "large";
 }
 
