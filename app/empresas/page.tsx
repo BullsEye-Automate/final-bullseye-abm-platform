@@ -11,7 +11,12 @@ import {
   IconRefresh,
   IconAlertCircle,
   IconBuildingFactory2,
-  IconRocket
+  IconRocket,
+  IconLoader2,
+  IconMicroscope,
+  IconBolt,
+  IconTarget,
+  IconUser
 } from "@tabler/icons-react";
 
 type Company = {
@@ -30,11 +35,21 @@ type Company = {
   research_summary: string | null;
   research_sources: { title: string; url: string }[];
   competitor_match: string | null;
+  deep_research: string | null;
   status: string;
   reject_reason: string | null;
   clay_pushed_at: string | null;
   clay_push_error: string | null;
   created_at: string;
+};
+
+type DeepResearch = {
+  trigger: string;
+  angulo: string;
+  senales: string[];
+  decisores: string[];
+  resumen_ejecutivo: string;
+  fuentes: { title: string; url: string }[];
 };
 
 const REGIONS: { value: string; label: string }[] = [
@@ -127,6 +142,8 @@ export default function EmpresasPage() {
   const [lastRun, setLastRun] = useState<{ inserted: number; skipped: number } | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ pushed: number; total: number; errors: number } | null>(null);
+  const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set());
+  const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
 
   // Precarga región y tamaño desde el ICP del cliente activo
   useEffect(() => {
@@ -208,6 +225,31 @@ export default function EmpresasPage() {
     setLastRun({ inserted: data.inserted?.length ?? 0, skipped: data.skipped ?? 0 });
     setTab("pending");
     load("pending");
+  }
+
+  // Limpia selección al cambiar de tab
+  useEffect(() => { setSelectedIds(new Set()); }, [tab]);
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  async function enrichSelected() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setEnrichingIds(new Set(ids));
+    await Promise.all(
+      ids.map((id) =>
+        fetch(`/api/companies/${id}/deep-research`, { method: "POST" }).catch(() => {})
+      )
+    );
+    setEnrichingIds(new Set());
+    setSelectedIds(new Set());
+    load(tab);
   }
 
   const counts = useMemo(() => {
@@ -293,7 +335,7 @@ export default function EmpresasPage() {
         )}
       </section>
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           {(["pending", "approved", "rejected"] as const).map((s) => {
             const label = s === "pending" ? "Pendientes" : s === "approved" ? "Aprobadas" : "Rechazadas";
@@ -321,10 +363,26 @@ export default function EmpresasPage() {
             );
           })}
         </div>
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-3 text-xs flex-wrap">
           <ScoreChip label="alto" color="success" count={counts.high ?? 0} />
           <ScoreChip label="medio" color="warning" count={counts.medium ?? 0} />
           <ScoreChip label="bajo" color="danger" count={counts.low ?? 0} />
+          {/* Botón de investigación batch — solo en Pendientes cuando hay selección */}
+          {tab === "pending" && selectedIds.size > 0 && (
+            <button
+              onClick={enrichSelected}
+              disabled={enrichingIds.size > 0}
+              className="btn-primary"
+              style={{ background: "#251762" }}
+              title="Investiga en profundidad las empresas seleccionadas con Perplexity + Claude"
+            >
+              {enrichingIds.size > 0 ? (
+                <><IconLoader2 size={14} className="animate-spin" /> Investigando {enrichingIds.size}…</>
+              ) : (
+                <><IconMicroscope size={14} /> Investigar {selectedIds.size} seleccionada{selectedIds.size > 1 ? "s" : ""}</>
+              )}
+            </button>
+          )}
           {tab === "approved" && unpushedCount > 0 && (
             <button
               onClick={pushAllToClay}
@@ -333,9 +391,7 @@ export default function EmpresasPage() {
               title="Empuja a Clay todas las aprobadas que aún no fueron prospectadas"
             >
               <IconRocket size={14} />
-              {bulkPushing
-                ? "Prospectando…"
-                : `Prospectar todas en Clay (${unpushedCount})`}
+              {bulkPushing ? "Prospectando…" : `Prospectar todas en Clay (${unpushedCount})`}
             </button>
           )}
           <button className="btn-secondary" onClick={() => load()} disabled={loading}>
@@ -366,7 +422,14 @@ export default function EmpresasPage() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {companies.map((c) => (
-            <CompanyCard key={c.id} c={c} onChange={load} />
+            <CompanyCard
+              key={c.id}
+              c={c}
+              onChange={load}
+              selected={tab === "pending" && selectedIds.has(c.id)}
+              onToggleSelect={tab === "pending" ? () => toggleSelect(c.id) : undefined}
+              externalEnriching={enrichingIds.has(c.id)}
+            />
           ))}
         </div>
       )}
@@ -404,13 +467,42 @@ function ScoreChip({
   );
 }
 
-function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
+function CompanyCard({
+  c,
+  onChange,
+  selected,
+  onToggleSelect,
+  externalEnriching
+}: {
+  c: Company;
+  onChange: () => void;
+  selected?: boolean;
+  onToggleSelect?: () => void;
+  externalEnriching?: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   const [pushingClay, setPushingClay] = useState(false);
   const [clayError, setClayError] = useState<string | null>(c.clay_push_error);
   const [clayPushedAt, setClayPushedAt] = useState<string | null>(c.clay_pushed_at);
+  const [enriching, setEnriching] = useState(false);
+  const [deepResearch, setDeepResearch] = useState<DeepResearch | null>(() => {
+    if (!c.deep_research) return null;
+    try { return JSON.parse(c.deep_research) as DeepResearch; } catch { return null; }
+  });
+
+  const isEnriching = enriching || !!externalEnriching;
+
+  async function enrichSelf(): Promise<void> {
+    setEnriching(true);
+    try {
+      const res  = await fetch(`/api/companies/${c.id}/deep-research`, { method: "POST" });
+      const data = await res.json();
+      if (data.result) setDeepResearch(data.result as DeepResearch);
+    } catch { /* silencioso — el usuario puede reintentar */ }
+    setEnriching(false);
+  }
 
   async function decide(decision: "approved" | "rejected", reasonArg?: string) {
     setBusy(true);
@@ -421,7 +513,13 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
     });
     setBusy(false);
     if (res.ok) {
-      onChange();
+      if (decision === "approved" && !deepResearch) {
+        // Auto-enrich en background — card desaparece de Pendientes inmediatamente
+        enrichSelf().then(() => onChange());
+        onChange();
+      } else {
+        onChange();
+      }
     } else {
       const d = await res.json();
       alert(d.error ?? "Error");
@@ -453,50 +551,67 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
       : "bg-danger-bg text-danger-fg";
 
   return (
-    <div className="card flex flex-col gap-3">
+    <div
+      className="card flex flex-col gap-3 relative"
+      style={selected ? { outline: "2px solid #62E0D8", outlineOffset: "1px" } : undefined}
+    >
+      {/* Overlay de enriquecimiento en progreso */}
+      {isEnriching && (
+        <div className="absolute inset-0 bg-white/80 rounded-xl flex flex-col items-center justify-center gap-2 z-10">
+          <IconLoader2 size={24} className="animate-spin" style={{ color: "#251762" }} />
+          <span className="text-sm font-medium" style={{ color: "#251762" }}>Investigando con IA…</span>
+          <span className="text-xs text-ink-muted">Esto puede tardar 15–20 segundos</span>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-semibold truncate">{c.company_name}</h3>
-            {c.fit_score && (
-              <span className={`badge ${scoreClass}`}>fit {c.fit_score}</span>
-            )}
-            {c.competitor_match && (
-              <span className="badge bg-brand-tint text-brand">
-                ya con {c.competitor_match}
-              </span>
-            )}
-          </div>
-          <div className="text-xs text-ink-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-            {c.company_type && <span>{labelType(c.company_type)}</span>}
-            {c.company_size && <span>· {c.company_size} empleados</span>}
-            {(c.company_city || c.company_country) && (
-              <span>
-                · {[c.company_city, c.company_country].filter(Boolean).join(", ")}
-              </span>
-            )}
+        <div className="min-w-0 flex items-start gap-2.5">
+          {/* Checkbox de selección — solo en Pendientes */}
+          {onToggleSelect && (
+            <button
+              onClick={onToggleSelect}
+              className="mt-0.5 shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-colors"
+              style={{
+                background:   selected ? "#251762" : "transparent",
+                borderColor:  selected ? "#251762" : "#C4BFDB",
+              }}
+              title={selected ? "Deseleccionar" : "Seleccionar para investigar"}
+            >
+              {selected && <IconCheck size={10} color="white" />}
+            </button>
+          )}
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="font-semibold truncate">{c.company_name}</h3>
+              {c.fit_score && (
+                <span className={`badge ${scoreClass}`}>fit {c.fit_score}</span>
+              )}
+              {deepResearch && (
+                <span className="badge" style={{ background: "rgba(98,224,216,0.15)", color: "#0E7A73", fontSize: "10px" }}>
+                  ✦ enriquecida
+                </span>
+              )}
+              {c.competitor_match && (
+                <span className="badge bg-brand-tint text-brand">ya con {c.competitor_match}</span>
+              )}
+            </div>
+            <div className="text-xs text-ink-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+              {c.company_type && c.company_type !== "other" && <span>{labelType(c.company_type)}</span>}
+              {c.company_size && <span>{c.company_type !== "other" ? "· " : ""}{c.company_size} empleados</span>}
+              {(c.company_city || c.company_country) && (
+                <span>· {[c.company_city, c.company_country].filter(Boolean).join(", ")}</span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {c.company_website && (
-            <a
-              href={c.company_website}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-secondary"
-              title="Sitio web"
-            >
+            <a href={c.company_website} target="_blank" rel="noreferrer" className="btn-secondary" title="Sitio web">
               <IconExternalLink size={14} />
             </a>
           )}
           {c.company_linkedin_url && (
-            <a
-              href={c.company_linkedin_url}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-secondary"
-              title="LinkedIn"
-            >
+            <a href={c.company_linkedin_url} target="_blank" rel="noreferrer" className="btn-secondary" title="LinkedIn">
               <IconBrandLinkedin size={14} />
             </a>
           )}
@@ -510,16 +625,18 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <div className="label mb-1">CAD</div>
-          <div>{c.cad_software || <span className="text-ink-subtle">—</span>}</div>
+      {(c.cad_software || c.scanner_technology) && (
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <div className="label mb-1">CAD</div>
+            <div>{c.cad_software || <span className="text-ink-subtle">—</span>}</div>
+          </div>
+          <div>
+            <div className="label mb-1">Escáner</div>
+            <div>{c.scanner_technology || <span className="text-ink-subtle">—</span>}</div>
+          </div>
         </div>
-        <div>
-          <div className="label mb-1">Escáner</div>
-          <div>{c.scanner_technology || <span className="text-ink-subtle">—</span>}</div>
-        </div>
-      </div>
+      )}
 
       {c.research_summary && (
         <div>
@@ -528,7 +645,7 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
         </div>
       )}
 
-      {c.research_sources && c.research_sources.length > 0 && (
+      {c.research_sources && c.research_sources.length > 0 && !deepResearch && (
         <details className="text-xs text-ink-muted">
           <summary className="cursor-pointer hover:text-ink">
             Fuentes ({c.research_sources.length})
@@ -536,18 +653,93 @@ function CompanyCard({ c, onChange }: { c: Company; onChange: () => void }) {
           <ul className="mt-2 space-y-1">
             {c.research_sources.slice(0, 8).map((s, i) => (
               <li key={i}>
-                <a
-                  href={s.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-brand truncate inline-block max-w-full"
-                >
+                <a href={s.url} target="_blank" rel="noreferrer" className="hover:text-brand truncate inline-block max-w-full">
                   {s.title || s.url}
                 </a>
               </li>
             ))}
           </ul>
         </details>
+      )}
+
+      {/* Bloque de investigación profunda */}
+      {deepResearch ? (
+        <div className="rounded-lg p-4 space-y-3 text-sm" style={{ background: "rgba(37,23,98,0.04)", border: "1px solid rgba(37,23,98,0.1)" }}>
+          <div className="flex items-center gap-2 font-semibold text-xs uppercase tracking-wide" style={{ color: "#251762" }}>
+            <IconMicroscope size={13} /> Investigación profunda
+          </div>
+          {deepResearch.trigger && (
+            <div className="flex gap-2">
+              <IconBolt size={14} className="shrink-0 mt-0.5" style={{ color: "#62E0D8" }} />
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-0.5">Trigger</div>
+                <p className="text-ink/90 leading-snug">{deepResearch.trigger}</p>
+              </div>
+            </div>
+          )}
+          {deepResearch.angulo && (
+            <div className="flex gap-2">
+              <IconTarget size={14} className="shrink-0 mt-0.5" style={{ color: "#62E0D8" }} />
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-0.5">Ángulo de mensaje</div>
+                <p className="text-ink/90 leading-snug">{deepResearch.angulo}</p>
+              </div>
+            </div>
+          )}
+          {deepResearch.senales && deepResearch.senales.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-1.5">Señales específicas</div>
+              <ul className="space-y-1">
+                {deepResearch.senales.map((s, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-ink/90">
+                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "#62E0D8" }} />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {deepResearch.decisores && deepResearch.decisores.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-1.5 flex items-center gap-1">
+                <IconUser size={11} /> Decisores detectados
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {deepResearch.decisores.map((d, i) => (
+                  <span key={i} className="text-xs px-2 py-0.5 rounded-full" style={{ background: "#251762", color: "#fff" }}>
+                    {d}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {deepResearch.fuentes && deepResearch.fuentes.length > 0 && (
+            <details className="text-xs text-ink-muted">
+              <summary className="cursor-pointer hover:text-ink">Fuentes reales ({deepResearch.fuentes.length})</summary>
+              <ul className="mt-2 space-y-1">
+                {deepResearch.fuentes.map((s, i) => (
+                  <li key={i}>
+                    <a href={s.url} target="_blank" rel="noreferrer" className="hover:text-brand truncate inline-block max-w-full">
+                      {s.title || s.url}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      ) : (
+        /* Botón de enriquecimiento individual — cuando no hay deep_research */
+        c.status === "pending" && (
+          <button
+            onClick={enrichSelf}
+            disabled={isEnriching}
+            className="btn-secondary text-xs self-start"
+            title="Investiga esta empresa en profundidad antes de decidir"
+          >
+            <IconMicroscope size={13} /> Investigar en profundidad
+          </button>
+        )
       )}
 
       {c.reject_reason && (
