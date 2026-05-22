@@ -487,6 +487,7 @@ function CompanyCard({
   const [clayError, setClayError] = useState<string | null>(c.clay_push_error);
   const [clayPushedAt, setClayPushedAt] = useState<string | null>(c.clay_pushed_at);
   const [enriching, setEnriching] = useState(false);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
   const [deepResearch, setDeepResearch] = useState<DeepResearch | null>(() => {
     if (!c.deep_research) return null;
     try { return JSON.parse(c.deep_research) as DeepResearch; } catch { return null; }
@@ -496,11 +497,20 @@ function CompanyCard({
 
   async function enrichSelf(): Promise<void> {
     setEnriching(true);
+    setEnrichError(null);
     try {
       const res  = await fetch(`/api/companies/${c.id}/deep-research`, { method: "POST" });
       const data = await res.json();
-      if (data.result) setDeepResearch(data.result as DeepResearch);
-    } catch { /* silencioso — el usuario puede reintentar */ }
+      if (!res.ok) {
+        setEnrichError(data.error ?? `Error ${res.status}`);
+      } else if (data.result) {
+        setDeepResearch(data.result as DeepResearch);
+      } else {
+        setEnrichError("La investigación no devolvió resultados. Intenta de nuevo.");
+      }
+    } catch (e: unknown) {
+      setEnrichError(e instanceof Error ? e.message : "Error de red");
+    }
     setEnriching(false);
   }
 
@@ -731,14 +741,21 @@ function CompanyCard({
       ) : (
         /* Botón de enriquecimiento individual — cuando no hay deep_research */
         c.status === "pending" && (
-          <button
-            onClick={enrichSelf}
-            disabled={isEnriching}
-            className="btn-secondary text-xs self-start"
-            title="Investiga esta empresa en profundidad antes de decidir"
-          >
-            <IconMicroscope size={13} /> Investigar en profundidad
-          </button>
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={enrichSelf}
+              disabled={isEnriching}
+              className="btn-secondary text-xs self-start"
+              title="Investiga esta empresa en profundidad antes de decidir"
+            >
+              <IconMicroscope size={13} /> Investigar en profundidad
+            </button>
+            {enrichError && (
+              <div className="text-xs text-danger-fg flex items-center gap-1.5">
+                <IconAlertCircle size={12} /> {enrichError}
+              </div>
+            )}
+          </div>
         )
       )}
 
