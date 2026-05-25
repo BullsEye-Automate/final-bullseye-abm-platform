@@ -62,7 +62,7 @@ export const EMPTY_FORM: IcpFormData = {
 };
 
 // Opciones de chips
-export const TAMANO_OPTS     = ["1–10", "11–50", "51–200", "201–500", "501–1.000", "1.000+"];
+export const TAMANO_OPTS     = ["1–10", "11–50", "51–100", "101–200", "201–500", "501–1.000", "1.000+"];
 export const FACTURACION_OPTS = ["< $500K", "$500K–$2M", "$2–10M", "$10–50M", "$50M+"];
 export const MODELO_OPTS     = ["B2B", "B2B2C", "SaaS", "Marketplace", "Servicios"];
 export const ETAPA_OPTS      = ["Startup", "Scale-up", "Empresa establecida", "Corporativo"];
