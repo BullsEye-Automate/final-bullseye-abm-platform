@@ -25,7 +25,6 @@ type ClientData = {
   hubspot_owner_id: string | null;
   clay_companies_webhook_url: string | null;
   clay_contacts_webhook_url: string | null;
-  clay_scoring_prompt: string | null;
 };
 
 type ConfigData = {
@@ -33,8 +32,6 @@ type ConfigData = {
   lemlist_staging_campaign_id: string | null;
   hubspot_owner_id: string | null;
 };
-
-type HubSpotOwner = { id: string; firstName: string; lastName: string; email: string };
 
 type VerifyStatus = "idle" | "loading" | "ok" | "error";
 
@@ -188,18 +185,8 @@ function Step1({ client, onComplete }: { client: ClientData; onComplete: (c: Cli
   const [logoUrl, setLogoUrl] = useState(client.logo_url ?? "");
   const [logoError, setLogoError] = useState<string | null>(null);
   const [description, setDescription] = useState(client.description ?? "");
-  const [ownerId, setOwnerId] = useState(client.hubspot_owner_id ?? "");
-  const [owners, setOwners] = useState<HubSpotOwner[]>([]);
-  const [ownersLoading, setOwnersLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch("/api/hubspot/owners").then(r => r.json())
-      .then(j => setOwners(j.owners ?? []))
-      .catch(() => {})
-      .finally(() => setOwnersLoading(false));
-  }, []);
 
   function handleLogoFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; e.target.value = "";
@@ -219,7 +206,6 @@ function Step1({ client, onComplete }: { client: ClientData; onComplete: (c: Cli
       body: JSON.stringify({
         name: name.trim(), slug, logo_url: logoUrl || null,
         description: description.trim() || null,
-        hubspot_owner_id: ownerId || null,
         onboarding_step: Math.max(client.onboarding_step, 1),
       }),
     });
@@ -233,7 +219,7 @@ function Step1({ client, onComplete }: { client: ClientData; onComplete: (c: Cli
       {error && <p className="text-danger-fg text-sm bg-danger-bg rounded-lg px-3 py-2">{error}</p>}
       <div>
         <label className="label block mb-1">Nombre del cliente *</label>
-        <input className="input" value={name} onChange={e => { setName(e.target.value); }} placeholder="Ej. Clínica Dental Norte" />
+        <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="Ej. Clínica Dental Norte" />
       </div>
       <div>
         <label className="label block mb-1">Slug (URL)</label>
@@ -266,17 +252,6 @@ function Step1({ client, onComplete }: { client: ClientData; onComplete: (c: Cli
         <textarea className="input resize-none" rows={3} value={description}
           onChange={e => setDescription(e.target.value)}
           placeholder="Ej. Red de clínicas dentales en LATAM enfocadas en ortodoncia..." />
-      </div>
-      <div>
-        <label className="label block mb-1">SDR asignado</label>
-        {ownersLoading ? (
-          <div className="flex items-center gap-2 text-ink-muted text-sm"><IconLoader2 size={14} className="animate-spin" /> Cargando usuarios de HubSpot...</div>
-        ) : (
-          <select className="input" value={ownerId} onChange={e => setOwnerId(e.target.value)}>
-            <option value="">— Sin asignar —</option>
-            {owners.map(o => <option key={o.id} value={o.id}>{o.firstName} {o.lastName} ({o.email})</option>)}
-          </select>
-        )}
       </div>
       <div className="flex justify-end pt-2">
         <button className="btn-primary flex items-center gap-2" onClick={save} disabled={saving || !name.trim() || !slug.trim()}>
