@@ -52,6 +52,13 @@ export default function IcpPage() {
   const [clayLoading,      setClayLoading]      = useState(false);
   const [clayCopied,       setClayCopied]       = useState(false);
   const [clayError,        setClayError]        = useState<string | null>(null);
+
+  const [fpTitles,     setFpTitles]     = useState<string | null>(null);
+  const [fpKeywords,   setFpKeywords]   = useState<string | null>(null);
+  const [fpExcluded,   setFpExcluded]   = useState<string | null>(null);
+  const [fpLoading,    setFpLoading]    = useState(false);
+  const [fpError,      setFpError]      = useState<string | null>(null);
+  const [fpCopied,     setFpCopied]     = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
 
@@ -72,9 +79,10 @@ export default function IcpPage() {
     if (!currentClient) return;
     setLoading(true);
     setError(null);
-    const [ctxRes, promptRes] = await Promise.all([
+    const [ctxRes, promptRes, fpRes] = await Promise.all([
       fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" }),
-      fetch(`/api/clients/${currentClient.id}/clay-scoring-prompt`, { cache: "no-store" })
+      fetch(`/api/clients/${currentClient.id}/clay-scoring-prompt`, { cache: "no-store" }),
+      fetch(`/api/clients/${currentClient.id}/generate-clay-config`, { cache: "no-store" }),
     ]);
     const j = await ctxRes.json();
     setLoading(false);
@@ -89,6 +97,12 @@ export default function IcpPage() {
     if (promptRes.ok) {
       const pj = await promptRes.json();
       setClayPrompt(pj.prompt ?? null);
+    }
+    if (fpRes.ok) {
+      const fj = await fpRes.json();
+      setFpTitles(fj.find_people_titles ?? null);
+      setFpKeywords(fj.find_people_keywords ?? null);
+      setFpExcluded(fj.excluded_titles ?? null);
     }
   }
 
@@ -111,6 +125,26 @@ export default function IcpPage() {
     navigator.clipboard.writeText(clayPrompt).then(() => {
       setClayCopied(true);
       setTimeout(() => setClayCopied(false), 2000);
+    });
+  }
+
+  async function generateClayConfig() {
+    if (!currentClient) return;
+    setFpLoading(true);
+    setFpError(null);
+    const r = await fetch(`/api/clients/${currentClient.id}/generate-clay-config`, { method: "POST" });
+    const j = await r.json();
+    setFpLoading(false);
+    if (j.error) { setFpError(j.error); return; }
+    setFpTitles(j.find_people_titles ?? null);
+    setFpKeywords(j.find_people_keywords ?? null);
+    setFpExcluded(j.excluded_titles ?? null);
+  }
+
+  function copyFpField(value: string, key: string) {
+    navigator.clipboard.writeText(value).then(() => {
+      setFpCopied(key);
+      setTimeout(() => setFpCopied(null), 2000);
     });
   }
 
@@ -579,6 +613,128 @@ export default function IcpPage() {
           )}
         </div>
       )}
+
+      {/* ── Clay Find People ── */}
+      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #E5E2F0" }}>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#251762" }}>
+          <div className="flex items-center gap-3">
+            <span
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0"
+              style={{ background: "#62E0D8", color: "#251762" }}
+            >
+              ⬡
+            </span>
+            <div>
+              <div className="font-semibold text-sm text-white tracking-wide">CLAY — FIND PEOPLE</div>
+              <div className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.5)" }}>
+                Cargos, keywords y exclusiones listos para pegar en Clay Find People
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {(fpTitles || fpKeywords || fpExcluded) && (
+              <button
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium"
+                style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8", border: "1px solid rgba(98,224,216,0.3)" }}
+                onClick={generateClayConfig}
+                disabled={fpLoading}
+              >
+                <IconRefresh size={13} className={fpLoading ? "animate-spin" : ""} />
+                Regenerar
+              </button>
+            )}
+            {!(fpTitles || fpKeywords || fpExcluded) && (
+              <button
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium"
+                style={{ background: "#62E0D8", color: "#251762" }}
+                onClick={generateClayConfig}
+                disabled={fpLoading || !doc}
+              >
+                {fpLoading
+                  ? <><IconLoader2 size={13} className="animate-spin" /> Generando…</>
+                  : <><IconSparkles size={13} /> Generar configuración Clay</>}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {!doc && (
+            <p className="text-sm text-ink-muted text-center py-3">
+              Carga el ICP primero para generar la configuración de Clay.
+            </p>
+          )}
+
+          {doc && fpLoading && !(fpTitles || fpKeywords || fpExcluded) && (
+            <div className="flex items-center gap-3 text-sm text-ink-muted py-4 justify-center">
+              <IconLoader2 size={18} className="animate-spin" style={{ color: "#251762" }} />
+              Generando configuración con Claude…
+            </div>
+          )}
+
+          {fpError && (
+            <div className="flex items-center gap-2 text-sm text-danger-fg">
+              <IconAlertCircle size={14} className="shrink-0" /> {fpError}
+            </div>
+          )}
+
+          {doc && !fpLoading && !(fpTitles || fpKeywords || fpExcluded) && !fpError && (
+            <p className="text-sm text-ink-muted text-center py-3">
+              Genera los valores para configurar Clay Find People basándote en el ICP de{" "}
+              <span className="font-medium text-ink">{currentClient?.name}</span>.
+            </p>
+          )}
+
+          {(fpTitles || fpKeywords || fpExcluded) && (
+            <div className="space-y-4">
+              {[
+                {
+                  key:   "titles",
+                  label: "Cargos para Find People",
+                  hint:  "Clay → tabla Companies → Find People → campo \"Job titles\" — pega esta lista",
+                  value: fpTitles,
+                },
+                {
+                  key:   "keywords",
+                  label: "Keywords de búsqueda",
+                  hint:  "Clay → Find People → campo \"Keywords\" — complementan los cargos para ampliar la búsqueda",
+                  value: fpKeywords,
+                },
+                {
+                  key:   "excluded",
+                  label: "Cargos a excluir",
+                  hint:  "Clay → Find People → campo \"Excluded job titles\" — cargos sin poder de compra",
+                  value: fpExcluded,
+                },
+              ].map(({ key, label, hint, value }) => value && (
+                <div key={key}>
+                  <div className="flex items-start justify-between gap-3 mb-1.5">
+                    <div>
+                      <p className="text-xs font-semibold text-ink">{label}</p>
+                      <p className="text-[11px] text-ink-muted mt-0.5">{hint}</p>
+                    </div>
+                    <button
+                      className="btn-secondary py-1 px-3 text-xs shrink-0 flex items-center gap-1.5"
+                      onClick={() => copyFpField(value, key)}
+                    >
+                      {fpCopied === key
+                        ? <><IconCheck size={13} /> ¡Copiado!</>
+                        : <><IconCopy size={13} /> Copiar</>}
+                    </button>
+                  </div>
+                  <textarea
+                    className="input w-full font-mono text-xs leading-relaxed"
+                    rows={3}
+                    readOnly
+                    value={value}
+                    style={{ resize: "vertical", background: "#FAFAFA" }}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ── Clay Lead Scoring ── */}
       <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #E5E2F0" }}>
