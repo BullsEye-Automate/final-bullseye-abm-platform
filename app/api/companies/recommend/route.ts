@@ -7,16 +7,18 @@ export const dynamic    = "force-dynamic";
 export const maxDuration = 120;
 
 type Body = {
-  region?:    string;
-  size?:      "small" | "medium" | "large";
-  limit?:     number;
-  client_id?: string | null;
+  region?:     string;
+  size?:       "small" | "medium" | "large";
+  size_hint?:  string | null;
+  limit?:      number;
+  client_id?:  string | null;
 };
 
 export async function POST(req: NextRequest) {
   const body     = (await req.json().catch(() => ({}))) as Body;
   const region   = body.region ?? "US";
   const size     = body.size   ?? "small";
+  const sizeHint = body.size_hint !== undefined ? body.size_hint : undefined;
   const limit    = Math.min(Math.max(body.limit ?? 8, 1), 15);
   const clientId = body.client_id ?? null;
 
@@ -67,6 +69,7 @@ export async function POST(req: NextRequest) {
       icpContent: icpCtx.content,
       region,
       size,
+      sizeHint,
       limit,
       exclude
     });

@@ -62,11 +62,16 @@ const REGIONS: { value: string; label: string }[] = [
   { value: "US",        label: "Estados Unidos" },
 ];
 
-const SIZES: { value: "small" | "medium" | "large"; label: string }[] = [
-  { value: "small",  label: "1–50 empleados" },
-  { value: "medium", label: "51–500 empleados" },
-  { value: "large",  label: "500+ empleados" }
-];
+// Convierte un chip de tamaño del ICP (ej "51–100") a hint de empleados para el prompt
+function chipToSizeHint(chip: string): string {
+  if (chip.endsWith("+")) {
+    const num = chip.replace(".", "").replace("+", "");
+    return `empresas con más de ${num} empleados`;
+  }
+  const parts = chip.split("–");
+  if (parts.length === 2) return `empresas con ${parts[0]} a ${parts[1]} empleados`;
+  return `empresas de tamaño ${chip}`;
+}
 
 // Extrae el valor de un campo [Etiqueta] del texto del ICP serializado
 function extractIcpField(text: string, label: string): string {
@@ -98,36 +103,20 @@ function inferRegionFromIcp(icpContent: string): string | null {
   return null;
 }
 
-// Infiere el tamaño objetivo desde el campo "Tamaño (empleados / revenue)".
-// Devuelve la categoría más baja presente para no sobre-estimar el segmento.
-function inferSizeFromIcp(icpContent: string): "small" | "medium" | "large" | null {
-  const tamano = extractIcpField(icpContent, "Tamaño (empleados / revenue)").toLowerCase();
-  if (!tamano) return null;
-  // Chips del nuevo formulario: detectamos cuáles están seleccionados
-  const hasSmall  = /\b1[–\-]10\b|11[–\-]50\b/.test(tamano);
-  const hasMedium = /51[–\-]200|201[–\-]500/.test(tamano);
-  const hasLarge  = /501|1\.000\+|1000\+/.test(tamano);
-  if (hasSmall) return "small";
-  if (hasMedium) return "medium";
-  if (hasLarge) return "large";
-  // Texto libre (formato antiguo)
-  const nums = (tamano.match(/\d+/g) ?? []).map(Number).filter((n) => n > 0);
-  if (nums.length === 0) {
-    if (/pequeñ|startup|micro/.test(tamano)) return "small";
-    if (/medi/.test(tamano)) return "medium";
-    if (/grand|enterprise|corp/.test(tamano)) return "large";
-    return null;
-  }
-  const max = Math.max(...nums);
-  if (max <= 50) return "small";
-  if (max <= 500) return "medium";
-  return "large";
+// Extrae los chips de tamaño seleccionados en el ICP (lista separada por comas)
+function extractSizeOptsFromIcp(icpContent: string): string[] {
+  const raw = extractIcpField(icpContent, "Tamaño (empleados / revenue)");
+  if (!raw) return [];
+  return raw.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 export default function EmpresasPage() {
   const { currentClient } = useClient();
-  const [region, setRegion] = useState("LATAM");
-  const [size, setSize] = useState<"small" | "medium" | "large">("small");
+  const [region,    setRegion]    = useState("LATAM");
+  const [sizeMode,  setSizeMode]  = useState("any");       // "any" | "custom" | chip value
+  const [customMin, setCustomMin] = useState("");
+  const [customMax, setCustomMax] = useState("");
+  const [icpSizeOpts, setIcpSizeOpts] = useState<string[]>([]);
   const [limit, setLimit] = useState(8);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -145,7 +134,7 @@ export default function EmpresasPage() {
   const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set());
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
 
-  // Precarga región y tamaño desde el ICP del cliente activo
+  // Precarga región y opciones de tamaño desde el ICP del cliente activo
   useEffect(() => {
     if (!currentClient) return;
     fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" })
@@ -154,9 +143,10 @@ export default function EmpresasPage() {
         const icpDoc = (data.items ?? []).find((i: { file_type: string }) => i.file_type === "icp");
         if (!icpDoc?.content) return;
         const inferredRegion = inferRegionFromIcp(icpDoc.content);
-        const inferredSize   = inferSizeFromIcp(icpDoc.content);
+        const sizeOpts       = extractSizeOptsFromIcp(icpDoc.content);
         if (inferredRegion) setRegion(inferredRegion);
-        if (inferredSize)   setSize(inferredSize);
+        setIcpSizeOpts(sizeOpts);
+        if (sizeOpts.length > 0) setSizeMode(sizeOpts[0]);
       })
       .catch(() => {});
   }, [currentClient?.id]);
@@ -211,10 +201,22 @@ export default function EmpresasPage() {
     setDiscovering(true);
     setError(null);
     setLastRun(null);
+
+    let size_hint: string | null = null;
+    if (sizeMode === "custom") {
+      const min = customMin ? parseInt(customMin) : null;
+      const max = customMax ? parseInt(customMax) : null;
+      if (min && max) size_hint = `empresas con ${min} a ${max} empleados`;
+      else if (min)   size_hint = `empresas con mínimo ${min} empleados`;
+      else if (max)   size_hint = `empresas con máximo ${max} empleados`;
+    } else if (sizeMode !== "any") {
+      size_hint = chipToSizeHint(sizeMode);
+    }
+
     const res = await fetch("/api/companies/recommend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ region, size, limit, client_id: currentClient?.id ?? null })
+      body: JSON.stringify({ region, size_hint, limit, client_id: currentClient?.id ?? null })
     });
     const data = await res.json();
     setDiscovering(false);
@@ -296,15 +298,35 @@ export default function EmpresasPage() {
           <Field label="Tamaño objetivo">
             <select
               className="input"
-              value={size}
-              onChange={(e) => setSize(e.target.value as typeof size)}
+              value={sizeMode}
+              onChange={(e) => setSizeMode(e.target.value)}
             >
-              {SIZES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
+              {icpSizeOpts.map((opt) => (
+                <option key={opt} value={opt}>{opt} empleados</option>
               ))}
+              <option value="any">Cualquier tamaño</option>
+              <option value="custom">Rango personalizado…</option>
             </select>
+            {sizeMode === "custom" && (
+              <div className="flex gap-2 mt-2">
+                <input
+                  type="number"
+                  min={1}
+                  className="input flex-1"
+                  placeholder="Mín. empleados"
+                  value={customMin}
+                  onChange={(e) => setCustomMin(e.target.value)}
+                />
+                <input
+                  type="number"
+                  min={1}
+                  className="input flex-1"
+                  placeholder="Máx. empleados"
+                  value={customMax}
+                  onChange={(e) => setCustomMax(e.target.value)}
+                />
+              </div>
+            )}
           </Field>
           <Field label="Máximo de empresas">
             <input

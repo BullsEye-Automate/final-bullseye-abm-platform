@@ -21,9 +21,10 @@ export type DiscoveredCompany = {
 };
 
 type DiscoverOpts = {
-  icpContent: string;   // Texto libre del ICP desde client_ai_context
+  icpContent: string;
   region: string;
-  size: "small" | "medium" | "large";
+  size?: "small" | "medium" | "large";
+  sizeHint?: string | null;   // si se provee, reemplaza size en el prompt
   limit: number;
   exclude: string[];
 };
@@ -95,7 +96,7 @@ fit_signals: una lista corta y concreta de las señales de fit detectadas, separ
 research_summary: 2–3 frases explicando por qué califica esta empresa según el ICP.
 competitor_match: si la empresa ya trabaja con un competidor mencionado en el ICP, indícalo aquí. Si no, null.`;
 
-const SIZE_HINT: Record<DiscoverOpts["size"], string> = {
+const SIZE_HINT: Record<"small" | "medium" | "large", string> = {
   small:  "empresas con 5–30 empleados (sweet spot, dueño decide)",
   medium: "empresas con 31–100 empleados",
   large:  "empresas grandes o grupos con 100+ empleados"
@@ -123,11 +124,13 @@ function isInStrictRegion(region: string, country: string | null | undefined): b
 }
 
 export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoveredCompany[]> {
-  const { icpContent, region, size, limit, exclude } = opts;
+  const { icpContent, region, limit, exclude } = opts;
 
   // 1) Research con Perplexity — query dinámica basada en el ICP del cliente
   const regionLabel    = REGION_LABEL[region] ?? region;
-  const sizeHint       = SIZE_HINT[size];
+  const resolvedSize   = opts.sizeHint !== undefined
+    ? opts.sizeHint
+    : SIZE_HINT[opts.size ?? "small"];
   const companyProfile = extractCompanyProfile(icpContent);
   const competitors    = extractCompetitors(icpContent);
   const excludeBlock   = exclude.length
@@ -138,7 +141,8 @@ export async function discoverCompanies(opts: DiscoverOpts): Promise<DiscoveredC
     ? `\n- Si externalizan o trabajan con alguno de estos competidores: ${competitors}`
     : "";
 
-  const perplexityUser = `Busca ${limit} empresas ÚNICAMENTE en ${regionLabel}, perfil "${sizeHint}".
+  const sizeHintLine   = resolvedSize ? `, perfil "${resolvedSize}"` : "";
+  const perplexityUser = `Busca ${limit} empresas ÚNICAMENTE en ${regionLabel}${sizeHintLine}.
 
 Perfil del cliente ideal: ${companyProfile}
 
