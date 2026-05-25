@@ -30,16 +30,6 @@ export async function pushContactToClay(
   contactId: string,
   options: { force?: boolean } = {}
 ): Promise<PushContactResult> {
-  const webhookUrl = process.env.CLAY_CONTACTS_WEBHOOK_URL;
-  if (!webhookUrl) {
-    return {
-      ok: false,
-      contact_id: contactId,
-      status: 500,
-      error: "CLAY_CONTACTS_WEBHOOK_URL is not configured"
-    };
-  }
-
   const { data: contact, error: cErr } = await db
     .from("contacts")
     .select(
@@ -81,7 +71,7 @@ export async function pushContactToClay(
   const { data: company, error: coErr } = await db
     .from("companies")
     .select(
-      "id, company_name, company_type, company_size, cad_software, scanner_technology, fit_signals"
+      "id, client_id, company_name, company_type, company_size, cad_software, scanner_technology, fit_signals"
     )
     .eq("id", contact.company_id)
     .maybeSingle();
@@ -95,6 +85,25 @@ export async function pushContactToClay(
       status: 400,
       error: "Contact has no associated company",
       skipped: "no_company"
+    };
+  }
+
+  // Resuelve la URL del webhook: primero desde la config del cliente en Supabase, luego env var.
+  let webhookUrl: string | null | undefined = process.env.CLAY_CONTACTS_WEBHOOK_URL;
+  if (company.client_id) {
+    const { data: client } = await db
+      .from("clients")
+      .select("clay_contacts_webhook_url")
+      .eq("id", company.client_id)
+      .maybeSingle();
+    if (client?.clay_contacts_webhook_url) webhookUrl = client.clay_contacts_webhook_url;
+  }
+  if (!webhookUrl) {
+    return {
+      ok: false,
+      contact_id: contactId,
+      status: 500,
+      error: "No hay webhook URL configurada para este cliente (Clay → Contacts)"
     };
   }
 

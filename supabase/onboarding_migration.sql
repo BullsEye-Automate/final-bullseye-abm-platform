@@ -4,6 +4,7 @@
 
 alter table clients add column if not exists clay_companies_webhook_url text;
 alter table clients add column if not exists clay_contacts_webhook_url  text;
+alter table clients add column if not exists clay_scoring_prompt        text;
 alter table clients add column if not exists onboarding_step            int  not null default 0;
 alter table clients add column if not exists onboarding_completed_at    timestamptz;
 alter table clients add column if not exists status                     text not null default 'active';

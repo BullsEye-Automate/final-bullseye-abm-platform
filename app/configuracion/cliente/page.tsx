@@ -8,7 +8,6 @@ import {
   IconLoader2,
   IconMail,
   IconDatabase,
-  IconChartFunnel
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -17,17 +16,23 @@ type Config = {
   lemlist_staging_campaign_id: string;
   clay_companies_table_id:     string;
   clay_contacts_table_id:      string;
-  hubspot_pipeline_id:         string;
-  hubspot_owner_id:            string;
 };
 
-const EMPTY: Config = {
+type ClientWebhooks = {
+  clay_companies_webhook_url: string;
+  clay_contacts_webhook_url:  string;
+};
+
+const EMPTY_CONFIG: Config = {
   lemlist_campaign_id:         "",
   lemlist_staging_campaign_id: "",
   clay_companies_table_id:     "",
   clay_contacts_table_id:      "",
-  hubspot_pipeline_id:         "",
-  hubspot_owner_id:            ""
+};
+
+const EMPTY_WEBHOOKS: ClientWebhooks = {
+  clay_companies_webhook_url: "",
+  clay_contacts_webhook_url:  "",
 };
 
 function Field({
@@ -35,7 +40,7 @@ function Field({
   hint,
   value,
   onChange,
-  placeholder
+  placeholder,
 }: {
   label: string;
   hint: string;
@@ -59,14 +64,19 @@ function Field({
 
 export default function ConfigClientePage() {
   const { currentClient } = useClient();
-  const [form, setForm]     = useState<Config>(EMPTY);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving]   = useState(false);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [error, setError]     = useState<string | null>(null);
+  const [form, setForm]         = useState<Config>(EMPTY_CONFIG);
+  const [webhooks, setWebhooks] = useState<ClientWebhooks>(EMPTY_WEBHOOKS);
+  const [loading, setLoading]   = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [savedAt, setSavedAt]   = useState<string | null>(null);
+  const [error, setError]       = useState<string | null>(null);
 
   function set(field: keyof Config) {
     return (v: string) => setForm((f) => ({ ...f, [field]: v }));
+  }
+
+  function setWebhook(field: keyof ClientWebhooks) {
+    return (v: string) => setWebhooks((w) => ({ ...w, [field]: v }));
   }
 
   useEffect(() => {
@@ -74,17 +84,26 @@ export default function ConfigClientePage() {
     setLoading(true);
     setError(null);
     setSavedAt(null);
-    fetch(`/api/clients/${currentClient.id}/config`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then(({ config }) => {
-        setForm(config ? {
-          lemlist_campaign_id:         config.lemlist_campaign_id         ?? "",
-          lemlist_staging_campaign_id: config.lemlist_staging_campaign_id ?? "",
-          clay_companies_table_id:     config.clay_companies_table_id     ?? "",
-          clay_contacts_table_id:      config.clay_contacts_table_id      ?? "",
-          hubspot_pipeline_id:         config.hubspot_pipeline_id         ?? "",
-          hubspot_owner_id:            config.hubspot_owner_id            ?? ""
-        } : EMPTY);
+
+    Promise.all([
+      fetch(`/api/clients/${currentClient.id}/config`, { cache: "no-store" }).then((r) => r.json()),
+      fetch(`/api/clients/${currentClient.id}`,        { cache: "no-store" }).then((r) => r.json()),
+    ])
+      .then(([configData, clientData]) => {
+        const cfg = configData.config;
+        setForm(cfg ? {
+          lemlist_campaign_id:         cfg.lemlist_campaign_id         ?? "",
+          lemlist_staging_campaign_id: cfg.lemlist_staging_campaign_id ?? "",
+          clay_companies_table_id:     cfg.clay_companies_table_id     ?? "",
+          clay_contacts_table_id:      cfg.clay_contacts_table_id      ?? "",
+        } : EMPTY_CONFIG);
+
+        const cl = clientData.client;
+        setWebhooks(cl ? {
+          clay_companies_webhook_url: cl.clay_companies_webhook_url ?? "",
+          clay_contacts_webhook_url:  cl.clay_contacts_webhook_url  ?? "",
+        } : EMPTY_WEBHOOKS);
+
         setLoading(false);
       })
       .catch((e) => { setError(e.message); setLoading(false); });
@@ -94,14 +113,35 @@ export default function ConfigClientePage() {
     if (!currentClient) return;
     setSaving(true);
     setError(null);
-    const res = await fetch(`/api/clients/${currentClient.id}/config`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form)
-    });
-    const data = await res.json();
+
+    const [configRes, clientRes] = await Promise.all([
+      fetch(`/api/clients/${currentClient.id}/config`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      }),
+      fetch(`/api/clients/${currentClient.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clay_companies_webhook_url: webhooks.clay_companies_webhook_url || null,
+          clay_contacts_webhook_url:  webhooks.clay_contacts_webhook_url  || null,
+        }),
+      }),
+    ]);
+
     setSaving(false);
-    if (!res.ok) { setError(data.error ?? "Error al guardar"); return; }
+
+    if (!configRes.ok) {
+      const d = await configRes.json().catch(() => ({}));
+      setError(d.error ?? "Error al guardar la configuración");
+      return;
+    }
+    if (!clientRes.ok) {
+      const d = await clientRes.json().catch(() => ({}));
+      setError(d.error ?? "Error al guardar las URLs de webhook");
+      return;
+    }
     setSavedAt(new Date().toLocaleTimeString());
   }
 
@@ -131,7 +171,7 @@ export default function ConfigClientePage() {
               {currentClient.name}
             </div>
             <span className="text-sm text-ink-muted">
-              IDs de Lemlist, Clay y HubSpot para este cliente.
+              IDs de Lemlist y Clay para este cliente.
             </span>
           </div>
         </div>
@@ -193,6 +233,20 @@ export default function ConfigClientePage() {
               <IconDatabase size={18} className="text-brand" /> Clay
             </h2>
             <Field
+              label="Companies Webhook URL"
+              hint="URL del Webhook Source de la tabla Companies en Clay. Clay → tabla Companies → columna Webhook → panel derecho → URL. La app la usa para enviar empresas aprobadas a Clay."
+              placeholder="https://api.clay.com/v3/sources/webhook/..."
+              value={webhooks.clay_companies_webhook_url}
+              onChange={setWebhook("clay_companies_webhook_url")}
+            />
+            <Field
+              label="Contacts Webhook URL"
+              hint="URL del Webhook Source de la tabla Contacts en Clay. Clay → tabla Contacts → columna Webhook → panel derecho → URL. La app la usa para enviar contactos pre-filter YES a Clay."
+              placeholder="https://api.clay.com/v3/sources/webhook/..."
+              value={webhooks.clay_contacts_webhook_url}
+              onChange={setWebhook("clay_contacts_webhook_url")}
+            />
+            <Field
               label="Companies table ID"
               hint="ID de la tabla de empresas en Clay. Se usa para configurar el webhook de entrada y el botón 'Prospectar en Clay'."
               placeholder="tbl_xxxxxxxxxxxxxxxxxx"
@@ -205,27 +259,6 @@ export default function ConfigClientePage() {
               placeholder="tbl_xxxxxxxxxxxxxxxxxx"
               value={form.clay_contacts_table_id}
               onChange={set("clay_contacts_table_id")}
-            />
-          </section>
-
-          {/* HubSpot */}
-          <section className="card space-y-4">
-            <h2 className="font-semibold flex items-center gap-2">
-              <IconChartFunnel size={18} className="text-brand" /> HubSpot
-            </h2>
-            <Field
-              label="Pipeline ID"
-              hint="ID del pipeline de HubSpot donde se crean los deals de este cliente. En HubSpot: Configuración → Pipelines."
-              placeholder="xxxxxxxx"
-              value={form.hubspot_pipeline_id}
-              onChange={set("hubspot_pipeline_id")}
-            />
-            <Field
-              label="Owner ID (SDR asignado)"
-              hint="User ID del SDR en HubSpot que se asigna como propietario de los contactos y deals de este cliente."
-              placeholder="xxxxxxxx"
-              value={form.hubspot_owner_id}
-              onChange={set("hubspot_owner_id")}
             />
           </section>
         </>
