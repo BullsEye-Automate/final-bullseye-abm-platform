@@ -25,8 +25,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     lemlist_staging_campaign_id: body.lemlist_staging_campaign_id ?? null,
     clay_companies_table_id:     body.clay_companies_table_id     ?? null,
     clay_contacts_table_id:      body.clay_contacts_table_id      ?? null,
-    hubspot_pipeline_id:         body.hubspot_pipeline_id         ?? null,
-    hubspot_owner_id:            body.hubspot_owner_id            ?? null
+    hubspot_owner_id:            body.hubspot_owner_id            ?? null,
   };
 
   const db = supabaseAdmin();

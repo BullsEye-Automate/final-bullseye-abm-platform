@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
   IconPlus,
   IconBuilding,
@@ -11,7 +12,8 @@ import {
   IconToggleRight,
   IconLoader2,
   IconUpload,
-  IconPhoto
+  IconPhoto,
+  IconSettings,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -21,6 +23,8 @@ type Client = {
   slug: string;
   logo_url: string | null;
   is_active: boolean;
+  status: string;
+  onboarding_step: number;
   created_at: string;
 };
 
@@ -188,7 +192,7 @@ export default function ClientesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [editing, setEditing] = useState<"new" | string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -202,21 +206,6 @@ export default function ClientesPage() {
   }
 
   useEffect(() => { load(); }, []);
-
-  async function handleCreate(form: FormState) {
-    setSaving(true);
-    setFormError(null);
-    const r = await fetch("/api/clients", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form)
-    });
-    const j = await r.json();
-    if (j.error) { setFormError(j.error); setSaving(false); return; }
-    setClients((prev) => [...prev, j.client].sort((a, b) => a.name.localeCompare(b.name)));
-    setEditing(null);
-    setSaving(false);
-  }
 
   async function handleEdit(id: string, form: FormState) {
     setSaving(true);
@@ -259,33 +248,11 @@ export default function ClientesPage() {
             Cada cliente tiene su propio ICP, campañas y pipeline.
           </p>
         </div>
-        <button
-          className="btn-primary"
-          onClick={() => { setEditing("new"); setFormError(null); }}
-          disabled={editing === "new"}
-        >
+        <Link href="/clientes/nuevo" className="btn-primary inline-flex items-center gap-2">
           <IconPlus size={16} />
           Nuevo cliente
-        </button>
+        </Link>
       </div>
-
-      {editing === "new" && (
-        <div className="card mb-6 border-2" style={{ borderColor: "#62E0D8" }}>
-          <h2 className="font-semibold text-ink mb-4 flex items-center gap-2">
-            <IconBuilding size={18} style={{ color: "#62E0D8" }} />
-            Nuevo cliente
-          </h2>
-          {formError && (
-            <p className="text-danger-fg text-sm mb-3 bg-danger-bg rounded-lg px-3 py-2">{formError}</p>
-          )}
-          <ClientForm
-            initial={EMPTY_FORM}
-            onSave={handleCreate}
-            onCancel={() => { setEditing(null); setFormError(null); }}
-            saving={saving}
-          />
-        </div>
-      )}
 
       {loading && (
         <div className="card flex items-center gap-3 text-ink-muted">
@@ -297,7 +264,7 @@ export default function ClientesPage() {
 
       {!loading && !error && (
         <>
-          {activeClients.length === 0 && editing !== "new" && (
+          {activeClients.length === 0 && (
             <div className="card text-center py-10">
               <IconBuilding size={32} className="mx-auto mb-3 text-ink-subtle" />
               <p className="text-ink-muted font-medium">Sin clientes todavía</p>
@@ -368,6 +335,8 @@ function ClientCard({
   onToggle: () => void;
   onSelect: () => void;
 }) {
+  const isOnboarding = client.status === "onboarding" && client.onboarding_step > 0;
+
   return (
     <div className="card mb-3" style={{ opacity: client.is_active ? 1 : 0.55 }}>
       {editing ? (
@@ -401,18 +370,38 @@ function ClientCard({
           )}
 
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-ink truncate">{client.name}</p>
+            <div className="flex items-center gap-2">
+              <p className="font-semibold text-ink truncate">{client.name}</p>
+              {isOnboarding && (
+                <span
+                  className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
+                  style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8" }}
+                >
+                  Configurando... ({client.onboarding_step}/6)
+                </span>
+              )}
+            </div>
             <p className="text-xs text-ink-subtle">/{client.slug}</p>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              className="btn-secondary text-xs py-1.5 px-3"
-              onClick={onSelect}
-              title="Seleccionar como cliente activo"
-            >
-              Seleccionar
-            </button>
+            {isOnboarding ? (
+              <Link
+                href={`/clientes/${client.id}/onboarding`}
+                className="btn-primary text-xs py-1.5 px-3 inline-flex items-center gap-1.5"
+              >
+                <IconSettings size={13} />
+                Retomar wizard
+              </Link>
+            ) : (
+              <button
+                className="btn-secondary text-xs py-1.5 px-3"
+                onClick={onSelect}
+                title="Seleccionar como cliente activo"
+              >
+                Seleccionar
+              </button>
+            )}
             <button className="btn-secondary py-1.5 px-2" onClick={onEdit} title="Editar">
               <IconPencil size={14} />
             </button>
