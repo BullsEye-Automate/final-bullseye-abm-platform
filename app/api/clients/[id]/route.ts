@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 const FULL_SELECT =
-  "id, name, slug, logo_url, is_active, status, onboarding_step, onboarding_completed_at, description, hubspot_owner_id, clay_companies_webhook_url, clay_contacts_webhook_url, created_at";
+  "id, name, slug, logo_url, is_active, status, onboarding_step, onboarding_completed_at, description, hubspot_owner_id, clay_companies_webhook_url, clay_contacts_webhook_url, clay_find_people_titles, clay_find_people_keywords, clay_excluded_titles, created_at";
 
 export async function GET(
   _req: NextRequest,
