@@ -373,7 +373,6 @@ function Step2({ client, onComplete }: { client: ClientData; onComplete: (c: Cli
 function Step3({ client, onComplete }: { client: ClientData; onComplete: (c: ClientData) => void }) {
   const [verifyStatus, setVerifyStatus] = useState<VerifyStatus>("idle");
   const [verifyMsg, setVerifyMsg] = useState("");
-  const [owners, setOwners] = useState<HubSpotOwner[]>([]);
   const [saving, setSaving] = useState(false);
 
   async function verify() {
@@ -382,7 +381,6 @@ function Step3({ client, onComplete }: { client: ClientData; onComplete: (c: Cli
       const res = await fetch("/api/hubspot/owners");
       const j = await res.json();
       if (!res.ok || j.error) { setVerifyStatus("error"); setVerifyMsg(j.error ?? `Error ${res.status}`); return; }
-      setOwners(j.owners ?? []);
       setVerifyStatus("ok");
       setVerifyMsg(`${(j.owners ?? []).length} usuarios encontrados en HubSpot.`);
     } catch { setVerifyStatus("error"); setVerifyMsg("Error de red."); }
@@ -398,8 +396,6 @@ function Step3({ client, onComplete }: { client: ClientData; onComplete: (c: Cli
     if (!j.error) onComplete(j.client);
     setSaving(false);
   }
-
-  const sdrOwner = client.hubspot_owner_id ? owners.find(o => o.id === client.hubspot_owner_id) : null;
 
   return (
     <div className="space-y-6">
@@ -424,15 +420,6 @@ function Step3({ client, onComplete }: { client: ClientData; onComplete: (c: Cli
         )}
       </div>
 
-      {client.hubspot_owner_id && (
-        <div className="rounded-lg p-4" style={{ background: "rgba(98,224,216,0.08)", border: "1px solid rgba(98,224,216,0.3)" }}>
-          <p className="text-xs text-ink-muted mb-1">SDR asignado (configurado en Paso 1)</p>
-          <p className="text-sm font-semibold text-ink">
-            {sdrOwner ? `${sdrOwner.firstName} ${sdrOwner.lastName} — ${sdrOwner.email}` : `ID: ${client.hubspot_owner_id}`}
-          </p>
-        </div>
-      )}
-
       <div className="flex justify-end pt-2">
         <button className="btn-primary flex items-center gap-2" onClick={next} disabled={saving}>
           {saving ? <IconLoader2 size={15} className="animate-spin" /> : <IconArrowRight size={15} />}
@@ -446,7 +433,7 @@ function Step3({ client, onComplete }: { client: ClientData; onComplete: (c: Cli
 // ─── Step 4: Clay ────────────────────────────────────────────────────────────
 
 function Step4({ client, onComplete }: { client: ClientData; onComplete: (c: ClientData) => void }) {
-  const [prompt, setPrompt] = useState(client.clay_scoring_prompt ?? "");
+  const [prompt, setPrompt] = useState("");
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptError, setPromptError] = useState<string | null>(null);
   const [promptCopied, setPromptCopied] = useState(false);
