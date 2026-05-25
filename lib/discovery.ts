@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic, CLAUDE_MODEL } from "./claude";
 import { perplexitySearch, PerplexityCitation } from "./perplexity";
+import { normalizeLinkedInUrl } from "./normalizeLinkedIn";
 
 export type DiscoveredCompany = {
   company_name: string;
@@ -198,7 +199,7 @@ A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vig
     ? parsed.companies.map((c: any) => ({
         company_name:         String(c.company_name ?? "").trim(),
         company_website:      c.company_website ?? null,
-        company_linkedin_url: c.company_linkedin_url ?? null,
+        company_linkedin_url: normalizeLinkedInUrl(c.company_linkedin_url),
         company_city:         c.company_city ?? null,
         company_country:      c.company_country ?? null,
         company_size:         typeof c.company_size === "number" ? c.company_size : null,

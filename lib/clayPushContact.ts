@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { normalizeLinkedInUrl } from "./normalizeLinkedIn";
 
 export type PushContactOk = {
   ok: true;
@@ -112,7 +113,7 @@ export async function pushContactToClay(
     last_name: contact.last_name ?? "",
     job_title: contact.job_title ?? "",
     linkedin_headline: contact.linkedin_headline ?? "",
-    linkedin_url: contact.linkedin_url ?? "",
+    linkedin_url: normalizeLinkedInUrl(contact.linkedin_url) ?? "",
     email: contact.email ?? "",
     phone: contact.phone ?? "",
     seniority: contact.seniority ?? "",
