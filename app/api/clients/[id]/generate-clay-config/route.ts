@@ -9,13 +9,14 @@ export const maxDuration = 60;
 
 const META_PROMPT = `You are a B2B prospecting expert specializing in Clay workflows.
 
-Based on the following ICP (Ideal Customer Profile), extract and generate 3 configurations for Clay's Find People feature.
+Based on the following ICP (Ideal Customer Profile), extract and generate 4 configurations for Clay's Find People feature.
 
-Return ONLY a valid JSON object with exactly these 3 keys — no markdown, no code fences, no explanation:
+Return ONLY a valid JSON object with exactly these 4 keys — no markdown, no code fences, no explanation:
 {
   "find_people_titles": "...",
   "find_people_keywords": "...",
-  "excluded_titles": "..."
+  "excluded_titles": "...",
+  "location_filter": "..."
 }
 
 Rules for "find_people_titles":
@@ -37,6 +38,16 @@ Rules for "excluded_titles":
 - Comma-separated
 - Example: "intern, assistant, coordinator, trainee, IT, developer, accountant, student"
 
+Rules for "location_filter":
+- Extract target geographies from the ICP and format them for Clay's Location filter
+- Include countries AND major cities if the ICP specifies them
+- All names must be in English, as Clay recognizes them
+- Comma-separated
+- If the ICP mentions "LATAM" or "Latin America" → expand to: Chile, Colombia, Mexico, Argentina, Peru, Uruguay
+- If the ICP mentions "USA" or "Estados Unidos" → use "United States"
+- If the ICP mentions "España" → use "Spain"
+- Example: "Chile, Colombia, Mexico, Argentina, Peru, Miami, New York"
+
 ICP:
 `;
 
@@ -48,15 +59,16 @@ export async function GET(
   const db = supabaseAdmin();
   const { data, error } = await db
     .from("clients")
-    .select("clay_find_people_titles, clay_find_people_keywords, clay_excluded_titles")
+    .select("clay_find_people_titles, clay_find_people_keywords, clay_excluded_titles, clay_location_filter")
     .eq("id", params.id)
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({
-    find_people_titles:  data?.clay_find_people_titles  ?? null,
+    find_people_titles:   data?.clay_find_people_titles   ?? null,
     find_people_keywords: data?.clay_find_people_keywords ?? null,
-    excluded_titles:     data?.clay_excluded_titles     ?? null,
+    excluded_titles:      data?.clay_excluded_titles      ?? null,
+    location_filter:      data?.clay_location_filter      ?? null,
   });
 }
 
@@ -97,7 +109,7 @@ export async function POST(
     .join("")
     .trim();
 
-  let parsed: { find_people_titles: string; find_people_keywords: string; excluded_titles: string };
+  let parsed: { find_people_titles: string; find_people_keywords: string; excluded_titles: string; location_filter: string };
   try {
     const jsonStr = raw.replace(/^```json\s*/i, "").replace(/```\s*$/, "").trim();
     parsed = JSON.parse(jsonStr);
@@ -114,6 +126,7 @@ export async function POST(
       clay_find_people_titles:  parsed.find_people_titles  ?? null,
       clay_find_people_keywords: parsed.find_people_keywords ?? null,
       clay_excluded_titles:     parsed.excluded_titles     ?? null,
+      clay_location_filter:     parsed.location_filter     ?? null,
     })
     .eq("id", params.id);
 
@@ -122,8 +135,9 @@ export async function POST(
   }
 
   return NextResponse.json({
-    find_people_titles:  parsed.find_people_titles,
+    find_people_titles:   parsed.find_people_titles,
     find_people_keywords: parsed.find_people_keywords,
-    excluded_titles:     parsed.excluded_titles,
+    excluded_titles:      parsed.excluded_titles,
+    location_filter:      parsed.location_filter,
   });
 }

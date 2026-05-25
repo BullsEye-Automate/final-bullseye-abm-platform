@@ -56,6 +56,7 @@ export default function IcpPage() {
   const [fpTitles,     setFpTitles]     = useState<string | null>(null);
   const [fpKeywords,   setFpKeywords]   = useState<string | null>(null);
   const [fpExcluded,   setFpExcluded]   = useState<string | null>(null);
+  const [fpLocation,   setFpLocation]   = useState<string | null>(null);
   const [fpLoading,    setFpLoading]    = useState(false);
   const [fpError,      setFpError]      = useState<string | null>(null);
   const [fpCopied,     setFpCopied]     = useState<string | null>(null);
@@ -103,6 +104,7 @@ export default function IcpPage() {
       setFpTitles(fj.find_people_titles ?? null);
       setFpKeywords(fj.find_people_keywords ?? null);
       setFpExcluded(fj.excluded_titles ?? null);
+      setFpLocation(fj.location_filter ?? null);
     }
   }
 
@@ -139,6 +141,7 @@ export default function IcpPage() {
     setFpTitles(j.find_people_titles ?? null);
     setFpKeywords(j.find_people_keywords ?? null);
     setFpExcluded(j.excluded_titles ?? null);
+    setFpLocation(j.location_filter ?? null);
   }
 
   function copyFpField(value: string, key: string) {
@@ -632,7 +635,7 @@ export default function IcpPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {(fpTitles || fpKeywords || fpExcluded) && (
+            {(fpTitles || fpKeywords || fpExcluded || fpLocation) && (
               <button
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium"
                 style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8", border: "1px solid rgba(98,224,216,0.3)" }}
@@ -643,7 +646,7 @@ export default function IcpPage() {
                 Regenerar
               </button>
             )}
-            {!(fpTitles || fpKeywords || fpExcluded) && (
+            {!(fpTitles || fpKeywords || fpExcluded || fpLocation) && (
               <button
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium"
                 style={{ background: "#62E0D8", color: "#251762" }}
@@ -665,7 +668,7 @@ export default function IcpPage() {
             </p>
           )}
 
-          {doc && fpLoading && !(fpTitles || fpKeywords || fpExcluded) && (
+          {doc && fpLoading && !(fpTitles || fpKeywords || fpExcluded || fpLocation) && (
             <div className="flex items-center gap-3 text-sm text-ink-muted py-4 justify-center">
               <IconLoader2 size={18} className="animate-spin" style={{ color: "#251762" }} />
               Generando configuración con Claude…
@@ -678,14 +681,14 @@ export default function IcpPage() {
             </div>
           )}
 
-          {doc && !fpLoading && !(fpTitles || fpKeywords || fpExcluded) && !fpError && (
+          {doc && !fpLoading && !(fpTitles || fpKeywords || fpExcluded || fpLocation) && !fpError && (
             <p className="text-sm text-ink-muted text-center py-3">
               Genera los valores para configurar Clay Find People basándote en el ICP de{" "}
               <span className="font-medium text-ink">{currentClient?.name}</span>.
             </p>
           )}
 
-          {(fpTitles || fpKeywords || fpExcluded) && (
+          {(fpTitles || fpKeywords || fpExcluded || fpLocation) && (
             <div className="space-y-4">
               {[
                 {
@@ -705,6 +708,12 @@ export default function IcpPage() {
                   label: "Cargos a excluir",
                   hint:  "Clay → Find People → campo \"Excluded job titles\" — cargos sin poder de compra",
                   value: fpExcluded,
+                },
+                {
+                  key:   "location",
+                  label: "Geografías para Find People",
+                  hint:  "Clay → tabla Companies → Find People → Location → pega esta lista",
+                  value: fpLocation,
                 },
               ].map(({ key, label, hint, value }) => value && (
                 <div key={key}>
