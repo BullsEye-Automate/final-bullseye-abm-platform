@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runPrefilter } from "./prefilter";
+import { normalizeLinkedInUrl } from "./normalizeLinkedIn";
 
 export type RawContact = {
   first_name?: string | null;
@@ -44,7 +45,7 @@ export async function intakeContactsForCompany(
   if (exErr) return { ok: false, status: 500, error: exErr.message };
   const seen = new Set(
     (existing ?? [])
-      .map((r) => (r.linkedin_url ?? "").toLowerCase().trim())
+      .map((r) => (normalizeLinkedInUrl(r.linkedin_url) ?? "").toLowerCase())
       .filter(Boolean)
   );
 
@@ -52,7 +53,8 @@ export async function intakeContactsForCompany(
   const rows: any[] = [];
 
   for (const c of raws) {
-    const linkedin = (c.linkedin_url ?? "").toLowerCase().trim();
+    const normalized = normalizeLinkedInUrl(c.linkedin_url);
+    const linkedin = (normalized ?? "").toLowerCase();
     if (linkedin && seen.has(linkedin)) {
       summary.skipped += 1;
       continue;
@@ -80,7 +82,7 @@ export async function intakeContactsForCompany(
       last_name:        c.last_name        ?? null,
       job_title:        c.job_title        ?? null,
       linkedin_headline: c.linkedin_headline ?? null,
-      linkedin_url:     c.linkedin_url     ?? null,
+      linkedin_url:     normalizeLinkedInUrl(c.linkedin_url),
       email:            c.email            ?? null,
       phone:            c.phone            ?? null,
       seniority:        c.seniority        ?? null,

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { normalizeLinkedInUrl } from "./normalizeLinkedIn";
 
 export type PushOk = {
   ok: true;
@@ -98,7 +99,7 @@ export async function pushCompanyToClay(
     scanner_technology: company.scanner_technology ?? "",
     fit_signals: company.fit_signals ?? "",
     fit_score: company.fit_score ?? null,
-    linkedin_url: company.company_linkedin_url ?? "",
+    linkedin_url: normalizeLinkedInUrl(company.company_linkedin_url) ?? "",
     approved_by: company.approved_by ?? "",
     approved_at: company.approved_at ?? "",
     status: "approved",
