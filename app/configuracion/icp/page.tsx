@@ -12,7 +12,9 @@ import {
   IconX,
   IconFileImport,
   IconChevronDown,
-  IconSparkles
+  IconSparkles,
+  IconCopy,
+  IconRefresh
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import {
@@ -46,6 +48,10 @@ export default function IcpPage() {
   const [magicLink,        setMagicLink]        = useState<string | null>(null);
   const [magicLinkLoading, setMagicLinkLoading] = useState(false);
   const [linkCopied,       setLinkCopied]       = useState(false);
+  const [clayPrompt,       setClayPrompt]       = useState<string | null>(null);
+  const [clayLoading,      setClayLoading]      = useState(false);
+  const [clayCopied,       setClayCopied]       = useState(false);
+  const [clayError,        setClayError]        = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
 
@@ -66,8 +72,11 @@ export default function IcpPage() {
     if (!currentClient) return;
     setLoading(true);
     setError(null);
-    const r = await fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" });
-    const j = await r.json();
+    const [ctxRes, promptRes] = await Promise.all([
+      fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" }),
+      fetch(`/api/clients/${currentClient.id}/clay-scoring-prompt`, { cache: "no-store" })
+    ]);
+    const j = await ctxRes.json();
     setLoading(false);
     if (j.error) { setError(j.error); return; }
     const icpDoc: IcpDoc | undefined = (j.items ?? []).find(
@@ -77,9 +86,33 @@ export default function IcpPage() {
     setFileName(icpDoc?.file_name ?? "ICP");
     setSavedAt(null);
     setForm(icpDoc?.content ? deserializeIcpForm(icpDoc.content) : EMPTY_FORM);
+    if (promptRes.ok) {
+      const pj = await promptRes.json();
+      setClayPrompt(pj.prompt ?? null);
+    }
   }
 
   useEffect(() => { load(); }, [currentClient?.id]);
+
+  async function generateClayPrompt(regenerate = false) {
+    if (!currentClient) return;
+    if (!regenerate && clayPrompt) return;
+    setClayLoading(true);
+    setClayError(null);
+    const r = await fetch(`/api/clients/${currentClient.id}/clay-scoring-prompt`, { method: "POST" });
+    const j = await r.json();
+    setClayLoading(false);
+    if (j.error) { setClayError(j.error); return; }
+    setClayPrompt(j.prompt);
+  }
+
+  function copyClayPrompt() {
+    if (!clayPrompt) return;
+    navigator.clipboard.writeText(clayPrompt).then(() => {
+      setClayCopied(true);
+      setTimeout(() => setClayCopied(false), 2000);
+    });
+  }
 
   async function save() {
     if (!currentClient) return;
@@ -546,6 +579,116 @@ export default function IcpPage() {
           )}
         </div>
       )}
+
+      {/* ── Clay Lead Scoring ── */}
+      <div className="rounded-xl overflow-hidden" style={{ border: "1px solid #E5E2F0" }}>
+        <div className="px-4 py-3 flex items-center justify-between" style={{ background: "#251762" }}>
+          <div className="flex items-center gap-3">
+            <span
+              className="w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-bold shrink-0"
+              style={{ background: "#62E0D8", color: "#251762" }}
+            >
+              ⬡
+            </span>
+            <div>
+              <div className="font-semibold text-sm text-white tracking-wide">CLAY — LEAD SCORING AI</div>
+              <div className="text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.5)" }}>
+                Prompt listo para pegar en la columna Lead Scoring AI de Clay
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {clayPrompt && (
+              <button
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
+                style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8", border: "1px solid rgba(98,224,216,0.3)" }}
+                onClick={() => generateClayPrompt(true)}
+                disabled={clayLoading}
+                title="Regenerar prompt desde el ICP actualizado"
+              >
+                <IconRefresh size={13} className={clayLoading ? "animate-spin" : ""} />
+                Regenerar
+              </button>
+            )}
+            {!clayPrompt && (
+              <button
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-all"
+                style={{ background: "#62E0D8", color: "#251762" }}
+                onClick={() => generateClayPrompt(false)}
+                disabled={clayLoading}
+              >
+                {clayLoading
+                  ? <><IconLoader2 size={13} className="animate-spin" /> Generando…</>
+                  : <><IconSparkles size={13} /> Generar prompt</>}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="p-5 space-y-3">
+          {clayLoading && !clayPrompt && (
+            <div className="flex items-center gap-3 text-sm text-ink-muted py-4 justify-center">
+              <IconLoader2 size={18} className="animate-spin" style={{ color: "#251762" }} />
+              Generando prompt optimizado con Claude…
+            </div>
+          )}
+
+          {clayError && (
+            <div className="flex items-center gap-2 text-sm text-danger-fg">
+              <IconSparkles size={14} className="shrink-0" /> {clayError}
+            </div>
+          )}
+
+          {clayPrompt && (
+            <>
+              <div
+                className="text-xs rounded-lg px-3 py-2 flex items-start gap-2"
+                style={{ background: "rgba(98,224,216,0.08)", border: "1px solid rgba(98,224,216,0.2)", color: "#0E7A73" }}
+              >
+                <IconSparkles size={13} className="shrink-0 mt-0.5" />
+                <span>
+                  Pega este prompt en la columna <strong>Lead Scoring AI</strong> de Clay en la tabla{" "}
+                  <strong>Contacts — {currentClient?.name}</strong>
+                </span>
+              </div>
+
+              <textarea
+                className="input w-full font-mono text-xs leading-relaxed"
+                rows={14}
+                readOnly
+                value={clayPrompt}
+                style={{ resize: "vertical", background: "#FAFAFA" }}
+              />
+
+              <div className="flex items-center gap-2">
+                <button
+                  className="btn-primary py-1.5 px-4"
+                  onClick={copyClayPrompt}
+                >
+                  {clayCopied
+                    ? <><IconCheck size={14} /> ¡Copiado!</>
+                    : <><IconCopy size={14} /> Copiar prompt</>}
+                </button>
+                <button
+                  className="btn-secondary py-1.5 px-4"
+                  onClick={() => generateClayPrompt(true)}
+                  disabled={clayLoading}
+                >
+                  <IconRefresh size={14} className={clayLoading ? "animate-spin" : ""} />
+                  {clayLoading ? "Regenerando…" : "Regenerar"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {!clayPrompt && !clayLoading && !clayError && (
+            <div className="text-sm text-ink-muted text-center py-4">
+              Genera el prompt para calificar leads automáticamente en Clay basándote en el ICP de{" "}
+              <span className="font-medium text-ink">{currentClient?.name}</span>.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
