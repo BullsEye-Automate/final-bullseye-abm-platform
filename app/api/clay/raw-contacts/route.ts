@@ -10,20 +10,34 @@ export const maxDuration = 300;
 
 // Webhook entrante de Clay con contactos crudos de "Find people at company".
 //
-// Formato recomendado (sin company_table_data):
+// Clay a veces envía JSON inválido con valores sin comillas:
+//   {"first_name": Antti, "last_name": Kulpp, ...}
+// El endpoint lee el body como texto y usa regex como fallback al JSON.parse().
+//
+// Body esperado desde Clay:
 //   {
-//     "first_name": "...",
-//     "last_name": "...",
-//     "job_title": "...",
-//     "linkedin_url": "...",              ← LinkedIn del contacto
-//     "company_linkedin_url": "..."       ← LinkedIn de la empresa (chip de Company Table Data.linkedin_url)
+//     "first_name":           <chip>,
+//     "last_name":            <chip>,
+//     "job_title":            <chip>,
+//     "linkedin_url":         <chip: linkedin_url del contacto>,
+//     "company_linkedin_url": <chip: Company Table Data.linkedin_url>
 //   }
 //
-// El endpoint resuelve bullseye_company_id en dos pasos:
-//   1. Busca bullseye_company_id directo en el payload (compatibilidad hacia atrás)
+// bullseye_company_id se resuelve en dos pasos:
+//   1. Busca el campo directo en el payload (compatibilidad hacia atrás)
 //   2. Si no lo encuentra, busca la empresa en Supabase por company_linkedin_url
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Campos que extraemos del body de Clay (soporta JSON válido e inválido)
+const CLAY_FIELDS = [
+  "first_name",
+  "last_name",
+  "job_title",
+  "linkedin_url",
+  "company_linkedin_url",
+  "bullseye_company_id",
+] as const;
 
 type IncomingContact = RawContact & {
   bullseye_company_id?: string;
@@ -32,16 +46,75 @@ type IncomingContact = RawContact & {
   company_linkedin_url?: string;
 };
 
-// ── Búsqueda de empresa por LinkedIn URL ─────────────────────────────────────
+// ── Parseo tolerante de texto ─────────────────────────────────────────────────
 
-// Extrae el slug de una URL de LinkedIn company (ej. "acme-corp" de ".../company/acme-corp").
+// Extrae el valor de un campo concreto de un texto que puede ser JSON válido
+// o inválido (valores sin comillas). Maneja tanto "field": "value" como "field": value.
+function extractFieldFromText(text: string, field: string): string {
+  // Intento 1: valor entre comillas  "field": "value"
+  const quotedRe = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, "i");
+  const quotedM = text.match(quotedRe);
+  if (quotedM) return quotedM[1].trim();
+
+  // Intento 2: valor sin comillas  "field": value  (para hasta coma, llave o fin)
+  const unquotedRe = new RegExp(`"${field}"\\s*:\\s*([^\\s",}][^",}]*)`, "i");
+  const unquotedM = text.match(unquotedRe);
+  if (unquotedM) return unquotedM[1].trim();
+
+  return "";
+}
+
+// Intenta extraer todos los campos conocidos del texto y devuelve un objeto plano.
+// Funciona aunque el JSON esté malformado (valores sin comillas, truncados, etc.).
+function extractFieldsFromText(text: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const field of CLAY_FIELDS) {
+    const val = extractFieldFromText(text, field);
+    if (val) result[field] = val;
+  }
+  return result;
+}
+
+// Parsea el body: JSON.parse primero; si falla, regex campo a campo.
+async function parseBody(
+  req: NextRequest
+): Promise<{ ok: true; body: any } | { ok: false; error: string }> {
+  const text = await req.text().catch(() => "");
+  if (!text) return { ok: false, error: "Empty body" };
+
+  // Intento 1: JSON válido
+  try {
+    return { ok: true, body: JSON.parse(text) };
+  } catch { /* continuar */ }
+
+  // Intento 2: extracción por regex (Clay sin comillas en los valores)
+  const extracted = extractFieldsFromText(text);
+  if (Object.keys(extracted).length > 0) {
+    return { ok: true, body: extracted };
+  }
+
+  return { ok: false, error: "Invalid JSON body — no se pudieron extraer campos" };
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+function checkAuth(req: NextRequest): { ok: true } | { ok: false; error: string } {
+  const expected = process.env.CLAY_WEBHOOK_SECRET;
+  if (!expected) return { ok: true };
+  const hdr =
+    req.headers.get("x-webhook-secret") ??
+    (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+  if (hdr !== expected) return { ok: false, error: "Unauthorized" };
+  return { ok: true };
+}
+
+// ── Lookup empresa por LinkedIn URL ───────────────────────────────────────────
+
 function extractLinkedInSlug(url: string): string | null {
   const m = url.match(/\/company\/([A-Za-z0-9._%-]+)/i);
   return m ? m[1].toLowerCase() : null;
 }
 
-// Busca la empresa en Supabase comparando el slug del LinkedIn URL.
-// LinkedIn URLs son globalmente únicas, por lo que no filtramos por client_id.
 async function findCompanyByLinkedin(
   db: SupabaseClient,
   rawUrl: string
@@ -61,17 +134,15 @@ async function findCompanyByLinkedin(
   return data?.id ?? null;
 }
 
-// ── Extracción de bullseye_company_id del payload (compatibilidad) ────────────
+// ── Extracción de bullseye_company_id del payload ─────────────────────────────
 
 function pickCompanyIdFromObject(obj: Record<string, any>): string {
-  // Paso 1: match exacto ignorando espacios/underscores/mayúsculas
   for (const [k, v] of Object.entries(obj)) {
     if (k.replace(/[\s_-]/g, "").toLowerCase() === "bullseyecompanyid") {
       const s = (v ?? "").toString().trim();
       if (s && UUID_RE.test(s)) return s;
     }
   }
-  // Paso 2: cualquier key con "company"+"id" y valor UUID
   for (const [k, v] of Object.entries(obj)) {
     const norm = k.replace(/[\s_-]/g, "").toLowerCase();
     if (norm.includes("company") && norm.includes("id")) {
@@ -82,28 +153,6 @@ function pickCompanyIdFromObject(obj: Record<string, any>): string {
   return "";
 }
 
-function pickCompanyIdFromString(text: string): string {
-  try {
-    const parsed = JSON.parse(text);
-    if (parsed && typeof parsed === "object") {
-      const fromObj = pickCompanyIdFromObject(parsed);
-      if (fromObj) return fromObj;
-    }
-  } catch { /* continuar */ }
-
-  const patterns = [
-    /bullseye_company_id["'\s:]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-    /Bullseye\s+Company\s+Id["'\s:]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-    /company[_\s-]?id["'\s:]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
-  ];
-  for (const re of patterns) {
-    const m = text.match(re);
-    if (m) return m[1];
-  }
-  return "";
-}
-
-// Intenta extraer bullseye_company_id únicamente del payload (sin DB).
 function extractCompanyIdFromPayload(item: IncomingContact): string {
   const direct = (item.bullseye_company_id ?? "").toString().trim();
   if (direct && UUID_RE.test(direct)) return direct;
@@ -112,48 +161,20 @@ function extractCompanyIdFromPayload(item: IncomingContact): string {
   if (ctd && typeof ctd === "object") {
     const fromObj = pickCompanyIdFromObject(ctd as Record<string, any>);
     if (fromObj) return fromObj;
-    for (const v of Object.values(ctd as Record<string, any>)) {
-      if (typeof v === "string") {
-        const fromStr = pickCompanyIdFromString(v);
-        if (fromStr) return fromStr;
-      }
-    }
   }
   if (typeof ctd === "string" && ctd.trim()) {
-    const fromStr = pickCompanyIdFromString(ctd);
-    if (fromStr) return fromStr;
+    try {
+      const parsed = JSON.parse(ctd);
+      if (parsed && typeof parsed === "object") {
+        const fromStr = pickCompanyIdFromObject(parsed);
+        if (fromStr) return fromStr;
+      }
+    } catch { /* continuar */ }
   }
   return "";
 }
 
-// ── Parseo del body ────────────────────────────────────────────────────────────
-
-async function parseBody(
-  req: NextRequest
-): Promise<{ ok: true; body: any } | { ok: false; error: string; companyId: string }> {
-  const text = await req.text().catch(() => "");
-  if (!text) return { ok: false, error: "Empty body", companyId: "" };
-  try {
-    return { ok: true, body: JSON.parse(text) };
-  } catch (e) {
-    const companyId = pickCompanyIdFromString(text);
-    return {
-      ok: false,
-      error: `Invalid JSON body: ${(e as Error).message}`,
-      companyId,
-    };
-  }
-}
-
-function checkAuth(req: NextRequest): { ok: true } | { ok: false; error: string } {
-  const expected = process.env.CLAY_WEBHOOK_SECRET;
-  if (!expected) return { ok: true };
-  const hdr =
-    req.headers.get("x-webhook-secret") ??
-    (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (hdr !== expected) return { ok: false, error: "Unauthorized" };
-  return { ok: true };
-}
+// ── Normalización del body ────────────────────────────────────────────────────
 
 function normalize(body: any): IncomingContact[] {
   if (!body) return [];
@@ -161,23 +182,23 @@ function normalize(body: any): IncomingContact[] {
   if (Array.isArray(body.contacts)) {
     return (body.contacts as RawContact[]).map((c) => ({
       ...c,
-      bullseye_company_id:    body.bullseye_company_id    ?? (c as any).bullseye_company_id,
-      company_table_data:     body.company_table_data     ?? (c as any).company_table_data,
-      company_linkedin_url:   body.company_linkedin_url   ?? (c as any).company_linkedin_url,
+      bullseye_company_id:  body.bullseye_company_id  ?? (c as any).bullseye_company_id,
+      company_table_data:   body.company_table_data   ?? (c as any).company_table_data,
+      company_linkedin_url: body.company_linkedin_url ?? (c as any).company_linkedin_url,
     }));
   }
   if (Array.isArray(body.people)) {
     return (body.people as RawContact[]).map((c) => ({
       ...c,
-      bullseye_company_id:    body.bullseye_company_id    ?? (c as any).bullseye_company_id,
-      company_table_data:     body.company_table_data     ?? (c as any).company_table_data,
-      company_linkedin_url:   body.company_linkedin_url   ?? (c as any).company_linkedin_url,
+      bullseye_company_id:  body.bullseye_company_id  ?? (c as any).bullseye_company_id,
+      company_table_data:   body.company_table_data   ?? (c as any).company_table_data,
+      company_linkedin_url: body.company_linkedin_url ?? (c as any).company_linkedin_url,
     }));
   }
   return [body as IncomingContact];
 }
 
-// ── Handler principal ──────────────────────────────────────────────────────────
+// ── Handler principal ─────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const auth = checkAuth(req);
@@ -185,15 +206,7 @@ export async function POST(req: NextRequest) {
 
   const parsed = await parseBody(req);
   if (!parsed.ok) {
-    return NextResponse.json(
-      {
-        error: parsed.error,
-        hint: parsed.companyId
-          ? `Detected bullseye_company_id=${parsed.companyId} via regex but could not parse contacts`
-          : "Could not extract any data from body",
-      },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
   const items = normalize(parsed.body);
@@ -203,15 +216,14 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Agrupa contactos por empresa, resolviendo el company ID en dos pasos.
   const byCompany = new Map<string, RawContact[]>();
   const noCompany: IncomingContact[] = [];
 
   for (const it of items) {
-    // Paso 1: extrae del payload (compatibilidad hacia atrás)
+    // Paso 1: extraer del payload
     let cid = extractCompanyIdFromPayload(it);
 
-    // Paso 2: busca en Supabase por company_linkedin_url si no se encontró en el payload
+    // Paso 2: buscar en Supabase por LinkedIn URL
     if (!cid && it.company_linkedin_url) {
       cid = (await findCompanyByLinkedin(db, it.company_linkedin_url)) ?? "";
     }
@@ -223,10 +235,10 @@ export async function POST(req: NextRequest) {
 
     const arr = byCompany.get(cid) ?? [];
     const {
-      bullseye_company_id:  _omit1,
-      company_table_data:   _omit2,
-      "Company Table Data": _omit3,
-      company_linkedin_url: _omit4,
+      bullseye_company_id:  _1,
+      company_table_data:   _2,
+      "Company Table Data": _3,
+      company_linkedin_url: _4,
       ...rest
     } = it;
     arr.push(rest);
@@ -251,7 +263,7 @@ export async function POST(req: NextRequest) {
   if (noCompany.length > 0) {
     errors.push({
       bullseye_company_id: "",
-      error: `${noCompany.length} contact(s) sin bullseye_company_id ni company_linkedin_url reconocible — no se persistieron`,
+      error: `${noCompany.length} contact(s) sin empresa identificable — no se persistieron`,
     });
   }
 
