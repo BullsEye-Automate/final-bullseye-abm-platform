@@ -34,18 +34,26 @@ type Contact = {
   status: string;
   clay_pushed_at: string | null;
   clay_push_error: string | null;
+  lemlist_pushed_at: string | null;
   created_at: string;
 };
 
 type Company = { id: string; company_name: string };
 
-type Bucket = "pending" | "manual_review" | "enriched" | "discarded";
+type Bucket = "pending" | "approved_pending" | "enriched" | "discarded";
 
 const BUCKET_LABELS: Record<Bucket, string> = {
   pending: "Pendientes",
-  manual_review: "Revisión manual",
+  approved_pending: "Por aprobar",
   enriched: "En campaña",
   discarded: "Descartados"
+};
+
+const BUCKET_DESCRIPTIONS: Record<Bucket, string> = {
+  pending: "Contactos importados esperando revisión IA.",
+  approved_pending: "Contactos con fit aprobado pendientes de enviar a Lemlist.",
+  enriched: "Contactos ya en campaña Lemlist.",
+  discarded: "Contactos descartados por IA o manualmente."
 };
 
 export default function ContactosPage() {
@@ -54,10 +62,11 @@ export default function ContactosPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [counts, setCounts] = useState<Record<Bucket, number>>({
     pending: 0,
-    manual_review: 0,
+    approved_pending: 0,
     enriched: 0,
     discarded: 0
   });
+  const [bulkApproving, setBulkApproving] = useState(false);
   const [approvedCompanies, setApprovedCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -99,6 +108,25 @@ export default function ContactosPage() {
     await load();
   }
 
+  async function recoverContact(contactId: string) {
+    setPushingId(contactId);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch(`/api/contacts/${contactId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "recovered" })
+    });
+    const data = await res.json();
+    setPushingId(null);
+    if (!res.ok) {
+      setError(data.error ?? "Recover failed");
+      return;
+    }
+    setPushNotice("Contacto recuperado.");
+    await load();
+  }
+
   async function pushAllPending() {
     setBulkPushing(true);
     setPushNotice(null);
@@ -130,6 +158,26 @@ export default function ContactosPage() {
     }
   }
 
+  async function bulkApproveEnrich() {
+    if (!currentClient) return;
+    setBulkApproving(true);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch("/api/contacts/bulk-approve-enrich", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient.id })
+    });
+    const data = await res.json();
+    setBulkApproving(false);
+    if (!res.ok) {
+      setError(data.error ?? "Bulk approve failed");
+      return;
+    }
+    setPushNotice(data.message ?? `${data.pushed ?? 0} contactos enviados a Lemlist.`);
+    await load();
+  }
+
   useEffect(() => {
     load(bucket);
   }, [bucket, currentClient?.id]);
@@ -139,10 +187,8 @@ export default function ContactosPage() {
   }, [currentClient?.id]);
 
   const pushablePendingCount = useMemo(() => {
-    if (bucket !== "pending") return 0;
-    return contacts.filter(
-      (c) => c.prefilter_result === "yes" && !c.clay_pushed_at
-    ).length;
+    if (bucket !== "approved_pending") return 0;
+    return contacts.length;
   }, [contacts, bucket]);
 
   const grouped = useMemo(() => {
@@ -196,7 +242,7 @@ export default function ContactosPage() {
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 flex-wrap">
-          {(["pending", "manual_review", "enriched", "discarded"] as const).map((b) => {
+          {(["pending", "approved_pending", "enriched", "discarded"] as Bucket[]).map((b) => {
             const active = bucket === b;
             return (
               <button
@@ -221,17 +267,17 @@ export default function ContactosPage() {
           })}
         </div>
         <div className="flex items-center gap-2">
-          {bucket === "pending" && pushablePendingCount > 0 && (
+          {bucket === "approved_pending" && pushablePendingCount > 0 && (
             <button
-              onClick={pushAllPending}
-              disabled={bulkPushing}
+              onClick={bulkApproveEnrich}
+              disabled={bulkApproving}
               className="btn-primary"
-              title="Empuja a Clay todos los contactos pre-filter YES que aún no fueron enviados"
+              title="Envía a Lemlist todos los contactos aprobados pendientes"
             >
               <IconSend size={14} />
-              {bulkPushing
-                ? "Empujando…"
-                : `Prospectar todos en Clay (${pushablePendingCount})`}
+              {bulkApproving
+                ? "Enviando…"
+                : `Aprobar todos (${pushablePendingCount}) → Lemlist`}
             </button>
           )}
           <button className="btn-secondary" onClick={() => load()} disabled={loading}>
@@ -272,6 +318,7 @@ export default function ContactosPage() {
                   <ContactCard
                     key={c.id}
                     c={c}
+                    bucket={bucket}
                     onPush={pushOne}
                     isPushing={pushingId === c.id}
                   />
