@@ -38,8 +38,6 @@ const CLAY_CHIPS_BLOCK = `
 - First Name: {{first_name}}
 - Last Name: {{last_name}}
 - Job Title: {{job_title}}
-- Seniority: {{seniority}}
-- LinkedIn Headline: {{linkedin_headline}}
 - LinkedIn URL: {{linkedin_url}}
 - Company Name: {{company_name}}
 - Company Size: {{company_size}}
