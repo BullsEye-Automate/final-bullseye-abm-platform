@@ -16,7 +16,10 @@ import {
   IconMicroscope,
   IconBolt,
   IconTarget,
-  IconUser
+  IconUser,
+  IconUpload,
+  IconSearch,
+  IconPencil
 } from "@tabler/icons-react";
 
 type Company = {
@@ -133,6 +136,26 @@ export default function EmpresasPage() {
   const [bulkResult, setBulkResult] = useState<{ pushed: number; total: number; errors: number } | null>(null);
   const [selectedIds,  setSelectedIds]  = useState<Set<string>>(new Set());
   const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
+
+  // Modo de discovery
+  const [discoveryMode, setDiscoveryMode] = useState<"recommend" | "search_one" | "import_csv">("recommend");
+
+  // Buscar empresa individual
+  const [searchName, setSearchName]           = useState("");
+  const [searchLinkedin, setSearchLinkedin]   = useState("");
+  const [searchingOne, setSearchingOne]       = useState(false);
+  const [searchOneResult, setSearchOneResult] = useState<string | null>(null);
+
+  // Importar CSV
+  const [csvFile, setCsvFile]               = useState<File | null>(null);
+  const [csvRows, setCsvRows]               = useState<Record<string, string>[]>([]);
+  const [csvImporting, setCsvImporting]     = useState(false);
+  const [csvProgress, setCsvProgress]       = useState(0);
+  const [csvSummary, setCsvSummary]         = useState<{ ok: number; errors: number } | null>(null);
+
+  // Aprobar todas las pendientes
+  const [bulkApproving, setBulkApproving]   = useState(false);
+  const [bulkApproveResult, setBulkApproveResult] = useState<{ approved: number } | null>(null);
 
   // Precarga región y opciones de tamaño desde el ICP del cliente activo
   useEffect(() => {
@@ -252,6 +275,99 @@ export default function EmpresasPage() {
     setEnrichingIds(new Set());
     setSelectedIds(new Set());
     load(tab);
+  }
+
+  // Buscar una empresa por nombre
+  async function searchOne() {
+    if (!searchName.trim()) return;
+    setSearchingOne(true);
+    setSearchOneResult(null);
+    const res = await fetch("/api/companies/research-one", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: searchName.trim(),
+        linkedin_url: searchLinkedin.trim() || undefined,
+        client_id: currentClient?.id ?? null
+      })
+    });
+    const data = await res.json();
+    setSearchingOne(false);
+    if (!res.ok) {
+      setSearchOneResult(`error:${data.error ?? "Error buscando empresa"}`);
+    } else if (data.already_exists) {
+      setSearchOneResult("exists:");
+    } else {
+      setSearchOneResult(`ok:${data.company?.company_name ?? searchName}`);
+      load("pending");
+    }
+  }
+
+  // Parsear CSV (columnas: name, linkedin_url, website, city, country)
+  function parseCsv(file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = (e.target?.result as string) ?? "";
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) { setCsvRows([]); return; }
+      const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/\s+/g, "_").replace(/['"]/g, ""));
+      const rows = lines.slice(1).map((line) => {
+        const vals = line.split(",").map((v) => v.trim().replace(/^["']|["']$/g, ""));
+        const obj: Record<string, string> = {};
+        headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
+        return obj;
+      }).filter((r) => r.name?.trim());
+      setCsvRows(rows);
+    };
+    reader.readAsText(file);
+  }
+
+  async function importCsv() {
+    if (csvRows.length === 0) return;
+    setCsvImporting(true);
+    setCsvProgress(0);
+    setCsvSummary(null);
+    let ok = 0;
+    let errors = 0;
+    for (let i = 0; i < csvRows.length; i++) {
+      const row = csvRows[i];
+      try {
+        const res = await fetch("/api/companies/research-one", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: row.name,
+            linkedin_url: row.linkedin_url || undefined,
+            website: row.website || undefined,
+            city: row.city || undefined,
+            country: row.country || undefined,
+            client_id: currentClient?.id ?? null
+          })
+        });
+        if (res.ok) ok++; else errors++;
+      } catch { errors++; }
+      setCsvProgress(i + 1);
+    }
+    setCsvImporting(false);
+    setCsvSummary({ ok, errors });
+    load("pending");
+  }
+
+  // Aprobar todas las pendientes en bloque
+  async function bulkApprove() {
+    setBulkApproving(true);
+    setBulkApproveResult(null);
+    const res = await fetch("/api/companies/bulk-approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient?.id ?? null })
+    });
+    const data = await res.json();
+    setBulkApproving(false);
+    if (res.ok) {
+      setBulkApproveResult({ approved: data.approved ?? 0 });
+      load("pending");
+    }
   }
 
   const counts = useMemo(() => {
