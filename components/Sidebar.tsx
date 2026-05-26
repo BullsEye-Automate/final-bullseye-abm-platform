@@ -33,8 +33,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/dashboard",       label: "Dashboard",       icon: IconLayoutDashboard, disabled: true },
       { href: "/empresas",        label: "Empresas",        icon: IconBuildingFactory2 },
-      { href: "/contactos",       label: "Contactos",       icon: IconUsers },
-      { href: "/revision-manual", label: "Revisión manual", icon: IconClipboardList,    disabled: true }
+      { href: "/contactos",       label: "Contactos",       icon: IconUsers }
     ]
   },
   {
@@ -61,7 +60,7 @@ const SECTIONS: Section[] = [
     label: "Análisis",
     items: [
       { href: "/reporteria",      label: "Reportería",      icon: IconReportAnalytics, disabled: true },
-      { href: "/entrenar-modelo", label: "Entrenar modelo", icon: IconBrain,           disabled: true }
+      { href: "/entrenar-modelo", label: "Entrenar modelo", icon: IconBrain }
     ]
   },
   {
@@ -69,7 +68,6 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/clientes",                label: "Clientes",         icon: IconBuilding },
       { href: "/configuracion/cliente",   label: "Config. cliente",  icon: IconAdjustments },
-      { href: "/configuracion/contexto",  label: "Contexto IA",      icon: IconBrain },
       { href: "/configuracion/icp",       label: "ICP",              icon: IconSettings }
     ]
   }
