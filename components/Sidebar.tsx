@@ -42,15 +42,15 @@ const SECTIONS: Section[] = [
   {
     label: "Outreach",
     items: [
-      { href: "/campanas",  label: "Campañas email", icon: IconMail,          disabled: true },
-      { href: "/linkedin",  label: "LinkedIn",       icon: IconBrandLinkedin, disabled: true }
+      { href: "/campanas", label: "Campañas email", icon: IconMail },
+      { href: "/linkedin", label: "LinkedIn",       icon: IconBrandLinkedin }
     ]
   },
   {
     label: "SDR",
     items: [
-      { href: "/llamadas",   label: "Llamadas",   icon: IconPhone,    disabled: true },
-      { href: "/respuestas", label: "Respuestas", icon: IconMessage2, disabled: true }
+      { href: "/llamadas",   label: "Llamadas",   icon: IconPhone },
+      { href: "/respuestas", label: "Respuestas", icon: IconMessage2 }
     ]
   },
   {
