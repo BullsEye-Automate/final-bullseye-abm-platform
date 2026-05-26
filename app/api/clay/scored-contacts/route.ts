@@ -43,14 +43,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: Body | null = null;
+  let body: Body;
   try {
-    body = await req.json();
+    const parsed = await req.json();
+    if (!parsed || typeof parsed !== "object") {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
+    body = parsed as Body;
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const contactId = body?.bullseye_contact_id?.trim();
+  const contactId = body.bullseye_contact_id?.trim();
   if (!contactId) {
     return NextResponse.json({ error: "bullseye_contact_id es requerido" }, { status: 400 });
   }
