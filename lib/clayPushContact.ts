@@ -17,15 +17,6 @@ export type PushContactErr = {
 
 export type PushContactResult = PushContactOk | PushContactErr;
 
-// Mapea el company_type interno al select de Clay (lab/clinic/DSO).
-function mapCompanyTypeForClay(t: string | null): string | null {
-  if (!t) return null;
-  if (t === "lab") return "lab";
-  if (t === "multi_clinic") return "clinic";
-  if (t === "dso") return "DSO";
-  return null;
-}
-
 export async function pushContactToClay(
   db: SupabaseClient,
   contactId: string,
@@ -71,9 +62,7 @@ export async function pushContactToClay(
 
   const { data: company, error: coErr } = await db
     .from("companies")
-    .select(
-      "id, client_id, company_name, company_type, company_size, cad_software, scanner_technology, fit_signals"
-    )
+    .select("id, client_id, company_name, company_size, fit_signals")
     .eq("id", contact.company_id)
     .maybeSingle();
   if (coErr) {
@@ -109,23 +98,20 @@ export async function pushContactToClay(
   }
 
   const payload = {
-    first_name: contact.first_name ?? "",
-    last_name: contact.last_name ?? "",
-    job_title: contact.job_title ?? "",
-    linkedin_headline: contact.linkedin_headline ?? "",
-    linkedin_url: normalizeLinkedInUrl(contact.linkedin_url) ?? "",
-    email: contact.email ?? "",
-    phone: contact.phone ?? "",
-    seniority: contact.seniority ?? "",
-    tenure: contact.tenure ?? "",
-    company_name: company.company_name,
-    company_type: mapCompanyTypeForClay(company.company_type),
-    company_size: company.company_size ?? null,
-    cad_software: company.cad_software ?? "",
-    scanner_technology: company.scanner_technology ?? "",
-    fit_signals: company.fit_signals ?? "",
+    bullseye_contact_id: contact.id,
     bullseye_company_id: company.id,
-    bullseye_contact_id: contact.id
+    first_name:          contact.first_name        ?? "",
+    last_name:           contact.last_name         ?? "",
+    job_title:           contact.job_title         ?? "",
+    linkedin_url:        normalizeLinkedInUrl(contact.linkedin_url) ?? "",
+    linkedin_headline:   contact.linkedin_headline ?? "",
+    email:               contact.email             ?? "",
+    phone:               contact.phone             ?? "",
+    seniority:           contact.seniority         ?? "",
+    tenure:              contact.tenure            ?? "",
+    company_name:        company.company_name,
+    company_size:        company.company_size       ?? null,
+    fit_signals:         company.fit_signals        ?? "",
   };
 
   let clayRes: Response;
