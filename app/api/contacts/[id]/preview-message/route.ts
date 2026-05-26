@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateMessages, type MessageInput } from "@/lib/messageGenerator";
-import { loadClientIcpContext } from "@/lib/modelTrainingConfig";
+import { loadClientIcpContext, loadActiveModelTrainingConfig } from "@/lib/modelTrainingConfig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,7 +49,10 @@ export async function POST(
     .maybeSingle();
 
   try {
-    const icpContext = await loadClientIcpContext(db, contact.client_id);
+    const [icpContext, trainingConfig] = await Promise.all([
+      loadClientIcpContext(db, contact.client_id),
+      loadActiveModelTrainingConfig(db, contact.client_id),
+    ]);
     const input: MessageInput = {
       first_name: contact.first_name,
       last_name: contact.last_name,
@@ -65,7 +68,7 @@ export async function POST(
       icp_context: icpContext
     };
 
-    const messages = await generateMessages(input);
+    const messages = await generateMessages(input, trainingConfig);
 
     // Guardar si se solicitó
     if (save) {

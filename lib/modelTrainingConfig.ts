@@ -41,16 +41,30 @@ export type ModelTrainingConfig = {
 };
 
 /**
- * Carga la configuración de entrenamiento activa.
- * Retorna null si no hay ninguna activa.
+ * Carga la config activa del cliente. Si no existe, cae al global (client_id IS NULL).
  */
 export async function loadActiveModelTrainingConfig(
-  db: SupabaseClient
+  db: SupabaseClient,
+  clientId?: string | null
 ): Promise<ModelTrainingConfig | null> {
+  if (clientId) {
+    const { data } = await db
+      .from("model_training_config")
+      .select("*")
+      .eq("is_active", true)
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) return data as ModelTrainingConfig;
+  }
+
+  // Fallback: config global (sin client_id)
   const { data, error } = await db
     .from("model_training_config")
     .select("*")
     .eq("is_active", true)
+    .is("client_id", null)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
