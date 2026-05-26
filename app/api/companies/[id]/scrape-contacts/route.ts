@@ -17,8 +17,10 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   }
 
   const target = company.company_website ?? company.company_name;
-  const query  = `${target} equipo liderazgo CEO director gerente manager "about" team leadership`;
-  const results = await perplexitySearch(query).catch(() => null);
+  const results = await perplexitySearch({
+    system: "Eres un asistente que extrae información de equipos directivos de empresas.",
+    user: `Busca el equipo de liderazgo de ${target}: CEO, director, gerente, manager. Incluye nombres completos y cargos.`,
+  }).catch(() => null);
   if (!results?.content) {
     return NextResponse.json({ found: 0, summary: { yes: 0, no: 0, skipped: 0 } });
   }
