@@ -60,6 +60,30 @@ function extractCompanyId(item: IncomingContact): string {
   return "";
 }
 
+// Intenta extraer bullseye_company_id de un string mal formateado usando regex.
+function regexCompanyId(text: string): string {
+  const m = text.match(/bullseye_company_id["':\s]+([a-f0-9-]{36})/i)
+    ?? text.match(/Bullseye Company Id["':\s]+([a-f0-9-]{36})/i);
+  return m ? m[1] : "";
+}
+
+// Parsea el body HTTP: intenta JSON.parse(); si falla intenta extraer
+// solo el bullseye_company_id con regex para devolver un error descriptivo.
+async function parseBody(req: NextRequest): Promise<{ ok: true; body: any } | { ok: false; error: string; companyId: string }> {
+  const text = await req.text().catch(() => "");
+  if (!text) return { ok: false, error: "Empty body", companyId: "" };
+  try {
+    return { ok: true, body: JSON.parse(text) };
+  } catch (e) {
+    const companyId = regexCompanyId(text);
+    return {
+      ok: false,
+      error: `Invalid JSON body: ${(e as Error).message}`,
+      companyId,
+    };
+  }
+}
+
 function checkAuth(req: NextRequest): { ok: true } | { ok: false; error: string } {
   const expected = process.env.CLAY_WEBHOOK_SECRET;
   if (!expected) return { ok: true }; // auth opcional
@@ -93,10 +117,16 @@ export async function POST(req: NextRequest) {
   const auth = checkAuth(req);
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
 
-  const body = await req.json().catch(() => null);
-  if (body == null) {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  const parsed = await parseBody(req);
+  if (!parsed.ok) {
+    return NextResponse.json({
+      error: parsed.error,
+      hint: parsed.companyId
+        ? `Detected bullseye_company_id=${parsed.companyId} via regex but could not parse contacts`
+        : "Could not extract any data from body"
+    }, { status: 400 });
   }
+  const body = parsed.body;
 
   const items = normalize(body);
   if (items.length === 0) {
