@@ -41,7 +41,7 @@ const CLAY_CHIPS_BLOCK = `
 - LinkedIn URL: {{linkedin_url}}
 - Company Name: {{company_name}}
 - Company Size: {{company_size}}
-- Fit Signals: {{fit_signals}}`;
+- Fit Signals: {{fit_signals}}  (company-level signals: industry, growth indicators, size context, and ICP alignment signals pre-validated by BullsEye)`;
 
 // GET — devuelve el prompt guardado (si existe)
 export async function GET(
