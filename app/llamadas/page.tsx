@@ -1,97 +1,314 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   IconPhone,
-  IconPhoneCall,
-  IconPhoneOff,
-  IconRefresh,
+  IconChevronRight,
+  IconUser,
+  IconClock,
   IconLoader2,
-  IconAlertCircle,
-  IconCheck,
-  IconX,
-  IconPlus,
-  IconClockHour4,
-  IconArrowDown,
-  IconArrowUp
+  IconRefresh,
+  IconBrandHubspot,
+  IconSparkles,
+  IconArrowUpRight,
+  IconArrowDownLeft,
 } from "@tabler/icons-react";
+import { useClient } from "@/lib/clientContext";
 
-// Tipos para llamadas de HubSpot
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
 type Call = {
   id: string;
-  title: string;
-  body: string;
-  direction: "INBOUND" | "OUTBOUND" | string;
-  duration_seconds: number;
-  disposition: string;
-  disposition_label: string;
-  status: string;
-  timestamp: string | null;
-  created_at: string | null;
+  client_id: string | null;
+  hubspot_call_id: string;
+  contact_name: string | null;
+  company_name: string | null;
+  direction: "OUTBOUND" | "INBOUND" | null;
+  duration_ms: number | null;
+  disposition: string | null;
+  disposition_label: string | null;
+  notes_raw: string | null;
+  notes_clean: string | null;
+  called_at: string | null;
+  hubspot_owner_id: string | null;
+  sdr_name: string | null;
+  ai_score: number | null;
+  ai_outcome: string | null;
+  ai_outcome_detail: string | null;
+  ai_is_real_conversation: boolean | null;
+  ai_summary: string | null;
+  ai_next_steps: string | null;
+  analyzed_at: string | null;
+  created_at: string;
 };
 
-// Dispositions disponibles para registrar una llamada
-const DISPOSITIONS = [
-  { value: "9d9162e7-6cf3-4944-bf63-4dff82258764", label: "Conectado" },
-  { value: "f240bbac-87c9-4f6e-bf70-924b57d47db7", label: "Voicemail" },
-  { value: "73a0d17f-1163-4015-bdd5-ec830791da20", label: "Sin respuesta" },
-  { value: "17b47fee-58de-441e-a44c-c6300d46f273", label: "Número incorrecto" }
-];
+type Stats = {
+  total: number;
+  avg_duration_ms: number;
+  avg_score: number;
+  real_conversations: number;
+  interested: number;
+  unique_contacts: number;
+  unique_companies: number;
+  analyzed_count: number;
+};
 
-// Formatea duración en segundos como "X min Y seg"
-function formatDuration(seconds: number): string {
-  if (!seconds || seconds <= 0) return "—";
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  if (m === 0) return `${s} seg`;
-  if (s === 0) return `${m} min`;
-  return `${m} min ${s} seg`;
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+// Formatea milisegundos a string legible (ej: "2m 46s", "47s")
+function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
 }
 
-// Calcula tiempo relativo en español
-function timeAgo(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "hace un momento";
-  if (diffMin < 60) return `hace ${diffMin} min`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `hace ${diffH} hora${diffH > 1 ? "s" : ""}`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD < 7) return `hace ${diffD} día${diffD > 1 ? "s" : ""}`;
-  return date.toLocaleDateString("es", { day: "numeric", month: "short" });
+// Formatea ISO a hora en formato 12h (ej: "03:27 p.m.")
+function formatTime(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString("es-CL", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
+
+// Agrupa llamadas por fecha en español (ej: "LUNES, 25 DE MAYO DE 2026")
+function groupCallsByDate(
+  calls: Call[]
+): { dateLabel: string; calls: Call[] }[] {
+  const map = new Map<string, Call[]>();
+  for (const c of calls) {
+    const d = c.called_at ? new Date(c.called_at) : new Date(c.created_at);
+    const key = d
+      .toLocaleDateString("es-CL", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      })
+      .toUpperCase();
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(c);
+  }
+  return Array.from(map.entries()).map(([dateLabel, calls]) => ({
+    dateLabel,
+    calls,
+  }));
+}
+
+// Retorna color según score del SDR
+function scoreColor(score: number): string {
+  if (score >= 7) return "#16a34a";
+  if (score >= 5) return "#d97706";
+  return "#dc2626";
+}
+
+// ─── Colores de outcome ───────────────────────────────────────────────────────
+
+const OUTCOME_COLORS: Record<string, string> = {
+  Interesado: "bg-green-100 text-green-800",
+  Objeción: "bg-orange-100 text-orange-800",
+  "Buzón de voz": "bg-slate-100 text-slate-700",
+  "No contesta": "bg-gray-100 text-gray-600",
+  "No decide": "bg-yellow-100 text-yellow-800",
+  "No aplica": "bg-red-100 text-red-700",
+  Ganado: "bg-emerald-100 text-emerald-800",
+};
+
+// ─── Sub-componentes ──────────────────────────────────────────────────────────
+
+function StatCard({
+  label,
+  value,
+  sub,
+  valueColor,
+}: {
+  label: string;
+  value: string | number;
+  sub?: string;
+  valueColor?: string;
+}) {
+  return (
+    <div className="card py-3 px-4 flex flex-col gap-1">
+      <div className="text-[10px] font-semibold tracking-widest text-ink-muted uppercase">
+        {label}
+      </div>
+      <div
+        className="text-2xl font-bold"
+        style={{ color: valueColor ?? "#251762" }}
+      >
+        {value}
+      </div>
+      {sub && <div className="text-xs text-ink-muted">{sub}</div>}
+    </div>
+  );
+}
+
+function OutcomeBadge({
+  outcome,
+  detail,
+}: {
+  outcome: string;
+  detail?: string | null;
+}) {
+  const cls = OUTCOME_COLORS[outcome] ?? "bg-gray-100 text-gray-600";
+  const label = detail ? `${outcome} · ${detail}` : outcome;
+  return (
+    <span
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function DirectionBadge({ direction }: { direction: string | null }) {
+  const isOutbound = direction === "OUTBOUND";
+  return (
+    <span
+      className="inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded"
+      style={
+        isOutbound
+          ? { background: "rgba(98,224,216,0.15)", color: "#0F6E56" }
+          : { background: "rgba(74,222,128,0.15)", color: "#15803d" }
+      }
+    >
+      {isOutbound ? (
+        <IconArrowUpRight size={11} />
+      ) : (
+        <IconArrowDownLeft size={11} />
+      )}
+      {isOutbound ? "SALIENTE" : "ENTRANTE"}
+    </span>
+  );
+}
+
+function CallCard({ call }: { call: Call }) {
+  return (
+    <div className="card py-3 px-4 hover:bg-gray-50 cursor-pointer transition-colors">
+      <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          {/* Hora */}
+          <span className="text-xs text-ink-muted w-20 shrink-0 pt-0.5">
+            {formatTime(call.called_at)}
+          </span>
+
+          {/* Contenido principal */}
+          <div className="flex-1 min-w-0">
+            {/* Fila 1: nombre, empresa, dirección, duración, SDR */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-ink">
+                {call.contact_name ?? "Desconocido"}
+              </span>
+              {call.company_name && (
+                <span className="text-ink-muted">· {call.company_name}</span>
+              )}
+              <DirectionBadge direction={call.direction} />
+              {call.duration_ms != null && call.duration_ms > 0 && (
+                <span className="flex items-center gap-1 text-xs text-ink-muted">
+                  <IconClock size={12} />
+                  {formatDuration(call.duration_ms)}
+                </span>
+              )}
+              {call.sdr_name && (
+                <span className="flex items-center gap-1 text-xs text-ink-muted">
+                  <IconUser size={12} />
+                  {call.sdr_name}
+                </span>
+              )}
+            </div>
+
+            {/* Fila 2: outcome badge + score */}
+            {call.ai_outcome && (
+              <div className="flex items-center gap-3 mt-1.5">
+                <OutcomeBadge
+                  outcome={call.ai_outcome}
+                  detail={call.ai_outcome_detail}
+                />
+                {call.ai_score != null && (
+                  <span className="text-xs text-ink-muted">
+                    ★ SDR {call.ai_score}/10
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Resumen IA */}
+            {call.ai_summary && (
+              <p className="text-sm text-ink mt-2 leading-relaxed">
+                {call.ai_summary}
+              </p>
+            )}
+
+            {/* Próximo paso */}
+            {call.ai_next_steps && (
+              <p className="text-sm mt-1">
+                <span className="font-medium" style={{ color: "#62E0D8" }}>
+                  Próximo paso:
+                </span>{" "}
+                <span className="text-ink">{call.ai_next_steps}</span>
+              </p>
+            )}
+
+            {/* Notas raw si no hay análisis */}
+            {!call.ai_summary && call.notes_clean && (
+              <p className="text-sm text-ink-muted mt-1 line-clamp-2">
+                {call.notes_clean}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <IconChevronRight
+          size={16}
+          className="text-ink-muted shrink-0 mt-0.5 ml-2"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function LlamadasPage() {
+  const { currentClient } = useClient();
+
   const [calls, setCalls] = useState<Call[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [outcomes, setOutcomes] = useState<string[]>([]);
+  const [sdrNames, setSdrNames] = useState<string[]>([]);
+
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    synced: number;
+    total: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Estado del formulario de nueva llamada
-  const [fTitle, setFTitle] = useState("");
-  const [fDirection, setFDirection] = useState<"OUTBOUND" | "INBOUND">("OUTBOUND");
-  const [fDurationMin, setFDurationMin] = useState("");
-  const [fDisposition, setFDisposition] = useState(DISPOSITIONS[0].value);
-  const [fBody, setFBody] = useState("");
-  const [fContactName, setFContactName] = useState("");
-  const [fCompanyName, setFCompanyName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  // Filtros locales del cliente
+  const [filterOutcome, setFilterOutcome] = useState<string>("");
+  const [filterSdr, setFilterSdr] = useState<string>("");
 
-  const loadCalls = useCallback(async () => {
+  // Carga de datos desde Supabase
+  const loadCalls = useCallback(async (clientId: string) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/hubspot/calls", { cache: "no-store" });
+      const params = new URLSearchParams({ client_id: clientId });
+      const res = await fetch(`/api/hubspot/calls?${params}`, {
+        cache: "no-store",
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "Error cargando llamadas");
       } else {
         setCalls(data.calls ?? []);
+        setStats(data.stats ?? null);
+        setOutcomes(data.outcomes ?? []);
+        setSdrNames(data.sdr_names ?? []);
       }
     } catch {
       setError("Error de red al cargar llamadas");
@@ -99,79 +316,156 @@ export default function LlamadasPage() {
     setLoading(false);
   }, []);
 
+  // Auto-sync al montar si no hay datos en Supabase
+  const autoSync = useCallback(
+    async (clientId: string) => {
+      // Primero intenta cargar desde Supabase
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams({ client_id: clientId });
+        const res = await fetch(`/api/hubspot/calls?${params}`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (res.ok && (data.calls ?? []).length > 0) {
+          setCalls(data.calls ?? []);
+          setStats(data.stats ?? null);
+          setOutcomes(data.outcomes ?? []);
+          setSdrNames(data.sdr_names ?? []);
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Si falla, continúa con el sync automático
+      }
+      setLoading(false);
+
+      // Si no hay datos, sincroniza automáticamente desde HubSpot
+      setSyncing(true);
+      try {
+        const syncRes = await fetch("/api/hubspot/calls/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ client_id: clientId }),
+        });
+        const syncData = await syncRes.json();
+        if (syncRes.ok) {
+          setSyncResult({ synced: syncData.synced, total: syncData.total });
+          await loadCalls(clientId);
+        }
+      } catch {
+        setError("Error al sincronizar con HubSpot");
+      }
+      setSyncing(false);
+    },
+    [loadCalls]
+  );
+
   useEffect(() => {
-    loadCalls();
-  }, [loadCalls]);
-
-  function resetForm() {
-    setFTitle("");
-    setFDirection("OUTBOUND");
-    setFDurationMin("");
-    setFDisposition(DISPOSITIONS[0].value);
-    setFBody("");
-    setFContactName("");
-    setFCompanyName("");
-    setSaveError(null);
-  }
-
-  async function handleSave() {
-    if (!fTitle.trim()) {
-      setSaveError("El título es requerido.");
-      return;
+    if (currentClient?.id) {
+      autoSync(currentClient.id);
     }
-    setSaving(true);
-    setSaveError(null);
+  }, [currentClient?.id, autoSync]);
 
-    // Convertir minutos a segundos
-    const durationSeconds = Math.round(parseFloat(fDurationMin || "0") * 60);
-
+  // Sincronización manual desde HubSpot
+  async function handleSync() {
+    if (!currentClient?.id) return;
+    setSyncing(true);
+    setSyncResult(null);
+    setError(null);
     try {
-      const res = await fetch("/api/hubspot/calls", {
+      const res = await fetch("/api/hubspot/calls/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: fTitle.trim(),
-          body: fBody.trim(),
-          direction: fDirection,
-          duration_seconds: durationSeconds,
-          disposition: fDisposition,
-          contact_name: fContactName.trim() || undefined,
-          company_name: fCompanyName.trim() || undefined
-        })
+        body: JSON.stringify({ client_id: currentClient.id }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setSaveError(data.error ?? "Error guardando la llamada");
+      if (res.ok) {
+        setSyncResult({ synced: data.synced, total: data.total });
+        await loadCalls(currentClient.id);
       } else {
-        setFormOpen(false);
-        resetForm();
-        setSuccessMsg("Llamada registrada en HubSpot.");
-        setTimeout(() => setSuccessMsg(null), 4000);
-        await loadCalls();
+        setError(data.error ?? "Error al sincronizar");
       }
     } catch {
-      setSaveError("Error de red al guardar");
+      setError("Error de red al sincronizar");
     }
-    setSaving(false);
+    setSyncing(false);
   }
+
+  // Análisis de llamadas pendientes con IA
+  async function handleAnalyze() {
+    if (!currentClient?.id) return;
+    setAnalyzing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/hubspot/calls/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id, limit: 10 }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        await loadCalls(currentClient.id);
+      } else {
+        setError(data.error ?? "Error al analizar llamadas");
+      }
+    } catch {
+      setError("Error de red al analizar");
+    }
+    setAnalyzing(false);
+  }
+
+  // Filtrado local del array de llamadas
+  const filteredCalls = useMemo((): Call[] => {
+    return calls.filter((c: Call) => {
+      if (filterOutcome && c.ai_outcome !== filterOutcome) return false;
+      if (filterSdr && c.sdr_name !== filterSdr) return false;
+      return true;
+    });
+  }, [calls, filterOutcome, filterSdr]);
+
+  const groupedByDate = useMemo(
+    () => groupCallsByDate(filteredCalls),
+    [filteredCalls]
+  );
+
+  // Métricas derivadas para la stats bar
+  const convRate =
+    stats && stats.total > 0
+      ? Math.round((stats.real_conversations / stats.total) * 100)
+      : 0;
+
+  const interestedPct =
+    stats && stats.unique_contacts > 0
+      ? Math.round((stats.interested / stats.unique_contacts) * 100)
+      : 0;
+
+  // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <header className="flex items-end justify-between">
+      <header className="flex items-start justify-between gap-4">
         <div>
           <div className="label">SDR</div>
-          <h1 className="text-2xl font-semibold tracking-tight">Llamadas</h1>
-          <div className="text-sm text-ink-muted mt-1">
-            Registro de llamadas comerciales sincronizado con HubSpot.
-          </div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+            <IconPhone size={24} />
+            Llamadas
+          </h1>
+          <p className="text-sm text-ink-muted mt-1">
+            Se sincronizan solas con HubSpot al abrir. Análisis con IA:
+            respuesta del cliente + evaluación del SDR.
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Refrescar desde Supabase */}
           <button
-            onClick={loadCalls}
+            onClick={() => currentClient?.id && loadCalls(currentClient.id)}
             disabled={loading}
             className="btn-secondary"
-            title="Refrescar lista"
+            title="Refrescar desde Supabase"
           >
             {loading ? (
               <IconLoader2 size={15} className="animate-spin" />
@@ -180,302 +474,175 @@ export default function LlamadasPage() {
             )}
             Refrescar
           </button>
+
+          {/* Sincronizar desde HubSpot */}
           <button
-            onClick={() => {
-              resetForm();
-              setFormOpen(true);
-            }}
-            className="btn-primary"
+            onClick={handleSync}
+            disabled={syncing}
+            className="btn-secondary"
+            title="Sincronizar llamadas desde HubSpot"
           >
-            <IconPlus size={16} />
-            Registrar llamada
+            {syncing ? (
+              <IconLoader2 size={15} className="animate-spin" />
+            ) : (
+              <IconBrandHubspot size={15} />
+            )}
+            Sincronizar HubSpot
+          </button>
+
+          {/* Analizar pendientes con IA */}
+          <button
+            onClick={handleAnalyze}
+            disabled={analyzing}
+            className="btn-primary"
+            title="Analizar llamadas pendientes con IA"
+          >
+            {analyzing ? (
+              <IconLoader2 size={15} className="animate-spin" />
+            ) : (
+              <IconSparkles size={15} />
+            )}
+            Analizar pendientes
           </button>
         </div>
       </header>
 
-      {/* Feedback de éxito */}
-      {successMsg && (
-        <div className="card border border-success-bg text-success-fg flex items-center gap-2">
-          <IconCheck size={16} />
-          {successMsg}
+      {/* Banner resultado del sync */}
+      {syncResult && (
+        <div
+          className="text-sm text-ink-muted border-l-4 pl-3 py-1"
+          style={{ borderColor: "#62E0D8" }}
+        >
+          Sync OK · {syncResult.total} escaneadas · {syncResult.synced}{" "}
+          guardadas
         </div>
       )}
 
-      {/* Formulario de nueva llamada (panel inline) */}
-      {formOpen && (
-        <section
-          className="card space-y-5"
-          style={{ border: "2px solid rgba(98,224,216,0.35)" }}
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold flex items-center gap-2">
-              <IconPhone size={17} />
-              Nueva llamada
-            </h2>
-            <button
-              onClick={() => {
-                setFormOpen(false);
-                resetForm();
-              }}
-              className="btn-secondary text-xs"
-            >
-              <IconX size={14} /> Cancelar
-            </button>
-          </div>
-
-          {/* Título */}
-          <div>
-            <div className="label mb-1">Título de la llamada *</div>
-            <input
-              className="input"
-              placeholder="Ej: Llamada de seguimiento — contacto inicial"
-              value={fTitle}
-              onChange={(e) => setFTitle(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {/* Dirección */}
-            <div>
-              <div className="label mb-2">Dirección</div>
-              <div className="flex gap-2">
-                {(["OUTBOUND", "INBOUND"] as const).map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setFDirection(d)}
-                    className={`btn flex-1 ${
-                      fDirection === d
-                        ? "bg-brand text-white"
-                        : "bg-white border border-[#E5E2F0] text-ink"
-                    }`}
-                  >
-                    {d === "OUTBOUND" ? (
-                      <IconArrowUp size={14} />
-                    ) : (
-                      <IconArrowDown size={14} />
-                    )}
-                    {d === "OUTBOUND" ? "Saliente" : "Entrante"}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Duración */}
-            <div>
-              <div className="label mb-1">Duración (minutos)</div>
-              <input
-                type="number"
-                min="0"
-                step="0.5"
-                className="input"
-                placeholder="Ej: 3.5"
-                value={fDurationMin}
-                onChange={(e) => setFDurationMin(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Resultado */}
-          <div>
-            <div className="label mb-1">Resultado</div>
-            <select
-              className="input"
-              value={fDisposition}
-              onChange={(e) => setFDisposition(e.target.value)}
-            >
-              {DISPOSITIONS.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Notas */}
-          <div>
-            <div className="label mb-1">Notas</div>
-            <textarea
-              className="input min-h-[100px]"
-              placeholder="Resumen de la llamada, próximos pasos, objeciones…"
-              value={fBody}
-              onChange={(e) => setFBody(e.target.value)}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {/* Contacto */}
-            <div>
-              <div className="label mb-1">Nombre del contacto (opcional)</div>
-              <input
-                className="input"
-                placeholder="María García"
-                value={fContactName}
-                onChange={(e) => setFContactName(e.target.value)}
-              />
-            </div>
-
-            {/* Empresa */}
-            <div>
-              <div className="label mb-1">Empresa (opcional)</div>
-              <input
-                className="input"
-                placeholder="Acme S.A."
-                value={fCompanyName}
-                onChange={(e) => setFCompanyName(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {/* Error de guardado */}
-          {saveError && (
-            <div className="flex items-center gap-2 text-sm text-danger-fg">
-              <IconAlertCircle size={15} />
-              {saveError}
-            </div>
-          )}
-
-          {/* Botón guardar */}
-          <div className="flex justify-end">
-            <button
-              onClick={handleSave}
-              disabled={saving || !fTitle.trim()}
-              className="btn-primary"
-            >
-              {saving ? (
-                <IconLoader2 size={15} className="animate-spin" />
-              ) : (
-                <IconPhone size={15} />
-              )}
-              {saving ? "Guardando…" : "Guardar llamada"}
-            </button>
-          </div>
-        </section>
-      )}
-
-      {/* Error de carga */}
-      {error && !loading && (
-        <div className="card border border-danger-bg text-danger-fg flex items-center gap-2">
-          <IconAlertCircle size={16} />
+      {/* Error */}
+      {error && (
+        <div className="card border border-red-200 text-red-700 text-sm px-4 py-2">
           {error}
         </div>
       )}
 
-      {/* Lista de llamadas */}
-      {loading ? (
-        <div className="flex items-center gap-3 text-ink-muted py-12 justify-center">
-          <IconLoader2 size={22} className="animate-spin" />
-          <span>Cargando llamadas…</span>
-        </div>
-      ) : calls.length === 0 && !error ? (
-        <div className="card flex items-center gap-3 text-ink-muted">
-          <IconPhoneOff size={18} className="shrink-0" />
-          No hay llamadas registradas todavía. Crea la primera usando el botón de arriba.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {calls.map((call) => (
-            <CallCard key={call.id} call={call} />
-          ))}
+      {/* Sin cliente seleccionado */}
+      {!currentClient && (
+        <div className="card text-ink-muted text-sm">
+          Selecciona un cliente en el selector de arriba para ver sus llamadas.
         </div>
       )}
-    </div>
-  );
-}
 
-function CallCard({ call }: { call: Call }) {
-  const isOutbound = call.direction === "OUTBOUND";
-
-  return (
-    <div className="card flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div className="flex items-start gap-3 min-w-0 flex-1">
-          {/* Ícono de dirección */}
-          <div
-            className="shrink-0 mt-0.5 rounded-lg p-2"
-            style={{
-              background: isOutbound
-                ? "rgba(98,224,216,0.12)"
-                : "rgba(74,222,128,0.12)"
-            }}
-          >
-            {isOutbound ? (
-              <IconArrowUp
-                size={16}
-                style={{ color: "#0F6E56" }}
-              />
-            ) : (
-              <IconArrowDown
-                size={16}
-                style={{ color: "#15803d" }}
-              />
-            )}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <h3 className="font-semibold truncate">{call.title}</h3>
-              {/* Badge dirección */}
-              <span
-                className="badge shrink-0"
-                style={
-                  isOutbound
-                    ? { background: "rgba(98,224,216,0.15)", color: "#0F6E56" }
-                    : { background: "rgba(74,222,128,0.15)", color: "#15803d" }
-                }
-              >
-                {isOutbound ? "Saliente" : "Entrante"}
-              </span>
-              {/* Badge estado */}
-              <span className="badge bg-[#F1EEF7] text-ink-muted">
-                {call.status}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-4 text-xs text-ink-muted flex-wrap">
-              {/* Fecha relativa */}
-              <span>{timeAgo(call.timestamp ?? call.created_at)}</span>
-
-              {/* Duración */}
-              {call.duration_seconds > 0 && (
-                <span className="flex items-center gap-1">
-                  <IconClockHour4 size={12} />
-                  {formatDuration(call.duration_seconds)}
-                </span>
-              )}
-
-              {/* Resultado */}
-              {call.disposition_label && call.disposition_label !== "—" && (
-                <span
-                  className="badge"
-                  style={{ background: "#F4F2FB", color: "#251762" }}
-                >
-                  {call.disposition_label}
-                </span>
-              )}
-            </div>
-          </div>
+      {/* Stats bar — 5 tarjetas horizontales */}
+      {stats && (
+        <div className="grid grid-cols-5 gap-3">
+          <StatCard
+            label="LLAMADAS"
+            value={stats.total}
+            sub={`${stats.unique_contacts} contactos · ${stats.unique_companies} empresas`}
+          />
+          <StatCard
+            label="DURACIÓN PROMEDIO"
+            value={
+              stats.avg_duration_ms > 0
+                ? formatDuration(stats.avg_duration_ms)
+                : "—"
+            }
+            sub={`${stats.analyzed_count} analizadas`}
+          />
+          <StatCard
+            label="SCORE SDR PROMEDIO"
+            value={
+              stats.avg_score > 0 ? `${stats.avg_score.toFixed(1)}/10` : "—"
+            }
+            sub="según IA"
+            valueColor={
+              stats.avg_score > 0 ? scoreColor(stats.avg_score) : undefined
+            }
+          />
+          <StatCard
+            label="TASA DE CONVERSACIÓN"
+            value={`${convRate}%`}
+            sub={`${stats.real_conversations}/${stats.total} conversaron`}
+          />
+          <StatCard
+            label="INTERESADOS"
+            value={stats.interested}
+            sub={`${interestedPct}% de los contactos`}
+          />
         </div>
+      )}
 
-        {/* Teléfono decorativo */}
-        <IconPhoneCall
-          size={15}
-          className="shrink-0 text-ink-muted mt-1"
-        />
-      </div>
+      {/* Filtros */}
+      {(outcomes.length > 0 || sdrNames.length > 0) && (
+        <div className="flex gap-3">
+          <select
+            className="input text-sm py-1.5"
+            value={filterOutcome}
+            onChange={(e) => setFilterOutcome(e.target.value)}
+          >
+            <option value="">Todas las respuestas</option>
+            {outcomes.map((o: string) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
+          </select>
 
-      {/* Notas truncadas a 2 líneas */}
-      {call.body && (
-        <p
-          className="text-sm text-ink/80 leading-relaxed"
-          style={{
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden"
-          }}
-        >
-          {call.body}
-        </p>
+          <select
+            className="input text-sm py-1.5"
+            value={filterSdr}
+            onChange={(e) => setFilterSdr(e.target.value)}
+          >
+            <option value="">Todos los SDR</option>
+            {sdrNames.map((s: string) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* Estado de carga / sync */}
+      {(loading || syncing) && (
+        <div className="flex items-center gap-3 text-ink-muted py-10 justify-center">
+          <IconLoader2 size={22} className="animate-spin" />
+          <span>
+            {syncing ? "Sincronizando con HubSpot…" : "Cargando llamadas…"}
+          </span>
+        </div>
+      )}
+
+      {/* Lista de llamadas agrupadas por fecha */}
+      {!loading && !syncing && currentClient && (
+        <>
+          {filteredCalls.length === 0 ? (
+            <div className="card text-ink-muted text-sm flex items-center gap-2">
+              <IconPhone size={18} className="shrink-0 opacity-40" />
+              No hay llamadas registradas. Presiona &ldquo;Sincronizar
+              HubSpot&rdquo; para importar las llamadas.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {groupedByDate.map(
+                ({ dateLabel, calls: dayCalls }: { dateLabel: string; calls: Call[] }) => (
+                  <div key={dateLabel}>
+                    {/* Cabecera de fecha */}
+                    <div className="text-xs font-semibold text-ink-muted uppercase tracking-wide py-2 border-b border-[#E5E2F0] mb-1">
+                      {dateLabel}
+                    </div>
+                    {/* Llamadas del día */}
+                    <div className="space-y-1">
+                      {dayCalls.map((call: Call) => (
+                        <CallCard key={call.id} call={call} />
+                      ))}
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

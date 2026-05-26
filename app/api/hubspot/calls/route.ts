@@ -1,160 +1,127 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Dispositions de HubSpot calls (UUIDs de sistema — los nombres son los standard)
-// En la UI usamos etiquetas legibles; el valor real lo provee HubSpot
-const DISPOSITION_LABELS: Record<string, string> = {
-  "9d9162e7-6cf3-4944-bf63-4dff82258764": "Conectado",
-  "f240bbac-87c9-4f6e-bf70-924b57d47db7": "Voicemail",
-  "73a0d17f-1163-4015-bdd5-ec830791da20": "Sin respuesta",
-  "17b47fee-58de-441e-a44c-c6300d46f273": "Número incorrecto"
-};
-
-type CallProperties = {
-  hs_call_title?: string;
-  hs_call_body?: string;
-  hs_call_direction?: string;
-  hs_call_duration?: string;
-  hs_call_disposition?: string;
-  hs_timestamp?: string;
-  hs_call_status?: string;
-};
-
-type HubSpotCall = {
+// Tipo de llamada devuelto por la API
+export type CallRow = {
   id: string;
-  properties: CallProperties;
-  createdAt?: string;
-  updatedAt?: string;
+  client_id: string | null;
+  hubspot_call_id: string;
+  contact_name: string | null;
+  company_name: string | null;
+  direction: "OUTBOUND" | "INBOUND" | null;
+  duration_ms: number | null;
+  disposition: string | null;
+  disposition_label: string | null;
+  notes_raw: string | null;
+  notes_clean: string | null;
+  called_at: string | null;
+  hubspot_owner_id: string | null;
+  sdr_name: string | null;
+  ai_score: number | null;
+  ai_outcome: string | null;
+  ai_outcome_detail: string | null;
+  ai_is_real_conversation: boolean | null;
+  ai_summary: string | null;
+  ai_next_steps: string | null;
+  analyzed_at: string | null;
+  created_at: string;
 };
 
-function formatCall(raw: HubSpotCall) {
-  const p = raw.properties;
-  const durationMs = parseInt(p.hs_call_duration ?? "0", 10);
-  const durationSec = Math.floor(durationMs / 1000);
-  return {
-    id: raw.id,
-    title: p.hs_call_title ?? "(sin título)",
-    body: p.hs_call_body ?? "",
-    direction: p.hs_call_direction ?? "OUTBOUND",
-    duration_seconds: durationSec,
-    disposition: p.hs_call_disposition ?? "",
-    disposition_label:
-      DISPOSITION_LABELS[p.hs_call_disposition ?? ""] ?? p.hs_call_disposition ?? "—",
-    status: p.hs_call_status ?? "COMPLETED",
-    timestamp: p.hs_timestamp ? new Date(parseInt(p.hs_timestamp, 10)).toISOString() : null,
-    created_at: raw.createdAt ?? null
-  };
-}
+// GET — Lee llamadas desde Supabase con filtros opcionales
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const clientId = searchParams.get("client_id");
+  const outcome = searchParams.get("outcome");
+  const sdrName = searchParams.get("sdr_name");
+  const limit = parseInt(searchParams.get("limit") ?? "100", 10);
 
-export async function GET() {
-  const token = process.env.HUBSPOT_ACCESS_TOKEN;
-  if (!token) {
+  if (!clientId) {
+    return NextResponse.json({ error: "client_id es requerido" }, { status: 400 });
+  }
+
+  const db = supabaseAdmin();
+
+  let query = db
+    .from("calls")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("called_at", { ascending: false })
+    .limit(limit);
+
+  if (outcome) {
+    query = query.eq("ai_outcome", outcome);
+  }
+  if (sdrName) {
+    query = query.eq("sdr_name", sdrName);
+  }
+
+  const { data: calls, error } = await query;
+
+  if (error) {
     return NextResponse.json(
-      { error: "HUBSPOT_ACCESS_TOKEN no configurado" },
+      { error: `Error consultando llamadas: ${error.message}` },
       { status: 500 }
     );
   }
 
-  // Obtener las últimas 50 llamadas ordenadas por fecha descendente
-  const url = new URL("https://api.hubapi.com/crm/v3/objects/calls");
-  url.searchParams.set(
-    "properties",
-    "hs_call_title,hs_call_body,hs_call_direction,hs_call_duration,hs_call_disposition,hs_timestamp,hs_call_status"
-  );
-  url.searchParams.set("limit", "50");
-  url.searchParams.set("sort", "-hs_timestamp");
+  const list: CallRow[] = calls ?? [];
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-    cache: "no-store"
-  });
+  // Calcular estadísticas
+  const total = list.length;
+  const withDuration = list.filter((c) => (c.duration_ms ?? 0) > 0);
+  const avgDurationMs =
+    withDuration.length > 0
+      ? Math.round(
+          withDuration.reduce((acc, c) => acc + (c.duration_ms ?? 0), 0) /
+            withDuration.length
+        )
+      : 0;
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    return NextResponse.json(
-      { error: `HubSpot respondió ${res.status}: ${text.slice(0, 300)}` },
-      { status: res.status }
-    );
-  }
+  const withScore = list.filter((c) => c.ai_score != null);
+  const avgScore =
+    withScore.length > 0
+      ? Math.round(
+          (withScore.reduce((acc, c) => acc + (c.ai_score ?? 0), 0) /
+            withScore.length) *
+            10
+        ) / 10
+      : 0;
 
-  const data = await res.json();
-  const calls = (data.results ?? []).map(formatCall);
+  const realConversations = list.filter(
+    (c) => c.ai_is_real_conversation === true
+  ).length;
+  const interested = list.filter((c) => c.ai_outcome === "Interesado").length;
+  const analyzedCount = list.filter((c) => c.analyzed_at != null).length;
 
-  return NextResponse.json({ calls });
-}
+  // Contactos y empresas únicas
+  const uniqueContacts = new Set(
+    list.map((c) => c.contact_name).filter(Boolean)
+  ).size;
+  const uniqueCompanies = new Set(
+    list.map((c) => c.company_name).filter(Boolean)
+  ).size;
 
-export async function POST(req: NextRequest) {
-  const token = process.env.HUBSPOT_ACCESS_TOKEN;
-  if (!token) {
-    return NextResponse.json(
-      { error: "HUBSPOT_ACCESS_TOKEN no configurado" },
-      { status: 500 }
-    );
-  }
+  // Outcomes y SDRs únicos para los filtros
+  const outcomes = [
+    ...new Set(list.map((c) => c.ai_outcome).filter(Boolean) as string[]),
+  ].sort();
+  const sdrNames = [
+    ...new Set(list.map((c) => c.sdr_name).filter(Boolean) as string[]),
+  ].sort();
 
-  let body: {
-    title: string;
-    body: string;
-    direction: "INBOUND" | "OUTBOUND";
-    duration_seconds: number;
-    disposition: string;
-    contact_name?: string;
-    company_name?: string;
+  const stats = {
+    total,
+    avg_duration_ms: avgDurationMs,
+    avg_score: avgScore,
+    real_conversations: realConversations,
+    interested,
+    unique_contacts: uniqueContacts,
+    unique_companies: uniqueCompanies,
+    analyzed_count: analyzedCount,
   };
 
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Body JSON inválido" }, { status: 400 });
-  }
-
-  if (!body.title?.trim()) {
-    return NextResponse.json({ error: "El campo 'title' es requerido" }, { status: 400 });
-  }
-
-  // HubSpot almacena duración en milisegundos
-  const durationMs = (body.duration_seconds ?? 0) * 1000;
-
-  const properties: Record<string, string | number> = {
-    hs_call_title: body.title,
-    hs_call_body: body.body ?? "",
-    hs_call_direction: body.direction ?? "OUTBOUND",
-    hs_call_duration: durationMs,
-    hs_call_disposition: body.disposition ?? "",
-    hs_timestamp: Date.now(),
-    hs_call_status: "COMPLETED"
-  };
-
-  // Agregar nombre de contacto/empresa en el body si se proveen
-  if (body.contact_name || body.company_name) {
-    const extra = [
-      body.contact_name ? `Contacto: ${body.contact_name}` : null,
-      body.company_name ? `Empresa: ${body.company_name}` : null
-    ]
-      .filter(Boolean)
-      .join("\n");
-    properties.hs_call_body = [body.body, extra].filter(Boolean).join("\n\n---\n");
-  }
-
-  const res = await fetch("https://api.hubapi.com/crm/v3/objects/calls", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ properties })
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    return NextResponse.json(
-      { error: `HubSpot respondió ${res.status}: ${text.slice(0, 300)}` },
-      { status: res.status }
-    );
-  }
-
-  const data = await res.json();
-  return NextResponse.json({ call: { id: data.id, properties: data.properties } });
+  return NextResponse.json({ calls: list, stats, outcomes, sdr_names: sdrNames });
 }
