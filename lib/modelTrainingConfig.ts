@@ -45,3 +45,32 @@ export async function loadActiveModelTrainingConfig(
 
   return data as ModelTrainingConfig | null;
 }
+
+// Verifica si la configuración tiene contenido relevante para la generación de mensajes.
+export function configHasContent(config: ModelTrainingConfig | null): config is ModelTrainingConfig {
+  if (!config) return false;
+  return !!(
+    config.business_name ||
+    config.business_description ||
+    config.value_props.length > 0
+  );
+}
+
+// Renderiza instrucciones de configuración para el prompt de usuario.
+export function renderConfigInstructions(
+  config: ModelTrainingConfig | null,
+  jobTitle: string | null | undefined,
+  companyType: string | null | undefined
+): string | null {
+  if (!configHasContent(config)) return null;
+  const lines: string[] = [];
+  if (config.register) lines.push(`Tone/register: ${config.register}`);
+  if (config.language) lines.push(`Language: ${config.language}`);
+  if (config.talking_points.length > 0) {
+    lines.push(`Talking points: ${config.talking_points.join("; ")}`);
+  }
+  if (config.required_phrases.length > 0) {
+    lines.push(`Required phrases/concepts: ${config.required_phrases.join(", ")}`);
+  }
+  return lines.length > 0 ? lines.join("\n") : null;
+}

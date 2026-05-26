@@ -1,151 +1,246 @@
-// Generación de mensajes de outreach personalizados para Lemlist.
-// Soporta configuración de entrenamiento del modelo (ModelTrainingConfig).
+import { createMessageWithFallback } from "./claude";
+import { supabaseAdmin } from "./supabase";
+import {
+  type ModelTrainingConfig,
+  configHasContent,
+  loadActiveModelTrainingConfig,
+  renderConfigInstructions
+} from "./modelTrainingConfig";
 
-import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
-import type Anthropic from "@anthropic-ai/sdk";
-import type { ModelTrainingConfig } from "@/lib/modelTrainingConfig";
-
-export type ContactMessageInput = {
-  hasEmail: boolean;
-  firstName?: string;
-  lastName?: string;
-  jobTitle?: string;
-  companyName?: string;
-  companyType?: string;
-  toolPrimary?: string;
-  toolSecondary?: string;
-  icpContext?: string;
-  fitReason?: string;
-  language?: "es" | "en";
-  trainingConfig?: ModelTrainingConfig | null;
+export type MessageInput = {
+  first_name: string | null;
+  last_name: string | null;
+  job_title: string | null;
+  linkedin_headline: string | null;
+  seniority: string | null;
+  company_name: string | null;
+  company_size: number | null;
+  company_type: string | null;
+  tool_primary: string | null;
+  tool_secondary: string | null;
+  fit_signals: string | null;
 };
 
-export type ContactMessages = {
-  // Rama CON email
-  emailSubject?: string;
-  emailBody?: string;
-  linkedinIcebreaker?: string;
-  // Rama SIN email
-  linkedinIcebreakerNoEmail?: string;
+export type GeneratedMessages = {
+  linkedin_icebreaker: string;
+  email_subject: string;
+  email_body: string;
+  model_used: string;
 };
 
-const SYSTEM_PROMPT = `Eres un experto en copywriting B2B y outbound sales.
-Generas mensajes de outreach personalizados para secuencias de Lemlist.
-Los mensajes deben ser directos, naturales y enfocados en aportar valor.
-Usa el contexto del ICP proporcionado para personalizar cada mensaje.
-Responde ÚNICAMENTE con JSON válido, sin texto adicional.`;
-
-function buildTrainingContext(config: ModelTrainingConfig): string {
+function buildSystemPrompt(config: ModelTrainingConfig | null): string {
   const lines: string[] = [];
-  if (config.business_name) lines.push(`Empresa: ${config.business_name}`);
-  if (config.business_description) lines.push(`Descripción: ${config.business_description}`);
-  if (config.target_buyer_persona) lines.push(`Buyer persona objetivo: ${config.target_buyer_persona}`);
-  if (config.register) lines.push(`Registro/tono: ${config.register}`);
-  if (config.talking_points?.length)
-    lines.push(`Talking points: ${config.talking_points.join("; ")}`);
-  if (config.value_props?.length)
-    lines.push(`Propuestas de valor: ${config.value_props.join("; ")}`);
-  if (config.forbidden_phrases?.length)
-    lines.push(`FRASES PROHIBIDAS (nunca usar): ${config.forbidden_phrases.join(", ")}`);
-  if (config.required_phrases?.length)
-    lines.push(`Frases/conceptos requeridos: ${config.required_phrases.join(", ")}`);
+  if (config?.business_name && config?.business_description) {
+    lines.push(`You are an SDR for ${config.business_name}. ${config.business_description}`);
+  } else if (config?.business_description) {
+    lines.push(`You are an SDR. ${config.business_description}`);
+  } else {
+    lines.push(`You are a B2B SDR writing outbound outreach to one prospect at a time.`);
+  }
+  if (config?.target_buyer_persona) {
+    lines.push(``);
+    lines.push(`Target buyer persona: ${config.target_buyer_persona}`);
+  }
+  if (config && config.value_props.length > 0) {
+    lines.push(``);
+    lines.push(`Value propositions (priority order):`);
+    config.value_props.forEach((v, i) => lines.push(`  ${i + 1}. ${v}`));
+  }
+  lines.push(``);
+  lines.push(`You write outreach for ONE prospect at a time. Output JSON only.`);
   return lines.join("\n");
 }
 
-export async function generateContactMessages(
-  input: ContactMessageInput
-): Promise<ContactMessages> {
-  const {
-    hasEmail,
-    firstName,
-    lastName,
-    jobTitle,
-    companyName,
-    companyType,
-    toolPrimary,
-    toolSecondary,
-    icpContext,
-    fitReason,
-    language = "es",
-    trainingConfig,
-  } = input;
+function buildUserPrompt(input: MessageInput, config: ModelTrainingConfig | null): string {
+  const fullName = [input.first_name, input.last_name].filter(Boolean).join(" ").trim();
+  const hasOperationalCompanyData =
+    Boolean(input.tool_primary) ||
+    Boolean(input.tool_secondary) ||
+    Boolean(input.fit_signals && input.fit_signals.trim().length > 0);
 
-  const contactInfo = [
-    firstName && `Nombre: ${firstName}${lastName ? " " + lastName : ""}`,
-    jobTitle && `Cargo: ${jobTitle}`,
-    companyName && `Empresa: ${companyName}`,
-    companyType && `Tipo de empresa: ${companyType}`,
-    toolPrimary && `Herramienta principal: ${toolPrimary}`,
-    toolSecondary && `Herramienta secundaria: ${toolSecondary}`,
-    fitReason && `Razón de fit IA: ${fitReason}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  const langInstruction =
-    language === "en"
-      ? "Write all messages in English."
-      : "Escribe todos los mensajes en español latinoamericano neutro.";
-
-  const greeting = language === "en" ? "Hi {{firstName}}," : "Hola {{firstName}},";
-
-  const icebreakerMaxChars = trainingConfig?.icebreaker_max_chars ?? 180;
-  const subjectMaxWords = trainingConfig?.subject_max_words ?? 7;
-  const bodyMaxWords = trainingConfig?.body_max_words ?? null;
-
-  const trainingCtx = trainingConfig ? buildTrainingContext(trainingConfig) : null;
-
-  let userPrompt: string;
-
-  if (hasEmail) {
-    userPrompt = `${langInstruction}
-
-${trainingCtx ? `Contexto de la empresa vendedora:\n${trainingCtx}\n` : ""}
-Contexto del ICP:
-${icpContext ?? "No disponible"}
-
-Datos del contacto:
-${contactInfo || "No disponibles"}
-
-Genera los mensajes para la secuencia de Lemlist (RAMA CON EMAIL):
-1. emailSubject: asunto del email inicial (máximo ${subjectMaxWords} palabras, sin signos de admiración, sin emojis)
-2. emailBody: cuerpo del email — empieza EXACTAMENTE con "${greeting}\\n\\n", luego el texto. ${bodyMaxWords ? `Máximo ${bodyMaxWords} palabras.` : "Máximo 5 oraciones."} Sin bullets. Termina con una pregunta o CTA sutil.
-3. linkedinIcebreaker: mensaje de chat LinkedIn para cuando acepta el invite (máximo ${icebreakerMaxChars} caracteres, sin saludo, sin emojis, directo al contexto relevante)
-
-Responde ÚNICAMENTE con este JSON:
-{"emailSubject":"...","emailBody":"...","linkedinIcebreaker":"..."}`;
+  const lines: string[] = [];
+  const configBlock = renderConfigInstructions(config, input.job_title, input.company_type);
+  if (configBlock) {
+    lines.push(configBlock.trim());
+    lines.push("");
+    lines.push("───");
+    lines.push("");
+  }
+  lines.push(`PROSPECT (the person you're writing to):`);
+  lines.push(`- First name: ${input.first_name ?? "(unknown)"}`);
+  lines.push(`- Full name: ${fullName || "(unknown)"}`);
+  lines.push(`- Job title: ${input.job_title ?? "(unknown)"}`);
+  if (input.linkedin_headline) lines.push(`- LinkedIn headline: ${input.linkedin_headline}`);
+  if (input.seniority) lines.push(`- Seniority: ${input.seniority}`);
+  lines.push(``);
+  lines.push(`COMPANY:`);
+  lines.push(`- Name: ${input.company_name ?? "(unknown)"}`);
+  if (input.company_size != null) lines.push(`- Size: ${input.company_size} employees`);
+  if (input.company_type) lines.push(`- Type: ${input.company_type}`);
+  lines.push(`- Primary tooling: ${input.tool_primary ?? "(no public information)"}`);
+  lines.push(`- Secondary tooling: ${input.tool_secondary ?? "(no public information)"}`);
+  if (input.fit_signals && input.fit_signals.trim().length > 0) {
+    lines.push(`- Fit signals: ${input.fit_signals}`);
   } else {
-    userPrompt = `${langInstruction}
+    lines.push(`- Fit signals: (no specific operational signals confirmed)`);
+  }
+  lines.push(``);
+  lines.push(`DATA QUALITY: ${hasOperationalCompanyData ? "company has confirmed operational data above" : "company has NO confirmed operational data (anchor outreach on the person's role / LinkedIn headline instead)"}`);
+  lines.push(``);
+  lines.push(`Generate three pieces of outreach. Return STRICT JSON only with this shape:`);
+  lines.push(`{"linkedin_icebreaker":"<single line, MAX 180 characters, NO greeting>","email_subject":"<MAX 7 words>","email_body":"<starts with 'Hi ${input.first_name ?? "{firstName}"},\\n\\n', then body>"}`);
+  lines.push(``);
+  lines.push(`ABSOLUTE RULES:`);
+  lines.push(`1. ZERO INVENTION. Reference ONLY facts that appear LITERALLY in the data above.`);
+  lines.push(`2. FORBIDDEN if not literal in the data: hiring, growth, expansion, recent news, case studies, funding, partnerships, tools/software, customer base, awards, certifications, products, services.`);
+  lines.push(`3. Citation markers like [2] in fit_signals are evidence pointers — do NOT reproduce them.`);
+  lines.push(`4. If a field says "(no public information)" or "(no specific operational signals confirmed)", treat it as UNKNOWN.`);
+  lines.push(`5. DO NOT use em-dash (—), en-dash (–), or hyphen (-) as a separator.`);
+  lines.push(`6. DO NOT add any sign-off ("Best,", "Saludos,", etc.) — Lemlist appends the signature automatically.`);
+  lines.push(``);
+  lines.push(`PERSONALIZATION HIERARCHY (use in strict order):`);
+  lines.push(`A. If "Fit signals" has a SPECIFIC confirmed operational fact about THIS company, reference exactly that.`);
+  lines.push(`B. Else if "Primary tooling" OR "Secondary tooling" is set (not "(no public information)"), reference it exactly.`);
+  lines.push(`C. Else if LinkedIn headline has a substantive statement beyond job title, reference it.`);
+  lines.push(`D. Else anchor on the prospect's ROLE + COMPANY TYPE only, with a value proposition from config, no claims about THIS company.`);
+  lines.push(``);
+  lines.push(`RULES for linkedin_icebreaker: MAX 180 chars. NEVER include "Hi ${input.first_name ?? "{firstName}"},". Industry peer tone. End with low-commitment question. No links, no emojis, no line breaks.`);
+  lines.push(`RULES for email_subject: MAX 7 words. Specific if data exists, role-anchored if not. No clickbait, no emojis.`);
+  lines.push(`RULES for email_body: Start with "Hi ${input.first_name ?? "there"},\\n\\n". Line 1: opener per hierarchy. Line 2: what we do. Line 3: proof point. CTA: one low-commitment question. No bullets, no bold. End with the CTA question. Nothing after it.`);
+  if (!hasOperationalCompanyData) {
+    lines.push(``);
+    lines.push(`REMINDER: This company has NO confirmed operational data. Do NOT invent tooling, hiring, growth, or any specific company fact.`);
+  }
+  lines.push(``);
+  lines.push(`Respond with the JSON object only, no prose around it.`);
+  return lines.join("\n");
+}
 
-${trainingCtx ? `Contexto de la empresa vendedora:\n${trainingCtx}\n` : ""}
-Contexto del ICP:
-${icpContext ?? "No disponible"}
+function extractJson(raw: string): unknown {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const body = fenced ? fenced[1].trim() : trimmed;
+  return JSON.parse(body);
+}
 
-Datos del contacto:
-${contactInfo || "No disponibles"}
+export function stripAiDashes(text: string): string {
+  let t = text;
+  t = t.replace(/\s*[—–]\s*/g, ", ");
+  t = t.replace(/(\s)-(\s)/g, ", ");
+  t = t.replace(/,\s*,/g, ",");
+  return t;
+}
 
-Genera el mensaje para la secuencia de Lemlist (RAMA SIN EMAIL):
-linkedinIcebreakerNoEmail: mensaje de chat LinkedIn final (máximo ${icebreakerMaxChars} caracteres, sin saludo, sin emojis, directo al contexto relevante del ICP)
+export function stripSignature(text: string): string {
+  let t = text.trim();
+  const patterns: RegExp[] = [
+    /\n+\s*(Best|Best regards|Cheers|Thanks|Thank you|Saludos|Atentamente|Cordialmente|Regards|Sincerely)[,\.\s][\s\S]*$/i,
+    /\n+\s*[—–-]\s*\w+[\s\S]*$/
+  ];
+  for (const p of patterns) {
+    t = t.replace(p, "").trim();
+  }
+  return t;
+}
 
-Responde ÚNICAMENTE con este JSON:
-{"linkedinIcebreakerNoEmail":"..."}`;
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripCitationMarkers(text: string): string {
+  return text.replace(/\s*\[\d+\]/g, "").replace(/\s{2,}/g, " ").trim();
+}
+
+function clampIcebreaker(text: string, firstName: string | null, maxChars = 180): string {
+  let t = text.trim().replace(/\s+/g, " ");
+  t = stripCitationMarkers(t);
+  t = stripAiDashes(t);
+  const name = escapeRegex((firstName ?? "").trim());
+  let stripped = t;
+  if (name) {
+    stripped = stripped.replace(new RegExp(`^hi\\s+${name}[,\\s].*?,\\s*`, "i"), "").trim();
+  }
+  stripped = stripped.replace(/^hi\s+[^,]{1,40},\s*/i, "").trim();
+  if (stripped.length > 0) t = stripped;
+  if (t.length > maxChars) t = t.slice(0, maxChars).trim();
+  return t.trim();
+}
+
+function sanitizeSubject(text: string): string {
+  return stripAiDashes(stripCitationMarkers(text.trim()));
+}
+
+function sanitizeBody(text: string): string {
+  let t = stripSignature(text);
+  t = stripAiDashes(t);
+  t = stripCitationMarkers(t);
+  return t.trim();
+}
+
+function stripForbiddenPhrases(text: string, phrases: string[]): string {
+  if (phrases.length === 0) return text;
+  let out = text;
+  for (const p of phrases) {
+    const trimmed = p.trim();
+    if (!trimmed) continue;
+    const re = new RegExp(escapeRegex(trimmed), "gi");
+    out = out.replace(re, "");
+  }
+  out = out.replace(/\s{2,}/g, " ").replace(/\s*([.,;])\s*/g, "$1 ").trim();
+  return out.length < text.length * 0.6 ? text : out;
+}
+
+export async function generateMessages(
+  input: MessageInput,
+  config: ModelTrainingConfig | null = null
+): Promise<GeneratedMessages> {
+  let activeConfig = config;
+  if (activeConfig === null) {
+    try {
+      activeConfig = await loadActiveModelTrainingConfig(supabaseAdmin());
+    } catch {
+      activeConfig = null;
+    }
   }
 
-  const message = await anthropic().messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 1000,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userPrompt }],
+  const systemPrompt = buildSystemPrompt(activeConfig);
+  const userPrompt = buildUserPrompt(input, activeConfig);
+
+  const { message, model_used } = await createMessageWithFallback({
+    max_tokens: 2048,
+    system: systemPrompt,
+    messages: [{ role: "user", content: userPrompt }]
   });
 
-  const raw = (message.content as Anthropic.ContentBlock[])
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b: Anthropic.TextBlock) => b.text)
-    .join("")
-    .trim();
+  const block = message.content.find((c) => c.type === "text");
+  if (!block || block.type !== "text") throw new Error("Claude returned no text block");
 
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("No se pudo parsear la respuesta de Claude");
+  const parsed = extractJson(block.text) as {
+    linkedin_icebreaker?: string;
+    email_subject?: string;
+    email_body?: string;
+  };
 
-  return JSON.parse(jsonMatch[0]) as ContactMessages;
+  if (!parsed.linkedin_icebreaker || !parsed.email_subject || !parsed.email_body) {
+    throw new Error("Claude response missing one of icebreaker/subject/body");
+  }
+
+  const forbidden = configHasContent(activeConfig) ? activeConfig!.forbidden_phrases : [];
+  const icebreakerMax = activeConfig?.icebreaker_max_chars ?? 180;
+
+  const result: GeneratedMessages = {
+    linkedin_icebreaker: stripForbiddenPhrases(
+      clampIcebreaker(parsed.linkedin_icebreaker, input.first_name, icebreakerMax),
+      forbidden
+    ),
+    email_subject: stripForbiddenPhrases(sanitizeSubject(parsed.email_subject), forbidden),
+    email_body: stripForbiddenPhrases(sanitizeBody(parsed.email_body), forbidden),
+    model_used
+  };
+
+  if (!result.linkedin_icebreaker.trim() || !result.email_subject.trim() || !result.email_body.trim()) {
+    throw new Error("El mensaje generado quedó vacío después de sanitizar (icebreaker/subject/body)");
+  }
+
+  return result;
 }
