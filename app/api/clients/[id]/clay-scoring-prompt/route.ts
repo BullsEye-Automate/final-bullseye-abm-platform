@@ -20,11 +20,27 @@ The generated prompt must:
 5. Be written entirely in English (Clay AI performs better in English)
 6. Be specific, actionable, and avoid generic language
 7. Reference the actual industry, company size, job titles, and signals from the ICP
+8. Do NOT include a "CONTACT DATA TO EVALUATE" section — that will be appended automatically
 
 The prompt should be ready to paste directly into a Clay AI column formula. Start the prompt directly — no preamble, no "Here is the prompt:" header.
 
 ICP and Buyer Persona:
 `;
+
+// Bloque fijo de chips de Clay que siempre se añade al final del prompt generado.
+// Clay sustituye estos {{campos}} con los datos reales de cada contacto al ejecutar la columna.
+const CLAY_CHIPS_BLOCK = `
+
+**CONTACT DATA TO EVALUATE:**
+- First Name: {{first_name}}
+- Last Name: {{last_name}}
+- Job Title: {{job_title}}
+- LinkedIn URL: {{linkedin_url}}
+- Company Name: {{company_name}}
+- Company Size: {{company_size}}
+- Company Type: {{company_type}}
+- Fit Signals: {{fit_signals}}
+- Country: {{country}}`;
 
 // GET — devuelve el prompt guardado (si existe)
 export async function GET(
@@ -76,11 +92,14 @@ export async function POST(
     ]
   });
 
-  const prompt = message.content
+  const generatedText = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
     .join("\n")
     .trim();
+
+  // Siempre añadimos el bloque de chips al final; Clay los reemplaza con datos reales.
+  const prompt = generatedText + CLAY_CHIPS_BLOCK;
 
   const { error: saveErr } = await db
     .from("clients")
