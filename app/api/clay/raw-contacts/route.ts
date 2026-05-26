@@ -78,22 +78,22 @@ function extractFieldsFromText(text: string): Record<string, string> {
 // Parsea el body: JSON.parse primero; si falla, regex campo a campo.
 async function parseBody(
   req: NextRequest
-): Promise<{ ok: true; body: any } | { ok: false; error: string }> {
+): Promise<{ ok: true; body: any; rawText: string } | { ok: false; error: string; rawText: string }> {
   const text = await req.text().catch(() => "");
-  if (!text) return { ok: false, error: "Empty body" };
+  if (!text) return { ok: false, error: "Empty body", rawText: "" };
 
   // Intento 1: JSON válido
   try {
-    return { ok: true, body: JSON.parse(text) };
+    return { ok: true, body: JSON.parse(text), rawText: text };
   } catch { /* continuar */ }
 
   // Intento 2: extracción por regex (Clay sin comillas en los valores)
   const extracted = extractFieldsFromText(text);
   if (Object.keys(extracted).length > 0) {
-    return { ok: true, body: extracted };
+    return { ok: true, body: extracted, rawText: text };
   }
 
-  return { ok: false, error: "Invalid JSON body — no se pudieron extraer campos" };
+  return { ok: false, error: "Invalid JSON body — no se pudieron extraer campos", rawText: text };
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -205,6 +205,16 @@ export async function POST(req: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: 401 });
 
   const parsed = await parseBody(req);
+
+  // LOG DE DIAGNÓSTICO — ver en Vercel Functions logs
+  console.log("[raw-contacts] raw body:", parsed.rawText.slice(0, 2000));
+  if (parsed.ok) {
+    console.log("[raw-contacts] parsed body keys:", Object.keys(parsed.body));
+    console.log("[raw-contacts] parsed body:", JSON.stringify(parsed.body, null, 2).slice(0, 2000));
+  } else {
+    console.log("[raw-contacts] parse error:", parsed.error);
+  }
+
   if (!parsed.ok) {
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
