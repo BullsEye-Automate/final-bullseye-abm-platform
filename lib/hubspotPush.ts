@@ -1,242 +1,228 @@
-// Lógica para sincronizar empresas y contactos de Supabase con HubSpot.
-// Usa prefijo bullseye_ en todas las propiedades custom.
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { associateContactCompany, createObject, searchByProperty, updateObject, type HubSpotProperties } from "./hubspot";
+import { ensureCompanyProperties, ensureContactProperties } from "./hubspotProperties";
+import { computeEngagementScore } from "./contactEngagement";
+import { getClientLemlistCampaignId } from "./lemlistCampaigns";
 
-import { supabaseAdmin } from "@/lib/supabase";
-import {
-  createHubspotCompany,
-  updateHubspotCompany,
-  searchHubspotCompanyByDomain,
-  createHubspotContact,
-  updateHubspotContact,
-  searchHubspotContactByEmail,
-  associateContactToCompany,
-} from "@/lib/hubspot";
-import { APP_PREFIX } from "@/lib/hubspotProperties";
+const APP_PREFIX = "bullseye";
 
-// ── Push de empresa ───────────────────────────────────────────────────────────
+export type HubSpotPushOk = { ok: true; hubspot_id: string; created: boolean };
+export type HubSpotPushErr = { ok: false; error: string; status?: number; debug?: unknown };
+export type HubSpotPushResult = HubSpotPushOk | HubSpotPushErr;
 
-export type CompanyPushResult =
-  | { ok: true; hubspotCompanyId: string; created: boolean }
-  | { ok: false; error: string };
+export type HubSpotCompanyInput = {
+  id: string;
+  company_name: string;
+  company_website: string | null;
+  company_linkedin_url: string | null;
+  company_city: string | null;
+  company_country: string | null;
+  company_size: number | null;
+  company_type: string | null;
+  tool_primary: string | null;
+  tool_secondary: string | null;
+  fit_signals: string | null;
+  fit_score: string | null;
+  approved_at: string | null;
+  clay_pushed_at: string | null;
+  hubspot_company_id?: string | null;
+};
 
-export async function pushCompanyToHubspot(
-  companyId: string
-): Promise<CompanyPushResult> {
-  const db = supabaseAdmin();
+export async function pushCompanyToHubSpot(db: SupabaseClient, company: HubSpotCompanyInput): Promise<HubSpotPushResult> {
+  const props = await ensureCompanyProperties();
+  if (!props.ok && props.errors.length > 0) console.warn("HubSpot company properties failed:", props.errors);
 
-  const { data: company, error: companyErr } = await db
-    .from("companies")
-    .select(
-      "id, company_name, company_website, company_linkedin_url, " +
-        "company_city, company_country, company_size, company_type, " +
-        "tool_primary, tool_secondary, fit_score, status, " +
-        "research_summary, hubspot_company_id"
-    )
-    .eq("id", companyId)
-    .maybeSingle();
+  const properties = buildCompanyProperties(company);
 
-  if (companyErr || !company) {
-    return {
-      ok: false,
-      error: companyErr?.message ?? "Empresa no encontrada",
-    };
+  if (company.hubspot_company_id) {
+    const r = await updateObject("companies", company.hubspot_company_id, properties);
+    if (r.ok) { await persistCompanySuccess(db, company.id, company.hubspot_company_id); return { ok: true, hubspot_id: company.hubspot_company_id, created: false }; }
+    if (r.status !== 404) { await persistCompanyError(db, company.id, `update: ${r.error}`); return { ok: false, error: r.error, status: r.status, debug: r.debug }; }
   }
 
-  // Construir propiedades HubSpot
-  const props: Record<string, string> = {};
-
-  if (company.company_name) props["name"] = company.company_name;
-  if (company.company_website) {
-    // Extraer dominio limpio
-    const domain = company.company_website
-      .replace(/^https?:\/\//, "")
-      .replace(/^www\./, "")
-      .split("/")[0];
-    props["domain"] = domain;
-    props["website"] = company.company_website;
+  const search = await searchByProperty("companies", `${APP_PREFIX}_company_id`, company.id);
+  if (search.ok && search.data && search.data.total > 0) {
+    const hubspotId = search.data.results[0].id;
+    const r = await updateObject("companies", hubspotId, properties);
+    if (!r.ok) { await persistCompanyError(db, company.id, `update-after-search: ${r.error}`); return { ok: false, error: r.error, status: r.status, debug: r.debug }; }
+    await persistCompanySuccess(db, company.id, hubspotId);
+    return { ok: true, hubspot_id: hubspotId, created: false };
   }
-  if (company.company_city) props["city"] = company.company_city;
-  if (company.company_country) props["country"] = company.company_country;
-  if (company.company_size) props["numberofemployees"] = String(company.company_size);
 
-  // Propiedades custom bullseye_
-  props[`${APP_PREFIX}_company_id`] = companyId;
-  if (company.fit_score) props[`${APP_PREFIX}_fit_score`] = company.fit_score;
-  if (company.status) props[`${APP_PREFIX}_status`] = company.status;
-  if (company.research_summary) props[`${APP_PREFIX}_research_summary`] = company.research_summary;
-  if (company.company_type) props[`${APP_PREFIX}_company_type`] = company.company_type;
-  if (company.tool_primary) props[`${APP_PREFIX}_tool_primary`] = company.tool_primary;
-  if (company.tool_secondary) props[`${APP_PREFIX}_tool_secondary`] = company.tool_secondary;
-
-  try {
-    let hubspotCompanyId = company.hubspot_company_id;
-    let created = false;
-
-    if (hubspotCompanyId) {
-      // Ya existe → actualizar
-      await updateHubspotCompany(hubspotCompanyId, props);
-    } else {
-      // Buscar por dominio primero
-      const domain = props["domain"];
-      if (domain) {
-        const existing = await searchHubspotCompanyByDomain(domain);
-        if (existing) {
-          hubspotCompanyId = existing.id;
-          await updateHubspotCompany(hubspotCompanyId, props);
-        }
-      }
-
-      if (!hubspotCompanyId) {
-        const created_ = await createHubspotCompany(props);
-        hubspotCompanyId = created_.id;
-        created = true;
+  const c = await createObject("companies", properties);
+  if (!c.ok) {
+    if (c.status === 409) {
+      const existingId = extractExistingHubSpotId(c.error);
+      if (existingId) {
+        const r = await updateObject("companies", existingId, properties);
+        if (!r.ok) { await persistCompanyError(db, company.id, `update-after-409: ${r.error}`); return { ok: false, error: r.error, status: r.status, debug: r.debug }; }
+        await persistCompanySuccess(db, company.id, existingId);
+        return { ok: true, hubspot_id: existingId, created: false };
       }
     }
-
-    // Actualizar Supabase
-    await db
-      .from("companies")
-      .update({
-        hubspot_company_id: hubspotCompanyId,
-        hubspot_synced_at: new Date().toISOString(),
-        hubspot_sync_error: null,
-      })
-      .eq("id", companyId);
-
-    return { ok: true, hubspotCompanyId, created };
-  } catch (err: unknown) {
-    const error = err instanceof Error ? err.message : String(err);
-    await db
-      .from("companies")
-      .update({
-        hubspot_sync_error: error,
-        hubspot_synced_at: new Date().toISOString(),
-      })
-      .eq("id", companyId);
-    return { ok: false, error };
+    await persistCompanyError(db, company.id, `create: ${c.error}`);
+    return { ok: false, error: c.error, status: c.status, debug: c.debug };
   }
+  const hubspotId = c.data?.id ?? "";
+  if (!hubspotId) { await persistCompanyError(db, company.id, "create: empty id in response"); return { ok: false, error: "HubSpot returned no id", debug: c.data }; }
+  await persistCompanySuccess(db, company.id, hubspotId);
+  return { ok: true, hubspot_id: hubspotId, created: true };
 }
 
-// ── Push de contacto ──────────────────────────────────────────────────────────
+function buildCompanyProperties(c: HubSpotCompanyInput): HubSpotProperties {
+  const props: HubSpotProperties = { name: c.company_name, [`${APP_PREFIX}_company_id`]: c.id };
+  if (c.company_website) { props.website = c.company_website; props.domain = extractDomain(c.company_website); }
+  if (c.company_linkedin_url) props.linkedin_company_page = c.company_linkedin_url;
+  if (c.company_city) props.city = c.company_city;
+  if (c.company_country) props.country = c.company_country;
+  if (c.company_size != null) props.numberofemployees = c.company_size;
+  if (c.company_type) props[`${APP_PREFIX}_company_type`] = c.company_type;
+  if (c.tool_primary) props[`${APP_PREFIX}_tool_primary`] = c.tool_primary;
+  if (c.tool_secondary) props[`${APP_PREFIX}_tool_secondary`] = c.tool_secondary;
+  if (c.fit_signals) props[`${APP_PREFIX}_fit_signals`] = c.fit_signals;
+  if (c.fit_score) props[`${APP_PREFIX}_company_fit_score`] = c.fit_score;
+  if (c.approved_at) props[`${APP_PREFIX}_approved_at`] = c.approved_at;
+  if (c.clay_pushed_at) props[`${APP_PREFIX}_clay_pushed_at`] = c.clay_pushed_at;
+  return props;
+}
 
-export type ContactHubspotPushResult =
-  | { ok: true; hubspotContactId: string; created: boolean }
-  | { ok: false; error: string };
+async function persistCompanySuccess(db: SupabaseClient, companyId: string, hubspotId: string) {
+  await db.from("companies").update({ hubspot_company_id: hubspotId, hubspot_synced_at: new Date().toISOString(), hubspot_sync_error: null }).eq("id", companyId);
+}
+async function persistCompanyError(db: SupabaseClient, companyId: string, error: string) {
+  await db.from("companies").update({ hubspot_sync_error: error }).eq("id", companyId);
+}
 
-export async function pushContactToHubspot(
-  contactId: string
-): Promise<ContactHubspotPushResult> {
-  const db = supabaseAdmin();
+export type HubSpotContactInput = {
+  id: string;
+  company_id: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  job_title: string | null;
+  email: string | null;
+  phone: string | null;
+  linkedin_url: string | null;
+  fit_score: number | null;
+  fit_reason: string | null;
+  fit_action: string | null;
+  linkedin_icebreaker: string | null;
+  email_subject: string | null;
+  email_body: string | null;
+  human_decision: string | null;
+  human_decision_reason: string | null;
+  clay_pushed_at: string | null;
+  lemlist_pushed_at: string | null;
+  phone_enrichment_status?: string | null;
+  phone_source?: string | null;
+  hubspot_contact_id?: string | null;
+  client_id?: string | null;
+};
 
-  const { data: contact, error: contactErr } = await db
-    .from("contacts")
-    .select(
-      "id, first_name, last_name, email, phone, job_title, linkedin_url, " +
-        "fit_score, fit_reason, fit_action, linkedin_icebreaker, " +
-        "email_subject, email_body, status, lemlist_lead_id, " +
-        "hubspot_contact_id, company_id"
-    )
-    .eq("id", contactId)
-    .maybeSingle();
+export type HubSpotCompanySnapshot = { company_type: string | null; tool_primary: string | null; tool_secondary: string | null };
 
-  if (contactErr || !contact) {
-    return {
-      ok: false,
-      error: contactErr?.message ?? "Contacto no encontrado",
-    };
-  }
+export async function pushContactToHubSpot(db: SupabaseClient, contact: HubSpotContactInput, hubspotCompanyId: string | null, companySnapshot: HubSpotCompanySnapshot | null = null): Promise<HubSpotPushResult> {
+  const props = await ensureContactProperties();
+  if (!props.ok && props.errors.length > 0) console.warn("HubSpot contact properties failed:", props.errors);
 
-  // Asegurar que la empresa esté en HubSpot primero
-  const { data: company } = await db
-    .from("companies")
-    .select("hubspot_company_id, company_name")
-    .eq("id", contact.company_id)
-    .maybeSingle();
+  const properties = buildContactProperties(contact, companySnapshot);
 
-  let hubspotCompanyId = company?.hubspot_company_id ?? null;
-
-  // Si la empresa no tiene hubspot_company_id, intentar pushearla
-  if (!hubspotCompanyId && contact.company_id) {
-    const companyResult = await pushCompanyToHubspot(contact.company_id);
-    if (companyResult.ok) {
-      hubspotCompanyId = companyResult.hubspotCompanyId;
-    }
-  }
-
-  // Construir propiedades del contacto
-  const props: Record<string, string> = {};
-
-  if (contact.first_name) props["firstname"] = contact.first_name;
-  if (contact.last_name) props["lastname"] = contact.last_name;
-  if (contact.email) props["email"] = contact.email;
-  if (contact.phone) props["phone"] = contact.phone;
-  if (contact.job_title) props["jobtitle"] = contact.job_title;
-  if (contact.linkedin_url) props["linkedin"] = contact.linkedin_url;
-  if (company?.company_name) props["company"] = company.company_name;
-
-  // Propiedades custom bullseye_
-  props[`${APP_PREFIX}_contact_id`] = contactId;
-  if (contact.fit_score != null) props[`${APP_PREFIX}_fit_score`] = String(contact.fit_score);
-  if (contact.fit_reason) props[`${APP_PREFIX}_fit_reason`] = contact.fit_reason;
-  if (contact.fit_action) props[`${APP_PREFIX}_fit_action`] = contact.fit_action;
-  if (contact.linkedin_icebreaker) props[`${APP_PREFIX}_linkedin_icebreaker`] = contact.linkedin_icebreaker;
-  if (contact.email_subject) props[`${APP_PREFIX}_email_subject`] = contact.email_subject;
-  if (contact.email_body) props[`${APP_PREFIX}_email_body`] = contact.email_body;
-  if (contact.status) props[`${APP_PREFIX}_status`] = contact.status;
-  if (contact.lemlist_lead_id) props[`${APP_PREFIX}_lemlist_lead_id`] = contact.lemlist_lead_id;
-
+  // Engagement score best-effort
   try {
-    let hubspotContactId = contact.hubspot_contact_id;
-    let created = false;
+    const eng = await computeEngagementScore(db, contact.id);
+    properties[`${APP_PREFIX}_engagement_score`] = eng.score;
+    if (eng.last_activity_at) properties[`${APP_PREFIX}_last_engagement_at`] = eng.last_activity_at;
+  } catch { /* ignorar */ }
 
-    if (hubspotContactId) {
-      await updateHubspotContact(hubspotContactId, props);
-    } else {
-      // Buscar por email si lo tiene
-      if (contact.email) {
-        const existing = await searchHubspotContactByEmail(contact.email);
-        if (existing) {
-          hubspotContactId = existing.id;
-          await updateHubspotContact(hubspotContactId, props);
-        }
-      }
+  // Lemlist campaign ID
+  const campaignId = await getClientLemlistCampaignId(db, contact.client_id ?? null);
+  if (campaignId) properties[`${APP_PREFIX}_lemlist_campaign`] = campaignId;
 
-      if (!hubspotContactId) {
-        const created_ = await createHubspotContact(props);
-        hubspotContactId = created_.id;
-        created = true;
-      }
-    }
-
-    // Asociar con empresa en HubSpot
-    if (hubspotCompanyId) {
-      try {
-        await associateContactToCompany(hubspotContactId, hubspotCompanyId);
-      } catch {
-        // No bloquear el push si la asociación falla
-      }
-    }
-
-    // Actualizar Supabase
-    await db
-      .from("contacts")
-      .update({
-        hubspot_contact_id: hubspotContactId,
-        hubspot_synced_at: new Date().toISOString(),
-        hubspot_sync_error: null,
-      })
-      .eq("id", contactId);
-
-    return { ok: true, hubspotContactId, created };
-  } catch (err: unknown) {
-    const error = err instanceof Error ? err.message : String(err);
-    await db
-      .from("contacts")
-      .update({
-        hubspot_sync_error: error,
-        hubspot_synced_at: new Date().toISOString(),
-      })
-      .eq("id", contactId);
-    return { ok: false, error };
+  if (contact.hubspot_contact_id) {
+    const r = await updateObject("contacts", contact.hubspot_contact_id, properties);
+    if (r.ok) { await persistContactSuccess(db, contact.id, contact.hubspot_contact_id); if (hubspotCompanyId) await associateContactCompany(contact.hubspot_contact_id, hubspotCompanyId); return { ok: true, hubspot_id: contact.hubspot_contact_id, created: false }; }
+    if (r.status !== 404) { await persistContactError(db, contact.id, `update: ${r.error}`); return { ok: false, error: r.error, status: r.status, debug: r.debug }; }
   }
+
+  let hubspotId: string | null = null;
+  const searchByOurId = await searchByProperty("contacts", `${APP_PREFIX}_contact_id`, contact.id);
+  if (searchByOurId.ok && searchByOurId.data && searchByOurId.data.total > 0) hubspotId = searchByOurId.data.results[0].id;
+
+  if (!hubspotId && contact.email) {
+    const searchByEmail = await searchByProperty("contacts", "email", contact.email);
+    if (searchByEmail.ok && searchByEmail.data && searchByEmail.data.total > 0) hubspotId = searchByEmail.data.results[0].id;
+  }
+
+  if (hubspotId) {
+    const r = await updateObject("contacts", hubspotId, properties);
+    if (!r.ok) { await persistContactError(db, contact.id, `update-after-search: ${r.error}`); return { ok: false, error: r.error, status: r.status, debug: r.debug }; }
+    await persistContactSuccess(db, contact.id, hubspotId);
+    if (hubspotCompanyId) await associateContactCompany(hubspotId, hubspotCompanyId);
+    return { ok: true, hubspot_id: hubspotId, created: false };
+  }
+
+  const c = await createObject("contacts", { ...properties, hs_lead_status: "NEW" });
+  if (!c.ok) {
+    if (c.status === 409) {
+      const existingId = extractExistingHubSpotId(c.error);
+      if (existingId) {
+        const r = await updateObject("contacts", existingId, properties);
+        if (!r.ok) { await persistContactError(db, contact.id, `update-after-409: ${r.error}`); return { ok: false, error: r.error, status: r.status, debug: r.debug }; }
+        await persistContactSuccess(db, contact.id, existingId);
+        if (hubspotCompanyId) await associateContactCompany(existingId, hubspotCompanyId);
+        return { ok: true, hubspot_id: existingId, created: false };
+      }
+    }
+    await persistContactError(db, contact.id, `create: ${c.error}`);
+    return { ok: false, error: c.error, status: c.status, debug: c.debug };
+  }
+  const newId = c.data?.id ?? "";
+  if (!newId) { await persistContactError(db, contact.id, "create: empty id in response"); return { ok: false, error: "HubSpot returned no id", debug: c.data }; }
+  await persistContactSuccess(db, contact.id, newId);
+  if (hubspotCompanyId) await associateContactCompany(newId, hubspotCompanyId);
+  return { ok: true, hubspot_id: newId, created: true };
+}
+
+function buildContactProperties(c: HubSpotContactInput, company: HubSpotCompanySnapshot | null): HubSpotProperties {
+  const props: HubSpotProperties = { [`${APP_PREFIX}_contact_id`]: c.id };
+  if (company?.tool_primary) props[`${APP_PREFIX}_tool_primary`] = company.tool_primary;
+  if (company?.company_type) props[`${APP_PREFIX}_company_type`] = company.company_type;
+  if (company?.tool_secondary) props[`${APP_PREFIX}_tool_secondary`] = company.tool_secondary;
+  if (c.first_name) props.firstname = c.first_name;
+  if (c.last_name) props.lastname = c.last_name;
+  if (c.email) props.email = c.email;
+  if (c.phone) props.phone = c.phone;
+  if (c.job_title) props.jobtitle = c.job_title;
+  if (c.linkedin_url) props.hs_linkedinid = c.linkedin_url;
+  if (c.fit_score != null) props[`${APP_PREFIX}_fit_score`] = c.fit_score;
+  if (c.fit_reason) props[`${APP_PREFIX}_fit_reason`] = c.fit_reason;
+  if (c.fit_action) props[`${APP_PREFIX}_fit_action`] = c.fit_action;
+  if (c.human_decision) props[`${APP_PREFIX}_human_decision`] = c.human_decision;
+  if (c.human_decision_reason) props[`${APP_PREFIX}_human_decision_reason`] = c.human_decision_reason;
+  if (c.linkedin_icebreaker) props[`${APP_PREFIX}_linkedin_icebreaker`] = c.linkedin_icebreaker;
+  if (c.email_subject) props[`${APP_PREFIX}_email_subject`] = c.email_subject;
+  if (c.email_body) props[`${APP_PREFIX}_email_body`] = c.email_body;
+  if (c.clay_pushed_at) props[`${APP_PREFIX}_clay_pushed_at`] = c.clay_pushed_at;
+  if (c.lemlist_pushed_at) props[`${APP_PREFIX}_lemlist_pushed_at`] = c.lemlist_pushed_at;
+  if (c.phone_enrichment_status) props[`${APP_PREFIX}_phone_enrichment_status`] = c.phone_enrichment_status;
+  if (c.phone_source) props[`${APP_PREFIX}_phone_source`] = c.phone_source;
+  return props;
+}
+
+async function persistContactSuccess(db: SupabaseClient, contactId: string, hubspotId: string) {
+  await db.from("contacts").update({ hubspot_contact_id: hubspotId, hubspot_synced_at: new Date().toISOString(), hubspot_sync_error: null }).eq("id", contactId);
+}
+async function persistContactError(db: SupabaseClient, contactId: string, error: string) {
+  await db.from("contacts").update({ hubspot_sync_error: error }).eq("id", contactId);
+}
+
+function extractExistingHubSpotId(error: string): string | null {
+  const m = /Existing\s*ID:\s*(\d+)/i.exec(error);
+  return m ? m[1] : null;
+}
+
+function extractDomain(url: string): string | undefined {
+  try {
+    const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return u.hostname.replace(/^www\./, "");
+  } catch { return undefined; }
 }

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { pushApprovedToLemlist } from "@/lib/lemlistPush";
-import { syncContactToHubspot } from "@/lib/hubspotContactSync";
-import { generateContactMessages } from "@/lib/messageGenerator";
-import { loadActiveModelTrainingConfig } from "@/lib/modelTrainingConfig";
+import { pushApprovedToLemlist, type LemlistPushContact, type LemlistPushCompany } from "@/lib/lemlistPush";
+import { pushCompanyToHubSpot, pushContactToHubSpot, type HubSpotCompanyInput, type HubSpotContactInput } from "@/lib/hubspotPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +10,20 @@ export const dynamic = "force-dynamic";
 // Aprueba en masa los contactos de manual_review y los empuja a Lemlist + HubSpot.
 // Body: { contact_ids?: string[], client_id?: string }
 // Si no se pasan contact_ids, aprueba todos los de manual_review (sin human_decision).
+
+const CONCURRENCY = 3;
+const DEFAULT_LIMIT = 25;
+
+const CONTACT_FIELDS =
+  "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, phone, seniority, " +
+  "fit_score, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, " +
+  "human_decision, human_decision_reason, clay_pushed_at, lemlist_pushed_at, " +
+  "phone_enrichment_status, phone_source, hubspot_contact_id, client_id, status";
+
+const COMPANY_FIELDS =
+  "id, company_name, company_website, company_linkedin_url, company_city, company_country, " +
+  "company_size, company_type, tool_primary, tool_secondary, fit_signals, fit_score, " +
+  "approved_at, clay_pushed_at, hubspot_company_id";
 
 export async function POST(req: NextRequest) {
   let body: { contact_ids?: string[]; client_id?: string } = {};
@@ -22,13 +34,11 @@ export async function POST(req: NextRequest) {
   }
 
   const db = supabaseAdmin();
-  const trainingConfig = await loadActiveModelTrainingConfig(db);
 
   // Construir query de contactos a aprobar
   let query = db
     .from("contacts")
-    .select("id, client_id, company_id, first_name, last_name, job_title, email, fit_reason, " +
-      "linkedin_icebreaker, email_subject, email_body")
+    .select(CONTACT_FIELDS)
     .eq("fit_action", "manual_review")
     .is("human_decision", null);
 
@@ -39,118 +49,109 @@ export async function POST(req: NextRequest) {
     query = query.in("id", body.contact_ids);
   }
 
-  const { data: contacts, error: fetchErr } = await query.limit(100);
+  const { data: contacts, error: fetchErr } = await query.limit(DEFAULT_LIMIT);
 
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
   if (!contacts || contacts.length === 0) {
     return NextResponse.json({ ok: true, total: 0, approved: 0, errors: [] });
   }
 
-  // Cargar todas las empresas de una vez para resolver client_id
+  // Cargar todas las empresas de una vez
   const companyIds = [...new Set(contacts.map((c: any) => c.company_id).filter(Boolean))];
   const { data: companies } = await db
     .from("companies")
-    .select("id, client_id, company_name, company_type, tool_primary, tool_secondary, research_summary")
+    .select(COMPANY_FIELDS)
     .in("id", companyIds);
 
-  type CompanyRow = {
-    id: string;
-    client_id: string | null;
-    company_name: string | null;
-    company_type: string | null;
-    tool_primary: string | null;
-    tool_secondary: string | null;
-    research_summary: string | null;
-  };
-
-  const companyMap = new Map<string, CompanyRow>(
-    (companies ?? []).map((co: any) => [co.id, co as CompanyRow])
+  const companyMap = new Map<string, any>(
+    (companies ?? []).map((co: any) => [co.id, co])
   );
 
   const results: { contactId: string; ok: boolean; error?: string }[] = [];
 
-  for (const contact of contacts as any[]) {
-    const company = companyMap.get(contact.company_id);
-    const clientId = (contact.client_id ?? company?.client_id ?? body.client_id) as string | null;
+  // Procesar en chunks de CONCURRENCY
+  for (let i = 0; i < contacts.length; i += CONCURRENCY) {
+    const chunk = contacts.slice(i, i + CONCURRENCY) as any[];
+    await Promise.all(chunk.map(async (contactRaw) => {
+      const companyRaw = companyMap.get(contactRaw.company_id);
+      const clientId = (contactRaw.client_id ?? companyRaw?.client_id ?? body.client_id) as string | null;
 
-    try {
-      // Registrar aprobación humana
-      await db.from("contacts").update({
-        human_decision: "approved",
-        human_decision_at: new Date().toISOString(),
-        human_decision_by: "bulk",
-      }).eq("id", contact.id);
+      try {
+        // Registrar aprobación humana y transicionar fit_action
+        await db.from("contacts").update({
+          human_decision: "approved",
+          human_decision_at: new Date().toISOString(),
+          human_decision_by: "bulk",
+          fit_action: "enrich"
+        }).eq("id", contactRaw.id);
 
-      // Generar mensajes si faltan
-      if (!contact.linkedin_icebreaker && !contact.email_subject) {
-        // Cargar ICP context
-        let icpContext: string | undefined;
-        if (clientId) {
-          const { data: icpData } = await db
-            .from("icp_config")
-            .select("notes, signals_strong, signals_medium")
-            .eq("client_id", clientId)
-            .eq("is_active", true)
-            .maybeSingle();
-          if (icpData) {
-            icpContext = [
-              icpData.notes,
-              icpData.signals_strong?.length ? `Señales fuertes: ${icpData.signals_strong.join(", ")}` : null,
-              icpData.signals_medium?.length ? `Señales medias: ${icpData.signals_medium.join(", ")}` : null,
-            ]
-              .filter(Boolean)
-              .join("\n") || undefined;
-          }
+        // Insertar feedback
+        await db.from("contact_feedback").insert({
+          contact_id: contactRaw.id,
+          decision: "approved",
+          reason: "bulk_approve",
+          decided_by: "bulk",
+          decided_at: new Date().toISOString()
+        }).then(() => {}).catch(() => {});
+
+        const company: LemlistPushCompany = companyRaw ? {
+          company_name: companyRaw.company_name,
+          company_size: companyRaw.company_size,
+          company_type: companyRaw.company_type,
+          tool_primary: companyRaw.tool_primary,
+          tool_secondary: companyRaw.tool_secondary,
+          fit_signals: companyRaw.fit_signals
+        } : null;
+
+        const contact: LemlistPushContact = {
+          first_name: contactRaw.first_name,
+          last_name: contactRaw.last_name,
+          job_title: contactRaw.job_title,
+          linkedin_headline: contactRaw.linkedin_headline,
+          linkedin_url: contactRaw.linkedin_url,
+          email: contactRaw.email,
+          phone: contactRaw.phone,
+          seniority: contactRaw.seniority,
+          fit_score: contactRaw.fit_score,
+          fit_reason: contactRaw.fit_reason,
+          linkedin_icebreaker: contactRaw.linkedin_icebreaker,
+          email_subject: contactRaw.email_subject,
+          email_body: contactRaw.email_body
+        };
+
+        // Push a Lemlist con force_regenerate
+        const lemlistResult = await pushApprovedToLemlist(db, contactRaw.id, contact, company, {
+          force_regenerate: true,
+          clientId
+        });
+
+        // Sync a HubSpot (no bloquear)
+        if (companyRaw) {
+          pushCompanyToHubSpot(db, companyRaw as HubSpotCompanyInput)
+            .then((cRes) => {
+              const hubspotCompanyId = cRes.ok ? cRes.hubspot_id : null;
+              return pushContactToHubSpot(
+                db,
+                contactRaw as unknown as HubSpotContactInput,
+                hubspotCompanyId,
+                companyRaw ? { company_type: companyRaw.company_type, tool_primary: companyRaw.tool_primary, tool_secondary: companyRaw.tool_secondary } : null
+              );
+            })
+            .catch((err) => {
+              console.error(`[bulk-approve] Error HubSpot para ${contactRaw.id}:`, err);
+            });
         }
 
-        try {
-          const messages = await generateContactMessages({
-            hasEmail: !!contact.email,
-            firstName: contact.first_name ?? undefined,
-            lastName: contact.last_name ?? undefined,
-            jobTitle: contact.job_title ?? undefined,
-            companyName: company?.company_name ?? undefined,
-            companyType: company?.company_type ?? undefined,
-            toolPrimary: company?.tool_primary ?? undefined,
-            toolSecondary: company?.tool_secondary ?? undefined,
-            icpContext,
-            fitReason: contact.fit_reason ?? undefined,
-            language: trainingConfig?.language as "es" | "en" | undefined ?? "es",
-            trainingConfig,
-          });
-
-          const msgUpdate: Record<string, string | null> = {};
-          if (messages.linkedinIcebreaker) msgUpdate["linkedin_icebreaker"] = messages.linkedinIcebreaker;
-          else if (messages.linkedinIcebreakerNoEmail) msgUpdate["linkedin_icebreaker"] = messages.linkedinIcebreakerNoEmail;
-          if (messages.emailSubject) msgUpdate["email_subject"] = messages.emailSubject;
-          if (messages.emailBody) msgUpdate["email_body"] = messages.emailBody;
-
-          if (Object.keys(msgUpdate).length > 0) {
-            await db.from("contacts").update(msgUpdate).eq("id", contact.id);
-          }
-        } catch (msgErr: unknown) {
-          // No bloquear si falla la generación de mensajes
-          console.error(`[bulk-approve] Error generando mensajes para ${contact.id}:`, msgErr);
+        if (lemlistResult.ok) {
+          results.push({ contactId: contactRaw.id, ok: true });
+        } else {
+          results.push({ contactId: contactRaw.id, ok: false, error: lemlistResult.error });
         }
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err.message : String(err);
+        results.push({ contactId: contactRaw.id, ok: false, error });
       }
-
-      // Push a Lemlist
-      const lemlistResult = await pushApprovedToLemlist(contact.id, clientId);
-
-      // Sync a HubSpot (no bloquear)
-      syncContactToHubspot(contact.id).catch((err) => {
-        console.error(`[bulk-approve] Error HubSpot para ${contact.id}:`, err);
-      });
-
-      if (lemlistResult.ok) {
-        results.push({ contactId: contact.id, ok: true });
-      } else {
-        results.push({ contactId: contact.id, ok: false, error: lemlistResult.error });
-      }
-    } catch (err: unknown) {
-      const error = err instanceof Error ? err.message : String(err);
-      results.push({ contactId: contact.id, ok: false, error });
-    }
+    }));
   }
 
   const approved = results.filter((r) => r.ok).length;

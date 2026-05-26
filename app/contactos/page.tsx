@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useClient } from "@/lib/clientContext";
 import {
   IconUsers,
   IconUpload,
@@ -17,6 +16,9 @@ import {
   IconEye,
   IconX,
   IconRotate,
+  IconBolt,
+  IconChevronDown,
+  IconChevronUp,
 } from "@tabler/icons-react";
 
 type Contact = {
@@ -50,29 +52,30 @@ type Contact = {
   hubspot_contact_id: string | null;
   hubspot_synced_at: string | null;
   hubspot_sync_error: string | null;
+  name_email_mismatch?: boolean;
+  name_email_mismatch_reason?: string | null;
   created_at: string;
 };
 
 type Company = { id: string; company_name: string };
 
-type Bucket = "pending" | "manual_review" | "approved" | "enriched" | "discarded";
+type Bucket = "pending" | "approved_pending" | "manual_review" | "enriched" | "discarded";
 
 const BUCKET_LABELS: Record<Bucket, string> = {
   pending: "Pendientes",
+  approved_pending: "Por aprobar",
   manual_review: "Revisión manual",
-  approved: "Aprobados",
   enriched: "En campaña",
   discarded: "Descartados",
 };
 
 export default function ContactosPage() {
-  const { currentClient } = useClient();
-  const [bucket, setBucket] = useState<Bucket>("pending");
+  const [bucket, setBucket] = useState<Bucket>("approved_pending");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [counts, setCounts] = useState<Record<Bucket, number>>({
     pending: 0,
+    approved_pending: 0,
     manual_review: 0,
-    approved: 0,
     enriched: 0,
     discarded: 0,
   });
@@ -85,12 +88,17 @@ export default function ContactosPage() {
   const [bulkApproving, setBulkApproving] = useState(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [previewMessages, setPreviewMessages] = useState<{ linkedin_icebreaker: string; email_subject: string; email_body: string; model_used: string } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [lemlistDebugId, setLemlistDebugId] = useState<string | null>(null);
+  const [lemlistDebugData, setLemlistDebugData] = useState<any>(null);
 
   async function load(forBucket: Bucket = bucket) {
     setLoading(true);
     setError(null);
-    const clientParam = currentClient ? `&client_id=${currentClient.id}` : "";
-    const res = await fetch(`/api/contacts?bucket=${forBucket}${clientParam}`, {
+    const res = await fetch(`/api/contacts?bucket=${forBucket}`, {
       cache: "no-store",
     });
     const data = await res.json();
@@ -148,12 +156,10 @@ export default function ContactosPage() {
     setBulkApproving(true);
     setPushNotice(null);
     setError(null);
-    const body: Record<string, unknown> = {};
-    if (currentClient) body.client_id = currentClient.id;
     const res = await fetch("/api/contacts/bulk-approve-enrich", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({}),
     });
     const data = await res.json();
     setBulkApproving(false);
@@ -222,6 +228,21 @@ export default function ContactosPage() {
     await load();
   }
 
+  async function retryHubspot(contactId: string) {
+    setActionId(contactId);
+    const res = await fetch(`/api/hubspot/push-contact/${contactId}`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    setActionId(null);
+    if (!res.ok) {
+      setError(data.error ?? "HubSpot retry failed");
+      return;
+    }
+    setPushNotice("Contacto sincronizado con HubSpot.");
+    await load();
+  }
+
   async function discardContact(contactId: string) {
     setActionId(contactId);
     const res = await fetch(`/api/contacts/${contactId}/discard`, {
@@ -239,9 +260,41 @@ export default function ContactosPage() {
     await load();
   }
 
+  async function deleteContact(contactId: string) {
+    if (!confirm("¿Eliminar este contacto permanentemente?")) return;
+    setActionId(contactId);
+    const res = await fetch(`/api/contacts/${contactId}`, { method: "DELETE" });
+    const data = await res.json();
+    setActionId(null);
+    if (!res.ok) {
+      setError(data.error ?? "Delete failed");
+      return;
+    }
+    setPushNotice("Contacto eliminado.");
+    await load();
+  }
+
+  async function previewMessage(contactId: string) {
+    setPreviewId(contactId);
+    setPreviewMessages(null);
+    setPreviewLoading(true);
+    const res = await fetch(`/api/contacts/${contactId}/preview-message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ save: true }),
+    });
+    const data = await res.json();
+    setPreviewLoading(false);
+    if (!res.ok) {
+      setError(data.error ?? "Preview failed");
+      setPreviewId(null);
+      return;
+    }
+    setPreviewMessages(data.messages);
+  }
+
   async function loadApprovedCompanies() {
-    const clientParam = currentClient ? `&client_id=${currentClient.id}` : "";
-    const res = await fetch(`/api/companies?status=approved${clientParam}`, {
+    const res = await fetch(`/api/companies?status=approved`, {
       cache: "no-store",
     });
     const data = await res.json();
@@ -254,11 +307,11 @@ export default function ContactosPage() {
 
   useEffect(() => {
     load(bucket);
-  }, [bucket, currentClient?.id]);
+  }, [bucket]);
 
   useEffect(() => {
     loadApprovedCompanies();
-  }, [currentClient?.id]);
+  }, []);
 
   const pushablePendingCount = useMemo(() => {
     if (bucket !== "pending") return 0;
@@ -268,16 +321,28 @@ export default function ContactosPage() {
   }, [contacts, bucket]);
 
   const manualReviewCount = counts.manual_review;
+  const approvedPendingCount = counts.approved_pending;
+
+  const filteredContacts = useMemo(() => {
+    if (!searchQuery.trim()) return contacts;
+    const q = searchQuery.toLowerCase();
+    return contacts.filter((c) => {
+      const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.toLowerCase();
+      const title = (c.job_title ?? "").toLowerCase();
+      const email = (c.email ?? "").toLowerCase();
+      return name.includes(q) || title.includes(q) || email.includes(q);
+    });
+  }, [contacts, searchQuery]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Contact[]>();
-    for (const c of contacts) {
+    for (const c of filteredContacts) {
       const arr = map.get(c.company_id) ?? [];
       arr.push(c);
       map.set(c.company_id, arr);
     }
     return Array.from(map.entries());
-  }, [contacts]);
+  }, [filteredContacts]);
 
   const companyNameById = useMemo(() => {
     const m = new Map<string, string>();
@@ -287,19 +352,12 @@ export default function ContactosPage() {
 
   return (
     <div className="space-y-6">
-      {!currentClient && (
-        <div className="card flex items-center gap-3 border border-warning-bg bg-warning-bg/40 text-warning-fg text-sm">
-          <IconAlertCircle size={16} className="shrink-0" />
-          Selecciona un cliente en el sidebar para ver y gestionar sus contactos.
-        </div>
-      )}
       <header className="flex items-end justify-between">
         <div>
           <div className="label">Prospección</div>
           <h1 className="text-2xl font-semibold tracking-tight">Contactos</h1>
           <div className="text-sm text-ink-muted mt-1">
-            Decisores de cada empresa aprobada. El pre-filter Claude descarta roles no decisores
-            antes de mandarlos a Clay.
+            Decisores de cada empresa aprobada. Pipeline: pending → scored → approved_pending / manual_review → Lemlist → HubSpot.
           </div>
         </div>
         <button onClick={() => setImportOpen(true)} className="btn-primary">
@@ -318,9 +376,40 @@ export default function ContactosPage() {
         />
       )}
 
+      {/* Preview modal */}
+      {previewId && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setPreviewId(null)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-lg">Previsualización de mensajes</h2>
+              <button className="btn-secondary text-xs" onClick={() => setPreviewId(null)}><IconX size={14} /></button>
+            </div>
+            {previewLoading ? (
+              <div className="text-ink-muted py-8 text-center">Generando mensajes con IA…</div>
+            ) : previewMessages ? (
+              <div className="space-y-4 text-sm">
+                <div>
+                  <div className="label mb-1">LinkedIn Icebreaker</div>
+                  <p className="text-ink/90 bg-[#F8F7FC] rounded p-3">{previewMessages.linkedin_icebreaker}</p>
+                </div>
+                <div>
+                  <div className="label mb-1">Asunto email</div>
+                  <p className="font-medium">{previewMessages.email_subject}</p>
+                </div>
+                <div>
+                  <div className="label mb-1">Cuerpo email</div>
+                  <p className="whitespace-pre-line text-ink/90 bg-[#F8F7FC] rounded p-3">{previewMessages.email_body}</p>
+                </div>
+                <div className="text-xs text-ink-muted">Modelo: {previewMessages.model_used} · Guardado en el contacto.</div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          {(["pending", "manual_review", "approved", "enriched", "discarded"] as const).map(
+          {(["pending", "approved_pending", "manual_review", "enriched", "discarded"] as const).map(
             (b) => {
               const active = bucket === b;
               return (
@@ -360,6 +449,19 @@ export default function ContactosPage() {
                 : `Prospectar todos en Clay (${pushablePendingCount})`}
             </button>
           )}
+          {bucket === "approved_pending" && approvedPendingCount > 0 && (
+            <button
+              onClick={bulkApproveEnrich}
+              disabled={bulkApproving}
+              className="btn-primary"
+              title="Envía a Lemlist todos los contactos con fit_action=enrich que aún no se han empujado"
+            >
+              <IconBolt size={14} />
+              {bulkApproving
+                ? "Enviando…"
+                : `Enviar todos a Lemlist (${approvedPendingCount})`}
+            </button>
+          )}
           {bucket === "manual_review" && manualReviewCount > 0 && (
             <button
               onClick={bulkApproveEnrich}
@@ -377,6 +479,17 @@ export default function ContactosPage() {
             <IconRefresh size={14} /> Refrescar
           </button>
         </div>
+      </div>
+
+      {/* Búsqueda */}
+      <div>
+        <input
+          type="search"
+          placeholder="Buscar por nombre, cargo o email…"
+          className="input max-w-sm"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
       </div>
 
       {error && (
@@ -417,7 +530,10 @@ export default function ContactosPage() {
                     onReject={(id) => decideContact(id, "rejected")}
                     onPushLemlist={pushToLemlist}
                     onRetryLemlist={retryLemlist}
+                    onRetryHubspot={retryHubspot}
                     onDiscard={discardContact}
+                    onDelete={deleteContact}
+                    onPreviewMessage={previewMessage}
                     isActing={actionId === c.id}
                     isPushingClay={pushingId === c.id}
                   />
@@ -448,8 +564,7 @@ function EmptyState({ bucket, hasApproved }: { bucket: Bucket; hasApproved: bool
   return (
     <div className="card text-ink-muted flex items-center gap-2">
       <IconUsers size={18} />
-      No hay contactos en {BUCKET_LABELS[bucket].toLowerCase()}. Usa "Importar contactos" arriba
-      para cargar los resultados de Clay.
+      No hay contactos en {BUCKET_LABELS[bucket].toLowerCase()}. {bucket === "pending" ? 'Usa "Importar contactos" para cargar desde Clay.' : ""}
     </div>
   );
 }
@@ -462,7 +577,10 @@ function ContactCard({
   onReject,
   onPushLemlist,
   onRetryLemlist,
+  onRetryHubspot,
   onDiscard,
+  onDelete,
+  onPreviewMessage,
   isActing,
   isPushingClay,
 }: {
@@ -473,10 +591,15 @@ function ContactCard({
   onReject: (id: string) => void | Promise<void>;
   onPushLemlist: (id: string) => void | Promise<void>;
   onRetryLemlist: (id: string) => void | Promise<void>;
+  onRetryHubspot: (id: string) => void | Promise<void>;
   onDiscard: (id: string) => void | Promise<void>;
+  onDelete: (id: string) => void | Promise<void>;
+  onPreviewMessage: (id: string) => void | Promise<void>;
   isActing: boolean;
   isPushingClay: boolean;
 }) {
+  const [showLemlistDebug, setShowLemlistDebug] = useState(false);
+
   const fullName =
     [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
   const scoreClass =
@@ -489,11 +612,14 @@ function ContactCard({
       : "bg-danger-bg text-danger-fg";
 
   const canPushClay = c.prefilter_result === "yes" && !c.clay_pushed_at;
-  const canApprove =
-    bucket === "manual_review" && !c.human_decision;
+  const canApprove = bucket === "manual_review" && !c.human_decision;
   const inLemlist = !!(c.lemlist_lead_id || c.lemlist_pushed_at);
   const inHubspot = !!(c.hubspot_contact_id || c.hubspot_synced_at);
   const hasLemlistError = !!c.lemlist_push_error && !inLemlist;
+  const hasHubspotError = !!c.hubspot_sync_error && !inHubspot;
+
+  // approved_pending: fit_action=enrich, no lemlist_pushed_at
+  const canPushToLemlist = bucket === "approved_pending" && !inLemlist;
 
   return (
     <div className="card flex flex-col gap-3">
@@ -501,6 +627,9 @@ function ContactCard({
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-semibold truncate">{fullName}</h3>
+            {c.name_email_mismatch && (
+              <span className="badge bg-warning-bg text-warning-fg" title={c.name_email_mismatch_reason ?? ""}>nombre≠email</span>
+            )}
             {c.prefilter_result === "yes" && (
               <span className="badge bg-success-bg text-success-fg">pre-filter ✓</span>
             )}
@@ -524,6 +653,11 @@ function ContactCard({
                 }`}
               >
                 {c.fit}
+              </span>
+            )}
+            {c.fit_action && (
+              <span className={`badge ${c.fit_action === "enrich" ? "bg-[#E8F4FF] text-[#0055AA]" : c.fit_action === "manual_review" ? "bg-warning-bg text-warning-fg" : "bg-danger-bg text-danger-fg"}`}>
+                {c.fit_action}
               </span>
             )}
             {inLemlist && (
@@ -614,13 +748,27 @@ function ContactCard({
       )}
 
       {hasLemlistError && (
-        <div className="text-xs text-danger-fg flex items-start gap-2">
-          <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
-          <span className="break-words">Lemlist: {c.lemlist_push_error}</span>
+        <div className="space-y-1">
+          <div className="text-xs text-danger-fg flex items-start gap-2">
+            <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
+            <span className="break-words">Lemlist: {c.lemlist_push_error}</span>
+          </div>
+          <button
+            className="text-xs text-ink-muted underline"
+            onClick={() => setShowLemlistDebug(!showLemlistDebug)}
+          >
+            {showLemlistDebug ? <IconChevronUp size={12} className="inline" /> : <IconChevronDown size={12} className="inline" />}
+            {showLemlistDebug ? " Ocultar debug" : " Ver debug Lemlist"}
+          </button>
+          {showLemlistDebug && (
+            <pre className="text-xs bg-[#F8F7FC] rounded p-2 overflow-x-auto max-h-32 text-ink-muted">
+              {c.lemlist_push_error}
+            </pre>
+          )}
         </div>
       )}
 
-      {c.hubspot_sync_error && !inHubspot && (
+      {hasHubspotError && (
         <div className="text-xs text-danger-fg flex items-start gap-2">
           <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
           <span className="break-words">HubSpot: {c.hubspot_sync_error}</span>
@@ -638,6 +786,19 @@ function ContactCard({
           >
             <IconSend size={12} />
             {isPushingClay ? "Empujando…" : "Prospectar en Clay"}
+          </button>
+        )}
+
+        {/* Bucket approved_pending: push a Lemlist directamente */}
+        {canPushToLemlist && (
+          <button
+            onClick={() => onPushLemlist(c.id)}
+            disabled={isActing}
+            className="btn-primary text-xs"
+            title="Generar mensajes y enviar a Lemlist"
+          >
+            <IconBolt size={12} />
+            {isActing ? "Enviando…" : "Enviar a Lemlist"}
           </button>
         )}
 
@@ -665,18 +826,6 @@ function ContactCard({
           </>
         )}
 
-        {/* Aprobado pero sin Lemlist → push manual */}
-        {c.human_decision === "approved" && !inLemlist && !hasLemlistError && (
-          <button
-            onClick={() => onPushLemlist(c.id)}
-            disabled={isActing}
-            className="btn-primary text-xs"
-          >
-            <IconSend size={12} />
-            {isActing ? "Enviando…" : "Enviar a Lemlist"}
-          </button>
-        )}
-
         {/* Error de Lemlist → retry */}
         {hasLemlistError && (
           <button
@@ -690,8 +839,34 @@ function ContactCard({
           </button>
         )}
 
+        {/* Error de HubSpot → retry */}
+        {hasHubspotError && (
+          <button
+            onClick={() => onRetryHubspot(c.id)}
+            disabled={isActing}
+            className="btn-secondary text-xs"
+            title="Reintentar sync a HubSpot"
+          >
+            <IconRotate size={12} />
+            {isActing ? "Sincronizando…" : "Reintentar HubSpot"}
+          </button>
+        )}
+
+        {/* Preview de mensaje */}
+        {!inLemlist && (
+          <button
+            onClick={() => onPreviewMessage(c.id)}
+            disabled={isActing}
+            className="btn-secondary text-xs"
+            title="Generar previsualización de mensajes"
+          >
+            <IconEye size={12} />
+            Preview msg
+          </button>
+        )}
+
         {/* Descartar (en buckets que no sean discarded) */}
-        {bucket !== "discarded" && !c.human_decision && (
+        {bucket !== "discarded" && !inLemlist && (
           <button
             onClick={() => onDiscard(c.id)}
             disabled={isActing}
@@ -700,6 +875,19 @@ function ContactCard({
           >
             <IconX size={12} />
             Descartar
+          </button>
+        )}
+
+        {/* Eliminar (solo en discarded) */}
+        {bucket === "discarded" && (
+          <button
+            onClick={() => onDelete(c.id)}
+            disabled={isActing}
+            className="btn-secondary text-xs text-danger-fg"
+            title="Eliminar permanentemente"
+          >
+            <IconX size={12} />
+            Eliminar
           </button>
         )}
       </div>

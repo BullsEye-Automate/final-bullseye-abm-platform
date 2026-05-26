@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/contacts/[id]/discard
-// Descarta manualmente un contacto.
+// Descarta manualmente un contacto e inserta contact_feedback.
 // Body opcional: { reason?: string, by?: string }
 
 export async function POST(
@@ -41,6 +41,15 @@ export async function POST(
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Insertar feedback
+  await db.from("contact_feedback").insert({
+    contact_id: id,
+    decision: "rejected",
+    reason: reason ?? null,
+    decided_by: by ?? "manual",
+    decided_at: new Date().toISOString()
+  }).then(() => {}).catch(() => {});
 
   return NextResponse.json({ ok: true, contactId: id, discarded: true });
 }

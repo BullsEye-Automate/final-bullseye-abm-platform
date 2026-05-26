@@ -1,80 +1,74 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { detectNameEmailMismatch } from "@/lib/contactValidation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CONTACT_COLUMNS =
-  "id, client_id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, " +
-  "email, phone, seniority, tenure, prefilter_result, prefilter_reason, " +
-  "fit_score, fit, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, " +
-  "status, clay_row_id, clay_pushed_at, clay_push_error, " +
-  "human_decision, human_decision_at, human_decision_reason, human_decision_by, " +
-  "lemlist_lead_id, lemlist_pushed_at, lemlist_push_error, " +
-  "hubspot_contact_id, hubspot_synced_at, hubspot_sync_error, " +
-  "source, created_at, updated_at";
+  "id, company_id, first_name, last_name, job_title, linkedin_headline, linkedin_url, email, phone, seniority, tenure, prefilter_result, prefilter_reason, fit_score, fit, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, status, clay_row_id, clay_pushed_at, clay_push_error, lemlist_lead_id, lemlist_pushed_at, lemlist_push_error, hubspot_contact_id, hubspot_synced_at, hubspot_sync_error, human_decision, human_decision_at, human_decision_reason, human_decision_by, source, created_at, updated_at";
+
+const APPROVED_PENDING_FILTER = (q: any) =>
+  q.eq("fit_action", "enrich").is("lemlist_pushed_at", null).neq("status", "discarded");
+
+const MANUAL_REVIEW_FILTER = (q: any) =>
+  q.eq("fit_action", "manual_review").is("human_decision", null);
+
+const DISCARDED_OR =
+  "prefilter_result.eq.no,fit_action.eq.discard,status.eq.discarded,human_decision.eq.rejected";
 
 export async function GET(req: NextRequest) {
-  const bucket    = req.nextUrl.searchParams.get("bucket")     ?? "pending";
-  const companyId = req.nextUrl.searchParams.get("company_id") ?? null;
-  const clientId  = req.nextUrl.searchParams.get("client_id")  ?? null;
+  const bucket = req.nextUrl.searchParams.get("bucket") ?? "pending";
+  const companyId = req.nextUrl.searchParams.get("company_id");
+  const clientId = req.nextUrl.searchParams.get("client_id") || null;
   const db = supabaseAdmin();
 
-  function applyFilters(q: any) {
-    if (companyId) q = q.eq("company_id", companyId);
-    if (clientId)  q = q.eq("client_id",  clientId);
-    return q;
-  }
+  let q: any = db.from("contacts").select(CONTACT_COLUMNS);
+  if (companyId) q = q.eq("company_id", companyId);
+  if (clientId) q = q.eq("client_id", clientId);
 
-  let q = applyFilters(db.from("contacts").select(CONTACT_COLUMNS));
-
-  // Buckets:
-  //   pending        → pre-filter yes, sin scoring aún
-  //   manual_review  → fit_action = manual_review y sin human_decision
-  //   approved       → human_decision = approved (en campaña o en proceso)
-  //   enriched       → status IN (enriched, contacted, replied) — auto-promovidos o aprobados
-  //   discarded      → pre-filter no, fit_action = discard, o status = discarded
   if (bucket === "pending") {
     q = q.eq("prefilter_result", "yes").is("fit_action", null).eq("status", "pending");
+  } else if (bucket === "approved_pending") {
+    q = APPROVED_PENDING_FILTER(q);
   } else if (bucket === "manual_review") {
-    q = q.eq("fit_action", "manual_review").is("human_decision", null);
-  } else if (bucket === "approved") {
-    q = q.eq("human_decision", "approved");
+    q = MANUAL_REVIEW_FILTER(q);
   } else if (bucket === "enriched") {
-    q = q.in("status", ["enriched", "contacted", "replied"]);
+    q = q.not("lemlist_pushed_at", "is", null);
   } else if (bucket === "discarded") {
-    q = q.or("prefilter_result.eq.no,fit_action.eq.discard,status.eq.discarded");
+    q = q.or(DISCARDED_OR);
   }
 
   const { data, error } = await q
     .order("fit_score", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .limit(500);
-
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  function countFor(bucketQ: (q: any) => any) {
-    return bucketQ(applyFilters(db.from("contacts").select("id", { count: "exact", head: true })));
-  }
+  const contacts = (data ?? []).map((c: any) => {
+    const m = detectNameEmailMismatch(c.first_name, c.last_name, c.email);
+    return { ...c, name_email_mismatch: m.mismatch, name_email_mismatch_reason: m.reason ?? null };
+  });
 
-  const [pending, manual, approved, enriched, discarded] = await Promise.all([
-    countFor((q) => q.eq("prefilter_result", "yes").is("fit_action", null).eq("status", "pending")),
-    countFor((q) => q.eq("fit_action", "manual_review").is("human_decision", null)),
-    countFor((q) => q.eq("human_decision", "approved")),
-    countFor((q) => q.in("status", ["enriched", "contacted", "replied"])),
-    countFor((q) => q.or("prefilter_result.eq.no,fit_action.eq.discard,status.eq.discarded")),
+  const [pending, approvedPending, manual, enriched, discarded] = await Promise.all([
+    db.from("contacts").select("id", { count: "exact", head: true })
+      .eq("prefilter_result", "yes").is("fit_action", null).eq("status", "pending"),
+    APPROVED_PENDING_FILTER(db.from("contacts").select("id", { count: "exact", head: true })),
+    MANUAL_REVIEW_FILTER(db.from("contacts").select("id", { count: "exact", head: true })),
+    db.from("contacts").select("id", { count: "exact", head: true }).not("lemlist_pushed_at", "is", null),
+    db.from("contacts").select("id", { count: "exact", head: true }).or(DISCARDED_OR)
   ]);
 
   return NextResponse.json(
     {
-      contacts: data ?? [],
+      contacts,
       counts: {
-        pending:       pending.count   ?? 0,
-        manual_review: manual.count    ?? 0,
-        approved:      approved.count  ?? 0,
-        enriched:      enriched.count  ?? 0,
-        discarded:     discarded.count ?? 0,
-      },
+        pending: pending.count ?? 0,
+        approved_pending: approvedPending.count ?? 0,
+        manual_review: manual.count ?? 0,
+        enriched: enriched.count ?? 0,
+        discarded: discarded.count ?? 0
+      }
     },
     { headers: { "Cache-Control": "no-store, max-age=0" } }
   );

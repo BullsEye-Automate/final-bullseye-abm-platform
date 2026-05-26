@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pushContactToHubspot } from "@/lib/hubspotPush";
+import { supabaseAdmin } from "@/lib/supabase";
+import { syncContactToHubSpot } from "@/lib/hubspotContactSync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // POST /api/hubspot/push-contact/[id]
-// Sincroniza un contacto de Supabase con HubSpot.
+// Sincroniza manualmente un contacto de Supabase con HubSpot.
 
 export async function POST(
   _req: NextRequest,
@@ -16,7 +17,8 @@ export async function POST(
     return NextResponse.json({ error: "id requerido" }, { status: 400 });
   }
 
-  const result = await pushContactToHubspot(id);
+  const db = supabaseAdmin();
+  const result = await syncContactToHubSpot(db, id);
 
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 500 });
@@ -25,7 +27,7 @@ export async function POST(
   return NextResponse.json({
     ok: true,
     contactId: id,
-    hubspotContactId: result.hubspotContactId,
-    created: result.created,
+    hubspot_id: (result as any).hubspot_id,
+    created: (result as any).created,
   });
 }

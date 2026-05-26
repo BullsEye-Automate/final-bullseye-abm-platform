@@ -1,29 +1,52 @@
-// Sincronización automática de contacto → HubSpot después de ser enriquecido.
-// Se llama desde el webhook de scored-contacts cuando se auto-aprueba.
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  pushCompanyToHubSpot,
+  pushContactToHubSpot,
+  type HubSpotCompanyInput,
+  type HubSpotContactInput,
+  type HubSpotPushResult
+} from "./hubspotPush";
 
-import { pushContactToHubspot, type ContactHubspotPushResult } from "@/lib/hubspotPush";
+const CONTACT_FIELDS =
+  "id, company_id, first_name, last_name, job_title, email, phone, linkedin_url, " +
+  "fit_score, fit_reason, fit_action, linkedin_icebreaker, email_subject, email_body, " +
+  "human_decision, human_decision_reason, clay_pushed_at, lemlist_pushed_at, " +
+  "phone_enrichment_status, phone_source, hubspot_contact_id, client_id";
 
-/**
- * Sincroniza un contacto con HubSpot.
- * Wrapper conveniente sobre pushContactToHubspot con logging.
- */
-export async function syncContactToHubspot(
+const COMPANY_FIELDS =
+  "id, company_name, company_website, company_linkedin_url, company_city, company_country, " +
+  "company_size, company_type, tool_primary, tool_secondary, fit_signals, fit_score, " +
+  "approved_at, clay_pushed_at, hubspot_company_id";
+
+export async function syncContactToHubSpot(
+  db: SupabaseClient,
   contactId: string
-): Promise<ContactHubspotPushResult> {
-  console.log(`[hubspotContactSync] Sincronizando contacto ${contactId}`);
+): Promise<HubSpotPushResult | { ok: false; error: string }> {
+  const { data: contactRaw, error } = await db
+    .from("contacts")
+    .select(CONTACT_FIELDS)
+    .eq("id", contactId)
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!contactRaw) return { ok: false, error: "Contact not found" };
+  const contact = contactRaw as unknown as HubSpotContactInput;
 
-  const result = await pushContactToHubspot(contactId);
+  let hubspotCompanyId: string | null = null;
+  let companySnapshot: { company_type: string | null; tool_primary: string | null; tool_secondary: string | null } | null = null;
 
-  if (result.ok) {
-    console.log(
-      `[hubspotContactSync] Contacto ${contactId} sincronizado. ` +
-        `HubSpot ID: ${result.hubspotContactId} (${result.created ? "creado" : "actualizado"})`
-    );
-  } else {
-    console.error(
-      `[hubspotContactSync] Error sincronizando contacto ${contactId}: ${result.error}`
-    );
+  if (contact.company_id) {
+    const { data: companyRaw } = await db
+      .from("companies")
+      .select(COMPANY_FIELDS)
+      .eq("id", contact.company_id)
+      .maybeSingle();
+    const company = companyRaw as unknown as HubSpotCompanyInput | null;
+    if (company) {
+      const cRes = await pushCompanyToHubSpot(db, company);
+      if (cRes.ok) hubspotCompanyId = cRes.hubspot_id;
+      companySnapshot = { company_type: company.company_type, tool_primary: company.tool_primary, tool_secondary: company.tool_secondary };
+    }
   }
 
-  return result;
+  return pushContactToHubSpot(db, contact, hubspotCompanyId, companySnapshot);
 }

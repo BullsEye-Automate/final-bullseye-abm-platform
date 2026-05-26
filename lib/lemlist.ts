@@ -1,118 +1,110 @@
-// Integración con la API de Lemlist para crear leads en campañas.
+const LEMLIST_API_BASE = process.env.LEMLIST_API_BASE_URL || "https://api.lemlist.com/api";
 
 export type LemlistLead = {
+  linkedinUrl?: string | null;
   email?: string | null;
   firstName?: string | null;
   lastName?: string | null;
   companyName?: string | null;
-  linkedinUrl?: string | null;
+  jobTitle?: string | null;
   phone?: string | null;
-  icebreaker?: string | null;
-  // Campos personalizados con prefijo bullseye_
+  icebreaker: string;
+  emailSubject: string;
+  emailBody: string;
   bullseye_fit_score?: number | null;
   bullseye_fit_reason?: string | null;
   bullseye_fit_action?: string | null;
-  // Permitir campos adicionales
-  [key: string]: unknown;
 };
 
-export type LemlistAddLeadResult =
-  | { ok: true; leadId: string; email: string | null }
-  | { ok: false; error: string; status?: number };
+type FetchAttempt = {
+  url: string;
+  method: string;
+  status: number;
+  ok: boolean;
+  response_preview: string;
+};
 
-/**
- * Agrega un lead a una campaña de Lemlist.
- * Si el lead no tiene email, lo omite y fuerza deduplicación por LinkedIn.
- */
-export async function addLeadToLemlistCampaign(
-  campaignId: string,
-  lead: LemlistLead
-): Promise<LemlistAddLeadResult> {
-  const apiKey = process.env.LEMLIST_API_KEY;
-  if (!apiKey) {
-    return { ok: false, error: "LEMLIST_API_KEY no configurada" };
-  }
-  if (!campaignId) {
-    return { ok: false, error: "campaignId requerido" };
-  }
+export type LemlistPushResult =
+  | { ok: true; leadId?: string; status: number; matched_url: string; attempts: FetchAttempt[] }
+  | { ok: false; status: number; error: string; debug?: { attempts: FetchAttempt[] } };
 
-  // Lemlist requiere al menos un email o linkedinUrl para deduplicar
-  const email = lead.email?.trim() || null;
-  const linkedinUrl = lead.linkedinUrl?.trim() || null;
+function buildAuthHeader(): string {
+  const key = process.env.LEMLIST_API_KEY ?? "";
+  const token = Buffer.from(`:${key}`).toString("base64");
+  return `Basic ${token}`;
+}
 
-  if (!email && !linkedinUrl) {
-    return {
-      ok: false,
-      error: "El lead debe tener email o linkedinUrl para añadirlo a Lemlist",
-    };
-  }
-
-  // Construir el payload para Lemlist
+function buildPayload(lead: LemlistLead): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
+  if (lead.linkedinUrl) payload.linkedinUrl = lead.linkedinUrl;
+  if (lead.email) payload.email = lead.email;
+  if (lead.firstName) payload.firstName = lead.firstName;
+  if (lead.lastName) payload.lastName = lead.lastName;
+  if (lead.companyName) payload.companyName = lead.companyName;
+  if (lead.jobTitle) payload.jobTitle = lead.jobTitle;
+  if (lead.phone) payload.phone = lead.phone;
+  payload.icebreaker = lead.icebreaker.trim();
+  payload.emailSubject = lead.emailSubject.trim();
+  payload.emailBody = lead.emailBody.trim();
+  if (lead.bullseye_fit_score != null) payload.bullseye_fit_score = lead.bullseye_fit_score;
+  if (lead.bullseye_fit_reason) payload.bullseye_fit_reason = lead.bullseye_fit_reason;
+  if (lead.bullseye_fit_action) payload.bullseye_fit_action = lead.bullseye_fit_action;
+  return payload;
+}
 
-  if (email) payload["email"] = email;
-  if (lead.firstName) payload["firstName"] = lead.firstName;
-  if (lead.lastName) payload["lastName"] = lead.lastName;
-  if (lead.companyName) payload["companyName"] = lead.companyName;
-  if (linkedinUrl) payload["linkedinUrl"] = linkedinUrl;
-  if (lead.phone) payload["phone"] = lead.phone;
-  if (lead.icebreaker) payload["icebreaker"] = lead.icebreaker;
-  if (lead.bullseye_fit_score != null) payload["bullseye_fit_score"] = lead.bullseye_fit_score;
-  if (lead.bullseye_fit_reason) payload["bullseye_fit_reason"] = lead.bullseye_fit_reason;
-  if (lead.bullseye_fit_action) payload["bullseye_fit_action"] = lead.bullseye_fit_action;
+const ENRICHMENT_QUERY = "findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true";
 
-  // Agregar cualquier campo adicional que no esté ya incluido
-  for (const [k, v] of Object.entries(lead)) {
-    if (
-      ![
-        "email", "firstName", "lastName", "companyName", "linkedinUrl",
-        "phone", "icebreaker", "bullseye_fit_score", "bullseye_fit_reason",
-        "bullseye_fit_action"
-      ].includes(k) &&
-      v != null
-    ) {
-      payload[k] = v;
-    }
+function buildCandidateRequests(campaignId: string, email: string | null | undefined): Array<{ url: string; method: string }> {
+  const id = encodeURIComponent(campaignId);
+  const requests: Array<{ url: string; method: string }> = [];
+  if (email) {
+    const enc = encodeURIComponent(email);
+    requests.push({ url: `${LEMLIST_API_BASE}/campaigns/${id}/leads/${enc}?verifyEmail=true&findPhone=true`, method: "POST" });
   }
+  requests.push({ url: `${LEMLIST_API_BASE}/campaigns/${id}/leads?${ENRICHMENT_QUERY}`, method: "POST" });
+  requests.push({ url: `${LEMLIST_API_BASE}/v2/campaigns/${id}/leads?${ENRICHMENT_QUERY}`, method: "POST" });
+  return requests;
+}
 
-  const url = `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(email ?? linkedinUrl!)}`;
-
+async function tryRequest(url: string, method: string, payload: unknown): Promise<FetchAttempt & { parsed: unknown }> {
+  let res: Response;
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`,
-      },
+    res = await fetch(url, {
+      method,
+      headers: { Authorization: buildAuthHeader(), "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify(payload),
+      cache: "no-store"
     });
-
-    const responseText = await res.text();
-    let responseData: Record<string, unknown> = {};
-    try {
-      responseData = JSON.parse(responseText);
-    } catch {
-      // Si no es JSON, usar el texto como error
-    }
-
-    if (!res.ok) {
-      const errMsg =
-        (responseData["error"] as string) ||
-        (responseData["message"] as string) ||
-        responseText ||
-        `HTTP ${res.status}`;
-      return { ok: false, error: errMsg, status: res.status };
-    }
-
-    // Lemlist retorna el lead creado con _id
-    const leadId =
-      (responseData["_id"] as string) ||
-      (responseData["leadId"] as string) ||
-      "";
-
-    return { ok: true, leadId, email };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: message };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Network error";
+    return { url, method, status: 0, ok: false, response_preview: message, parsed: null };
   }
+  const rawText = await res.text();
+  let parsed: unknown = null;
+  try { parsed = rawText ? JSON.parse(rawText) : null; } catch { parsed = { raw: rawText.slice(0, 600) }; }
+  return { url, method, status: res.status, ok: res.ok, response_preview: rawText.slice(0, 400), parsed };
+}
+
+export async function addLeadToCampaign(campaignId: string, lead: LemlistLead): Promise<LemlistPushResult> {
+  if (!process.env.LEMLIST_API_KEY) return { ok: false, status: 500, error: "LEMLIST_API_KEY is not configured" };
+  if (!campaignId) return { ok: false, status: 500, error: "campaignId is empty" };
+  if (!lead.linkedinUrl && !lead.email) return { ok: false, status: 400, error: "Lead has neither linkedinUrl nor email" };
+  const missing = [!lead.icebreaker?.trim() && "icebreaker", !lead.emailSubject?.trim() && "emailSubject", !lead.emailBody?.trim() && "emailBody"].filter(Boolean);
+  if (missing.length > 0) return { ok: false, status: 400, error: `Lead has blank ${missing.join(", ")} — refusing to push` };
+
+  const payload = buildPayload(lead);
+  const candidates = buildCandidateRequests(campaignId, lead.email);
+  const attempts: FetchAttempt[] = [];
+
+  for (const req of candidates) {
+    const result = await tryRequest(req.url, req.method, payload);
+    attempts.push({ url: result.url, method: result.method, status: result.status, ok: result.ok, response_preview: result.response_preview });
+    if (result.ok) {
+      const leadId = (result.parsed as { _id?: string; id?: string })?._id ?? (result.parsed as { _id?: string; id?: string })?.id;
+      return { ok: true, leadId, status: result.status, matched_url: result.url, attempts };
+    }
+  }
+
+  const last = attempts[attempts.length - 1];
+  return { ok: false, status: last?.status ?? 0, error: `Lemlist rejected the lead on all ${attempts.length} URL pattern(s) tried`, debug: { attempts } };
 }

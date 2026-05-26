@@ -4,25 +4,14 @@ import { supabaseAdmin } from "@/lib/supabase";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// DELETE /api/contacts/[id] — elimina un contacto
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  const { id } = params;
-  if (!id) {
-    return NextResponse.json({ error: "id requerido" }, { status: 400 });
-  }
-
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const db = supabaseAdmin();
-
-  const { error } = await db.from("contacts").delete().eq("id", id);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, deleted: id });
+  const { data: existing, error: fetchErr } = await db.from("contacts").select("id, first_name, last_name").eq("id", params.id).maybeSingle();
+  if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
+  if (!existing) return NextResponse.json({ error: "Contact not found" }, { status: 404 });
+  const { error: delErr } = await db.from("contacts").delete().eq("id", params.id);
+  if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
+  return NextResponse.json({ deleted: true, id: params.id });
 }
 
 // GET /api/contacts/[id] — obtiene un contacto por ID
@@ -30,8 +19,7 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const { id } = params;
-  if (!id) {
+  if (!params.id) {
     return NextResponse.json({ error: "id requerido" }, { status: 400 });
   }
 
@@ -40,7 +28,7 @@ export async function GET(
   const { data, error } = await db
     .from("contacts")
     .select("*")
-    .eq("id", id)
+    .eq("id", params.id)
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
