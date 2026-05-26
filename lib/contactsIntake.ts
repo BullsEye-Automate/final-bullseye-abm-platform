@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runPrefilter } from "./prefilter";
 import { normalizeLinkedInUrl } from "./normalizeLinkedIn";
+import { pushContactToClay } from "./clayPushContact";
 
 export type RawContact = {
   first_name?: string | null;
@@ -94,9 +95,18 @@ export async function intakeContactsForCompany(
 
   if (rows.length === 0) return { ok: true, summary };
 
-  const { error: insertErr } = await db.from("contacts").insert(rows);
+  const { data: inserted, error: insertErr } = await db
+    .from("contacts")
+    .insert(rows)
+    .select("id, prefilter_result");
   if (insertErr) return { ok: false, status: 500, error: insertErr.message };
 
   summary.inserted = rows.length;
+
+  // Auto-push a Clay: contactos con prefilter_result = 'yes' recién insertados.
+  // Fire-and-forget: un fallo de push no revierte el intake.
+  const yesList = (inserted ?? []).filter((r) => r.prefilter_result === "yes");
+  await Promise.all(yesList.map((r) => pushContactToClay(db, r.id).catch(() => null)));
+
   return { ok: true, summary };
 }
