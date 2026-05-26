@@ -320,6 +320,7 @@ export default function ContactosPage() {
                     c={c}
                     bucket={bucket}
                     onPush={pushOne}
+                    onRecover={recoverContact}
                     isPushing={pushingId === c.id}
                   />
                 ))}
@@ -357,11 +358,15 @@ function EmptyState({ bucket, hasApproved }: { bucket: Bucket; hasApproved: bool
 
 function ContactCard({
   c,
+  bucket,
   onPush,
+  onRecover,
   isPushing
 }: {
   c: Contact;
+  bucket: Bucket;
   onPush: (id: string) => void | Promise<void>;
+  onRecover: (id: string) => void | Promise<void>;
   isPushing: boolean;
 }) {
   const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
@@ -373,7 +378,7 @@ function ContactCard({
       : c.fit_score >= 5
       ? "bg-warning-bg text-warning-fg"
       : "bg-danger-bg text-danger-fg";
-  const canPush = c.prefilter_result === "yes" && !c.clay_pushed_at;
+  const canPush = c.prefilter_result === "yes" && !c.clay_pushed_at && bucket === "pending";
   return (
     <div className="card flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -388,6 +393,12 @@ function ContactCard({
             )}
             {c.clay_pushed_at && (
               <span className="badge bg-success-bg text-success-fg">en Clay ✓</span>
+            )}
+            {/* Badge fit_action enrich en teal para approved_pending */}
+            {bucket === "approved_pending" && c.fit_action === "enrich" && (
+              <span className="badge" style={{ background: "rgba(98,224,216,0.15)", color: "#0F6E56" }}>
+                enrich
+              </span>
             )}
             {c.fit_score !== null && (
               <span className={`badge ${scoreClass}`}>score {c.fit_score}/10</span>
@@ -428,6 +439,13 @@ function ContactCard({
         </div>
       )}
 
+      {/* Fecha de envío a Lemlist en tab "enriched" */}
+      {bucket === "enriched" && c.lemlist_pushed_at && (
+        <div className="text-xs text-ink-muted">
+          Enviado a Lemlist: {new Date(c.lemlist_pushed_at).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" })}
+        </div>
+      )}
+
       {c.fit_reason && (
         <div>
           <div className="label mb-1">Razón IA</div>
@@ -459,8 +477,8 @@ function ContactCard({
         </div>
       )}
 
-      {canPush && (
-        <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {canPush && (
           <button
             onClick={() => onPush(c.id)}
             disabled={isPushing}
@@ -469,8 +487,18 @@ function ContactCard({
             <IconSend size={12} />
             {isPushing ? "Empujando…" : "Prospectar en Clay"}
           </button>
-        </div>
-      )}
+        )}
+        {/* Botón recuperar para contactos descartados */}
+        {bucket === "discarded" && (
+          <button
+            onClick={() => onRecover(c.id)}
+            disabled={isPushing}
+            className="btn-secondary text-xs"
+          >
+            {isPushing ? "Recuperando…" : "Recuperar"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
