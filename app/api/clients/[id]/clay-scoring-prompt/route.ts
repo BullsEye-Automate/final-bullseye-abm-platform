@@ -29,18 +29,21 @@ ICP and Buyer Persona:
 
 // Bloque fijo de chips de Clay que siempre se añade al final del prompt generado.
 // Clay sustituye estos {{campos}} con los datos reales de cada contacto al ejecutar la columna.
+// Solo incluye campos que la app envía realmente vía webhook (clayPushContact.ts).
+// {{company_type}} y {{country}} se omiten — no están en el payload y Clay los
+// pasaba como texto literal al AI, rompiendo el score.
 const CLAY_CHIPS_BLOCK = `
 
 **CONTACT DATA TO EVALUATE:**
 - First Name: {{first_name}}
 - Last Name: {{last_name}}
 - Job Title: {{job_title}}
+- Seniority: {{seniority}}
+- LinkedIn Headline: {{linkedin_headline}}
 - LinkedIn URL: {{linkedin_url}}
 - Company Name: {{company_name}}
 - Company Size: {{company_size}}
-- Company Type: {{company_type}}
-- Fit Signals: {{fit_signals}}
-- Country: {{country}}`;
+- Fit Signals: {{fit_signals}}`;
 
 // GET — devuelve el prompt guardado (si existe)
 export async function GET(
