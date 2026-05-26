@@ -106,7 +106,16 @@ export async function intakeContactsForCompany(
   // Auto-push a Clay: contactos con prefilter_result = 'yes' recién insertados.
   // Fire-and-forget: un fallo de push no revierte el intake.
   const yesList = (inserted ?? []).filter((r) => r.prefilter_result === "yes");
-  await Promise.all(yesList.map((r) => pushContactToClay(db, r.id).catch(() => null)));
+  console.log(`[intake] inserted=${rows.length} yes=${yesList.length} no=${rows.length - yesList.length} companyId=${companyId}`);
+  await Promise.all(
+    yesList.map((r) =>
+      pushContactToClay(db, r.id).then((res) => {
+        console.log(`[intake] pushContactToClay id=${r.id} result=`, JSON.stringify(res));
+      }).catch((err) => {
+        console.error(`[intake] pushContactToClay id=${r.id} EXCEPTION:`, err);
+      })
+    )
+  );
 
   return { ok: true, summary };
 }
