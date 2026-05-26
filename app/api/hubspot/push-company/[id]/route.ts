@@ -23,14 +23,15 @@ export async function POST(
   }
 
   const db = supabaseAdmin();
-  const { data: companyRaw, error: fetchErr } = await db
+  const { data: _companyRaw, error: fetchErr } = await db
     .from("companies")
     .select(COMPANY_FIELDS)
     .eq("id", id)
     .maybeSingle();
 
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
-  if (!companyRaw) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
+  if (!_companyRaw) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
+  const companyRaw = _companyRaw as any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   const result = await pushCompanyToHubSpot(db, companyRaw as unknown as HubSpotCompanyInput);
 

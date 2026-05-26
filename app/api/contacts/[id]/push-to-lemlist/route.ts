@@ -33,14 +33,15 @@ export async function POST(
   const db = supabaseAdmin();
 
   // Cargar contacto completo
-  const { data: contactRaw, error: fetchErr } = await db
+  const { data: _contactRaw, error: fetchErr } = await db
     .from("contacts")
     .select(CONTACT_FIELDS)
     .eq("id", id)
     .maybeSingle();
 
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
-  if (!contactRaw) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
+  if (!_contactRaw) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
+  const contactRaw = _contactRaw as any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   // Verificar requisitos mínimos
   if (!contactRaw.email && !contactRaw.linkedin_url) {
@@ -52,11 +53,12 @@ export async function POST(
   let companyHubSpotInput: HubSpotCompanyInput | null = null;
 
   if (contactRaw.company_id) {
-    const { data: companyRaw } = await db
+    const { data: _companyRaw } = await db
       .from("companies")
       .select(COMPANY_FIELDS)
       .eq("id", contactRaw.company_id)
       .maybeSingle();
+    const companyRaw = _companyRaw as any; // eslint-disable-line @typescript-eslint/no-explicit-any
     if (companyRaw) {
       company = {
         company_name: companyRaw.company_name,

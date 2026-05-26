@@ -51,14 +51,16 @@ export async function POST(
   const db = supabaseAdmin();
 
   // Cargar contacto completo
-  const { data: contactRaw, error: fetchErr } = await db
+  const { data: _contactRaw, error: fetchErr } = await db
     .from("contacts")
     .select(CONTACT_FIELDS)
     .eq("id", id)
     .maybeSingle();
 
   if (fetchErr) return NextResponse.json({ error: fetchErr.message }, { status: 500 });
-  if (!contactRaw) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
+  if (!_contactRaw) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const contactRaw = _contactRaw as any;
 
   // Registrar la decisión humana
   const updateData: Record<string, any> = {
@@ -81,14 +83,15 @@ export async function POST(
 
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
 
-  // Insertar feedback
-  await db.from("contact_feedback").insert({
-    contact_id: id,
-    decision,
-    reason: reason ?? null,
-    decided_by: by ?? "manual",
-    decided_at: new Date().toISOString()
-  }).then(() => {}).catch(() => {});
+  // Insertar feedback (ignorar errores — no bloquea el flujo)
+  try {
+    await db.from("contact_feedback").insert({
+      contact_id: id, decision,
+      reason: reason ?? null,
+      decided_by: by ?? "manual",
+      decided_at: new Date().toISOString()
+    });
+  } catch { /* no-op */ }
 
   if (decision === "rejected") {
     return NextResponse.json({ ok: true, decision, contactId: id });
@@ -99,11 +102,13 @@ export async function POST(
   let companyHubSpotInput: HubSpotCompanyInput | null = null;
 
   if (contactRaw.company_id) {
-    const { data: companyRaw } = await db
+    const { data: _companyRaw } = await db
       .from("companies")
       .select(COMPANY_FIELDS)
       .eq("id", contactRaw.company_id)
       .maybeSingle();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const companyRaw = _companyRaw as any;
     if (companyRaw) {
       company = {
         company_name: companyRaw.company_name,

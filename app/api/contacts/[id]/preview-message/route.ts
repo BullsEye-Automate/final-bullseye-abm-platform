@@ -30,7 +30,7 @@ export async function POST(
   const db = supabaseAdmin();
 
   // Cargar contacto
-  const { data: contact, error: contactErr } = await db
+  const { data: _contact, error: contactErr } = await db
     .from("contacts")
     .select(
       "id, first_name, last_name, job_title, linkedin_headline, email, seniority, fit_reason, company_id, client_id"
@@ -39,7 +39,8 @@ export async function POST(
     .maybeSingle();
 
   if (contactErr) return NextResponse.json({ error: contactErr.message }, { status: 500 });
-  if (!contact) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
+  if (!_contact) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
+  const contact = _contact as any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   // Cargar empresa
   const { data: company } = await db

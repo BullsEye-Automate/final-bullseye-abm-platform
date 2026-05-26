@@ -42,14 +42,14 @@ export async function POST(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Insertar feedback
-  await db.from("contact_feedback").insert({
-    contact_id: id,
-    decision: "rejected",
-    reason: reason ?? null,
-    decided_by: by ?? "manual",
-    decided_at: new Date().toISOString()
-  }).then(() => {}).catch(() => {});
+  try {
+    await db.from("contact_feedback").insert({
+      contact_id: id, decision: "rejected",
+      reason: reason ?? null,
+      decided_by: by ?? "manual",
+      decided_at: new Date().toISOString()
+    });
+  } catch { /* no-op */ }
 
   return NextResponse.json({ ok: true, contactId: id, discarded: true });
 }

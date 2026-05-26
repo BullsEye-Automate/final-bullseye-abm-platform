@@ -85,14 +85,13 @@ export async function POST(req: NextRequest) {
           fit_action: "enrich"
         }).eq("id", contactRaw.id);
 
-        // Insertar feedback
-        await db.from("contact_feedback").insert({
-          contact_id: contactRaw.id,
-          decision: "approved",
-          reason: "bulk_approve",
-          decided_by: "bulk",
-          decided_at: new Date().toISOString()
-        }).then(() => {}).catch(() => {});
+        try {
+          await db.from("contact_feedback").insert({
+            contact_id: contactRaw.id, decision: "approved",
+            reason: "bulk_approve", decided_by: "bulk",
+            decided_at: new Date().toISOString()
+          });
+        } catch { /* no-op */ }
 
         const company: LemlistPushCompany = companyRaw ? {
           company_name: companyRaw.company_name,
