@@ -247,26 +247,39 @@ export async function POST(req: NextRequest) {
   }
 
   const totals = { received: items.length, inserted: 0, yes: 0, no: 0, skipped: 0 };
-  const errors: { bullseye_company_id: string; error: string }[] = [];
+  const errors:  { bullseye_company_id: string; error: string }[] = [];
+  const debug:   { step: string; detail: string }[] = [];
+
+  // Diagnóstico: qué campos llegaron
+  const firstItem = items[0] as any;
+  debug.push({ step: "fields_received", detail: Object.keys(firstItem).join(", ") });
+  debug.push({ step: "company_linkedin_url", detail: firstItem.company_linkedin_url ?? "(vacío)" });
 
   for (const [companyId, contacts] of byCompany) {
+    debug.push({ step: "company_found", detail: companyId });
     const r = await intakeContactsForCompany(db, companyId, contacts);
     if (!r.ok) {
       errors.push({ bullseye_company_id: companyId, error: r.error });
+      debug.push({ step: "intake_error", detail: r.error });
       continue;
     }
     totals.inserted += r.summary.inserted;
     totals.yes      += r.summary.yes;
     totals.no       += r.summary.no;
     totals.skipped  += r.summary.skipped;
+    debug.push({ step: "intake_ok", detail: `inserted=${r.summary.inserted} yes=${r.summary.yes} no=${r.summary.no} skipped=${r.summary.skipped}` });
+    for (const p of r.pushDetails) {
+      debug.push({ step: `push_${p.result}`, detail: `id=${p.contact_id}${p.skipped ? ` skipped=${p.skipped}` : ""}${p.error ? ` error=${p.error}` : ""}` });
+    }
   }
 
   if (noCompany.length > 0) {
+    debug.push({ step: "company_not_found", detail: `company_linkedin_url="${firstItem.company_linkedin_url}" — no coincide con ninguna empresa en Supabase` });
     errors.push({
       bullseye_company_id: "",
       error: `${noCompany.length} contact(s) sin empresa identificable — no se persistieron`,
     });
   }
 
-  return NextResponse.json({ ...totals, errors });
+  return NextResponse.json({ ...totals, errors, debug });
 }
