@@ -17,15 +17,6 @@ export type PushErr = {
 
 export type PushResult = PushOk | PushErr;
 
-// Mapea el company_type interno al select de Clay (lab/clinic/DSO).
-function mapCompanyTypeForClay(t: string | null): string | null {
-  if (!t) return null;
-  if (t === "lab") return "lab";
-  if (t === "multi_clinic") return "clinic";
-  if (t === "dso") return "DSO";
-  return null;
-}
-
 export async function pushCompanyToClay(
   db: SupabaseClient,
   companyId: string,
@@ -34,7 +25,7 @@ export async function pushCompanyToClay(
   const { data: company, error: fetchErr } = await db
     .from("companies")
     .select(
-      "id, client_id, company_name, company_website, company_linkedin_url, company_city, company_size, company_type, cad_software, scanner_technology, fit_signals, fit_score, status, clay_pushed_at, approved_by, approved_at"
+      "id, client_id, company_name, company_website, company_linkedin_url, company_city, company_country, company_size, fit_signals, fit_score, description, status, clay_pushed_at"
     )
     .eq("id", companyId)
     .maybeSingle();
@@ -90,20 +81,17 @@ export async function pushCompanyToClay(
   }
 
   const payload = {
-    company_name: company.company_name,
-    company_website: company.company_website ?? "",
-    company_city: company.company_city ?? "",
-    company_size: company.company_size ?? null,
-    company_type: mapCompanyTypeForClay(company.company_type),
-    cad_software: company.cad_software ?? "",
-    scanner_technology: company.scanner_technology ?? "",
-    fit_signals: company.fit_signals ?? "",
-    fit_score: company.fit_score ?? null,
-    linkedin_url: normalizeLinkedInUrl(company.company_linkedin_url) ?? "",
-    approved_by: company.approved_by ?? "",
-    approved_at: company.approved_at ?? "",
-    status: "approved",
-    bullseye_company_id: company.id
+    bullseye_company_id: company.id,
+    name:                company.company_name,
+    website:             company.company_website     ?? "",
+    linkedin_url:        normalizeLinkedInUrl(company.company_linkedin_url) ?? "",
+    company_size:        company.company_size        ?? null,
+    fit_score:           company.fit_score           ?? null,
+    fit_signals:         company.fit_signals         ?? "",
+    description:         (company as any).description ?? "",
+    country:             (company as any).company_country ?? "",
+    city:                company.company_city        ?? "",
+    status:              "approved",
   };
 
   let clayRes: Response;
