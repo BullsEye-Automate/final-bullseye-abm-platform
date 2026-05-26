@@ -1,6 +1,23 @@
 // Carga y caché de la configuración de entrenamiento del modelo de scoring.
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+// Carga el contenido del ICP de un cliente desde client_ai_context.
+export async function loadClientIcpContext(
+  db: SupabaseClient,
+  clientId: string | null | undefined
+): Promise<string | null> {
+  if (!clientId) return null;
+  const { data } = await db
+    .from("client_ai_context")
+    .select("content")
+    .eq("client_id", clientId)
+    .eq("file_type", "icp")
+    .order("uploaded_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.content?.trim() || null;
+}
+
 export type ModelTrainingConfig = {
   id: string;
   is_active: boolean;

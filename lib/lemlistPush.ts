@@ -3,6 +3,7 @@ import { addLeadToCampaign } from "./lemlist";
 import { generateMessages, type MessageInput } from "./messageGenerator";
 import { computeContactFitScore, type ScoreInput } from "./contactScoring";
 import { getClientLemlistCampaignId } from "./lemlistCampaigns";
+import { loadClientIcpContext } from "./modelTrainingConfig";
 
 export type LemlistPushOk = { ok: true; lead_id?: string; messages_generated: boolean; model_used?: string };
 export type LemlistPushErr = { ok: false; error: string; status?: number; debug?: unknown };
@@ -88,12 +89,14 @@ export async function pushApprovedToLemlist(
       return { ok: false, error };
     }
     try {
+      const icpContext = await loadClientIcpContext(db, clientId);
       const input: MessageInput = {
         first_name: contact.first_name, last_name: contact.last_name, job_title: contact.job_title,
         linkedin_headline: contact.linkedin_headline, seniority: contact.seniority,
         company_name: company.company_name, company_size: company.company_size,
         company_type: company.company_type, tool_primary: company.tool_primary,
-        tool_secondary: company.tool_secondary, fit_signals: company.fit_signals
+        tool_secondary: company.tool_secondary, fit_signals: company.fit_signals,
+        icp_context: icpContext
       };
       const generated = await generateMessages(input);
       icebreaker = generated.linkedin_icebreaker;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateMessages, type MessageInput } from "@/lib/messageGenerator";
+import { loadClientIcpContext } from "@/lib/modelTrainingConfig";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +49,7 @@ export async function POST(
     .maybeSingle();
 
   try {
+    const icpContext = await loadClientIcpContext(db, contact.client_id);
     const input: MessageInput = {
       first_name: contact.first_name,
       last_name: contact.last_name,
@@ -59,7 +61,8 @@ export async function POST(
       company_type: company?.company_type ?? null,
       tool_primary: company?.tool_primary ?? null,
       tool_secondary: company?.tool_secondary ?? null,
-      fit_signals: company?.fit_signals ?? null
+      fit_signals: company?.fit_signals ?? null,
+      icp_context: icpContext
     };
 
     const messages = await generateMessages(input);

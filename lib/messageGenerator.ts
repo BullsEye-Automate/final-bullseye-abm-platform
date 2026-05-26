@@ -19,6 +19,7 @@ export type MessageInput = {
   tool_primary: string | null;
   tool_secondary: string | null;
   fit_signals: string | null;
+  icp_context?: string | null;
 };
 
 export type GeneratedMessages = {
@@ -28,12 +29,16 @@ export type GeneratedMessages = {
   model_used: string;
 };
 
-function buildSystemPrompt(config: ModelTrainingConfig | null): string {
+function buildSystemPrompt(config: ModelTrainingConfig | null, icpContext?: string | null): string {
   const lines: string[] = [];
   if (config?.business_name && config?.business_description) {
     lines.push(`You are an SDR for ${config.business_name}. ${config.business_description}`);
   } else if (config?.business_description) {
     lines.push(`You are an SDR. ${config.business_description}`);
+  } else if (icpContext) {
+    lines.push(`You are a B2B SDR. Use the following ICP context to understand who you're selling to and what the value proposition is:`);
+    lines.push(``);
+    lines.push(icpContext.slice(0, 2000));
   } else {
     lines.push(`You are a B2B SDR writing outbound outreach to one prospect at a time.`);
   }
@@ -203,7 +208,7 @@ export async function generateMessages(
     }
   }
 
-  const systemPrompt = buildSystemPrompt(activeConfig);
+  const systemPrompt = buildSystemPrompt(activeConfig, input.icp_context);
   const userPrompt = buildUserPrompt(input, activeConfig);
 
   const { message, model_used } = await createMessageWithFallback({
