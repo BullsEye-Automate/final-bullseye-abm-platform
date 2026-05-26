@@ -21,7 +21,8 @@ import {
   IconCheck,
   IconPlus,
   IconAdjustments,
-  IconMapSearch
+  IconMapSearch,
+  IconStethoscope
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -61,8 +62,9 @@ const SECTIONS: Section[] = [
   {
     label: "Análisis",
     items: [
-      { href: "/reporteria",      label: "Reportería",      icon: IconReportAnalytics, disabled: true },
-      { href: "/entrenar-modelo", label: "Entrenar modelo", icon: IconBrain }
+      { href: "/reporteria",          label: "Reportería",          icon: IconReportAnalytics, disabled: true },
+      { href: "/entrenar-modelo",     label: "Entrenar modelo",     icon: IconBrain },
+      { href: "/diagnostico-empresa", label: "Diagnóstico empresa", icon: IconStethoscope }
     ]
   },
   {
