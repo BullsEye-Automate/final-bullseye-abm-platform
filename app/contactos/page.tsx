@@ -10,11 +10,18 @@ import {
   IconBrandLinkedin,
   IconBuildingFactory2,
   IconRefresh,
-  IconSend
+  IconSend,
+  IconThumbUp,
+  IconThumbDown,
+  IconPlayerPlay,
+  IconEye,
+  IconX,
+  IconRotate,
 } from "@tabler/icons-react";
 
 type Contact = {
   id: string;
+  client_id: string | null;
   company_id: string;
   first_name: string | null;
   last_name: string | null;
@@ -26,26 +33,36 @@ type Contact = {
   seniority: string | null;
   prefilter_result: "yes" | "no" | null;
   fit_score: number | null;
+  fit: string | null;
   fit_reason: string | null;
   fit_action: string | null;
   linkedin_icebreaker: string | null;
   email_subject: string | null;
   email_body: string | null;
   status: string;
+  human_decision: string | null;
+  human_decision_at: string | null;
   clay_pushed_at: string | null;
   clay_push_error: string | null;
+  lemlist_lead_id: string | null;
+  lemlist_pushed_at: string | null;
+  lemlist_push_error: string | null;
+  hubspot_contact_id: string | null;
+  hubspot_synced_at: string | null;
+  hubspot_sync_error: string | null;
   created_at: string;
 };
 
 type Company = { id: string; company_name: string };
 
-type Bucket = "pending" | "manual_review" | "enriched" | "discarded";
+type Bucket = "pending" | "manual_review" | "approved" | "enriched" | "discarded";
 
 const BUCKET_LABELS: Record<Bucket, string> = {
   pending: "Pendientes",
   manual_review: "Revisión manual",
+  approved: "Aprobados",
   enriched: "En campaña",
-  discarded: "Descartados"
+  discarded: "Descartados",
 };
 
 export default function ContactosPage() {
@@ -55,8 +72,9 @@ export default function ContactosPage() {
   const [counts, setCounts] = useState<Record<Bucket, number>>({
     pending: 0,
     manual_review: 0,
+    approved: 0,
     enriched: 0,
-    discarded: 0
+    discarded: 0,
   });
   const [approvedCompanies, setApprovedCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(false);
@@ -64,12 +82,17 @@ export default function ContactosPage() {
   const [error, setError] = useState<string | null>(null);
   const [pushingId, setPushingId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
+  const [bulkApproving, setBulkApproving] = useState(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
 
   async function load(forBucket: Bucket = bucket) {
     setLoading(true);
+    setError(null);
     const clientParam = currentClient ? `&client_id=${currentClient.id}` : "";
-    const res = await fetch(`/api/contacts?bucket=${forBucket}${clientParam}`, { cache: "no-store" });
+    const res = await fetch(`/api/contacts?bucket=${forBucket}${clientParam}`, {
+      cache: "no-store",
+    });
     const data = await res.json();
     setLoading(false);
     if (!res.ok) {
@@ -87,7 +110,7 @@ export default function ContactosPage() {
     const res = await fetch("/api/clay/push-contact", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contact_id: contactId })
+      body: JSON.stringify({ contact_id: contactId }),
     });
     const data = await res.json();
     setPushingId(null);
@@ -114,14 +137,113 @@ export default function ContactosPage() {
     const total = data.total ?? 0;
     const pushed = data.pushed ?? 0;
     setPushNotice(
-      `${pushed} de ${total} contactos empujados a Clay${errs.length > 0 ? ` · ${errs.length} con error` : ""}.`
+      `${pushed} de ${total} contactos empujados a Clay${
+        errs.length > 0 ? ` · ${errs.length} con error` : ""
+      }.`
     );
+    await load();
+  }
+
+  async function bulkApproveEnrich() {
+    setBulkApproving(true);
+    setPushNotice(null);
+    setError(null);
+    const body: Record<string, unknown> = {};
+    if (currentClient) body.client_id = currentClient.id;
+    const res = await fetch("/api/contacts/bulk-approve-enrich", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    setBulkApproving(false);
+    if (!res.ok) {
+      setError(data.error ?? "Bulk approve failed");
+      return;
+    }
+    const errs = (data.errors ?? []) as { error: string }[];
+    setPushNotice(
+      `${data.approved ?? 0} de ${data.total ?? 0} contactos aprobados y enviados a Lemlist${
+        errs.length > 0 ? ` · ${errs.length} con error` : ""
+      }.`
+    );
+    await load();
+  }
+
+  async function decideContact(contactId: string, decision: "approved" | "rejected") {
+    setActionId(contactId);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch(`/api/contacts/${contactId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision, by: "manual" }),
+    });
+    const data = await res.json();
+    setActionId(null);
+    if (!res.ok) {
+      setError(data.error ?? "Decision failed");
+      return;
+    }
+    const label = decision === "approved" ? "aprobado y enviado a Lemlist" : "rechazado";
+    setPushNotice(`Contacto ${label}.`);
+    await load();
+  }
+
+  async function pushToLemlist(contactId: string) {
+    setActionId(contactId);
+    setPushNotice(null);
+    setError(null);
+    const res = await fetch(`/api/contacts/${contactId}/push-to-lemlist`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    setActionId(null);
+    if (!res.ok) {
+      setError(data.error ?? "Lemlist push failed");
+      return;
+    }
+    setPushNotice("Contacto enviado a Lemlist.");
+    await load();
+  }
+
+  async function retryLemlist(contactId: string) {
+    setActionId(contactId);
+    const res = await fetch(`/api/contacts/${contactId}/lemlist-retry`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    setActionId(null);
+    if (!res.ok) {
+      setError(data.error ?? "Retry failed");
+      return;
+    }
+    setPushNotice("Reintento a Lemlist exitoso.");
+    await load();
+  }
+
+  async function discardContact(contactId: string) {
+    setActionId(contactId);
+    const res = await fetch(`/api/contacts/${contactId}/discard`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ by: "manual" }),
+    });
+    const data = await res.json();
+    setActionId(null);
+    if (!res.ok) {
+      setError(data.error ?? "Discard failed");
+      return;
+    }
+    setPushNotice("Contacto descartado.");
     await load();
   }
 
   async function loadApprovedCompanies() {
     const clientParam = currentClient ? `&client_id=${currentClient.id}` : "";
-    const res = await fetch(`/api/companies?status=approved${clientParam}`, { cache: "no-store" });
+    const res = await fetch(`/api/companies?status=approved${clientParam}`, {
+      cache: "no-store",
+    });
     const data = await res.json();
     if (res.ok) {
       setApprovedCompanies(
@@ -144,6 +266,8 @@ export default function ContactosPage() {
       (c) => c.prefilter_result === "yes" && !c.clay_pushed_at
     ).length;
   }, [contacts, bucket]);
+
+  const manualReviewCount = counts.manual_review;
 
   const grouped = useMemo(() => {
     const map = new Map<string, Contact[]>();
@@ -194,33 +318,35 @@ export default function ContactosPage() {
         />
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          {(["pending", "manual_review", "enriched", "discarded"] as const).map((b) => {
-            const active = bucket === b;
-            return (
-              <button
-                key={b}
-                onClick={() => setBucket(b)}
-                className={`btn ${
-                  active
-                    ? "bg-brand text-white"
-                    : "bg-white border border-[#E5E2F0] text-ink hover:border-brand-soft"
-                }`}
-              >
-                {BUCKET_LABELS[b]}
-                <span
-                  className={`ml-2 inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] font-semibold ${
-                    active ? "bg-white/20 text-white" : "bg-[#F1EEF7] text-ink-muted"
+          {(["pending", "manual_review", "approved", "enriched", "discarded"] as const).map(
+            (b) => {
+              const active = bucket === b;
+              return (
+                <button
+                  key={b}
+                  onClick={() => setBucket(b)}
+                  className={`btn ${
+                    active
+                      ? "bg-brand text-white"
+                      : "bg-white border border-[#E5E2F0] text-ink hover:border-brand-soft"
                   }`}
                 >
-                  {counts[b]}
-                </span>
-              </button>
-            );
-          })}
+                  {BUCKET_LABELS[b]}
+                  <span
+                    className={`ml-2 inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] font-semibold ${
+                      active ? "bg-white/20 text-white" : "bg-[#F1EEF7] text-ink-muted"
+                    }`}
+                  >
+                    {counts[b]}
+                  </span>
+                </button>
+              );
+            }
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {bucket === "pending" && pushablePendingCount > 0 && (
             <button
               onClick={pushAllPending}
@@ -232,6 +358,19 @@ export default function ContactosPage() {
               {bulkPushing
                 ? "Empujando…"
                 : `Prospectar todos en Clay (${pushablePendingCount})`}
+            </button>
+          )}
+          {bucket === "manual_review" && manualReviewCount > 0 && (
+            <button
+              onClick={bulkApproveEnrich}
+              disabled={bulkApproving}
+              className="btn-primary"
+              title="Aprueba todos los contactos en revisión manual y los envía a Lemlist"
+            >
+              <IconPlayerPlay size={14} />
+              {bulkApproving
+                ? "Aprobando…"
+                : `Aprobar todos y enviar a Lemlist (${manualReviewCount})`}
             </button>
           )}
           <button className="btn-secondary" onClick={() => load()} disabled={loading}>
@@ -272,8 +411,15 @@ export default function ContactosPage() {
                   <ContactCard
                     key={c.id}
                     c={c}
-                    onPush={pushOne}
-                    isPushing={pushingId === c.id}
+                    bucket={bucket}
+                    onPushClay={pushOne}
+                    onApprove={(id) => decideContact(id, "approved")}
+                    onReject={(id) => decideContact(id, "rejected")}
+                    onPushLemlist={pushToLemlist}
+                    onRetryLemlist={retryLemlist}
+                    onDiscard={discardContact}
+                    isActing={actionId === c.id}
+                    isPushingClay={pushingId === c.id}
                   />
                 ))}
               </div>
@@ -310,14 +456,29 @@ function EmptyState({ bucket, hasApproved }: { bucket: Bucket; hasApproved: bool
 
 function ContactCard({
   c,
-  onPush,
-  isPushing
+  bucket,
+  onPushClay,
+  onApprove,
+  onReject,
+  onPushLemlist,
+  onRetryLemlist,
+  onDiscard,
+  isActing,
+  isPushingClay,
 }: {
   c: Contact;
-  onPush: (id: string) => void | Promise<void>;
-  isPushing: boolean;
+  bucket: Bucket;
+  onPushClay: (id: string) => void | Promise<void>;
+  onApprove: (id: string) => void | Promise<void>;
+  onReject: (id: string) => void | Promise<void>;
+  onPushLemlist: (id: string) => void | Promise<void>;
+  onRetryLemlist: (id: string) => void | Promise<void>;
+  onDiscard: (id: string) => void | Promise<void>;
+  isActing: boolean;
+  isPushingClay: boolean;
 }) {
-  const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
+  const fullName =
+    [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
   const scoreClass =
     c.fit_score === null
       ? "bg-[#F1EEF7] text-ink-muted"
@@ -326,7 +487,14 @@ function ContactCard({
       : c.fit_score >= 5
       ? "bg-warning-bg text-warning-fg"
       : "bg-danger-bg text-danger-fg";
-  const canPush = c.prefilter_result === "yes" && !c.clay_pushed_at;
+
+  const canPushClay = c.prefilter_result === "yes" && !c.clay_pushed_at;
+  const canApprove =
+    bucket === "manual_review" && !c.human_decision;
+  const inLemlist = !!(c.lemlist_lead_id || c.lemlist_pushed_at);
+  const inHubspot = !!(c.hubspot_contact_id || c.hubspot_synced_at);
+  const hasLemlistError = !!c.lemlist_push_error && !inLemlist;
+
   return (
     <div className="card flex flex-col gap-3">
       <div className="flex items-start justify-between gap-3">
@@ -340,10 +508,35 @@ function ContactCard({
               <span className="badge bg-danger-bg text-danger-fg">pre-filter ✗</span>
             )}
             {c.clay_pushed_at && (
-              <span className="badge bg-success-bg text-success-fg">en Clay ✓</span>
+              <span className="badge bg-success-bg text-success-fg">Clay ✓</span>
             )}
             {c.fit_score !== null && (
               <span className={`badge ${scoreClass}`}>score {c.fit_score}/10</span>
+            )}
+            {c.fit && (
+              <span
+                className={`badge ${
+                  c.fit === "high"
+                    ? "bg-success-bg text-success-fg"
+                    : c.fit === "medium"
+                    ? "bg-warning-bg text-warning-fg"
+                    : "bg-danger-bg text-danger-fg"
+                }`}
+              >
+                {c.fit}
+              </span>
+            )}
+            {inLemlist && (
+              <span className="badge bg-[#E8F4FF] text-[#0066CC]">Lemlist ✓</span>
+            )}
+            {inHubspot && (
+              <span className="badge bg-[#FFF0E5] text-[#E85D00]">HubSpot ✓</span>
+            )}
+            {c.human_decision === "approved" && (
+              <span className="badge bg-success-bg text-success-fg">aprobado</span>
+            )}
+            {c.human_decision === "rejected" && (
+              <span className="badge bg-danger-bg text-danger-fg">rechazado</span>
             )}
           </div>
           <div className="text-xs text-ink-muted mt-1">
@@ -372,7 +565,9 @@ function ContactCard({
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
             <div className="label mb-1">Email</div>
-            <div className="truncate">{c.email || <span className="text-ink-subtle">—</span>}</div>
+            <div className="truncate">
+              {c.email || <span className="text-ink-subtle">—</span>}
+            </div>
           </div>
           <div>
             <div className="label mb-1">Teléfono</div>
@@ -390,14 +585,20 @@ function ContactCard({
 
       {c.linkedin_icebreaker && (
         <details className="text-xs text-ink-muted">
-          <summary className="cursor-pointer hover:text-ink">Icebreaker LinkedIn</summary>
+          <summary className="cursor-pointer hover:text-ink">
+            <IconEye size={12} className="inline mr-1" />
+            Icebreaker LinkedIn
+          </summary>
           <p className="mt-2 text-ink/90 text-sm">{c.linkedin_icebreaker}</p>
         </details>
       )}
 
       {c.email_subject && c.email_body && (
         <details className="text-xs text-ink-muted">
-          <summary className="cursor-pointer hover:text-ink">Email generado</summary>
+          <summary className="cursor-pointer hover:text-ink">
+            <IconEye size={12} className="inline mr-1" />
+            Email generado
+          </summary>
           <div className="mt-2 text-sm">
             <div className="font-medium">{c.email_subject}</div>
             <p className="text-ink/90 whitespace-pre-line mt-1">{c.email_body}</p>
@@ -408,22 +609,100 @@ function ContactCard({
       {c.clay_push_error && (
         <div className="text-xs text-danger-fg flex items-start gap-2">
           <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
-          <span className="break-words">{c.clay_push_error}</span>
+          <span className="break-words">Clay: {c.clay_push_error}</span>
         </div>
       )}
 
-      {canPush && (
-        <div className="flex justify-end">
+      {hasLemlistError && (
+        <div className="text-xs text-danger-fg flex items-start gap-2">
+          <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span className="break-words">Lemlist: {c.lemlist_push_error}</span>
+        </div>
+      )}
+
+      {c.hubspot_sync_error && !inHubspot && (
+        <div className="text-xs text-danger-fg flex items-start gap-2">
+          <IconAlertCircle size={14} className="shrink-0 mt-0.5" />
+          <span className="break-words">HubSpot: {c.hubspot_sync_error}</span>
+        </div>
+      )}
+
+      {/* Acciones */}
+      <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-[#F1EEF7]">
+        {/* Bucket pending: push a Clay */}
+        {canPushClay && (
           <button
-            onClick={() => onPush(c.id)}
-            disabled={isPushing}
+            onClick={() => onPushClay(c.id)}
+            disabled={isPushingClay || isActing}
             className="btn-primary text-xs"
           >
             <IconSend size={12} />
-            {isPushing ? "Empujando…" : "Prospectar en Clay"}
+            {isPushingClay ? "Empujando…" : "Prospectar en Clay"}
           </button>
-        </div>
-      )}
+        )}
+
+        {/* Bucket manual_review: aprobar / rechazar */}
+        {canApprove && (
+          <>
+            <button
+              onClick={() => onApprove(c.id)}
+              disabled={isActing}
+              className="btn-primary text-xs"
+              title="Aprobar y enviar a Lemlist"
+            >
+              <IconThumbUp size={12} />
+              {isActing ? "Procesando…" : "Aprobar"}
+            </button>
+            <button
+              onClick={() => onReject(c.id)}
+              disabled={isActing}
+              className="btn-secondary text-xs"
+              title="Rechazar"
+            >
+              <IconThumbDown size={12} />
+              Rechazar
+            </button>
+          </>
+        )}
+
+        {/* Aprobado pero sin Lemlist → push manual */}
+        {c.human_decision === "approved" && !inLemlist && !hasLemlistError && (
+          <button
+            onClick={() => onPushLemlist(c.id)}
+            disabled={isActing}
+            className="btn-primary text-xs"
+          >
+            <IconSend size={12} />
+            {isActing ? "Enviando…" : "Enviar a Lemlist"}
+          </button>
+        )}
+
+        {/* Error de Lemlist → retry */}
+        {hasLemlistError && (
+          <button
+            onClick={() => onRetryLemlist(c.id)}
+            disabled={isActing}
+            className="btn-secondary text-xs"
+            title="Reintentar push a Lemlist"
+          >
+            <IconRotate size={12} />
+            {isActing ? "Reintentando…" : "Reintentar Lemlist"}
+          </button>
+        )}
+
+        {/* Descartar (en buckets que no sean discarded) */}
+        {bucket !== "discarded" && !c.human_decision && (
+          <button
+            onClick={() => onDiscard(c.id)}
+            disabled={isActing}
+            className="btn-secondary text-xs text-danger-fg"
+            title="Descartar contacto"
+          >
+            <IconX size={12} />
+            Descartar
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -431,7 +710,7 @@ function ContactCard({
 function ImportPanel({
   companies,
   onClose,
-  onDone
+  onDone,
 }: {
   companies: Company[];
   onClose: () => void;
@@ -441,7 +720,12 @@ function ImportPanel({
   const [json, setJson] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ inserted: number; yes: number; no: number; skipped: number } | null>(null);
+  const [result, setResult] = useState<{
+    inserted: number;
+    yes: number;
+    no: number;
+    skipped: number;
+  } | null>(null);
 
   async function run() {
     setBusy(true);
@@ -464,7 +748,7 @@ function ImportPanel({
     const res = await fetch("/api/contacts/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_id: companyId, contacts: arr })
+      body: JSON.stringify({ company_id: companyId, contacts: arr }),
     });
     const data = await res.json();
     setBusy(false);
@@ -507,7 +791,9 @@ function ImportPanel({
             </select>
           </div>
           <div>
-            <div className="label mb-1">JSON de contactos (de Clay "Find people at company")</div>
+            <div className="label mb-1">
+              JSON de contactos (de Clay "Find people at company")
+            </div>
             <textarea
               className="input min-h-[180px] font-mono text-xs"
               placeholder='[{"first_name":"Tom","last_name":"Wiand","job_title":"Owner","linkedin_url":"https://...","linkedin_headline":"...","email":"tom@wiand.com"}]'
@@ -521,7 +807,11 @@ function ImportPanel({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={run} disabled={busy || !companyId || !json.trim()} className="btn-primary">
+            <button
+              onClick={run}
+              disabled={busy || !companyId || !json.trim()}
+              className="btn-primary"
+            >
               <IconUpload size={14} /> {busy ? "Procesando…" : "Procesar (corre pre-filter)"}
             </button>
             {result && (
