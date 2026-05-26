@@ -7,10 +7,9 @@ import {
   IconLayoutDashboard,
   IconBuildingFactory2,
   IconUsers,
-  IconClipboardList,
   IconMail,
-  IconBrandLinkedin,
   IconPhone,
+  IconPhoneCall,
   IconMessage2,
   IconChartFunnel,
   IconReportAnalytics,
@@ -42,14 +41,14 @@ const SECTIONS: Section[] = [
   {
     label: "Outreach",
     items: [
-      { href: "/campanas", label: "Campañas email", icon: IconMail },
-      { href: "/linkedin", label: "LinkedIn",       icon: IconBrandLinkedin }
+      { href: "/campanas", label: "Campañas email", icon: IconMail }
     ]
   },
   {
     label: "SDR",
     items: [
-      { href: "/llamadas",   label: "Llamadas",   icon: IconPhone },
+      { href: "/telefonos",  label: "Teléfonos",  icon: IconPhone },
+      { href: "/llamadas",   label: "Llamadas",   icon: IconPhoneCall },
       { href: "/respuestas", label: "Respuestas", icon: IconMessage2 }
     ]
   },
