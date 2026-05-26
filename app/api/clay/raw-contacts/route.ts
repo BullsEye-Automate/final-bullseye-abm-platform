@@ -7,17 +7,24 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 // Webhook entrante de Clay con contactos crudos de "Find people at company".
-// Formatos aceptados:
-//   1) Un solo contacto:
-//      { bullseye_company_id, first_name, last_name, job_title, ... }
-//      o { company_table_data: { bullseye_company_id, ... }, first_name, ... }
-//   2) Lote para una empresa:
-//      { bullseye_company_id, contacts: [ {first_name,...}, ... ] }
-//      o { bullseye_company_id, people: [...] }
-//   3) Lote mixto (cada item con su propio bullseye_company_id):
-//      [ { bullseye_company_id, ... }, { bullseye_company_id, ... } ]
-// El id de empresa se busca primero en bullseye_company_id (flat). Si no está,
-// se intenta extraer de company_table_data.bullseye_company_id (objeto o JSON string).
+//
+// Formatos aceptados para bullseye_company_id:
+//   A) Campo directo (recomendado — configurar en Clay así):
+//      { "bullseye_company_id": "uuid", "first_name": "...", ... }
+//
+//   B) Dentro de company_table_data como objeto:
+//      { "company_table_data": { "Bullseye Company Id": "uuid" }, ... }
+//
+//   C) Dentro de company_table_data como JSON string (Clay a veces serializa así):
+//      { "company_table_data": "{\"Bullseye Company Id\":\"uuid\"}", ... }
+//
+//   D) String truncado o malformado — se extrae con regex como último recurso.
+//
+// Para usar la opción A desde Clay: en el body del HTTP API action añadir un campo
+//   bullseye_company_id  =  {{Company Table Data.Bullseye Company Id}}
+// Esto chipea solo el sub-campo y evita enviar el objeto completo.
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type IncomingContact = RawContact & {
   bullseye_company_id?: string;
@@ -25,57 +32,90 @@ type IncomingContact = RawContact & {
   "Company Table Data"?: any;
 };
 
-// Clay serializa los sub-campos de "Company Table Data" usando el display name
-// (ej. "Bullseye Company Id") en vez del internal name (bullseye_company_id).
-// Esta búsqueda normaliza keys ignorando espacios, underscores y mayúsculas.
-function pickBullseyeCompanyId(obj: Record<string, any>): string {
+// Busca bullseye_company_id en un objeto ya parseado.
+// Paso 1: match exacto (ignora espacios, underscores y mayúsculas).
+// Paso 2: cualquier key que contenga "company" e "id" y cuyo valor sea un UUID.
+function pickCompanyIdFromObject(obj: Record<string, any>): string {
+  // Paso 1 — match exacto "bullseyecompanyid"
   for (const [k, v] of Object.entries(obj)) {
-    if (k.replace(/[\s_]/g, "").toLowerCase() === "bullseyecompanyid") {
+    if (k.replace(/[\s_-]/g, "").toLowerCase() === "bullseyecompanyid") {
       const s = (v ?? "").toString().trim();
-      if (s) return s;
+      if (s && UUID_RE.test(s)) return s;
     }
   }
+  // Paso 2 — cualquier key con "company" + "id" y valor UUID
+  for (const [k, v] of Object.entries(obj)) {
+    const norm = k.replace(/[\s_-]/g, "").toLowerCase();
+    if (norm.includes("company") && norm.includes("id")) {
+      const s = (v ?? "").toString().trim();
+      if (s && UUID_RE.test(s)) return s;
+    }
+  }
+  return "";
+}
+
+// Extrae bullseye_company_id de un string (JSON o malformado) usando tres estrategias.
+function pickCompanyIdFromString(text: string): string {
+  // Estrategia 1: JSON.parse + búsqueda en objeto
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === "object") {
+      const fromObj = pickCompanyIdFromObject(parsed);
+      if (fromObj) return fromObj;
+    }
+  } catch { /* continuar */ }
+
+  // Estrategia 2: regex sobre el texto crudo (funciona con JSON truncado o malformado)
+  const patterns = [
+    /bullseye_company_id["'\s:]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+    /Bullseye\s+Company\s+Id["'\s:]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+    /company[_\s-]?id["'\s:]+([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m) return m[1];
+  }
+
   return "";
 }
 
 function extractCompanyId(item: IncomingContact): string {
+  // A) campo directo bullseye_company_id
   const direct = (item.bullseye_company_id ?? "").toString().trim();
-  if (direct) return direct;
+  if (direct && UUID_RE.test(direct)) return direct;
+
+  // B/C/D) company_table_data como objeto o string
   const ctd = item.company_table_data ?? item["Company Table Data"];
   if (ctd && typeof ctd === "object") {
-    const fromObj = pickBullseyeCompanyId(ctd);
+    const fromObj = pickCompanyIdFromObject(ctd as Record<string, any>);
     if (fromObj) return fromObj;
-  }
-  if (typeof ctd === "string") {
-    try {
-      const parsed = JSON.parse(ctd);
-      if (parsed && typeof parsed === "object") {
-        const fromStr = pickBullseyeCompanyId(parsed);
+    // Si el objeto tiene valores string, buscar en ellos también
+    for (const v of Object.values(ctd as Record<string, any>)) {
+      if (typeof v === "string") {
+        const fromStr = pickCompanyIdFromString(v);
         if (fromStr) return fromStr;
       }
-    } catch {
-      // ignore
     }
   }
+  if (typeof ctd === "string" && ctd.trim()) {
+    const fromStr = pickCompanyIdFromString(ctd);
+    if (fromStr) return fromStr;
+  }
+
   return "";
 }
 
-// Intenta extraer bullseye_company_id de un string mal formateado usando regex.
-function regexCompanyId(text: string): string {
-  const m = text.match(/bullseye_company_id["':\s]+([a-f0-9-]{36})/i)
-    ?? text.match(/Bullseye Company Id["':\s]+([a-f0-9-]{36})/i);
-  return m ? m[1] : "";
-}
-
-// Parsea el body HTTP: intenta JSON.parse(); si falla intenta extraer
-// solo el bullseye_company_id con regex para devolver un error descriptivo.
-async function parseBody(req: NextRequest): Promise<{ ok: true; body: any } | { ok: false; error: string; companyId: string }> {
+// Parsea el body HTTP: intenta JSON.parse(); si falla extrae bullseye_company_id
+// con regex para devolver un error descriptivo en lugar de un 500 genérico.
+async function parseBody(
+  req: NextRequest
+): Promise<{ ok: true; body: any } | { ok: false; error: string; companyId: string }> {
   const text = await req.text().catch(() => "");
   if (!text) return { ok: false, error: "Empty body", companyId: "" };
   try {
     return { ok: true, body: JSON.parse(text) };
   } catch (e) {
-    const companyId = regexCompanyId(text);
+    const companyId = pickCompanyIdFromString(text);
     return {
       ok: false,
       error: `Invalid JSON body: ${(e as Error).message}`,
@@ -100,16 +140,18 @@ function normalize(body: any): IncomingContact[] {
   if (Array.isArray(body.contacts)) {
     return (body.contacts as RawContact[]).map((c) => ({
       ...c,
-      bullseye_company_id: body.bullseye_company_id ?? (c as any).bullseye_company_id
+      bullseye_company_id: body.bullseye_company_id ?? (c as any).bullseye_company_id,
+      company_table_data: body.company_table_data ?? (c as any).company_table_data,
     }));
   }
   if (Array.isArray(body.people)) {
     return (body.people as RawContact[]).map((c) => ({
       ...c,
-      bullseye_company_id: body.bullseye_company_id ?? (c as any).bullseye_company_id
+      bullseye_company_id: body.bullseye_company_id ?? (c as any).bullseye_company_id,
+      company_table_data: body.company_table_data ?? (c as any).company_table_data,
     }));
   }
-  // single contact
+  // contacto único
   return [body as IncomingContact];
 }
 
@@ -119,12 +161,15 @@ export async function POST(req: NextRequest) {
 
   const parsed = await parseBody(req);
   if (!parsed.ok) {
-    return NextResponse.json({
-      error: parsed.error,
-      hint: parsed.companyId
-        ? `Detected bullseye_company_id=${parsed.companyId} via regex but could not parse contacts`
-        : "Could not extract any data from body"
-    }, { status: 400 });
+    return NextResponse.json(
+      {
+        error: parsed.error,
+        hint: parsed.companyId
+          ? `Detected bullseye_company_id=${parsed.companyId} via regex but could not parse contacts`
+          : "Could not extract any data from body",
+      },
+      { status: 400 }
+    );
   }
   const body = parsed.body;
 
@@ -172,7 +217,7 @@ export async function POST(req: NextRequest) {
   if (noCompany.length > 0) {
     errors.push({
       bullseye_company_id: "",
-      error: `${noCompany.length} contact(s) sin bullseye_company_id — no se persistieron`
+      error: `${noCompany.length} contact(s) sin bullseye_company_id — no se persistieron`,
     });
   }
 
