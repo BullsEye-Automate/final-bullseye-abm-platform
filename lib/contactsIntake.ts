@@ -22,8 +22,15 @@ export type IntakeSummary = {
   skipped: number;
 };
 
+export type PushDetail = {
+  contact_id: string;
+  result: string;
+  skipped?: string;
+  error?: string;
+};
+
 export type IntakeResult =
-  | { ok: true; summary: IntakeSummary }
+  | { ok: true; summary: IntakeSummary; pushDetails: PushDetail[] }
   | { ok: false; status: number; error: string };
 
 export async function intakeContactsForCompany(
@@ -93,7 +100,7 @@ export async function intakeContactsForCompany(
     });
   }
 
-  if (rows.length === 0) return { ok: true, summary };
+  if (rows.length === 0) return { ok: true, summary, pushDetails: [] };
 
   const { data: inserted, error: insertErr } = await db
     .from("contacts")
@@ -104,18 +111,22 @@ export async function intakeContactsForCompany(
   summary.inserted = rows.length;
 
   // Auto-push a Clay: contactos con prefilter_result = 'yes' recién insertados.
-  // Fire-and-forget: un fallo de push no revierte el intake.
   const yesList = (inserted ?? []).filter((r) => r.prefilter_result === "yes");
-  console.log(`[intake] inserted=${rows.length} yes=${yesList.length} no=${rows.length - yesList.length} companyId=${companyId}`);
-  await Promise.all(
-    yesList.map((r) =>
-      pushContactToClay(db, r.id).then((res) => {
-        console.log(`[intake] pushContactToClay id=${r.id} result=`, JSON.stringify(res));
-      }).catch((err) => {
-        console.error(`[intake] pushContactToClay id=${r.id} EXCEPTION:`, err);
-      })
-    )
+  const pushResults = await Promise.all(
+    yesList.map((r) => pushContactToClay(db, r.id).catch((err) => ({
+      ok: false as const,
+      contact_id: r.id,
+      status: 500,
+      error: String(err?.message ?? err),
+    })))
   );
 
-  return { ok: true, summary };
+  const pushDetails: PushDetail[] = pushResults.map((res) => ({
+    contact_id: res.contact_id,
+    result: res.ok ? "pushed" : "failed",
+    skipped: !res.ok ? (res as any).skipped : undefined,
+    error:   !res.ok ? res.error : undefined,
+  }));
+
+  return { ok: true, summary, pushDetails };
 }
