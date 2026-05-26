@@ -20,7 +20,8 @@ import {
   IconChevronDown,
   IconCheck,
   IconPlus,
-  IconAdjustments
+  IconAdjustments,
+  IconMapSearch
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -33,7 +34,8 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/dashboard",       label: "Dashboard",       icon: IconLayoutDashboard },
       { href: "/empresas",        label: "Empresas",        icon: IconBuildingFactory2 },
-      { href: "/contactos",       label: "Contactos",       icon: IconUsers }
+      { href: "/contactos",       label: "Contactos",       icon: IconUsers },
+      { href: "/sales-navigator", label: "Sales Navigator", icon: IconMapSearch }
     ]
   },
   {

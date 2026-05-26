@@ -399,76 +399,247 @@ export default function EmpresasPage() {
 
       <section className="card">
         <h2 className="font-semibold mb-3 flex items-center gap-2">
-          <IconSparkles size={18} className="text-brand" /> Recomendar empresas
+          <IconSparkles size={18} className="text-brand" /> Agregar empresas
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-          <Field label="Región">
-            <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
-              {REGIONS.map((r) => (
-                <option key={r.value} value={r.value}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Tamaño objetivo">
-            <select
-              className="input"
-              value={sizeMode}
-              onChange={(e) => setSizeMode(e.target.value)}
+
+        {/* Tabs de modo */}
+        <div className="flex gap-2 mb-4">
+          {(
+            [
+              { key: "recommend",  label: "Recomendación IA",  icon: IconSparkles },
+              { key: "search_one", label: "Buscar empresa",    icon: IconSearch   },
+              { key: "import_csv", label: "Importar CSV",      icon: IconUpload   }
+            ] as const
+          ).map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setDiscoveryMode(key)}
+              className={`btn text-xs ${
+                discoveryMode === key
+                  ? "bg-brand text-white"
+                  : "bg-white border border-[#E5E2F0] text-ink hover:border-brand-soft"
+              }`}
             >
-              {icpSizeOpts.map((opt) => (
-                <option key={opt} value={opt}>{opt} empleados</option>
-              ))}
-              <option value="any">Cualquier tamaño</option>
-              <option value="custom">Rango personalizado…</option>
-            </select>
-            {sizeMode === "custom" && (
-              <div className="flex gap-2 mt-2">
+              <Icon size={14} /> {label}
+            </button>
+          ))}
+        </div>
+
+        {/* Modo: Recomendación IA */}
+        {discoveryMode === "recommend" && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+              <Field label="Región">
+                <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
+                  {REGIONS.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Tamaño objetivo">
+                <select
+                  className="input"
+                  value={sizeMode}
+                  onChange={(e) => setSizeMode(e.target.value)}
+                >
+                  {icpSizeOpts.map((opt) => (
+                    <option key={opt} value={opt}>{opt} empleados</option>
+                  ))}
+                  <option value="any">Cualquier tamaño</option>
+                  <option value="custom">Rango personalizado…</option>
+                </select>
+                {sizeMode === "custom" && (
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      type="number"
+                      min={1}
+                      className="input flex-1"
+                      placeholder="Mín. empleados"
+                      value={customMin}
+                      onChange={(e) => setCustomMin(e.target.value)}
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      className="input flex-1"
+                      placeholder="Máx. empleados"
+                      value={customMax}
+                      onChange={(e) => setCustomMax(e.target.value)}
+                    />
+                  </div>
+                )}
+              </Field>
+              <Field label="Máximo de empresas">
                 <input
                   type="number"
                   min={1}
-                  className="input flex-1"
-                  placeholder="Mín. empleados"
-                  value={customMin}
-                  onChange={(e) => setCustomMin(e.target.value)}
+                  max={15}
+                  className="input"
+                  value={limit}
+                  onChange={(e) => setLimit(Number(e.target.value))}
                 />
-                <input
-                  type="number"
-                  min={1}
-                  className="input flex-1"
-                  placeholder="Máx. empleados"
-                  value={customMax}
-                  onChange={(e) => setCustomMax(e.target.value)}
-                />
+              </Field>
+              <div>
+                <button onClick={discover} disabled={discovering} className="btn-primary w-full">
+                  <IconSparkles size={16} /> {discovering ? "Investigando…" : "Buscar nuevas empresas"}
+                </button>
+              </div>
+            </div>
+            {lastRun && (
+              <div className="mt-3 text-sm text-success-fg flex items-center gap-2">
+                <IconCheck size={14} /> {lastRun.inserted} nuevas insertadas
+                {lastRun.skipped > 0 && ` · ${lastRun.skipped} duplicadas omitidas`}
               </div>
             )}
-          </Field>
-          <Field label="Máximo de empresas">
-            <input
-              type="number"
-              min={1}
-              max={15}
-              className="input"
-              value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-            />
-          </Field>
-          <div>
-            <button onClick={discover} disabled={discovering} className="btn-primary w-full">
-              <IconSparkles size={16} /> {discovering ? "Investigando…" : "Buscar nuevas empresas"}
+            {error && (
+              <div className="mt-3 text-sm text-danger-fg flex items-center gap-2">
+                <IconAlertCircle size={14} /> {error}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Modo: Buscar empresa individual */}
+        {discoveryMode === "search_one" && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Field label="Nombre de la empresa">
+                <input
+                  className="input"
+                  placeholder="Nombre de la empresa..."
+                  value={searchName}
+                  onChange={(e) => setSearchName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") searchOne(); }}
+                />
+              </Field>
+              <Field label="LinkedIn URL (opcional)">
+                <input
+                  className="input"
+                  placeholder="https://linkedin.com/company/..."
+                  value={searchLinkedin}
+                  onChange={(e) => setSearchLinkedin(e.target.value)}
+                />
+              </Field>
+            </div>
+            <button
+              onClick={searchOne}
+              disabled={searchingOne || !searchName.trim()}
+              className="btn-primary"
+            >
+              {searchingOne ? (
+                <><IconLoader2 size={15} className="animate-spin" /> Investigando…</>
+              ) : (
+                <><IconSearch size={15} /> Investigar empresa</>
+              )}
             </button>
-          </div>
-        </div>
-        {lastRun && (
-          <div className="mt-3 text-sm text-success-fg flex items-center gap-2">
-            <IconCheck size={14} /> {lastRun.inserted} nuevas insertadas
-            {lastRun.skipped > 0 && ` · ${lastRun.skipped} duplicadas omitidas`}
+            {searchOneResult && (
+              <div
+                className={`flex items-center gap-2 text-sm rounded-lg px-3 py-2 ${
+                  searchOneResult.startsWith("ok:")
+                    ? "bg-success-bg text-success-fg"
+                    : searchOneResult.startsWith("exists:")
+                    ? "bg-warning-bg text-warning-fg"
+                    : "bg-danger-bg text-danger-fg"
+                }`}
+              >
+                {searchOneResult.startsWith("ok:") && (
+                  <><IconCheck size={14} /> ✓ {searchOneResult.slice(3)} agregada como pendiente</>
+                )}
+                {searchOneResult.startsWith("exists:") && (
+                  <><IconAlertCircle size={14} /> Ya existe en la base</>
+                )}
+                {searchOneResult.startsWith("error:") && (
+                  <><IconAlertCircle size={14} /> {searchOneResult.slice(6)}</>
+                )}
+              </div>
+            )}
           </div>
         )}
-        {error && (
-          <div className="mt-3 text-sm text-danger-fg flex items-center gap-2">
-            <IconAlertCircle size={14} /> {error}
+
+        {/* Modo: Importar CSV */}
+        {discoveryMode === "import_csv" && (
+          <div className="space-y-3">
+            <p className="text-sm text-ink-muted">
+              CSV con columnas: <code className="bg-[#F4F2FB] px-1 rounded">name</code>,{" "}
+              <code className="bg-[#F4F2FB] px-1 rounded">linkedin_url</code> (opcional),{" "}
+              <code className="bg-[#F4F2FB] px-1 rounded">website</code> (opcional),{" "}
+              <code className="bg-[#F4F2FB] px-1 rounded">city</code>,{" "}
+              <code className="bg-[#F4F2FB] px-1 rounded">country</code>
+            </p>
+            <input
+              type="file"
+              accept=".csv"
+              className="input"
+              onChange={(e) => {
+                const f = e.target.files?.[0] ?? null;
+                setCsvFile(f);
+                setCsvRows([]);
+                setCsvSummary(null);
+                setCsvProgress(0);
+                if (f) parseCsv(f);
+              }}
+            />
+            {csvRows.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs text-ink-muted">{csvRows.length} filas detectadas</div>
+                <div className="rounded-lg border border-[#E5E2F0] overflow-hidden text-xs">
+                  <table className="w-full">
+                    <thead className="bg-[#F4F2FB]">
+                      <tr>
+                        {Object.keys(csvRows[0]).map((h) => (
+                          <th key={h} className="px-3 py-2 text-left font-medium text-ink-muted">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvRows.slice(0, 5).map((row, i) => (
+                        <tr key={i} className="border-t border-[#E5E2F0]">
+                          {Object.values(row).map((v, j) => (
+                            <td key={j} className="px-3 py-2 text-ink/80 truncate max-w-[140px]">{v}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {csvRows.length > 5 && (
+                    <div className="px-3 py-2 text-ink-muted bg-[#F9F8FD] border-t border-[#E5E2F0]">
+                      +{csvRows.length - 5} filas más…
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={importCsv}
+                  disabled={csvImporting}
+                  className="btn-primary"
+                >
+                  {csvImporting ? (
+                    <><IconLoader2 size={15} className="animate-spin" /> Importando {csvProgress}/{csvRows.length}…</>
+                  ) : (
+                    <><IconUpload size={15} /> Importar e investigar ({csvRows.length})</>
+                  )}
+                </button>
+                {csvImporting && (
+                  <div className="w-full bg-[#E5E2F0] rounded-full h-1.5">
+                    <div
+                      className="bg-brand h-1.5 rounded-full transition-all"
+                      style={{ width: `${(csvProgress / csvRows.length) * 100}%` }}
+                    />
+                  </div>
+                )}
+                {csvSummary && (
+                  <div className="flex items-center gap-2 text-sm bg-success-bg text-success-fg rounded-lg px-3 py-2">
+                    <IconCheck size={14} />
+                    {csvSummary.ok} empresas importadas
+                    {csvSummary.errors > 0 && ` · ${csvSummary.errors} con error`}
+                  </div>
+                )}
+              </div>
+            )}
+            {csvFile && csvRows.length === 0 && (
+              <div className="text-sm text-danger-fg">No se encontraron filas válidas en el CSV.</div>
+            )}
           </div>
         )}
       </section>
@@ -521,6 +692,21 @@ export default function EmpresasPage() {
               )}
             </button>
           )}
+          {tab === "pending" && statusCounts.pending > 0 && selectedIds.size === 0 && (
+            <button
+              onClick={bulkApprove}
+              disabled={bulkApproving}
+              className="btn-primary"
+              style={{ background: "#251762" }}
+              title="Aprueba todas las empresas pendientes del cliente actual"
+            >
+              {bulkApproving ? (
+                <><IconLoader2 size={14} className="animate-spin" /> Aprobando…</>
+              ) : (
+                <><IconCheck size={14} /> Aprobar todas ({statusCounts.pending})</>
+              )}
+            </button>
+          )}
           {tab === "approved" && unpushedCount > 0 && (
             <button
               onClick={pushAllToClay}
@@ -545,6 +731,13 @@ export default function EmpresasPage() {
             {bulkResult.pushed} de {bulkResult.total} empresas empujadas a Clay
             {bulkResult.errors > 0 && ` · ${bulkResult.errors} con error`}
           </span>
+        </div>
+      )}
+
+      {bulkApproveResult && (
+        <div className="card text-sm flex items-center gap-3">
+          <IconCheck size={16} className="text-success-fg" />
+          <span>{bulkApproveResult.approved} empresas aprobadas</span>
         </div>
       )}
 
@@ -631,6 +824,17 @@ function CompanyCard({
     try { return JSON.parse(c.deep_research) as DeepResearch; } catch { return null; }
   });
 
+  // Edición inline de tamaño de empresa
+  const [editingSize, setEditingSize]   = useState(false);
+  const [sizeValue, setSizeValue]       = useState(c.company_size?.toString() ?? "");
+  const [companySize, setCompanySize]   = useState<number | null>(c.company_size);
+  const [savingSize, setSavingSize]     = useState(false);
+
+  // Re-verificar con IA
+  const [reverifying, setReverifying]   = useState(false);
+  const [reverifyFlash, setReverifyFlash] = useState(false);
+  const [localCompany, setLocalCompany] = useState<Company>(c);
+
   const isEnriching = enriching || !!externalEnriching;
 
   async function enrichSelf(): Promise<void> {
@@ -650,6 +854,38 @@ function CompanyCard({
       setEnrichError(e instanceof Error ? e.message : "Error de red");
     }
     setEnriching(false);
+  }
+
+  async function saveSize() {
+    const newSize = parseInt(sizeValue);
+    if (isNaN(newSize) || newSize < 1) { setEditingSize(false); return; }
+    setSavingSize(true);
+    try {
+      const res = await fetch(`/api/companies/${c.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company_size: newSize })
+      });
+      if (res.ok) {
+        setCompanySize(newSize);
+        setEditingSize(false);
+      }
+    } catch { /* silencia */ }
+    setSavingSize(false);
+  }
+
+  async function reVerify() {
+    setReverifying(true);
+    try {
+      const res  = await fetch(`/api/companies/${c.id}/re-verify`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.company) {
+        setLocalCompany(data.company as Company);
+        setReverifyFlash(true);
+        setTimeout(() => setReverifyFlash(false), 2000);
+      }
+    } catch { /* silencia */ }
+    setReverifying(false);
   }
 
   async function decide(decision: "approved" | "rejected", reasonArg?: string) {
@@ -744,10 +980,55 @@ function CompanyCard({
               )}
             </div>
             <div className="text-xs text-ink-muted mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-              {c.company_type && c.company_type !== "other" && <span>{labelType(c.company_type)}</span>}
-              {c.company_size && <span>{c.company_type !== "other" ? "· " : ""}{c.company_size} empleados</span>}
-              {(c.company_city || c.company_country) && (
-                <span>· {[c.company_city, c.company_country].filter(Boolean).join(", ")}</span>
+              {localCompany.company_type && localCompany.company_type !== "other" && <span>{labelType(localCompany.company_type)}</span>}
+              {/* Tamaño editable inline */}
+              {editingSize ? (
+                <span className="flex items-center gap-1">
+                  {localCompany.company_type !== "other" && companySize && <span>· </span>}
+                  <input
+                    autoFocus
+                    type="number"
+                    min={1}
+                    className="w-20 border border-brand-soft rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-brand-soft"
+                    value={sizeValue}
+                    onChange={(e) => setSizeValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveSize();
+                      if (e.key === "Escape") setEditingSize(false);
+                    }}
+                  />
+                  <button
+                    onClick={saveSize}
+                    disabled={savingSize}
+                    className="text-success-fg hover:text-success-fg/80"
+                    title="Guardar"
+                  >
+                    {savingSize ? <IconLoader2 size={11} className="animate-spin" /> : <IconCheck size={11} />}
+                  </button>
+                  <button
+                    onClick={() => setEditingSize(false)}
+                    className="text-ink-muted hover:text-danger-fg"
+                    title="Cancelar"
+                  >
+                    <IconX size={11} />
+                  </button>
+                </span>
+              ) : (
+                <button
+                  onClick={() => { setEditingSize(true); setSizeValue(companySize?.toString() ?? ""); }}
+                  className="inline-flex items-center gap-1 hover:text-ink group"
+                  title="Editar número de empleados"
+                >
+                  {companySize ? (
+                    <span>{localCompany.company_type !== "other" ? "· " : ""}{companySize} empleados</span>
+                  ) : (
+                    <span className="text-ink-subtle italic">N/A empleados</span>
+                  )}
+                  <IconPencil size={10} className="opacity-0 group-hover:opacity-60 transition-opacity" />
+                </button>
+              )}
+              {(localCompany.company_city || localCompany.company_country) && (
+                <span>· {[localCompany.company_city, localCompany.company_country].filter(Boolean).join(", ")}</span>
               )}
             </div>
           </div>
@@ -766,40 +1047,40 @@ function CompanyCard({
         </div>
       </div>
 
-      {c.fit_signals && (
+      {localCompany.fit_signals && (
         <div>
           <div className="label mb-1">Señales detectadas</div>
-          <div className="text-sm">{c.fit_signals}</div>
+          <div className="text-sm">{localCompany.fit_signals}</div>
         </div>
       )}
 
-      {(c.cad_software || c.scanner_technology) && (
+      {(localCompany.cad_software || localCompany.scanner_technology) && (
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
             <div className="label mb-1">CAD</div>
-            <div>{c.cad_software || <span className="text-ink-subtle">—</span>}</div>
+            <div>{localCompany.cad_software || <span className="text-ink-subtle">—</span>}</div>
           </div>
           <div>
             <div className="label mb-1">Escáner</div>
-            <div>{c.scanner_technology || <span className="text-ink-subtle">—</span>}</div>
+            <div>{localCompany.scanner_technology || <span className="text-ink-subtle">—</span>}</div>
           </div>
         </div>
       )}
 
-      {c.research_summary && (
+      {localCompany.research_summary && (
         <div>
           <div className="label mb-1">Razonamiento IA</div>
-          <p className="text-sm text-ink/90">{c.research_summary}</p>
+          <p className="text-sm text-ink/90">{localCompany.research_summary}</p>
         </div>
       )}
 
-      {c.research_sources && c.research_sources.length > 0 && !deepResearch && (
+      {localCompany.research_sources && localCompany.research_sources.length > 0 && !deepResearch && (
         <details className="text-xs text-ink-muted">
           <summary className="cursor-pointer hover:text-ink">
-            Fuentes ({c.research_sources.length})
+            Fuentes ({localCompany.research_sources.length})
           </summary>
           <ul className="mt-2 space-y-1">
-            {c.research_sources.slice(0, 8).map((s, i) => (
+            {localCompany.research_sources.slice(0, 8).map((s, i) => (
               <li key={i}>
                 <a href={s.url} target="_blank" rel="noreferrer" className="hover:text-brand truncate inline-block max-w-full">
                   {s.title || s.url}
@@ -878,7 +1159,7 @@ function CompanyCard({
         </div>
       ) : (
         /* Botón de enriquecimiento individual — cuando no hay deep_research */
-        c.status === "pending" && (
+        localCompany.status === "pending" && (
           <div className="flex flex-col gap-1">
             <button
               onClick={enrichSelf}
@@ -897,13 +1178,35 @@ function CompanyCard({
         )
       )}
 
-      {c.reject_reason && (
+      {/* Botón Re-verificar con IA */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={reVerify}
+          disabled={reverifying}
+          className="btn-secondary text-xs self-start"
+          title="Re-investiga esta empresa con los prompts de producción y actualiza sus datos"
+        >
+          {reverifying ? (
+            <IconLoader2 size={13} className="animate-spin" />
+          ) : (
+            <IconRefresh size={13} />
+          )}
+          Re-verificar con IA
+        </button>
+        {reverifyFlash && (
+          <span className="text-xs text-success-fg flex items-center gap-1">
+            <IconCheck size={12} /> Actualizado
+          </span>
+        )}
+      </div>
+
+      {localCompany.reject_reason && (
         <div className="text-xs text-danger-fg bg-danger-bg rounded-md p-2">
-          Rechazada: {c.reject_reason}
+          Rechazada: {localCompany.reject_reason}
         </div>
       )}
 
-      {c.status === "approved" && (
+      {localCompany.status === "approved" && (
         <div className="flex flex-col gap-2 pt-1 border-t border-[#EEEDFE]">
           <div className="flex items-center gap-2 pt-2">
             {clayPushedAt ? (
@@ -975,7 +1278,7 @@ function CompanyCard({
         </div>
       )}
 
-      {c.status === "pending" && (
+      {localCompany.status === "pending" && (
         <div className="flex items-center gap-2 pt-1">
           <button
             onClick={() => decide("approved")}
