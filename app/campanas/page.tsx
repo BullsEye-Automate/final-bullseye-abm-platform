@@ -1,25 +1,24 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useClient } from "@/lib/clientContext";
 import {
   IconMail,
-  IconAlertCircle,
+  IconBrandLinkedin,
+  IconSearch,
   IconRefresh,
   IconSend,
-  IconCheck,
   IconLoader2,
-  IconBrandLinkedin,
-  IconUsers,
-  IconMailOpened,
-  IconMailFast,
-  IconAlertTriangle,
-  IconSquare,
-  IconSquareCheck
+  IconAlertCircle,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconExternalLink,
+  IconCheck,
+  IconX,
+  IconFilter,
 } from "@tabler/icons-react";
-import Link from "next/link";
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+// ─── Tipos ───────────────────────────────────────────────────────────────────
 
 type CampaignStats = {
   total: number;
@@ -37,640 +36,631 @@ type Campaign = {
   isStarted: boolean;
 };
 
+type LeadState = "active" | "paused" | "replied" | "bounced" | "unsubscribed" | "finished";
+
+type Lead = {
+  _id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  companyName?: string;
+  jobTitle?: string;
+  linkedinUrl?: string;
+  isPaused: boolean;
+  isFinished: boolean;
+  completed?: string | null;
+  addedAt?: string;
+};
+
 type PendingContact = {
   id: string;
   first_name: string | null;
   last_name: string | null;
   job_title: string | null;
   email: string | null;
-  company_id: string;
   company_name?: string;
 };
 
-type LeadStatus =
-  | "replied"
-  | "bounced"
-  | "clicked"
-  | "opened"
-  | "unsubscribed"
-  | "active";
-
-type CampaignLead = {
-  _id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-  companyName?: string;
-  status?: LeadStatus;
-  isPaused?: boolean;
-  isReplied?: boolean;
-  isBounced?: boolean;
-  isOpened?: boolean;
-  isClicked?: boolean;
-  isUnsubscribed?: boolean;
-};
-
-type Tab = "pending" | "in_campaign";
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function pct(num: number, denom: number): string {
-  if (!denom) return "0%";
-  return `${Math.round((num / denom) * 100)}%`;
+function deriveLeadState(lead: Lead): LeadState {
+  if (lead.isPaused) return "paused";
+  if (lead.completed === "emailReplied" || lead.completed === "linkedinReplied") return "replied";
+  if (lead.completed === "emailBounced") return "bounced";
+  if (lead.completed === "emailUnsubscribed") return "unsubscribed";
+  if (lead.isFinished) return "finished";
+  return "active";
 }
 
-function leadStatus(lead: CampaignLead): LeadStatus {
-  if (lead.isReplied)      return "replied";
-  if (lead.isBounced)      return "bounced";
-  if (lead.isClicked)      return "clicked";
-  if (lead.isOpened)       return "opened";
-  if (lead.isUnsubscribed) return "unsubscribed";
-  return lead.status ?? "active";
+function fullName(lead: Lead): string {
+  return [lead.firstName, lead.lastName].filter(Boolean).join(" ") || lead.email || "—";
 }
 
-const STATUS_LABELS: Record<LeadStatus, string> = {
-  replied:       "Respondió",
-  bounced:       "Rebotó",
-  clicked:       "Hizo clic",
-  opened:        "Abrió",
-  unsubscribed:  "Desuscrito",
-  active:        "Activo",
+function pct(num: number, den: number): string {
+  if (!den) return "0%";
+  return `${Math.round((num / den) * 100)}%`;
+}
+
+function relativeDate(iso?: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const diff = Math.round((Date.now() - d.getTime()) / 86400000);
+  if (diff === 0) return "hoy";
+  if (diff === 1) return "ayer";
+  if (diff < 30) return `hace ${diff} días`;
+  return d.toLocaleDateString("es-CL", { day: "numeric", month: "short" });
+}
+
+// ─── Sub-componentes ──────────────────────────────────────────────────────────
+
+function StatChip({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
+  return (
+    <div className="card py-3 px-4 text-center min-w-[110px]">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="text-2xl font-bold mt-0.5" style={{ color: color ?? "#1a1040" }}>{value}</div>
+      {sub && <div className="text-[11px] text-ink-muted mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+const STATE_CONFIG: Record<LeadState, { label: string; bg: string; color: string }> = {
+  active:       { label: "Activo",        bg: "#EDF9F8", color: "#0F6E56" },
+  paused:       { label: "Pausado",       bg: "#FEF3C7", color: "#92400E" },
+  replied:      { label: "Respondió",     bg: "#DCFCE7", color: "#166534" },
+  bounced:      { label: "Rebotado",      bg: "#FEE2E2", color: "#991B1B" },
+  unsubscribed: { label: "Desuscripto",   bg: "#F3F4F6", color: "#6B7280" },
+  finished:     { label: "Terminado",     bg: "#F3F4F6", color: "#374151" },
 };
 
-const STATUS_STYLES: Record<LeadStatus, string> = {
-  replied:      "bg-success-bg text-success-fg",
-  bounced:      "bg-danger-bg text-danger-fg",
-  clicked:      "bg-[rgba(98,224,216,0.15)] text-[#0F6E56]",
-  opened:       "bg-blue-50 text-blue-700",
-  unsubscribed: "bg-gray-100 text-gray-500",
-  active:       "bg-[#F1EEF7] text-ink-muted",
-};
+function StateBadge({ state }: { state: LeadState }) {
+  const c = STATE_CONFIG[state];
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full" style={{ background: c.bg, color: c.color }}>
+      {c.label}
+    </span>
+  );
+}
 
-// ─── Componente principal ─────────────────────────────────────────────────────
+function LeadCard({
+  lead,
+  campaignId,
+  onPauseToggle,
+}: {
+  lead: Lead;
+  campaignId: string;
+  onPauseToggle: (email: string, pause: boolean) => void;
+}) {
+  const [toggling, setToggling] = useState(false);
+  const state = deriveLeadState(lead);
+  const name = fullName(lead);
+  const initials = [lead.firstName?.[0], lead.lastName?.[0]].filter(Boolean).join("").toUpperCase() || "?";
+
+  async function handlePause() {
+    setToggling(true);
+    await onPauseToggle(lead.email, !lead.isPaused);
+    setToggling(false);
+  }
+
+  const hasLinkedin = Boolean(lead.linkedinUrl);
+
+  return (
+    <div className="card px-4 py-3 flex items-center gap-3 hover:bg-gray-50 transition">
+      {/* Avatar */}
+      <div
+        className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
+        style={{ background: "#251762" }}
+      >
+        {initials}
+      </div>
+
+      {/* Info principal */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold text-ink text-sm">{name}</span>
+          {lead.companyName && <span className="text-ink-muted text-sm">· {lead.companyName}</span>}
+          <StateBadge state={state} />
+        </div>
+        <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+          {lead.jobTitle && (
+            <span className="text-xs text-ink-muted">{lead.jobTitle}</span>
+          )}
+          {/* Canales */}
+          <div className="flex items-center gap-1.5">
+            <span
+              className="flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded"
+              style={{ background: "#F0F4FF", color: "#4B5563" }}
+            >
+              <IconMail size={10} /> Email
+            </span>
+            {hasLinkedin && (
+              <span
+                className="flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded"
+                style={{ background: "#EFF6FF", color: "#1D4ED8" }}
+              >
+                <IconBrandLinkedin size={10} /> LinkedIn
+              </span>
+            )}
+          </div>
+          {lead.addedAt && (
+            <span className="text-[11px] text-ink-muted">{relativeDate(lead.addedAt)}</span>
+          )}
+        </div>
+      </div>
+
+      {/* Email */}
+      {lead.email && (
+        <span className="text-xs text-ink-muted hidden md:block max-w-[180px] truncate">{lead.email}</span>
+      )}
+
+      {/* Acciones */}
+      <div className="flex items-center gap-2 shrink-0">
+        {/* LinkedIn externo */}
+        {lead.linkedinUrl && (
+          <a
+            href={lead.linkedinUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 rounded hover:bg-blue-50 transition"
+            title="Ver en LinkedIn"
+            style={{ color: "#1D4ED8" }}
+          >
+            <IconBrandLinkedin size={15} />
+          </a>
+        )}
+        {/* Ver en Lemlist */}
+        <a
+          href={`https://app.lemlist.com/campaigns/${campaignId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-1.5 rounded hover:bg-gray-100 transition text-ink-muted"
+          title="Ver en Lemlist"
+        >
+          <IconExternalLink size={14} />
+        </a>
+        {/* Pausar / Reanudar */}
+        {state !== "replied" && state !== "bounced" && state !== "unsubscribed" && state !== "finished" && (
+          <button
+            onClick={handlePause}
+            disabled={toggling}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition disabled:opacity-50"
+            style={
+              lead.isPaused
+                ? { borderColor: "#62E0D8", color: "#0F6E56", background: "#EDF9F8" }
+                : { borderColor: "#E5E2F0", color: "#6B6884", background: "white" }
+            }
+            title={lead.isPaused ? "Reanudar campaña" : "Pausar campaña"}
+          >
+            {toggling ? (
+              <IconLoader2 size={13} className="animate-spin" />
+            ) : lead.isPaused ? (
+              <IconPlayerPlay size={13} />
+            ) : (
+              <IconPlayerPause size={13} />
+            )}
+            {lead.isPaused ? "Reanudar" : "Pausar"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Página principal ─────────────────────────────────────────────────────────
+
+type FilterState = "all" | "active" | "paused" | "replied" | "bounced" | "finished";
+
+const FILTER_LABELS: Record<FilterState, string> = {
+  all:      "Todos",
+  active:   "Activos",
+  paused:   "Pausados",
+  replied:  "Respondieron",
+  bounced:  "Rebotados",
+  finished: "Terminados",
+};
 
 export default function CampanasPage() {
   const { currentClient } = useClient();
-  const [tab, setTab] = useState<Tab>("pending");
 
-  // Stats campaña
-  const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [stats, setStats] = useState<CampaignStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
-  const [statsError, setStatsError] = useState<string | null>(null);
+  const [campaign, setCampaign]     = useState<Campaign | null>(null);
+  const [stats, setStats]           = useState<CampaignStats | null>(null);
+  const [leads, setLeads]           = useState<Lead[]>([]);
+  const [pending, setPending]       = useState<PendingContact[]>([]);
+  const [tab, setTab]               = useState<"campaign" | "pending">("campaign");
+  const [filter, setFilter]         = useState<FilterState>("all");
+  const [search, setSearch]         = useState("");
+  const [loading, setLoading]       = useState(false);
+  const [pushing, setPushing]       = useState(false);
+  const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number } | null>(null);
+  const [error, setError]           = useState<string | null>(null);
 
-  // Tab "Por enviar"
-  const [pendingContacts, setPendingContacts] = useState<PendingContact[]>([]);
-  const [pendingLoading, setPendingLoading] = useState(false);
-  const [pendingError, setPendingError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [pushing, setPushing] = useState(false);
-  const [pushNotice, setPushNotice] = useState<string | null>(null);
-
-  // Tab "En campaña"
-  const [campaignLeads, setCampaignLeads] = useState<CampaignLead[]>([]);
-  const [leadsLoading, setLeadsLoading] = useState(false);
-  const [leadsError, setLeadsError] = useState<string | null>(null);
-
-  // ID de campaña para URL de Lemlist
-  const campaignId = campaign?._id ?? null;
-
-  // ── Cargar stats de la campaña ──────────────────────────────────────────────
-
-  const loadCampaignStats = useCallback(async () => {
-    if (!currentClient) return;
-    setStatsLoading(true);
-    setStatsError(null);
+  // ── Carga datos de campaña ──
+  const loadCampaign = useCallback(async () => {
+    if (!currentClient?.id) return;
+    setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`/api/lemlist/campaigns?client_id=${currentClient.id}`, {
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setStatsError(data.error ?? "Error al cargar campaña");
-        return;
+      const [statsRes, leadsRes, pendingRes] = await Promise.all([
+        fetch(`/api/lemlist/campaigns?client_id=${currentClient.id}`),
+        fetch(`/api/lemlist/campaigns/leads?client_id=${currentClient.id}`),
+        fetch(`/api/contacts?client_id=${currentClient.id}&bucket=approved_pending`),
+      ]);
+
+      if (statsRes.ok) {
+        const d = await statsRes.json();
+        setCampaign(d.campaign);
+        setStats(d.stats);
+      } else {
+        const d = await statsRes.json();
+        setError(d.error ?? "Error cargando campaña");
       }
-      setCampaign(data.campaign);
-      setStats(data.stats);
-    } catch {
-      setStatsError("Error de red al cargar campaña");
+
+      if (leadsRes.ok) {
+        const d = await leadsRes.json();
+        setLeads(d.leads ?? []);
+      }
+
+      if (pendingRes.ok) {
+        const d = await pendingRes.json();
+        setPending(d.contacts ?? []);
+      }
     } finally {
-      setStatsLoading(false);
+      setLoading(false);
     }
   }, [currentClient?.id]);
 
-  // ── Cargar contactos pendientes de enviar ────────────────────────────────────
+  useEffect(() => { loadCampaign(); }, [loadCampaign]);
 
-  const loadPendingContacts = useCallback(async () => {
-    if (!currentClient) return;
-    setPendingLoading(true);
-    setPendingError(null);
-    setSelected(new Set());
-    try {
-      // Obtener contactos con fit_action='enrich', lemlist_pushed_at IS NULL, status != 'discarded'
-      const res = await fetch(
-        `/api/contacts?bucket=approved_pending&client_id=${currentClient.id}`,
-        { cache: "no-store" }
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        setPendingError(data.error ?? "Error al cargar contactos");
-        return;
-      }
-
-      // Obtener nombres de empresas
-      const contacts: any[] = data.contacts ?? [];
-      const companyIds = [...new Set(contacts.map((c) => c.company_id).filter(Boolean))];
-
-      let companyNames: Record<string, string> = {};
-      if (companyIds.length > 0) {
-        const compRes = await fetch(
-          `/api/companies?status=approved&client_id=${currentClient.id}`,
-          { cache: "no-store" }
-        );
-        const compData = await compRes.json();
-        for (const c of compData.companies ?? []) {
-          companyNames[c.id] = c.company_name;
-        }
-      }
-
-      setPendingContacts(
-        contacts.map((c) => ({
-          ...c,
-          company_name: companyNames[c.company_id] ?? "",
-        }))
-      );
-    } catch {
-      setPendingError("Error de red al cargar contactos");
-    } finally {
-      setPendingLoading(false);
-    }
-  }, [currentClient?.id]);
-
-  // ── Cargar leads en campaña ──────────────────────────────────────────────────
-
-  const loadCampaignLeads = useCallback(async () => {
-    if (!currentClient || !campaignId) return;
-    setLeadsLoading(true);
-    setLeadsError(null);
-    try {
-      const apiKey = ""; // No se puede acceder al apiKey en client-side; usar endpoint proxy
-      // Usamos el endpoint de campañas existente como proxy para obtener el ID
-      // y luego obtenemos leads desde el endpoint correcto
-      const res = await fetch(
-        `/api/lemlist/campaigns/leads?client_id=${currentClient.id}`,
-        { cache: "no-store" }
-      );
-      if (!res.ok) {
-        // Fallback: mostrar mensaje de error sin bloquear
-        setLeadsError("No se pudo cargar la lista de leads. Verifica la configuración.");
-        return;
-      }
-      const data = await res.json();
-      setCampaignLeads(data.leads ?? []);
-    } catch {
-      setLeadsError("Error de red al cargar leads");
-    } finally {
-      setLeadsLoading(false);
-    }
-  }, [currentClient?.id, campaignId]);
-
-  // ── Efectos ──────────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    if (currentClient) {
-      loadCampaignStats();
-    }
-  }, [currentClient?.id]);
-
-  useEffect(() => {
-    if (!currentClient) return;
-    if (tab === "pending") {
-      loadPendingContacts();
-    } else {
-      loadCampaignLeads();
-    }
-  }, [tab, currentClient?.id]);
-
-  // ── Selección ────────────────────────────────────────────────────────────────
-
-  function toggleSelect(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleAll() {
-    if (selected.size === pendingContacts.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(pendingContacts.map((c) => c.id)));
-    }
-  }
-
-  // ── Push a Lemlist ────────────────────────────────────────────────────────────
-
-  async function pushToLemlist(contactIds?: string[]) {
-    if (!currentClient) return;
+  // ── Enviar a Lemlist ──
+  async function pushAll() {
+    if (!currentClient?.id) return;
     setPushing(true);
-    setPushNotice(null);
-    try {
-      const res = await fetch("/api/lemlist/push", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_id: currentClient.id,
-          contact_ids: contactIds,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setPushNotice(`Error: ${data.error ?? "Push fallido"}`);
-        return;
-      }
-      const errCount = data.errors?.length ?? 0;
-      setPushNotice(
-        `${data.pushed} enviados a Lemlist · ${data.skipped} sin email saltados${
-          errCount > 0 ? ` · ${errCount} errores` : ""
-        }`
-      );
-      await loadPendingContacts();
-      await loadCampaignStats();
-    } catch {
-      setPushNotice("Error de red al enviar a Lemlist");
-    } finally {
-      setPushing(false);
-    }
+    setPushResult(null);
+    const res = await fetch("/api/lemlist/push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient.id }),
+    });
+    const d = await res.json();
+    setPushResult({ pushed: d.pushed ?? 0, skipped: d.skipped ?? 0 });
+    setPushing(false);
+    loadCampaign();
   }
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  // ── Pausar/reanudar lead ──
+  async function handlePauseToggle(email: string, pause: boolean) {
+    if (!currentClient?.id) return;
+    await fetch("/api/lemlist/leads/pause", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient.id, email, pause }),
+    });
+    setLeads((prev) =>
+      prev.map((l) => (l.email === email ? { ...l, isPaused: pause } : l))
+    );
+  }
+
+  // ── Filtrar y buscar leads ──
+  const filteredLeads = useMemo(() => {
+    let result = leads;
+
+    if (filter !== "all") {
+      result = result.filter((l) => {
+        const state = deriveLeadState(l);
+        if (filter === "finished") return state === "finished" || state === "unsubscribed";
+        return state === filter;
+      });
+    }
+
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(
+        (l) =>
+          fullName(l).toLowerCase().includes(q) ||
+          l.email?.toLowerCase().includes(q) ||
+          l.companyName?.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [leads, filter, search]);
+
+  // ── Contadores ──
+  const counts = useMemo(() => ({
+    active:   leads.filter((l) => deriveLeadState(l) === "active").length,
+    paused:   leads.filter((l) => deriveLeadState(l) === "paused").length,
+    replied:  leads.filter((l) => deriveLeadState(l) === "replied").length,
+    bounced:  leads.filter((l) => deriveLeadState(l) === "bounced").length,
+    finished: leads.filter((l) => ["finished", "unsubscribed"].includes(deriveLeadState(l))).length,
+  }), [leads]);
+
+  // ── Sin cliente ──
+  if (!currentClient) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-ink-muted">Selecciona un cliente en el sidebar para ver sus campañas.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Aviso: sin cliente seleccionado */}
-      {!currentClient && (
-        <div className="card flex items-center gap-3 border border-warning-bg bg-warning-bg/40 text-warning-fg text-sm">
-          <IconAlertCircle size={16} className="shrink-0" />
-          Selecciona un cliente en el sidebar para ver sus campañas.
-        </div>
-      )}
-
+    <div className="space-y-5">
       {/* Header */}
-      <header>
-        <div className="label">Outreach</div>
-        <h1 className="text-2xl font-semibold tracking-tight">Campañas email</h1>
-        <div className="text-sm text-ink-muted mt-1">
-          Gestión de outreach por email vía Lemlist
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <div className="label">Outreach</div>
+          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <IconMail size={22} style={{ color: "#62E0D8" }} /> Campañas
+          </h1>
+          <p className="text-sm text-ink-muted mt-0.5">
+            Outreach multicanal (email + LinkedIn) vía Lemlist
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={loadCampaign}
+            disabled={loading}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
+          >
+            <IconRefresh size={14} className={loading ? "animate-spin" : ""} />
+            Refrescar
+          </button>
+          {pending.length > 0 && (
+            <button
+              onClick={pushAll}
+              disabled={pushing}
+              className="btn-primary flex items-center gap-1.5 text-sm"
+            >
+              {pushing ? <IconLoader2 size={14} className="animate-spin" /> : <IconSend size={14} />}
+              Enviar {pending.length} a Lemlist
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Stats de campaña */}
-      {currentClient && (
-        <div className="card space-y-3">
-          {statsLoading ? (
-            <div className="flex items-center gap-2 text-ink-muted text-sm">
-              <IconLoader2 size={16} className="animate-spin" />
-              Cargando campaña…
-            </div>
-          ) : statsError ? (
-            <div className="flex items-start gap-3 text-sm">
-              <IconAlertCircle size={16} className="text-warning-fg shrink-0 mt-0.5" />
-              <div>
-                <span className="text-ink-muted">{statsError}</span>
-                {statsError.includes("Config. cliente") && (
-                  <Link
-                    href="/configuracion/cliente"
-                    className="ml-2 text-brand underline"
-                  >
-                    Ir a Config. cliente
-                  </Link>
-                )}
-              </div>
-            </div>
-          ) : campaign ? (
-            <>
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <IconMail size={16} style={{ color: "#62E0D8" }} />
-                  <span className="font-semibold">{campaign.name}</span>
-                  <span
-                    className={`badge ${
-                      campaign.isStarted
-                        ? "bg-success-bg text-success-fg"
-                        : "bg-[#F1EEF7] text-ink-muted"
-                    }`}
-                  >
-                    {campaign.isStarted ? "Activa" : "Pausada"}
-                  </span>
-                </div>
-                <button
-                  onClick={loadCampaignStats}
-                  className="btn-secondary text-xs"
-                >
-                  <IconRefresh size={13} />
-                </button>
-              </div>
-              {stats && (
-                <div className="flex flex-wrap gap-3 mt-1">
-                  <StatChip label="Enviados" value={stats.contacted} color="text-ink" />
-                  <StatChip
-                    label="Abiertos"
-                    value={`${pct(stats.opened, stats.contacted)}`}
-                    color="text-blue-600"
-                  />
-                  <StatChip
-                    label="Replies"
-                    value={`${pct(stats.replied, stats.contacted)}`}
-                    color="text-[#0F6E56]"
-                  />
-                  <StatChip
-                    label="Clics"
-                    value={`${pct(stats.clicked, stats.contacted)}`}
-                    color="text-[#62E0D8]"
-                  />
-                  <StatChip label="Rebotados" value={stats.bounced} color="text-danger-fg" />
-                </div>
-              )}
-            </>
-          ) : null}
+      {/* Error */}
+      {error && (
+        <div className="card border-l-4 border-red-400 px-4 py-3 flex items-center gap-2 text-red-700">
+          <IconAlertCircle size={16} />
+          <span className="text-sm">{error}</span>
+          {error.includes("Config. cliente") && (
+            <a href="/configuracion/cliente" className="underline ml-1 text-sm">Configurar →</a>
+          )}
         </div>
       )}
 
-      {/* Tabs */}
-      {currentClient && (
-        <>
-          <div className="flex items-center gap-2">
-            {(["pending", "in_campaign"] as Tab[]).map((t) => {
-              const active = tab === t;
-              const label = t === "pending" ? "Por enviar" : "En campaña";
-              const count = t === "pending" ? pendingContacts.length : campaignLeads.length;
-              return (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`btn ${
-                    active
-                      ? "bg-brand text-white"
-                      : "bg-white border border-[#E5E2F0] text-ink hover:border-brand-soft"
-                  }`}
-                >
-                  {label}
-                  <span
-                    className={`ml-2 inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] font-semibold ${
-                      active ? "bg-white/20 text-white" : "bg-[#F1EEF7] text-ink-muted"
-                    }`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
+      {/* Push result */}
+      {pushResult && (
+        <div className="card border-l-4 px-4 py-3 flex items-center gap-2"
+          style={{ borderColor: "#62E0D8", color: "#0F6E56" }}
+        >
+          <IconCheck size={16} />
+          <span className="text-sm font-medium">
+            {pushResult.pushed} contactos enviados a Lemlist
+            {pushResult.skipped > 0 && ` · ${pushResult.skipped} saltados (sin email)`}
+          </span>
+        </div>
+      )}
+
+      {/* Campaign header card */}
+      {campaign && (
+        <div className="card px-5 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <IconMail size={16} style={{ color: "#62E0D8" }} />
+              <span className="font-semibold text-ink">{campaign.name}</span>
+              <span
+                className="text-[11px] px-2 py-0.5 rounded-full font-medium"
+                style={
+                  campaign.isStarted
+                    ? { background: "#DCFCE7", color: "#166534" }
+                    : { background: "#FEF3C7", color: "#92400E" }
+                }
+              >
+                {campaign.isStarted ? "Activa" : "Pausada"}
+              </span>
+            </div>
+            <a
+              href={`https://app.lemlist.com/campaigns/${campaign._id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-ink-muted flex items-center gap-1 hover:underline"
+            >
+              Ver en Lemlist <IconExternalLink size={12} />
+            </a>
           </div>
 
-          {/* ── Tab: Por enviar ── */}
-          {tab === "pending" && (
-            <div className="space-y-4">
-              {/* Barra de acciones */}
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  {pendingContacts.length > 0 && (
-                    <button onClick={toggleAll} className="btn-secondary text-xs">
-                      {selected.size === pendingContacts.length ? (
-                        <IconSquareCheck size={14} />
-                      ) : (
-                        <IconSquare size={14} />
-                      )}
-                      {selected.size === pendingContacts.length
-                        ? "Deseleccionar todo"
-                        : "Seleccionar todo"}
+          {/* Stats */}
+          {stats && (
+            <div className="flex flex-wrap gap-3 mt-4">
+              <StatChip label="En campaña" value={stats.contacted || leads.length} />
+              <StatChip
+                label="Abiertos"
+                value={pct(stats.opened, stats.contacted)}
+                sub={`${stats.opened} de ${stats.contacted}`}
+                color={stats.opened > 0 ? "#1D4ED8" : undefined}
+              />
+              <StatChip
+                label="Clicks"
+                value={pct(stats.clicked, stats.contacted)}
+                sub={`${stats.clicked} clicks`}
+                color={stats.clicked > 0 ? "#0F6E56" : undefined}
+              />
+              <StatChip
+                label="Replies"
+                value={pct(stats.replied, stats.contacted)}
+                sub={`${stats.replied} respuestas`}
+                color={stats.replied > 0 ? "#166534" : undefined}
+              />
+              <StatChip
+                label="Rebotados"
+                value={stats.bounced}
+                color={stats.bounced > 0 ? "#991B1B" : undefined}
+              />
+              {counts.paused > 0 && (
+                <StatChip label="Pausados" value={counts.paused} color="#92400E" />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center justify-center py-12 text-ink-muted gap-2">
+          <IconLoader2 size={18} className="animate-spin" />
+          <span className="text-sm">Cargando campañas…</span>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <>
+          {/* Tabs */}
+          <div className="flex gap-1 border-b border-[#E5E2F0]">
+            {(["campaign", "pending"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className="px-4 py-2.5 text-sm font-medium border-b-2 transition"
+                style={
+                  tab === t
+                    ? { borderColor: "#62E0D8", color: "#62E0D8" }
+                    : { borderColor: "transparent", color: "#6B6884" }
+                }
+              >
+                {t === "campaign"
+                  ? `En campaña ${leads.length > 0 ? `(${leads.length})` : ""}`
+                  : `Por enviar ${pending.length > 0 ? `(${pending.length})` : ""}`}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab: En campaña */}
+          {tab === "campaign" && (
+            <div className="space-y-3">
+              {/* Buscador + filtro */}
+              <div className="flex gap-2 items-center">
+                <div className="relative flex-1 max-w-md">
+                  <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar por nombre, empresa o email…"
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-[#E5E2F0] rounded-lg outline-none focus:border-[#62E0D8] bg-white"
+                  />
+                  {search && (
+                    <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink">
+                      <IconX size={13} />
                     </button>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  {selected.size > 0 && (
+
+                {/* Filtro de estado */}
+                <div className="flex gap-1 flex-wrap">
+                  {(Object.keys(FILTER_LABELS) as FilterState[]).map((f) => (
                     <button
-                      onClick={() => pushToLemlist([...selected])}
-                      disabled={pushing}
-                      className="btn-primary text-xs"
+                      key={f}
+                      onClick={() => setFilter(f)}
+                      className="text-xs px-2.5 py-1.5 rounded-full border transition"
+                      style={
+                        filter === f
+                          ? { background: "#251762", color: "white", borderColor: "#251762" }
+                          : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }
+                      }
                     >
-                      {pushing ? (
-                        <IconLoader2 size={13} className="animate-spin" />
-                      ) : (
-                        <IconSend size={13} />
+                      {FILTER_LABELS[f]}
+                      {f !== "all" && counts[f as keyof typeof counts] > 0 && (
+                        <span className="ml-1 opacity-70">{counts[f as keyof typeof counts]}</span>
                       )}
-                      {pushing
-                        ? "Enviando…"
-                        : `Enviar seleccionados (${selected.size})`}
                     </button>
-                  )}
-                  {pendingContacts.length > 0 && (
-                    <button
-                      onClick={() => pushToLemlist()}
-                      disabled={pushing}
-                      className="btn-primary text-xs"
-                    >
-                      {pushing ? (
-                        <IconLoader2 size={13} className="animate-spin" />
-                      ) : (
-                        <IconMailFast size={13} />
-                      )}
-                      {pushing ? "Enviando…" : `Enviar todos (${pendingContacts.length})`}
-                    </button>
-                  )}
-                  <button
-                    onClick={loadPendingContacts}
-                    disabled={pendingLoading}
-                    className="btn-secondary text-xs"
-                  >
-                    <IconRefresh size={13} />
-                  </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Notificación push */}
-              {pushNotice && (
-                <div className="card border border-success-bg text-success-fg flex items-center gap-2 text-sm">
-                  <IconCheck size={15} />
-                  {pushNotice}
-                </div>
-              )}
-
-              {/* Error */}
-              {pendingError && (
-                <div className="card border border-danger-bg text-danger-fg flex items-center gap-2 text-sm">
-                  <IconAlertCircle size={15} />
-                  {pendingError}
-                </div>
-              )}
-
               {/* Lista */}
-              {pendingLoading ? (
-                <div className="flex items-center gap-2 text-ink-muted text-sm">
-                  <IconLoader2 size={16} className="animate-spin" />
-                  Cargando contactos…
-                </div>
-              ) : pendingContacts.length === 0 ? (
-                <div className="card flex items-center gap-2 text-ink-muted text-sm">
-                  <IconUsers size={16} />
-                  No hay contactos aprobados pendientes de enviar.
+              {filteredLeads.length === 0 ? (
+                <div className="text-center py-12 text-ink-muted text-sm">
+                  {search || filter !== "all"
+                    ? "Sin resultados para este filtro."
+                    : leads.length === 0
+                    ? "No hay leads en la campaña aún."
+                    : "Sin resultados."}
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {pendingContacts.map((c) => {
-                    const isSelected = selected.has(c.id);
-                    const fullName =
-                      [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
-                    return (
-                      <div
-                        key={c.id}
-                        onClick={() => toggleSelect(c.id)}
-                        className={`card flex items-center gap-4 cursor-pointer transition ${
-                          isSelected
-                            ? "border-2 border-brand-soft"
-                            : "border border-transparent hover:border-[#E5E2F0]"
-                        }`}
-                        style={{ padding: "12px 16px" }}
-                      >
-                        <div className="shrink-0 text-ink-muted">
-                          {isSelected ? (
-                            <IconSquareCheck size={18} style={{ color: "#62E0D8" }} />
-                          ) : (
-                            <IconSquare size={18} />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">{fullName}</span>
-                            {c.company_name && (
-                              <span className="text-xs text-ink-muted">
-                                · {c.company_name}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-ink-muted mt-0.5">
-                            {c.job_title || "—"}
-                          </div>
-                        </div>
-                        <div className="shrink-0">
-                          {c.email ? (
-                            <span className="badge bg-success-bg text-success-fg">
-                              {c.email}
-                            </span>
-                          ) : (
-                            <span className="badge bg-danger-bg text-danger-fg">
-                              Sin email
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {filteredLeads.map((lead) => (
+                    <LeadCard
+                      key={lead._id || lead.email}
+                      lead={lead}
+                      campaignId={campaign?._id ?? ""}
+                      onPauseToggle={handlePauseToggle}
+                    />
+                  ))}
+                  {filteredLeads.length < leads.length && (
+                    <p className="text-xs text-center text-ink-muted pt-2">
+                      Mostrando {filteredLeads.length} de {leads.length} leads
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          {/* ── Tab: En campaña ── */}
-          {tab === "in_campaign" && (
-            <div className="space-y-4">
-              <div className="flex justify-end">
-                <button
-                  onClick={loadCampaignLeads}
-                  disabled={leadsLoading}
-                  className="btn-secondary text-xs"
-                >
-                  <IconRefresh size={13} />
-                  Refrescar
-                </button>
-              </div>
-
-              {leadsError && (
-                <div className="card border border-warning-bg text-warning-fg flex items-start gap-2 text-sm">
-                  <IconAlertTriangle size={15} className="shrink-0 mt-0.5" />
-                  <div>
-                    {leadsError}
-                    {campaignId && (
-                      <a
-                        href="https://app.lemlist.com"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ml-2 underline text-brand"
-                      >
-                        Ver en Lemlist
-                      </a>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {leadsLoading ? (
-                <div className="flex items-center gap-2 text-ink-muted text-sm">
-                  <IconLoader2 size={16} className="animate-spin" />
-                  Cargando leads…
-                </div>
-              ) : campaignLeads.length === 0 && !leadsError ? (
-                <div className="card flex items-center gap-2 text-ink-muted text-sm">
-                  <IconMailOpened size={16} />
-                  No hay leads en campaña todavía.
+          {/* Tab: Por enviar */}
+          {tab === "pending" && (
+            <div className="space-y-3">
+              {pending.length === 0 ? (
+                <div className="text-center py-12 text-ink-muted text-sm">
+                  No hay contactos pendientes de envío.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {campaignLeads.map((lead) => {
-                    const status = leadStatus(lead);
-                    const fullName =
-                      [lead.firstName, lead.lastName].filter(Boolean).join(" ") ||
-                      lead.email ||
-                      "(sin nombre)";
-                    return (
-                      <div
-                        key={lead._id}
-                        className="card flex items-center gap-4"
-                        style={{ padding: "12px 16px" }}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">{fullName}</span>
-                            {lead.companyName && (
-                              <span className="text-xs text-ink-muted">
-                                · {lead.companyName}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-ink-muted mt-0.5">{lead.email}</div>
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-ink-muted">
+                      {pending.length} contacto{pending.length !== 1 ? "s" : ""} aprobado{pending.length !== 1 ? "s" : ""} para enviar a Lemlist
+                    </p>
+                    <button
+                      onClick={pushAll}
+                      disabled={pushing}
+                      className="btn-primary flex items-center gap-1.5 text-sm"
+                    >
+                      {pushing ? <IconLoader2 size={14} className="animate-spin" /> : <IconSend size={14} />}
+                      Enviar todos
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {pending.map((c) => (
+                      <div key={c.id} className="card px-4 py-3 flex items-center gap-3">
+                        <div
+                          className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
+                          style={{ background: "#251762" }}
+                        >
+                          {[c.first_name?.[0], c.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?"}
                         </div>
-                        <span className={`badge ${STATUS_STYLES[status]}`}>
-                          {STATUS_LABELS[status]}
-                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-ink">
+                            {[c.first_name, c.last_name].filter(Boolean).join(" ") || "—"}
+                            {c.company_name && <span className="text-ink-muted font-normal"> · {c.company_name}</span>}
+                          </div>
+                          {c.job_title && <div className="text-xs text-ink-muted">{c.job_title}</div>}
+                        </div>
+                        {c.email ? (
+                          <span className="text-xs text-ink-muted hidden md:block">{c.email}</span>
+                        ) : (
+                          <span className="text-xs px-2 py-0.5 rounded" style={{ background: "#FEE2E2", color: "#991B1B" }}>
+                            Sin email
+                          </span>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           )}
         </>
       )}
-    </div>
-  );
-}
-
-// ─── Componente helper ────────────────────────────────────────────────────────
-
-function StatChip({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: number | string;
-  color: string;
-}) {
-  return (
-    <div className="flex flex-col items-center justify-center px-4 py-2 rounded-lg bg-[#F4F2FB] min-w-[80px]">
-      <span className={`text-lg font-bold ${color}`}>{value}</span>
-      <span className="text-[10px] uppercase tracking-wide text-ink-muted mt-0.5">{label}</span>
     </div>
   );
 }

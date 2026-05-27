@@ -41,7 +41,7 @@ const SECTIONS: Section[] = [
   {
     label: "Outreach",
     items: [
-      { href: "/campanas", label: "Campañas email", icon: IconMail }
+      { href: "/campanas", label: "Campañas", icon: IconMail }
     ]
   },
   {
