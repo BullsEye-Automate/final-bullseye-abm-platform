@@ -111,7 +111,7 @@ export async function POST(req: NextRequest) {
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
-  const clientLabel = client?.name ? matchClientOption(client.name) : null;
+  const clientLabel = client?.name ? await matchClientOption(client.name) : null;
 
   let pushed = 0, skipped = 0, generated = 0;
   const errors: { contact_id: string; error: string }[] = [];
@@ -294,11 +294,11 @@ async function syncToHubSpot(opts: {
   if (companyName) {
     const existingCompanyId = await searchHSCompany(companyName);
     hsCompanyId = await upsertHSCompany({
-      name:                 companyName,
-      bullseye_fit_signals: fitSignals  || undefined,
-      bullseye_company_id:  companyDbId || undefined,
+      name:                       companyName,
+      bullseye_fit_signals:       fitSignals  || undefined,
+      bullseye_company_id:        companyDbId || undefined,
+      ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}),
     }, existingCompanyId);
-    // Empresa fallida no bloquea la creación del contacto
     if (!hsCompanyId) console.warn(`[hs-sync] upsertHSCompany falló para "${companyName}" — contacto igual se creará`);
   }
 

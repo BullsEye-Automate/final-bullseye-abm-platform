@@ -11,19 +11,38 @@ function norm(s: string) {
   return s.toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9]/g, "");
 }
 
-// Opciones conocidas de cliente_bullseye_empresa (actualizar si se agregan nuevas)
-const CLIENT_OPTIONS = [
-  "BullsEye", "SOVOS", "Crossnet", "Apply Digital", "AcidLab",
-  "CanalCero", "Lemu", "Otro", "Webfleet", "Ecommerce",
-];
+// Cache en memoria de las opciones reales del enum en HubSpot
+let _clientOptionsCache: Array<{ label: string; value: string }> | null = null;
 
-export function matchClientOption(clientName: string): string | null {
+async function fetchClientEnumOptions(): Promise<Array<{ label: string; value: string }>> {
+  if (_clientOptionsCache) return _clientOptionsCache;
+  try {
+    const res = await fetch(`${HS}/crm/v3/properties/companies/cliente_bullseye_empresa`, {
+      headers: hsHeaders(),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      _clientOptionsCache = (data.options ?? []).filter((o: any) => !o.hidden);
+    }
+  } catch { /* ignorar si falla */ }
+  return _clientOptionsCache ?? [];
+}
+
+// Busca el valor interno del enum en HubSpot que mejor coincida con el nombre del cliente.
+// Normaliza (lowercase, sin espacios/símbolos) tanto el nombre como label y value para hacer
+// match aunque difieran en mayúsculas o separadores ("BullsEye" ↔ "BULLS EYE").
+export async function matchClientOption(clientName: string): Promise<string | null> {
+  const options = await fetchClientEnumOptions();
   const n = norm(clientName);
-  return (
-    CLIENT_OPTIONS.find((o) => norm(o) === n) ??
-    CLIENT_OPTIONS.find((o) => { const no = norm(o); return n.includes(no) || no.includes(n); }) ??
-    null
-  );
+  const found =
+    options.find((o) => norm(o.value) === n) ??
+    options.find((o) => norm(o.label) === n) ??
+    options.find((o) => {
+      const nv = norm(o.value);
+      const nl = norm(o.label);
+      return n.includes(nv) || nv.includes(n) || n.includes(nl) || nl.includes(n);
+    });
+  return found?.value ?? null;
 }
 
 export async function searchHSCompany(name: string): Promise<string | null> {

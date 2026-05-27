@@ -137,7 +137,7 @@ async function refreshClientContacts(
     trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
   ].filter(Boolean).join("\n") || null;
 
-  const clientLabel = client?.name ? matchClientOption(client.name) : null;
+  const clientLabel = client?.name ? await matchClientOption(client.name) : null;
 
   let updated = 0, synced = 0;
 
@@ -173,7 +173,8 @@ async function refreshClientContacts(
     if (companyName) {
       const existingCompanyId = await searchHSCompany(companyName);
       hsCompanyId = await upsertHSCompany(
-        { name: companyName, bullseye_fit_signals: fitSignals || undefined, bullseye_company_id: contact.company_id || undefined },
+        { name: companyName, bullseye_fit_signals: fitSignals || undefined, bullseye_company_id: contact.company_id || undefined,
+          ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}) },
         existingCompanyId
       );
     }
