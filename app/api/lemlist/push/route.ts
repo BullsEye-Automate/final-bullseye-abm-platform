@@ -142,7 +142,9 @@ export async function POST(req: NextRequest) {
         } catch { /* ignorar si no parsea */ }
 
         const msgs = await generateContactMessages({
-          hasEmail,
+          // Siempre generamos todos los mensajes (email + icebreaker) aunque el contacto
+          // no tenga email todavía — Lemlist lo va a encontrar y necesita las variables.
+          hasEmail:         true,
           firstName:        contact.first_name        ?? undefined,
           lastName:         contact.last_name         ?? undefined,
           jobTitle:         contact.job_title         ?? undefined,
@@ -230,25 +232,28 @@ export async function POST(req: NextRequest) {
 
     pushed++;
 
-    // 4) Sync a HubSpot + script SDR (fire & forget, no bloquea el push) ────────
-    const trainingCtxForScript = [
-      trainingConfig.business_description && `Negocio: ${trainingConfig.business_description}`,
-      trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
-      trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
-    ].filter(Boolean).join("\n") || null;
+    // 4) Sync a HubSpot + script SDR — solo cuando hay email (HubSpot lo requiere)
+    // Para contactos sin email, el sync ocurrirá cuando Lemlist notifique el email enriquecido.
+    if (contact.email?.trim()) {
+      const trainingCtxForScript = [
+        trainingConfig.business_description && `Negocio: ${trainingConfig.business_description}`,
+        trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
+        trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
+      ].filter(Boolean).join("\n") || null;
 
-    syncToHubSpotWithScript({
-      contact,
-      companyName,
-      fitSignals:     company?.fit_signals    ?? null,
-      companyDbId:    contact.company_id      ?? null,
-      clientName:     client?.name            ?? null,
-      clientLabel,
-      campaignId,
-      hubspotOwnerId: config.hubspot_owner_id ?? null,
-      icpContext:     icpContext              ?? null,
-      trainingCtx:    trainingCtxForScript,
-    }).catch(() => {/* no bloquea */});
+      syncToHubSpotWithScript({
+        contact,
+        companyName,
+        fitSignals:     company?.fit_signals    ?? null,
+        companyDbId:    contact.company_id      ?? null,
+        clientName:     client?.name            ?? null,
+        clientLabel,
+        campaignId,
+        hubspotOwnerId: config.hubspot_owner_id ?? null,
+        icpContext:     icpContext              ?? null,
+        trainingCtx:    trainingCtxForScript,
+      }).catch(() => {/* no bloquea */});
+    }
   }
 
   return NextResponse.json({ pushed, skipped, generated, errors, reason: skipped > 0 && pushed === 0 ? "no_email" : undefined });

@@ -34,11 +34,12 @@ export async function POST(
       .order("uploaded_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
-    db.from("model_training_config")
-      .select("business_description, value_props, talking_points, target_buyer_persona")
-      .eq("client_id", company?.client_id ?? "")
-      .maybeSingle()
-      .catch(() => ({ data: null })),
+    Promise.resolve(
+      db.from("model_training_config")
+        .select("business_description, value_props, talking_points, target_buyer_persona")
+        .eq("client_id", company?.client_id ?? "")
+        .maybeSingle()
+    ).catch(() => ({ data: null })),
   ]);
 
   const tc = (trainingResult as any)?.data ?? {};
@@ -58,7 +59,7 @@ export async function POST(
   } catch { /* */ }
 
   const msgs = await generateContactMessages({
-    hasEmail:         Boolean(contact.email?.trim()),
+    hasEmail:         true, // siempre genera email + icebreaker para preview completo
     firstName:        contact.first_name        ?? undefined,
     lastName:         contact.last_name         ?? undefined,
     jobTitle:         contact.job_title         ?? undefined,
