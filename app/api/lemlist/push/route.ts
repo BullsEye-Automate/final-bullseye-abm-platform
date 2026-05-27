@@ -111,8 +111,9 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
 
-  let pushed = 0, skipped = 0, generated = 0;
+  let pushed = 0, skipped = 0, generated = 0, hsSynced = 0;
   const errors: { contact_id: string; error: string }[] = [];
+  const hsIds: string[] = [];
 
   // ── Procesar secuencialmente (Claude + Lemlist + HubSpot) ─────────────────
   for (const contact of contacts) {
@@ -252,16 +253,20 @@ export async function POST(req: NextRequest) {
     };
 
     try {
-      await syncToHubSpot(hsOpts);
+      const hsId = await syncToHubSpot(hsOpts);
+      if (hsId) { hsSynced++; hsIds.push(hsId); }
+      console.log(`[lemlist-push] contacto=${contact.id} hsContactId=${hsId ?? "null"}`);
     } catch (err: any) {
+      console.error(`[lemlist-push] HubSpot error contacto=${contact.id}:`, err?.message);
       errors.push({ contact_id: contact.id, error: `HubSpot: ${err?.message ?? "error"}` });
     }
   }
 
-  return NextResponse.json({ pushed, skipped, generated, errors, reason: skipped > 0 && pushed === 0 ? "no_email" : undefined });
+  console.log(`[lemlist-push] resultado: pushed=${pushed} hsSynced=${hsSynced} errors=${errors.length}`);
+  return NextResponse.json({ pushed, skipped, generated, hsSynced, hsIds, errors, reason: skipped > 0 && pushed === 0 ? "no_email" : undefined });
 }
 
-// Sync empresa + contacto a HubSpot (sincrónico). Lanza error si falla.
+// Sync empresa + contacto a HubSpot (sincrónico). Lanza error si falla. Devuelve el HS contact ID.
 async function syncToHubSpot(opts: {
   contact:        Record<string, any>;
   companyName:    string;
@@ -272,7 +277,7 @@ async function syncToHubSpot(opts: {
   hubspotOwnerId: string | null;
   icpContext:     string | null;
   trainingCtx:    string | null;
-}) {
+}): Promise<string | null> {
   const { contact, companyName, fitSignals, companyDbId, clientName, campaignId, hubspotOwnerId, icpContext, trainingCtx } = opts;
 
   const isLushaPhone  = contact.phone_source === "lusha";
@@ -343,4 +348,6 @@ async function syncToHubSpot(opts: {
   })
     .then((script) => { if (hsContactId) patchHSContact(hsContactId, { bullseye_script_sdr_ia: script }); })
     .catch(() => {});
+
+  return hsContactId;
 }

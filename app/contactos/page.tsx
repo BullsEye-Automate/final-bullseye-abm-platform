@@ -158,13 +158,15 @@ export default function ContactosPage() {
       setError("No se encontraron contactos con fit_action=enrich listos para enviar. Verifica que tengan email y no estén ya en campaña.");
       return;
     }
+    const hsSynced = data.hsSynced ?? 0;
     const parts = [`${pushed} contacto${pushed !== 1 ? "s" : ""} enviado${pushed !== 1 ? "s" : ""} a Lemlist`];
-    if (skipped > 0) parts.push(`${skipped} sin email ni LinkedIn`);
-    if (errs > 0)    parts.push(`${errs} con error`);
+    if (hsSynced > 0) parts.push(`${hsSynced} sincronizado${hsSynced !== 1 ? "s" : ""} en HubSpot`);
+    if (skipped > 0)  parts.push(`${skipped} sin email ni LinkedIn`);
+    if (errs > 0)     parts.push(`${errs} con error`);
     setNotice(parts.join(" · ") + ".");
     if (data.errors?.length > 0) {
       const detail = data.errors.map((e: any) => e.error).join(" | ");
-      setError(`Errores Lemlist: ${detail}`);
+      setError(`Errores: ${detail}`);
     }
     await load();
   }
