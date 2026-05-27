@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
   // si se importaron antes del soporte multi-tenant).
   let q = db
     .from("contacts")
-    .select("id, first_name, last_name, job_title, linkedin_headline, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, fit_score")
+    .select("id, first_name, last_name, job_title, linkedin_headline, seniority, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, fit_score")
     .eq("fit_action", "enrich")
     .is("lemlist_pushed_at", null)
     .neq("status", "discarded");
@@ -169,13 +169,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2) Contactos sin email: guardar icebreaker y saltar Lemlist ─────────────
-    if (!hasEmail) {
+    // 2) Si no tiene email ni linkedin_url no se puede pushear
+    if (!hasEmail && !contact.linkedin_url?.trim()) {
       skipped++;
       continue;
     }
 
     // 3) Push a Lemlist con mensajes y flags de enrichment ─────────────────────
+    // Lemlist enriquece email y teléfono: si no hay email usamos LinkedIn URL como
+    // identificador del lead y marcamos findEmail=true para que Lemlist lo encuentre.
+    const leadIdentifier = hasEmail
+      ? encodeURIComponent(contact.email!)
+      : encodeURIComponent(contact.linkedin_url!.trim());
+
     const lemlistPayload: Record<string, string | boolean | undefined> = {
       firstName:    contact.first_name          ?? undefined,
       lastName:     contact.last_name           ?? undefined,
@@ -186,7 +192,7 @@ export async function POST(req: NextRequest) {
       emailSubject: contact.email_subject       ?? undefined,
       emailBody:    contact.email_body          ?? undefined,
       findPhone:    true,
-      ...(contact.linkedin_url && !contact.email?.trim() ? { findEmail: true } : {}),
+      ...(!hasEmail ? { findEmail: true } : {}),
     };
 
     Object.keys(lemlistPayload).forEach(
@@ -196,7 +202,7 @@ export async function POST(req: NextRequest) {
     let lemRes: Response;
     try {
       lemRes = await fetch(
-        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}`,
+        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${leadIdentifier}`,
         {
           method: "POST",
           headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/json" },
@@ -299,6 +305,8 @@ async function syncToHubSpotWithScript(opts: {
     linkedin_bio:                   contact.linkedin_url        ?? undefined,
     bullseye_contact_id:            contact.id,
     bullseye_client_name:           clientName                  ?? undefined,
+    bullseye_seniority:             contact.seniority           ?? undefined,
+    bullseye_linkedin_headline:     contact.linkedin_headline   ?? undefined,
     bullseye_email_subject:         contact.email_subject       ?? undefined,
     bullseye_email_body:            contact.email_body          ?? undefined,
     bullseye_linkedin_icebreaker:   contact.linkedin_icebreaker ?? undefined,

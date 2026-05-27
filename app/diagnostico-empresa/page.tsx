@@ -38,46 +38,25 @@ type DiagnosticResult = {
   };
 };
 
-const VERDICT: Record<FitVerdict, { label: string; desc: string; icon: React.ReactNode; bg: string; text: string; border: string }> = {
-  yes: {
-    label: "Es fit",
-    desc: "La empresa cumple con el ICP del cliente",
-    icon: <IconCheck size={22} strokeWidth={2.5} />,
-    bg: "bg-success-bg",
-    text: "text-success-fg",
-    border: "border-success-bg",
-  },
-  no: {
-    label: "No es fit",
-    desc: "La empresa no cumple con el ICP del cliente",
-    icon: <IconX size={22} strokeWidth={2.5} />,
-    bg: "bg-danger-bg",
-    text: "text-danger-fg",
-    border: "border-danger-bg",
-  },
-  maybe: {
-    label: "Potencial fit",
-    desc: "Requiere validación adicional",
-    icon: <IconQuestionMark size={22} strokeWidth={2.5} />,
-    bg: "bg-warning-bg",
-    text: "text-warning-fg",
-    border: "border-warning-bg",
-  },
-};
+function verdictConfig(verdict: FitVerdict) {
+  if (verdict === "yes")   return { label: "Es fit",        desc: "La empresa cumple con el ICP del cliente",   bg: "bg-success-bg", text: "text-success-fg", border: "border-success-bg",  Icon: IconCheck         };
+  if (verdict === "no")    return { label: "No es fit",     desc: "La empresa no cumple con el ICP del cliente", bg: "bg-danger-bg",  text: "text-danger-fg",  border: "border-danger-bg",   Icon: IconX             };
+  return                          { label: "Potencial fit", desc: "Requiere validación adicional",               bg: "bg-warning-bg", text: "text-warning-fg", border: "border-warning-bg",  Icon: IconQuestionMark  };
+}
 
 export default function DiagnosticoEmpresaPage() {
   const { currentClient } = useClient();
 
-  const [name, setName]             = useState("");
+  const [name, setName]               = useState("");
   const [linkedinUrl, setLinkedinUrl] = useState("");
-  const [website, setWebsite]       = useState("");
+  const [website, setWebsite]         = useState("");
 
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [result, setResult]     = useState<DiagnosticResult | null>(null);
 
-  const [adding, setAdding]         = useState(false);
-  const [addedId, setAddedId]       = useState<string | null>(null);
+  const [adding, setAdding]           = useState(false);
+  const [addedId, setAddedId]         = useState<string | null>(null);
   const [alreadyExists, setAlreadyExists] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -97,17 +76,19 @@ export default function DiagnosticoEmpresaPage() {
         body: JSON.stringify({
           name:        name.trim(),
           linkedin_url: linkedinUrl.trim() || undefined,
-          website:     website.trim()     || undefined,
+          website:     website.trim()      || undefined,
           client_id:   currentClient.id,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) setError(json.error ?? `Error ${res.status}`);
-      else         setResult(json);
-    } catch {
-      setError("Error de red al contactar el servidor");
+      let json: any;
+      try { json = await res.json(); } catch { json = {}; }
+      if (!res.ok) setError(json?.error ?? `Error ${res.status}`);
+      else         setResult(json as DiagnosticResult);
+    } catch (err: any) {
+      setError(err?.message ?? "Error de red al contactar el servidor");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   async function addToPipeline() {
@@ -129,20 +110,23 @@ export default function DiagnosticoEmpresaPage() {
           company_size:    result.company_size,
           company_country: result.company_country,
           company_city:    result.company_city,
-          linkedin_url:    result._raw.linkedin_url,
-          website:         result._raw.website,
+          linkedin_url:    result._raw?.linkedin_url,
+          website:         result._raw?.website,
         }),
       });
-      const json = await res.json();
-      if (!res.ok) setError(json.error ?? "Error al agregar");
+      let json: any;
+      try { json = await res.json(); } catch { json = {}; }
+      if (!res.ok) setError(json?.error ?? "Error al agregar");
       else { setAddedId(json.company_id); setAlreadyExists(json.already_exists ?? false); }
-    } catch {
-      setError("Error de red al agregar");
+    } catch (err: any) {
+      setError(err?.message ?? "Error de red al agregar");
+    } finally {
+      setAdding(false);
     }
-    setAdding(false);
   }
 
-  const v = result ? VERDICT[result.fit_verdict] : null;
+  const v = result?.fit_verdict ? verdictConfig(result.fit_verdict) : null;
+  const signals = result?.fit_signals ? result.fit_signals.split(" · ").map(s => s.trim()).filter(Boolean) : [];
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
@@ -225,13 +209,15 @@ export default function DiagnosticoEmpresaPage() {
           <div className={`card border-2 ${v.border}`}>
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div className="flex items-center gap-3">
-                <div className={`p-2.5 rounded-full ${v.bg} ${v.text}`}>{v.icon}</div>
+                <div className={`p-2.5 rounded-full ${v.bg} ${v.text}`}>
+                  <v.Icon size={22} strokeWidth={2.5} />
+                </div>
                 <div>
                   <div className={`text-xl font-bold ${v.text}`}>{v.label}</div>
                   <div className="text-sm text-ink-muted">{v.desc}</div>
                 </div>
               </div>
-              {result.fit_score !== null && (
+              {result.fit_score !== null && result.fit_score !== undefined && (
                 <div className="text-right shrink-0">
                   <div className={`text-3xl font-bold ${v.text}`}>
                     {result.fit_score}
@@ -242,7 +228,6 @@ export default function DiagnosticoEmpresaPage() {
               )}
             </div>
 
-            {/* Razón del veredicto */}
             {result.fit_reason && (
               <p className="mt-4 text-sm text-ink/90 leading-relaxed border-t border-[#F1EEF7] pt-4">
                 {result.fit_reason}
@@ -260,7 +245,7 @@ export default function DiagnosticoEmpresaPage() {
               {result.company_size && (
                 <span className="flex items-center gap-1">
                   <IconUsers size={12} />
-                  {result.company_size.toLocaleString()} empleados
+                  {Number(result.company_size).toLocaleString()} empleados
                 </span>
               )}
               {result.company_type && (
@@ -269,12 +254,12 @@ export default function DiagnosticoEmpresaPage() {
                   {result.company_type}
                 </span>
               )}
-              {result._raw.linkedin_url && (
+              {result._raw?.linkedin_url && (
                 <a href={result._raw.linkedin_url} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-brand">
                   <IconBrandLinkedin size={12} /> LinkedIn
                 </a>
               )}
-              {result._raw.website && (
+              {result._raw?.website && (
                 <a href={result._raw.website} target="_blank" rel="noreferrer" className="flex items-center gap-1 hover:text-brand">
                   <IconWorld size={12} /> Web
                 </a>
@@ -282,13 +267,13 @@ export default function DiagnosticoEmpresaPage() {
             </div>
 
             {/* Señales de fit */}
-            {result.fit_signals && (
+            {signals.length > 0 && (
               <div className="mt-4 pt-4 border-t border-[#F1EEF7]">
                 <div className="label mb-2">Señales de fit</div>
                 <div className="flex flex-wrap gap-2">
-                  {result.fit_signals.split(" · ").map((s, i) => (
+                  {signals.map((s, i) => (
                     <span key={i} className="badge bg-[#F0FDF4] text-[#166534] border border-[#BBF7D0]">
-                      {s.trim()}
+                      {s}
                     </span>
                   ))}
                 </div>

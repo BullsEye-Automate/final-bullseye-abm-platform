@@ -13,6 +13,8 @@ function hsHeaders() {
 }
 
 const CONTACT_PROPERTIES = [
+  { name: "bullseye_seniority",            label: "Seniority (BullsEye)",          type: "string", fieldType: "text"     },
+  { name: "bullseye_linkedin_headline",   label: "LinkedIn Headline (BullsEye)",  type: "string", fieldType: "text"     },
   { name: "bullseye_email_subject",       label: "Email Subject (BullsEye)",      type: "string", fieldType: "text"     },
   { name: "bullseye_email_body",          label: "Email Body (BullsEye)",         type: "string", fieldType: "textarea" },
   { name: "bullseye_linkedin_icebreaker", label: "LinkedIn Icebreaker",           type: "string", fieldType: "textarea" },
