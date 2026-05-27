@@ -53,15 +53,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Empresas ya existentes del cliente para excluir duplicados
-  const { data: existing, error: exErr } = await db
-    .from("companies")
-    .select("company_name")
-    .eq("client_id", clientId)
-    .limit(1000);
+  // Empresas ya existentes + excluidas manualmente, para evitar duplicados y re-sugerir descartadas
+  const [{ data: existing, error: exErr }, { data: excluded }] = await Promise.all([
+    db.from("companies").select("company_name").eq("client_id", clientId).limit(1000),
+    db.from("excluded_companies").select("company_name").eq("client_id", clientId).limit(1000),
+  ]);
 
   if (exErr) return NextResponse.json({ error: exErr.message }, { status: 500 });
-  const exclude = (existing ?? []).map((r: { company_name: string }) => r.company_name);
+  const exclude = [
+    ...(existing ?? []).map((r: { company_name: string }) => r.company_name),
+    ...(excluded ?? []).map((r: { company_name: string }) => r.company_name),
+  ];
 
   let discovered;
   try {

@@ -10,7 +10,9 @@ import {
   IconDatabase,
   IconCloud,
   IconCircleCheck,
-  IconWrench,
+  IconTool,
+  IconUpload,
+  IconTrash,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -80,6 +82,12 @@ export default function ConfigClientePage() {
   const [sdrScripts, setSdrScripts]       = useState<"idle" | "running" | "done" | "error">("idle");
   const [sdrScriptsResult, setSdrScriptsResult] = useState<string | null>(null);
 
+  type ExcludedCompany = { id: string; company_name: string; company_website?: string };
+  const [excluded, setExcluded]             = useState<ExcludedCompany[]>([]);
+  const [excludedLoading, setExcludedLoading] = useState(false);
+  const [uploadState, setUploadState]         = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [uploadResult, setUploadResult]       = useState<string | null>(null);
+
   function set(field: keyof Config) {
     return (v: string) => setForm((f) => ({ ...f, [field]: v }));
   }
@@ -116,6 +124,14 @@ export default function ConfigClientePage() {
         setLoading(false);
       })
       .catch((e) => { setError(e.message); setLoading(false); });
+
+    // Cargar empresas excluidas
+    setExcludedLoading(true);
+    fetch(`/api/clients/${currentClient.id}/excluded-companies`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setExcluded(d.excluded ?? []))
+      .catch(() => {})
+      .finally(() => setExcludedLoading(false));
   }, [currentClient?.id]);
 
   async function generateSdrScripts() {
@@ -181,6 +197,40 @@ export default function ConfigClientePage() {
       setHsSetup("error");
       setHsSetupResult(e.message ?? "Error de red");
     }
+  }
+
+  async function uploadExcluded(file: File) {
+    if (!currentClient) return;
+    setUploadState("uploading");
+    setUploadResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`/api/clients/${currentClient.id}/excluded-companies`, {
+        method: "POST",
+        body: fd,
+      });
+      const d = await res.json();
+      if (!res.ok) { setUploadState("error"); setUploadResult(d.error ?? "Error"); return; }
+      setUploadResult(`${d.inserted} empresas agregadas (${d.total} en el archivo)`);
+      setUploadState("done");
+      // Recargar lista
+      fetch(`/api/clients/${currentClient.id}/excluded-companies`, { cache: "no-store" })
+        .then((r) => r.json()).then((d) => setExcluded(d.excluded ?? [])).catch(() => {});
+    } catch (e: any) {
+      setUploadState("error");
+      setUploadResult(e.message ?? "Error de red");
+    }
+  }
+
+  async function deleteExcluded(id: string) {
+    if (!currentClient) return;
+    const res = await fetch(`/api/clients/${currentClient.id}/excluded-companies`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [id] }),
+    });
+    if (res.ok) setExcluded((prev) => prev.filter((e) => e.id !== id));
   }
 
   async function save() {
@@ -336,11 +386,79 @@ export default function ConfigClientePage() {
             />
           </section>
 
+          {/* Empresas excluidas */}
+          <section className="card space-y-4">
+            <div>
+              <h2 className="font-semibold flex items-center gap-2">
+                <IconTrash size={18} className="text-brand" /> Empresas excluidas
+              </h2>
+              <p className="text-sm text-ink-muted mt-1">
+                La IA no sugerirá estas empresas al usar el motor de recomendación.
+                Útil para clientes actuales, competidores o empresas que ya estás trabajando.
+              </p>
+            </div>
+
+            {/* Upload Excel */}
+            <div className="space-y-2">
+              <p className="text-xs text-ink-muted">
+                Sube un Excel con una columna llamada <code className="bg-surface-2 px-1 rounded">Company</code>, <code className="bg-surface-2 px-1 rounded">Name</code> o <code className="bg-surface-2 px-1 rounded">Empresa</code>.
+              </p>
+              <div className="flex items-center gap-3">
+                <label className="btn-secondary flex items-center gap-2 text-sm cursor-pointer">
+                  {uploadState === "uploading"
+                    ? <IconLoader2 size={15} className="animate-spin" />
+                    : uploadState === "done"
+                    ? <IconCircleCheck size={15} className="text-success-fg" />
+                    : <IconUpload size={15} />}
+                  {uploadState === "uploading" ? "Subiendo…" : "Subir Excel"}
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) { uploadExcluded(f); e.target.value = ""; }
+                    }}
+                  />
+                </label>
+                {uploadResult && (
+                  <span className={`text-xs ${uploadState === "error" ? "text-danger-fg" : "text-success-fg"}`}>
+                    {uploadResult}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Lista actual */}
+            {excludedLoading ? (
+              <div className="flex items-center gap-2 text-ink-muted text-sm">
+                <IconLoader2 size={14} className="animate-spin" /> Cargando…
+              </div>
+            ) : excluded.length === 0 ? (
+              <p className="text-xs text-ink-muted">No hay empresas excluidas para este cliente.</p>
+            ) : (
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {excluded.map((e) => (
+                  <div key={e.id} className="flex items-center justify-between py-1 px-2 rounded hover:bg-surface-2 group">
+                    <span className="text-sm">{e.company_name}</span>
+                    <button
+                      onClick={() => deleteExcluded(e.id)}
+                      className="opacity-0 group-hover:opacity-100 text-ink-muted hover:text-danger-fg transition-opacity"
+                    >
+                      <IconTrash size={14} />
+                    </button>
+                  </div>
+                ))}
+                <p className="text-xs text-ink-muted pt-1">{excluded.length} empresa{excluded.length !== 1 ? "s" : ""} excluida{excluded.length !== 1 ? "s" : ""}</p>
+              </div>
+            )}
+          </section>
+
           {/* Setup retroactivo */}
           <section className="card space-y-5">
             <div>
               <h2 className="font-semibold flex items-center gap-2">
-                <IconWrench size={18} className="text-brand" /> Setup retroactivo
+                <IconTool size={18} className="text-brand" /> Setup retroactivo
               </h2>
               <p className="text-sm text-ink-muted mt-1">
                 Acciones de configuración puntual o para aplicar cambios a contactos ya existentes.
@@ -427,7 +545,7 @@ export default function ConfigClientePage() {
                     ? <IconLoader2 size={15} className="animate-spin" />
                     : sdrScripts === "done"
                     ? <IconCircleCheck size={15} className="text-success-fg" />
-                    : <IconWrench size={15} />}
+                    : <IconTool size={15} />}
                   {sdrScripts === "running" ? "Generando scripts…" : "Generar scripts SDR"}
                 </button>
                 {sdrScriptsResult && (
