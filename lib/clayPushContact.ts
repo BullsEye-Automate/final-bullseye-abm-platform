@@ -54,7 +54,7 @@ export async function pushContactToClay(
 
   const { data: company, error: coErr } = await db
     .from("companies")
-    .select("id, client_id, company_name, company_size, fit_signals")
+    .select("id, client_id, company_name, company_size, company_country, fit_signals")
     .eq("id", contact.company_id)
     .maybeSingle();
 
@@ -102,6 +102,7 @@ export async function pushContactToClay(
     tenure:              contact.tenure            ?? "",
     company_name:        company.company_name,
     company_size:        company.company_size       ?? null,
+    company_country:     (company as any).company_country ?? null,
     fit_signals:         company.fit_signals        ?? "",
   };
 
