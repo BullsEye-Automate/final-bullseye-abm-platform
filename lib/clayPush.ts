@@ -89,7 +89,7 @@ export async function pushCompanyToClay(
     fit_score:           company.fit_score           ?? null,
     fit_signals:         company.fit_signals         ?? "",
     description:         (company as any).description ?? "",
-    country:             (company as any).company_country ?? "",
+    country:             (company as any).company_country ?? null,
     city:                company.company_city        ?? "",
     status:              "approved",
   };
