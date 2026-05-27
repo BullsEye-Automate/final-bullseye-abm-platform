@@ -40,6 +40,8 @@ const EMPTY_WEBHOOKS: ClientWebhooks = {
   clay_contacts_webhook_url:  "",
 };
 
+type ExcludedCompany = { id: string; company_name: string; company_website?: string };
+
 function Field({
   label,
   hint,
@@ -82,7 +84,6 @@ export default function ConfigClientePage() {
   const [sdrScripts, setSdrScripts]       = useState<"idle" | "running" | "done" | "error">("idle");
   const [sdrScriptsResult, setSdrScriptsResult] = useState<string | null>(null);
 
-  type ExcludedCompany = { id: string; company_name: string; company_website?: string };
   const [excluded, setExcluded]             = useState<ExcludedCompany[]>([]);
   const [excludedLoading, setExcludedLoading] = useState(false);
   const [uploadState, setUploadState]         = useState<"idle" | "uploading" | "done" | "error">("idle");
