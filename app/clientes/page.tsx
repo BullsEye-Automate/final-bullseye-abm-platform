@@ -14,6 +14,7 @@ import {
   IconUpload,
   IconPhoto,
   IconSettings,
+  IconTrash,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -196,6 +197,9 @@ export default function ClientesPage() {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
   async function load() {
     setLoading(true);
     const r = await fetch("/api/clients");
@@ -222,6 +226,17 @@ export default function ClientesPage() {
     );
     setEditing(null);
     setSaving(false);
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(true);
+    const r = await fetch(`/api/clients/${id}`, { method: "DELETE" });
+    const j = await r.json();
+    if (!j.error) {
+      setClients((prev) => prev.filter((c) => c.id !== id));
+    }
+    setConfirmDelete(null);
+    setDeleting(false);
   }
 
   async function toggleActive(client: Client) {
@@ -262,6 +277,38 @@ export default function ClientesPage() {
       )}
       {error && <div className="card text-danger-fg bg-danger-bg">{error}</div>}
 
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="card w-full max-w-sm mx-4">
+            <h2 className="font-bold text-ink text-lg mb-2">Eliminar cliente</h2>
+            <p className="text-ink-muted text-sm mb-5">
+              ¿Estás seguro de que quieres eliminar <strong>{confirmDelete.name}</strong>?
+              Esta acción no se puede deshacer y eliminará todos sus datos asociados.
+            </p>
+            <div className="flex gap-2">
+              <button
+                className="btn-secondary flex-1"
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleting}
+              >
+                Cancelar
+              </button>
+              <button
+                className="flex-1 text-sm font-medium py-2 px-4 rounded-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                style={{ background: "#ef4444", color: "white" }}
+                onClick={() => handleDelete(confirmDelete.id)}
+                disabled={deleting}
+              >
+                {deleting
+                  ? <IconLoader2 size={15} className="animate-spin" />
+                  : <IconTrash size={15} />}
+                {deleting ? "Eliminando..." : "Eliminar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!loading && !error && (
         <>
           {activeClients.length === 0 && (
@@ -286,6 +333,7 @@ export default function ClientesPage() {
               onSaveEdit={(form) => handleEdit(client.id, form)}
               onToggle={() => toggleActive(client)}
               onSelect={() => setCurrentClient(client)}
+              onDelete={() => setConfirmDelete({ id: client.id, name: client.name })}
             />
           ))}
 
@@ -304,6 +352,7 @@ export default function ClientesPage() {
                   onSaveEdit={(form) => handleEdit(client.id, form)}
                   onToggle={() => toggleActive(client)}
                   onSelect={() => setCurrentClient(client)}
+                  onDelete={() => setConfirmDelete({ id: client.id, name: client.name })}
                 />
               ))}
             </div>
@@ -323,7 +372,8 @@ function ClientCard({
   onCancelEdit,
   onSaveEdit,
   onToggle,
-  onSelect
+  onSelect,
+  onDelete
 }: {
   client: Client;
   editing: boolean;
@@ -334,6 +384,7 @@ function ClientCard({
   onSaveEdit: (f: FormState) => void;
   onToggle: () => void;
   onSelect: () => void;
+  onDelete: () => void;
 }) {
   const isOnboarding = client.status === "onboarding" && client.onboarding_step > 0;
 
@@ -413,6 +464,13 @@ function ClientCard({
               {client.is_active
                 ? <IconToggleRight size={18} style={{ color: "#62E0D8" }} />
                 : <IconToggleLeft  size={18} className="text-ink-subtle" />}
+            </button>
+            <button
+              className="btn-secondary py-1.5 px-2 text-danger-fg"
+              onClick={onDelete}
+              title="Eliminar cliente"
+            >
+              <IconTrash size={14} />
             </button>
           </div>
         </div>

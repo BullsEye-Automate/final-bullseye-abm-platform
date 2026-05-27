@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
+async function pauseClientLemlistCampaigns(clientId: string): Promise<void> {
+  const apiKey = process.env.LEMLIST_API_KEY;
+  if (!apiKey) return;
+
+  const db = supabaseAdmin();
+  const { data: config } = await db
+    .from("client_configs")
+    .select("lemlist_campaign_id, lemlist_staging_campaign_id")
+    .eq("client_id", clientId)
+    .maybeSingle();
+
+  if (!config) return;
+
+  const credentials = Buffer.from(`:${apiKey}`).toString("base64");
+  const ids = [config.lemlist_campaign_id, config.lemlist_staging_campaign_id].filter(Boolean);
+
+  await Promise.all(
+    ids.map((id) =>
+      fetch(`https://api.lemlist.com/api/campaigns/${id}/pause`, {
+        method: "PUT",
+        headers: { Authorization: `Basic ${credentials}` },
+      }).catch(() => {})
+    )
+  );
+}
+
 export const dynamic = "force-dynamic";
 
 const FULL_SELECT =
@@ -69,5 +95,25 @@ export async function PATCH(
         : error.message;
     return NextResponse.json({ error: msg }, { status: 400 });
   }
+
+  // Pausar campañas de Lemlist al desactivar el cliente
+  if (body.is_active === false) {
+    pauseClientLemlistCampaigns(params.id).catch(() => {});
+  }
+
   return NextResponse.json({ client: data });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("clients")
+    .delete()
+    .eq("id", params.id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ success: true });
 }
