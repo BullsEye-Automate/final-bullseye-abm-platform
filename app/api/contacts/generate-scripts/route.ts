@@ -73,21 +73,26 @@ async function handleRequest(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // ICP + training context
-  const [{ data: icpCtx }, { data: tc }] = await Promise.all([
-    db.from("client_ai_context")
-      .select("content")
-      .eq("client_id", body.client_id)
-      .eq("file_type", "icp")
-      .order("uploaded_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    db.from("model_training_config")
+  // ICP context
+  const { data: icpCtx } = await db
+    .from("client_ai_context")
+    .select("content")
+    .eq("client_id", body.client_id)
+    .eq("file_type", "icp")
+    .order("uploaded_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // Training config (tabla puede no existir)
+  let tc: Record<string, string | null> | null = null;
+  try {
+    const { data } = await db
+      .from("model_training_config")
       .select("business_description, value_props, talking_points")
       .eq("client_id", body.client_id)
-      .maybeSingle()
-      .catch(() => ({ data: null })),
-  ]);
+      .maybeSingle();
+    tc = data;
+  } catch { /* tabla no existe aún */ }
 
   const trainingCtx = [
     tc?.business_description && `Negocio: ${tc.business_description}`,

@@ -161,7 +161,7 @@ function propFilter(property: string, operation: Record<string, unknown>): HsFil
 
 // La API v3 exige: raíz OR → al menos un hijo AND
 function isKnown(property: string): HsFilter {
-  return propFilter(property, { operationType: "ALL_PROPERTY", operator: "HAS_PROPERTY" });
+  return propFilter(property, { operationType: "ALL_PROPERTY", operator: "IS_KNOWN" });
 }
 
 function numGte(property: string, value: number): HsFilter {
@@ -260,5 +260,9 @@ export async function createHSList(list: {
     return { name: list.name, id: d.listId ?? d.id ?? null, status: "created" };
   }
   const text = await res.text().catch(() => "");
+  // Lista duplicada — tratarla como éxito silencioso
+  if (text.includes("DUPLICATE_LIST_NAME") || text.includes("already exist")) {
+    return { name: list.name, id: null, status: "created" };
+  }
   return { name: list.name, id: null, status: "error", error: text.slice(0, 300) };
 }
