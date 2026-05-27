@@ -40,12 +40,14 @@ const CONTACT_PROPERTIES = [
     fieldType: "textarea",
     description: "Script personalizado generado por IA para la llamada SDR. Incluye apertura, propuesta de valor, preguntas de calificación, manejo de objeciones y CTA.",
   },
+  { name: "cliente_bullseye_ia", label: "Cliente BullsEye (IA)", type: "string", fieldType: "text" },
 ];
 
 const COMPANY_PROPERTIES = [
-  { name: "bullseye_fit_signals",        label: "Fit Signals (BullsEye)",    type: "string", fieldType: "textarea" },
-  { name: "bullseye_company_id",         label: "BullsEye Company ID",       type: "string", fieldType: "text"     },
-  { name: "bullseye_icp_score",          label: "ICP Score (BullsEye)",      type: "number", fieldType: "number"   },
+  { name: "bullseye_fit_signals",  label: "Fit Signals (BullsEye)", type: "string", fieldType: "textarea" },
+  { name: "bullseye_company_id",   label: "BullsEye Company ID",    type: "string", fieldType: "text"     },
+  { name: "bullseye_icp_score",    label: "ICP Score (BullsEye)",   type: "number", fieldType: "number"   },
+  { name: "cliente_bullseye_ia",   label: "Cliente BullsEye (IA)",  type: "string", fieldType: "text"     },
 ];
 
 async function createProperty(

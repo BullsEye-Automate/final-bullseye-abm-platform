@@ -297,6 +297,7 @@ async function syncToHubSpot(opts: {
       name:                       companyName,
       bullseye_fit_signals:       fitSignals  || undefined,
       bullseye_company_id:        companyDbId || undefined,
+      cliente_bullseye_ia:        clientName  || undefined,
       ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}),
     }, existingCompanyId);
     if (!hsCompanyId) console.warn(`[hs-sync] upsertHSCompany falló para "${companyName}" — contacto igual se creará`);
@@ -316,6 +317,7 @@ async function syncToHubSpot(opts: {
     linkedin_bio:                   contact.linkedin_url        ?? undefined,
     bullseye_contact_id:            contact.id,
     bullseye_client_name:           clientName                  ?? undefined,
+    cliente_bullseye_ia:            clientName                  ?? undefined,
     bullseye_seniority:             contact.seniority           ?? undefined,
     bullseye_linkedin_headline:     contact.linkedin_headline   ?? undefined,
     bullseye_email_subject:         contact.email_subject       ?? undefined,
