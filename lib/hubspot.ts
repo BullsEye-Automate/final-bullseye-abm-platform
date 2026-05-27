@@ -159,8 +159,9 @@ function propFilter(property: string, operation: Record<string, unknown>): HsFil
   return { filterType: "PROPERTY", property, operation };
 }
 
+// La API v3 exige: raíz OR → al menos un hijo AND
 function isKnown(property: string): HsFilter {
-  return propFilter(property, { operationType: "STRING", operator: "HAS_PROPERTY" });
+  return propFilter(property, { operationType: "ALL_PROPERTY", operator: "HAS_PROPERTY" });
 }
 
 function numGte(property: string, value: number): HsFilter {
@@ -179,55 +180,59 @@ function enumAnyOf(property: string, values: string[]): HsFilter {
   return propFilter(property, { operationType: "ENUMERATION", operator: "IS_ANY_OF", values });
 }
 
+// Helpers para construir la estructura OR(AND(...)) requerida por HubSpot v3
+function andBranch(filters: HsFilter[], subBranches: HsFilterBranch[] = []): HsFilterBranch {
+  return { filterBranchType: "AND", filterBranches: subBranches, filters };
+}
+
+function orRoot(...children: HsFilterBranch[]): HsFilterBranch {
+  return { filterBranchType: "OR", filterBranches: children, filters: [] };
+}
+
 const ACTIVE_LEAD_STATUSES = ["IN_PROGRESS", "NEW", "ATTEMPTED_TO_CONTACT", "BAD_TIMING", "CONNECTED", "OPEN_DEAL"];
 
 export function buildClientLists(clientName: string, folderId: number | null) {
-  const phoneOrLusha: HsFilterBranch = {
-    filterBranchType: "OR",
-    filterBranches: [],
-    filters: [isKnown("phone"), isKnown("bullseye_telefono_lusha")],
-  };
+  const clientFilter = strEq("bullseye_client_name", clientName);
+
+  // Rama OR para teléfono: tiene phone estándar O teléfono de Lusha
+  const phoneOrLusha = andBranch([], [
+    { filterBranchType: "OR", filterBranches: [], filters: [isKnown("phone"), isKnown("bullseye_telefono_lusha")] },
+  ]);
 
   return [
     {
       name: `Alta interacción (priorizar) - ${clientName}`,
       folderId,
-      filterBranch: {
-        filterBranchType: "AND",
-        filterBranches: [] as HsFilterBranch[],
-        filters: [
-          strEq("bullseye_client_name", clientName),
+      // OR → AND(client, engagement>=50, lead_status in [...])
+      filterBranch: orRoot(
+        andBranch([
+          clientFilter,
           numGte("bullseye_engagement_score", 50),
           enumAnyOf("hs_lead_status", ACTIVE_LEAD_STATUSES),
-        ],
-      },
+        ])
+      ),
     },
     {
       name: `Warm por llamar (fit 5-7 + phone) - ${clientName}`,
       folderId,
-      filterBranch: {
-        filterBranchType: "AND",
-        filterBranches: [phoneOrLusha],
-        filters: [
-          strEq("bullseye_client_name", clientName),
-          numGte("bullseye_fit_score", 5),
-          numLte("bullseye_fit_score", 7),
-          enumAnyOf("hs_lead_status", ["NEW"]),
-        ],
-      },
+      // OR → AND(client, fit 5-7, NEW, AND(OR(phone known, lusha known)))
+      filterBranch: orRoot(
+        andBranch(
+          [clientFilter, numGte("bullseye_fit_score", 5), numLte("bullseye_fit_score", 7), enumAnyOf("hs_lead_status", ["NEW"])],
+          [{ filterBranchType: "OR", filterBranches: [], filters: [isKnown("phone"), isKnown("bullseye_telefono_lusha")] }]
+        )
+      ),
     },
     {
       name: `Hot por llamar (fit ≥ 8 + phone) - ${clientName}`,
       folderId,
-      filterBranch: {
-        filterBranchType: "AND",
-        filterBranches: [phoneOrLusha],
-        filters: [
-          strEq("bullseye_client_name", clientName),
-          numGte("bullseye_fit_score", 8),
-          enumAnyOf("hs_lead_status", ["NEW"]),
-        ],
-      },
+      // OR → AND(client, fit>=8, NEW, AND(OR(phone known, lusha known)))
+      filterBranch: orRoot(
+        andBranch(
+          [clientFilter, numGte("bullseye_fit_score", 8), enumAnyOf("hs_lead_status", ["NEW"])],
+          [{ filterBranchType: "OR", filterBranches: [], filters: [isKnown("phone"), isKnown("bullseye_telefono_lusha")] }]
+        )
+      ),
     },
   ];
 }

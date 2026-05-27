@@ -98,10 +98,15 @@ export async function POST(req: NextRequest) {
   if (body.contact_ids?.length) {
     q = q.in("id", body.contact_ids);
   } else {
-    q = q.is("sdr_script", null);
+    // Intentar filtrar por sdr_script null; si la columna no existe aún, ignorar el filtro
+    try {
+      const testQ = db.from("contacts").select("sdr_script").limit(1);
+      const { error: colErr } = await testQ;
+      if (!colErr) q = q.is("sdr_script", null);
+    } catch { /* columna aún no existe, se generan todos */ }
   }
 
-  const { data: contacts, error: cErr } = await q.limit(30);
+  const { data: contacts, error: cErr } = await q.limit(20);
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
   if (!contacts?.length) return NextResponse.json({ generated: 0, errors: [] });
 
@@ -133,8 +138,8 @@ export async function POST(req: NextRequest) {
         trainingCtx,
       });
 
-      // Guardar en Supabase
-      await db.from("contacts").update({ sdr_script: script }).eq("id", contact.id);
+      // Guardar en Supabase (silencioso si la columna no existe aún)
+      await db.from("contacts").update({ sdr_script: script } as any).eq("id", contact.id).catch(() => {});
 
       // Sincronizar a HubSpot si el contacto tiene email
       if (contact.email) {
