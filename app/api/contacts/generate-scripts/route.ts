@@ -157,7 +157,9 @@ async function handleRequest(req: NextRequest) {
 
       generated++;
     } catch (err: any) {
-      errors.push({ contact_id: contact.id, error: err?.message ?? "Error generando script" });
+      const msg = err?.message ?? String(err) ?? "Error generando script";
+      console.error(`[generate-scripts] contacto ${contact.id}:`, msg);
+      errors.push({ contact_id: contact.id, error: msg });
     }
   }
 

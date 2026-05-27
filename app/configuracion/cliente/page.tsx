@@ -129,7 +129,11 @@ export default function ConfigClientePage() {
       });
       const d = await res.json();
       if (!res.ok) { setSdrScripts("error"); setSdrScriptsResult(d.error ?? "Error"); return; }
-      setSdrScriptsResult(`${d.generated} scripts generados${d.errors?.length ? ` (${d.errors.length} errores)` : ""}`);
+      const firstErr = d.errors?.[0]?.error ?? "";
+      setSdrScriptsResult(
+        `${d.generated} scripts generados` +
+        (d.errors?.length ? ` — ${d.errors.length} errores: ${firstErr.slice(0, 120)}` : "")
+      );
       setSdrScripts(d.errors?.length > 0 ? "error" : "done");
     } catch (e: any) {
       setSdrScripts("error");
