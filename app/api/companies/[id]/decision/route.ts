@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { triggerDeepResearchForCompany } from "@/lib/deep-research";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,6 +68,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     icp_version: company.icp_version
   });
   if (fbErr) return NextResponse.json({ error: fbErr.message }, { status: 500 });
+
+  // Deep research automático al aprobar (fire & forget)
+  if (body.decision === "approved") {
+    triggerDeepResearchForCompany(db, params.id).catch(() => {});
+  }
 
   return NextResponse.json({ company: updated });
 }

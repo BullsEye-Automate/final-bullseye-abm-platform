@@ -94,11 +94,11 @@ export async function POST(req: NextRequest) {
   if (contactsError) return NextResponse.json({ error: contactsError.message }, { status: 500 });
   if (!contacts?.length) return NextResponse.json({ pushed: 0, skipped: 0, generated: 0, errors: [] });
 
-  // ── Empresas (nombre + fit_signals para personalizar) ─────────────────────
+  // ── Empresas (nombre + fit_signals + deep_research para personalizar) ───────
   const companyIds = [...new Set(contacts.map((c) => c.company_id).filter(Boolean))];
   const { data: companies } = await db
     .from("companies")
-    .select("id, company_name, fit_signals")
+    .select("id, company_name, fit_signals, deep_research")
     .in("id", companyIds);
 
   const companyById = new Map((companies ?? []).map((c) => [c.id, c]));
@@ -129,14 +129,22 @@ export async function POST(req: NextRequest) {
           company?.fit_signals && `Señales de fit de esta empresa: ${company.fit_signals}`,
         ].filter(Boolean).join("\n\n") || undefined;
 
+        // Parsear deep_research si existe
+        let deepResearch: { trigger: string; angulo: string; resumen_ejecutivo: string } | null = null;
+        try {
+          const raw = company?.deep_research;
+          if (raw) deepResearch = typeof raw === "string" ? JSON.parse(raw) : raw;
+        } catch { /* ignorar si no parsea */ }
+
         const msgs = await generateContactMessages({
           hasEmail,
-          firstName:   contact.first_name  ?? undefined,
-          lastName:    contact.last_name   ?? undefined,
-          jobTitle:    contact.job_title   ?? undefined,
-          companyName: companyName         || undefined,
-          icpContext:  enrichedContext,
-          language:    "es",
+          firstName:    contact.first_name  ?? undefined,
+          lastName:     contact.last_name   ?? undefined,
+          jobTitle:     contact.job_title   ?? undefined,
+          companyName:  companyName         || undefined,
+          icpContext:   enrichedContext,
+          deepResearch,
+          language:     "es",
         });
 
         const update: Record<string, string | undefined> = {};

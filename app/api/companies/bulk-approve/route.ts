@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { pushCompanyToClay } from "@/lib/clayPush";
+import { triggerDeepResearchForCompany } from "@/lib/deep-research";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ export async function POST(req: NextRequest) {
     pushCompanyToClay(db, c.id).catch(() => {
       db.from("companies").update({ clay_push_error: "bulk push failed" }).eq("id", c.id);
     });
+    triggerDeepResearchForCompany(db, c.id).catch(() => {});
   }
 
   return NextResponse.json({ approved, clay_errors: clayErrors });

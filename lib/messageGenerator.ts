@@ -1,6 +1,12 @@
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import type Anthropic from "@anthropic-ai/sdk";
 
+export type DeepResearchContext = {
+  trigger: string;
+  angulo: string;
+  resumen_ejecutivo: string;
+};
+
 export type ContactMessageInput = {
   hasEmail: boolean;
   firstName?: string;
@@ -8,6 +14,7 @@ export type ContactMessageInput = {
   jobTitle?: string;
   companyName?: string;
   icpContext?: string;
+  deepResearch?: DeepResearchContext | null;
   language?: "es" | "en";
 };
 
@@ -36,8 +43,16 @@ export async function generateContactMessages(
     jobTitle,
     companyName,
     icpContext,
+    deepResearch,
     language = "es",
   } = input;
+
+  const deepResearchContext = deepResearch
+    ? `\nInvestigación profunda de la empresa:
+- Trigger actual: ${deepResearch.trigger}
+- Ángulo de mensaje: ${deepResearch.angulo}
+- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`
+    : "";
 
   const contactInfo = [
     firstName && `Nombre: ${firstName}${lastName ? " " + lastName : ""}`,
@@ -60,12 +75,13 @@ export async function generateContactMessages(
     userPrompt = `${langInstruction}
 
 Contexto del ICP:
-${icpContext ?? "No disponible"}
+${icpContext ?? "No disponible"}${deepResearchContext}
 
 Datos del contacto:
 ${contactInfo || "No disponibles"}
 
-Genera los mensajes para la secuencia de Lemlist (RAMA CON EMAIL):
+Genera los mensajes para la secuencia de Lemlist (RAMA CON EMAIL).
+${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar los mensajes con un evento o señal real y verificable de la empresa." : ""}
 1. emailSubject: asunto del email inicial (máximo 7 palabras, sin signos de admiración, sin emojis)
 2. emailBody: cuerpo del email — empieza EXACTAMENTE con "${greeting}\\n\\n", luego el texto. Máximo 5 oraciones. Sin bullets. Termina con una pregunta o CTA sutil.
 3. linkedinIcebreaker: mensaje de chat LinkedIn para cuando acepta el invite (máximo 180 caracteres, sin saludo, sin emojis, directo al contexto relevante)
@@ -76,12 +92,13 @@ Responde ÚNICAMENTE con este JSON:
     userPrompt = `${langInstruction}
 
 Contexto del ICP:
-${icpContext ?? "No disponible"}
+${icpContext ?? "No disponible"}${deepResearchContext}
 
 Datos del contacto:
 ${contactInfo || "No disponibles"}
 
-Genera el mensaje para la secuencia de Lemlist (RAMA SIN EMAIL):
+Genera el mensaje para la secuencia de Lemlist (RAMA SIN EMAIL).
+${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con un evento real y verificable de la empresa." : ""}
 linkedinIcebreakerNoEmail: mensaje de chat LinkedIn final (máximo 180 caracteres, sin saludo, sin emojis, directo al contexto relevante del ICP)
 
 Responde ÚNICAMENTE con este JSON:

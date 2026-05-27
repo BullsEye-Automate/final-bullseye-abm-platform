@@ -1,4 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { anthropic, CLAUDE_MODEL } from "./claude";
 import { perplexitySearch } from "./perplexity";
 
@@ -102,6 +103,47 @@ Extrae el ángulo de personalización para el outreach de BullsEye hacia esta em
     resumen_ejecutivo:  parsed?.resumen_ejecutivo  ?? "",
     fuentes:            research.citations.slice(0, 6)
   };
+}
+
+// Helper reutilizable: lanza deep research para una empresa y guarda el resultado en Supabase.
+// Pensado para fire-and-forget: llama sin await y encadena .catch(() => {}).
+export async function triggerDeepResearchForCompany(
+  db: SupabaseClient,
+  companyId: string
+): Promise<void> {
+  const { data: company } = await db
+    .from("companies")
+    .select("id, company_name, company_website, company_linkedin_url, company_country, client_id, deep_research")
+    .eq("id", companyId)
+    .maybeSingle();
+
+  if (!company) return;
+  // No re-investigar si ya tiene deep_research guardado
+  if (company.deep_research) return;
+
+  const { data: icpCtx } = await db
+    .from("client_ai_context")
+    .select("content")
+    .eq("client_id", company.client_id)
+    .eq("file_type", "icp")
+    .order("uploaded_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!icpCtx?.content?.trim()) return;
+
+  const result = await runDeepResearch({
+    companyName:     company.company_name,
+    companyWebsite:  company.company_website,
+    companyLinkedin: company.company_linkedin_url,
+    companyCountry:  company.company_country,
+    icpContent:      icpCtx.content,
+  });
+
+  await db
+    .from("companies")
+    .update({ deep_research: JSON.stringify(result) })
+    .eq("id", companyId);
 }
 
 function extractJson(text: string): any {
