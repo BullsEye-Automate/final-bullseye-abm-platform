@@ -48,14 +48,18 @@ export async function intakeContactsForCompany(
 
   const { data: existing, error: exErr } = await db
     .from("contacts")
-    .select("linkedin_url")
+    .select("id, linkedin_url, linkedin_headline, seniority")
     .eq("company_id", companyId);
   if (exErr) return { ok: false, status: 500, error: exErr.message };
-  const seen = new Set(
+
+  // Mapa linkedin_url → registro existente para actualizar headline/seniority
+  const existingByUrl = new Map(
     (existing ?? [])
-      .map((r) => (normalizeLinkedInUrl(r.linkedin_url) ?? "").toLowerCase())
-      .filter(Boolean)
+      .filter((r) => r.linkedin_url)
+      .map((r) => [(normalizeLinkedInUrl(r.linkedin_url) ?? "").toLowerCase(), r])
   );
+
+  const seen = new Set(existingByUrl.keys());
 
   const summary: IntakeSummary = { inserted: 0, yes: 0, no: 0, skipped: 0 };
   const rows: any[] = [];
@@ -64,6 +68,24 @@ export async function intakeContactsForCompany(
     const normalized = normalizeLinkedInUrl(c.linkedin_url);
     const linkedin = (normalized ?? "").toLowerCase();
     if (linkedin && seen.has(linkedin)) {
+      // Actualizar headline/seniority si llegaron nuevos y el contacto no los tenía
+      const prev = existingByUrl.get(linkedin);
+      if (prev) {
+        const update: Record<string, string | null> = {};
+        if (c.linkedin_headline?.trim() && !prev.linkedin_headline) {
+          update.linkedin_headline = c.linkedin_headline;
+          // Limpiar mensajes para que se regeneren con el nuevo headline
+          update.email_subject       = null;
+          update.email_body          = null;
+          update.linkedin_icebreaker = null;
+        }
+        if (c.seniority?.trim() && !prev.seniority) {
+          update.seniority = c.seniority;
+        }
+        if (Object.keys(update).length > 0) {
+          await db.from("contacts").update(update).eq("id", prev.id);
+        }
+      }
       summary.skipped += 1;
       continue;
     }
