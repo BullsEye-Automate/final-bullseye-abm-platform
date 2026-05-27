@@ -173,8 +173,7 @@ async function refreshClientContacts(
     if (companyName) {
       const existingCompanyId = await searchHSCompany(companyName);
       hsCompanyId = await upsertHSCompany(
-        { name: companyName, bullseye_fit_signals: fitSignals || undefined, bullseye_company_id: contact.company_id || undefined,
-          ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}) },
+        { name: companyName, bullseye_fit_signals: fitSignals || undefined, bullseye_company_id: contact.company_id || undefined },
         existingCompanyId
       );
     }

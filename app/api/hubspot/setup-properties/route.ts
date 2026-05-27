@@ -46,7 +46,6 @@ const COMPANY_PROPERTIES = [
   { name: "bullseye_fit_signals",        label: "Fit Signals (BullsEye)",    type: "string", fieldType: "textarea" },
   { name: "bullseye_company_id",         label: "BullsEye Company ID",       type: "string", fieldType: "text"     },
   { name: "bullseye_icp_score",          label: "ICP Score (BullsEye)",      type: "number", fieldType: "number"   },
-  { name: "cliente_bullseye_empresa", label: "Cliente BullsEye (Empresa)", type: "string", fieldType: "text" },
 ];
 
 async function createProperty(

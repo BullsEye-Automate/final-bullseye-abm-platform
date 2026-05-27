@@ -294,12 +294,12 @@ async function syncToHubSpot(opts: {
   if (companyName) {
     const existingCompanyId = await searchHSCompany(companyName);
     hsCompanyId = await upsertHSCompany({
-      name:                     companyName,
-      bullseye_fit_signals:     fitSignals  || undefined,
-      bullseye_company_id:      companyDbId || undefined,
-      ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}),
+      name:                 companyName,
+      bullseye_fit_signals: fitSignals  || undefined,
+      bullseye_company_id:  companyDbId || undefined,
     }, existingCompanyId);
-    if (!hsCompanyId) throw new Error(`upsertHSCompany falló para "${companyName}"`);
+    // Empresa fallida no bloquea la creación del contacto
+    if (!hsCompanyId) console.warn(`[hs-sync] upsertHSCompany falló para "${companyName}" — contacto igual se creará`);
   }
 
   // ── Contacto ───────────────────────────────────────────────────────────────
