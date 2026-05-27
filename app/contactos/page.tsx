@@ -156,9 +156,13 @@ export default function ContactosPage() {
       return;
     }
     const parts = [`${pushed} contacto${pushed !== 1 ? "s" : ""} enviado${pushed !== 1 ? "s" : ""} a Lemlist`];
-    if (skipped > 0) parts.push(`${skipped} sin email (Clay aún enriqueciéndolos)`);
+    if (skipped > 0) parts.push(`${skipped} sin email ni LinkedIn`);
     if (errs > 0)    parts.push(`${errs} con error`);
     setNotice(parts.join(" · ") + ".");
+    if (data.errors?.length > 0) {
+      const detail = data.errors.map((e: any) => e.error).join(" | ");
+      setError(`Errores Lemlist: ${detail}`);
+    }
     await load();
   }
 
