@@ -391,10 +391,13 @@ function ContactCard({
             {bucket === "approved_pending" && c.fit_action === "enrich" && (
               <span className="badge" style={{ background: "rgba(98,224,216,0.15)", color: "#0F6E56" }}>enrich</span>
             )}
+            {c.seniority && (
+              <span className="badge bg-[#EEF2FF] text-[#4F46E5]">{c.seniority}</span>
+            )}
             {c.fit_score !== null && <span className={`badge ${scoreClass}`}>score {c.fit_score}/10</span>}
           </div>
           <div className="text-xs text-ink-muted mt-1">
-            {c.job_title ?? "(sin cargo)"}{c.seniority ? ` · ${c.seniority}` : ""}
+            {c.job_title ?? "(sin cargo)"}
           </div>
         </div>
         {c.linkedin_url && (
@@ -405,7 +408,10 @@ function ContactCard({
       </div>
 
       {c.linkedin_headline && (
-        <div className="text-sm text-ink/90 italic">{c.linkedin_headline}</div>
+        <div className="flex items-start gap-1.5 text-sm">
+          <IconBrandLinkedin size={14} className="text-[#0A66C2] shrink-0 mt-0.5" />
+          <span className="text-ink/80 italic">{c.linkedin_headline}</span>
+        </div>
       )}
 
       {(c.email || c.phone) && (
