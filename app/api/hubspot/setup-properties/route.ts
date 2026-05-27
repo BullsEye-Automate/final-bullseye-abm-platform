@@ -25,7 +25,7 @@ const CONTACT_PROPERTIES = [
     label: "BullsEye Engagement Score",
     type: "number",
     fieldType: "number",
-    description: "Score 0-100 de interacción del contacto con las campañas (Lemlist + llamadas). Se recalcula en cada sync. EMAIL (max 50): +1 enviado, +5 abierto (max 15), +15 click (max 30), +25 respondido (max 50). LINKEDIN (max 50): +1 mensaje, +15 invitación aceptada, +30 respuesta. LLAMADAS: +50 interesado, +40 callback, +25 timing, +15 precio, +5 otra. +10 boost si actividad en últimos 7 días.",
+    description: "Score 0-100 de interacción del contacto con las campañas.",
   },
   { name: "bullseye_client_name",         label: "Cliente BullsEye",             type: "string", fieldType: "text"     },
   { name: "bullseye_status",              label: "Estado (BullsEye)",             type: "string", fieldType: "text"     },
@@ -38,7 +38,7 @@ const CONTACT_PROPERTIES = [
     label: "Script SDR IA",
     type: "string",
     fieldType: "textarea",
-    description: "Script personalizado generado por IA para la llamada SDR. Incluye apertura, propuesta de valor, preguntas de calificación, manejo de objeciones y CTA.",
+    description: "Script personalizado generado por IA para la llamada SDR.",
   },
   { name: "cliente_bullseye_ia", label: "Cliente BullsEye (IA)", type: "string", fieldType: "text" },
 ];

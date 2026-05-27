@@ -34,7 +34,6 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // ── Cliente y configuración ────────────────────────────────────────────────
   const [{ data: client }, { data: config }] = await Promise.all([
     db.from("clients").select("name").eq("id", body.client_id).maybeSingle(),
     db.from("client_configs")
@@ -47,7 +46,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No hay campaña configurada en Config. cliente" }, { status: 400 });
   }
 
-  // ── ICP del cliente (para contextualizar mensajes) ─────────────────────────
   const { data: icpCtx } = await db
     .from("client_ai_context")
     .select("content")
@@ -57,7 +55,6 @@ export async function POST(req: NextRequest) {
     .limit(1)
     .maybeSingle();
 
-  // ── Configuración de entrenamiento de modelo (tono, propuestas de valor) ───
   let trainingConfig: Record<string, string | null> = {};
   try {
     const { data: tc } = await db
@@ -68,7 +65,6 @@ export async function POST(req: NextRequest) {
     trainingConfig = tc ?? {};
   } catch { /* tabla puede no existir aún */ }
 
-  // Contexto combinado para Claude
   const icpContext = [
     icpCtx?.content,
     trainingConfig.business_description && `Descripción del negocio: ${trainingConfig.business_description}`,
@@ -77,10 +73,6 @@ export async function POST(req: NextRequest) {
     trainingConfig.target_buyer_persona && `Buyer persona: ${trainingConfig.target_buyer_persona}`,
   ].filter(Boolean).join("\n\n") || undefined;
 
-  // ── Contactos a procesar ───────────────────────────────────────────────────
-  // Cuando se pasan contact_ids específicos no filtramos por client_id (los IDs
-  // ya son suficientemente selectivos y los contactos pueden carecer de client_id
-  // si se importaron antes del soporte multi-tenant).
   let q = db
     .from("contacts")
     .select("id, first_name, last_name, job_title, linkedin_headline, seniority, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, fit_score")
@@ -91,7 +83,6 @@ export async function POST(req: NextRequest) {
   if (body.contact_ids?.length) {
     q = q.in("id", body.contact_ids);
   } else {
-    // Solo en bulk aplicamos el filtro de cliente para no procesar contactos de otro cliente
     q = q.eq("client_id", body.client_id);
   }
 
@@ -99,7 +90,6 @@ export async function POST(req: NextRequest) {
   if (contactsError) return NextResponse.json({ error: contactsError.message }, { status: 500 });
   if (!contacts?.length) return NextResponse.json({ pushed: 0, skipped: 0, generated: 0, errors: [], reason: "no_contacts" });
 
-  // ── Empresas (nombre + fit_signals + deep_research para personalizar) ───────
   const companyIds = [...new Set(contacts.map((c) => c.company_id).filter(Boolean))];
   const { data: companies } = await db
     .from("companies")
@@ -115,13 +105,11 @@ export async function POST(req: NextRequest) {
   const errors: { contact_id: string; error: string }[] = [];
   const hsIds: string[] = [];
 
-  // ── Procesar secuencialmente (Claude + Lemlist + HubSpot) ─────────────────
   for (const contact of contacts) {
     const company     = companyById.get(contact.company_id);
     const companyName = company?.company_name ?? "";
     const hasEmail    = Boolean(contact.email?.trim());
 
-    // 1) Generar mensajes si faltan o si tienen el tag {{firstName}} sin reemplazar
     const needsMessages =
       !contact.email_subject   ||
       !contact.email_body      ||
@@ -135,7 +123,6 @@ export async function POST(req: NextRequest) {
           company?.fit_signals && `Señales de fit de esta empresa: ${company.fit_signals}`,
         ].filter(Boolean).join("\n\n") || undefined;
 
-        // Parsear deep_research si existe
         let deepResearch: { trigger: string; angulo: string; resumen_ejecutivo: string } | null = null;
         try {
           const raw = company?.deep_research;
@@ -143,8 +130,6 @@ export async function POST(req: NextRequest) {
         } catch { /* ignorar si no parsea */ }
 
         const msgs = await generateContactMessages({
-          // Siempre generamos todos los mensajes (email + icebreaker) aunque el contacto
-          // no tenga email todavía — Lemlist lo va a encontrar y necesita las variables.
           hasEmail:         true,
           firstName:        contact.first_name        ?? undefined,
           lastName:         contact.last_name         ?? undefined,
@@ -172,18 +157,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2) Si no tiene ni email ni linkedin_url no hay forma de identificar el lead
     if (!hasEmail && !contact.linkedin_url?.trim()) {
       skipped++;
       continue;
     }
 
-    // 3) Push a Lemlist ────────────────────────────────────────────────────────
-    // Con email    → POST /campaigns/{id}/leads/{email}?verifyEmail=true&findPhone=true
-    // Sin email    → POST /campaigns/{id}/leads?findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true
-    //                El linkedinUrl va en el body; Lemlist busca el email internamente.
     const ENRICH = "findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true";
-
     const lemlistUrl = hasEmail
       ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true&findPhone=true`
       : `https://api.lemlist.com/api/campaigns/${campaignId}/leads?${ENRICH}`;
@@ -233,7 +212,6 @@ export async function POST(req: NextRequest) {
 
     pushed++;
 
-    // 4) Sync a HubSpot (sincrónico para detectar errores) + SDR script async
     const trainingCtxForScript = [
       trainingConfig.business_description && `Negocio: ${trainingConfig.business_description}`,
       trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
@@ -266,7 +244,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ pushed, skipped, generated, hsSynced, hsIds, errors, reason: skipped > 0 && pushed === 0 ? "no_email" : undefined });
 }
 
-// Sync empresa + contacto a HubSpot (sincrónico). Lanza error si falla. Devuelve el HS contact ID.
 async function syncToHubSpot(opts: {
   contact:        Record<string, any>;
   companyName:    string;
@@ -290,7 +267,6 @@ async function syncToHubSpot(opts: {
     emailReplies:      contact.status === "replied" ? 1 : 0,
   });
 
-  // ── Empresa ────────────────────────────────────────────────────────────────
   let hsCompanyId: string | null = null;
   if (companyName) {
     const existingCompanyId = await searchHSCompany(companyName);
@@ -302,7 +278,6 @@ async function syncToHubSpot(opts: {
     if (!hsCompanyId) console.warn(`[hs-sync] upsertHSCompany falló para "${companyName}" — contacto igual se creará`);
   }
 
-  // ── Contacto ───────────────────────────────────────────────────────────────
   const existingContactId =
     await searchHSContactByBullseyeId(contact.id) ??
     (contact.email ? await searchHSContact(contact.email) : null);
@@ -331,10 +306,8 @@ async function syncToHubSpot(opts: {
     ...(hubspotOwnerId ? { hubspot_owner_id: hubspotOwnerId } : {}),
   }, existingContactId);
 
-
   if (hsContactId && hsCompanyId) await associateContactCompany(hsContactId, hsCompanyId);
 
-  // ── Script SDR IA (fire & forget — Claude es lento) ───────────────────────
   generateSdrScript({
     firstName:   contact.first_name          ?? "",
     lastName:    contact.last_name           ?? "",

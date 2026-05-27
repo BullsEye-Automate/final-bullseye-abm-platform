@@ -11,40 +11,6 @@ function norm(s: string) {
   return s.toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9]/g, "");
 }
 
-// Cache en memoria de las opciones reales del enum en HubSpot
-let _clientOptionsCache: Array<{ label: string; value: string }> | null = null;
-
-async function fetchClientEnumOptions(): Promise<Array<{ label: string; value: string }>> {
-  if (_clientOptionsCache) return _clientOptionsCache;
-  try {
-    const res = await fetch(`${HS}/crm/v3/properties/companies/cliente_bullseye_empresa`, {
-      headers: hsHeaders(),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      _clientOptionsCache = (data.options ?? []).filter((o: any) => !o.hidden);
-    }
-  } catch { /* ignorar si falla */ }
-  return _clientOptionsCache ?? [];
-}
-
-// Busca el valor interno del enum en HubSpot que mejor coincida con el nombre del cliente.
-// Normaliza (lowercase, sin espacios/símbolos) tanto el nombre como label y value para hacer
-// match aunque difieran en mayúsculas o separadores ("BullsEye" ↔ "BULLS EYE").
-export async function matchClientOption(clientName: string): Promise<string | null> {
-  const options = await fetchClientEnumOptions();
-  const n = norm(clientName);
-  const found =
-    options.find((o) => norm(o.value) === n) ??
-    options.find((o) => norm(o.label) === n) ??
-    options.find((o) => {
-      const nv = norm(o.value);
-      const nl = norm(o.label);
-      return n.includes(nv) || nv.includes(n) || n.includes(nl) || nl.includes(n);
-    });
-  return found?.value ?? null;
-}
-
 export async function searchHSCompany(name: string): Promise<string | null> {
   const res = await fetch(`${HS}/crm/v3/objects/companies/search`, {
     method: "POST",
@@ -98,50 +64,6 @@ export async function searchHSContact(email: string): Promise<string | null> {
   if (!res.ok) return null;
   const d = await res.json();
   return d.results?.[0]?.id ?? null;
-}
-
-// Combina un nuevo cliente con la lista existente (separada por ";"), sin duplicados.
-function mergeClientLabel(existing: string | null | undefined, newClient: string): string {
-  const n = norm(newClient);
-  const parts = (existing ?? "").split(";").map((s) => s.trim()).filter(Boolean);
-  if (!parts.some((p) => norm(p) === n)) parts.push(newClient);
-  return parts.join(";");
-}
-
-// Lee una propiedad de un contacto existente en HubSpot.
-async function getHSContactProp(contactId: string, prop: string): Promise<string | null> {
-  const res = await fetch(`${HS}/crm/v3/objects/contacts/${contactId}?properties=${prop}`, {
-    headers: hsHeaders(),
-  });
-  if (!res.ok) return null;
-  const d = await res.json();
-  return d.properties?.[prop] ?? null;
-}
-
-// Lee una propiedad de una empresa existente en HubSpot.
-async function getHSCompanyProp(companyId: string, prop: string): Promise<string | null> {
-  const res = await fetch(`${HS}/crm/v3/objects/companies/${companyId}?properties=${prop}`, {
-    headers: hsHeaders(),
-  });
-  if (!res.ok) return null;
-  const d = await res.json();
-  return d.properties?.[prop] ?? null;
-}
-
-// Calcula el valor correcto de cliente_bullseye_ia para un objeto existente.
-// Si el objeto ya existe en HubSpot, lee el valor actual y agrega el nuevo cliente
-// solo si no estaba ya en la lista.
-export async function resolveClientBullseyeIa(
-  objectType: "contact" | "company",
-  existingId: string | null | undefined,
-  newClient: string | null | undefined
-): Promise<string | undefined> {
-  if (!newClient) return undefined;
-  if (!existingId) return newClient;
-  const current = objectType === "contact"
-    ? await getHSContactProp(existingId, "cliente_bullseye_ia")
-    : await getHSCompanyProp(existingId, "cliente_bullseye_ia");
-  return mergeClientLabel(current, newClient);
 }
 
 export async function searchHSContactByBullseyeId(contactId: string): Promise<string | null> {
@@ -252,7 +174,6 @@ function propFilter(property: string, operation: Record<string, unknown>): HsFil
   return { filterType: "PROPERTY", property, operation };
 }
 
-// La API v3 exige: raíz OR → al menos un hijo AND
 function isKnown(property: string): HsFilter {
   return propFilter(property, { operationType: "ALL_PROPERTY", operator: "IS_KNOWN" });
 }
@@ -273,7 +194,6 @@ function enumAnyOf(property: string, values: string[]): HsFilter {
   return propFilter(property, { operationType: "ENUMERATION", operator: "IS_ANY_OF", values });
 }
 
-// Helpers para construir la estructura OR(AND(...)) requerida por HubSpot v3
 function andBranch(filters: HsFilter[], subBranches: HsFilterBranch[] = []): HsFilterBranch {
   return { filterBranchType: "AND", filterBranches: subBranches, filters };
 }
@@ -286,9 +206,6 @@ const ACTIVE_LEAD_STATUSES = ["IN_PROGRESS", "NEW", "ATTEMPTED_TO_CONTACT", "BAD
 
 export function buildClientLists(clientName: string, folderId: number | null) {
   const c = strEq("bullseye_client_name", clientName);
-
-  // HubSpot v3: los AND no pueden tener sub-ramas OR de propiedades.
-  // Para "phone OR lusha" se distribuye: OR(AND(..., phone), AND(..., lusha))
   return [
     {
       name: `Alta interacción (priorizar) - ${clientName}`,
@@ -316,7 +233,6 @@ export function buildClientLists(clientName: string, folderId: number | null) {
   ];
 }
 
-// API v1: la única que soporta carpetas para listas
 export async function createHSListFolder(name: string): Promise<number | null> {
   const res = await fetch(`${HS}/contacts/v1/lists/folders`, {
     method: "POST",
@@ -353,14 +269,12 @@ export async function createHSList(list: {
     return { name: list.name, id: d.listId ?? d.id ?? null, status: "created" };
   }
   const text = await res.text().catch(() => "");
-  // Lista duplicada — tratarla como éxito silencioso
   if (text.includes("DUPLICATE_LIST_NAME") || text.includes("already exist")) {
     return { name: list.name, id: null, status: "created" };
   }
   return { name: list.name, id: null, status: "error", error: text.slice(0, 300) };
 }
 
-// Crear carpeta + 3 listas en HubSpot para un cliente (llamar al crear cliente)
 export async function provisionClientHubSpot(clientName: string): Promise<void> {
   if (!process.env.HUBSPOT_ACCESS_TOKEN) return;
   const folderId = await createHSListFolder(clientName).catch(() => null);

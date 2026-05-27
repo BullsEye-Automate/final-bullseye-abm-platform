@@ -17,7 +17,6 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-// Trae todos los leads de una campaña de Lemlist con paginación.
 async function fetchAllLeads(campaignId: string, credentials: string): Promise<any[]> {
   const all: any[] = [];
   let offset = 0;
@@ -40,15 +39,6 @@ async function fetchAllLeads(campaignId: string, credentials: string): Promise<a
   return all;
 }
 
-/**
- * POST /api/lemlist/refresh-contacts
- * Body: { client_id: string }
- *
- * 1. Trae todos los leads de la campaña Lemlist del cliente.
- * 2. Para cada lead, busca el contacto en Supabase por email o LinkedIn URL.
- * 3. Si Lemlist enriqueció el email de un contacto que no lo tenía, actualiza Supabase.
- * 4. Sincroniza (o re-sincroniza) a HubSpot.
- */
 export async function POST(req: NextRequest) {
   let body: { client_id: string };
   try {
@@ -83,7 +73,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ updated: 0, synced: 0, reason: "no_leads" });
   }
 
-  // Indexar leads de Lemlist por email y por LinkedIn URL normalizado
   const leadByEmail    = new Map<string, any>();
   const leadByLinkedin = new Map<string, any>();
   for (const lead of leads) {
@@ -94,7 +83,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Traer contactos de Supabase que ya fueron pusheados a Lemlist
   const { data: contacts } = await db
     .from("contacts")
     .select("id, first_name, last_name, job_title, linkedin_headline, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, seniority, fit_score, status")
@@ -105,7 +93,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ updated: 0, synced: 0, reason: "no_contacts_pushed" });
   }
 
-  // Datos de empresa + contexto para HubSpot/script
   const companyIds = [...new Set(contacts.map((c) => c.company_id).filter(Boolean))];
   const { data: companies } = await db
     .from("companies")
@@ -145,15 +132,12 @@ export async function POST(req: NextRequest) {
     trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
   ].filter(Boolean).join("\n") || null;
 
-  const campaignId  = config.lemlist_campaign_id;
-
-  let updated = 0;
-  let synced  = 0;
+  const campaignId = config.lemlist_campaign_id;
+  let updated = 0, synced = 0;
   const errors: { contact_id: string; error: string }[] = [];
 
   for (const contact of contacts) {
     try {
-      // Buscar lead de Lemlist que corresponde a este contacto
       const normLinkedin = contact.linkedin_url ? (normalizeLinkedInUrl(contact.linkedin_url) ?? "").toLowerCase() : "";
       const lead =
         (contact.email ? leadByEmail.get(contact.email.toLowerCase()) : null) ??
@@ -161,7 +145,6 @@ export async function POST(req: NextRequest) {
 
       if (!lead) continue;
 
-      // Detectar si Lemlist enriqueció el email donde antes no había
       const gotNewEmail = !contact.email?.trim() && !!lead.email?.trim();
       const gotNewPhone = !contact.phone?.trim()  && !!lead.phone?.trim();
 
@@ -177,18 +160,14 @@ export async function POST(req: NextRequest) {
         updated++;
       }
 
-      // Sincronizar (o re-sincronizar) a HubSpot con datos actualizados
       const company     = companyById.get(contact.company_id);
       const companyName = company?.company_name ?? "";
       const fitSignals  = company?.fit_signals  ?? null;
-
       const isLushaPhone  = contact.phone_source === "lusha";
       const standardPhone = !isLushaPhone ? (contact.phone ?? null) : null;
       const lushaPhone    = isLushaPhone  ? (contact.phone ?? null) : null;
-
       const engagementScore = computeEngagementScore({ emailSent: true, hasRecentActivity: true });
 
-      // Empresa en HubSpot
       let hsCompanyId: string | null = null;
       if (companyName) {
         const existingCompanyId = await searchHSCompany(companyName);
@@ -198,7 +177,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Contacto en HubSpot — buscar por ID interno primero
       const existingContactId =
         await searchHSContactByBullseyeId(contact.id) ??
         (contact.email ? await searchHSContact(contact.email) : null);
@@ -232,7 +210,6 @@ export async function POST(req: NextRequest) {
         await associateContactCompany(hsContactId, hsCompanyId);
       }
 
-      // Script SDR (fire & forget) si hay email y contacto en HubSpot
       if (hsContactId && contact.email) {
         generateSdrScript({
           firstName:   contact.first_name ?? "",
@@ -246,7 +223,7 @@ export async function POST(req: NextRequest) {
           icebreaker:  contact.linkedin_icebreaker ?? null,
         })
           .then((script) => patchHSContact(hsContactId, { bullseye_script_sdr_ia: script }))
-          .catch(() => {/* no bloquea */});
+          .catch(() => {});
       }
 
       synced++;

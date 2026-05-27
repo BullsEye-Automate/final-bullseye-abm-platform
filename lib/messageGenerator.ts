@@ -50,10 +50,7 @@ export async function generateContactMessages(
   } = input;
 
   const deepResearchContext = deepResearch
-    ? `\nInvestigación profunda de la empresa:
-- Trigger actual: ${deepResearch.trigger}
-- Ángulo de mensaje: ${deepResearch.angulo}
-- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`
+    ? `\nInvestigación profunda de la empresa:\n- Trigger actual: ${deepResearch.trigger}\n- Ángulo de mensaje: ${deepResearch.angulo}\n- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`
     : "";
 
   const contactInfo = [
@@ -78,37 +75,9 @@ export async function generateContactMessages(
   let userPrompt: string;
 
   if (hasEmail) {
-    userPrompt = `${langInstruction}
-
-Contexto del ICP:
-${icpContext ?? "No disponible"}${deepResearchContext}
-
-Datos del contacto:
-${contactInfo || "No disponibles"}
-
-Genera los mensajes para la secuencia de Lemlist (RAMA CON EMAIL).
-${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar los mensajes con un evento o señal real y verificable de la empresa." : ""}
-1. emailSubject: asunto del email inicial (máximo 7 palabras, sin signos de admiración, sin emojis)
-2. emailBody: cuerpo del email — empieza EXACTAMENTE con "${greeting}\\n\\n", luego el texto. Máximo 5 oraciones. Sin bullets. Termina con una pregunta o CTA sutil.
-3. linkedinIcebreaker: mensaje de chat LinkedIn para cuando acepta el invite (máximo 180 caracteres, sin saludo, sin emojis, directo al contexto relevante)
-
-Responde ÚNICAMENTE con este JSON:
-{"emailSubject":"...","emailBody":"...","linkedinIcebreaker":"..."}`;
+    userPrompt = `${langInstruction}\n\nContexto del ICP:\n${icpContext ?? "No disponible"}${deepResearchContext}\n\nDatos del contacto:\n${contactInfo || "No disponibles"}\n\nGenera los mensajes para la secuencia de Lemlist (RAMA CON EMAIL).\n${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar los mensajes con un evento o señal real y verificable de la empresa." : ""}\n1. emailSubject: asunto del email inicial (máximo 7 palabras, sin signos de admiración, sin emojis)\n2. emailBody: cuerpo del email — empieza EXACTAMENTE con "${greeting}\\n\\n", luego el texto. Máximo 5 oraciones. Sin bullets. Termina con una pregunta o CTA sutil.\n3. linkedinIcebreaker: mensaje de chat LinkedIn para cuando acepta el invite (máximo 180 caracteres, sin saludo, sin emojis, directo al contexto relevante)\n\nResponde ÚNICAMENTE con este JSON:\n{"emailSubject":"...","emailBody":"...","linkedinIcebreaker":"..."}`;
   } else {
-    userPrompt = `${langInstruction}
-
-Contexto del ICP:
-${icpContext ?? "No disponible"}${deepResearchContext}
-
-Datos del contacto:
-${contactInfo || "No disponibles"}
-
-Genera el mensaje para la secuencia de Lemlist (RAMA SIN EMAIL).
-${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con un evento real y verificable de la empresa." : ""}
-linkedinIcebreakerNoEmail: mensaje de chat LinkedIn final (máximo 180 caracteres, sin saludo, sin emojis, directo al contexto relevante del ICP)
-
-Responde ÚNICAMENTE con este JSON:
-{"linkedinIcebreakerNoEmail":"..."}`;
+    userPrompt = `${langInstruction}\n\nContexto del ICP:\n${icpContext ?? "No disponible"}${deepResearchContext}\n\nDatos del contacto:\n${contactInfo || "No disponibles"}\n\nGenera el mensaje para la secuencia de Lemlist (RAMA SIN EMAIL).\n${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con un evento real y verificable de la empresa." : ""}\nlinkedinIcebreakerNoEmail: mensaje de chat LinkedIn final (máximo 180 caracteres, sin saludo, sin emojis, directo al contexto relevante del ICP)\n\nResponde ÚNICAMENTE con este JSON:\n{"linkedinIcebreakerNoEmail":"..."}`;
   }
 
   const message = await anthropic().messages.create({

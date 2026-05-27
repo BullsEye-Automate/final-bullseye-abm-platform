@@ -38,7 +38,6 @@ async function fetchAllLeads(campaignId: string, credentials: string): Promise<a
 }
 
 export async function GET(req: NextRequest) {
-  // Vercel envía el header Authorization: Bearer <CRON_SECRET>
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret) {
     const auth = req.headers.get("authorization") ?? "";
@@ -53,7 +52,6 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
 
-  // Traer todos los clientes activos con campaña de Lemlist configurada
   const { data: configs } = await db
     .from("client_configs")
     .select("client_id, lemlist_campaign_id, hubspot_owner_id")
@@ -135,7 +133,6 @@ async function refreshClientContacts(
     trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
     trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
   ].filter(Boolean).join("\n") || null;
-
 
   let updated = 0, synced = 0;
 
