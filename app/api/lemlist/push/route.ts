@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { generateContactMessages } from "@/lib/messageGenerator";
 import {
   matchClientOption,
+  computeEngagementScore,
   searchHSCompany,
   upsertHSCompany,
   searchHSContact,
@@ -212,8 +213,9 @@ export async function POST(req: NextRequest) {
     syncToHubSpot({
       contact,
       companyName,
-      fitSignals:     company?.fit_signals   ?? null,
-      companyDbId:    contact.company_id     ?? null,
+      fitSignals:     company?.fit_signals    ?? null,
+      companyDbId:    contact.company_id      ?? null,
+      clientName:     client?.name            ?? null,
       clientLabel,
       campaignId,
       hubspotOwnerId: config.hubspot_owner_id ?? null,
@@ -228,16 +230,23 @@ async function syncToHubSpot(opts: {
   companyName:    string;
   fitSignals:     string | null;
   companyDbId:    string | null;
+  clientName:     string | null;
   clientLabel:    string | null;
   campaignId:     string;
   hubspotOwnerId: string | null;
 }) {
-  const { contact, companyName, fitSignals, companyDbId, clientLabel, campaignId, hubspotOwnerId } = opts;
+  const { contact, companyName, fitSignals, companyDbId, clientName, clientLabel, campaignId, hubspotOwnerId } = opts;
 
-  // Teléfono: si viene de Lusha va a bullseye_telefono_lusha; si no, al campo estándar
   const isLushaPhone  = contact.phone_source === "lusha";
   const standardPhone = !isLushaPhone ? (contact.phone ?? null) : null;
   const lushaPhone    = isLushaPhone  ? (contact.phone ?? null) : null;
+
+  // Score inicial: email enviado + boost de recencia (se recalculará con datos Lemlist posteriores)
+  const engagementScore = computeEngagementScore({
+    emailSent:         true,
+    hasRecentActivity: true,
+    emailReplies:      contact.status === "replied" ? 1 : 0,
+  });
 
   // ── Empresa ────────────────────────────────────────────────────────────────
   let hsCompanyId: string | null = null;
@@ -256,22 +265,24 @@ async function syncToHubSpot(opts: {
   const existingContactId = contact.email ? await searchHSContact(contact.email) : null;
 
   const contactProps: Record<string, string | number | null | undefined> = {
-    email:                          contact.email             ?? undefined,
-    firstname:                      contact.first_name        ?? undefined,
-    lastname:                       contact.last_name         ?? undefined,
-    jobtitle:                       contact.job_title         ?? undefined,
-    phone:                          standardPhone             ?? undefined,
-    linkedin_bio:                   contact.linkedin_url      ?? undefined,
+    email:                          contact.email               ?? undefined,
+    firstname:                      contact.first_name          ?? undefined,
+    lastname:                       contact.last_name           ?? undefined,
+    jobtitle:                       contact.job_title           ?? undefined,
+    phone:                          standardPhone               ?? undefined,
+    linkedin_bio:                   contact.linkedin_url        ?? undefined,
     bullseye_contact_id:            contact.id,
-    bullseye_email_subject:         contact.email_subject     ?? undefined,
-    bullseye_email_body:            contact.email_body        ?? undefined,
+    bullseye_client_name:           clientName                  ?? undefined,
+    bullseye_email_subject:         contact.email_subject       ?? undefined,
+    bullseye_email_body:            contact.email_body          ?? undefined,
     bullseye_linkedin_icebreaker:   contact.linkedin_icebreaker ?? undefined,
-    bullseye_telefono_lusha:        lushaPhone                ?? undefined,
-    bullseye_fit_score:             contact.fit_score         ?? undefined,
-    bullseye_status:                contact.status            ?? undefined,
+    bullseye_telefono_lusha:        lushaPhone                  ?? undefined,
+    bullseye_fit_score:             contact.fit_score           ?? undefined,
+    bullseye_engagement_score:      engagementScore,
+    bullseye_status:                contact.status              ?? undefined,
     bullseye_lemlist_pushed_at:     new Date().toISOString(),
     bullseye_lemlist_campaign_id:   campaignId,
-    bullseye_phone_source:          contact.phone_source      ?? undefined,
+    bullseye_phone_source:          contact.phone_source        ?? undefined,
     ...(hubspotOwnerId ? { hubspot_owner_id: hubspotOwnerId } : {}),
   };
 

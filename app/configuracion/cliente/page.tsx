@@ -72,8 +72,10 @@ export default function ConfigClientePage() {
   const [saving, setSaving]         = useState(false);
   const [savedAt, setSavedAt]       = useState<string | null>(null);
   const [error, setError]           = useState<string | null>(null);
-  const [hsSetup, setHsSetup]       = useState<"idle" | "running" | "done" | "error">("idle");
+  const [hsSetup, setHsSetup]             = useState<"idle" | "running" | "done" | "error">("idle");
   const [hsSetupResult, setHsSetupResult] = useState<string | null>(null);
+  const [hsLists, setHsLists]             = useState<"idle" | "running" | "done" | "error">("idle");
+  const [hsListsResult, setHsListsResult] = useState<string | null>(null);
 
   function set(field: keyof Config) {
     return (v: string) => setForm((f) => ({ ...f, [field]: v }));
@@ -112,6 +114,27 @@ export default function ConfigClientePage() {
       })
       .catch((e) => { setError(e.message); setLoading(false); });
   }, [currentClient?.id]);
+
+  async function setupHubSpotLists() {
+    if (!currentClient) return;
+    setHsLists("running");
+    setHsListsResult(null);
+    try {
+      const res = await fetch("/api/hubspot/setup-client", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setHsLists("error"); setHsListsResult(d.error ?? "Error"); return; }
+      const folder = d.folder.created ? "Carpeta creada" : "Sin carpeta";
+      setHsListsResult(`${folder} · ${d.lists.created} listas creadas${d.lists.errors ? ` (${d.lists.errors} errores)` : ""}`);
+      setHsLists(d.lists.errors > 0 ? "error" : "done");
+    } catch (e: any) {
+      setHsLists("error");
+      setHsListsResult(e.message ?? "Error de red");
+    }
+  }
 
   async function setupHubSpotProperties() {
     setHsSetup("running");
@@ -259,24 +282,52 @@ export default function ConfigClientePage() {
               Crea las propiedades custom de BullsEye en HubSpot (email body, icebreaker, teléfono Lusha, fit score, etc.).
               Ejecuta esto <strong>una sola vez</strong> — si las propiedades ya existen las saltará sin error.
             </p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={setupHubSpotProperties}
-                disabled={hsSetup === "running"}
-                className="btn-secondary flex items-center gap-2 text-sm"
-              >
-                {hsSetup === "running"
-                  ? <IconLoader2 size={15} className="animate-spin" />
-                  : hsSetup === "done"
-                  ? <IconCircleCheck size={15} className="text-success-fg" />
-                  : <IconCloud size={15} />}
-                {hsSetup === "running" ? "Creando propiedades…" : "Crear propiedades en HubSpot"}
-              </button>
-              {hsSetupResult && (
-                <span className={`text-xs ${hsSetup === "error" ? "text-danger-fg" : "text-success-fg"}`}>
-                  {hsSetupResult}
-                </span>
-              )}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={setupHubSpotProperties}
+                  disabled={hsSetup === "running"}
+                  className="btn-secondary flex items-center gap-2 text-sm"
+                >
+                  {hsSetup === "running"
+                    ? <IconLoader2 size={15} className="animate-spin" />
+                    : hsSetup === "done"
+                    ? <IconCircleCheck size={15} className="text-success-fg" />
+                    : <IconCloud size={15} />}
+                  {hsSetup === "running" ? "Creando propiedades…" : "Crear propiedades en HubSpot"}
+                </button>
+                {hsSetupResult && (
+                  <span className={`text-xs ${hsSetup === "error" ? "text-danger-fg" : "text-success-fg"}`}>
+                    {hsSetupResult}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <p className="text-sm text-ink-muted mb-2">
+                  Crea la carpeta <strong>{currentClient.name}</strong> y las 3 listas de segmentación en HubSpot
+                  (Alta interacción, Warm por llamar, Hot por llamar). Requiere que las propiedades ya estén creadas.
+                </p>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={setupHubSpotLists}
+                    disabled={hsLists === "running"}
+                    className="btn-secondary flex items-center gap-2 text-sm"
+                  >
+                    {hsLists === "running"
+                      ? <IconLoader2 size={15} className="animate-spin" />
+                      : hsLists === "done"
+                      ? <IconCircleCheck size={15} className="text-success-fg" />
+                      : <IconCloud size={15} />}
+                    {hsLists === "running" ? "Creando listas…" : "Crear listas en HubSpot"}
+                  </button>
+                  {hsListsResult && (
+                    <span className={`text-xs ${hsLists === "error" ? "text-danger-fg" : "text-success-fg"}`}>
+                      {hsListsResult}
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           </section>
 

@@ -18,6 +18,14 @@ const CONTACT_PROPERTIES = [
   { name: "bullseye_linkedin_icebreaker", label: "LinkedIn Icebreaker",           type: "string", fieldType: "textarea" },
   { name: "bullseye_telefono_lusha",      label: "Teléfono Lusha",               type: "string", fieldType: "text"     },
   { name: "bullseye_fit_score",           label: "Fit Score (BullsEye)",          type: "number", fieldType: "number"   },
+  {
+    name: "bullseye_engagement_score",
+    label: "BullsEye Engagement Score",
+    type: "number",
+    fieldType: "number",
+    description: "Score 0-100 de interacción del contacto con las campañas (Lemlist + llamadas). Se recalcula en cada sync. EMAIL (max 50): +1 enviado, +5 abierto (max 15), +15 click (max 30), +25 respondido (max 50). LINKEDIN (max 50): +1 mensaje, +15 invitación aceptada, +30 respuesta. LLAMADAS: +50 interesado, +40 callback, +25 timing, +15 precio, +5 otra. +10 boost si actividad en últimos 7 días.",
+  },
+  { name: "bullseye_client_name",         label: "Cliente BullsEye",             type: "string", fieldType: "text"     },
   { name: "bullseye_status",              label: "Estado (BullsEye)",             type: "string", fieldType: "text"     },
   { name: "bullseye_contact_id",          label: "BullsEye Contact ID",           type: "string", fieldType: "text"     },
   { name: "bullseye_lemlist_pushed_at",   label: "Lemlist Pushed At",             type: "string", fieldType: "text"     },
@@ -33,7 +41,7 @@ const COMPANY_PROPERTIES = [
 
 async function createProperty(
   objectType: "contacts" | "companies",
-  prop: { name: string; label: string; type: string; fieldType: string }
+  prop: { name: string; label: string; type: string; fieldType: string; description?: string }
 ): Promise<{ name: string; status: "created" | "exists" | "error"; error?: string }> {
   const groupName = objectType === "contacts" ? "contactinformation" : "companyinformation";
   const res = await fetch(`${HS}/crm/v3/properties/${objectType}`, {
