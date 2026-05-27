@@ -13,22 +13,21 @@ export function prefilterUserPrompt(args: {
 - LinkedIn headline: ${args.linkedin_headline ?? "(unknown)"}
 - Company type: ${args.company_type ?? "(unknown)"}
 
-Answer YES if the contact is clearly a decision maker:
-- Lab owner, director, president, or general manager
-- Production manager, lab manager, or operations manager
-- Digital workflow manager or coordinator
-- Office manager or practice manager (often handles purchasing)
-- Dentist or doctor who is also an owner, founder, director, or manager of a clinic, DSO, or dental group
+IMPORTANT: If LinkedIn headline is "(unknown)" or missing, base your decision SOLELY on the job title. Do not answer NO just because headline or seniority data is unavailable.
 
-Answer NO if the contact is:
-- CAD technician, CAD operator, CAD designer, or dental technician (operational role, no purchasing authority, may feel threatened by outsourcing)
-- Ceramist, dental assistant, or lab assistant
-- Clinical dentist or hygienist with no ownership or management role
-- Sales rep, distributor, or equipment vendor
-- Software developer, IT staff, or administrative assistant
-- Finance roles (CFO, Financial Controller, Accountant, Treasurer, Bookkeeper, Finance Manager) — they may approve but do not initiate CAD/CAM outsourcing decisions; the buyer is operations/production leadership
+Answer YES if the job title suggests decision-making, management, or ownership:
+- Owner, founder, director, president, general manager, or CEO/COO/CXO
+- Any VP, head, or lead of a business area (sales, operations, marketing, growth, product, etc.)
+- Manager or coordinator of a relevant department or team
+- Independent professional or practice owner
 
-When in doubt about whether someone has decision power, answer YES. It is better to score a borderline contact than to miss a potential decision maker.
+Answer NO only if the job title clearly indicates a non-buyer operational or support role:
+- Technician, operator, assistant, or analyst with no management scope
+- Sales rep, distributor, or equipment/software vendor (they sell, not buy)
+- Pure finance roles (accountant, bookkeeper, treasurer, financial controller) — they approve but do not initiate B2B service purchases
+- IT staff, developer, or administrative assistant
+
+When in doubt, answer YES. Missing data is never a reason to discard a contact.
 
 Respond with a single word only: YES or NO`;
 }
