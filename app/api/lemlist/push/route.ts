@@ -3,7 +3,6 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { generateContactMessages } from "@/lib/messageGenerator";
 import { generateSdrScript } from "@/lib/sdrScript";
 import {
-  matchClientOption,
   computeEngagementScore,
   searchHSCompany,
   upsertHSCompany,
@@ -111,7 +110,6 @@ export async function POST(req: NextRequest) {
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
-  const clientLabel = client?.name ? await matchClientOption(client.name) : null;
 
   let pushed = 0, skipped = 0, generated = 0;
   const errors: { contact_id: string; error: string }[] = [];
@@ -247,7 +245,6 @@ export async function POST(req: NextRequest) {
       fitSignals:     company?.fit_signals    ?? null,
       companyDbId:    contact.company_id      ?? null,
       clientName:     client?.name            ?? null,
-      clientLabel,
       campaignId,
       hubspotOwnerId: config.hubspot_owner_id ?? null,
       icpContext:     icpContext              ?? null,
@@ -271,13 +268,12 @@ async function syncToHubSpot(opts: {
   fitSignals:     string | null;
   companyDbId:    string | null;
   clientName:     string | null;
-  clientLabel:    string | null;
   campaignId:     string;
   hubspotOwnerId: string | null;
   icpContext:     string | null;
   trainingCtx:    string | null;
 }) {
-  const { contact, companyName, fitSignals, companyDbId, clientName, clientLabel, campaignId, hubspotOwnerId, icpContext, trainingCtx } = opts;
+  const { contact, companyName, fitSignals, companyDbId, clientName, campaignId, hubspotOwnerId, icpContext, trainingCtx } = opts;
 
   const isLushaPhone  = contact.phone_source === "lusha";
   const standardPhone = !isLushaPhone ? (contact.phone ?? null) : null;
@@ -294,11 +290,9 @@ async function syncToHubSpot(opts: {
   if (companyName) {
     const existingCompanyId = await searchHSCompany(companyName);
     hsCompanyId = await upsertHSCompany({
-      name:                       companyName,
-      bullseye_fit_signals:       fitSignals  || undefined,
-      bullseye_company_id:        companyDbId || undefined,
-      cliente_bullseye_ia:        clientName  || undefined,
-      ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}),
+      name:                 companyName,
+      bullseye_fit_signals: fitSignals  || undefined,
+      bullseye_company_id:  companyDbId || undefined,
     }, existingCompanyId);
     if (!hsCompanyId) console.warn(`[hs-sync] upsertHSCompany falló para "${companyName}" — contacto igual se creará`);
   }
@@ -317,7 +311,6 @@ async function syncToHubSpot(opts: {
     linkedin_bio:                   contact.linkedin_url        ?? undefined,
     bullseye_contact_id:            contact.id,
     bullseye_client_name:           clientName                  ?? undefined,
-    cliente_bullseye_ia:            clientName                  ?? undefined,
     bullseye_seniority:             contact.seniority           ?? undefined,
     bullseye_linkedin_headline:     contact.linkedin_headline   ?? undefined,
     bullseye_email_subject:         contact.email_subject       ?? undefined,

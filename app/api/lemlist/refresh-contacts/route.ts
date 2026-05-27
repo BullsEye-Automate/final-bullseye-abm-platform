@@ -9,7 +9,6 @@ import {
   upsertHSCompany,
   associateContactCompany,
   patchHSContact,
-  matchClientOption,
   computeEngagementScore,
 } from "@/lib/hubspot";
 import { generateSdrScript } from "@/lib/sdrScript";
@@ -146,7 +145,6 @@ export async function POST(req: NextRequest) {
     trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
   ].filter(Boolean).join("\n") || null;
 
-  const clientLabel = client?.name ? await matchClientOption(client.name) : null;
   const campaignId  = config.lemlist_campaign_id;
 
   let updated = 0;
@@ -195,9 +193,7 @@ export async function POST(req: NextRequest) {
       if (companyName) {
         const existingCompanyId = await searchHSCompany(companyName);
         hsCompanyId = await upsertHSCompany(
-          { name: companyName, bullseye_fit_signals: fitSignals || undefined, bullseye_company_id: contact.company_id || undefined,
-            cliente_bullseye_ia: client?.name || undefined,
-            ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}) },
+          { name: companyName, bullseye_fit_signals: fitSignals || undefined, bullseye_company_id: contact.company_id || undefined },
           existingCompanyId
         );
       }
@@ -216,7 +212,6 @@ export async function POST(req: NextRequest) {
         linkedin_bio:                 contact.linkedin_url        ?? undefined,
         bullseye_contact_id:          contact.id,
         bullseye_client_name:         client?.name                ?? undefined,
-        cliente_bullseye_ia:          client?.name                ?? undefined,
         bullseye_seniority:           contact.seniority           ?? undefined,
         bullseye_linkedin_headline:   contact.linkedin_headline   ?? undefined,
         bullseye_email_subject:       contact.email_subject       ?? undefined,

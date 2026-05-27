@@ -91,6 +91,50 @@ export async function searchHSContact(email: string): Promise<string | null> {
   return d.results?.[0]?.id ?? null;
 }
 
+// Combina un nuevo cliente con la lista existente (separada por ";"), sin duplicados.
+function mergeClientLabel(existing: string | null | undefined, newClient: string): string {
+  const n = norm(newClient);
+  const parts = (existing ?? "").split(";").map((s) => s.trim()).filter(Boolean);
+  if (!parts.some((p) => norm(p) === n)) parts.push(newClient);
+  return parts.join(";");
+}
+
+// Lee una propiedad de un contacto existente en HubSpot.
+async function getHSContactProp(contactId: string, prop: string): Promise<string | null> {
+  const res = await fetch(`${HS}/crm/v3/objects/contacts/${contactId}?properties=${prop}`, {
+    headers: hsHeaders(),
+  });
+  if (!res.ok) return null;
+  const d = await res.json();
+  return d.properties?.[prop] ?? null;
+}
+
+// Lee una propiedad de una empresa existente en HubSpot.
+async function getHSCompanyProp(companyId: string, prop: string): Promise<string | null> {
+  const res = await fetch(`${HS}/crm/v3/objects/companies/${companyId}?properties=${prop}`, {
+    headers: hsHeaders(),
+  });
+  if (!res.ok) return null;
+  const d = await res.json();
+  return d.properties?.[prop] ?? null;
+}
+
+// Calcula el valor correcto de cliente_bullseye_ia para un objeto existente.
+// Si el objeto ya existe en HubSpot, lee el valor actual y agrega el nuevo cliente
+// solo si no estaba ya en la lista.
+export async function resolveClientBullseyeIa(
+  objectType: "contact" | "company",
+  existingId: string | null | undefined,
+  newClient: string | null | undefined
+): Promise<string | undefined> {
+  if (!newClient) return undefined;
+  if (!existingId) return newClient;
+  const current = objectType === "contact"
+    ? await getHSContactProp(existingId, "cliente_bullseye_ia")
+    : await getHSCompanyProp(existingId, "cliente_bullseye_ia");
+  return mergeClientLabel(current, newClient);
+}
+
 export async function searchHSContactByBullseyeId(contactId: string): Promise<string | null> {
   const res = await fetch(`${HS}/crm/v3/objects/contacts/search`, {
     method: "POST",
