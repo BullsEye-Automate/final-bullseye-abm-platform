@@ -10,6 +10,7 @@ import {
   IconDatabase,
   IconCloud,
   IconCircleCheck,
+  IconWrench,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -300,96 +301,6 @@ export default function ConfigClientePage() {
             />
           </section>
 
-          {/* HubSpot */}
-          <section className="card space-y-4">
-            <h2 className="font-semibold flex items-center gap-2">
-              <IconCloud size={18} className="text-brand" /> HubSpot
-            </h2>
-            <p className="text-sm text-ink-muted">
-              Crea las propiedades custom de BullsEye en HubSpot (email body, icebreaker, teléfono Lusha, fit score, etc.).
-              Ejecuta esto <strong>una sola vez</strong> — si las propiedades ya existen las saltará sin error.
-            </p>
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={setupHubSpotProperties}
-                  disabled={hsSetup === "running"}
-                  className="btn-secondary flex items-center gap-2 text-sm"
-                >
-                  {hsSetup === "running"
-                    ? <IconLoader2 size={15} className="animate-spin" />
-                    : hsSetup === "done"
-                    ? <IconCircleCheck size={15} className="text-success-fg" />
-                    : <IconCloud size={15} />}
-                  {hsSetup === "running" ? "Creando propiedades…" : "Crear propiedades en HubSpot"}
-                </button>
-                {hsSetupResult && (
-                  <span className={`text-xs ${hsSetup === "error" ? "text-danger-fg" : "text-success-fg"}`}>
-                    {hsSetupResult}
-                  </span>
-                )}
-              </div>
-
-              <div>
-                <p className="text-sm text-ink-muted mb-2">
-                  Crea la carpeta <strong>{currentClient.name}</strong> y las 3 listas de segmentación en HubSpot
-                  (Alta interacción, Warm por llamar, Hot por llamar). Requiere que las propiedades ya estén creadas.
-                </p>
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={setupHubSpotLists}
-                    disabled={hsLists === "running"}
-                    className="btn-secondary flex items-center gap-2 text-sm"
-                  >
-                    {hsLists === "running"
-                      ? <IconLoader2 size={15} className="animate-spin" />
-                      : hsLists === "done"
-                      ? <IconCircleCheck size={15} className="text-success-fg" />
-                      : <IconCloud size={15} />}
-                    {hsLists === "running" ? "Creando listas…" : "Crear listas en HubSpot"}
-                  </button>
-                  {hsListsResult && (
-                    <span className={`text-xs ${hsLists === "error" ? "text-danger-fg" : "text-success-fg"}`}>
-                      {hsListsResult}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {/* SDR Script IA */}
-          <section className="card space-y-4">
-            <h2 className="font-semibold flex items-center gap-2">
-              <IconCloud size={18} className="text-brand" /> Script SDR IA
-            </h2>
-            <p className="text-sm text-ink-muted">
-              Genera scripts de llamada personalizados para cada contacto usando Claude.
-              El script incluye apertura, propuesta de valor, preguntas de calificación, manejo de objeciones y CTA.
-              Se guarda en HubSpot como <code className="text-xs bg-surface-2 px-1 rounded">bullseye_script_sdr_ia</code> y en Supabase.
-              Solo procesa contactos que aún no tienen script.
-            </p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={generateSdrScripts}
-                disabled={sdrScripts === "running"}
-                className="btn-secondary flex items-center gap-2 text-sm"
-              >
-                {sdrScripts === "running"
-                  ? <IconLoader2 size={15} className="animate-spin" />
-                  : sdrScripts === "done"
-                  ? <IconCircleCheck size={15} className="text-success-fg" />
-                  : <IconCloud size={15} />}
-                {sdrScripts === "running" ? "Generando scripts…" : "Generar scripts SDR"}
-              </button>
-              {sdrScriptsResult && (
-                <span className={`text-xs ${sdrScripts === "error" ? "text-danger-fg" : "text-success-fg"}`}>
-                  {sdrScriptsResult}
-                </span>
-              )}
-            </div>
-          </section>
-
           {/* Clay */}
           <section className="card space-y-4">
             <h2 className="font-semibold flex items-center gap-2">
@@ -423,6 +334,109 @@ export default function ConfigClientePage() {
               value={form.clay_contacts_table_id}
               onChange={set("clay_contacts_table_id")}
             />
+          </section>
+
+          {/* Setup retroactivo */}
+          <section className="card space-y-5">
+            <div>
+              <h2 className="font-semibold flex items-center gap-2">
+                <IconWrench size={18} className="text-brand" /> Setup retroactivo
+              </h2>
+              <p className="text-sm text-ink-muted mt-1">
+                Acciones de configuración puntual o para aplicar cambios a contactos ya existentes.
+                Los nuevos contactos se procesan automáticamente al hacer push a Lemlist.
+              </p>
+            </div>
+
+            {/* HubSpot propiedades */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Propiedades HubSpot</p>
+              <p className="text-xs text-ink-muted">
+                Crea las propiedades custom <code className="bg-surface-2 px-1 rounded">bullseye_*</code> en HubSpot
+                (email body, icebreaker, teléfono Lusha, fit score, engagement score, etc.).
+                Ejecuta esto <strong>una sola vez</strong> globalmente — si ya existen las saltará.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={setupHubSpotProperties}
+                  disabled={hsSetup === "running"}
+                  className="btn-secondary flex items-center gap-2 text-sm"
+                >
+                  {hsSetup === "running"
+                    ? <IconLoader2 size={15} className="animate-spin" />
+                    : hsSetup === "done"
+                    ? <IconCircleCheck size={15} className="text-success-fg" />
+                    : <IconCloud size={15} />}
+                  {hsSetup === "running" ? "Creando propiedades…" : "Crear propiedades en HubSpot"}
+                </button>
+                {hsSetupResult && (
+                  <span className={`text-xs ${hsSetup === "error" ? "text-danger-fg" : "text-success-fg"}`}>
+                    {hsSetupResult}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-border" />
+
+            {/* HubSpot listas */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Listas HubSpot — {currentClient.name}</p>
+              <p className="text-xs text-ink-muted">
+                Crea la carpeta <strong>{currentClient.name}</strong> y las 3 listas de segmentación
+                (Alta interacción, Warm por llamar, Hot por llamar). Para clientes nuevos esto ocurre automáticamente.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={setupHubSpotLists}
+                  disabled={hsLists === "running"}
+                  className="btn-secondary flex items-center gap-2 text-sm"
+                >
+                  {hsLists === "running"
+                    ? <IconLoader2 size={15} className="animate-spin" />
+                    : hsLists === "done"
+                    ? <IconCircleCheck size={15} className="text-success-fg" />
+                    : <IconCloud size={15} />}
+                  {hsLists === "running" ? "Creando listas…" : "Crear listas en HubSpot"}
+                </button>
+                {hsListsResult && (
+                  <span className={`text-xs ${hsLists === "error" ? "text-danger-fg" : "text-success-fg"}`}>
+                    {hsListsResult}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-border" />
+
+            {/* Script SDR IA */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Script SDR IA</p>
+              <p className="text-xs text-ink-muted">
+                Genera scripts de llamada personalizados para contactos existentes que aún no tienen script.
+                Para contactos nuevos el script se genera automáticamente al hacer push a Lemlist.
+                Se guarda en HubSpot como <code className="bg-surface-2 px-1 rounded">bullseye_script_sdr_ia</code>.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={generateSdrScripts}
+                  disabled={sdrScripts === "running"}
+                  className="btn-secondary flex items-center gap-2 text-sm"
+                >
+                  {sdrScripts === "running"
+                    ? <IconLoader2 size={15} className="animate-spin" />
+                    : sdrScripts === "done"
+                    ? <IconCircleCheck size={15} className="text-success-fg" />
+                    : <IconWrench size={15} />}
+                  {sdrScripts === "running" ? "Generando scripts…" : "Generar scripts SDR"}
+                </button>
+                {sdrScriptsResult && (
+                  <span className={`text-xs ${sdrScripts === "error" ? "text-danger-fg" : "text-success-fg"}`}>
+                    {sdrScriptsResult}
+                  </span>
+                )}
+              </div>
+            </div>
           </section>
         </>
       )}
