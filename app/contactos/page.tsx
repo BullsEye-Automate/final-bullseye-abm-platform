@@ -80,6 +80,9 @@ export default function ContactosPage() {
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
 
+  // Sync Lemlist → HubSpot
+  const [refreshing, setRefreshing] = useState(false);
+
   async function load(forBucket: Bucket = bucket) {
     setLoading(true);
     const clientParam = currentClient ? `&client_id=${currentClient.id}` : "";
@@ -164,6 +167,32 @@ export default function ContactosPage() {
       setError(`Errores Lemlist: ${detail}`);
     }
     await load();
+  }
+
+  async function refreshFromLemlist() {
+    if (!currentClient) return;
+    setRefreshing(true);
+    setNotice(null); setError(null);
+    try {
+      const res = await fetch("/api/lemlist/refresh-contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Error al sincronizar"); return; }
+      const parts = [];
+      if (data.updated > 0) parts.push(`${data.updated} email${data.updated !== 1 ? "s" : ""} nuevos guardados`);
+      if (data.synced  > 0) parts.push(`${data.synced} contacto${data.synced !== 1 ? "s" : ""} sincronizados con HubSpot`);
+      setNotice(parts.length > 0 ? parts.join(" · ") + "." : "Sin novedades de Lemlist.");
+      if (data.errors?.length > 0) {
+        const detail = data.errors.slice(0, 3).map((e: any) => e.error).join(" | ");
+        setError(`Errores sync: ${detail}`);
+      }
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function discardContact(id: string) {
@@ -276,6 +305,9 @@ export default function ContactosPage() {
               {bulkApproving ? "Enviando…" : `Aprobar y enviar a Lemlist (${allIds.length})`}
             </button>
           )}
+          <button className="btn-secondary" onClick={refreshFromLemlist} disabled={refreshing || !currentClient} title="Jala emails/teléfonos enriquecidos de Lemlist y sincroniza con HubSpot">
+            <IconRefresh size={14} /> {refreshing ? "Sincronizando…" : "Sync Lemlist → HubSpot"}
+          </button>
           <button className="btn-secondary" onClick={() => load()} disabled={loading}>
             <IconRefresh size={14} /> Refrescar
           </button>

@@ -72,6 +72,20 @@ export async function searchHSContact(email: string): Promise<string | null> {
   return d.results?.[0]?.id ?? null;
 }
 
+export async function searchHSContactByBullseyeId(contactId: string): Promise<string | null> {
+  const res = await fetch(`${HS}/crm/v3/objects/contacts/search`, {
+    method: "POST",
+    headers: hsHeaders(),
+    body: JSON.stringify({
+      filterGroups: [{ filters: [{ propertyName: "bullseye_contact_id", operator: "EQ", value: contactId }] }],
+      limit: 1,
+    }),
+  });
+  if (!res.ok) return null;
+  const d = await res.json();
+  return d.results?.[0]?.id ?? null;
+}
+
 export async function upsertHSContact(
   props: Record<string, string | number | null | undefined>,
   existingId?: string | null

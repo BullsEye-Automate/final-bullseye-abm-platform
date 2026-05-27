@@ -8,6 +8,7 @@ import {
   searchHSCompany,
   upsertHSCompany,
   searchHSContact,
+  searchHSContactByBullseyeId,
   upsertHSContact,
   associateContactCompany,
   patchHSContact,
@@ -232,9 +233,9 @@ export async function POST(req: NextRequest) {
 
     pushed++;
 
-    // 4) Sync a HubSpot + script SDR — solo cuando hay email (HubSpot lo requiere)
-    // Para contactos sin email, el sync ocurrirá cuando Lemlist notifique el email enriquecido.
-    if (contact.email?.trim()) {
+    // 4) Sync a HubSpot + script SDR (siempre, con o sin email)
+    // HubSpot acepta contactos sin email; se actualiza cuando Lemlist enriquezca.
+    {
       const trainingCtxForScript = [
         trainingConfig.business_description && `Negocio: ${trainingConfig.business_description}`,
         trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
@@ -298,7 +299,11 @@ async function syncToHubSpotWithScript(opts: {
   }
 
   // ── Contacto ───────────────────────────────────────────────────────────────
-  const existingContactId = contact.email ? await searchHSContact(contact.email) : null;
+  // Buscar primero por bullseye_contact_id (funciona con o sin email),
+  // luego por email como fallback para contactos creados antes de esta lógica.
+  const existingContactId =
+    await searchHSContactByBullseyeId(contact.id) ??
+    (contact.email ? await searchHSContact(contact.email) : null);
 
   const contactProps: Record<string, string | number | null | undefined> = {
     email:                          contact.email               ?? undefined,
