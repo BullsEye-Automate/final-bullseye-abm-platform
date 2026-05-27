@@ -326,7 +326,6 @@ async function syncToHubSpot(opts: {
     ...(hubspotOwnerId ? { hubspot_owner_id: hubspotOwnerId } : {}),
   }, existingContactId);
 
-  if (!hsContactId) throw new Error(`upsertHSContact falló para contact ${contact.id} (email: ${contact.email ?? "sin email"})`);
 
   if (hsContactId && hsCompanyId) await associateContactCompany(hsContactId, hsCompanyId);
 
@@ -342,6 +341,6 @@ async function syncToHubSpot(opts: {
     emailBody:   contact.email_body          ?? null,
     icebreaker:  contact.linkedin_icebreaker ?? null,
   })
-    .then((script) => patchHSContact(hsContactId, { bullseye_script_sdr_ia: script }))
+    .then((script) => { if (hsContactId) patchHSContact(hsContactId, { bullseye_script_sdr_ia: script }); })
     .catch(() => {});
 }

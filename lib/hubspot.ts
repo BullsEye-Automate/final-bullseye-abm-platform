@@ -68,12 +68,21 @@ export async function upsertHSCompany(
     const res = await fetch(`${HS}/crm/v3/objects/companies/${existingId}`, {
       method: "PATCH", headers: hsHeaders(), body: JSON.stringify({ properties: clean }),
     });
-    return res.ok ? existingId : null;
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.warn(`[hs] PATCH company ${existingId} → ${res.status}: ${txt.slice(0, 200)}`);
+      return null;
+    }
+    return existingId;
   }
   const res = await fetch(`${HS}/crm/v3/objects/companies`, {
     method: "POST", headers: hsHeaders(), body: JSON.stringify({ properties: clean }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    console.warn(`[hs] POST company → ${res.status}: ${txt.slice(0, 200)}`);
+    return null;
+  }
   return (await res.json()).id ?? null;
 }
 
@@ -158,12 +167,19 @@ export async function upsertHSContact(
     const res = await fetch(`${HS}/crm/v3/objects/contacts/${existingId}`, {
       method: "PATCH", headers: hsHeaders(), body: JSON.stringify({ properties: clean }),
     });
-    return res.ok ? existingId : null;
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`HubSpot PATCH contact ${existingId} → ${res.status}: ${txt.slice(0, 300)}`);
+    }
+    return existingId;
   }
   const res = await fetch(`${HS}/crm/v3/objects/contacts`, {
     method: "POST", headers: hsHeaders(), body: JSON.stringify({ properties: clean }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`HubSpot POST contact → ${res.status}: ${txt.slice(0, 300)}`);
+  }
   return (await res.json()).id ?? null;
 }
 
