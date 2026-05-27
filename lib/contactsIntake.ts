@@ -96,7 +96,8 @@ export async function intakeContactsForCompany(
       prefilter = await runPrefilter({
         job_title: c.job_title ?? null,
         linkedin_headline: c.linkedin_headline ?? null,
-        company_type: company.company_type ?? null
+        company_type: company.company_type ?? null,
+        company_name: company.company_name ?? null,
       });
     } catch {
       // Si Claude falla, marcamos yes para no descartar el contacto por error de infra.

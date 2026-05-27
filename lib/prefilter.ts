@@ -6,6 +6,7 @@ export type PrefilterInput = {
   job_title: string | null;
   linkedin_headline: string | null;
   company_type: string | null;
+  company_name?: string | null;
 };
 
 export type PrefilterResult = "yes" | "no";
