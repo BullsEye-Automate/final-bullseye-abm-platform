@@ -52,6 +52,14 @@ Estructura el script con estas secciones (cada una 2-4 bullets breves):
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    return await handleRequest(req);
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message ?? "Error interno del servidor" }, { status: 500 });
+  }
+}
+
+async function handleRequest(req: NextRequest) {
   let body: { client_id: string; contact_ids?: string[] };
   try {
     body = await req.json();
@@ -97,16 +105,9 @@ export async function POST(req: NextRequest) {
 
   if (body.contact_ids?.length) {
     q = q.in("id", body.contact_ids);
-  } else {
-    // Intentar filtrar por sdr_script null; si la columna no existe aún, ignorar el filtro
-    try {
-      const testQ = db.from("contacts").select("sdr_script").limit(1);
-      const { error: colErr } = await testQ;
-      if (!colErr) q = q.is("sdr_script", null);
-    } catch { /* columna aún no existe, se generan todos */ }
   }
 
-  const { data: contacts, error: cErr } = await q.limit(20);
+  const { data: contacts, error: cErr } = await q.limit(5);
   if (cErr) return NextResponse.json({ error: cErr.message }, { status: 500 });
   if (!contacts?.length) return NextResponse.json({ generated: 0, errors: [] });
 
