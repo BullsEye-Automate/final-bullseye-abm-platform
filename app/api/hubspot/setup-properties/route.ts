@@ -43,9 +43,23 @@ const CONTACT_PROPERTIES = [
 ];
 
 const COMPANY_PROPERTIES = [
-  { name: "bullseye_fit_signals",  label: "Fit Signals (BullsEye)",    type: "string", fieldType: "textarea" },
-  { name: "bullseye_company_id",   label: "BullsEye Company ID",       type: "string", fieldType: "text"     },
-  { name: "bullseye_icp_score",    label: "ICP Score (BullsEye)",      type: "number", fieldType: "number"   },
+  { name: "bullseye_fit_signals",        label: "Fit Signals (BullsEye)",    type: "string", fieldType: "textarea" },
+  { name: "bullseye_company_id",         label: "BullsEye Company ID",       type: "string", fieldType: "text"     },
+  { name: "bullseye_icp_score",          label: "ICP Score (BullsEye)",      type: "number", fieldType: "number"   },
+  { name: "cliente_bullseye_empresa",    label: "Cliente BullsEye (Empresa)", type: "enumeration", fieldType: "select",
+    options: [
+      { label: "BullsEye",       value: "BullsEye",       displayOrder: 0, hidden: false },
+      { label: "SOVOS",          value: "SOVOS",          displayOrder: 1, hidden: false },
+      { label: "Crossnet",       value: "Crossnet",       displayOrder: 2, hidden: false },
+      { label: "Apply Digital",  value: "Apply Digital",  displayOrder: 3, hidden: false },
+      { label: "AcidLab",        value: "AcidLab",        displayOrder: 4, hidden: false },
+      { label: "CanalCero",      value: "CanalCero",      displayOrder: 5, hidden: false },
+      { label: "Lemu",           value: "Lemu",           displayOrder: 6, hidden: false },
+      { label: "Webfleet",       value: "Webfleet",       displayOrder: 7, hidden: false },
+      { label: "Ecommerce",      value: "Ecommerce",      displayOrder: 8, hidden: false },
+      { label: "Otro",           value: "Otro",           displayOrder: 9, hidden: false },
+    ]
+  },
 ];
 
 async function createProperty(

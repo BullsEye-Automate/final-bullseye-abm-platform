@@ -296,6 +296,7 @@ async function syncToHubSpotWithScript(opts: {
       ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}),
     };
     hsCompanyId = await upsertHSCompany(companyProps, existingCompanyId);
+    if (!hsCompanyId) console.error(`[hs-sync] upsertHSCompany falló para "${companyName}" (contact ${contact.id})`);
   }
 
   // ── Contacto ───────────────────────────────────────────────────────────────
@@ -330,6 +331,7 @@ async function syncToHubSpotWithScript(opts: {
   };
 
   const hsContactId = await upsertHSContact(contactProps, existingContactId);
+  if (!hsContactId) console.error(`[hs-sync] upsertHSContact falló para contact ${contact.id} (email: ${contact.email ?? "sin email"})`);
 
   // ── Asociar contacto ↔ empresa ─────────────────────────────────────────────
   if (hsContactId && hsCompanyId) {
