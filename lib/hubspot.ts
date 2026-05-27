@@ -160,15 +160,15 @@ function propFilter(property: string, operation: Record<string, unknown>): HsFil
 }
 
 function isKnown(property: string): HsFilter {
-  return propFilter(property, { operationType: "ALL_PROPERTY", operator: "IS_KNOWN" });
+  return propFilter(property, { operationType: "STRING", operator: "HAS_PROPERTY" });
 }
 
 function numGte(property: string, value: number): HsFilter {
-  return propFilter(property, { operationType: "NUMBER", operator: "IS_GREATER_THAN_OR_EQUAL_TO", value: String(value) });
+  return propFilter(property, { operationType: "NUMBER", operator: "IS_GREATER_THAN_OR_EQUAL_TO", value });
 }
 
 function numLte(property: string, value: number): HsFilter {
-  return propFilter(property, { operationType: "NUMBER", operator: "IS_LESS_THAN_OR_EQUAL_TO", value: String(value) });
+  return propFilter(property, { operationType: "NUMBER", operator: "IS_LESS_THAN_OR_EQUAL_TO", value });
 }
 
 function strEq(property: string, value: string): HsFilter {
@@ -176,12 +176,12 @@ function strEq(property: string, value: string): HsFilter {
 }
 
 function enumAnyOf(property: string, values: string[]): HsFilter {
-  return propFilter(property, { operationType: "MULTISTRING", operator: "IS_ANY_OF", values });
+  return propFilter(property, { operationType: "ENUMERATION", operator: "IS_ANY_OF", values });
 }
 
 const ACTIVE_LEAD_STATUSES = ["IN_PROGRESS", "NEW", "ATTEMPTED_TO_CONTACT", "BAD_TIMING", "CONNECTED", "OPEN_DEAL"];
 
-export function buildClientLists(clientName: string, folderId: string | null) {
+export function buildClientLists(clientName: string, folderId: number | null) {
   const phoneOrLusha: HsFilterBranch = {
     filterBranchType: "OR",
     filterBranches: [],
@@ -232,20 +232,22 @@ export function buildClientLists(clientName: string, folderId: string | null) {
   ];
 }
 
-export async function createHSListFolder(name: string): Promise<string | null> {
-  const res = await fetch(`${HS}/crm/v3/lists/folders`, {
+// API v1: la única que soporta carpetas para listas
+export async function createHSListFolder(name: string): Promise<number | null> {
+  const res = await fetch(`${HS}/contacts/v1/lists/folders`, {
     method: "POST",
     headers: hsHeaders(),
     body: JSON.stringify({ name }),
   });
   if (!res.ok) return null;
   const d = await res.json();
-  return d.folderId ?? d.id ?? null;
+  const id = d.folder?.id ?? d.id ?? null;
+  return id != null ? Number(id) : null;
 }
 
 export async function createHSList(list: {
   name: string;
-  folderId: string | null;
+  folderId: number | null;
   filterBranch: HsFilterBranch;
 }): Promise<{ name: string; id: string | null; status: "created" | "error"; error?: string }> {
   const body: Record<string, unknown> = {
@@ -267,5 +269,5 @@ export async function createHSList(list: {
     return { name: list.name, id: d.listId ?? d.id ?? null, status: "created" };
   }
   const text = await res.text().catch(() => "");
-  return { name: list.name, id: null, status: "error", error: text.slice(0, 200) };
+  return { name: list.name, id: null, status: "error", error: text.slice(0, 300) };
 }

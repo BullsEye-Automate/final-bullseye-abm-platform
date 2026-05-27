@@ -31,6 +31,13 @@ const CONTACT_PROPERTIES = [
   { name: "bullseye_lemlist_pushed_at",   label: "Lemlist Pushed At",             type: "string", fieldType: "text"     },
   { name: "bullseye_phone_source",        label: "Fuente del Teléfono",           type: "string", fieldType: "text"     },
   { name: "bullseye_lemlist_campaign_id", label: "Lemlist Campaign ID",           type: "string", fieldType: "text"     },
+  {
+    name: "bullseye_script_sdr_ia",
+    label: "Script SDR IA",
+    type: "string",
+    fieldType: "textarea",
+    description: "Script personalizado generado por IA para la llamada SDR. Incluye apertura, propuesta de valor, preguntas de calificación, manejo de objeciones y CTA.",
+  },
 ];
 
 const COMPANY_PROPERTIES = [

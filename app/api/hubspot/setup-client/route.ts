@@ -28,19 +28,25 @@ export async function POST(req: NextRequest) {
 
   const clientName = client.name;
 
-  // Crear carpeta con el nombre del cliente
-  const folderId = await createHSListFolder(clientName);
+  // Carpeta (falla silenciosamente — las listas se crean igual sin carpeta)
+  const folderId = await createHSListFolder(clientName).catch(() => null);
 
-  // Crear las 3 listas
+  // Crear las 3 listas en secuencia para capturar errores individuales
   const listDefs = buildClientLists(clientName, folderId);
   const results  = await Promise.all(listDefs.map(createHSList));
 
   const created = results.filter((r) => r.status === "created").length;
-  const errors  = results.filter((r) => r.status === "error");
+  const errored = results.filter((r) => r.status === "error");
 
   return NextResponse.json({
     client: clientName,
     folder: { id: folderId, created: folderId !== null },
-    lists: { created, errors: errors.length, detail: results },
+    lists: {
+      created,
+      errors: errored.length,
+      detail: results,
+      // Exponer mensajes de error completos para diagnóstico
+      errorMessages: errored.map((r) => `${r.name}: ${r.error}`),
+    },
   });
 }

@@ -76,6 +76,8 @@ export default function ConfigClientePage() {
   const [hsSetupResult, setHsSetupResult] = useState<string | null>(null);
   const [hsLists, setHsLists]             = useState<"idle" | "running" | "done" | "error">("idle");
   const [hsListsResult, setHsListsResult] = useState<string | null>(null);
+  const [sdrScripts, setSdrScripts]       = useState<"idle" | "running" | "done" | "error">("idle");
+  const [sdrScriptsResult, setSdrScriptsResult] = useState<string | null>(null);
 
   function set(field: keyof Config) {
     return (v: string) => setForm((f) => ({ ...f, [field]: v }));
@@ -115,6 +117,26 @@ export default function ConfigClientePage() {
       .catch((e) => { setError(e.message); setLoading(false); });
   }, [currentClient?.id]);
 
+  async function generateSdrScripts() {
+    if (!currentClient) return;
+    setSdrScripts("running");
+    setSdrScriptsResult(null);
+    try {
+      const res = await fetch("/api/contacts/generate-scripts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) { setSdrScripts("error"); setSdrScriptsResult(d.error ?? "Error"); return; }
+      setSdrScriptsResult(`${d.generated} scripts generados${d.errors?.length ? ` (${d.errors.length} errores)` : ""}`);
+      setSdrScripts(d.errors?.length > 0 ? "error" : "done");
+    } catch (e: any) {
+      setSdrScripts("error");
+      setSdrScriptsResult(e.message ?? "Error de red");
+    }
+  }
+
   async function setupHubSpotLists() {
     if (!currentClient) return;
     setHsLists("running");
@@ -128,7 +150,8 @@ export default function ConfigClientePage() {
       const d = await res.json();
       if (!res.ok) { setHsLists("error"); setHsListsResult(d.error ?? "Error"); return; }
       const folder = d.folder.created ? "Carpeta creada" : "Sin carpeta";
-      setHsListsResult(`${folder} · ${d.lists.created} listas creadas${d.lists.errors ? ` (${d.lists.errors} errores)` : ""}`);
+      const errMsg = d.lists.errorMessages?.join(" | ") ?? "";
+      setHsListsResult(`${folder} · ${d.lists.created} listas creadas${d.lists.errors ? ` — ${errMsg}` : ""}`);
       setHsLists(d.lists.errors > 0 ? "error" : "done");
     } catch (e: any) {
       setHsLists("error");
@@ -328,6 +351,38 @@ export default function ConfigClientePage() {
                   )}
                 </div>
               </div>
+            </div>
+          </section>
+
+          {/* SDR Script IA */}
+          <section className="card space-y-4">
+            <h2 className="font-semibold flex items-center gap-2">
+              <IconCloud size={18} className="text-brand" /> Script SDR IA
+            </h2>
+            <p className="text-sm text-ink-muted">
+              Genera scripts de llamada personalizados para cada contacto usando Claude.
+              El script incluye apertura, propuesta de valor, preguntas de calificación, manejo de objeciones y CTA.
+              Se guarda en HubSpot como <code className="text-xs bg-surface-2 px-1 rounded">bullseye_script_sdr_ia</code> y en Supabase.
+              Solo procesa contactos que aún no tienen script.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={generateSdrScripts}
+                disabled={sdrScripts === "running"}
+                className="btn-secondary flex items-center gap-2 text-sm"
+              >
+                {sdrScripts === "running"
+                  ? <IconLoader2 size={15} className="animate-spin" />
+                  : sdrScripts === "done"
+                  ? <IconCircleCheck size={15} className="text-success-fg" />
+                  : <IconCloud size={15} />}
+                {sdrScripts === "running" ? "Generando scripts…" : "Generar scripts SDR"}
+              </button>
+              {sdrScriptsResult && (
+                <span className={`text-xs ${sdrScripts === "error" ? "text-danger-fg" : "text-success-fg"}`}>
+                  {sdrScriptsResult}
+                </span>
+              )}
             </div>
           </section>
 
