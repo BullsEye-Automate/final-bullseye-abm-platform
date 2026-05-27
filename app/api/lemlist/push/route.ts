@@ -122,11 +122,12 @@ export async function POST(req: NextRequest) {
     const companyName = company?.company_name ?? "";
     const hasEmail    = Boolean(contact.email?.trim());
 
-    // 1) Generar mensajes si faltan ──────────────────────────────────────────
+    // 1) Generar mensajes si faltan o si tienen el tag {{firstName}} sin reemplazar
     const needsMessages =
       !contact.email_subject   ||
       !contact.email_body      ||
-      !contact.linkedin_icebreaker;
+      !contact.linkedin_icebreaker ||
+      contact.email_body?.includes("{{firstName}}");
 
     if (needsMessages) {
       try {

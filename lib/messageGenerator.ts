@@ -72,8 +72,8 @@ export async function generateContactMessages(
 
   const recipientName = firstName?.trim() ?? null;
   const greeting = recipientName
-    ? (language === "en" ? `Hi ${recipientName},`  : `Hola ${recipientName},`)
-    : (language === "en" ? "Hi,"                   : "Hola,");
+    ? (language === "en" ? `Hi ${recipientName},`           : `Hola ${recipientName}! ¿Cómo estás?`)
+    : (language === "en" ? "Hi,"                            : "Hola! ¿Cómo estás?");
 
   let userPrompt: string;
 
