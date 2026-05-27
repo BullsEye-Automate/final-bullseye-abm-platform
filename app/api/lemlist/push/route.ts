@@ -151,20 +151,24 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // 3) Push a Lemlist con mensajes como variables personalizadas ─────────────
-    const lemlistPayload: Record<string, string | undefined> = {
+    // 3) Push a Lemlist con mensajes y flags de enrichment ─────────────────────
+    const lemlistPayload: Record<string, string | boolean | undefined> = {
       firstName:          contact.first_name        ?? undefined,
       lastName:           contact.last_name         ?? undefined,
       companyName:        companyName               || undefined,
       linkedinUrl:        contact.linkedin_url      ?? undefined,
       phone:              contact.phone             ?? undefined,
-      // Mensajes generados — se usan como {{icebreaker}}, {{emailSubject}}, {{emailBody}} en la campaña
+      // Mensajes generados — variables {{icebreaker}}, {{emailSubject}}, {{emailBody}} en la campaña
       icebreaker:         contact.linkedin_icebreaker ?? undefined,
       emailSubject:       contact.email_subject       ?? undefined,
       emailBody:          contact.email_body          ?? undefined,
+      // Enrichment automático al entrar a la campaña
+      findPhone: true,
+      // findEmail solo si tiene LinkedIn pero no email propio (enriquece en Lemlist)
+      ...(contact.linkedin_url && !contact.email?.trim() ? { findEmail: true } : {}),
     };
 
-    // Limpiar undefined
+    // Limpiar undefined (no los boolean)
     Object.keys(lemlistPayload).forEach(
       (k) => lemlistPayload[k] === undefined && delete lemlistPayload[k]
     );
