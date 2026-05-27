@@ -234,34 +234,38 @@ export async function POST(req: NextRequest) {
 
     pushed++;
 
-    // 4) Sync a HubSpot + script SDR (siempre, con o sin email)
-    // HubSpot acepta contactos sin email; se actualiza cuando Lemlist enriquezca.
-    {
-      const trainingCtxForScript = [
-        trainingConfig.business_description && `Negocio: ${trainingConfig.business_description}`,
-        trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
-        trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
-      ].filter(Boolean).join("\n") || null;
+    // 4) Sync a HubSpot (sincrónico para detectar errores) + SDR script async
+    const trainingCtxForScript = [
+      trainingConfig.business_description && `Negocio: ${trainingConfig.business_description}`,
+      trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
+      trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
+    ].filter(Boolean).join("\n") || null;
 
-      syncToHubSpotWithScript({
-        contact,
-        companyName,
-        fitSignals:     company?.fit_signals    ?? null,
-        companyDbId:    contact.company_id      ?? null,
-        clientName:     client?.name            ?? null,
-        clientLabel,
-        campaignId,
-        hubspotOwnerId: config.hubspot_owner_id ?? null,
-        icpContext:     icpContext              ?? null,
-        trainingCtx:    trainingCtxForScript,
-      }).catch(() => {/* no bloquea */});
+    const hsOpts = {
+      contact,
+      companyName,
+      fitSignals:     company?.fit_signals    ?? null,
+      companyDbId:    contact.company_id      ?? null,
+      clientName:     client?.name            ?? null,
+      clientLabel,
+      campaignId,
+      hubspotOwnerId: config.hubspot_owner_id ?? null,
+      icpContext:     icpContext              ?? null,
+      trainingCtx:    trainingCtxForScript,
+    };
+
+    try {
+      await syncToHubSpot(hsOpts);
+    } catch (err: any) {
+      errors.push({ contact_id: contact.id, error: `HubSpot: ${err?.message ?? "error"}` });
     }
   }
 
   return NextResponse.json({ pushed, skipped, generated, errors, reason: skipped > 0 && pushed === 0 ? "no_email" : undefined });
 }
 
-async function syncToHubSpotWithScript(opts: {
+// Sync empresa + contacto a HubSpot (sincrónico). Lanza error si falla.
+async function syncToHubSpot(opts: {
   contact:        Record<string, any>;
   companyName:    string;
   fitSignals:     string | null;
@@ -279,7 +283,6 @@ async function syncToHubSpotWithScript(opts: {
   const standardPhone = !isLushaPhone ? (contact.phone ?? null) : null;
   const lushaPhone    = isLushaPhone  ? (contact.phone ?? null) : null;
 
-  // Score inicial: email enviado + boost de recencia (se recalculará con datos Lemlist posteriores)
   const engagementScore = computeEngagementScore({
     emailSent:         true,
     hasRecentActivity: true,
@@ -290,24 +293,21 @@ async function syncToHubSpotWithScript(opts: {
   let hsCompanyId: string | null = null;
   if (companyName) {
     const existingCompanyId = await searchHSCompany(companyName);
-    const companyProps: Record<string, string | number | null | undefined> = {
+    hsCompanyId = await upsertHSCompany({
       name:                     companyName,
-      bullseye_fit_signals:     fitSignals    || undefined,
-      bullseye_company_id:      companyDbId   || undefined,
+      bullseye_fit_signals:     fitSignals  || undefined,
+      bullseye_company_id:      companyDbId || undefined,
       ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}),
-    };
-    hsCompanyId = await upsertHSCompany(companyProps, existingCompanyId);
-    if (!hsCompanyId) console.error(`[hs-sync] upsertHSCompany falló para "${companyName}" (contact ${contact.id})`);
+    }, existingCompanyId);
+    if (!hsCompanyId) throw new Error(`upsertHSCompany falló para "${companyName}"`);
   }
 
   // ── Contacto ───────────────────────────────────────────────────────────────
-  // Buscar primero por bullseye_contact_id (funciona con o sin email),
-  // luego por email como fallback para contactos creados antes de esta lógica.
   const existingContactId =
     await searchHSContactByBullseyeId(contact.id) ??
     (contact.email ? await searchHSContact(contact.email) : null);
 
-  const contactProps: Record<string, string | number | null | undefined> = {
+  const hsContactId = await upsertHSContact({
     email:                          contact.email               ?? undefined,
     firstname:                      contact.first_name          ?? undefined,
     lastname:                       contact.last_name           ?? undefined,
@@ -329,30 +329,24 @@ async function syncToHubSpotWithScript(opts: {
     bullseye_lemlist_campaign_id:   campaignId,
     bullseye_phone_source:          contact.phone_source        ?? undefined,
     ...(hubspotOwnerId ? { hubspot_owner_id: hubspotOwnerId } : {}),
-  };
+  }, existingContactId);
 
-  const hsContactId = await upsertHSContact(contactProps, existingContactId);
-  if (!hsContactId) console.error(`[hs-sync] upsertHSContact falló para contact ${contact.id} (email: ${contact.email ?? "sin email"})`);
+  if (!hsContactId) throw new Error(`upsertHSContact falló para contact ${contact.id} (email: ${contact.email ?? "sin email"})`);
 
-  // ── Asociar contacto ↔ empresa ─────────────────────────────────────────────
-  if (hsContactId && hsCompanyId) {
-    await associateContactCompany(hsContactId, hsCompanyId);
-  }
+  if (hsContactId && hsCompanyId) await associateContactCompany(hsContactId, hsCompanyId);
 
-  // ── Script SDR IA (fire & forget) ─────────────────────────────────────────
-  if (hsContactId) {
-    generateSdrScript({
-      firstName:   contact.first_name          ?? "",
-      lastName:    contact.last_name           ?? "",
-      jobTitle:    contact.job_title           ?? "",
-      companyName,
-      fitSignals,
-      icpContext,
-      trainingCtx,
-      emailBody:   contact.email_body          ?? null,
-      icebreaker:  contact.linkedin_icebreaker ?? null,
-    })
-      .then((script) => patchHSContact(hsContactId, { bullseye_script_sdr_ia: script }))
-      .catch(() => {/* no bloquea */});
-  }
+  // ── Script SDR IA (fire & forget — Claude es lento) ───────────────────────
+  generateSdrScript({
+    firstName:   contact.first_name          ?? "",
+    lastName:    contact.last_name           ?? "",
+    jobTitle:    contact.job_title           ?? "",
+    companyName,
+    fitSignals,
+    icpContext,
+    trainingCtx,
+    emailBody:   contact.email_body          ?? null,
+    icebreaker:  contact.linkedin_icebreaker ?? null,
+  })
+    .then((script) => patchHSContact(hsContactId, { bullseye_script_sdr_ia: script }))
+    .catch(() => {});
 }
