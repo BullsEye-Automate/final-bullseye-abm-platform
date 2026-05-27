@@ -70,7 +70,10 @@ export async function generateContactMessages(
       ? "Write all messages in English."
       : "Escribe todos los mensajes en español latinoamericano neutro.";
 
-  const greeting = language === "en" ? "Hi {{firstName}}," : "Hola {{firstName}},";
+  const recipientName = firstName?.trim() ?? null;
+  const greeting = recipientName
+    ? (language === "en" ? `Hi ${recipientName},`  : `Hola ${recipientName},`)
+    : (language === "en" ? "Hi,"                   : "Hola,");
 
   let userPrompt: string;
 
