@@ -8,10 +8,10 @@ import {
   IconClock,
   IconLoader2,
   IconRefresh,
-  IconBrandHubspot,
+  IconCloud,
   IconSparkles,
-  IconArrowUpRight,
-  IconArrowDownLeft,
+  IconArrowUp,
+  IconArrowDown,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -175,9 +175,9 @@ function DirectionBadge({ direction }: { direction: string | null }) {
       }
     >
       {isOutbound ? (
-        <IconArrowUpRight size={11} />
+        <IconArrowUp size={11} />
       ) : (
-        <IconArrowDownLeft size={11} />
+        <IconArrowDown size={11} />
       )}
       {isOutbound ? "SALIENTE" : "ENTRANTE"}
     </span>
@@ -485,7 +485,7 @@ export default function LlamadasPage() {
             {syncing ? (
               <IconLoader2 size={15} className="animate-spin" />
             ) : (
-              <IconBrandHubspot size={15} />
+              <IconCloud size={15} />
             )}
             Sincronizar HubSpot
           </button>
