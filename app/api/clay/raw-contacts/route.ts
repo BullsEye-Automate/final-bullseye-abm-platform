@@ -34,6 +34,8 @@ const CLAY_FIELDS = [
   "first_name",
   "last_name",
   "job_title",
+  "linkedin_headline",
+  "seniority",
   "linkedin_url",
   "company_linkedin_url",
   "bullseye_company_id",

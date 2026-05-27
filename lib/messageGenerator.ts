@@ -12,6 +12,7 @@ export type ContactMessageInput = {
   firstName?: string;
   lastName?: string;
   jobTitle?: string;
+  linkedinHeadline?: string;
   companyName?: string;
   icpContext?: string;
   deepResearch?: DeepResearchContext | null;
@@ -41,6 +42,7 @@ export async function generateContactMessages(
     firstName,
     lastName,
     jobTitle,
+    linkedinHeadline,
     companyName,
     icpContext,
     deepResearch,
@@ -57,6 +59,7 @@ export async function generateContactMessages(
   const contactInfo = [
     firstName && `Nombre: ${firstName}${lastName ? " " + lastName : ""}`,
     jobTitle && `Cargo: ${jobTitle}`,
+    linkedinHeadline && `LinkedIn headline: ${linkedinHeadline}`,
     companyName && `Empresa: ${companyName}`,
   ]
     .filter(Boolean)

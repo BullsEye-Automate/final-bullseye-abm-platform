@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
   // ── Contactos a procesar ───────────────────────────────────────────────────
   let q = db
     .from("contacts")
-    .select("id, first_name, last_name, job_title, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, fit_score")
+    .select("id, first_name, last_name, job_title, linkedin_headline, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, fit_score")
     .eq("client_id", body.client_id)
     .eq("fit_action", "enrich")
     .is("lemlist_pushed_at", null)
@@ -138,13 +138,14 @@ export async function POST(req: NextRequest) {
 
         const msgs = await generateContactMessages({
           hasEmail,
-          firstName:    contact.first_name  ?? undefined,
-          lastName:     contact.last_name   ?? undefined,
-          jobTitle:     contact.job_title   ?? undefined,
-          companyName:  companyName         || undefined,
-          icpContext:   enrichedContext,
+          firstName:        contact.first_name        ?? undefined,
+          lastName:         contact.last_name         ?? undefined,
+          jobTitle:         contact.job_title         ?? undefined,
+          linkedinHeadline: contact.linkedin_headline ?? undefined,
+          companyName:      companyName               || undefined,
+          icpContext:       enrichedContext,
           deepResearch,
-          language:     "es",
+          language:         "es",
         });
 
         const update: Record<string, string | undefined> = {};
