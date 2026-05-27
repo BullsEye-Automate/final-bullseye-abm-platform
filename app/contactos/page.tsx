@@ -67,20 +67,16 @@ export default function ContactosPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [approvedCompanies, setApprovedCompanies] = useState<Company[]>([]);
 
-  // Acciones en curso
   const [bulkApproving, setBulkApproving] = useState(false);
   const [pushingId, setPushingId] = useState<string | null>(null);
   const [discardingId, setDiscardingId] = useState<string | null>(null);
   const [pushingCompany, setPushingCompany] = useState<string | null>(null);
 
-  // Colapsables
   const [expandedCompanies, setExpandedCompanies] = useState<Set<string>>(new Set());
 
-  // Previews de mensajes
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
 
-  // Sync Lemlist → HubSpot
   const [refreshing, setRefreshing] = useState(false);
 
   async function load(forBucket: Bucket = bucket) {
@@ -92,7 +88,6 @@ export default function ContactosPage() {
     if (!res.ok) { setError(data.error ?? "Load failed"); return; }
     setContacts(data.contacts ?? []);
     if (data.counts) setCounts(data.counts);
-    // Colapsar todo al cambiar bucket
     setExpandedCompanies(new Set());
     setPreviews({});
   }
@@ -130,8 +125,6 @@ export default function ContactosPage() {
     for (const c of approvedCompanies) m.set(c.id, c.company_name);
     return m;
   }, [approvedCompanies]);
-
-  // ── Acciones ──────────────────────────────────────────────────────────────
 
   async function pushToLemlist(contactIds: string[], companyId?: string) {
     if (!currentClient) return;
@@ -281,7 +274,6 @@ export default function ContactosPage() {
         />
       )}
 
-      {/* Tabs + acciones globales */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           {(["pending", "approved_pending", "enriched", "discarded"] as Bucket[]).map((b) => {
@@ -327,7 +319,6 @@ export default function ContactosPage() {
         </div>
       )}
 
-      {/* Expand / Collapse all */}
       {!loading && grouped.length > 0 && (
         <div className="flex items-center justify-between text-sm text-ink-muted">
           <span>{grouped.length} empresa{grouped.length !== 1 ? "s" : ""}</span>
@@ -356,7 +347,6 @@ export default function ContactosPage() {
 
             return (
               <div key={companyId} className="card p-0 overflow-hidden">
-                {/* Header empresa */}
                 <div
                   className="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-[#F8F6FC] select-none"
                   onClick={() => toggleCompany(companyId)}
@@ -381,7 +371,6 @@ export default function ContactosPage() {
                   )}
                 </div>
 
-                {/* Contactos */}
                 {expanded && (
                   <div className="border-t border-[#F1EEF7] grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-[#F1EEF7]">
                     {items.map((c) => (
@@ -410,8 +399,6 @@ export default function ContactosPage() {
   );
 }
 
-// ── ContactCard ────────────────────────────────────────────────────────────────
-
 function ContactCard({
   c, bucket, isPushing, isDiscarding, isPreviewLoading, preview,
   onPushLemlist, onDiscard, onRecover, onPreview,
@@ -436,7 +423,6 @@ function ContactCard({
 
   return (
     <div className="p-4 flex flex-col gap-3">
-      {/* Cabecera */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -490,7 +476,6 @@ function ContactCard({
         </div>
       )}
 
-      {/* Mensajes ya guardados */}
       {(c.linkedin_icebreaker || (c.email_subject && c.email_body)) && (
         <details className="text-xs">
           <summary className="cursor-pointer text-ink-muted hover:text-ink">Ver mensajes guardados</summary>
@@ -512,7 +497,6 @@ function ContactCard({
         </details>
       )}
 
-      {/* Preview de mensajes generados */}
       {preview && (
         <div className="rounded-lg border border-[#E5E2F0] bg-[#F8F6FC] p-3 space-y-3 text-sm">
           {(preview.emailSubject || preview.emailBody) && (
@@ -542,7 +526,6 @@ function ContactCard({
         </div>
       )}
 
-      {/* Acciones */}
       <div className="flex items-center gap-2 flex-wrap pt-1">
         {bucket === "approved_pending" && (
           <>
@@ -589,8 +572,6 @@ function ContactCard({
   );
 }
 
-// ── EmptyState ─────────────────────────────────────────────────────────────────
-
 function EmptyState({ bucket, hasApproved }: { bucket: Bucket; hasApproved: boolean }) {
   if (!hasApproved) {
     return (
@@ -610,8 +591,6 @@ function EmptyState({ bucket, hasApproved }: { bucket: Bucket; hasApproved: bool
     </div>
   );
 }
-
-// ── ImportPanel ────────────────────────────────────────────────────────────────
 
 function ImportPanel({ companies, onClose, onDone }: { companies: Company[]; onClose: () => void; onDone: () => void }) {
   const [companyId, setCompanyId] = useState(companies[0]?.id ?? "");
