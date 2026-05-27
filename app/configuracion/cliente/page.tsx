@@ -8,6 +8,8 @@ import {
   IconLoader2,
   IconMail,
   IconDatabase,
+  IconCloud,
+  IconCircleCheck,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -66,10 +68,12 @@ export default function ConfigClientePage() {
   const { currentClient } = useClient();
   const [form, setForm]         = useState<Config>(EMPTY_CONFIG);
   const [webhooks, setWebhooks] = useState<ClientWebhooks>(EMPTY_WEBHOOKS);
-  const [loading, setLoading]   = useState(false);
-  const [saving, setSaving]     = useState(false);
-  const [savedAt, setSavedAt]   = useState<string | null>(null);
-  const [error, setError]       = useState<string | null>(null);
+  const [loading, setLoading]       = useState(false);
+  const [saving, setSaving]         = useState(false);
+  const [savedAt, setSavedAt]       = useState<string | null>(null);
+  const [error, setError]           = useState<string | null>(null);
+  const [hsSetup, setHsSetup]       = useState<"idle" | "running" | "done" | "error">("idle");
+  const [hsSetupResult, setHsSetupResult] = useState<string | null>(null);
 
   function set(field: keyof Config) {
     return (v: string) => setForm((f) => ({ ...f, [field]: v }));
@@ -108,6 +112,25 @@ export default function ConfigClientePage() {
       })
       .catch((e) => { setError(e.message); setLoading(false); });
   }, [currentClient?.id]);
+
+  async function setupHubSpotProperties() {
+    setHsSetup("running");
+    setHsSetupResult(null);
+    try {
+      const res = await fetch("/api/hubspot/setup-properties", { method: "POST" });
+      const d   = await res.json();
+      if (!res.ok) { setHsSetup("error"); setHsSetupResult(d.error ?? "Error"); return; }
+      const { summary } = d;
+      setHsSetupResult(
+        `Contactos: ${summary.contacts.created} creadas, ${summary.contacts.exists} ya existían` +
+        ` · Empresas: ${summary.companies.created} creadas, ${summary.companies.exists} ya existían`
+      );
+      setHsSetup("done");
+    } catch (e: any) {
+      setHsSetup("error");
+      setHsSetupResult(e.message ?? "Error de red");
+    }
+  }
 
   async function save() {
     if (!currentClient) return;
@@ -225,6 +248,36 @@ export default function ConfigClientePage() {
               value={form.lemlist_staging_campaign_id}
               onChange={set("lemlist_staging_campaign_id")}
             />
+          </section>
+
+          {/* HubSpot */}
+          <section className="card space-y-4">
+            <h2 className="font-semibold flex items-center gap-2">
+              <IconCloud size={18} className="text-brand" /> HubSpot
+            </h2>
+            <p className="text-sm text-ink-muted">
+              Crea las propiedades custom de BullsEye en HubSpot (email body, icebreaker, teléfono Lusha, fit score, etc.).
+              Ejecuta esto <strong>una sola vez</strong> — si las propiedades ya existen las saltará sin error.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={setupHubSpotProperties}
+                disabled={hsSetup === "running"}
+                className="btn-secondary flex items-center gap-2 text-sm"
+              >
+                {hsSetup === "running"
+                  ? <IconLoader2 size={15} className="animate-spin" />
+                  : hsSetup === "done"
+                  ? <IconCircleCheck size={15} className="text-success-fg" />
+                  : <IconCloud size={15} />}
+                {hsSetup === "running" ? "Creando propiedades…" : "Crear propiedades en HubSpot"}
+              </button>
+              {hsSetupResult && (
+                <span className={`text-xs ${hsSetup === "error" ? "text-danger-fg" : "text-success-fg"}`}>
+                  {hsSetupResult}
+                </span>
+              )}
+            </div>
           </section>
 
           {/* Clay */}
