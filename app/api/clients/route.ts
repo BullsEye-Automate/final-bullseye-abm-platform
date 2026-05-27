@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { provisionClientHubSpot } from "@/lib/hubspot";
 
 export const dynamic = "force-dynamic";
 
@@ -51,5 +52,9 @@ export async function POST(req: NextRequest) {
       : error.message;
     return NextResponse.json({ error: msg }, { status: 400 });
   }
+
+  // Auto-crear carpeta y listas en HubSpot (fire & forget, no bloquea la respuesta)
+  provisionClientHubSpot(data.name).catch(() => {/* no bloquea */});
+
   return NextResponse.json({ client: data }, { status: 201 });
 }

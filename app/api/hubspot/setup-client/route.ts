@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   // Carpeta (falla silenciosamente — las listas se crean igual sin carpeta)
   const folderId = await createHSListFolder(clientName).catch(() => null);
 
-  // Crear las 3 listas en secuencia para capturar errores individuales
+  // Crear las 3 listas capturando errores individuales para diagnóstico
   const listDefs = buildClientLists(clientName, folderId);
   const results  = await Promise.all(listDefs.map(createHSList));
 
@@ -45,7 +45,6 @@ export async function POST(req: NextRequest) {
       created,
       errors: errored.length,
       detail: results,
-      // Exponer mensajes de error completos para diagnóstico
       errorMessages: errored.map((r) => `${r.name}: ${r.error}`),
     },
   });

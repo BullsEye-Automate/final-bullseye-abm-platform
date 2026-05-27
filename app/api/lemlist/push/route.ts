@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateContactMessages } from "@/lib/messageGenerator";
+import { generateSdrScript } from "@/lib/sdrScript";
 import {
   matchClientOption,
   computeEngagementScore,
@@ -9,6 +10,7 @@ import {
   searchHSContact,
   upsertHSContact,
   associateContactCompany,
+  patchHSContact,
 } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
@@ -209,8 +211,14 @@ export async function POST(req: NextRequest) {
 
     pushed++;
 
-    // 4) Sync a HubSpot (no bloquea en caso de error) ─────────────────────────
-    syncToHubSpot({
+    // 4) Sync a HubSpot + script SDR (fire & forget, no bloquea el push) ────────
+    const trainingCtxForScript = [
+      trainingConfig.business_description && `Negocio: ${trainingConfig.business_description}`,
+      trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
+      trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
+    ].filter(Boolean).join("\n") || null;
+
+    syncToHubSpotWithScript({
       contact,
       companyName,
       fitSignals:     company?.fit_signals    ?? null,
@@ -219,13 +227,15 @@ export async function POST(req: NextRequest) {
       clientLabel,
       campaignId,
       hubspotOwnerId: config.hubspot_owner_id ?? null,
-    }).catch(() => {/* HubSpot no bloquea el flujo */});
+      icpContext:     icpContext              ?? null,
+      trainingCtx:    trainingCtxForScript,
+    }).catch(() => {/* no bloquea */});
   }
 
   return NextResponse.json({ pushed, skipped, generated, errors });
 }
 
-async function syncToHubSpot(opts: {
+async function syncToHubSpotWithScript(opts: {
   contact:        Record<string, any>;
   companyName:    string;
   fitSignals:     string | null;
@@ -234,8 +244,10 @@ async function syncToHubSpot(opts: {
   clientLabel:    string | null;
   campaignId:     string;
   hubspotOwnerId: string | null;
+  icpContext:     string | null;
+  trainingCtx:    string | null;
 }) {
-  const { contact, companyName, fitSignals, companyDbId, clientName, clientLabel, campaignId, hubspotOwnerId } = opts;
+  const { contact, companyName, fitSignals, companyDbId, clientName, clientLabel, campaignId, hubspotOwnerId, icpContext, trainingCtx } = opts;
 
   const isLushaPhone  = contact.phone_source === "lusha";
   const standardPhone = !isLushaPhone ? (contact.phone ?? null) : null;
@@ -291,5 +303,22 @@ async function syncToHubSpot(opts: {
   // ── Asociar contacto ↔ empresa ─────────────────────────────────────────────
   if (hsContactId && hsCompanyId) {
     await associateContactCompany(hsContactId, hsCompanyId);
+  }
+
+  // ── Script SDR IA (fire & forget) ─────────────────────────────────────────
+  if (hsContactId) {
+    generateSdrScript({
+      firstName:   contact.first_name          ?? "",
+      lastName:    contact.last_name           ?? "",
+      jobTitle:    contact.job_title           ?? "",
+      companyName,
+      fitSignals,
+      icpContext,
+      trainingCtx,
+      emailBody:   contact.email_body          ?? null,
+      icebreaker:  contact.linkedin_icebreaker ?? null,
+    })
+      .then((script) => patchHSContact(hsContactId, { bullseye_script_sdr_ia: script }))
+      .catch(() => {/* no bloquea */});
   }
 }

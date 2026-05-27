@@ -266,3 +266,11 @@ export async function createHSList(list: {
   }
   return { name: list.name, id: null, status: "error", error: text.slice(0, 300) };
 }
+
+// Crear carpeta + 3 listas en HubSpot para un cliente (llamar al crear cliente)
+export async function provisionClientHubSpot(clientName: string): Promise<void> {
+  if (!process.env.HUBSPOT_ACCESS_TOKEN) return;
+  const folderId = await createHSListFolder(clientName).catch(() => null);
+  const listDefs = buildClientLists(clientName, folderId);
+  await Promise.all(listDefs.map(createHSList)).catch(() => {/* no bloquea */});
+}
