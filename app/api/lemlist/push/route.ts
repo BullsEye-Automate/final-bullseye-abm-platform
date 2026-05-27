@@ -169,20 +169,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2) Si no tiene email ni linkedin_url no se puede pushear
+    // 2) Si no tiene ni email ni linkedin_url no hay forma de identificar el lead
     if (!hasEmail && !contact.linkedin_url?.trim()) {
       skipped++;
       continue;
     }
 
-    // 3) Push a Lemlist con mensajes y flags de enrichment ─────────────────────
-    // Lemlist enriquece email y teléfono: si no hay email usamos LinkedIn URL como
-    // identificador del lead y marcamos findEmail=true para que Lemlist lo encuentre.
-    const leadIdentifier = hasEmail
-      ? encodeURIComponent(contact.email!)
-      : encodeURIComponent(contact.linkedin_url!.trim());
+    // 3) Push a Lemlist ────────────────────────────────────────────────────────
+    // Con email    → POST /campaigns/{id}/leads/{email}?verifyEmail=true&findPhone=true
+    // Sin email    → POST /campaigns/{id}/leads?findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true
+    //                El linkedinUrl va en el body; Lemlist busca el email internamente.
+    const ENRICH = "findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true";
 
-    const lemlistPayload: Record<string, string | boolean | undefined> = {
+    const lemlistUrl = hasEmail
+      ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true&findPhone=true`
+      : `https://api.lemlist.com/api/campaigns/${campaignId}/leads?${ENRICH}`;
+
+    const lemlistPayload: Record<string, string | undefined> = {
       firstName:    contact.first_name          ?? undefined,
       lastName:     contact.last_name           ?? undefined,
       companyName:  companyName                 || undefined,
@@ -191,9 +194,8 @@ export async function POST(req: NextRequest) {
       icebreaker:   contact.linkedin_icebreaker ?? undefined,
       emailSubject: contact.email_subject       ?? undefined,
       emailBody:    contact.email_body          ?? undefined,
-      findPhone:    true,
-      ...(!hasEmail ? { findEmail: true } : {}),
     };
+    if (hasEmail) lemlistPayload.email = contact.email!;
 
     Object.keys(lemlistPayload).forEach(
       (k) => lemlistPayload[k] === undefined && delete lemlistPayload[k]
@@ -201,14 +203,11 @@ export async function POST(req: NextRequest) {
 
     let lemRes: Response;
     try {
-      lemRes = await fetch(
-        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${leadIdentifier}`,
-        {
-          method: "POST",
-          headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/json" },
-          body: JSON.stringify(lemlistPayload),
-        }
-      );
+      lemRes = await fetch(lemlistUrl, {
+        method: "POST",
+        headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/json" },
+        body: JSON.stringify(lemlistPayload),
+      });
     } catch (err: any) {
       errors.push({ contact_id: contact.id, error: err?.message ?? "Error de red" });
       continue;
