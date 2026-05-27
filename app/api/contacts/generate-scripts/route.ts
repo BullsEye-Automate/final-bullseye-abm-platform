@@ -145,7 +145,9 @@ async function handleRequest(req: NextRequest) {
       });
 
       // Guardar en Supabase (silencioso si la columna no existe aún)
-      await db.from("contacts").update({ sdr_script: script } as any).eq("id", contact.id).catch(() => {});
+      try {
+        await db.from("contacts").update({ sdr_script: script } as any).eq("id", contact.id);
+      } catch { /* columna sdr_script puede no existir aún */ }
 
       // Sincronizar a HubSpot si el contacto tiene email
       if (contact.email) {
