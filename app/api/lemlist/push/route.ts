@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateContactMessages } from "@/lib/messageGenerator";
+import {
+  matchClientOption,
+  searchHSCompany,
+  upsertHSCompany,
+  searchHSContact,
+  upsertHSContact,
+  associateContactCompany,
+} from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,12 +31,14 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // ── Configuración del cliente ───────────────────────────────────────────────
-  const { data: config } = await db
-    .from("client_configs")
-    .select("lemlist_campaign_id")
-    .eq("client_id", body.client_id)
-    .maybeSingle();
+  // ── Cliente y configuración ────────────────────────────────────────────────
+  const [{ data: client }, { data: config }] = await Promise.all([
+    db.from("clients").select("name").eq("id", body.client_id).maybeSingle(),
+    db.from("client_configs")
+      .select("lemlist_campaign_id, hubspot_owner_id")
+      .eq("client_id", body.client_id)
+      .maybeSingle(),
+  ]);
 
   if (!config?.lemlist_campaign_id) {
     return NextResponse.json({ error: "No hay campaña configurada en Config. cliente" }, { status: 400 });
@@ -67,7 +77,7 @@ export async function POST(req: NextRequest) {
   // ── Contactos a procesar ───────────────────────────────────────────────────
   let q = db
     .from("contacts")
-    .select("id, first_name, last_name, job_title, email, phone, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker")
+    .select("id, first_name, last_name, job_title, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, fit_score")
     .eq("client_id", body.client_id)
     .eq("fit_action", "enrich")
     .is("lemlist_pushed_at", null)
@@ -92,11 +102,12 @@ export async function POST(req: NextRequest) {
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
+  const clientLabel = client?.name ? matchClientOption(client.name) : null;
 
   let pushed = 0, skipped = 0, generated = 0;
   const errors: { contact_id: string; error: string }[] = [];
 
-  // ── Procesar secuencialmente (Claude + Lemlist) ────────────────────────────
+  // ── Procesar secuencialmente (Claude + Lemlist + HubSpot) ─────────────────
   for (const contact of contacts) {
     const company     = companyById.get(contact.company_id);
     const companyName = company?.company_name ?? "";
@@ -110,7 +121,6 @@ export async function POST(req: NextRequest) {
 
     if (needsMessages) {
       try {
-        // Enriquece el contexto ICP con señales específicas de la empresa
         const enrichedContext = [
           icpContext,
           company?.fit_signals && `Señales de fit de esta empresa: ${company.fit_signals}`,
@@ -126,7 +136,6 @@ export async function POST(req: NextRequest) {
           language:    "es",
         });
 
-        // Guardar mensajes en la tabla de contactos
         const update: Record<string, string | undefined> = {};
         if (msgs.emailSubject)              update.email_subject       = msgs.emailSubject;
         if (msgs.emailBody)                 update.email_body          = msgs.emailBody;
@@ -135,13 +144,11 @@ export async function POST(req: NextRequest) {
 
         if (Object.keys(update).length > 0) {
           await db.from("contacts").update(update).eq("id", contact.id);
-          // Actualizar local para usar en el push a Lemlist
           Object.assign(contact, update);
           generated++;
         }
       } catch (err: any) {
         errors.push({ contact_id: contact.id, error: `Generación mensajes: ${err?.message ?? "error"}` });
-        // Continuamos — push sin mensajes es mejor que no pushear
       }
     }
 
@@ -153,22 +160,18 @@ export async function POST(req: NextRequest) {
 
     // 3) Push a Lemlist con mensajes y flags de enrichment ─────────────────────
     const lemlistPayload: Record<string, string | boolean | undefined> = {
-      firstName:          contact.first_name        ?? undefined,
-      lastName:           contact.last_name         ?? undefined,
-      companyName:        companyName               || undefined,
-      linkedinUrl:        contact.linkedin_url      ?? undefined,
-      phone:              contact.phone             ?? undefined,
-      // Mensajes generados — variables {{icebreaker}}, {{emailSubject}}, {{emailBody}} en la campaña
-      icebreaker:         contact.linkedin_icebreaker ?? undefined,
-      emailSubject:       contact.email_subject       ?? undefined,
-      emailBody:          contact.email_body          ?? undefined,
-      // Enrichment automático al entrar a la campaña
-      findPhone: true,
-      // findEmail solo si tiene LinkedIn pero no email propio (enriquece en Lemlist)
+      firstName:    contact.first_name          ?? undefined,
+      lastName:     contact.last_name           ?? undefined,
+      companyName:  companyName                 || undefined,
+      linkedinUrl:  contact.linkedin_url        ?? undefined,
+      phone:        contact.phone               ?? undefined,
+      icebreaker:   contact.linkedin_icebreaker ?? undefined,
+      emailSubject: contact.email_subject       ?? undefined,
+      emailBody:    contact.email_body          ?? undefined,
+      findPhone:    true,
       ...(contact.linkedin_url && !contact.email?.trim() ? { findEmail: true } : {}),
     };
 
-    // Limpiar undefined (no los boolean)
     Object.keys(lemlistPayload).forEach(
       (k) => lemlistPayload[k] === undefined && delete lemlistPayload[k]
     );
@@ -204,7 +207,78 @@ export async function POST(req: NextRequest) {
       .eq("id", contact.id);
 
     pushed++;
+
+    // 4) Sync a HubSpot (no bloquea en caso de error) ─────────────────────────
+    syncToHubSpot({
+      contact,
+      companyName,
+      fitSignals:     company?.fit_signals   ?? null,
+      companyDbId:    contact.company_id     ?? null,
+      clientLabel,
+      campaignId,
+      hubspotOwnerId: config.hubspot_owner_id ?? null,
+    }).catch(() => {/* HubSpot no bloquea el flujo */});
   }
 
   return NextResponse.json({ pushed, skipped, generated, errors });
+}
+
+async function syncToHubSpot(opts: {
+  contact:        Record<string, any>;
+  companyName:    string;
+  fitSignals:     string | null;
+  companyDbId:    string | null;
+  clientLabel:    string | null;
+  campaignId:     string;
+  hubspotOwnerId: string | null;
+}) {
+  const { contact, companyName, fitSignals, companyDbId, clientLabel, campaignId, hubspotOwnerId } = opts;
+
+  // Teléfono: si viene de Lusha va a bullseye_telefono_lusha; si no, al campo estándar
+  const isLushaPhone  = contact.phone_source === "lusha";
+  const standardPhone = !isLushaPhone ? (contact.phone ?? null) : null;
+  const lushaPhone    = isLushaPhone  ? (contact.phone ?? null) : null;
+
+  // ── Empresa ────────────────────────────────────────────────────────────────
+  let hsCompanyId: string | null = null;
+  if (companyName) {
+    const existingCompanyId = await searchHSCompany(companyName);
+    const companyProps: Record<string, string | number | null | undefined> = {
+      name:                     companyName,
+      bullseye_fit_signals:     fitSignals    || undefined,
+      bullseye_company_id:      companyDbId   || undefined,
+      ...(clientLabel ? { cliente_bullseye_empresa: clientLabel } : {}),
+    };
+    hsCompanyId = await upsertHSCompany(companyProps, existingCompanyId);
+  }
+
+  // ── Contacto ───────────────────────────────────────────────────────────────
+  const existingContactId = contact.email ? await searchHSContact(contact.email) : null;
+
+  const contactProps: Record<string, string | number | null | undefined> = {
+    email:                          contact.email             ?? undefined,
+    firstname:                      contact.first_name        ?? undefined,
+    lastname:                       contact.last_name         ?? undefined,
+    jobtitle:                       contact.job_title         ?? undefined,
+    phone:                          standardPhone             ?? undefined,
+    linkedin_bio:                   contact.linkedin_url      ?? undefined,
+    bullseye_contact_id:            contact.id,
+    bullseye_email_subject:         contact.email_subject     ?? undefined,
+    bullseye_email_body:            contact.email_body        ?? undefined,
+    bullseye_linkedin_icebreaker:   contact.linkedin_icebreaker ?? undefined,
+    bullseye_telefono_lusha:        lushaPhone                ?? undefined,
+    bullseye_fit_score:             contact.fit_score         ?? undefined,
+    bullseye_status:                contact.status            ?? undefined,
+    bullseye_lemlist_pushed_at:     new Date().toISOString(),
+    bullseye_lemlist_campaign_id:   campaignId,
+    bullseye_phone_source:          contact.phone_source      ?? undefined,
+    ...(hubspotOwnerId ? { hubspot_owner_id: hubspotOwnerId } : {}),
+  };
+
+  const hsContactId = await upsertHSContact(contactProps, existingContactId);
+
+  // ── Asociar contacto ↔ empresa ─────────────────────────────────────────────
+  if (hsContactId && hsCompanyId) {
+    await associateContactCompany(hsContactId, hsCompanyId);
+  }
 }

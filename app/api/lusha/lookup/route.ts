@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
+import { searchHSContact, patchHSContact } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -150,7 +151,7 @@ export async function POST(req: NextRequest) {
     company_name: companyName,
   };
 
-  // Si se proporcionó contact_id, actualizar Supabase
+  // Si se proporcionó contact_id, actualizar Supabase y HubSpot
   if (body.contact_id) {
     try {
       const db = supabaseAdmin();
@@ -158,9 +159,16 @@ export async function POST(req: NextRequest) {
         .from("contacts")
         .update({ phone: firstPhone.number, phone_source: "lusha" })
         .eq("id", body.contact_id);
+
+      // Actualizar bullseye_telefono_lusha en HubSpot si el contacto ya fue sincronizado
+      if (firstEmail) {
+        const hsContactId = await searchHSContact(firstEmail).catch(() => null);
+        if (hsContactId) {
+          await patchHSContact(hsContactId, { bullseye_telefono_lusha: firstPhone.number });
+        }
+      }
     } catch (dbErr: any) {
-      // No bloqueamos la respuesta por un error de BD — solo lo registramos
-      console.error("[lusha/lookup] Error actualizando Supabase:", dbErr?.message);
+      console.error("[lusha/lookup] Error actualizando Supabase/HubSpot:", dbErr?.message);
     }
   }
 
