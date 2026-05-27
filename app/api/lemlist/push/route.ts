@@ -78,21 +78,26 @@ export async function POST(req: NextRequest) {
   ].filter(Boolean).join("\n\n") || undefined;
 
   // ── Contactos a procesar ───────────────────────────────────────────────────
+  // Cuando se pasan contact_ids específicos no filtramos por client_id (los IDs
+  // ya son suficientemente selectivos y los contactos pueden carecer de client_id
+  // si se importaron antes del soporte multi-tenant).
   let q = db
     .from("contacts")
     .select("id, first_name, last_name, job_title, linkedin_headline, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, fit_score")
-    .eq("client_id", body.client_id)
     .eq("fit_action", "enrich")
     .is("lemlist_pushed_at", null)
     .neq("status", "discarded");
 
   if (body.contact_ids?.length) {
     q = q.in("id", body.contact_ids);
+  } else {
+    // Solo en bulk aplicamos el filtro de cliente para no procesar contactos de otro cliente
+    q = q.eq("client_id", body.client_id);
   }
 
   const { data: contacts, error: contactsError } = await q.limit(20);
   if (contactsError) return NextResponse.json({ error: contactsError.message }, { status: 500 });
-  if (!contacts?.length) return NextResponse.json({ pushed: 0, skipped: 0, generated: 0, errors: [] });
+  if (!contacts?.length) return NextResponse.json({ pushed: 0, skipped: 0, generated: 0, errors: [], reason: "no_contacts" });
 
   // ── Empresas (nombre + fit_signals + deep_research para personalizar) ───────
   const companyIds = [...new Set(contacts.map((c) => c.company_id).filter(Boolean))];
@@ -241,7 +246,7 @@ export async function POST(req: NextRequest) {
     }).catch(() => {/* no bloquea */});
   }
 
-  return NextResponse.json({ pushed, skipped, generated, errors });
+  return NextResponse.json({ pushed, skipped, generated, errors, reason: skipped > 0 && pushed === 0 ? "no_email" : undefined });
 }
 
 async function syncToHubSpotWithScript(opts: {

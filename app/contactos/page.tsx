@@ -148,9 +148,17 @@ export default function ContactosPage() {
     else setBulkApproving(false);
 
     if (!res.ok) { setError(data.error ?? "Error al enviar"); return; }
-    const pushed = data.pushed ?? 0;
-    const errs = data.errors?.length ?? 0;
-    setNotice(`${pushed} contacto${pushed !== 1 ? "s" : ""} enviado${pushed !== 1 ? "s" : ""} a Lemlist${errs > 0 ? ` · ${errs} con error` : ""}.`);
+    const pushed  = data.pushed  ?? 0;
+    const skipped = data.skipped ?? 0;
+    const errs    = data.errors?.length ?? 0;
+    if (data.reason === "no_contacts") {
+      setError("No se encontraron contactos con fit_action=enrich listos para enviar. Verifica que tengan email y no estén ya en campaña.");
+      return;
+    }
+    const parts = [`${pushed} contacto${pushed !== 1 ? "s" : ""} enviado${pushed !== 1 ? "s" : ""} a Lemlist`];
+    if (skipped > 0) parts.push(`${skipped} sin email (Clay aún enriqueciéndolos)`);
+    if (errs > 0)    parts.push(`${errs} con error`);
+    setNotice(parts.join(" · ") + ".");
     await load();
   }
 
@@ -183,17 +191,27 @@ export default function ContactosPage() {
 
   async function generatePreview(contactId: string) {
     if (previews[contactId]) {
-      // Toggle: si ya tiene preview, ocultarlo
       setPreviews(prev => { const n = { ...prev }; delete n[contactId]; return n; });
       return;
     }
     setPreviewLoading(contactId);
     setError(null);
-    const res = await fetch(`/api/contacts/${contactId}/preview-messages`, { method: "POST" });
-    const data = await res.json();
-    setPreviewLoading(null);
-    if (!res.ok) { setError(data.error ?? "Error al generar preview"); return; }
-    setPreviews(prev => ({ ...prev, [contactId]: data }));
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 65_000);
+      const res = await fetch(`/api/contacts/${contactId}/preview-messages`, {
+        method: "POST",
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Error al generar preview"); return; }
+      setPreviews(prev => ({ ...prev, [contactId]: data }));
+    } catch (err: any) {
+      setError(err?.name === "AbortError" ? "Timeout al generar preview (>65 s). Intenta de nuevo." : "Error de red al generar preview.");
+    } finally {
+      setPreviewLoading(null);
+    }
   }
 
   const allIds = useMemo(() => contacts.map(c => c.id), [contacts]);
