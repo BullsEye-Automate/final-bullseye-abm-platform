@@ -183,7 +183,7 @@ async function refreshClientContacts(
       lastname:                     contact.last_name           ?? undefined,
       jobtitle:                     contact.job_title           ?? undefined,
       phone:                        standardPhone               ?? undefined,
-      linkedin_bio:                 contact.linkedin_url        ?? undefined,
+      hs_linkedin_url:              contact.linkedin_url        ?? undefined,
       bullseye_contact_id:          contact.id,
       bullseye_client_name:         client?.name                ?? undefined,
       bullseye_seniority:           contact.seniority           ?? undefined,
