@@ -73,14 +73,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ updated: 0, synced: 0, reason: "no_leads" });
   }
 
-  const leadByEmail    = new Map<string, any>();
-  const leadByLinkedin = new Map<string, any>();
+  const leadByEmail      = new Map<string, any>();
+  const leadByLinkedin   = new Map<string, any>();
+  const leadByBullseyeId = new Map<string, any>();
+  const leadByName       = new Map<string, any>();
   for (const lead of leads) {
-    if (lead.email?.trim())       leadByEmail.set(lead.email.trim().toLowerCase(), lead);
+    if (lead.email?.trim())             leadByEmail.set(lead.email.trim().toLowerCase(), lead);
+    if (lead.bullseyeContactId?.trim()) leadByBullseyeId.set(lead.bullseyeContactId.trim(), lead);
     if (lead.linkedinUrl?.trim()) {
       const norm = normalizeLinkedInUrl(lead.linkedinUrl);
       if (norm) leadByLinkedin.set(norm.toLowerCase(), lead);
     }
+    const nameKey = [lead.firstName, lead.lastName, lead.companyName]
+      .map((s: string | undefined) => (s ?? "").trim().toLowerCase()).join("|");
+    if (nameKey !== "||") leadByName.set(nameKey, lead);
   }
 
   const { data: contacts } = await db
@@ -140,9 +146,13 @@ export async function POST(req: NextRequest) {
     try {
       // 1. Intentar matchear el contacto en Lemlist para enriquecer email/phone
       const normLinkedin = contact.linkedin_url ? (normalizeLinkedInUrl(contact.linkedin_url) ?? "").toLowerCase() : "";
+      const contactNameKey = [contact.first_name, contact.last_name, companyById.get(contact.company_id)?.company_name]
+        .map((s: string | undefined) => (s ?? "").trim().toLowerCase()).join("|");
       const lead =
+        leadByBullseyeId.get(contact.id) ??
         (contact.email ? leadByEmail.get(contact.email.toLowerCase()) : null) ??
-        (normLinkedin  ? leadByLinkedin.get(normLinkedin)              : null);
+        (normLinkedin  ? leadByLinkedin.get(normLinkedin)              : null) ??
+        (contactNameKey !== "||" ? leadByName.get(contactNameKey)      : null);
 
       if (lead) {
         const gotNewEmail = !contact.email?.trim() && !!lead.email?.trim();

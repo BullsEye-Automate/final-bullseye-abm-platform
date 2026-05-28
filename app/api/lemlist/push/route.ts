@@ -156,14 +156,15 @@ export async function POST(req: NextRequest) {
       : `https://api.lemlist.com/api/campaigns/${campaignId}/leads?${ENRICH}`;
 
     const lemlistPayload: Record<string, string | undefined> = {
-      firstName:    contact.first_name          ?? undefined,
-      lastName:     contact.last_name           ?? undefined,
-      companyName:  companyName                 || undefined,
-      linkedinUrl:  contact.linkedin_url        ?? undefined,
-      phone:        contact.phone               ?? undefined,
-      icebreaker:   contact.linkedin_icebreaker ?? undefined,
-      emailSubject: contact.email_subject       ?? undefined,
-      emailBody:    contact.email_body          ?? undefined,
+      firstName:          contact.first_name          ?? undefined,
+      lastName:           contact.last_name           ?? undefined,
+      companyName:        companyName                 || undefined,
+      linkedinUrl:        contact.linkedin_url        ?? undefined,
+      phone:              contact.phone               ?? undefined,
+      icebreaker:         contact.linkedin_icebreaker ?? undefined,
+      emailSubject:       contact.email_subject       ?? undefined,
+      emailBody:          contact.email_body          ?? undefined,
+      bullseyeContactId:  contact.id,
     };
     if (hasEmail) lemlistPayload.email = contact.email!;
 
