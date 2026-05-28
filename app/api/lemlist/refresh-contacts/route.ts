@@ -138,27 +138,32 @@ export async function POST(req: NextRequest) {
 
   for (const contact of contacts) {
     try {
+      // 1. Intentar matchear el contacto en Lemlist para enriquecer email/phone
       const normLinkedin = contact.linkedin_url ? (normalizeLinkedInUrl(contact.linkedin_url) ?? "").toLowerCase() : "";
       const lead =
         (contact.email ? leadByEmail.get(contact.email.toLowerCase()) : null) ??
-        (normLinkedin    ? leadByLinkedin.get(normLinkedin)             : null);
+        (normLinkedin  ? leadByLinkedin.get(normLinkedin)              : null);
 
-      if (!lead) continue;
-
-      const gotNewEmail = !contact.email?.trim() && !!lead.email?.trim();
-      const gotNewPhone = !contact.phone?.trim()  && !!lead.phone?.trim();
-
-      if (gotNewEmail || gotNewPhone) {
-        const update: Record<string, string> = {};
-        if (gotNewEmail) update.email = lead.email.trim();
-        if (gotNewPhone) {
-          update.phone        = lead.phone.trim();
-          update.phone_source = "lemlist";
+      if (lead) {
+        const gotNewEmail = !contact.email?.trim() && !!lead.email?.trim();
+        const gotNewPhone = !contact.phone?.trim()  && !!lead.phone?.trim();
+        if (gotNewEmail || gotNewPhone) {
+          const update: Record<string, string> = {};
+          if (gotNewEmail) update.email = lead.email.trim();
+          if (gotNewPhone) { update.phone = lead.phone.trim(); update.phone_source = "lemlist"; }
+          await db.from("contacts").update(update).eq("id", contact.id);
+          Object.assign(contact, update);
+          updated++;
         }
-        await db.from("contacts").update(update).eq("id", contact.id);
-        Object.assign(contact, update);
-        updated++;
       }
+
+      // 2. Buscar contacto existente en HubSpot
+      const existingContactId =
+        await searchHSContactByBullseyeId(contact.id) ??
+        (contact.email ? await searchHSContact(contact.email) : null);
+
+      // Solo crear nuevo si ya tiene email o teléfono; siempre actualizar si ya existe en HubSpot
+      if (!existingContactId && !contact.email?.trim() && !contact.phone?.trim()) continue;
 
       const company     = companyById.get(contact.company_id);
       const companyName = company?.company_name ?? "";
@@ -176,10 +181,6 @@ export async function POST(req: NextRequest) {
           existingCompanyId
         );
       }
-
-      const existingContactId =
-        await searchHSContactByBullseyeId(contact.id) ??
-        (contact.email ? await searchHSContact(contact.email) : null);
 
       const contactProps: Record<string, string | number | null | undefined> = {
         email:                        contact.email               ?? undefined,
@@ -205,12 +206,11 @@ export async function POST(req: NextRequest) {
       };
 
       const hsContactId = await upsertHSContact(contactProps, existingContactId);
+      if (!hsContactId) { synced++; continue; }
 
-      if (hsContactId && hsCompanyId) {
-        await associateContactCompany(hsContactId, hsCompanyId);
-      }
+      if (hsCompanyId) await associateContactCompany(hsContactId, hsCompanyId);
 
-      if (hsContactId && contact.email) {
+      if (contact.email) {
         try {
           const script = await generateSdrScript({
             firstName:   contact.first_name ?? "",
