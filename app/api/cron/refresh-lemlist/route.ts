@@ -12,6 +12,7 @@ import {
   computeEngagementScore,
 } from "@/lib/hubspot";
 import { generateSdrScript } from "@/lib/sdrScript";
+import { generateContactMessages } from "@/lib/messageGenerator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -78,9 +79,9 @@ async function refreshClientContacts(
   config: { client_id: string; lemlist_campaign_id: string; hubspot_owner_id?: string | null },
   credentials: string,
   apiKey: string
-): Promise<{ updated: number; synced: number }> {
+): Promise<{ updated: number; synced: number; generated: number }> {
   const leads = await fetchAllLeads(config.lemlist_campaign_id, credentials);
-  if (leads.length === 0) return { updated: 0, synced: 0 };
+  if (leads.length === 0) return { updated: 0, synced: 0, generated: 0 };
 
   const leadByEmail      = new Map<string, any>();
   const leadByLinkedin   = new Map<string, any>();
@@ -104,7 +105,7 @@ async function refreshClientContacts(
     .eq("client_id", config.client_id)
     .not("lemlist_pushed_at", "is", null);
 
-  if (!contacts?.length) return { updated: 0, synced: 0 };
+  if (!contacts?.length) return { updated: 0, synced: 0, generated: 0 };
 
   const companyIds = [...new Set(contacts.map((c) => c.company_id).filter(Boolean))];
   const { data: companies } = await db
@@ -140,7 +141,7 @@ async function refreshClientContacts(
     trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
   ].filter(Boolean).join("\n") || null;
 
-  let updated = 0, synced = 0;
+  let updated = 0, synced = 0, generated = 0;
 
   for (const contact of contacts) {
     try {
@@ -178,6 +179,48 @@ async function refreshClientContacts(
       const company     = companyById.get(contact.company_id);
       const companyName = company?.company_name ?? "";
       const fitSignals  = company?.fit_signals  ?? null;
+
+      // 3. Generar mensajes si faltan
+      const needsMessages =
+        !contact.email_subject ||
+        !contact.email_body    ||
+        !contact.linkedin_icebreaker ||
+        contact.email_body?.includes("{{firstName}}");
+
+      if (needsMessages) {
+        try {
+          const enrichedContext = [
+            icpContext,
+            fitSignals && `Señales de fit de esta empresa: ${fitSignals}`,
+          ].filter(Boolean).join("\n\n") || undefined;
+
+          const msgs = await generateContactMessages({
+            hasEmail:         !!contact.email?.trim(),
+            firstName:        contact.first_name        ?? undefined,
+            lastName:         contact.last_name         ?? undefined,
+            jobTitle:         contact.job_title         ?? undefined,
+            linkedinHeadline: contact.linkedin_headline ?? undefined,
+            companyName:      companyName               || undefined,
+            icpContext:       enrichedContext,
+            language:         "es",
+          });
+
+          const msgUpdate: Record<string, string | undefined> = {};
+          if (msgs.emailSubject)              msgUpdate.email_subject       = msgs.emailSubject;
+          if (msgs.emailBody)                 msgUpdate.email_body          = msgs.emailBody;
+          if (msgs.linkedinIcebreaker)        msgUpdate.linkedin_icebreaker = msgs.linkedinIcebreaker;
+          if (msgs.linkedinIcebreakerNoEmail) msgUpdate.linkedin_icebreaker = msgs.linkedinIcebreakerNoEmail;
+
+          if (Object.keys(msgUpdate).length > 0) {
+            await db.from("contacts").update(msgUpdate).eq("id", contact.id);
+            Object.assign(contact, msgUpdate);
+            generated++;
+          }
+        } catch (err: any) {
+          console.error(`[refresh-lemlist] error generando mensajes contacto ${contact.id}:`, err?.message);
+        }
+      }
+
       const isLushaPhone  = contact.phone_source === "lusha";
       const standardPhone = !isLushaPhone ? (contact.phone ?? null) : null;
       const lushaPhone    = isLushaPhone  ? (contact.phone ?? null) : null;
@@ -231,7 +274,10 @@ async function refreshClientContacts(
             emailBody:   contact.email_body          ?? null,
             icebreaker:  contact.linkedin_icebreaker ?? null,
           });
-          await patchHSContact(hsContactId, { bullseye_script_sdr_ia: script });
+          const scriptOk = await patchHSContact(hsContactId, { bullseye_script_sdr_ia: script });
+          if (!scriptOk) {
+            console.error(`[sdr-script] patchHSContact falló para contacto ${contact.id} (hsId=${hsContactId})`);
+          }
         } catch (err: any) {
           console.error(`[sdr-script] error generando script para contacto ${contact.id}:`, err?.message);
         }
@@ -243,5 +289,5 @@ async function refreshClientContacts(
     }
   }
 
-  return { updated, synced };
+  return { updated, synced, generated };
 }

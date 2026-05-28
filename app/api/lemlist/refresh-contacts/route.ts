@@ -12,6 +12,7 @@ import {
   computeEngagementScore,
 } from "@/lib/hubspot";
 import { generateSdrScript } from "@/lib/sdrScript";
+import { generateContactMessages } from "@/lib/messageGenerator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
   ].filter(Boolean).join("\n") || null;
 
   const campaignId = config.lemlist_campaign_id;
-  let updated = 0, synced = 0;
+  let updated = 0, synced = 0, generated = 0;
   const errors: { contact_id: string; error: string }[] = [];
 
   for (const contact of contacts) {
@@ -178,6 +179,48 @@ export async function POST(req: NextRequest) {
       const company     = companyById.get(contact.company_id);
       const companyName = company?.company_name ?? "";
       const fitSignals  = company?.fit_signals  ?? null;
+
+      // 3. Generar mensajes si faltan (puede ocurrir si la generación falló durante el push)
+      const needsMessages =
+        !contact.email_subject ||
+        !contact.email_body    ||
+        !contact.linkedin_icebreaker ||
+        contact.email_body?.includes("{{firstName}}");
+
+      if (needsMessages) {
+        try {
+          const enrichedContext = [
+            icpContext,
+            fitSignals && `Señales de fit de esta empresa: ${fitSignals}`,
+          ].filter(Boolean).join("\n\n") || undefined;
+
+          const msgs = await generateContactMessages({
+            hasEmail:         !!contact.email?.trim(),
+            firstName:        contact.first_name        ?? undefined,
+            lastName:         contact.last_name         ?? undefined,
+            jobTitle:         contact.job_title         ?? undefined,
+            linkedinHeadline: contact.linkedin_headline ?? undefined,
+            companyName:      companyName               || undefined,
+            icpContext:       enrichedContext,
+            language:         "es",
+          });
+
+          const msgUpdate: Record<string, string | undefined> = {};
+          if (msgs.emailSubject)              msgUpdate.email_subject       = msgs.emailSubject;
+          if (msgs.emailBody)                 msgUpdate.email_body          = msgs.emailBody;
+          if (msgs.linkedinIcebreaker)        msgUpdate.linkedin_icebreaker = msgs.linkedinIcebreaker;
+          if (msgs.linkedinIcebreakerNoEmail) msgUpdate.linkedin_icebreaker = msgs.linkedinIcebreakerNoEmail;
+
+          if (Object.keys(msgUpdate).length > 0) {
+            await db.from("contacts").update(msgUpdate).eq("id", contact.id);
+            Object.assign(contact, msgUpdate);
+            generated++;
+          }
+        } catch (err: any) {
+          errors.push({ contact_id: contact.id, error: `Generación mensajes: ${err?.message ?? "error"}` });
+        }
+      }
+
       const isLushaPhone  = contact.phone_source === "lusha";
       const standardPhone = !isLushaPhone ? (contact.phone ?? null) : null;
       const lushaPhone    = isLushaPhone  ? (contact.phone ?? null) : null;
@@ -233,9 +276,14 @@ export async function POST(req: NextRequest) {
             emailBody:   contact.email_body          ?? null,
             icebreaker:  contact.linkedin_icebreaker ?? null,
           });
-          await patchHSContact(hsContactId, { bullseye_script_sdr_ia: script });
+          const scriptOk = await patchHSContact(hsContactId, { bullseye_script_sdr_ia: script });
+          if (!scriptOk) {
+            console.error(`[sdr-script] patchHSContact falló para contacto ${contact.id} (hsId=${hsContactId})`);
+            errors.push({ contact_id: contact.id, error: "Script SDR: HubSpot PATCH falló (propiedad puede no existir)" });
+          }
         } catch (err: any) {
           console.error(`[sdr-script] error generando script para contacto ${contact.id}:`, err?.message);
+          errors.push({ contact_id: contact.id, error: `Script SDR: ${err?.message ?? "error"}` });
         }
       }
 
@@ -245,5 +293,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ updated, synced, errors });
+  return NextResponse.json({ updated, synced, generated, errors });
 }
