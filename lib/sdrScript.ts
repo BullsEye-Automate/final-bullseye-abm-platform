@@ -15,7 +15,9 @@ export async function generateSdrScript(opts: {
 
   const system = `Eres un experto en ventas B2B que prepara scripts de llamada para SDRs.
 Redacta scripts concisos y personalizados en formato bullet-points, listos para usar como material de apoyo durante la llamada.
-Usa un tono consultivo y directo. Evita frases genéricas. Responde SOLO con el script en markdown.`;
+Usa un tono consultivo y directo. Evita frases genéricas.
+NUNCA uses guiones largos (—). En su lugar usa comas o puntos según corresponda.
+Responde SOLO con el script en markdown.`;
 
   const user = `Prepara un script de llamada SDR para este contacto:
 

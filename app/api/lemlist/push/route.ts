@@ -308,19 +308,22 @@ async function syncToHubSpot(opts: {
 
   if (hsContactId && hsCompanyId) await associateContactCompany(hsContactId, hsCompanyId);
 
-  generateSdrScript({
-    firstName:   contact.first_name          ?? "",
-    lastName:    contact.last_name           ?? "",
-    jobTitle:    contact.job_title           ?? "",
-    companyName,
-    fitSignals,
-    icpContext,
-    trainingCtx,
-    emailBody:   contact.email_body          ?? null,
-    icebreaker:  contact.linkedin_icebreaker ?? null,
-  })
-    .then((script) => { if (hsContactId) patchHSContact(hsContactId, { bullseye_script_sdr_ia: script }); })
-    .catch(() => {});
+  try {
+    const script = await generateSdrScript({
+      firstName:   contact.first_name          ?? "",
+      lastName:    contact.last_name           ?? "",
+      jobTitle:    contact.job_title           ?? "",
+      companyName,
+      fitSignals,
+      icpContext,
+      trainingCtx,
+      emailBody:   contact.email_body          ?? null,
+      icebreaker:  contact.linkedin_icebreaker ?? null,
+    });
+    if (hsContactId) await patchHSContact(hsContactId, { bullseye_script_sdr_ia: script });
+  } catch (err: any) {
+    console.error(`[sdr-script] error generando script para contacto ${contact.id}:`, err?.message);
+  }
 
   return hsContactId;
 }

@@ -32,6 +32,7 @@ const SYSTEM_PROMPT = `Eres un experto en copywriting B2B y outbound sales.
 Generas mensajes de outreach personalizados para secuencias de Lemlist.
 Los mensajes deben ser directos, naturales y enfocados en aportar valor.
 Usa el contexto del ICP proporcionado para personalizar cada mensaje.
+NUNCA uses guiones largos (—). En su lugar usa comas o puntos según corresponda.
 Responde ÚNICAMENTE con JSON válido, sin texto adicional.`;
 
 export async function generateContactMessages(
