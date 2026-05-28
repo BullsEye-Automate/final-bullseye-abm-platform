@@ -8,6 +8,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Vercel production deploy
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          curl -s -X POST "https://api.vercel.com/v1/integrations/deploy/prj_SR2QnNm4XA6PzhZ42ThyJK1ogrEd/vc7gh3XnF7"
+          # Obtener el org ID desde la API de Vercel usando el project ID
+          ORG_ID=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/prj_SR2QnNm4XA6PzhZ42ThyJK1ogrEd" | \
+            jq -r '.accountId')
+
+          export VERCEL_ORG_ID=$ORG_ID
+          export VERCEL_PROJECT_ID=prj_SR2QnNm4XA6PzhZ42ThyJK1ogrEd
+
+          echo "Deploying with ORG_ID=$ORG_ID PROJECT_ID=$VERCEL_PROJECT_ID"
+
+          npx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          npx vercel build --prod --token=$VERCEL_TOKEN
+          npx vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
