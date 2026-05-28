@@ -71,16 +71,27 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       const firstName   = (f.firstName  ?? l.firstName  ?? l.first_name  ?? "") as string;
       const lastName    = (f.lastName   ?? l.lastName   ?? l.last_name   ?? "") as string;
       const jobTitle    = (f.jobTitle   ?? l.jobTitle   ?? l.job_title   ?? f.tagline ?? "") as string;
-      const companyName = (f.companyName ?? l.companyName ?? l.company_name ?? "") as string;
       const email       = (l.email ?? f.email ?? null) as string | null;
       const linkedinUrl = (l.linkedinUrl ?? l.linkedin_url ?? null) as string | null;
       const key         = (l._id ?? l.contactId ?? email ?? linkedinUrl ?? "") as string;
-      const lc          = companyName.toLowerCase();
-      const matched     = companyWords.length > 0 ? companyWords.some((w: string) => lc.includes(w)) : false;
+
+      // Empresa: campo directo o extraída del JSON de señal (lastSignalData_*)
+      let companyName = (f.companyName ?? l.companyName ?? l.company_name ?? "") as string;
+      if (!companyName) {
+        const signalKey = Object.keys(f).find(k => k.startsWith("lastSignalData_"));
+        if (signalKey) {
+          try {
+            const sd = JSON.parse(f[signalKey] as string);
+            companyName = sd?.data?.company?.fields?.name ?? "";
+          } catch { /* ignorar */ }
+        }
+      }
+
+      const lc      = companyName.toLowerCase();
+      const matched = companyWords.length > 0 ? companyWords.some((w: string) => lc.includes(w)) : false;
       return { key, firstName, lastName, jobTitle, companyName, linkedinUrl, email, matched };
     }),
     total: leads.length,
-    _debug: leads[0] ?? null,
   });
 }
 
