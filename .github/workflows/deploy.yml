@@ -10,20 +10,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Deploy to Vercel
+      - name: Setup and Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
-          # Obtener el org ID desde la API de Vercel usando el project ID
-          ORG_ID=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v9/projects/prj_SR2QnNm4XA6PzhZ42ThyJK1ogrEd" | \
-            jq -r '.accountId')
+          set -e
 
-          export VERCEL_ORG_ID=$ORG_ID
-          export VERCEL_PROJECT_ID=prj_SR2QnNm4XA6PzhZ42ThyJK1ogrEd
+          npm install -g vercel@latest --silent
 
-          echo "Deploying with ORG_ID=$ORG_ID PROJECT_ID=$VERCEL_PROJECT_ID"
+          # Obtener el team ID (primer equipo del token)
+          echo "=== Obteniendo team ID ==="
+          TEAMS=$(curl -s "https://api.vercel.com/v2/teams" \
+            -H "Authorization: Bearer $VERCEL_TOKEN")
+          echo "Respuesta teams: $TEAMS"
+          TEAM_ID=$(echo "$TEAMS" | jq -r '.teams[0].id // empty')
+          echo "Team ID: $TEAM_ID"
 
-          npx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-          npx vercel build --prod --token=$VERCEL_TOKEN
-          npx vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+          # Crear .vercel/project.json
+          mkdir -p .vercel
+          echo "{\"orgId\":\"$TEAM_ID\",\"projectId\":\"prj_SR2QnNm4XA6PzhZ42ThyJK1ogrEd\"}" > .vercel/project.json
+          echo "Project config: $(cat .vercel/project.json)"
+
+          # Deploy
+          vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+          vercel build --prod --token=$VERCEL_TOKEN
+          vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
