@@ -7,13 +7,33 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 async function getStagingLeads(stagingId: string, apiKey: string) {
+  const creds = `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`;
+
   const leadsRes = await fetch(
     `https://api.lemlist.com/api/campaigns/${stagingId}/leads?limit=100`,
-    { headers: { Authorization: `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}` } }
+    { headers: { Authorization: creds } }
   ).catch(() => null);
   if (!leadsRes?.ok) return null;
   const payload = await leadsRes.json().catch(() => ({}));
-  return (payload.items ?? (Array.isArray(payload) ? payload : [])) as Record<string, unknown>[];
+  const leads = (payload.items ?? (Array.isArray(payload) ? payload : [])) as Record<string, unknown>[];
+
+  // Los leads de Lemlist solo traen _id, state y contactId.
+  // Hay que enriquecer cada uno con los datos del contacto.
+  const enriched = await Promise.all(
+    leads.map(async (lead) => {
+      const contactId = lead.contactId as string | undefined;
+      if (!contactId) return lead;
+      const res = await fetch(
+        `https://api.lemlist.com/api/contacts/${contactId}`,
+        { headers: { Authorization: creds } }
+      ).catch(() => null);
+      if (!res?.ok) return lead;
+      const contact = await res.json().catch(() => ({}));
+      return { ...contact, ...lead };
+    })
+  );
+
+  return enriched;
 }
 
 // GET: devuelve leads de la campaña puente sin importar (para mostrar checkboxes en la UI)
