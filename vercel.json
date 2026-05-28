@@ -4,5 +4,6 @@
       "path": "/api/cron/refresh-lemlist",
       "schedule": "0 */4 * * *"
     }
-  ]
+  ],
+  "framework": "nextjs"
 }
