@@ -1,17 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateContactMessages } from "@/lib/messageGenerator";
-import { generateSdrScript } from "@/lib/sdrScript";
-import {
-  computeEngagementScore,
-  searchHSCompany,
-  upsertHSCompany,
-  searchHSContact,
-  searchHSContactByBullseyeId,
-  upsertHSContact,
-  associateContactCompany,
-  patchHSContact,
-} from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -101,9 +90,8 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
 
-  let pushed = 0, skipped = 0, generated = 0, hsSynced = 0;
+  let pushed = 0, skipped = 0, generated = 0;
   const errors: { contact_id: string; error: string }[] = [];
-  const hsIds: string[] = [];
 
   for (const contact of contacts) {
     const company     = companyById.get(contact.company_id);
@@ -211,119 +199,8 @@ export async function POST(req: NextRequest) {
       .eq("id", contact.id);
 
     pushed++;
-
-    const trainingCtxForScript = [
-      trainingConfig.business_description && `Negocio: ${trainingConfig.business_description}`,
-      trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
-      trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
-    ].filter(Boolean).join("\n") || null;
-
-    const hsOpts = {
-      contact,
-      companyName,
-      fitSignals:     company?.fit_signals    ?? null,
-      companyDbId:    contact.company_id      ?? null,
-      clientName:     client?.name            ?? null,
-      campaignId,
-      hubspotOwnerId: config.hubspot_owner_id ?? null,
-      icpContext:     icpContext              ?? null,
-      trainingCtx:    trainingCtxForScript,
-    };
-
-    try {
-      const hsId = await syncToHubSpot(hsOpts);
-      if (hsId) { hsSynced++; hsIds.push(hsId); }
-      console.log(`[lemlist-push] contacto=${contact.id} hsContactId=${hsId ?? "null"}`);
-    } catch (err: any) {
-      console.error(`[lemlist-push] HubSpot error contacto=${contact.id}:`, err?.message);
-      errors.push({ contact_id: contact.id, error: `HubSpot: ${err?.message ?? "error"}` });
-    }
   }
 
-  console.log(`[lemlist-push] resultado: pushed=${pushed} hsSynced=${hsSynced} errors=${errors.length}`);
-  return NextResponse.json({ pushed, skipped, generated, hsSynced, hsIds, errors, reason: skipped > 0 && pushed === 0 ? "no_email" : undefined });
-}
-
-async function syncToHubSpot(opts: {
-  contact:        Record<string, any>;
-  companyName:    string;
-  fitSignals:     string | null;
-  companyDbId:    string | null;
-  clientName:     string | null;
-  campaignId:     string;
-  hubspotOwnerId: string | null;
-  icpContext:     string | null;
-  trainingCtx:    string | null;
-}): Promise<string | null> {
-  const { contact, companyName, fitSignals, companyDbId, clientName, campaignId, hubspotOwnerId, icpContext, trainingCtx } = opts;
-
-  const isLushaPhone  = contact.phone_source === "lusha";
-  const standardPhone = !isLushaPhone ? (contact.phone ?? null) : null;
-  const lushaPhone    = isLushaPhone  ? (contact.phone ?? null) : null;
-
-  const engagementScore = computeEngagementScore({
-    emailSent:         true,
-    hasRecentActivity: true,
-    emailReplies:      contact.status === "replied" ? 1 : 0,
-  });
-
-  let hsCompanyId: string | null = null;
-  if (companyName) {
-    const existingCompanyId = await searchHSCompany(companyName);
-    hsCompanyId = await upsertHSCompany({
-      name:                 companyName,
-      bullseye_fit_signals: fitSignals  || undefined,
-      bullseye_company_id:  companyDbId || undefined,
-    }, existingCompanyId);
-    if (!hsCompanyId) console.warn(`[hs-sync] upsertHSCompany falló para "${companyName}" — contacto igual se creará`);
-  }
-
-  const existingContactId =
-    await searchHSContactByBullseyeId(contact.id) ??
-    (contact.email ? await searchHSContact(contact.email) : null);
-
-  const hsContactId = await upsertHSContact({
-    email:                          contact.email               ?? undefined,
-    firstname:                      contact.first_name          ?? undefined,
-    lastname:                       contact.last_name           ?? undefined,
-    jobtitle:                       contact.job_title           ?? undefined,
-    phone:                          standardPhone               ?? undefined,
-    hs_linkedin_url:                contact.linkedin_url        ?? undefined,
-    bullseye_contact_id:            contact.id,
-    bullseye_client_name:           clientName                  ?? undefined,
-    bullseye_seniority:             contact.seniority           ?? undefined,
-    bullseye_linkedin_headline:     contact.linkedin_headline   ?? undefined,
-    bullseye_email_subject:         contact.email_subject       ?? undefined,
-    bullseye_email_body:            contact.email_body          ?? undefined,
-    bullseye_linkedin_icebreaker:   contact.linkedin_icebreaker ?? undefined,
-    bullseye_telefono_lusha:        lushaPhone                  ?? undefined,
-    bullseye_fit_score:             contact.fit_score           ?? undefined,
-    bullseye_engagement_score:      engagementScore,
-    bullseye_status:                contact.status              ?? undefined,
-    bullseye_lemlist_pushed_at:     new Date().toISOString(),
-    bullseye_lemlist_campaign_id:   campaignId,
-    bullseye_phone_source:          contact.phone_source        ?? undefined,
-    ...(hubspotOwnerId ? { hubspot_owner_id: hubspotOwnerId } : {}),
-  }, existingContactId);
-
-  if (hsContactId && hsCompanyId) await associateContactCompany(hsContactId, hsCompanyId);
-
-  try {
-    const script = await generateSdrScript({
-      firstName:   contact.first_name          ?? "",
-      lastName:    contact.last_name           ?? "",
-      jobTitle:    contact.job_title           ?? "",
-      companyName,
-      fitSignals,
-      icpContext,
-      trainingCtx,
-      emailBody:   contact.email_body          ?? null,
-      icebreaker:  contact.linkedin_icebreaker ?? null,
-    });
-    if (hsContactId) await patchHSContact(hsContactId, { bullseye_script_sdr_ia: script });
-  } catch (err: any) {
-    console.error(`[sdr-script] error generando script para contacto ${contact.id}:`, err?.message);
-  }
-
-  return hsContactId;
+  console.log(`[lemlist-push] resultado: pushed=${pushed} errors=${errors.length}`);
+  return NextResponse.json({ pushed, skipped, generated, errors, reason: skipped > 0 && pushed === 0 ? "no_email" : undefined });
 }
