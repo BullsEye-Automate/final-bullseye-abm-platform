@@ -203,18 +203,21 @@ async function refreshClientContacts(
     if (hsContactId && hsCompanyId) await associateContactCompany(hsContactId, hsCompanyId);
 
     if (hsContactId && contact.email) {
-      generateSdrScript({
-        firstName:   contact.first_name ?? "",
-        lastName:    contact.last_name  ?? "",
-        jobTitle:    contact.job_title  ?? "",
-        companyName, fitSignals,
-        icpContext:  icpContext ?? null,
-        trainingCtx: trainingCtxForScript,
-        emailBody:   contact.email_body          ?? null,
-        icebreaker:  contact.linkedin_icebreaker ?? null,
-      })
-        .then((script) => patchHSContact(hsContactId, { bullseye_script_sdr_ia: script }))
-        .catch(() => {});
+      try {
+        const script = await generateSdrScript({
+          firstName:   contact.first_name ?? "",
+          lastName:    contact.last_name  ?? "",
+          jobTitle:    contact.job_title  ?? "",
+          companyName, fitSignals,
+          icpContext:  icpContext ?? null,
+          trainingCtx: trainingCtxForScript,
+          emailBody:   contact.email_body          ?? null,
+          icebreaker:  contact.linkedin_icebreaker ?? null,
+        });
+        await patchHSContact(hsContactId, { bullseye_script_sdr_ia: script });
+      } catch (err: any) {
+        console.error(`[sdr-script] error generando script para contacto ${contact.id}:`, err?.message);
+      }
     }
 
     synced++;
