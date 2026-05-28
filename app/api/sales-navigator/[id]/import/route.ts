@@ -67,22 +67,17 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   return NextResponse.json({
     leads: leads.map(l => {
-      const firstName   = (l.firstName   ?? l.first_name  ?? "") as string;
-      const lastName    = (l.lastName    ?? l.last_name   ?? "") as string;
-      const jobTitle    = (l.jobTitle    ?? l.job_title   ?? l.title ?? l.position ?? "") as string;
-      const companyName = (l.companyName ?? l.company_name ?? l.company ?? "") as string;
-      const lc = companyName.toLowerCase();
-      const matched = companyWords.length > 0 ? companyWords.some((w: string) => lc.includes(w)) : false;
-      return {
-        key:         (l.email ?? l.linkedinUrl ?? l.linkedin_url ?? "") as string,
-        firstName,
-        lastName,
-        jobTitle,
-        companyName,
-        linkedinUrl: (l.linkedinUrl ?? l.linkedin_url ?? null) as string | null,
-        email:       (l.email ?? null) as string | null,
-        matched,
-      };
+      const f           = (l.fields ?? {}) as Record<string, unknown>;
+      const firstName   = (f.firstName  ?? l.firstName  ?? l.first_name  ?? "") as string;
+      const lastName    = (f.lastName   ?? l.lastName   ?? l.last_name   ?? "") as string;
+      const jobTitle    = (f.jobTitle   ?? l.jobTitle   ?? l.job_title   ?? f.tagline ?? "") as string;
+      const companyName = (f.companyName ?? l.companyName ?? l.company_name ?? "") as string;
+      const email       = (l.email ?? f.email ?? null) as string | null;
+      const linkedinUrl = (l.linkedinUrl ?? l.linkedin_url ?? null) as string | null;
+      const key         = (l._id ?? l.contactId ?? email ?? linkedinUrl ?? "") as string;
+      const lc          = companyName.toLowerCase();
+      const matched     = companyWords.length > 0 ? companyWords.some((w: string) => lc.includes(w)) : false;
+      return { key, firstName, lastName, jobTitle, companyName, linkedinUrl, email, matched };
     }),
     total: leads.length,
     _debug: leads[0] ?? null,
@@ -127,7 +122,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (selectedKeys.length > 0) {
     const keySet = new Set(selectedKeys);
     matched = leads.filter(l => {
-      const key = (l.email ?? l.linkedinUrl ?? l.linkedin_url ?? "") as string;
+      const key = (l._id ?? l.contactId ?? l.email ?? l.linkedinUrl ?? "") as string;
       return keySet.has(key);
     });
   } else if (all) {
@@ -139,18 +134,22 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .split(/\s+/)
       .filter((w: string) => w.length > 3);
     matched = leads.filter(l => {
-      const lc = ((l.companyName ?? l.company_name ?? "") as string).toLowerCase();
-      return companyWords.some((w: string) => lc.includes(w));
+      const f  = (l.fields ?? {}) as Record<string, unknown>;
+      const cn = ((f.companyName ?? l.companyName ?? l.company_name ?? "") as string).toLowerCase();
+      return companyWords.some((w: string) => cn.includes(w));
     });
   }
 
-  const contacts = matched.map(l => ({
-    first_name:   (l.firstName  ?? l.first_name  ?? null) as string | null,
-    last_name:    (l.lastName   ?? l.last_name   ?? null) as string | null,
-    job_title:    (l.jobTitle   ?? l.job_title   ?? null) as string | null,
-    linkedin_url: (l.linkedinUrl ?? l.linkedin_url ?? null) as string | null,
-    email:        (l.email ?? null) as string | null,
-  }));
+  const contacts = matched.map(l => {
+    const f = (l.fields ?? {}) as Record<string, unknown>;
+    return {
+      first_name:   (f.firstName  ?? l.firstName  ?? l.first_name  ?? null) as string | null,
+      last_name:    (f.lastName   ?? l.lastName   ?? l.last_name   ?? null) as string | null,
+      job_title:    (f.jobTitle   ?? l.jobTitle   ?? l.job_title   ?? null) as string | null,
+      linkedin_url: (l.linkedinUrl ?? l.linkedin_url ?? null) as string | null,
+      email:        (l.email ?? f.email ?? null) as string | null,
+    };
+  });
 
   const intakeResult = contacts.length > 0
     ? await intakeContactsForCompany(db, params.id, contacts).catch(() => null)
