@@ -14,7 +14,6 @@ Reglas:
 - Usa ÚNICAMENTE la evidencia provista. No inventes datos.
 - company_linkedin_url: solo si aparece literal en la evidencia (formato https://www.linkedin.com/company/<slug>). Si dudas, null.
 - company_website: solo si aparece literal. Si dudas, null.
-- cad_software y scanner_technology: solo si hay evidencia explícita. Si no aplican al sector, null.
 - fit_signals: señales de fit separadas por " · ". Si no hay evidencia, string vacío.
 - fit_score: "high" si hay señales claras, "medium" si hay algunas, "low" si no hay evidencia de fit.
 
@@ -26,9 +25,7 @@ Devuelve SOLO JSON válido:
   "company_city": string | null,
   "company_country": string | null,
   "company_size": number | null,
-  "company_type": "lab" | "multi_clinic" | "dso" | "other",
-  "cad_software": string | null,
-  "scanner_technology": string | null,
+  "company_type": "other",
   "fit_signals": string,
   "fit_score": "high" | "medium" | "low",
   "competitor_match": string | null,
@@ -118,8 +115,6 @@ export async function POST(req: NextRequest) {
     company_country:      (extracted.company_country as string | null) ?? null,
     company_size:         (extracted.company_size as number | null) ?? null,
     company_type:         (extracted.company_type as string) || "other",
-    cad_software:         (extracted.cad_software as string | null) ?? null,
-    scanner_technology:   (extracted.scanner_technology as string | null) ?? null,
     fit_signals:          (extracted.fit_signals as string) || "",
     fit_score:            (extracted.fit_score as string) || "low",
     competitor_match:     (extracted.competitor_match as string | null) ?? null,

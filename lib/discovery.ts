@@ -70,8 +70,6 @@ Reglas:
 - REQUISITO DURO — company_linkedin_url: solo incluye la empresa si la evidencia trae una URL verificable de su página corporativa de LinkedIn (formato exacto https://www.linkedin.com/company/<slug>). NUNCA construyas el slug a partir del nombre, NUNCA adivines. Si la evidencia no la trae, descarta la empresa antes de devolverla.
 - REQUISITO DURO — company_country: debe coincidir con la región solicitada por el usuario. Si la empresa está fuera de esa región, descártala antes de devolverla. Usa el código ISO de 2 letras cuando sea posible (US, CA, MX, GB, DE, etc.).
 - company_website: si lo incluyes, debe estar literal en la evidencia. Si dudas, déjalo en null antes que inventar.
-- Los campos cad_software y scanner_technology son opcionales y solo relevantes en sectores tecnológicos específicos — déjalos en null si no aplican.
-
 Devuelve SIEMPRE JSON válido con esta forma exacta:
 {
   "companies": [
@@ -82,9 +80,7 @@ Devuelve SIEMPRE JSON válido con esta forma exacta:
       "company_city": string | null,
       "company_country": string | null,
       "company_size": number | null,
-      "company_type": "lab" | "multi_clinic" | "dso" | "other",
-      "cad_software": string | null,
-      "scanner_technology": string | null,
+      "company_type": "other",
       "fit_signals": string,
       "fit_score": "high" | "medium" | "low",
       "competitor_match": string | null,
@@ -210,8 +206,6 @@ A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vig
         company_type:         ["lab", "multi_clinic", "dso", "other"].includes(c.company_type)
           ? c.company_type
           : "other",
-        cad_software:         c.cad_software ?? null,
-        scanner_technology:   c.scanner_technology ?? null,
         fit_signals:          String(c.fit_signals ?? ""),
         fit_score:            ["high", "medium", "low"].includes(c.fit_score) ? c.fit_score : "medium",
         competitor_match:     c.competitor_match ?? null,

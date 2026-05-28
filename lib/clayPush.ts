@@ -25,7 +25,7 @@ export async function pushCompanyToClay(
   const { data: company, error: fetchErr } = await db
     .from("companies")
     .select(
-      "id, client_id, company_name, company_website, company_linkedin_url, company_city, company_country, company_size, fit_signals, fit_score, description, status, clay_pushed_at"
+      "id, client_id, company_name, company_website, company_linkedin_url, company_city, company_country, company_size, fit_signals, fit_score, status, clay_pushed_at"
     )
     .eq("id", companyId)
     .maybeSingle();

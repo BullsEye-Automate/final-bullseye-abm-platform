@@ -13,14 +13,12 @@ IMPORTANTE: NO inventes datos. Usa ÚNICAMENTE la evidencia provista.
 
 Devuelve SOLO JSON válido:
 {
-  "cad_software": string | null,
-  "scanner_technology": string | null,
   "fit_signals": string | null,
   "research_summary": string | null,
   "company_city": string | null,
   "company_country": string | null,
   "company_size": number | null,
-  "company_type": "lab" | "multi_clinic" | "dso" | "other",
+  "company_type": "other",
   "fit_score": "high" | "medium" | "low"
 }
 
@@ -116,9 +114,6 @@ export async function POST(req: NextRequest) {
 
   // Keywords a analizar
   const baseKeywords: string[] = [];
-  if (extracted.cad_software)      baseKeywords.push(extracted.cad_software as string);
-  if (extracted.scanner_technology) baseKeywords.push(extracted.scanner_technology as string);
-
   const allKeywords = [
     ...baseKeywords,
     ...extraKeywords
@@ -135,10 +130,8 @@ export async function POST(req: NextRequest) {
     total_citations:  citations.length,
     keyword_matches:  keywordMatches,
     extracted: {
-      cad_software:       (extracted.cad_software      as string | null) ?? null,
-      scanner_technology: (extracted.scanner_technology as string | null) ?? null,
-      fit_signals:        (extracted.fit_signals        as string | null) ?? null,
-      research_summary:   (extracted.research_summary   as string | null) ?? null,
+      fit_signals:      (extracted.fit_signals      as string | null) ?? null,
+      research_summary: (extracted.research_summary as string | null) ?? null,
     },
     citations,
     perplexity: {
