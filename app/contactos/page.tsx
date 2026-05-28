@@ -177,8 +177,9 @@ export default function ContactosPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Error al sincronizar"); return; }
       const parts = [];
-      if (data.updated > 0) parts.push(`${data.updated} email${data.updated !== 1 ? "s" : ""} nuevos guardados`);
-      if (data.synced  > 0) parts.push(`${data.synced} contacto${data.synced !== 1 ? "s" : ""} sincronizados con HubSpot`);
+      if (data.updated   > 0) parts.push(`${data.updated} email${data.updated !== 1 ? "s" : ""} nuevos guardados`);
+      if (data.generated > 0) parts.push(`${data.generated} mensaje${data.generated !== 1 ? "s" : ""} generados`);
+      if (data.synced    > 0) parts.push(`${data.synced} contacto${data.synced !== 1 ? "s" : ""} sincronizados con HubSpot`);
       setNotice(parts.length > 0 ? parts.join(" · ") + "." : "Sin novedades de Lemlist.");
       if (data.errors?.length > 0) {
         const detail = data.errors.slice(0, 3).map((e: any) => e.error).join(" | ");
