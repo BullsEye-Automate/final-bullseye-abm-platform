@@ -47,20 +47,25 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   return NextResponse.json({
     leads: leads.map(l => {
-      const lc = ((l.companyName ?? l.company_name ?? "") as string).toLowerCase();
-      const matched = companyWords.some((w: string) => lc.includes(w));
+      const firstName   = (l.firstName   ?? l.first_name  ?? "") as string;
+      const lastName    = (l.lastName    ?? l.last_name   ?? "") as string;
+      const jobTitle    = (l.jobTitle    ?? l.job_title   ?? l.title ?? l.position ?? "") as string;
+      const companyName = (l.companyName ?? l.company_name ?? l.company ?? "") as string;
+      const lc = companyName.toLowerCase();
+      const matched = companyWords.length > 0 ? companyWords.some((w: string) => lc.includes(w)) : false;
       return {
-        key:          (l.email ?? l.linkedinUrl ?? l.linkedin_url ?? "") as string,
-        firstName:    (l.firstName  ?? l.first_name  ?? "") as string,
-        lastName:     (l.lastName   ?? l.last_name   ?? "") as string,
-        jobTitle:     (l.jobTitle   ?? l.job_title   ?? "") as string,
-        companyName:  (l.companyName ?? l.company_name ?? "") as string,
-        linkedinUrl:  (l.linkedinUrl ?? l.linkedin_url ?? null) as string | null,
-        email:        (l.email ?? null) as string | null,
+        key:         (l.email ?? l.linkedinUrl ?? l.linkedin_url ?? "") as string,
+        firstName,
+        lastName,
+        jobTitle,
+        companyName,
+        linkedinUrl: (l.linkedinUrl ?? l.linkedin_url ?? null) as string | null,
+        email:       (l.email ?? null) as string | null,
         matched,
       };
     }),
     total: leads.length,
+    _debug: leads[0] ?? null,
   });
 }
 

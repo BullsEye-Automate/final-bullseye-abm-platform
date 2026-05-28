@@ -562,7 +562,9 @@ function CompanyCard({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-ink leading-tight">
-                      {lead.firstName} {lead.lastName}
+                      {(lead.firstName || lead.lastName)
+                        ? `${lead.firstName} ${lead.lastName}`.trim()
+                        : (lead.email ?? lead.linkedinUrl ?? "Sin nombre")}
                       {lead.jobTitle && (
                         <span className="font-normal text-ink-muted"> · {lead.jobTitle}</span>
                       )}
