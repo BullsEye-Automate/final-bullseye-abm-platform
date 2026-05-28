@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/cron/refresh-lemlist",
-      "schedule": "0 */4 * * *"
+      "schedule": "0 8 * * *"
     }
   ],
   "framework": "nextjs",
