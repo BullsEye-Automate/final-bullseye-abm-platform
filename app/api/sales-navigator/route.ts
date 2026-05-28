@@ -4,7 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const clientId = req.nextUrl.searchParams.get("client_id") || null;
+  const clientId      = req.nextUrl.searchParams.get("client_id") || null;
+  const includeRecent = req.nextUrl.searchParams.get("include_recent") === "1";
   const db = supabaseAdmin();
 
   let q = db
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
     if (r.company_id) contactCountMap.set(r.company_id, (contactCountMap.get(r.company_id) ?? 0) + 1);
   }
 
-  const GRACE_HOURS = 24;
+  const GRACE_HOURS = includeRecent ? 0 : 24;
   const now = new Date();
 
   const no_contacts: unknown[] = [];

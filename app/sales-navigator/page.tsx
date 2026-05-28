@@ -72,13 +72,16 @@ export default function SalesNavigatorPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("no_contacts");
+  const [includeRecent, setIncludeRecent] = useState(false);
 
   const load = useCallback(async () => {
     if (!currentClient) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/sales-navigator?client_id=${currentClient.id}`, {
+      const params = new URLSearchParams({ client_id: currentClient.id });
+      if (includeRecent) params.set("include_recent", "1");
+      const res = await fetch(`/api/sales-navigator?${params}`, {
         cache: "no-store"
       });
       const json = await res.json();
@@ -91,7 +94,7 @@ export default function SalesNavigatorPage() {
       setError("Error de red al cargar Sales Navigator");
     }
     setLoading(false);
-  }, [currentClient]);
+  }, [currentClient, includeRecent]);
 
   useEffect(() => {
     load();
@@ -141,8 +144,9 @@ export default function SalesNavigatorPage() {
 
       {currentClient && (
         <>
-          {/* Tabs */}
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* Tabs + toggle */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
             {tabs.map((t) => (
               <button
                 key={t.key}
@@ -165,6 +169,14 @@ export default function SalesNavigatorPage() {
                 </span>
               </button>
             ))}
+            </div>
+            <button
+              onClick={() => setIncludeRecent(v => !v)}
+              className={`btn text-xs ${includeRecent ? "bg-brand text-white" : "bg-white border border-[#E5E2F0] text-ink-muted hover:border-brand-soft"}`}
+              title="Por defecto se esperan 24h desde que la empresa fue a Clay, para no mostrar las que Clay todavía está procesando."
+            >
+              Incluir las recién mandadas a Clay
+            </button>
           </div>
 
           {error && (
