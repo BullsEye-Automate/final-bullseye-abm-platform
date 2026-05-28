@@ -326,6 +326,7 @@ function CompanyCard({
 }) {
   const [loadingLeads, setLoadingLeads] = useState(false);
   const [stagingLeads, setStagingLeads] = useState<StagingLead[] | null>(null);
+  const [debugLead, setDebugLead] = useState<Record<string, unknown> | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [leadsFilter, setLeadsFilter] = useState("");
   const [importing, setImporting] = useState(false);
@@ -348,6 +349,7 @@ function CompanyCard({
       } else {
         const leads: StagingLead[] = json.leads ?? [];
         setStagingLeads(leads);
+        setDebugLead(json._debug ?? null);
         setSelectedKeys(new Set(leads.filter(l => l.matched).map(l => l.key)));
       }
     } catch {
@@ -500,6 +502,16 @@ function CompanyCard({
           </button>
         )}
       </div>
+
+      {/* DEBUG TEMPORAL — muestra el lead crudo de Lemlist para diagnosticar campos */}
+      {debugLead && (
+        <details className="rounded-lg border border-orange-200 bg-orange-50 text-xs p-2">
+          <summary className="cursor-pointer font-semibold text-orange-700 mb-1">🔍 Debug: campos raw del lead (Lemlist)</summary>
+          <pre className="overflow-x-auto text-orange-900 whitespace-pre-wrap break-all mt-1">
+            {JSON.stringify(debugLead, null, 2)}
+          </pre>
+        </details>
+      )}
 
       {/* Lista de leads de la campaña puente con checkboxes */}
       {stagingLeads && (
