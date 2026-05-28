@@ -56,10 +56,19 @@ type SalesNavData = {
   no_fit: NoFitItem[];
 };
 
+type StagingLead = {
+  key: string;
+  firstName: string;
+  lastName: string;
+  jobTitle: string;
+  companyName: string;
+  linkedinUrl: string | null;
+  email: string | null;
+  matched: boolean;
+};
+
 type ImportResult = {
   summary?: { yes: number; no: number };
-  matched_count?: number;
-  staged_leads?: Array<{ name: string; email?: string }>;
   staged_total?: number;
   error?: string;
 };
@@ -315,39 +324,66 @@ function CompanyCard({
   onReload: () => void;
   showMarkNoFit?: boolean;
 }) {
+  const [loadingLeads, setLoadingLeads] = useState(false);
+  const [stagingLeads, setStagingLeads] = useState<StagingLead[] | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [leadsFilter, setLeadsFilter] = useState("");
   const [importing, setImporting] = useState(false);
   const [markingNoFit, setMarkingNoFit] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [importAllLoading, setImportAllLoading] = useState(false);
 
   const salesNavUrl = `https://www.linkedin.com/sales/search/people?keywords=${encodeURIComponent(
     company.company_name
   )}`;
 
-  async function handleImport(all = false) {
-    if (all) {
-      setImportAllLoading(true);
-    } else {
-      setImporting(true);
-      setImportResult(null);
-    }
+  async function handleFetchLeads() {
+    setLoadingLeads(true);
+    setImportResult(null);
+    setStagingLeads(null);
     try {
-      const url = `/api/sales-navigator/${company.id}/import${all ? "?all=1" : ""}`;
-      const res = await fetch(url, { method: "POST" });
+      const res  = await fetch(`/api/sales-navigator/${company.id}/import`);
+      const json = await res.json();
+      if (!res.ok) {
+        setImportResult({ error: json.error ?? `Error ${res.status}` });
+      } else {
+        const leads: StagingLead[] = json.leads ?? [];
+        setStagingLeads(leads);
+        setSelectedKeys(new Set(leads.filter(l => l.matched).map(l => l.key)));
+      }
+    } catch {
+      setImportResult({ error: "Error de red al cargar leads" });
+    }
+    setLoadingLeads(false);
+  }
+
+  async function handleImport() {
+    setImporting(true);
+    try {
+      const res  = await fetch(`/api/sales-navigator/${company.id}/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selected_keys: Array.from(selectedKeys) }),
+      });
       const json = await res.json();
       if (!res.ok) {
         setImportResult({ error: json.error ?? `Error ${res.status}` });
       } else {
         setImportResult(json);
-        if (json.summary?.yes > 0) {
-          setTimeout(() => onReload(), 1500);
-        }
+        setStagingLeads(null);
+        if (json.summary?.yes > 0) setTimeout(() => onReload(), 1500);
       }
     } catch {
       setImportResult({ error: "Error de red al importar" });
     }
     setImporting(false);
-    setImportAllLoading(false);
+  }
+
+  function toggleKey(key: string) {
+    setSelectedKeys(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
   }
 
   async function handleMarkNoFit() {
@@ -442,37 +478,125 @@ function CompanyCard({
           >
             <IconSearch size={15} /> Abrir en Sales Navigator
           </a>
-          <button
-            onClick={() => handleImport(false)}
-            disabled={importing}
-            className="btn-secondary flex-1"
-          >
-            {importing ? (
-              <IconLoader2 size={15} className="animate-spin" />
-            ) : (
-              <IconDownload size={15} />
-            )}
-            {importing ? "Importando…" : "Importar desde Campaña puente"}
-          </button>
+          {!stagingLeads && (
+            <button
+              onClick={handleFetchLeads}
+              disabled={loadingLeads}
+              className="btn-secondary flex-1"
+            >
+              {loadingLeads ? <IconLoader2 size={15} className="animate-spin" /> : <IconDownload size={15} />}
+              {loadingLeads ? "Cargando…" : "Importar desde Campaña puente"}
+            </button>
+          )}
         </div>
-        {showMarkNoFit && (
+        {showMarkNoFit && !stagingLeads && (
           <button
             onClick={handleMarkNoFit}
             disabled={markingNoFit}
             className="btn-danger self-start text-xs"
           >
-            {markingNoFit ? (
-              <IconLoader2 size={13} className="animate-spin" />
-            ) : (
-              <IconX size={13} />
-            )}
+            {markingNoFit ? <IconLoader2 size={13} className="animate-spin" /> : <IconX size={13} />}
             Sin contactos fit
           </button>
         )}
       </div>
 
-      {/* Resultado de importación inline */}
-      {importResult && (
+      {/* Lista de leads de la campaña puente con checkboxes */}
+      {stagingLeads && (
+        <div className="rounded-lg border border-[#E5E2F0] bg-[#F9F8FC] overflow-hidden">
+          {/* Header con filtro y acciones */}
+          <div className="px-3 py-2 border-b border-[#E5E2F0] flex items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-ink-muted uppercase tracking-wide">
+              Leads en la campaña puente ({stagingLeads.length})
+            </span>
+            <div className="flex gap-2 text-xs">
+              <button
+                onClick={() => setSelectedKeys(new Set(stagingLeads.map(l => l.key)))}
+                className="text-brand hover:underline"
+              >
+                Marcar todos
+              </button>
+              <span className="text-ink-muted">·</span>
+              <button
+                onClick={() => setSelectedKeys(new Set())}
+                className="text-brand hover:underline"
+              >
+                Desmarcar todos
+              </button>
+            </div>
+          </div>
+
+          {/* Filtro */}
+          <div className="px-3 py-2 border-b border-[#E5E2F0]">
+            <input
+              type="text"
+              placeholder="Filtrar por nombre, empresa o cargo (ej: &quot;CEO&quot;)"
+              value={leadsFilter}
+              onChange={e => setLeadsFilter(e.target.value)}
+              className="w-full text-xs rounded-md border border-[#D8D5EA] px-2.5 py-1.5 bg-white placeholder:text-ink-muted focus:outline-none focus:ring-1 focus:ring-brand"
+            />
+          </div>
+
+          {/* Lista */}
+          <div className="divide-y divide-[#E5E2F0] max-h-72 overflow-y-auto">
+            {stagingLeads
+              .filter(l => {
+                if (!leadsFilter.trim()) return true;
+                const q = leadsFilter.toLowerCase();
+                return (
+                  `${l.firstName} ${l.lastName}`.toLowerCase().includes(q) ||
+                  l.companyName.toLowerCase().includes(q) ||
+                  l.jobTitle.toLowerCase().includes(q)
+                );
+              })
+              .map(lead => (
+                <label
+                  key={lead.key}
+                  className="flex items-start gap-3 px-3 py-2.5 cursor-pointer hover:bg-white transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedKeys.has(lead.key)}
+                    onChange={() => toggleKey(lead.key)}
+                    className="mt-0.5 accent-[#62E0D8] shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-ink leading-tight">
+                      {lead.firstName} {lead.lastName}
+                      {lead.jobTitle && (
+                        <span className="font-normal text-ink-muted"> · {lead.jobTitle}</span>
+                      )}
+                    </div>
+                    {lead.companyName && (
+                      <div className="text-xs text-ink-muted mt-0.5">{lead.companyName}</div>
+                    )}
+                  </div>
+                </label>
+              ))}
+          </div>
+
+          {/* Footer con botón de importar y cancelar */}
+          <div className="px-3 py-2.5 border-t border-[#E5E2F0] flex gap-2 items-center">
+            <button
+              onClick={handleImport}
+              disabled={importing || selectedKeys.size === 0}
+              className="btn-primary text-xs flex-1 justify-center"
+            >
+              {importing ? <IconLoader2 size={13} className="animate-spin" /> : <IconDownload size={13} />}
+              {importing ? "Importando…" : `Importar y enviar directo a Lemlist (${selectedKeys.size})`}
+            </button>
+            <button
+              onClick={() => { setStagingLeads(null); setLeadsFilter(""); setImportResult(null); }}
+              className="text-xs text-ink-muted hover:text-ink"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Resultado de importación */}
+      {importResult && !stagingLeads && (
         <div>
           {importResult.error ? (
             <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm bg-danger-bg text-danger-fg">
@@ -482,46 +606,14 @@ function CompanyCard({
           ) : importResult.summary && importResult.summary.yes > 0 ? (
             <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm bg-success-bg text-success-fg">
               <IconCheck size={15} className="shrink-0" />
-              {importResult.summary.yes} contactos importados · {importResult.summary.no} no pasaron
-              pre-filter
+              {importResult.summary.yes} contactos importados · {importResult.summary.no} no pasaron pre-filter
             </div>
-          ) : importResult.matched_count === 0 ? (
-            <div className="rounded-lg p-3 text-sm space-y-2 bg-[#F4F2FB] border border-[#E5E2F0]">
-              <div className="text-ink-muted text-xs font-medium uppercase tracking-wide">
-                Sin coincidencias — leads en espera ({importResult.staged_total ?? 0})
-              </div>
-              {importResult.staged_leads && importResult.staged_leads.length > 0 && (
-                <ul className="space-y-1 text-xs text-ink">
-                  {importResult.staged_leads.slice(0, 5).map((l, i) => (
-                    <li key={i} className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-brand-soft shrink-0" />
-                      {l.name}
-                      {l.email && <span className="text-ink-muted">{l.email}</span>}
-                    </li>
-                  ))}
-                  {(importResult.staged_total ?? 0) > 5 && (
-                    <li className="text-ink-muted">
-                      +{(importResult.staged_total ?? 0) - 5} más…
-                    </li>
-                  )}
-                </ul>
-              )}
-              <button
-                onClick={() => handleImport(true)}
-                disabled={importAllLoading}
-                className="btn-primary text-xs"
-              >
-                {importAllLoading ? (
-                  <IconLoader2 size={13} className="animate-spin" />
-                ) : (
-                  <IconDownload size={13} />
-                )}
-                {importAllLoading
-                  ? "Importando…"
-                  : `Importar ${importResult.staged_total ?? 0} de todas formas`}
-              </button>
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm bg-warning-bg text-warning-fg">
+              <IconAlertCircle size={15} className="shrink-0" />
+              0 contactos importados — todos existían o no pasaron el pre-filter
             </div>
-          ) : null}
+          )}
         </div>
       )}
     </div>
