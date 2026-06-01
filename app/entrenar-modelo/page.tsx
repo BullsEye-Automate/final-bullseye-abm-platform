@@ -1,607 +1,687 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useClient } from "@/lib/clientContext";
 import {
-  IconAlertCircle,
-  IconPlus,
-  IconTrash,
-  IconFileText,
-  IconLoader2,
-  IconBrain,
-  IconUpload,
+  IconFlask,
+  IconSparkles,
   IconCheck,
+  IconTrash,
+  IconLoader2,
+  IconStar,
+  IconStarFilled,
+  IconChevronDown,
+  IconChevronUp,
+  IconSearch,
   IconX,
   IconDeviceFloppy,
+  IconBrain,
+  IconAlertCircle,
 } from "@tabler/icons-react";
-import { useClient } from "@/lib/clientContext";
 
-// ── Tipos ─────────────────────────────────────────────────────────────
-type ContextItem = {
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+type Tab = "lab" | "examples" | "style";
+
+type GeneratedMessages = {
+  emailSubject?: string;
+  emailBody?: string;
+  linkedinIcebreaker?: string;
+};
+
+type Example = {
   id: string;
-  file_name: string;
-  file_type: string;
-  content: string;
-  uploaded_at: string;
+  contact_name?: string;
+  job_title?: string;
+  company_name?: string;
+  email_subject: string;
+  email_body: string;
+  icebreaker?: string;
+  had_reply: boolean;
+  notes?: string;
+  created_at: string;
 };
 
-type ModelConfig = {
-  business_description: string;
-  target_buyer_persona: string;
-  value_props: string;
-  talking_points: string;
-  strong_decision_maker_keywords: string[];
-  exclude_role_keywords: string[];
+type StyleGuide = {
+  tone: string;
+  rules: string;
+  avoid: string;
+  email_length: string;
 };
 
-const EMPTY_CONFIG: ModelConfig = {
-  business_description: "",
-  target_buyer_persona: "",
-  value_props: "",
-  talking_points: "",
-  strong_decision_maker_keywords: [],
-  exclude_role_keywords: [],
+type ContactSuggestion = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  job_title: string | null;
+  company_name: string | null;
+  email: string | null;
 };
 
-// ── Constantes docs ────────────────────────────────────────────────────
-const FILE_TYPES = [
-  { value: "icp",          label: "ICP" },
-  { value: "one_pager",    label: "One Pager" },
-  { value: "presentacion", label: "Presentación" },
-  { value: "caso_uso",     label: "Caso de uso" },
-  { value: "propuesta",    label: "Propuesta" },
-  { value: "otro",         label: "Otro" },
-];
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const TYPE_COLORS: Record<string, string> = {
-  icp:          "bg-brand-tint text-brand",
-  one_pager:    "bg-info-bg text-info-fg",
-  presentacion: "bg-warning-bg text-warning-fg",
-  caso_uso:     "bg-success-bg text-success-fg",
-  propuesta:    "bg-[#F1EEF7] text-ink-muted",
-  otro:         "bg-[#F1EEF7] text-ink-subtle",
-};
-
-function typeLabel(type: string) {
-  return FILE_TYPES.find((t) => t.value === type)?.label ?? type;
-}
-
-function formatBytes(n: number) {
-  if (n < 1000) return `${n} chars`;
-  return `${(n / 1000).toFixed(1)}k chars`;
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("es", {
-    day: "2-digit", month: "short", year: "numeric",
-  });
-}
-
-type FormState = { file_name: string; file_type: string; content: string };
-const EMPTY_FORM: FormState = { file_name: "", file_type: "icp", content: "" };
-
-// ── Tab Documentos IA ─────────────────────────────────────────────────
-function DocumentosTab({ clientId }: { clientId: string }) {
-  const [items, setItems]         = useState<ContextItem[]>([]);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState<string | null>(null);
-  const [showForm, setShowForm]   = useState(false);
-  const [form, setForm]           = useState<FormState>(EMPTY_FORM);
-  const [saving, setSaving]       = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  async function load() {
-    setLoading(true);
-    setError(null);
-    const r = await fetch(`/api/clients/${clientId}/context`, { cache: "no-store" });
-    const j = await r.json();
-    setLoading(false);
-    if (j.error) { setError(j.error); return; }
-    setItems(j.items ?? []);
-  }
-
-  useEffect(() => {
-    load();
-    setShowForm(false);
-  }, [clientId]);
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const name = file.name.replace(/\.[^.]+$/, "");
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = (ev.target?.result as string) ?? "";
-      setForm((f) => ({ ...f, file_name: f.file_name || name, content: text }));
-    };
-    reader.readAsText(file, "utf-8");
-    e.target.value = "";
-  }
-
-  async function save() {
-    setSaving(true);
-    setFormError(null);
-    const r = await fetch(`/api/clients/${clientId}/context`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    const j = await r.json();
-    setSaving(false);
-    if (j.error) { setFormError(j.error); return; }
-    setItems((prev) => [j.item, ...prev]);
-    setForm(EMPTY_FORM);
-    setShowForm(false);
-  }
-
-  async function remove(item: ContextItem) {
-    setDeletingId(item.id);
-    const r = await fetch(`/api/clients/${clientId}/context/${item.id}`, { method: "DELETE" });
-    setDeletingId(null);
-    if (r.ok) {
-      setItems((prev) => prev.filter((i) => i.id !== item.id));
-      if (expandedId === item.id) setExpandedId(null);
-    }
-  }
-
-  const totalChars = items.reduce((acc, i) => acc + (i.content?.length ?? 0), 0);
-
+function EmptyState({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
-    <div className="space-y-5">
-      {/* Resumen + botón */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 text-sm text-ink-muted">
-          {items.length > 0 && (
-            <>
-              <span className="flex items-center gap-1.5">
-                <IconFileText size={14} />
-                {items.length} documento{items.length !== 1 ? "s" : ""}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <IconBrain size={14} />
-                {formatBytes(totalChars)} de contexto
-              </span>
-            </>
-          )}
-        </div>
-        <button
-          className="btn-primary"
-          onClick={() => { setShowForm(true); setFormError(null); setForm(EMPTY_FORM); }}
-          disabled={showForm}
-        >
-          <IconPlus size={16} /> Agregar documento
-        </button>
-      </div>
-
-      {/* Formulario */}
-      {showForm && (
-        <div className="card border-2 space-y-4" style={{ borderColor: "#62E0D8" }}>
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold flex items-center gap-2">
-              <IconBrain size={18} style={{ color: "#62E0D8" }} />
-              Nuevo documento de contexto
-            </h2>
-            <button className="btn-secondary py-1 px-2" onClick={() => setShowForm(false)}>
-              <IconX size={14} />
-            </button>
-          </div>
-
-          {formError && (
-            <p className="text-danger-fg text-sm bg-danger-bg rounded-lg px-3 py-2">{formError}</p>
-          )}
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label block mb-1">Nombre del documento *</label>
-              <input
-                className="input"
-                placeholder="Ej. ICP BullsEye v2"
-                value={form.file_name}
-                onChange={(e) => setForm((f) => ({ ...f, file_name: e.target.value }))}
-                autoFocus
-              />
-            </div>
-            <div>
-              <label className="label block mb-1">Tipo</label>
-              <select
-                className="input"
-                value={form.file_type}
-                onChange={(e) => setForm((f) => ({ ...f, file_type: e.target.value }))}
-              >
-                {FILE_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="label">Contenido *</label>
-              <button
-                className="btn-secondary py-1 px-2 text-xs flex items-center gap-1"
-                onClick={() => fileRef.current?.click()}
-              >
-                <IconUpload size={12} /> Cargar .txt / .md
-              </button>
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".txt,.md,.markdown,.text"
-                className="hidden"
-                onChange={handleFile}
-              />
-            </div>
-            <textarea
-              className="input min-h-[220px] font-mono text-xs leading-relaxed"
-              placeholder={"Pega aquí el contenido del documento:\n- ICP completo\n- One pager de propuesta de valor\n- Casos de uso exitosos\n- Cualquier contexto que el agente IA deba conocer"}
-              value={form.content}
-              onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
-            />
-            {form.content && (
-              <p className="text-xs text-ink-subtle mt-1 text-right">{formatBytes(form.content.length)}</p>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              className="btn-primary flex-1"
-              onClick={save}
-              disabled={saving || !form.file_name.trim() || !form.content.trim()}
-            >
-              {saving ? <IconLoader2 size={15} className="animate-spin" /> : <IconCheck size={15} />}
-              {saving ? "Guardando…" : "Guardar documento"}
-            </button>
-            <button className="btn-secondary" onClick={() => setShowForm(false)}>Cancelar</button>
-          </div>
-        </div>
-      )}
-
-      {error && (
-        <div className="card text-danger-fg flex items-center gap-2 text-sm">
-          <IconAlertCircle size={16} /> {error}
-        </div>
-      )}
-
-      {!loading && !error && items.length === 0 && !showForm && (
-        <div className="card text-center py-10">
-          <IconBrain size={36} className="mx-auto mb-3 text-ink-subtle" />
-          <p className="font-medium text-ink">Sin documentos de contexto todavía</p>
-          <p className="text-sm text-ink-muted mt-1 max-w-sm mx-auto">
-            Agrega el ICP, one pager, propuesta de valor o cualquier documento que el agente deba conocer.
-          </p>
-          <button
-            className="btn-primary mt-4 mx-auto"
-            onClick={() => { setShowForm(true); setFormError(null); setForm(EMPTY_FORM); }}
-          >
-            <IconPlus size={16} /> Agregar primer documento
-          </button>
-        </div>
-      )}
-
-      {loading && (
-        <div className="card flex items-center gap-3 text-ink-muted">
-          <IconLoader2 size={18} className="animate-spin" /> Cargando documentos…
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {items.map((item) => {
-          const expanded = expandedId === item.id;
-          return (
-            <div key={item.id} className="card">
-              <div className="flex items-start gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-ink truncate">{item.file_name}</h3>
-                    <span className={`badge ${TYPE_COLORS[item.file_type] ?? TYPE_COLORS.otro}`}>
-                      {typeLabel(item.file_type)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-ink-subtle">
-                    <span>{formatBytes(item.content?.length ?? 0)}</span>
-                    <span>·</span>
-                    <span>{formatDate(item.uploaded_at)}</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    className="btn-secondary py-1 px-2 text-xs"
-                    onClick={() => setExpandedId(expanded ? null : item.id)}
-                  >
-                    {expanded ? "Ocultar" : "Ver"}
-                  </button>
-                  <button
-                    className="btn-secondary py-1 px-2 text-danger-fg"
-                    onClick={() => remove(item)}
-                    disabled={deletingId === item.id}
-                    title="Eliminar"
-                  >
-                    {deletingId === item.id
-                      ? <IconLoader2 size={14} className="animate-spin" />
-                      : <IconTrash size={14} />}
-                  </button>
-                </div>
-              </div>
-
-              {expanded && (
-                <div className="mt-3 pt-3 border-t border-[#E5E2F0]">
-                  <pre className="text-xs text-ink/80 whitespace-pre-wrap break-words leading-relaxed max-h-[300px] overflow-y-auto font-mono bg-canvas rounded-lg p-3">
-                    {item.content}
-                  </pre>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+    <div className="flex flex-col items-center justify-center py-16 gap-3 text-ink-muted">
+      <div className="opacity-30">{icon}</div>
+      <p className="text-sm">{text}</p>
     </div>
   );
 }
 
-// ── Tab Configuración IA ───────────────────────────────────────────────
-function ConfiguracionTab({ clientId }: { clientId: string }) {
-  const [config, setConfig]   = useState<ModelConfig>(EMPTY_CONFIG);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving]   = useState(false);
-  const [saved, setSaved]     = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+function MessageBlock({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</label>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={label.includes("Body") ? 6 : 2}
+        className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y bg-white"
+      />
+      {label.includes("Icebreaker") && (
+        <p className="text-[10px] text-ink-muted text-right">{value.length}/180 chars</p>
+      )}
+    </div>
+  );
+}
 
-  // Keywords como texto (una por línea)
-  const [strongKw, setStrongKw]   = useState("");
-  const [excludeKw, setExcludeKw] = useState("");
+// ─── TAB: Laboratorio ─────────────────────────────────────────────────────────
 
-  async function load() {
-    setLoading(true);
-    setError(null);
-    const r = await fetch(`/api/clients/${clientId}/model-config`, { cache: "no-store" });
-    const j = await r.json();
-    setLoading(false);
-    if (j.error) { setError(j.error); return; }
-    if (j.config) {
-      setConfig({
-        business_description:           j.config.business_description ?? "",
-        target_buyer_persona:           j.config.target_buyer_persona ?? "",
-        value_props:                    j.config.value_props ?? "",
-        talking_points:                 j.config.talking_points ?? "",
-        strong_decision_maker_keywords: j.config.strong_decision_maker_keywords ?? [],
-        exclude_role_keywords:          j.config.exclude_role_keywords ?? [],
+function LabTab({ clientId }: { clientId: string }) {
+  const [mode, setMode]               = useState<"search" | "manual">("search");
+  const [query, setQuery]             = useState("");
+  const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
+  const [selected, setSelected]       = useState<ContactSuggestion | null>(null);
+  const [manual, setManual]           = useState({ firstName: "", lastName: "", jobTitle: "", companyName: "", hasEmail: true });
+  const [generating, setGenerating]   = useState(false);
+  const [messages, setMessages]       = useState<GeneratedMessages | null>(null);
+  const [edited, setEdited]           = useState<GeneratedMessages>({});
+  const [saving, setSaving]           = useState(false);
+  const [saved, setSaved]             = useState(false);
+  const [feedback, setFeedback]       = useState("");
+  const [regenerating, setRegenerating] = useState(false);
+  const [genError, setGenError]       = useState<string | null>(null);
+
+  // Buscar contactos
+  useEffect(() => {
+    if (!query.trim() || mode !== "search") { setSuggestions([]); return; }
+    const t = setTimeout(async () => {
+      const res = await fetch(`/api/contacts?client_id=${clientId}&search=${encodeURIComponent(query)}&limit=6`);
+      if (res.ok) {
+        const d = await res.json();
+        setSuggestions(d.contacts ?? []);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query, clientId, mode]);
+
+  const setField = (f: keyof GeneratedMessages) => (v: string) =>
+    setEdited((p) => ({ ...p, [f]: v }));
+
+  async function generate(withFeedback?: string) {
+    setGenError(null);
+    if (mode === "search" && !selected) return;
+    if (mode === "manual" && !manual.firstName && !manual.jobTitle) return;
+
+    if (messages) setRegenerating(true); else setGenerating(true);
+
+    const payload: Record<string, unknown> = { client_id: clientId };
+    if (mode === "search" && selected) {
+      payload.contact_id = selected.id;
+    } else {
+      payload.manual = manual;
+    }
+    if (withFeedback) payload.feedback = withFeedback;
+
+    try {
+      const res = await fetch("/api/training/lab", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
-      setStrongKw((j.config.strong_decision_maker_keywords ?? []).join("\n"));
-      setExcludeKw((j.config.exclude_role_keywords ?? []).join("\n"));
+      const d = await res.json();
+      if (!res.ok) { setGenError(d.error ?? "Error al generar"); return; }
+      const msgs = d.messages as GeneratedMessages;
+      setMessages(msgs);
+      setEdited({
+        emailSubject:       msgs.emailSubject       ?? "",
+        emailBody:          msgs.emailBody          ?? "",
+        linkedinIcebreaker: msgs.linkedinIcebreaker ?? "",
+      });
+      setFeedback("");
+      setSaved(false);
+    } catch (err: unknown) {
+      setGenError((err as Error)?.message ?? "Error de red");
+    } finally {
+      setGenerating(false);
+      setRegenerating(false);
     }
   }
 
-  useEffect(() => { load(); }, [clientId]);
-
-  async function save() {
+  async function saveAsExample() {
     setSaving(true);
-    setError(null);
-    const payload = {
-      ...config,
-      strong_decision_maker_keywords: strongKw.split("\n").map((k) => k.trim()).filter(Boolean),
-      exclude_role_keywords:          excludeKw.split("\n").map((k) => k.trim()).filter(Boolean),
-    };
-    const r = await fetch(`/api/clients/${clientId}/model-config`, {
+    const contactName = selected
+      ? [selected.first_name, selected.last_name].filter(Boolean).join(" ")
+      : [manual.firstName, manual.lastName].filter(Boolean).join(" ");
+
+    await fetch("/api/training/examples", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        client_id:     clientId,
+        contact_name:  contactName || undefined,
+        job_title:     selected?.job_title  ?? manual.jobTitle   || undefined,
+        company_name:  selected?.company_name ?? manual.companyName || undefined,
+        email_subject: edited.emailSubject ?? "",
+        email_body:    edited.emailBody    ?? "",
+        icebreaker:    edited.linkedinIcebreaker ?? "",
+      }),
     });
-    const j = await r.json();
     setSaving(false);
-    if (j.error) { setError(j.error); return; }
     setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-  }
-
-  if (loading) {
-    return (
-      <div className="card flex items-center gap-3 text-ink-muted">
-        <IconLoader2 size={18} className="animate-spin" /> Cargando configuración…
-      </div>
-    );
   }
 
   return (
-    <div className="space-y-5 max-w-2xl">
-      {error && (
-        <div className="card text-danger-fg flex items-center gap-2 text-sm">
-          <IconAlertCircle size={16} /> {error}
-        </div>
-      )}
-
-      <p className="text-sm text-ink-muted">
-        Esta información alimenta los prompts del agente IA para scoring de contactos y generación de mensajes.
-      </p>
-
-      {/* Descripción del negocio */}
-      <div className="card space-y-2">
-        <div>
-          <label className="text-xs font-semibold text-ink block mb-0.5">Descripción del negocio</label>
-          <p className="text-[11px] text-ink-muted mb-2">¿Qué hace el cliente? ¿A quién ayuda? ¿Cuál es su diferencial?</p>
-          <textarea
-            rows={4}
-            className="input w-full resize-y"
-            placeholder="Ej: BullsEye ABM ayuda a empresas B2B de venta consultiva a generar reuniones calificadas con cuentas objetivo mediante ABM..."
-            value={config.business_description}
-            onChange={(e) => setConfig((c) => ({ ...c, business_description: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      {/* Perfil del decisor */}
-      <div className="card space-y-2">
-        <div>
-          <label className="text-xs font-semibold text-ink block mb-0.5">Perfil del decisor objetivo</label>
-          <p className="text-[11px] text-ink-muted mb-2">Cargo, tamaño de empresa, señales que buscan, dolores típicos.</p>
-          <textarea
-            rows={4}
-            className="input w-full resize-y"
-            placeholder="Ej: Director Comercial o CEO en empresas B2B de 15-200 empleados que venden servicios de alto valor..."
-            value={config.target_buyer_persona}
-            onChange={(e) => setConfig((c) => ({ ...c, target_buyer_persona: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      {/* Propuestas de valor */}
-      <div className="card space-y-2">
-        <div>
-          <label className="text-xs font-semibold text-ink block mb-0.5">Propuestas de valor</label>
-          <p className="text-[11px] text-ink-muted mb-2">Una propuesta por línea. El agente las usa para personalizar mensajes.</p>
-          <textarea
-            rows={5}
-            className="input w-full resize-y"
-            placeholder={"Generamos reuniones calificadas con cuentas objetivo\nEstrategia ABM personalizada por vertical\nProspección omnicanal (email + LinkedIn)\nContactos pre-investigados con señales de fit"}
-            value={config.value_props}
-            onChange={(e) => setConfig((c) => ({ ...c, value_props: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      {/* Talking points */}
-      <div className="card space-y-2">
-        <div>
-          <label className="text-xs font-semibold text-ink block mb-0.5">Talking points clave</label>
-          <p className="text-[11px] text-ink-muted mb-2">Puntos de conversación que el agente puede usar en icebreakers y follow-ups.</p>
-          <textarea
-            rows={5}
-            className="input w-full resize-y"
-            placeholder={"Uno por línea. Ej:\nNo vendemos volumen, vendemos cuentas estratégicas\nTu SDR necesita pipelines, no listas frías\nCada mensaje es personalizado con contexto real de la empresa"}
-            value={config.talking_points}
-            onChange={(e) => setConfig((c) => ({ ...c, talking_points: e.target.value }))}
-          />
-        </div>
-      </div>
-
-      {/* Keywords scoring */}
-      <div className="card space-y-4">
-        <h3 className="font-semibold text-sm text-ink flex items-center gap-2">
-          <IconBrain size={16} style={{ color: "#62E0D8" }} />
-          Scoring de roles
-        </h3>
-        <p className="text-[11px] text-ink-muted -mt-2">
-          El agente de scoring usa estas listas para calificar contactos. Una keyword por línea.
-        </p>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="text-xs font-semibold text-ink block mb-0.5">Roles decisores ✓</label>
-            <p className="text-[11px] text-ink-muted mb-2">Contactos con estos roles suben en el score.</p>
-            <textarea
-              rows={6}
-              className="input w-full resize-y font-mono text-xs"
-              placeholder={"CEO\nDirector\nVP\nHead of\nGerente\nOwner\nFounder"}
-              value={strongKw}
-              onChange={(e) => setStrongKw(e.target.value)}
-            />
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ── Panel izquierdo: selección ── */}
+      <div className="space-y-4">
+        <div className="card px-5 py-4 space-y-4">
+          <div className="flex gap-2">
+            {(["search", "manual"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => { setMode(m); setSelected(null); setQuery(""); }}
+                className="text-sm px-3 py-1.5 rounded-lg border transition"
+                style={mode === m
+                  ? { background: "#251762", color: "white", borderColor: "#251762" }
+                  : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }
+                }
+              >
+                {m === "search" ? "Buscar contacto" : "Ingresar manual"}
+              </button>
+            ))}
           </div>
-          <div>
-            <label className="text-xs font-semibold text-ink block mb-0.5">Roles a excluir ✗</label>
-            <p className="text-[11px] text-ink-muted mb-2">Contactos con estos roles bajan en el score.</p>
-            <textarea
-              rows={6}
-              className="input w-full resize-y font-mono text-xs"
-              placeholder={"Intern\nTrainee\nJunior\nAssistant\nCoordinator\nStaff"}
-              value={excludeKw}
-              onChange={(e) => setExcludeKw(e.target.value)}
-            />
-          </div>
+
+          {mode === "search" && (
+            <div className="space-y-3">
+              <div className="relative">
+                <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Nombre, empresa o cargo…"
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-[#E5E2F0] rounded-lg outline-none focus:border-[#62E0D8]"
+                />
+              </div>
+              {suggestions.length > 0 && !selected && (
+                <div className="border border-[#E5E2F0] rounded-xl overflow-hidden divide-y divide-[#F0EEF8]">
+                  {suggestions.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => { setSelected(c); setSuggestions([]); setQuery([c.first_name, c.last_name].filter(Boolean).join(" ")); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 transition"
+                    >
+                      <div className="w-7 h-7 rounded-full bg-[#251762] flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                        {[c.first_name?.[0], c.last_name?.[0]].filter(Boolean).join("").toUpperCase() || "?"}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-ink truncate">
+                          {[c.first_name, c.last_name].filter(Boolean).join(" ") || "—"}
+                        </div>
+                        <div className="text-xs text-ink-muted truncate">
+                          {[c.job_title, c.company_name].filter(Boolean).join(" · ")}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {selected && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(98,224,216,0.1)" }}>
+                  <IconCheck size={14} style={{ color: "#62E0D8" }} />
+                  <span className="text-sm font-medium text-ink">
+                    {[selected.first_name, selected.last_name].filter(Boolean).join(" ")}
+                    {selected.job_title && <span className="font-normal text-ink-muted"> · {selected.job_title}</span>}
+                  </span>
+                  <button onClick={() => { setSelected(null); setQuery(""); }} className="ml-auto text-ink-muted hover:text-ink">
+                    <IconX size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {mode === "manual" && (
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { key: "firstName",   label: "Nombre" },
+                { key: "lastName",    label: "Apellido" },
+                { key: "jobTitle",    label: "Cargo" },
+                { key: "companyName", label: "Empresa" },
+              ].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</label>
+                  <input
+                    value={(manual as Record<string, string>)[key]}
+                    onChange={(e) => setManual((p) => ({ ...p, [key]: e.target.value }))}
+                    className="mt-1 w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]"
+                  />
+                </div>
+              ))}
+              <label className="col-span-2 flex items-center gap-2 text-sm text-ink cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={manual.hasEmail}
+                  onChange={(e) => setManual((p) => ({ ...p, hasEmail: e.target.checked }))}
+                />
+                Tiene email
+              </label>
+            </div>
+          )}
+
+          <button
+            onClick={() => generate()}
+            disabled={generating || (mode === "search" && !selected) || (mode === "manual" && !manual.firstName && !manual.jobTitle)}
+            className="btn-primary w-full flex items-center justify-center gap-2 text-sm disabled:opacity-40"
+          >
+            {generating ? <IconLoader2 size={14} className="animate-spin" /> : <IconSparkles size={14} />}
+            {generating ? "Generando…" : "Generar mensajes"}
+          </button>
         </div>
+
+        {/* Feedback */}
+        {messages && (
+          <div className="card px-5 py-4 space-y-3">
+            <p className="text-sm font-semibold text-ink">Feedback para mejorar</p>
+            <p className="text-xs text-ink-muted">Explicá qué cambiar y regenerá con ese contexto.</p>
+            <textarea
+              value={feedback}
+              onChange={(e) => setFeedback(e.target.value)}
+              rows={3}
+              placeholder="Ej: el subject es muy genérico, necesito algo más directo. El body es muy largo, reducilo a 3 oraciones…"
+              className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none"
+            />
+            <button
+              onClick={() => generate(feedback)}
+              disabled={regenerating || !feedback.trim()}
+              className="w-full flex items-center justify-center gap-2 text-sm px-4 py-2 rounded-lg border border-[#251762] text-[#251762] hover:bg-[#F1EEF7] transition disabled:opacity-40"
+            >
+              {regenerating ? <IconLoader2 size={13} className="animate-spin" /> : <IconSparkles size={13} />}
+              Regenerar con feedback
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Guardar */}
-      <div className="flex items-center gap-3">
-        <button
-          className="btn-primary"
-          onClick={save}
-          disabled={saving}
-        >
-          {saving
-            ? <><IconLoader2 size={15} className="animate-spin" /> Guardando…</>
-            : <><IconDeviceFloppy size={15} /> Guardar configuración</>}
-        </button>
-        {saved && (
-          <span className="flex items-center gap-1.5 text-sm text-success-fg">
-            <IconCheck size={14} /> Guardado
-          </span>
+      {/* ── Panel derecho: resultado ── */}
+      <div className="space-y-4">
+        {genError && (
+          <div className="card border-l-4 border-red-400 px-4 py-3 text-red-600 text-sm flex items-center gap-2">
+            <IconAlertCircle size={14} /> {genError}
+          </div>
+        )}
+
+        {!messages && !generating && (
+          <EmptyState
+            icon={<IconFlask size={48} />}
+            text="Seleccioná un contacto y generá los mensajes para ver el resultado aquí."
+          />
+        )}
+
+        {generating && !messages && (
+          <div className="card flex flex-col items-center justify-center py-16 gap-3">
+            <IconLoader2 size={28} className="animate-spin" style={{ color: "#62E0D8" }} />
+            <p className="text-sm text-ink-muted">Generando mensajes personalizados…</p>
+          </div>
+        )}
+
+        {messages && (
+          <div className="card px-5 py-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="font-semibold text-ink text-sm">Mensajes generados</p>
+              {regenerating && <IconLoader2 size={14} className="animate-spin text-ink-muted" />}
+            </div>
+
+            <MessageBlock
+              label="Subject {{emailSubject}}"
+              value={edited.emailSubject ?? ""}
+              onChange={setField("emailSubject")}
+            />
+            <MessageBlock
+              label="Email Body {{emailBody}}"
+              value={edited.emailBody ?? ""}
+              onChange={setField("emailBody")}
+            />
+            <MessageBlock
+              label="LinkedIn Icebreaker {{icebreaker}}"
+              value={edited.linkedinIcebreaker ?? ""}
+              onChange={setField("linkedinIcebreaker")}
+            />
+
+            <button
+              onClick={saveAsExample}
+              disabled={saving || saved}
+              className="w-full flex items-center justify-center gap-2 text-sm py-2.5 rounded-xl transition"
+              style={saved
+                ? { background: "#EDF9F8", color: "#0F6E56", border: "1px solid #62E0D8" }
+                : { background: "#251762", color: "white" }
+              }
+            >
+              {saving ? <IconLoader2 size={13} className="animate-spin" /> : saved ? <IconCheck size={13} /> : <IconStarFilled size={13} />}
+              {saved ? "Guardado como ejemplo aprobado" : "Guardar como ejemplo aprobado"}
+            </button>
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-// ── Página principal ───────────────────────────────────────────────────
-type Tab = "documentos" | "configuracion";
+// ─── TAB: Ejemplos aprobados ──────────────────────────────────────────────────
+
+function ExamplesTab({ clientId }: { clientId: string }) {
+  const [examples, setExamples] = useState<Example[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const res = await fetch(`/api/training/examples?client_id=${clientId}`);
+    if (res.ok) setExamples((await res.json()).examples ?? []);
+    setLoading(false);
+  }, [clientId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function toggleReply(id: string, had_reply: boolean) {
+    await fetch(`/api/training/examples/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ had_reply }),
+    });
+    setExamples((p) => p.map((e) => e.id === id ? { ...e, had_reply } : e));
+  }
+
+  async function deleteExample(id: string) {
+    await fetch(`/api/training/examples/${id}`, { method: "DELETE" });
+    setExamples((p) => p.filter((e) => e.id !== id));
+  }
+
+  if (loading) return <div className="flex justify-center py-16"><IconLoader2 size={24} className="animate-spin text-ink-muted" /></div>;
+
+  if (!examples.length) return (
+    <EmptyState
+      icon={<IconStarFilled size={48} />}
+      text="Aún no hay ejemplos. Generá mensajes en el Laboratorio y guardalos acá."
+    />
+  );
+
+  const withReply = examples.filter((e) => e.had_reply).length;
+
+  return (
+    <div className="space-y-4">
+      {/* Stats */}
+      <div className="flex gap-3 flex-wrap">
+        <div className="card px-4 py-3 text-center min-w-[110px]">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Total</div>
+          <div className="text-2xl font-bold text-ink mt-0.5">{examples.length}</div>
+          <div className="text-[11px] text-ink-muted">ejemplos</div>
+        </div>
+        <div className="card px-4 py-3 text-center min-w-[110px]">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">Con reply</div>
+          <div className="text-2xl font-bold mt-0.5" style={{ color: "#0F6E56" }}>{withReply}</div>
+          <div className="text-[11px] text-ink-muted">funcionaron</div>
+        </div>
+        <div className="card px-4 py-3 flex-1 min-w-[200px]">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted mb-2">Calidad del dataset</div>
+          <div className="w-full bg-gray-100 rounded-full h-2">
+            <div
+              className="h-2 rounded-full transition-all"
+              style={{
+                width: `${examples.length ? Math.min((examples.length / 10) * 100, 100) : 0}%`,
+                background: "#62E0D8",
+              }}
+            />
+          </div>
+          <div className="text-[11px] text-ink-muted mt-1">
+            {examples.length < 3 ? "Necesitás al menos 3 ejemplos" : examples.length < 8 ? "Buen comienzo, seguí agregando" : "Excelente dataset"}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {examples.map((ex) => (
+          <div key={ex.id} className="card border border-[#E5E2F0]">
+            <button
+              onClick={() => setExpanded((p) => p === ex.id ? null : ex.id)}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition rounded-xl"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium text-sm text-ink truncate">{ex.email_subject}</span>
+                  {ex.had_reply && (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0" style={{ background: "#DCFCE7", color: "#166534" }}>
+                      Tuvo reply
+                    </span>
+                  )}
+                </div>
+                {(ex.contact_name || ex.job_title || ex.company_name) && (
+                  <div className="text-xs text-ink-muted mt-0.5">
+                    {[ex.contact_name, ex.job_title, ex.company_name].filter(Boolean).join(" · ")}
+                  </div>
+                )}
+              </div>
+              {expanded === ex.id
+                ? <IconChevronUp size={14} className="text-ink-muted shrink-0" />
+                : <IconChevronDown size={14} className="text-ink-muted shrink-0" />
+              }
+            </button>
+
+            {expanded === ex.id && (
+              <div className="px-4 pb-4 border-t border-[#E5E2F0] pt-3 space-y-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Email body</p>
+                  <p className="text-sm text-ink mt-1 whitespace-pre-wrap">{ex.email_body}</p>
+                </div>
+                {ex.icebreaker && (
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Icebreaker LinkedIn</p>
+                    <p className="text-sm text-ink mt-1">{ex.icebreaker}</p>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={() => toggleReply(ex.id, !ex.had_reply)}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition"
+                    style={ex.had_reply
+                      ? { background: "#DCFCE7", color: "#166534", borderColor: "#86EFAC" }
+                      : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }
+                    }
+                  >
+                    {ex.had_reply ? <IconStarFilled size={12} /> : <IconStar size={12} />}
+                    {ex.had_reply ? "Tuvo reply" : "Marcar con reply"}
+                  </button>
+                  <button
+                    onClick={() => deleteExample(ex.id)}
+                    className="ml-auto flex items-center gap-1 text-xs text-red-400 hover:text-red-600 transition px-2 py-1.5 rounded-lg hover:bg-red-50"
+                  >
+                    <IconTrash size={12} /> Eliminar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── TAB: Guía de estilo ──────────────────────────────────────────────────────
+
+function StyleTab({ clientId }: { clientId: string }) {
+  const [style, setStyle]     = useState<StyleGuide>({ tone: "", rules: "", avoid: "", email_length: "corto" });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/training/style-guide?client_id=${clientId}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.style) setStyle(d.style); })
+      .finally(() => setLoading(false));
+  }, [clientId]);
+
+  async function save() {
+    setSaving(true);
+    await fetch("/api/training/style-guide", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, ...style }),
+    });
+    setSaving(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  }
+
+  if (loading) return <div className="flex justify-center py-16"><IconLoader2 size={24} className="animate-spin text-ink-muted" /></div>;
+
+  const LENGTH_OPTIONS = [
+    { value: "corto", label: "Corto",  desc: "3 oraciones" },
+    { value: "medio", label: "Medio",  desc: "4-5 oraciones" },
+    { value: "largo", label: "Largo",  desc: "6+ oraciones" },
+  ];
+
+  return (
+    <div className="max-w-2xl space-y-5">
+      <p className="text-sm text-ink-muted">
+        Estas reglas se inyectan en el prompt de Claude cada vez que se generan mensajes. Cuanto más específico seas, más parecidos serán a cómo vos escribís.
+      </p>
+
+      <div className="card px-5 py-4 space-y-3">
+        <h3 className="font-semibold text-ink text-sm">Largo del email</h3>
+        <div className="flex gap-2">
+          {LENGTH_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setStyle((p) => ({ ...p, email_length: opt.value }))}
+              className="flex-1 py-3 rounded-xl border text-center transition"
+              style={style.email_length === opt.value
+                ? { background: "#251762", color: "white", borderColor: "#251762" }
+                : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }
+              }
+            >
+              <div className="text-sm font-semibold">{opt.label}</div>
+              <div className="text-[11px] opacity-70 mt-0.5">{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card px-5 py-4 space-y-2">
+        <h3 className="font-semibold text-ink text-sm">Tono y personalidad</h3>
+        <p className="text-xs text-ink-muted">Describí el tono con el que querés sonar.</p>
+        <textarea
+          value={style.tone}
+          onChange={(e) => setStyle((p) => ({ ...p, tone: e.target.value }))}
+          rows={3}
+          placeholder="Ej: Directo y confiado, sin formalismos. Tuteo siempre. Frases cortas y al punto."
+          className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none"
+        />
+      </div>
+
+      <div className="card px-5 py-4 space-y-2">
+        <h3 className="font-semibold text-ink text-sm">Reglas de escritura</h3>
+        <p className="text-xs text-ink-muted">Una regla por línea. Cómo estructurás los mensajes.</p>
+        <textarea
+          value={style.rules}
+          onChange={(e) => setStyle((p) => ({ ...p, rules: e.target.value }))}
+          rows={5}
+          placeholder={`Ej:\nSiempre abrí con algo específico de la empresa o el cargo.\nTerminá con una pregunta abierta, nunca con "¿Tenés 15 minutos?".\nEl subject nunca lleva signos de pregunta.\nNo usar "espero que estés bien" ni frases de relleno.`}
+          className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y"
+        />
+      </div>
+
+      <div className="card px-5 py-4 space-y-2">
+        <h3 className="font-semibold text-ink text-sm">Palabras y frases a NUNCA usar</h3>
+        <p className="text-xs text-ink-muted">Una por línea. Claude las evitará activamente.</p>
+        <textarea
+          value={style.avoid}
+          onChange={(e) => setStyle((p) => ({ ...p, avoid: e.target.value }))}
+          rows={4}
+          placeholder={`Ej:\nespero que estés bien\ndisrupción / disruptivo\nsolución integral\n¿Tenés 15 minutos para una llamada?`}
+          className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y"
+        />
+      </div>
+
+      <button
+        onClick={save}
+        disabled={saving}
+        className="btn-primary flex items-center gap-2 text-sm"
+      >
+        {saving ? <IconLoader2 size={14} className="animate-spin" /> : saved ? <IconCheck size={14} /> : <IconDeviceFloppy size={14} />}
+        {saved ? "Guía guardada" : "Guardar guía de estilo"}
+      </button>
+    </div>
+  );
+}
+
+// ─── Página principal ─────────────────────────────────────────────────────────
+
+const TAB_CONFIG = [
+  { id: "lab"      as Tab, label: "Laboratorio",        icon: <IconFlask size={16} />,       desc: "Generá y refiná mensajes con feedback" },
+  { id: "examples" as Tab, label: "Ejemplos aprobados", icon: <IconStarFilled size={16} />,  desc: "Tu biblioteca de mensajes que funcionan" },
+  { id: "style"    as Tab, label: "Guía de estilo",     icon: <IconBrain size={16} />,       desc: "Tono, reglas y frases a evitar" },
+];
 
 export default function EntrenarModeloPage() {
   const { currentClient } = useClient();
-  const [activeTab, setActiveTab] = useState<Tab>("documentos");
+  const [tab, setTab] = useState<Tab>("lab");
 
   if (!currentClient) {
     return (
-      <div className="card flex items-center gap-3 text-warning-fg border border-warning-bg bg-warning-bg/40 text-sm max-w-xl">
-        <IconAlertCircle size={18} className="shrink-0" />
-        Selecciona un cliente en el sidebar para gestionar su configuración IA.
+      <div className="flex items-center justify-center h-64">
+        <p className="text-ink-muted">Seleccioná un cliente en el sidebar.</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      {/* Header */}
+    <div className="space-y-5">
       <header>
         <div className="label">Análisis · Configuración</div>
-        <h1 className="text-2xl font-semibold tracking-tight">Entrenar modelo</h1>
-        <div className="flex items-center gap-2 mt-1">
-          <div
-            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
-            style={{ background: "#251762" }}
-          >
-            {currentClient.name}
-          </div>
-          <span className="text-sm text-ink-muted">
-            Documentos y configuración que el agente IA usa para prospectar.
-          </span>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <IconBrain size={22} style={{ color: "#62E0D8" }} /> Entrenar modelo
+        </h1>
+        <p className="text-sm text-ink-muted mt-0.5">
+          Personalizá cómo escribe la IA para que suene exactamente como vos.
+        </p>
       </header>
 
       {/* Tabs */}
-      <div className="border-b border-[#E5E2F0]">
-        <div className="flex gap-1">
-          {(["documentos", "configuracion"] as Tab[]).map((tab) => {
-            const labels: Record<Tab, string> = {
-              documentos:    "Documentos IA",
-              configuracion: "Configuración IA",
-            };
-            const active = activeTab === tab;
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className="px-4 py-2.5 text-sm font-medium transition-colors -mb-px"
-                style={
-                  active
-                    ? { color: "#251762", borderBottom: "2px solid #62E0D8" }
-                    : { color: "#6B6884", borderBottom: "2px solid transparent" }
-                }
-              >
-                {labels[tab]}
-              </button>
-            );
-          })}
-        </div>
+      <div className="flex gap-1 border-b border-[#E5E2F0]">
+        {TAB_CONFIG.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition"
+            style={tab === t.id
+              ? { borderColor: "#62E0D8", color: "#62E0D8" }
+              : { borderColor: "transparent", color: "#6B6884" }
+            }
+          >
+            {t.icon}
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Contenido del tab activo */}
-      {activeTab === "documentos" && (
-        <DocumentosTab clientId={currentClient.id} />
-      )}
-      {activeTab === "configuracion" && (
-        <ConfiguracionTab clientId={currentClient.id} />
-      )}
+      <div>
+        {tab === "lab"      && <LabTab      clientId={currentClient.id} />}
+        {tab === "examples" && <ExamplesTab clientId={currentClient.id} />}
+        {tab === "style"    && <StyleTab    clientId={currentClient.id} />}
+      </div>
     </div>
   );
 }
