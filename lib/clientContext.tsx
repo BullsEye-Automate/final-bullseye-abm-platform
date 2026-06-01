@@ -9,6 +9,14 @@ export type ClientSummary = {
   logo_url: string | null;
 };
 
+// Cliente especial que representa "todos los clientes"
+export const ALL_CLIENTS: ClientSummary = {
+  id: "__all__",
+  name: "Todos los clientes",
+  slug: "__all__",
+  logo_url: null,
+};
+
 type ClientContextValue = {
   clients: ClientSummary[];
   currentClient: ClientSummary | null;
@@ -36,7 +44,9 @@ export function ClientProvider({ children }: { children: ReactNode }) {
         setClients(list);
         // Restaura el cliente guardado en localStorage
         const savedId = localStorage.getItem("bullseye_client_id");
-        if (savedId) {
+        if (savedId === ALL_CLIENTS.id) {
+          setCurrentClientState(ALL_CLIENTS);
+        } else if (savedId) {
           const found = list.find((c) => c.id === savedId);
           if (found) setCurrentClientState(found);
         }

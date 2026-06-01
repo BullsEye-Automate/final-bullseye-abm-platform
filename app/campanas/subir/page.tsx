@@ -344,7 +344,7 @@ export default function SubirCampanaPage() {
           <IconFileSpreadsheet size={22} style={{ color: "#62E0D8" }} /> Carga masiva desde Excel
         </h1>
         <p className="text-sm text-ink-muted mt-0.5">
-          Subí un Excel/CSV, generá mensajes personalizados con IA y enviá directo a Lemlist.
+          Sube un Excel/CSV, genera mensajes personalizados con IA y envía directo a Lemlist.
         </p>
       </header>
 
@@ -363,7 +363,7 @@ export default function SubirCampanaPage() {
             <IconUpload size={26} style={{ color: "#62E0D8" }} />
           </div>
           <div className="text-center">
-            <p className="font-semibold text-ink">Arrastrá tu archivo aquí o hacé click</p>
+            <p className="font-semibold text-ink">Arrastra tu archivo aquí o haz clic</p>
             <p className="text-sm text-ink-muted mt-1">CSV o Excel (.csv, .xlsx, .xls)</p>
           </div>
           <input
@@ -462,10 +462,10 @@ export default function SubirCampanaPage() {
           <div className="flex items-center justify-between">
             <div>
               <p className="font-semibold text-ink">
-                Revisá y editá los mensajes antes de enviar
+                Revisa y edita los mensajes antes de enviar
               </p>
               <p className="text-sm text-ink-muted">
-                Hacé click en cada contacto para ver y editar el subject, body e icebreaker.
+                Haz clic en cada contacto para ver y editar el subject, body e icebreaker.
               </p>
             </div>
             <button

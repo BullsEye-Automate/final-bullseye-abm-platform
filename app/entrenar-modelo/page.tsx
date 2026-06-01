@@ -294,7 +294,7 @@ function LabTab({ clientId }: { clientId: string }) {
         {messages && (
           <div className="card px-5 py-4 space-y-3">
             <p className="text-sm font-semibold text-ink">Feedback para mejorar</p>
-            <p className="text-xs text-ink-muted">Explicá qué cambiar y regenerá con ese contexto.</p>
+            <p className="text-xs text-ink-muted">Explica qué cambiar y regenera con ese contexto.</p>
             <textarea
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
@@ -325,7 +325,7 @@ function LabTab({ clientId }: { clientId: string }) {
         {!messages && !generating && (
           <EmptyState
             icon={<IconFlask size={48} />}
-            text="Seleccioná un contacto y generá los mensajes para ver el resultado aquí."
+            text="Selecciona un contacto y genera los mensajes para ver el resultado aquí."
           />
         )}
 
@@ -413,7 +413,7 @@ function ExamplesTab({ clientId }: { clientId: string }) {
   if (!examples.length) return (
     <EmptyState
       icon={<IconStarFilled size={48} />}
-      text="Aún no hay ejemplos. Generá mensajes en el Laboratorio y guardalos acá."
+      text="Aún no hay ejemplos. Genera mensajes en el Laboratorio y guárdalos aquí."
     />
   );
 
@@ -556,7 +556,7 @@ function StyleTab({ clientId }: { clientId: string }) {
   return (
     <div className="max-w-2xl space-y-5">
       <p className="text-sm text-ink-muted">
-        Estas reglas se inyectan en el prompt de Claude cada vez que se generan mensajes. Cuanto más específico seas, más parecidos serán a cómo vos escribís.
+        Estas reglas se inyectan en el prompt de Claude cada vez que se generan mensajes. Cuanto más específico seas, más parecidos serán a cómo tú escribes.
       </p>
 
       <div className="card px-5 py-4 space-y-3">
@@ -630,7 +630,7 @@ function StyleTab({ clientId }: { clientId: string }) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 const TAB_CONFIG = [
-  { id: "lab"      as Tab, label: "Laboratorio",        icon: <IconFlask size={16} />,       desc: "Generá y refiná mensajes con feedback" },
+  { id: "lab"      as Tab, label: "Laboratorio",        icon: <IconFlask size={16} />,       desc: "Genera y refina mensajes con feedback" },
   { id: "examples" as Tab, label: "Ejemplos aprobados", icon: <IconStarFilled size={16} />,  desc: "Tu biblioteca de mensajes que funcionan" },
   { id: "style"    as Tab, label: "Guía de estilo",     icon: <IconBrain size={16} />,       desc: "Tono, reglas y frases a evitar" },
 ];
@@ -642,7 +642,7 @@ export default function EntrenarModeloPage() {
   if (!currentClient) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-ink-muted">Seleccioná un cliente en el sidebar.</p>
+        <p className="text-ink-muted">Selecciona un cliente en el sidebar.</p>
       </div>
     );
   }

@@ -455,11 +455,11 @@ function CompanyCard({
         <div className="font-semibold text-ink-muted uppercase tracking-wide mb-2">Pasos</div>
         <div className="flex gap-2">
           <span className="font-bold text-brand shrink-0">1.</span>
-          <span>Hacé clic en "Abrir en Sales Nav" abajo</span>
+          <span>Haz clic en "Abrir en Sales Nav" abajo</span>
         </div>
         <div className="flex gap-2">
           <span className="font-bold text-brand shrink-0">2.</span>
-          <span>Buscá decisores fit y mandálos a la Campaña puente con la extensión de Lemlist.</span>
+          <span>Busca decisores fit y envíalos a la Campaña puente con la extensión de Lemlist.</span>
         </div>
         <div className="flex gap-2">
           <span className="font-bold text-brand shrink-0">3.</span>

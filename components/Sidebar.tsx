@@ -23,7 +23,7 @@ import {
   IconMapSearch,
   IconStethoscope
 } from "@tabler/icons-react";
-import { useClient } from "@/lib/clientContext";
+import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 
 type Item = { href: string; label: string; icon: any; disabled?: boolean };
 type Section = { label: string; items: Item[] };
@@ -61,7 +61,7 @@ const SECTIONS: Section[] = [
   {
     label: "Análisis",
     items: [
-      { href: "/reporteria",          label: "Reportería",          icon: IconReportAnalytics, disabled: true },
+      { href: "/reporteria",          label: "Reportería",          icon: IconReportAnalytics },
       { href: "/entrenar-modelo",     label: "Entrenar modelo",     icon: IconBrain },
       { href: "/diagnostico-empresa", label: "Diagnóstico empresa", icon: IconStethoscope }
     ]
@@ -152,6 +152,19 @@ function ClientSelector() {
           </div>
 
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }} className="mt-1">
+            {/* Opción "Todos los clientes" */}
+            {!query.trim() && (
+              <button
+                onClick={() => { setCurrentClient(ALL_CLIENTS); setOpen(false); setQuery(""); }}
+                className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-left transition hover:bg-white/10"
+                style={{ color: currentClient?.id === ALL_CLIENTS.id ? "#62E0D8" : "rgba(255,255,255,0.6)" }}
+              >
+                <span className="flex items-center gap-1.5">
+                  <span style={{ fontSize: 10, opacity: 0.7 }}>◈</span> Todos los clientes
+                </span>
+                {currentClient?.id === ALL_CLIENTS.id && <IconCheck size={13} className="shrink-0" />}
+              </button>
+            )}
             {filtered.length === 0 ? (
               <p className="px-3 py-2 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
                 {clients.length === 0 ? "Sin clientes aún" : "Sin resultados"}
