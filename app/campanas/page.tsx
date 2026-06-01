@@ -16,7 +16,9 @@ import {
   IconCheck,
   IconX,
   IconFilter,
+  IconFileSpreadsheet,
 } from "@tabler/icons-react";
+import Link from "next/link";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -396,6 +398,13 @@ export default function CampanasPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <Link
+            href="/campanas/subir"
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
+          >
+            <IconFileSpreadsheet size={14} style={{ color: "#62E0D8" }} />
+            Carga masiva
+          </Link>
           <button
             onClick={loadCampaign}
             disabled={loading}
