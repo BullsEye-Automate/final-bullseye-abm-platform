@@ -17,6 +17,7 @@ import {
   IconX,
   IconFilter,
   IconFileSpreadsheet,
+  IconBrandHubspot,
 } from "@tabler/icons-react";
 import Link from "next/link";
 
@@ -273,6 +274,8 @@ export default function CampanasPage() {
   const [loading, setLoading]       = useState(false);
   const [pushing, setPushing]       = useState(false);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number } | null>(null);
+  const [syncing, setSyncing]       = useState(false);
+  const [syncResult, setSyncResult] = useState<{ updated: number; synced: number } | null>(null);
   const [error, setError]           = useState<string | null>(null);
 
   // ── Carga datos de campaña ──
@@ -326,6 +329,21 @@ export default function CampanasPage() {
     setPushResult({ pushed: d.pushed ?? 0, skipped: d.skipped ?? 0 });
     setPushing(false);
     loadCampaign();
+  }
+
+  // ── Sincronizar con HubSpot ──
+  async function syncHubSpot() {
+    if (!currentClient?.id) return;
+    setSyncing(true);
+    setSyncResult(null);
+    const res = await fetch("/api/lemlist/refresh-contacts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient.id }),
+    });
+    const d = await res.json();
+    setSyncResult({ updated: d.updated ?? 0, synced: d.synced ?? 0 });
+    setSyncing(false);
   }
 
   // ── Pausar/reanudar lead ──
@@ -406,6 +424,18 @@ export default function CampanasPage() {
             Carga masiva
           </Link>
           <button
+            onClick={syncHubSpot}
+            disabled={syncing}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
+            title="Sincronizar contactos con HubSpot"
+          >
+            {syncing
+              ? <IconLoader2 size={14} className="animate-spin" />
+              : <IconBrandHubspot size={14} style={{ color: "#FF7A59" }} />
+            }
+            {syncing ? "Sincronizando…" : "Sync HubSpot"}
+          </button>
+          <button
             onClick={loadCampaign}
             disabled={loading}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
@@ -434,6 +464,19 @@ export default function CampanasPage() {
           {error.includes("Config. cliente") && (
             <a href="/configuracion/cliente" className="underline ml-1 text-sm">Configurar →</a>
           )}
+        </div>
+      )}
+
+      {/* Sync HubSpot result */}
+      {syncResult && (
+        <div className="card border-l-4 px-4 py-3 flex items-center gap-2"
+          style={{ borderColor: "#FF7A59", color: "#7D4A35" }}
+        >
+          <IconBrandHubspot size={16} style={{ color: "#FF7A59" }} />
+          <span className="text-sm font-medium">
+            HubSpot sincronizado: {syncResult.synced} contacto{syncResult.synced !== 1 ? "s" : ""} creados/actualizados
+            {syncResult.updated > 0 && ` · ${syncResult.updated} enriquecidos con email/teléfono de Lemlist`}
+          </span>
         </div>
       )}
 
