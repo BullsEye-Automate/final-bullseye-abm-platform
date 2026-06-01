@@ -17,7 +17,7 @@ import {
   IconX,
   IconFilter,
   IconFileSpreadsheet,
-  IconBrandHubspot,
+  IconCloudUpload,
 } from "@tabler/icons-react";
 import Link from "next/link";
 
@@ -431,7 +431,7 @@ export default function CampanasPage() {
           >
             {syncing
               ? <IconLoader2 size={14} className="animate-spin" />
-              : <IconBrandHubspot size={14} style={{ color: "#FF7A59" }} />
+              : <IconCloudUpload size={14} style={{ color: "#FF7A59" }} />
             }
             {syncing ? "Sincronizando…" : "Sync HubSpot"}
           </button>
@@ -472,7 +472,7 @@ export default function CampanasPage() {
         <div className="card border-l-4 px-4 py-3 flex items-center gap-2"
           style={{ borderColor: "#FF7A59", color: "#7D4A35" }}
         >
-          <IconBrandHubspot size={16} style={{ color: "#FF7A59" }} />
+          <IconCloudUpload size={16} style={{ color: "#FF7A59" }} />
           <span className="text-sm font-medium">
             HubSpot sincronizado: {syncResult.synced} contacto{syncResult.synced !== 1 ? "s" : ""} creados/actualizados
             {syncResult.updated > 0 && ` · ${syncResult.updated} enriquecidos con email/teléfono de Lemlist`}
