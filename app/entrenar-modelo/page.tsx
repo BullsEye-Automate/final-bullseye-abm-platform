@@ -171,8 +171,8 @@ function LabTab({ clientId }: { clientId: string }) {
       body: JSON.stringify({
         client_id:     clientId,
         contact_name:  contactName || undefined,
-        job_title:     selected?.job_title  ?? manual.jobTitle   || undefined,
-        company_name:  selected?.company_name ?? manual.companyName || undefined,
+        job_title:     (selected?.job_title  ?? manual.jobTitle)   || undefined,
+        company_name:  (selected?.company_name ?? manual.companyName) || undefined,
         email_subject: edited.emailSubject ?? "",
         email_body:    edited.emailBody    ?? "",
         icebreaker:    edited.linkedinIcebreaker ?? "",
