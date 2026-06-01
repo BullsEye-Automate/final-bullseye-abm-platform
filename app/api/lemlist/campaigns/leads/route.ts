@@ -63,7 +63,22 @@ export async function GET(req: NextRequest) {
 
   const leadsData = await lemRes.json();
   // Lemlist puede retornar array directo o { leads: [...] }
-  const leads: any[] = Array.isArray(leadsData) ? leadsData : (leadsData.leads ?? []);
+  const rawLeads: any[] = Array.isArray(leadsData) ? leadsData : (leadsData.leads ?? []);
+
+  // Normalizar campos: Lemlist usa snake_case en algunas versiones de API
+  const leads = rawLeads.map((l: any) => ({
+    _id:         l._id ?? l.id ?? l.email,
+    email:       l.email ?? "",
+    firstName:   l.firstName   ?? l.first_name   ?? "",
+    lastName:    l.lastName    ?? l.last_name     ?? "",
+    companyName: l.companyName ?? l.company_name  ?? l.company ?? "",
+    jobTitle:    l.jobTitle    ?? l.job_title     ?? l.title   ?? "",
+    linkedinUrl: l.linkedinUrl ?? l.linkedin_url  ?? l.linkedin ?? "",
+    isPaused:    l.isPaused    ?? l.is_paused     ?? false,
+    isFinished:  l.isFinished  ?? l.is_finished   ?? false,
+    completed:   l.completed   ?? null,
+    addedAt:     l.addedAt     ?? l.added_at      ?? l.createdAt ?? null,
+  }));
 
   return NextResponse.json({ leads });
 }
