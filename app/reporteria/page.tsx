@@ -97,18 +97,26 @@ export default function ReporteriaPage() {
   const [period, setPeriod] = useState<Period>("all");
   const [stats, setStats]   = useState<Stats | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError]   = useState<string | null>(null);
 
   const isAll = !currentClient || currentClient.id === ALL_CLIENTS.id;
 
   const load = useCallback(async () => {
     if (!currentClient) return;
     setLoading(true);
+    setError(null);
     const { from, to } = periodToDates(period);
     const params = new URLSearchParams({ client_id: currentClient.id });
     if (from) params.set("from", from);
     if (to)   params.set("to",   to);
-    const res = await fetch(`/api/reporteria?${params}`);
-    if (res.ok) setStats(await res.json());
+    try {
+      const res = await fetch(`/api/reporteria?${params}`);
+      const d = await res.json();
+      if (!res.ok) { setError(d.error ?? "Error al cargar datos"); }
+      else setStats(d);
+    } catch (e: any) {
+      setError(e?.message ?? "Error de red");
+    }
     setLoading(false);
   }, [currentClient, period]);
 
@@ -162,6 +170,10 @@ export default function ReporteriaPage() {
       {!currentClient ? (
         <div className="card flex items-center justify-center py-16 text-ink-muted text-sm">
           Selecciona un cliente o "Todos los clientes" en el sidebar.
+        </div>
+      ) : error ? (
+        <div className="card border-l-4 border-red-400 px-5 py-4 text-red-600 text-sm flex items-center gap-2">
+          <IconX size={16} /> Error: {error}
         </div>
       ) : loading && !stats ? (
         <div className="card flex items-center justify-center py-16 gap-2 text-ink-muted">

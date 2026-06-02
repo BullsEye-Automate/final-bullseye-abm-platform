@@ -5,92 +5,75 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const clientId  = req.nextUrl.searchParams.get("client_id"); // "__all__" o uuid
-  const fromParam = req.nextUrl.searchParams.get("from");
-  const toParam   = req.nextUrl.searchParams.get("to");
+  const clientId = req.nextUrl.searchParams.get("client_id");
 
   const db = supabaseAdmin();
   const isAll = !clientId || clientId === "__all__";
 
-  // ── Helpers de filtro ──────────────────────────────────────────────
-  function addClientFilter<T extends object>(q: any): any {
+  function clientFilter(q: any): any {
     return isAll ? q : q.eq("client_id", clientId);
   }
-  function addDateFilter(q: any, col: string): any {
-    if (fromParam) q = q.gte(col, fromParam);
-    if (toParam)   q = q.lte(col, toParam);
-    return q;
-  }
 
-  // ── Empresas ───────────────────────────────────────────────────────
-  const { count: totalEmpresas } = await addClientFilter(
-    db.from("companies").select("id", { count: "exact", head: true })
-  );
+  try {
+    const [
+      { count: totalEmpresas },
+      { count: totalContactos },
+      { count: contactosEnLemlist },
+      { count: contactosAprobados },
+      { count: contactosDescartados },
+      { count: contactosConReply },
+      { count: totalLlamadas },
+      { count: llamadasReales },
+    ] = await Promise.all([
+      clientFilter(db.from("companies").select("id", { count: "exact", head: true })),
+      clientFilter(db.from("contacts").select("id", { count: "exact", head: true })),
+      clientFilter(db.from("contacts").select("id", { count: "exact", head: true }).not("lemlist_pushed_at", "is", null)),
+      clientFilter(db.from("contacts").select("id", { count: "exact", head: true }).eq("fit_action", "enrich")),
+      clientFilter(db.from("contacts").select("id", { count: "exact", head: true }).eq("status", "discarded")),
+      // Replies: contactos que completaron con reply en Lemlist
+      clientFilter(db.from("contacts").select("id", { count: "exact", head: true }).not("lemlist_pushed_at", "is", null).eq("status", "replied")),
+      clientFilter(db.from("calls").select("id", { count: "exact", head: true })),
+      // Llamadas reales: conversaciones confirmadas por IA
+      clientFilter(db.from("calls").select("id", { count: "exact", head: true }).eq("ai_is_real_conversation", true)),
+    ]);
 
-  // ── Contactos ─────────────────────────────────────────────────────
-  const { count: totalContactos } = await addClientFilter(
-    db.from("contacts").select("id", { count: "exact", head: true })
-  );
-  const { count: contactosEnLemlist } = await addClientFilter(
-    db.from("contacts").select("id", { count: "exact", head: true })
-      .not("lemlist_pushed_at", "is", null)
-  );
-  const { count: contactosAprobados } = await addClientFilter(
-    db.from("contacts").select("id", { count: "exact", head: true })
-      .eq("fit_action", "enrich")
-  );
-  const { count: contactosDescartados } = await addClientFilter(
-    db.from("contacts").select("id", { count: "exact", head: true })
-      .eq("status", "discarded")
-  );
+    // Desglose por cliente (solo en modo "Todos")
+    let porCliente: { name: string; empresas: number; contactos: number; en_lemlist: number; llamadas: number }[] = [];
+    if (isAll) {
+      const { data: clientList } = await db
+        .from("clients")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name");
 
-  // ── Llamadas ──────────────────────────────────────────────────────
-  const { count: totalLlamadas } = await addClientFilter(
-    db.from("calls").select("id", { count: "exact", head: true })
-  );
-  const { count: llamadasConectadas } = await addClientFilter(
-    db.from("calls").select("id", { count: "exact", head: true })
-      .eq("outcome", "connected")
-  );
-
-  // ── Respuestas Lemlist ─────────────────────────────────────────────
-  const { count: totalRespuestas } = await addClientFilter(
-    db.from("lemlist_replies").select("id", { count: "exact", head: true })
-  ).catch(() => ({ count: 0 }));
-
-  // ── Contactos por cliente (solo para vista "Todos") ────────────────
-  let porCliente: { name: string; empresas: number; contactos: number; en_lemlist: number }[] = [];
-  if (isAll) {
-    const { data: clientList } = await db
-      .from("clients")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name");
-
-    if (clientList?.length) {
-      const results = await Promise.all(
-        clientList.map(async (cl) => {
-          const [{ count: emp }, { count: con }, { count: lem }] = await Promise.all([
-            db.from("companies").select("id", { count: "exact", head: true }).eq("client_id", cl.id),
-            db.from("contacts").select("id", { count: "exact", head: true }).eq("client_id", cl.id),
-            db.from("contacts").select("id", { count: "exact", head: true }).eq("client_id", cl.id).not("lemlist_pushed_at", "is", null),
-          ]);
-          return { name: cl.name, empresas: emp ?? 0, contactos: con ?? 0, en_lemlist: lem ?? 0 };
-        })
-      );
-      porCliente = results;
+      if (clientList?.length) {
+        porCliente = await Promise.all(
+          clientList.map(async (cl) => {
+            const [{ count: emp }, { count: con }, { count: lem }, { count: calls }] = await Promise.all([
+              db.from("companies").select("id", { count: "exact", head: true }).eq("client_id", cl.id),
+              db.from("contacts").select("id", { count: "exact", head: true }).eq("client_id", cl.id),
+              db.from("contacts").select("id", { count: "exact", head: true }).eq("client_id", cl.id).not("lemlist_pushed_at", "is", null),
+              db.from("calls").select("id", { count: "exact", head: true }).eq("client_id", cl.id),
+            ]);
+            return { name: cl.name, empresas: emp ?? 0, contactos: con ?? 0, en_lemlist: lem ?? 0, llamadas: calls ?? 0 };
+          })
+        );
+      }
     }
-  }
 
-  return NextResponse.json({
-    empresas:            totalEmpresas      ?? 0,
-    contactos:           totalContactos     ?? 0,
-    contactosAprobados:  contactosAprobados ?? 0,
-    contactosEnLemlist:  contactosEnLemlist ?? 0,
-    contactosDescartados: contactosDescartados ?? 0,
-    llamadas:            totalLlamadas      ?? 0,
-    llamadasConectadas:  llamadasConectadas ?? 0,
-    respuestas:          totalRespuestas    ?? 0,
-    porCliente,
-  });
+    return NextResponse.json({
+      empresas:             totalEmpresas      ?? 0,
+      contactos:            totalContactos     ?? 0,
+      contactosAprobados:   contactosAprobados ?? 0,
+      contactosEnLemlist:   contactosEnLemlist ?? 0,
+      contactosDescartados: contactosDescartados ?? 0,
+      respuestas:           contactosConReply  ?? 0,
+      llamadas:             totalLlamadas      ?? 0,
+      llamadasConectadas:   llamadasReales     ?? 0,
+      porCliente,
+    });
+  } catch (err: any) {
+    console.error("[reporteria]", err?.message);
+    return NextResponse.json({ error: err?.message ?? "Error interno" }, { status: 500 });
+  }
 }
