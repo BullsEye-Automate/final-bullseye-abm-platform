@@ -436,23 +436,23 @@ function ClientCard({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {isOnboarding ? (
+            {isOnboarding && (
               <Link
                 href={`/clientes/${client.id}/onboarding`}
-                className="btn-primary text-xs py-1.5 px-3 inline-flex items-center gap-1.5"
+                className="btn-secondary text-xs py-1.5 px-3 inline-flex items-center gap-1.5"
+                title="Retomar asistente de configuración"
               >
                 <IconSettings size={13} />
-                Retomar wizard
+                Configurar
               </Link>
-            ) : (
-              <button
-                className="btn-secondary text-xs py-1.5 px-3"
-                onClick={onSelect}
-                title="Seleccionar como cliente activo"
-              >
-                Seleccionar
-              </button>
             )}
+            <button
+              className="btn-secondary text-xs py-1.5 px-3"
+              onClick={onSelect}
+              title="Seleccionar como cliente activo"
+            >
+              Usar ahora
+            </button>
             <button className="btn-secondary py-1.5 px-2" onClick={onEdit} title="Editar">
               <IconPencil size={14} />
             </button>

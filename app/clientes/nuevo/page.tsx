@@ -11,45 +11,12 @@ import {
   IconPhoto,
   IconUpload,
   IconX,
+  IconSettings,
+  IconLayoutDashboard,
+  IconSparkles,
 } from "@tabler/icons-react";
-
-const STEP_LABELS = ["Datos básicos", "ICP", "HubSpot", "Clay", "Lemlist", "Activación"];
-
-function WizardStepper({ current }: { current: number }) {
-  return (
-    <div className="flex items-center mb-8 overflow-x-auto pb-1">
-      {STEP_LABELS.map((label, i) => {
-        const n = i + 1;
-        const done = n < current;
-        const active = n === current;
-        return (
-          <div key={n} className="flex items-center">
-            <div className="flex flex-col items-center min-w-0">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-                style={{
-                  background: done ? "#62E0D8" : active ? "transparent" : "rgba(37,23,98,0.08)",
-                  border: active ? "2px solid #251762" : done ? "none" : "2px solid #d1d5db",
-                  color: done ? "#251762" : active ? "#251762" : "#9ca3af",
-                }}
-              >
-                {done ? <IconCheck size={14} /> : n}
-              </div>
-              <span className="text-xs mt-1 text-center whitespace-nowrap"
-                style={{ color: active ? "#251762" : done ? "#6b7280" : "#9ca3af", fontWeight: active ? 600 : 400 }}>
-                {label}
-              </span>
-            </div>
-            {i < STEP_LABELS.length - 1 && (
-              <div className="h-0.5 mx-2 shrink-0"
-                style={{ width: 32, background: done ? "#62E0D8" : "#e5e7eb", marginBottom: 20 }} />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+import { useClient } from "@/lib/clientContext";
+import type { ClientSummary } from "@/lib/clientContext";
 
 function slugify(text: string) {
   return text.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
@@ -57,17 +24,20 @@ function slugify(text: string) {
 
 export default function NuevoClientePage() {
   const router = useRouter();
+  const { setCurrentClient } = useClient();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
+  const [name, setName]               = useState("");
+  const [slug, setSlug]               = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
-  const [logoUrl, setLogoUrl] = useState("");
-  const [logoError, setLogoError] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl]         = useState("");
+  const [logoError, setLogoError]     = useState<string | null>(null);
   const [description, setDescription] = useState("");
+  const [saving, setSaving]           = useState(false);
+  const [error, setError]             = useState<string | null>(null);
 
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Estado post-creación
+  const [created, setCreated] = useState<{ id: string; summary: ClientSummary } | null>(null);
 
   function handleName(val: string) {
     setName(val);
@@ -107,97 +77,181 @@ export default function NuevoClientePage() {
     });
     const j = await res.json();
     if (j.error) { setError(j.error); setSaving(false); return; }
-    router.push(`/clientes/${j.client.id}/onboarding`);
+
+    const summary: ClientSummary = {
+      id:       j.client.id,
+      name:     j.client.name,
+      slug:     j.client.slug,
+      logo_url: j.client.logo_url ?? null,
+    };
+    setCreated({ id: j.client.id, summary });
+    setSaving(false);
   }
 
+  function goToPlatform(path = "/dashboard") {
+    if (!created) return;
+    setCurrentClient(created.summary);
+    router.push(path);
+  }
+
+  // ── Vista post-creación ──
+  if (created) {
+    return (
+      <div className="max-w-xl">
+        <div className="card text-center py-8 px-6 space-y-6">
+          <div
+            className="w-14 h-14 rounded-full flex items-center justify-center mx-auto"
+            style={{ background: "rgba(98,224,216,0.15)" }}
+          >
+            <IconCheck size={28} style={{ color: "#62E0D8" }} />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-ink">
+              ¡Cliente creado!
+            </h1>
+            <p className="text-sm text-ink-muted mt-1">
+              <strong>{name}</strong> está listo. ¿Qué quieres hacer ahora?
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+            {/* Opción 1: Asistente */}
+            <button
+              onClick={() => router.push(`/clientes/${created.id}/onboarding`)}
+              className="card border-2 border-[#E5E2F0] hover:border-[#251762] p-4 text-left transition group"
+            >
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center mb-3"
+                style={{ background: "rgba(37,23,98,0.08)" }}
+              >
+                <IconSettings size={18} style={{ color: "#251762" }} />
+              </div>
+              <p className="font-semibold text-ink text-sm">Asistente de configuración</p>
+              <p className="text-xs text-ink-muted mt-1">
+                Configura ICP, HubSpot, Clay y Lemlist paso a paso.
+              </p>
+            </button>
+
+            {/* Opción 2: Ir directo */}
+            <button
+              onClick={() => goToPlatform("/dashboard")}
+              className="card border-2 border-[#E5E2F0] hover:border-[#62E0D8] p-4 text-left transition group"
+            >
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center mb-3"
+                style={{ background: "rgba(98,224,216,0.1)" }}
+              >
+                <IconSparkles size={18} style={{ color: "#62E0D8" }} />
+              </div>
+              <p className="font-semibold text-ink text-sm">Ir a la plataforma ahora</p>
+              <p className="text-xs text-ink-muted mt-1">
+                Empieza a trabajar de inmediato. Puedes configurar el resto después.
+              </p>
+            </button>
+          </div>
+
+          <p className="text-xs text-ink-muted">
+            Puedes retomar el asistente en cualquier momento desde{" "}
+            <Link href="/clientes" className="underline">Clientes</Link>.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Formulario de creación ──
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-lg">
       <div className="flex items-center gap-3 mb-6">
         <Link href="/clientes" className="btn-secondary py-1.5 px-2">
           <IconArrowLeft size={16} />
         </Link>
         <div>
           <h1 className="text-2xl font-bold text-ink">Nuevo cliente</h1>
-          <p className="text-sm text-ink-muted mt-0.5">Wizard de onboarding — 6 pasos</p>
+          <p className="text-sm text-ink-muted mt-0.5">Solo nombre y logo — el resto es opcional</p>
         </div>
       </div>
 
-      <WizardStepper current={1} />
-
-      <div className="card">
-        <div className="flex items-center gap-2 mb-6">
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
-            style={{ background: "#251762" }}>1</div>
-          <h2 className="text-lg font-semibold text-ink">Datos básicos</h2>
-        </div>
-
+      <div className="card space-y-5">
         {error && (
-          <p className="text-danger-fg text-sm mb-4 bg-danger-bg rounded-lg px-3 py-2">{error}</p>
+          <p className="text-danger-fg text-sm bg-danger-bg rounded-lg px-3 py-2">{error}</p>
         )}
 
-        <div className="space-y-5">
-          <div>
-            <label className="label block mb-1">Nombre del cliente *</label>
-            <input className="input" placeholder="Ej. Clínica Dental Norte"
-              value={name} onChange={(e) => handleName(e.target.value)} autoFocus />
-          </div>
-
-          <div>
-            <label className="label block mb-1">Slug (URL)</label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-ink-muted select-none">/clientes/</span>
-              <input className="input" placeholder="clinica-dental-norte"
-                value={slug} onChange={(e) => { setSlugTouched(true); setSlug(slugify(e.target.value)); }} />
-            </div>
-            <p className="text-xs text-ink-subtle mt-1">Solo letras, números y guiones.</p>
-          </div>
-
-          <div>
-            <label className="label block mb-1">Logo — opcional</label>
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
-                style={{ background: logoUrl ? "transparent" : "rgba(37,23,98,0.08)", border: "1px dashed #c8c3dc" }}>
-                {logoUrl
-                  ? <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" />
-                  : <IconPhoto size={20} className="text-ink-subtle" />}
-              </div>
-              <div className="flex-1 space-y-1">
-                <div className="flex items-center gap-2">
-                  <button type="button" className="btn-secondary py-1.5 px-3 text-sm flex items-center gap-1.5"
-                    onClick={() => fileRef.current?.click()}>
-                    <IconUpload size={14} /> Subir PNG / JPG
-                  </button>
-                  {logoUrl && (
-                    <button type="button" className="btn-secondary py-1.5 px-2 text-danger-fg"
-                      onClick={() => { setLogoUrl(""); setLogoError(null); }}>
-                      <IconX size={14} />
-                    </button>
-                  )}
-                </div>
-                <p className="text-xs text-ink-subtle">Máximo 500 KB.</p>
-                {logoError && <p className="text-xs text-danger-fg">{logoError}</p>}
-              </div>
-            </div>
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg"
-              className="hidden" onChange={handleLogoFile} />
-          </div>
-
-          <div>
-            <label className="label block mb-1">Descripción breve del negocio</label>
-            <textarea className="input resize-none" rows={3}
-              placeholder="Ej. Red de clínicas dentales en LATAM enfocadas en ortodoncia y estética dental..."
-              value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
+        <div>
+          <label className="label block mb-1">Nombre del cliente *</label>
+          <input
+            className="input"
+            placeholder="Ej. Acid Labs"
+            value={name}
+            onChange={(e) => handleName(e.target.value)}
+            autoFocus
+          />
         </div>
 
-        <div className="flex items-center justify-between mt-6 pt-4 border-t border-ink-subtle/20">
+        <div>
+          <label className="label block mb-1">Slug (URL)</label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-ink-muted select-none">/clientes/</span>
+            <input
+              className="input"
+              placeholder="acid-labs"
+              value={slug}
+              onChange={(e) => { setSlugTouched(true); setSlug(slugify(e.target.value)); }}
+            />
+          </div>
+          <p className="text-xs text-ink-subtle mt-1">Solo letras, números y guiones.</p>
+        </div>
+
+        <div>
+          <label className="label block mb-1">Logo — opcional</label>
+          <div className="flex items-center gap-3">
+            <div
+              className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0 overflow-hidden"
+              style={{ background: logoUrl ? "transparent" : "rgba(37,23,98,0.08)", border: "1px dashed #c8c3dc" }}
+            >
+              {logoUrl
+                ? <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                : <IconPhoto size={20} className="text-ink-subtle" />}
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center gap-2">
+                <button type="button" className="btn-secondary py-1.5 px-3 text-sm flex items-center gap-1.5"
+                  onClick={() => fileRef.current?.click()}>
+                  <IconUpload size={14} /> Subir PNG / JPG
+                </button>
+                {logoUrl && (
+                  <button type="button" className="btn-secondary py-1.5 px-2 text-danger-fg"
+                    onClick={() => { setLogoUrl(""); setLogoError(null); }}>
+                    <IconX size={14} />
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-ink-subtle">Máximo 500 KB.</p>
+              {logoError && <p className="text-xs text-danger-fg">{logoError}</p>}
+            </div>
+          </div>
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleLogoFile} />
+        </div>
+
+        <div>
+          <label className="label block mb-1">Descripción breve — opcional</label>
+          <textarea className="input resize-none" rows={2}
+            placeholder="Ej. Agencia de desarrollo de software especializada en startups..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)} />
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-ink-subtle/20">
           <Link href="/clientes" className="btn-secondary flex items-center gap-2">
             <IconArrowLeft size={15} /> Cancelar
           </Link>
-          <button className="btn-primary flex items-center gap-2"
-            onClick={handleSubmit} disabled={saving || !name.trim() || !slug.trim()}>
+          <button
+            className="btn-primary flex items-center gap-2"
+            onClick={handleSubmit}
+            disabled={saving || !name.trim() || !slug.trim()}
+          >
             {saving ? <IconLoader2 size={15} className="animate-spin" /> : <IconArrowRight size={15} />}
-            {saving ? "Guardando..." : "Siguiente — Paso 2"}
+            {saving ? "Creando..." : "Crear cliente"}
           </button>
         </div>
       </div>
