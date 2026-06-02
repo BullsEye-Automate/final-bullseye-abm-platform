@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { generateContactMessages } from "@/lib/messageGenerator";
+import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,12 +15,14 @@ type ParsedContact = {
   companyName?: string;
   linkedinUrl?: string;
   industry?: string;
+  companySize?: string;
 };
 
 type GeneratedContact = ParsedContact & {
   emailSubject?: string;
   emailBody?: string;
   icebreaker?: string;
+  segmentName?: string;
   error?: string;
 };
 
@@ -39,35 +41,74 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Cargar contexto ICP del cliente
-  const { data: icpCtx } = await db
-    .from("client_ai_context")
-    .select("content")
-    .eq("client_id", client_id)
-    .eq("file_type", "icp")
-    .order("uploaded_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  let trainingConfig: Record<string, string | null> = {};
-  try {
-    const { data: tc } = await db
-      .from("model_training_config")
+  // Cargar todo el contexto del cliente en paralelo
+  const [{ data: icpCtx }, { data: tc }, { data: styleData }, { data: segments }, { data: globalExamples }] = await Promise.all([
+    db.from("client_ai_context").select("content").eq("client_id", client_id)
+      .eq("file_type", "icp").order("uploaded_at", { ascending: false }).limit(1).maybeSingle(),
+    db.from("model_training_config")
       .select("business_description, value_props, talking_points, target_buyer_persona")
-      .eq("client_id", client_id)
-      .maybeSingle();
-    trainingConfig = tc ?? {};
-  } catch { /* tabla puede no existir */ }
+      .eq("client_id", client_id).maybeSingle(),
+    db.from("model_training_config")
+      .select("style_tone, style_rules, style_avoid, style_email_length")
+      .eq("client_id", client_id).maybeSingle(),
+    db.from("training_segments").select("id, name, routing_hint").eq("client_id", client_id)
+      .order("created_at", { ascending: true }),
+    db.from("message_examples").select("*").eq("client_id", client_id).is("segment_id", null)
+      .order("created_at", { ascending: false }).limit(5),
+  ]);
 
   const icpContext = [
     icpCtx?.content,
-    trainingConfig.business_description && `Descripción del negocio: ${trainingConfig.business_description}`,
-    trainingConfig.value_props          && `Propuestas de valor: ${trainingConfig.value_props}`,
-    trainingConfig.talking_points       && `Puntos clave de conversación: ${trainingConfig.talking_points}`,
-    trainingConfig.target_buyer_persona && `Buyer persona: ${trainingConfig.target_buyer_persona}`,
+    tc?.business_description && `Descripción del negocio: ${tc.business_description}`,
+    tc?.value_props          && `Propuestas de valor: ${tc.value_props}`,
+    tc?.talking_points       && `Puntos clave de conversación: ${tc.talking_points}`,
+    tc?.target_buyer_persona && `Buyer persona: ${tc.target_buyer_persona}`,
   ].filter(Boolean).join("\n\n") || undefined;
 
-  // Generar mensajes en lotes de 3 contactos en paralelo
+  const styleGuide = styleData ? {
+    tone:        styleData.style_tone        ?? "",
+    rules:       styleData.style_rules       ?? "",
+    avoid:       styleData.style_avoid       ?? "",
+    emailLength: styleData.style_email_length ?? "corto",
+  } : undefined;
+
+  const fewShotGlobal = (globalExamples ?? []).map((e) => ({
+    emailSubject: e.email_subject,
+    emailBody:    e.email_body,
+    icebreaker:   e.icebreaker ?? "",
+    contactName:  e.contact_name ?? "",
+    jobTitle:     e.job_title    ?? "",
+  }));
+
+  // Cache de contextos de segmento (evita re-fetching para el mismo segmento)
+  const segmentCache = new Map<string, SegmentContext>();
+
+  async function getSegmentContext(segmentId: string, segmentName: string): Promise<SegmentContext> {
+    if (segmentCache.has(segmentId)) return segmentCache.get(segmentId)!;
+
+    const [{ data: sources }, { data: examples }] = await Promise.all([
+      db.from("segment_sources").select("content, title").eq("segment_id", segmentId).not("content", "is", null),
+      db.from("message_examples").select("*").eq("segment_id", segmentId)
+        .order("created_at", { ascending: false }).limit(5),
+    ]);
+
+    const ctx: SegmentContext = {
+      id:      segmentId,
+      name:    segmentName,
+      sources: (sources ?? []).map((s) => [s.title && `### ${s.title}`, s.content].filter(Boolean).join("\n")).join("\n\n"),
+      examples: (examples ?? []).map((e) => ({
+        emailSubject: e.email_subject,
+        emailBody:    e.email_body,
+        icebreaker:   e.icebreaker ?? "",
+        contactName:  e.contact_name ?? "",
+        jobTitle:     e.job_title    ?? "",
+      })),
+    };
+
+    segmentCache.set(segmentId, ctx);
+    return ctx;
+  }
+
   const BATCH_SIZE = 3;
   const results: GeneratedContact[] = [];
 
@@ -76,20 +117,38 @@ export async function POST(req: NextRequest) {
     const batchResults = await Promise.all(
       batch.map(async (c): Promise<GeneratedContact> => {
         try {
+          // Routing de segmento por contacto
+          const routing = await routeContactToSegment(
+            { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
+            segments ?? []
+          );
+
+          let segmentContext: SegmentContext | undefined;
+          if (routing.segmentId && routing.segmentName) {
+            segmentContext = await getSegmentContext(routing.segmentId, routing.segmentName);
+          }
+
           const msgs = await generateContactMessages({
-            hasEmail: Boolean(c.email?.trim()),
-            firstName: c.firstName || undefined,
-            lastName: c.lastName || undefined,
-            jobTitle: c.jobTitle || undefined,
-            companyName: c.companyName || undefined,
+            hasEmail:       Boolean(c.email?.trim()),
+            firstName:      c.firstName  || undefined,
+            lastName:       c.lastName   || undefined,
+            jobTitle:       c.jobTitle   || undefined,
+            companyName:    c.companyName || undefined,
+            industry:       c.industry   || undefined,
+            companySize:    c.companySize || undefined,
             icpContext,
+            fewShotExamples: fewShotGlobal,
+            styleGuide,
+            segmentContext,
             language: "es",
           });
+
           return {
             ...c,
             emailSubject: msgs.emailSubject,
             emailBody:    msgs.emailBody,
             icebreaker:   msgs.linkedinIcebreaker ?? msgs.linkedinIcebreakerNoEmail,
+            segmentName:  routing.segmentName ?? undefined,
           };
         } catch (err: any) {
           return { ...c, error: err?.message ?? "Error de generación" };

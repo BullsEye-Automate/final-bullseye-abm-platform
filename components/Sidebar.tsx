@@ -41,7 +41,8 @@ const SECTIONS: Section[] = [
   {
     label: "Outreach",
     items: [
-      { href: "/campanas", label: "Campañas", icon: IconMail }
+      { href: "/campanas",        label: "Campañas",        icon: IconMail  },
+      { href: "/entrenar-modelo", label: "Entrenar modelo", icon: IconBrain },
     ]
   },
   {
@@ -62,7 +63,6 @@ const SECTIONS: Section[] = [
     label: "Análisis",
     items: [
       { href: "/reporteria",          label: "Reportería",          icon: IconReportAnalytics },
-      { href: "/entrenar-modelo",     label: "Entrenar modelo",     icon: IconBrain },
       { href: "/diagnostico-empresa", label: "Diagnóstico empresa", icon: IconStethoscope }
     ]
   },

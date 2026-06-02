@@ -22,6 +22,19 @@ export type StyleGuide = {
   emailLength?: string;
 };
 
+export type Segment = {
+  id: string;
+  name: string;
+  routing_hint: string;
+};
+
+export type SegmentContext = {
+  id: string;
+  name: string;
+  sources: string; // contenido concatenado de las fuentes del segmento
+  examples?: FewShotExample[];
+};
+
 export type ContactMessageInput = {
   hasEmail: boolean;
   firstName?: string;
@@ -29,10 +42,13 @@ export type ContactMessageInput = {
   jobTitle?: string;
   linkedinHeadline?: string;
   companyName?: string;
+  industry?: string;
+  companySize?: string;
   icpContext?: string;
   deepResearch?: DeepResearchContext | null;
   fewShotExamples?: FewShotExample[];
   styleGuide?: StyleGuide;
+  segmentContext?: SegmentContext;
   language?: "es" | "en";
 };
 
@@ -43,6 +59,12 @@ export type ContactMessages = {
   linkedinIcebreakerNoEmail?: string;
 };
 
+export type RoutingResult = {
+  segmentId: string | null;
+  segmentName: string | null;
+  reasoning: string;
+};
+
 const BASE_SYSTEM_PROMPT = `Eres un experto en copywriting B2B y outbound sales.
 Generas mensajes de outreach personalizados para secuencias de Lemlist.
 Los mensajes deben ser directos, naturales y enfocados en aportar valor.
@@ -50,8 +72,17 @@ Usa el contexto del ICP proporcionado para personalizar cada mensaje.
 NUNCA uses guiones largos (—). En su lugar usa comas o puntos según corresponda.
 Responde ÚNICAMENTE con JSON válido, sin texto adicional.`;
 
-function buildSystemPrompt(styleGuide?: StyleGuide, fewShot?: FewShotExample[]): string {
+function buildSystemPrompt(
+  styleGuide?: StyleGuide,
+  fewShot?: FewShotExample[],
+  segmentCtx?: SegmentContext
+): string {
   const parts: string[] = [BASE_SYSTEM_PROMPT];
+
+  if (segmentCtx?.sources?.trim()) {
+    parts.push(`\n## CONTEXTO ESPECÍFICO DEL SEGMENTO: ${segmentCtx.name.toUpperCase()}`);
+    parts.push(segmentCtx.sources);
+  }
 
   if (styleGuide?.tone || styleGuide?.rules || styleGuide?.avoid || styleGuide?.emailLength) {
     parts.push("\n## GUÍA DE ESTILO DEL CLIENTE (aplica siempre)");
@@ -61,18 +92,86 @@ function buildSystemPrompt(styleGuide?: StyleGuide, fewShot?: FewShotExample[]):
     if (styleGuide.avoid)       parts.push(`NUNCA escribas:\n${styleGuide.avoid}`);
   }
 
-  if (fewShot?.length) {
+  // Prioriza ejemplos del segmento; si no hay, usa los globales
+  const examples = (segmentCtx?.examples?.length ? segmentCtx.examples : fewShot) ?? [];
+  if (examples.length) {
     parts.push("\n## EJEMPLOS APROBADOS DE MENSAJES (imita este estilo)");
-    fewShot.forEach((ex, i) => {
+    examples.forEach((ex, i) => {
       parts.push(`\n--- Ejemplo ${i + 1}${ex.contactName ? ` (para ${ex.contactName}${ex.jobTitle ? ", " + ex.jobTitle : ""})` : ""} ---`);
       parts.push(`Subject: ${ex.emailSubject}`);
       parts.push(`Body: ${ex.emailBody}`);
       if (ex.icebreaker) parts.push(`Icebreaker: ${ex.icebreaker}`);
     });
-    parts.push("\nIMPORTANTE: estos ejemplos muestran el tono, largo y estilo exacto que debe tener cada mensaje. Adapta el contenido al nuevo contacto pero mantén el mismo estilo.");
+    parts.push("\nIMPORTANTE: estos ejemplos muestran el tono, largo y estilo exacto. Adapta el contenido al nuevo contacto pero mantén el mismo estilo.");
   }
 
   return parts.join("\n");
+}
+
+// Determina qué segmento aplica a un contacto basado en su perfil
+export async function routeContactToSegment(
+  contact: {
+    firstName?: string;
+    lastName?: string;
+    jobTitle?: string;
+    companyName?: string;
+    industry?: string;
+    companySize?: string;
+  },
+  segments: Segment[]
+): Promise<RoutingResult> {
+  if (!segments.length) {
+    return { segmentId: null, segmentName: null, reasoning: "Sin segmentos configurados" };
+  }
+
+  const segmentList = segments
+    .map((s, i) => `${i + 1}. ID: "${s.id}" | Nombre: ${s.name} | Criterio: ${s.routing_hint}`)
+    .join("\n");
+
+  const contactProfile = [
+    (contact.firstName || contact.lastName) && `Nombre: ${[contact.firstName, contact.lastName].filter(Boolean).join(" ")}`,
+    contact.jobTitle    && `Cargo: ${contact.jobTitle}`,
+    contact.companyName && `Empresa: ${contact.companyName}`,
+    contact.industry    && `Industria: ${contact.industry}`,
+    contact.companySize && `Tamaño de empresa: ${contact.companySize}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  try {
+    const message = await anthropic().messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 200,
+      system:
+        "Eres un clasificador de contactos B2B. Dado un perfil de contacto y una lista de segmentos con criterios de enrutamiento, elige el segmento más apropiado. Responde SOLO con JSON válido, sin texto adicional.",
+      messages: [
+        {
+          role: "user",
+          content: `Perfil del contacto:\n${contactProfile || "Sin datos específicos"}\n\nSegmentos disponibles:\n${segmentList}\n\nElige el segmento más apropiado para este contacto. Si ninguno aplica claramente, elige el más cercano.\n\nResponde ÚNICAMENTE con este JSON:\n{"segment_id":"<id exacto del segmento>","reasoning":"<razón breve en 1 oración>"}`,
+        },
+      ],
+    });
+
+    const raw = message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
+
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return { segmentId: null, segmentName: null, reasoning: "No se pudo parsear la respuesta" };
+
+    const parsed = JSON.parse(match[0]);
+    const matched = segments.find((s) => s.id === parsed.segment_id);
+
+    return {
+      segmentId:   matched?.id   ?? null,
+      segmentName: matched?.name ?? null,
+      reasoning:   parsed.reasoning ?? "",
+    };
+  } catch {
+    return { segmentId: null, segmentName: null, reasoning: "Error en routing" };
+  }
 }
 
 export async function generateContactMessages(
@@ -89,10 +188,11 @@ export async function generateContactMessages(
     deepResearch,
     fewShotExamples,
     styleGuide,
+    segmentContext,
     language = "es",
   } = input;
 
-  const systemPrompt = buildSystemPrompt(styleGuide, fewShotExamples);
+  const systemPrompt = buildSystemPrompt(styleGuide, fewShotExamples, segmentContext);
 
   const deepResearchContext = deepResearch
     ? `\nInvestigación profunda de la empresa:\n- Trigger actual: ${deepResearch.trigger}\n- Ángulo de mensaje: ${deepResearch.angulo}\n- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`

@@ -10,29 +10,30 @@ export async function GET(req: NextRequest) {
 
   const db = supabaseAdmin();
   const { data, error } = await db
-    .from("message_examples")
-    .select("*")
+    .from("training_segments")
+    .select("*, segment_sources(*)")
     .eq("client_id", clientId)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ examples: data ?? [] });
+  return NextResponse.json({ segments: data ?? [] });
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { client_id, segment_id, contact_name, job_title, company_name, email_subject, email_body, icebreaker, notes } = body;
-  if (!client_id || !email_subject || !email_body) {
-    return NextResponse.json({ error: "Faltan campos requeridos" }, { status: 400 });
+  const { client_id, name, description, routing_hint } = body;
+
+  if (!client_id || !name?.trim()) {
+    return NextResponse.json({ error: "Se requiere client_id y name" }, { status: 400 });
   }
 
   const db = supabaseAdmin();
   const { data, error } = await db
-    .from("message_examples")
-    .insert({ client_id, segment_id: segment_id ?? null, contact_name, job_title, company_name, email_subject, email_body, icebreaker, notes })
+    .from("training_segments")
+    .insert({ client_id, name: name.trim(), description: description ?? null, routing_hint: routing_hint ?? "" })
     .select()
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ example: data });
+  return NextResponse.json({ segment: data });
 }
