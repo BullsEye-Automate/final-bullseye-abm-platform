@@ -24,6 +24,7 @@ import {
   IconTag,
   IconEdit,
   IconRoute,
+  IconUpload,
 } from "@tabler/icons-react";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -126,8 +127,11 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [saving, setSaving]           = useState(false);
   const [editSeg, setEditSeg]         = useState<Partial<Segment> | null>(null);
   const [addingSource, setAddingSource] = useState<string | null>(null); // segment id
-  const [srcForm, setSrcForm]         = useState({ type: "text" as "text" | "url", title: "", content: "", url: "" });
+  const [srcForm, setSrcForm]         = useState({ type: "text" as "text" | "url" | "file", title: "", content: "", url: "" });
+  const [srcFile, setSrcFile]         = useState<File | null>(null);
   const [srcLoading, setSrcLoading]   = useState(false);
+  const [srcError, setSrcError]       = useState<string | null>(null);
+  const fileInputRef                  = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -179,32 +183,69 @@ function SegmentsTab({ clientId }: { clientId: string }) {
     if (selected === id) setSelected(null);
   }
 
+  function resetSrcForm() {
+    setSrcForm({ type: "text", title: "", content: "", url: "" });
+    setSrcFile(null);
+    setSrcError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSrcFile(file);
+    if (!srcForm.title) setSrcForm((p) => ({ ...p, title: file.name }));
+  }
+
   async function addSource(segmentId: string) {
     setSrcLoading(true);
+    setSrcError(null);
+
+    let content = srcForm.content;
+
+    // Para archivos: leer el texto del archivo en el cliente
+    if (srcForm.type === "file" && srcFile) {
+      try {
+        content = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (ev) => resolve((ev.target?.result as string) ?? "");
+          reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+          reader.readAsText(srcFile, "UTF-8");
+        });
+      } catch {
+        setSrcError("No se pudo leer el archivo. Asegúrate de que sea un archivo de texto (.txt, .md, .csv).");
+        setSrcLoading(false);
+        return;
+      }
+    }
+
     const body: Record<string, string> = {
-      source_type: srcForm.type,
-      title: srcForm.title,
+      source_type: srcForm.type === "file" ? "document" : srcForm.type,
+      title: srcForm.title.trim(),
     };
-    if (srcForm.type === "text") body.content = srcForm.content;
-    else body.url = srcForm.url;
+    if (srcForm.type === "url") body.url = srcForm.url;
+    else body.content = content;
 
     const res = await fetch(`/api/training/segments/${segmentId}/sources`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (res.ok) {
-      const d = await res.json();
-      setSegments((p) =>
-        p.map((s) =>
-          s.id === segmentId
-            ? { ...s, segment_sources: [...(s.segment_sources ?? []), d.source] }
-            : s
-        )
-      );
-      setAddingSource(null);
-      setSrcForm({ type: "text", title: "", content: "", url: "" });
+    const d = await res.json();
+    if (!res.ok) {
+      setSrcError(d.error ?? "Error al guardar la fuente");
+      setSrcLoading(false);
+      return;
     }
+    setSegments((p) =>
+      p.map((s) =>
+        s.id === segmentId
+          ? { ...s, segment_sources: [...(s.segment_sources ?? []), d.source] }
+          : s
+      )
+    );
+    setAddingSource(null);
+    resetSrcForm();
     setSrcLoading(false);
   }
 
@@ -419,31 +460,43 @@ function SegmentsTab({ clientId }: { clientId: string }) {
 
               {addingSource === seg.id && (
                 <div className="border border-[#E5E2F0] rounded-xl px-4 py-4 space-y-3 bg-gray-50/50">
-                  <div className="flex gap-2">
-                    {(["text", "url"] as const).map((t) => (
+                  {/* Selector de tipo + botón cancelar en la misma fila */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {([
+                      { t: "text",  label: "Texto",   icon: <IconFileText size={12} /> },
+                      { t: "url",   label: "URL",     icon: <IconLink size={12} /> },
+                      { t: "file",  label: "Archivo", icon: <IconUpload size={12} /> },
+                    ] as const).map(({ t, label, icon }) => (
                       <button
                         key={t}
-                        onClick={() => setSrcForm((p) => ({ ...p, type: t }))}
+                        onClick={() => { setSrcForm((p) => ({ ...p, type: t })); setSrcFile(null); setSrcError(null); }}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition"
                         style={srcForm.type === t
                           ? { background: "#251762", color: "white", borderColor: "#251762" }
                           : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }
                         }
                       >
-                        {t === "text" ? <IconFileText size={12} /> : <IconLink size={12} />}
-                        {t === "text" ? "Texto" : "URL"}
+                        {icon}{label}
                       </button>
                     ))}
+                    <button
+                      onClick={() => { setAddingSource(null); resetSrcForm(); }}
+                      className="ml-auto px-2.5 py-1.5 text-xs rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center gap-1"
+                    >
+                      <IconX size={12} /> Cancelar
+                    </button>
                   </div>
 
+                  {/* Título */}
                   <input
                     value={srcForm.title}
                     onChange={(e) => setSrcForm((p) => ({ ...p, title: e.target.value }))}
-                    placeholder="Título (opcional)"
+                    placeholder={srcForm.type === "file" ? "Título (se llena automático)" : "Título (opcional)"}
                     className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white"
                   />
 
-                  {srcForm.type === "text" ? (
+                  {/* Campo según tipo */}
+                  {srcForm.type === "text" && (
                     <textarea
                       value={srcForm.content}
                       onChange={(e) => setSrcForm((p) => ({ ...p, content: e.target.value }))}
@@ -451,7 +504,9 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                       placeholder="Pega aquí el texto, descripción del producto, casos de éxito, argumentario de ventas…"
                       className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white"
                     />
-                  ) : (
+                  )}
+
+                  {srcForm.type === "url" && (
                     <input
                       value={srcForm.url}
                       onChange={(e) => setSrcForm((p) => ({ ...p, url: e.target.value }))}
@@ -461,23 +516,64 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     />
                   )}
 
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => addSource(seg.id)}
-                      disabled={srcLoading || (srcForm.type === "text" ? !srcForm.content.trim() : !srcForm.url.trim())}
-                      className="flex-1 text-sm py-2 rounded-lg text-white disabled:opacity-40 transition flex items-center justify-center gap-2"
-                      style={{ background: "#251762" }}
-                    >
-                      {srcLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconPlus size={13} />}
-                      {srcLoading ? (srcForm.type === "url" ? "Obteniendo contenido…" : "Guardando…") : "Agregar fuente"}
-                    </button>
-                    <button
-                      onClick={() => { setAddingSource(null); setSrcForm({ type: "text", title: "", content: "", url: "" }); }}
-                      className="px-3 text-sm rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50"
-                    >
-                      <IconX size={14} />
-                    </button>
-                  </div>
+                  {srcForm.type === "file" && (
+                    <div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".txt,.md,.csv,.json,.xml,.html,.htm"
+                        className="hidden"
+                        onChange={handleFileSelect}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full text-sm border-2 border-dashed border-[#E5E2F0] rounded-xl px-4 py-6 text-center hover:border-[#251762] transition"
+                      >
+                        {srcFile ? (
+                          <div className="flex items-center justify-center gap-2 text-ink">
+                            <IconFileText size={16} style={{ color: "#62E0D8" }} />
+                            <span className="font-medium">{srcFile.name}</span>
+                            <span className="text-ink-muted text-xs">({(srcFile.size / 1024).toFixed(0)} KB)</span>
+                          </div>
+                        ) : (
+                          <div className="text-ink-muted space-y-1">
+                            <IconUpload size={20} className="mx-auto opacity-40" />
+                            <p>Haz clic para seleccionar un archivo</p>
+                            <p className="text-xs opacity-60">.txt · .md · .csv · .json · .html</p>
+                          </div>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {srcError && (
+                    <p className="text-xs text-red-500 flex items-center gap-1.5">
+                      <IconAlertCircle size={13} /> {srcError}
+                    </p>
+                  )}
+
+                  {/* Botón guardar */}
+                  <button
+                    onClick={() => addSource(selected!)}
+                    disabled={
+                      srcLoading ||
+                      (srcForm.type === "text" && !srcForm.content.trim()) ||
+                      (srcForm.type === "url"  && !srcForm.url.trim()) ||
+                      (srcForm.type === "file" && !srcFile)
+                    }
+                    className="w-full text-sm py-2.5 rounded-lg text-white disabled:opacity-40 transition flex items-center justify-center gap-2"
+                    style={{ background: "#251762" }}
+                  >
+                    {srcLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconPlus size={13} />}
+                    {srcLoading
+                      ? srcForm.type === "url"  ? "Obteniendo contenido…"
+                      : srcForm.type === "file" ? "Leyendo archivo…"
+                      : "Guardando…"
+                      : "Agregar fuente"
+                    }
+                  </button>
                 </div>
               )}
 
