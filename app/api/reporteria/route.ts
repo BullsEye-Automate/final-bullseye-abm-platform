@@ -5,10 +5,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const clientId = req.nextUrl.searchParams.get("client_id");
+  const rawClientId = req.nextUrl.searchParams.get("client_id");
+  const clientId = (!rawClientId || rawClientId === "__all__") ? null : rawClientId;
 
   const db = supabaseAdmin();
-  const isAll = !clientId || clientId === "__all__";
+  const isAll = !clientId;
 
   function clientFilter(q: any): any {
     return isAll ? q : q.eq("client_id", clientId);

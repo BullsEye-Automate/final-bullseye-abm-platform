@@ -10,7 +10,11 @@ export const maxDuration = 60;
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const rangeParam = url.searchParams.get("range") ?? "this_month";
-  const clientId   = url.searchParams.get("client_id") || null;
+  const clientId = (() => {
+    const raw = url.searchParams.get("client_id");
+    if (!raw || raw === "__all__") return null; // null = sin filtro = todos
+    return raw;
+  })();
   const key: RangeKey = isValidRangeKey(rangeParam) ? rangeParam : "this_month";
   const range = resolveRange(key);
   const db = supabaseAdmin();
