@@ -11,7 +11,30 @@ export async function GET(req: NextRequest) {
   const bucket    = req.nextUrl.searchParams.get("bucket")     ?? "pending";
   const companyId = req.nextUrl.searchParams.get("company_id");
   const clientId  = req.nextUrl.searchParams.get("client_id")  || null;
+  const search    = req.nextUrl.searchParams.get("search")?.trim();
+  const limit     = parseInt(req.nextUrl.searchParams.get("limit") ?? "500", 10);
   const db = supabaseAdmin();
+
+  // Modo búsqueda para el Laboratorio: busca en nombre, apellido y cargo, con join a companies
+  if (search) {
+    const term = `%${search}%`;
+    const { data, error } = await db
+      .from("contacts")
+      .select("id, first_name, last_name, job_title, email, company_id, companies(company_name)")
+      .eq("client_id", clientId ?? "")
+      .or(`first_name.ilike.${term},last_name.ilike.${term},job_title.ilike.${term}`)
+      .limit(limit);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const contacts = (data ?? []).map((c: any) => ({
+      id:           c.id,
+      first_name:   c.first_name,
+      last_name:    c.last_name,
+      job_title:    c.job_title,
+      email:        c.email,
+      company_name: Array.isArray(c.companies) ? (c.companies[0]?.company_name ?? null) : (c.companies?.company_name ?? null),
+    }));
+    return NextResponse.json({ contacts });
+  }
 
   function applyFilters(q: any) {
     if (companyId) q = q.eq("company_id", companyId);

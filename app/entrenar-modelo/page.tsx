@@ -194,6 +194,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setSrcFile(file);
+    setSrcError(null);
     if (!srcForm.title) setSrcForm((p) => ({ ...p, title: file.name }));
   }
 
@@ -203,19 +204,37 @@ function SegmentsTab({ clientId }: { clientId: string }) {
 
     let content = srcForm.content;
 
-    // Para archivos: leer el texto del archivo en el cliente
     if (srcForm.type === "file" && srcFile) {
-      try {
-        content = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (ev) => resolve((ev.target?.result as string) ?? "");
-          reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
-          reader.readAsText(srcFile, "UTF-8");
-        });
-      } catch {
-        setSrcError("No se pudo leer el archivo. Asegúrate de que sea un archivo de texto (.txt, .md, .csv).");
-        setSrcLoading(false);
-        return;
+      const isPdf = srcFile.name.toLowerCase().endsWith(".pdf") || srcFile.type === "application/pdf";
+
+      if (isPdf) {
+        // PDF: enviar al servidor para extraer texto
+        try {
+          const fd = new FormData();
+          fd.append("file", srcFile);
+          const res = await fetch("/api/training/parse-pdf", { method: "POST", body: fd });
+          const d = await res.json();
+          if (!res.ok) { setSrcError(d.error ?? "Error al procesar el PDF"); setSrcLoading(false); return; }
+          content = d.text;
+        } catch {
+          setSrcError("Error de red al procesar el PDF");
+          setSrcLoading(false);
+          return;
+        }
+      } else {
+        // Archivos de texto: leer en el cliente
+        try {
+          content = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (ev) => resolve((ev.target?.result as string) ?? "");
+            reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+            reader.readAsText(srcFile, "UTF-8");
+          });
+        } catch {
+          setSrcError("No se pudo leer el archivo. Asegúrate de que sea un archivo de texto (.txt, .md, .csv).");
+          setSrcLoading(false);
+          return;
+        }
       }
     }
 
@@ -521,7 +540,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept=".txt,.md,.csv,.json,.xml,.html,.htm"
+                        accept=".pdf,.txt,.md,.csv,.json,.xml,.html,.htm"
                         className="hidden"
                         onChange={handleFileSelect}
                       />
@@ -540,7 +559,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                           <div className="text-ink-muted space-y-1">
                             <IconUpload size={20} className="mx-auto opacity-40" />
                             <p>Haz clic para seleccionar un archivo</p>
-                            <p className="text-xs opacity-60">.txt · .md · .csv · .json · .html</p>
+                            <p className="text-xs opacity-60">.pdf · .txt · .md · .csv · .json · .html</p>
                           </div>
                         )}
                       </button>
@@ -1100,16 +1119,29 @@ function StyleTab({ clientId }: { clientId: string }) {
       .finally(() => setLoading(false));
   }, [clientId]);
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   async function save() {
     setSaving(true);
-    await fetch("/api/training/style-guide", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: clientId, ...style }),
-    });
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/training/style-guide", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: clientId, ...style }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        setSaveError(d.error ?? "Error al guardar");
+        setSaving(false);
+        return;
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch {
+      setSaveError("Error de red al guardar");
+    }
     setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
   }
 
   if (loading) return <div className="flex justify-center py-16"><IconLoader2 size={24} className="animate-spin text-ink-muted" /></div>;
@@ -1181,6 +1213,12 @@ function StyleTab({ clientId }: { clientId: string }) {
           className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y"
         />
       </div>
+
+      {saveError && (
+        <div className="flex items-center gap-2 text-sm text-red-600 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
+          <IconAlertCircle size={14} /> {saveError}
+        </div>
+      )}
 
       <button
         onClick={save}
