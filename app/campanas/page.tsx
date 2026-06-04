@@ -274,9 +274,11 @@ export default function CampanasPage() {
   const [loading, setLoading]       = useState(false);
   const [pushing, setPushing]       = useState(false);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number } | null>(null);
-  const [syncing, setSyncing]       = useState(false);
-  const [syncResult, setSyncResult] = useState<{ updated: number; synced: number } | null>(null);
-  const [error, setError]           = useState<string | null>(null);
+  const [syncing, setSyncing]           = useState(false);
+  const [syncResult, setSyncResult]     = useState<{ updated: number; synced: number } | null>(null);
+  const [importing, setImporting]       = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [error, setError]               = useState<string | null>(null);
 
   // ── Carga datos de campaña ──
   const loadCampaign = useCallback(async () => {
@@ -344,6 +346,21 @@ export default function CampanasPage() {
     const d = await res.json();
     setSyncResult({ updated: d.updated ?? 0, synced: d.synced ?? 0 });
     setSyncing(false);
+  }
+
+  // ── Importar leads de Lemlist a Supabase ──
+  async function importFromLemlist() {
+    if (!currentClient?.id) return;
+    setImporting(true);
+    setImportResult(null);
+    const res = await fetch("/api/lemlist/import-leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient.id }),
+    });
+    const d = await res.json();
+    setImportResult({ imported: d.imported ?? 0, skipped: d.skipped ?? 0 });
+    setImporting(false);
   }
 
   // ── Pausar/reanudar lead ──
@@ -424,6 +441,18 @@ export default function CampanasPage() {
             Carga masiva
           </Link>
           <button
+            onClick={importFromLemlist}
+            disabled={importing}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
+            title="Importar leads de Lemlist a Supabase"
+          >
+            {importing
+              ? <IconLoader2 size={14} className="animate-spin" />
+              : <IconCloudUpload size={14} style={{ color: "#62E0D8" }} />
+            }
+            {importing ? "Importando…" : "Importar de Lemlist"}
+          </button>
+          <button
             onClick={syncHubSpot}
             disabled={syncing}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
@@ -476,6 +505,19 @@ export default function CampanasPage() {
           <span className="text-sm font-medium">
             HubSpot sincronizado: {syncResult.synced} contacto{syncResult.synced !== 1 ? "s" : ""} creados/actualizados
             {syncResult.updated > 0 && ` · ${syncResult.updated} enriquecidos con email/teléfono de Lemlist`}
+          </span>
+        </div>
+      )}
+
+      {/* Import result */}
+      {importResult && (
+        <div className="card border-l-4 px-4 py-3 flex items-center gap-2"
+          style={{ borderColor: "#62E0D8", color: "#0F6E56" }}
+        >
+          <IconCheck size={16} />
+          <span className="text-sm font-medium">
+            {importResult.imported} lead{importResult.imported !== 1 ? "s" : ""} importados de Lemlist a Supabase
+            {importResult.skipped > 0 && ` · ${importResult.skipped} saltados (sin email)`}
           </span>
         </div>
       )}

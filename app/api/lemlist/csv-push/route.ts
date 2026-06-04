@@ -102,6 +102,20 @@ export async function POST(req: NextRequest) {
     }
 
     pushed++;
+
+    // Guardar en Supabase con upsert por email+client_id
+    const row: Record<string, string | null> = {
+      client_id,
+      email:        contact.email.trim(),
+      first_name:   contact.firstName   || null,
+      last_name:    contact.lastName    || null,
+      job_title:    contact.jobTitle    || null,
+      company_name: contact.companyName || null,
+      linkedin_url: contact.linkedinUrl || null,
+      phone:        contact.phone       || null,
+      lemlist_status: "active",
+    };
+    await db.from("contacts").upsert(row, { onConflict: "email,client_id" });
   }
 
   return NextResponse.json({ pushed, skipped, errors });
