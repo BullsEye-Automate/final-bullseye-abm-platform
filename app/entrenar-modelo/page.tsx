@@ -128,7 +128,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [editSeg, setEditSeg]         = useState<Partial<Segment> | null>(null);
   const [addingSource, setAddingSource] = useState<string | null>(null); // segment id
   const [srcForm, setSrcForm]         = useState({ type: "text" as "text" | "url" | "file", title: "", content: "", url: "" });
-  const [srcFile, setSrcFile]         = useState<File | null>(null);
+  const [srcFiles, setSrcFiles]        = useState<File[]>([]);
   const [srcLoading, setSrcLoading]   = useState(false);
   const [srcError, setSrcError]       = useState<string | null>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
@@ -185,65 +185,87 @@ function SegmentsTab({ clientId }: { clientId: string }) {
 
   function resetSrcForm() {
     setSrcForm({ type: "text", title: "", content: "", url: "" });
-    setSrcFile(null);
+    setSrcFiles([]);
     setSrcError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setSrcFile(file);
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setSrcFiles(files);
     setSrcError(null);
-    if (!srcForm.title) setSrcForm((p) => ({ ...p, title: file.name }));
+    // Llenar título solo cuando es un único archivo y el campo está vacío
+    if (files.length === 1 && !srcForm.title) setSrcForm((p) => ({ ...p, title: files[0].name }));
+  }
+
+  async function readFileContent(file: File): Promise<string> {
+    const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+    if (isPdf) {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/training/parse-pdf", { method: "POST", body: fd });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? "Error al procesar el PDF");
+      return d.text as string;
+    }
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve((ev.target?.result as string) ?? "");
+      reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+      reader.readAsText(file, "UTF-8");
+    });
   }
 
   async function addSource(segmentId: string) {
     setSrcLoading(true);
     setSrcError(null);
 
-    let content = srcForm.content;
-
-    if (srcForm.type === "file" && srcFile) {
-      const isPdf = srcFile.name.toLowerCase().endsWith(".pdf") || srcFile.type === "application/pdf";
-
-      if (isPdf) {
-        // PDF: enviar al servidor para extraer texto
+    if (srcForm.type === "file" && srcFiles.length > 0) {
+      const addedSources: Source[] = [];
+      for (const file of srcFiles) {
+        let content: string;
         try {
-          const fd = new FormData();
-          fd.append("file", srcFile);
-          const res = await fetch("/api/training/parse-pdf", { method: "POST", body: fd });
-          const d = await res.json();
-          if (!res.ok) { setSrcError(d.error ?? "Error al procesar el PDF"); setSrcLoading(false); return; }
-          content = d.text;
-        } catch {
-          setSrcError("Error de red al procesar el PDF");
+          content = await readFileContent(file);
+        } catch (err: unknown) {
+          setSrcError((err as Error)?.message ?? "Error al leer archivo");
           setSrcLoading(false);
           return;
         }
-      } else {
-        // Archivos de texto: leer en el cliente
-        try {
-          content = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (ev) => resolve((ev.target?.result as string) ?? "");
-            reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
-            reader.readAsText(srcFile, "UTF-8");
-          });
-        } catch {
-          setSrcError("No se pudo leer el archivo. Asegúrate de que sea un archivo de texto (.txt, .md, .csv).");
+        const body = { source_type: "document", title: file.name, content };
+        const res = await fetch(`/api/training/segments/${segmentId}/sources`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await res.json();
+        if (!res.ok) {
+          setSrcError(d.error ?? `Error al guardar "${file.name}"`);
           setSrcLoading(false);
           return;
         }
+        addedSources.push(d.source as Source);
       }
+      setSegments((p) =>
+        p.map((s) =>
+          s.id === segmentId
+            ? { ...s, segment_sources: [...(s.segment_sources ?? []), ...addedSources] }
+            : s
+        )
+      );
+      setAddingSource(null);
+      resetSrcForm();
+      setSrcLoading(false);
+      return;
     }
 
+    // Flujo texto / URL
     const body: Record<string, string> = {
       source_type: srcForm.type === "file" ? "document" : srcForm.type,
       title: srcForm.title.trim(),
     };
     if (srcForm.type === "url") body.url = srcForm.url;
-    else body.content = content;
+    else body.content = srcForm.content;
 
     const res = await fetch(`/api/training/segments/${segmentId}/sources`, {
       method: "POST",
@@ -506,13 +528,15 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     </button>
                   </div>
 
-                  {/* Título */}
-                  <input
-                    value={srcForm.title}
-                    onChange={(e) => setSrcForm((p) => ({ ...p, title: e.target.value }))}
-                    placeholder={srcForm.type === "file" ? "Título (se llena automático)" : "Título (opcional)"}
-                    className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white"
-                  />
+                  {/* Título — se oculta si hay múltiples archivos (usan su propio nombre) */}
+                  {!(srcForm.type === "file" && srcFiles.length > 1) && (
+                    <input
+                      value={srcForm.title}
+                      onChange={(e) => setSrcForm((p) => ({ ...p, title: e.target.value }))}
+                      placeholder={srcForm.type === "file" ? "Título (se llena automático)" : "Título (opcional)"}
+                      className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white"
+                    />
+                  )}
 
                   {/* Campo según tipo */}
                   {srcForm.type === "text" && (
@@ -536,11 +560,12 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                   )}
 
                   {srcForm.type === "file" && (
-                    <div>
+                    <div className="space-y-2">
                       <input
                         ref={fileInputRef}
                         type="file"
                         accept=".pdf,.txt,.md,.csv,.json,.xml,.html,.htm"
+                        multiple
                         className="hidden"
                         onChange={handleFileSelect}
                       />
@@ -549,20 +574,37 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                         onClick={() => fileInputRef.current?.click()}
                         className="w-full text-sm border-2 border-dashed border-[#E5E2F0] rounded-xl px-4 py-6 text-center hover:border-[#251762] transition"
                       >
-                        {srcFile ? (
-                          <div className="flex items-center justify-center gap-2 text-ink">
-                            <IconFileText size={16} style={{ color: "#62E0D8" }} />
-                            <span className="font-medium">{srcFile.name}</span>
-                            <span className="text-ink-muted text-xs">({(srcFile.size / 1024).toFixed(0)} KB)</span>
+                        {srcFiles.length > 0 ? (
+                          <div className="text-ink space-y-1">
+                            <div className="flex items-center justify-center gap-1.5 font-medium">
+                              <IconFileText size={16} style={{ color: "#62E0D8" }} />
+                              {srcFiles.length === 1
+                                ? srcFiles[0].name
+                                : `${srcFiles.length} archivos seleccionados`}
+                            </div>
+                            <p className="text-xs text-ink-muted">
+                              {(srcFiles.reduce((acc, f) => acc + f.size, 0) / 1024).toFixed(0)} KB en total · Haz clic para cambiar
+                            </p>
                           </div>
                         ) : (
                           <div className="text-ink-muted space-y-1">
                             <IconUpload size={20} className="mx-auto opacity-40" />
-                            <p>Haz clic para seleccionar un archivo</p>
+                            <p>Haz clic para seleccionar uno o varios archivos</p>
                             <p className="text-xs opacity-60">.pdf · .txt · .md · .csv · .json · .html</p>
                           </div>
                         )}
                       </button>
+                      {srcFiles.length > 1 && (
+                        <div className="space-y-1">
+                          {srcFiles.map((f, i) => (
+                            <div key={i} className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] bg-white">
+                              <IconFileText size={12} style={{ color: "#62E0D8" }} />
+                              <span className="flex-1 truncate text-ink">{f.name}</span>
+                              <span className="text-ink-muted shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -580,7 +622,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                       srcLoading ||
                       (srcForm.type === "text" && !srcForm.content.trim()) ||
                       (srcForm.type === "url"  && !srcForm.url.trim()) ||
-                      (srcForm.type === "file" && !srcFile)
+                      (srcForm.type === "file" && srcFiles.length === 0)
                     }
                     className="w-full text-sm py-2.5 rounded-lg text-white disabled:opacity-40 transition flex items-center justify-center gap-2"
                     style={{ background: "#251762" }}
@@ -588,9 +630,11 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     {srcLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconPlus size={13} />}
                     {srcLoading
                       ? srcForm.type === "url"  ? "Obteniendo contenido…"
-                      : srcForm.type === "file" ? "Leyendo archivo…"
+                      : srcForm.type === "file" ? `Procesando${srcFiles.length > 1 ? ` (0/${srcFiles.length})` : ""}…`
                       : "Guardando…"
-                      : "Agregar fuente"
+                      : srcForm.type === "file" && srcFiles.length > 1
+                        ? `Agregar ${srcFiles.length} archivos`
+                        : "Agregar fuente"
                     }
                   </button>
                 </div>
