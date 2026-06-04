@@ -364,6 +364,10 @@ export default function CampanasPage() {
         setError(d.error + (d.debug ? ` | debug: ${JSON.stringify(d.debug)}` : ""));
       } else {
         setImportResult({ imported: d.imported ?? 0, skipped: d.skipped ?? 0, fields: d.contact_fields });
+        if (d.sample_contact) {
+          console.log("=== SAMPLE CONTACT DE LEMLIST ===", d.sample_contact);
+          setError("Muestra de contacto: " + JSON.stringify(d.sample_contact).slice(0, 500));
+        }
         loadCampaign();
       }
     } catch {

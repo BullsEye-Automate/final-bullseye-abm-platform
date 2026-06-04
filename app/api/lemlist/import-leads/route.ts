@@ -164,5 +164,6 @@ export async function POST(req: NextRequest) {
     fetched_contacts: contactData.length,
     fetch_failed: fetchFailed,
     sample_errors: sampleErrors,
+    sample_contact: contactData[0] ?? null,
   });
 }
