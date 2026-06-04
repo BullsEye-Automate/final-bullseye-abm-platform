@@ -35,103 +35,78 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
 
-  // Usar exactamente la misma URL que el endpoint que ya funciona (sin offset)
-  let res: Response;
-  try {
-    res = await fetch(
-      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=500`,
-      {
-        headers: { Authorization: `Basic ${credentials}` },
-        cache: "no-store",
-      }
-    );
-  } catch (err: any) {
-    return NextResponse.json({ error: `Error de red: ${err?.message}` }, { status: 502 });
-  }
+  // 1. Traer todos los leads de la campaña (solo tienen _id, state, contactId)
+  const res = await fetch(
+    `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=500`,
+    { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
+  );
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    return NextResponse.json({ error: `Lemlist ${res.status}: ${text.slice(0, 300)}` }, { status: 502 });
+    return NextResponse.json({ error: `Lemlist ${res.status}: ${text.slice(0, 200)}` }, { status: 502 });
   }
 
-  const data = await res.json();
-  const rawLeads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
+  const raw = await res.json();
+  const leads: any[] = Array.isArray(raw) ? raw : (raw.leads ?? raw.list ?? []);
 
-  if (rawLeads.length === 0) {
+  if (leads.length === 0) {
     return NextResponse.json({ imported: 0, skipped: 0 });
   }
 
-  // Debug: devolver el primer lead crudo para inspeccionar la estructura
-  const debug = (req.nextUrl.searchParams.get("debug") === "1");
-  if (debug) {
-    return NextResponse.json({ sample: rawLeads[0], total: rawLeads.length });
+  // 2. Para cada lead, buscar el contacto completo (email, nombre, etc.)
+  //    Hacerlo en paralelo por lotes de 10 para no saturar la API
+  const BATCH = 10;
+  const contacts: any[] = [];
+
+  for (let i = 0; i < leads.length; i += BATCH) {
+    const batch = leads.slice(i, i + BATCH);
+    const results = await Promise.all(
+      batch.map(async (lead: any) => {
+        const contactId = lead.contactId;
+        if (!contactId) return null;
+
+        const r = await fetch(
+          `https://api.lemlist.com/api/people/${contactId}`,
+          { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
+        );
+        if (!r.ok) return null;
+
+        const c = await r.json();
+        return { ...c, _leadId: lead._id, _contactId: contactId };
+      })
+    );
+    contacts.push(...results.filter(Boolean));
   }
 
-  // Normalizar campos (Lemlist mezcla camelCase y snake_case)
-  // En Lemlist el _id del lead ES el email — usarlo como fallback
-  const leads = rawLeads.map((l: any) => ({
-    email:        (l.email ?? l._id ?? "").trim().toLowerCase(),
-    first_name:   l.firstName   ?? l.first_name   ?? null,
-    last_name:    l.lastName    ?? l.last_name     ?? null,
-    company_name: l.companyName ?? l.company_name  ?? l.company ?? null,
-    job_title:    l.jobTitle    ?? l.job_title     ?? l.title   ?? null,
-    linkedin_url: l.linkedinUrl ?? l.linkedin_url  ?? l.linkedin ?? null,
-    phone:        l.phone ?? null,
-  }));
+  // 3. Upsert en Supabase usando lemlist_contact_id como clave
+  let imported = 0;
+  let skipped  = 0;
 
-  const valid   = leads.filter((l) => l.email);
-  const skipped = rawLeads.length - valid.length;
+  for (const c of contacts) {
+    const email = (c.email ?? c.linkedinEmail ?? "").trim().toLowerCase();
+    if (!email) { skipped++; continue; }
 
-  // Cargar contactos existentes de este cliente que tengan linkedin_url
-  // para poder cruzar email → contacto existente sin email
-  const linkedinUrls = valid.map((l) => l.linkedin_url).filter(Boolean) as string[];
-  const linkedinMap = new Map<string, string>(); // linkedin_url → contact id
+    const row: Record<string, string> = {
+      client_id,
+      email,
+      lemlist_contact_id: c._contactId,
+      lemlist_lead_id:    c._leadId,
+      lemlist_status:     "active",
+    };
+    if (c.firstName   ?? c.first_name)   row.first_name   = c.firstName   ?? c.first_name;
+    if (c.lastName    ?? c.last_name)    row.last_name    = c.lastName    ?? c.last_name;
+    if (c.companyName ?? c.company_name) row.company_name = c.companyName ?? c.company_name;
+    if (c.jobTitle    ?? c.job_title)    row.job_title    = c.jobTitle    ?? c.job_title;
+    if (c.linkedinUrl ?? c.linkedin_url) row.linkedin_url = c.linkedinUrl ?? c.linkedin_url;
+    if (c.phone)                         row.phone        = c.phone;
 
-  if (linkedinUrls.length > 0) {
-    const { data: existing } = await db
+    const { error } = await db
       .from("contacts")
-      .select("id, linkedin_url, email")
-      .eq("client_id", client_id)
-      .in("linkedin_url", linkedinUrls);
+      .upsert(row, { onConflict: "lemlist_contact_id" });
 
-    for (const c of existing ?? []) {
-      if (c.linkedin_url) linkedinMap.set(c.linkedin_url.toLowerCase(), c.id);
-    }
+    if (!error) imported++;
+    else skipped++;
   }
 
-  let matched = 0;
-  let created = 0;
-
-  for (const lead of valid) {
-    const linkedinKey = lead.linkedin_url?.toLowerCase();
-    const existingId  = linkedinKey ? linkedinMap.get(linkedinKey) : undefined;
-
-    if (existingId) {
-      // Contacto ya existe por LinkedIn → solo actualizar email (y datos que falten)
-      const update: Record<string, string> = { email: lead.email, lemlist_status: "active" };
-      if (lead.first_name)   update.first_name   = lead.first_name;
-      if (lead.last_name)    update.last_name    = lead.last_name;
-      if (lead.company_name) update.company_name = lead.company_name;
-      if (lead.job_title)    update.job_title    = lead.job_title;
-      if (lead.phone)        update.phone        = lead.phone;
-
-      const { error: updErr } = await db.from("contacts").update(update).eq("id", existingId);
-      if (!updErr) matched++;
-    } else {
-      // No existe por LinkedIn → insertar fila nueva con email (ignorar si ya existe)
-      const row: Record<string, string> = { client_id, email: lead.email, lemlist_status: "active" };
-      if (lead.first_name)   row.first_name   = lead.first_name;
-      if (lead.last_name)    row.last_name    = lead.last_name;
-      if (lead.company_name) row.company_name = lead.company_name;
-      if (lead.job_title)    row.job_title    = lead.job_title;
-      if (lead.linkedin_url) row.linkedin_url = lead.linkedin_url;
-      if (lead.phone)        row.phone        = lead.phone;
-
-      const { error: insErr } = await db.from("contacts").insert(row);
-      // ignorar conflictos de duplicados (código 23505)
-      if (!insErr || (insErr as any).code === "23505") created++;
-    }
-  }
-
-  return NextResponse.json({ imported: matched + created, matched, created, skipped });
+  return NextResponse.json({ imported, skipped, total_leads: leads.length, total_contacts_fetched: contacts.length });
 }

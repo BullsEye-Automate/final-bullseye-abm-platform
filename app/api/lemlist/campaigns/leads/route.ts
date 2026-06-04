@@ -80,25 +80,27 @@ export async function GET(req: NextRequest) {
     addedAt:     l.addedAt     ?? l.added_at      ?? l.createdAt ?? null,
   }));
 
-  // Enriquecer con datos de Supabase (Clay tiene nombres/empresas que Lemlist no tiene)
-  const emails = leads.map((l) => l.email).filter(Boolean);
-  if (emails.length > 0) {
+  // Enriquecer con datos de Supabase cruzando por lemlist_lead_id
+  const leadIds = rawLeads.map((l: any) => l._id).filter(Boolean);
+  if (leadIds.length > 0) {
     const { data: dbContacts } = await db
       .from("contacts")
-      .select("email, first_name, last_name, company_name, job_title, linkedin_url")
+      .select("lemlist_lead_id, email, first_name, last_name, company_name, job_title, linkedin_url")
       .eq("client_id", clientId)
-      .in("email", emails);
+      .in("lemlist_lead_id", leadIds);
 
     if (dbContacts && dbContacts.length > 0) {
-      const byEmail = new Map(dbContacts.map((c: any) => [c.email?.toLowerCase(), c]));
+      const byLeadId = new Map(dbContacts.map((c: any) => [c.lemlist_lead_id, c]));
       for (const lead of leads) {
-        const c = byEmail.get(lead.email);
+        const rawLead = rawLeads.find((r: any) => r._id === lead._id);
+        const c = byLeadId.get(rawLead?._id);
         if (!c) continue;
-        if (!lead.firstName && c.first_name)   lead.firstName   = c.first_name;
-        if (!lead.lastName  && c.last_name)    lead.lastName    = c.last_name;
-        if (!lead.companyName && c.company_name) lead.companyName = c.company_name;
-        if (!lead.jobTitle  && c.job_title)    lead.jobTitle    = c.job_title;
-        if (!lead.linkedinUrl && c.linkedin_url) lead.linkedinUrl = c.linkedin_url;
+        if (c.email)        lead.email       = c.email;
+        if (c.first_name)   lead.firstName   = c.first_name;
+        if (c.last_name)    lead.lastName    = c.last_name;
+        if (c.company_name) lead.companyName = c.company_name;
+        if (c.job_title)    lead.jobTitle    = c.job_title;
+        if (c.linkedin_url) lead.linkedinUrl = c.linkedin_url;
       }
     }
   }
