@@ -65,10 +65,10 @@ export async function GET(req: NextRequest) {
   // Lemlist puede retornar array directo o { leads: [...] }
   const rawLeads: any[] = Array.isArray(leadsData) ? leadsData : (leadsData.leads ?? []);
 
-  // Normalizar campos: Lemlist usa snake_case en algunas versiones de API
+  // Normalizar campos de Lemlist
   const leads = rawLeads.map((l: any) => ({
     _id:         l._id ?? l.id ?? l.email,
-    email:       l.email ?? "",
+    email:       (l.email ?? "").trim().toLowerCase(),
     firstName:   l.firstName   ?? l.first_name   ?? "",
     lastName:    l.lastName    ?? l.last_name     ?? "",
     companyName: l.companyName ?? l.company_name  ?? l.company ?? "",
@@ -79,6 +79,29 @@ export async function GET(req: NextRequest) {
     completed:   l.completed   ?? null,
     addedAt:     l.addedAt     ?? l.added_at      ?? l.createdAt ?? null,
   }));
+
+  // Enriquecer con datos de Supabase (Clay tiene nombres/empresas que Lemlist no tiene)
+  const emails = leads.map((l) => l.email).filter(Boolean);
+  if (emails.length > 0) {
+    const { data: dbContacts } = await db
+      .from("contacts")
+      .select("email, first_name, last_name, company_name, job_title, linkedin_url")
+      .eq("client_id", clientId)
+      .in("email", emails);
+
+    if (dbContacts && dbContacts.length > 0) {
+      const byEmail = new Map(dbContacts.map((c: any) => [c.email?.toLowerCase(), c]));
+      for (const lead of leads) {
+        const c = byEmail.get(lead.email);
+        if (!c) continue;
+        if (!lead.firstName && c.first_name)   lead.firstName   = c.first_name;
+        if (!lead.lastName  && c.last_name)    lead.lastName    = c.last_name;
+        if (!lead.companyName && c.company_name) lead.companyName = c.company_name;
+        if (!lead.jobTitle  && c.job_title)    lead.jobTitle    = c.job_title;
+        if (!lead.linkedinUrl && c.linkedin_url) lead.linkedinUrl = c.linkedin_url;
+      }
+    }
+  }
 
   return NextResponse.json({ leads });
 }

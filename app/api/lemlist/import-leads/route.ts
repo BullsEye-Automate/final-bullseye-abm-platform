@@ -35,61 +35,80 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
 
-  // Paginar leads de Lemlist (máx 100 por página según API)
+  // Lemlist no soporta offset confiablemente — paginamos con limit/offset solo si la respuesta llega llena
   const allLeads: any[] = [];
-  let offset = 0;
   const limit = 100;
+  let page = 0;
+  let safetyBreak = 0;
 
-  while (true) {
+  while (safetyBreak < 20) {
+    safetyBreak++;
+    const url = `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=${limit}&offset=${page * limit}`;
     let res: Response;
     try {
-      res = await fetch(
-        `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=${limit}&offset=${offset}`,
-        {
-          headers: { Authorization: `Basic ${credentials}` },
-          cache: "no-store",
-        }
-      );
+      res = await fetch(url, {
+        headers: { Authorization: `Basic ${credentials}` },
+        cache: "no-store",
+      });
     } catch (err: any) {
       return NextResponse.json({ error: `Error de red: ${err?.message}` }, { status: 502 });
     }
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      return NextResponse.json({ error: `Lemlist ${res.status}: ${text.slice(0, 200)}` }, { status: 502 });
+      // Devolver debug para entender qué pasa
+      return NextResponse.json({
+        error: `Lemlist ${res.status}: ${text.slice(0, 300)}`,
+        debug: { url, page },
+      }, { status: 502 });
     }
 
     const data = await res.json();
-    // Lemlist puede devolver array directo o { leads: [] }
-    const page: any[] = Array.isArray(data) ? data : (data.leads ?? []);
-    allLeads.push(...page);
 
-    if (page.length < limit) break;
-    offset += limit;
+    // Lemlist puede devolver array directo, { leads: [] }, o incluso { list: [] }
+    let chunk: any[];
+    if (Array.isArray(data)) {
+      chunk = data;
+    } else if (Array.isArray(data.leads)) {
+      chunk = data.leads;
+    } else if (Array.isArray(data.list)) {
+      chunk = data.list;
+    } else {
+      // Respuesta inesperada — devolver para debug
+      return NextResponse.json({
+        error: "Formato de respuesta inesperado de Lemlist",
+        debug: { keys: Object.keys(data), sample: JSON.stringify(data).slice(0, 400) },
+      }, { status: 502 });
+    }
+
+    allLeads.push(...chunk);
+
+    // Si la página vino incompleta, no hay más
+    if (chunk.length < limit) break;
+    page++;
   }
 
   if (allLeads.length === 0) {
-    return NextResponse.json({ imported: 0, skipped: 0 });
+    return NextResponse.json({ imported: 0, skipped: 0, debug: "Lemlist devolvió 0 leads" });
   }
 
-  // Normalizar campos igual que campaigns/leads/route.ts (Lemlist mezcla camelCase y snake_case)
+  // Normalizar campos (Lemlist mezcla camelCase y snake_case según versión)
   const normalized = allLeads.map((l: any) => ({
-    email:       (l.email ?? "").trim(),
-    first_name:  l.firstName   ?? l.first_name   ?? null,
-    last_name:   l.lastName    ?? l.last_name     ?? null,
+    email:        (l.email ?? "").trim().toLowerCase(),
+    first_name:   l.firstName   ?? l.first_name   ?? null,
+    last_name:    l.lastName    ?? l.last_name     ?? null,
     company_name: l.companyName ?? l.company_name ?? l.company ?? null,
-    job_title:   l.jobTitle    ?? l.job_title     ?? l.title   ?? null,
+    job_title:    l.jobTitle    ?? l.job_title     ?? l.title   ?? null,
     linkedin_url: l.linkedinUrl ?? l.linkedin_url ?? l.linkedin ?? null,
-    phone:       l.phone ?? null,
-    lemlist_status: "active",
+    phone:        l.phone       ?? null,
   }));
 
   const valid   = normalized.filter((r) => r.email);
   const skipped = allLeads.length - valid.length;
 
-  // Construir rows — solo incluir campos no-nulos para no pisar datos existentes en Supabase
+  // Solo incluir campos con valor para no pisar datos de Clay/Supabase existentes
   const rows = valid.map((r) => {
-    const row: Record<string, string | null> = { client_id, email: r.email, lemlist_status: "active" };
+    const row: Record<string, string> = { client_id, email: r.email, lemlist_status: "active" };
     if (r.first_name)   row.first_name   = r.first_name;
     if (r.last_name)    row.last_name    = r.last_name;
     if (r.company_name) row.company_name = r.company_name;
