@@ -61,6 +61,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ imported: 0, skipped: 0 });
   }
 
+  // Debug: devolver el primer lead crudo para inspeccionar la estructura
+  const debug = (req.nextUrl.searchParams.get("debug") === "1");
+  if (debug) {
+    return NextResponse.json({ sample: rawLeads[0], total: rawLeads.length });
+  }
+
   // Normalizar campos (Lemlist mezcla camelCase y snake_case)
   // En Lemlist el _id del lead ES el email — usarlo como fallback
   const leads = rawLeads.map((l: any) => ({
