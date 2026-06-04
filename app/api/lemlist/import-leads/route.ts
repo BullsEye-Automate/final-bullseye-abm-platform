@@ -115,11 +115,10 @@ export async function POST(req: NextRequest) {
       if (lead.job_title)    update.job_title    = lead.job_title;
       if (lead.phone)        update.phone        = lead.phone;
 
-      await db.from("contacts").update(update).eq("id", existingId);
-      matched++;
+      const { error: updErr } = await db.from("contacts").update(update).eq("id", existingId);
+      if (!updErr) matched++;
     } else {
-      // No existe por LinkedIn → insertar fila nueva con email
-      // (upsert por email para evitar duplicados si ya lo importamos antes)
+      // No existe por LinkedIn → insertar fila nueva con email (ignorar si ya existe)
       const row: Record<string, string> = { client_id, email: lead.email, lemlist_status: "active" };
       if (lead.first_name)   row.first_name   = lead.first_name;
       if (lead.last_name)    row.last_name    = lead.last_name;
@@ -128,12 +127,9 @@ export async function POST(req: NextRequest) {
       if (lead.linkedin_url) row.linkedin_url = lead.linkedin_url;
       if (lead.phone)        row.phone        = lead.phone;
 
-      const { error } = await db
-        .from("contacts")
-        .upsert(row, { onConflict: "linkedin_url" })
-        .select();
-
-      if (!error) created++;
+      const { error: insErr } = await db.from("contacts").insert(row);
+      // ignorar conflictos de duplicados (código 23505)
+      if (!insErr || (insErr as any).code === "23505") created++;
     }
   }
 
