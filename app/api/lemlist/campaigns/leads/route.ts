@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
   // Normalizar campos de Lemlist
   const leads = rawLeads.map((l: any) => ({
     _id:         l._id ?? l.id ?? l.email,
-    email:       (l.email ?? "").trim().toLowerCase(),
+    email:       (l.email ?? l._id ?? "").trim().toLowerCase(),
     firstName:   l.firstName   ?? l.first_name   ?? "",
     lastName:    l.lastName    ?? l.last_name     ?? "",
     companyName: l.companyName ?? l.company_name  ?? l.company ?? "",

@@ -62,8 +62,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Normalizar campos (Lemlist mezcla camelCase y snake_case)
+  // En Lemlist el _id del lead ES el email — usarlo como fallback
   const leads = rawLeads.map((l: any) => ({
-    email:        (l.email ?? "").trim().toLowerCase(),
+    email:        (l.email ?? l._id ?? "").trim().toLowerCase(),
     first_name:   l.firstName   ?? l.first_name   ?? null,
     last_name:    l.lastName    ?? l.last_name     ?? null,
     company_name: l.companyName ?? l.company_name  ?? l.company ?? null,
