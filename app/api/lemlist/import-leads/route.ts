@@ -35,96 +35,100 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
 
-  // Lemlist no soporta offset confiablemente — paginamos con limit/offset solo si la respuesta llega llena
-  const allLeads: any[] = [];
-  const limit = 100;
-  let page = 0;
-  let safetyBreak = 0;
-
-  while (safetyBreak < 20) {
-    safetyBreak++;
-    const url = `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=${limit}&offset=${page * limit}`;
-    let res: Response;
-    try {
-      res = await fetch(url, {
+  // Usar exactamente la misma URL que el endpoint que ya funciona (sin offset)
+  let res: Response;
+  try {
+    res = await fetch(
+      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=500`,
+      {
         headers: { Authorization: `Basic ${credentials}` },
         cache: "no-store",
-      });
-    } catch (err: any) {
-      return NextResponse.json({ error: `Error de red: ${err?.message}` }, { status: 502 });
-    }
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      // Devolver debug para entender qué pasa
-      return NextResponse.json({
-        error: `Lemlist ${res.status}: ${text.slice(0, 300)}`,
-        debug: { url, page },
-      }, { status: 502 });
-    }
-
-    const data = await res.json();
-
-    // Lemlist puede devolver array directo, { leads: [] }, o incluso { list: [] }
-    let chunk: any[];
-    if (Array.isArray(data)) {
-      chunk = data;
-    } else if (Array.isArray(data.leads)) {
-      chunk = data.leads;
-    } else if (Array.isArray(data.list)) {
-      chunk = data.list;
-    } else {
-      // Respuesta inesperada — devolver para debug
-      return NextResponse.json({
-        error: "Formato de respuesta inesperado de Lemlist",
-        debug: { keys: Object.keys(data), sample: JSON.stringify(data).slice(0, 400) },
-      }, { status: 502 });
-    }
-
-    allLeads.push(...chunk);
-
-    // Si la página vino incompleta, no hay más
-    if (chunk.length < limit) break;
-    page++;
+      }
+    );
+  } catch (err: any) {
+    return NextResponse.json({ error: `Error de red: ${err?.message}` }, { status: 502 });
   }
 
-  if (allLeads.length === 0) {
-    return NextResponse.json({ imported: 0, skipped: 0, debug: "Lemlist devolvió 0 leads" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    return NextResponse.json({ error: `Lemlist ${res.status}: ${text.slice(0, 300)}` }, { status: 502 });
   }
 
-  // Normalizar campos (Lemlist mezcla camelCase y snake_case según versión)
-  const normalized = allLeads.map((l: any) => ({
+  const data = await res.json();
+  const rawLeads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
+
+  if (rawLeads.length === 0) {
+    return NextResponse.json({ imported: 0, skipped: 0 });
+  }
+
+  // Normalizar campos (Lemlist mezcla camelCase y snake_case)
+  const leads = rawLeads.map((l: any) => ({
     email:        (l.email ?? "").trim().toLowerCase(),
     first_name:   l.firstName   ?? l.first_name   ?? null,
     last_name:    l.lastName    ?? l.last_name     ?? null,
-    company_name: l.companyName ?? l.company_name ?? l.company ?? null,
+    company_name: l.companyName ?? l.company_name  ?? l.company ?? null,
     job_title:    l.jobTitle    ?? l.job_title     ?? l.title   ?? null,
-    linkedin_url: l.linkedinUrl ?? l.linkedin_url ?? l.linkedin ?? null,
-    phone:        l.phone       ?? null,
+    linkedin_url: l.linkedinUrl ?? l.linkedin_url  ?? l.linkedin ?? null,
+    phone:        l.phone ?? null,
   }));
 
-  const valid   = normalized.filter((r) => r.email);
-  const skipped = allLeads.length - valid.length;
+  const valid   = leads.filter((l) => l.email);
+  const skipped = rawLeads.length - valid.length;
 
-  // Solo incluir campos con valor para no pisar datos de Clay/Supabase existentes
-  const rows = valid.map((r) => {
-    const row: Record<string, string> = { client_id, email: r.email, lemlist_status: "active" };
-    if (r.first_name)   row.first_name   = r.first_name;
-    if (r.last_name)    row.last_name    = r.last_name;
-    if (r.company_name) row.company_name = r.company_name;
-    if (r.job_title)    row.job_title    = r.job_title;
-    if (r.linkedin_url) row.linkedin_url = r.linkedin_url;
-    if (r.phone)        row.phone        = r.phone;
-    return row;
-  });
+  // Cargar contactos existentes de este cliente que tengan linkedin_url
+  // para poder cruzar email → contacto existente sin email
+  const linkedinUrls = valid.map((l) => l.linkedin_url).filter(Boolean) as string[];
+  const linkedinMap = new Map<string, string>(); // linkedin_url → contact id
 
-  const { error: upsertError } = await db
-    .from("contacts")
-    .upsert(rows, { onConflict: "email,client_id" });
+  if (linkedinUrls.length > 0) {
+    const { data: existing } = await db
+      .from("contacts")
+      .select("id, linkedin_url, email")
+      .eq("client_id", client_id)
+      .in("linkedin_url", linkedinUrls);
 
-  if (upsertError) {
-    return NextResponse.json({ error: upsertError.message }, { status: 500 });
+    for (const c of existing ?? []) {
+      if (c.linkedin_url) linkedinMap.set(c.linkedin_url.toLowerCase(), c.id);
+    }
   }
 
-  return NextResponse.json({ imported: rows.length, skipped });
+  let matched = 0;
+  let created = 0;
+
+  for (const lead of valid) {
+    const linkedinKey = lead.linkedin_url?.toLowerCase();
+    const existingId  = linkedinKey ? linkedinMap.get(linkedinKey) : undefined;
+
+    if (existingId) {
+      // Contacto ya existe por LinkedIn → solo actualizar email (y datos que falten)
+      const update: Record<string, string> = { email: lead.email, lemlist_status: "active" };
+      if (lead.first_name)   update.first_name   = lead.first_name;
+      if (lead.last_name)    update.last_name    = lead.last_name;
+      if (lead.company_name) update.company_name = lead.company_name;
+      if (lead.job_title)    update.job_title    = lead.job_title;
+      if (lead.phone)        update.phone        = lead.phone;
+
+      await db.from("contacts").update(update).eq("id", existingId);
+      matched++;
+    } else {
+      // No existe por LinkedIn → insertar fila nueva con email
+      // (upsert por email para evitar duplicados si ya lo importamos antes)
+      const row: Record<string, string> = { client_id, email: lead.email, lemlist_status: "active" };
+      if (lead.first_name)   row.first_name   = lead.first_name;
+      if (lead.last_name)    row.last_name    = lead.last_name;
+      if (lead.company_name) row.company_name = lead.company_name;
+      if (lead.job_title)    row.job_title    = lead.job_title;
+      if (lead.linkedin_url) row.linkedin_url = lead.linkedin_url;
+      if (lead.phone)        row.phone        = lead.phone;
+
+      const { error } = await db
+        .from("contacts")
+        .upsert(row, { onConflict: "linkedin_url" })
+        .select();
+
+      if (!error) created++;
+    }
+  }
+
+  return NextResponse.json({ imported: matched + created, matched, created, skipped });
 }
