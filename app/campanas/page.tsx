@@ -277,7 +277,7 @@ export default function CampanasPage() {
   const [syncing, setSyncing]           = useState(false);
   const [syncResult, setSyncResult]     = useState<{ updated: number; synced: number } | null>(null);
   const [importing, setImporting]       = useState(false);
-  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; fields?: string[] } | null>(null);
   const [error, setError]               = useState<string | null>(null);
 
   // ── Carga datos de campaña ──
@@ -361,9 +361,9 @@ export default function CampanasPage() {
       });
       const d = await res.json();
       if (d.error) {
-        setError(d.error);
+        setError(d.error + (d.debug ? ` | debug: ${JSON.stringify(d.debug)}` : ""));
       } else {
-        setImportResult({ imported: d.imported ?? 0, skipped: d.skipped ?? 0 });
+        setImportResult({ imported: d.imported ?? 0, skipped: d.skipped ?? 0, fields: d.contact_fields });
         loadCampaign();
       }
     } catch {
@@ -528,6 +528,7 @@ export default function CampanasPage() {
           <span className="text-sm font-medium">
             {importResult.imported} lead{importResult.imported !== 1 ? "s" : ""} importados de Lemlist a Supabase
             {importResult.skipped > 0 && ` · ${importResult.skipped} saltados (sin email)`}
+            {importResult.fields && ` · campos: ${importResult.fields.join(", ")}`}
           </span>
         </div>
       )}

@@ -124,9 +124,9 @@ export async function POST(req: NextRequest) {
       email,
       lemlist_status: "active",
     };
-    // Guardar IDs de Lemlist si las columnas existen (migration puede no haberse corrido aún)
-    if (c._contactId) row.lemlist_contact_id = c._contactId;
-    if (c._leadId)    row.lemlist_lead_id    = c._leadId;
+    // Campos de Lemlist IDs — solo incluir si las columnas existen (migration opcional)
+    // if (c._contactId) row.lemlist_contact_id = c._contactId;
+    // if (c._leadId)    row.lemlist_lead_id    = c._leadId;
 
     if (c.firstName   ?? c.first_name)   row.first_name   = c.firstName   ?? c.first_name;
     if (c.lastName    ?? c.last_name)    row.last_name    = c.lastName    ?? c.last_name;
