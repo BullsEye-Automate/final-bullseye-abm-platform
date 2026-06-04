@@ -191,12 +191,17 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
-    if (!files.length) return;
-    setSrcFiles(files);
+    const newFiles = Array.from(e.target.files ?? []);
+    if (!newFiles.length) return;
+    setSrcFiles((prev) => {
+      // Acumular archivos evitando duplicados por nombre
+      const existing = new Set(prev.map((f) => f.name));
+      const merged = [...prev, ...newFiles.filter((f) => !existing.has(f.name))];
+      return merged;
+    });
     setSrcError(null);
-    // Llenar título solo cuando es un único archivo y el campo está vacío
-    if (files.length === 1 && !srcForm.title) setSrcForm((p) => ({ ...p, title: files[0].name }));
+    // Reset el input para poder volver a seleccionar los mismos archivos si se desea
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function readFileContent(file: File): Promise<string> {
@@ -510,7 +515,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     ] as const).map(({ t, label, icon }) => (
                       <button
                         key={t}
-                        onClick={() => { setSrcForm((p) => ({ ...p, type: t })); setSrcFile(null); setSrcError(null); }}
+                        onClick={() => { setSrcForm((p) => ({ ...p, type: t })); setSrcFiles([]); setSrcError(null); }}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition"
                         style={srcForm.type === t
                           ? { background: "#251762", color: "white", borderColor: "#251762" }
@@ -528,12 +533,12 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     </button>
                   </div>
 
-                  {/* Título — se oculta si hay múltiples archivos (usan su propio nombre) */}
-                  {!(srcForm.type === "file" && srcFiles.length > 1) && (
+                  {/* Título — se oculta en modo archivo (cada archivo usa su propio nombre) */}
+                  {srcForm.type !== "file" && (
                     <input
                       value={srcForm.title}
                       onChange={(e) => setSrcForm((p) => ({ ...p, title: e.target.value }))}
-                      placeholder={srcForm.type === "file" ? "Título (se llena automático)" : "Título (opcional)"}
+                      placeholder="Título (opcional)"
                       className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white"
                     />
                   )}
@@ -569,40 +574,42 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                         className="hidden"
                         onChange={handleFileSelect}
                       />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="w-full text-sm border-2 border-dashed border-[#E5E2F0] rounded-xl px-4 py-6 text-center hover:border-[#251762] transition"
-                      >
-                        {srcFiles.length > 0 ? (
-                          <div className="text-ink space-y-1">
-                            <div className="flex items-center justify-center gap-1.5 font-medium">
-                              <IconFileText size={16} style={{ color: "#62E0D8" }} />
-                              {srcFiles.length === 1
-                                ? srcFiles[0].name
-                                : `${srcFiles.length} archivos seleccionados`}
-                            </div>
-                            <p className="text-xs text-ink-muted">
-                              {(srcFiles.reduce((acc, f) => acc + f.size, 0) / 1024).toFixed(0)} KB en total · Haz clic para cambiar
-                            </p>
-                          </div>
-                        ) : (
+
+                      {srcFiles.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full text-sm border-2 border-dashed border-[#E5E2F0] rounded-xl px-4 py-8 text-center hover:border-[#251762] transition"
+                        >
                           <div className="text-ink-muted space-y-1">
                             <IconUpload size={20} className="mx-auto opacity-40" />
-                            <p>Haz clic para seleccionar uno o varios archivos</p>
-                            <p className="text-xs opacity-60">.pdf · .txt · .md · .csv · .json · .html</p>
+                            <p>Haz clic para seleccionar archivos</p>
+                            <p className="text-xs opacity-60">Puedes seleccionar varios a la vez · .pdf · .txt · .md · .csv</p>
                           </div>
-                        )}
-                      </button>
-                      {srcFiles.length > 1 && (
-                        <div className="space-y-1">
+                        </button>
+                      ) : (
+                        <div className="border border-[#E5E2F0] rounded-xl overflow-hidden">
                           {srcFiles.map((f, i) => (
-                            <div key={i} className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] bg-white">
-                              <IconFileText size={12} style={{ color: "#62E0D8" }} />
-                              <span className="flex-1 truncate text-ink">{f.name}</span>
-                              <span className="text-ink-muted shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                            <div key={i} className="flex items-center gap-2 px-3 py-2.5 border-b border-[#F0EEF8] last:border-b-0 bg-white">
+                              <IconFileText size={14} style={{ color: "#62E0D8" }} className="shrink-0" />
+                              <span className="flex-1 truncate text-sm text-ink">{f.name}</span>
+                              <span className="text-xs text-ink-muted shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                              <button
+                                type="button"
+                                onClick={() => setSrcFiles((p) => p.filter((_, idx) => idx !== i))}
+                                className="shrink-0 text-red-300 hover:text-red-500 transition"
+                              >
+                                <IconX size={13} />
+                              </button>
                             </div>
                           ))}
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-full flex items-center justify-center gap-1.5 text-xs py-2 text-ink-muted hover:bg-gray-50 transition border-t border-[#F0EEF8]"
+                          >
+                            <IconPlus size={12} /> Agregar más archivos
+                          </button>
                         </div>
                       )}
                     </div>
