@@ -5,6 +5,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
+// Endpoints posibles para contactos en Lemlist (probar en orden)
+const CONTACT_PATHS = [
+  (id: string) => `https://api.lemlist.com/api/contacts/${id}`,
+  (id: string) => `https://api.lemlist.com/api/leads/${id}`,
+];
+
 export async function POST(req: NextRequest) {
   let body: { client_id: string };
   try {
@@ -35,64 +41,93 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
 
-  // 1. Traer todos los leads de la campaña (solo tienen _id, state, contactId)
-  const res = await fetch(
+  // 1. Traer lista de leads de la campaña (solo _id, state, contactId)
+  const leadsRes = await fetch(
     `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=500`,
     { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
   );
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    return NextResponse.json({ error: `Lemlist ${res.status}: ${text.slice(0, 200)}` }, { status: 502 });
+  if (!leadsRes.ok) {
+    const text = await leadsRes.text().catch(() => "");
+    return NextResponse.json({ error: `Lemlist leads ${leadsRes.status}: ${text.slice(0, 200)}` }, { status: 502 });
   }
 
-  const raw = await res.json();
-  const leads: any[] = Array.isArray(raw) ? raw : (raw.leads ?? raw.list ?? []);
+  const rawLeads = await leadsRes.json();
+  const leads: any[] = Array.isArray(rawLeads) ? rawLeads : (rawLeads.leads ?? rawLeads.list ?? []);
 
   if (leads.length === 0) {
     return NextResponse.json({ imported: 0, skipped: 0 });
   }
 
-  // 2. Para cada lead, buscar el contacto completo (email, nombre, etc.)
-  //    Hacerlo en paralelo por lotes de 10 para no saturar la API
-  const BATCH = 10;
-  const contacts: any[] = [];
+  // Probar el endpoint correcto con el primer contactId
+  const firstContactId = leads[0]?.contactId;
+  let workingPath: ((id: string) => string) | null = null;
+  let debugFirstContact: any = null;
 
-  for (let i = 0; i < leads.length; i += BATCH) {
+  if (firstContactId) {
+    for (const pathFn of CONTACT_PATHS) {
+      const r = await fetch(pathFn(firstContactId), {
+        headers: { Authorization: `Basic ${credentials}` },
+        cache: "no-store",
+      });
+      if (r.ok) {
+        workingPath = pathFn;
+        debugFirstContact = await r.json();
+        break;
+      }
+    }
+  }
+
+  // Si ningún endpoint funcionó, devolver debug para entender la estructura
+  if (!workingPath) {
+    return NextResponse.json({
+      error: "No se pudo obtener datos del contacto desde Lemlist",
+      debug: {
+        first_lead: leads[0],
+        tried_paths: CONTACT_PATHS.map((fn) => fn(firstContactId ?? "NOID")),
+      },
+    }, { status: 502 });
+  }
+
+  // 2. Buscar contactos completos en paralelo (lotes de 10)
+  const BATCH = 10;
+  const contactData: any[] = [{ ...debugFirstContact, _leadId: leads[0]._id, _contactId: firstContactId }];
+
+  for (let i = 1; i < leads.length; i += BATCH) {
     const batch = leads.slice(i, i + BATCH);
     const results = await Promise.all(
       batch.map(async (lead: any) => {
-        const contactId = lead.contactId;
-        if (!contactId) return null;
-
-        const r = await fetch(
-          `https://api.lemlist.com/api/people/${contactId}`,
-          { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
-        );
-        if (!r.ok) return null;
-
-        const c = await r.json();
-        return { ...c, _leadId: lead._id, _contactId: contactId };
+        if (!lead.contactId) return null;
+        const r = await fetch(workingPath!(lead.contactId), {
+          headers: { Authorization: `Basic ${credentials}` },
+          cache: "no-store",
+        }).catch(() => null);
+        if (!r?.ok) return null;
+        const c = await r.json().catch(() => null);
+        if (!c) return null;
+        return { ...c, _leadId: lead._id, _contactId: lead.contactId };
       })
     );
-    contacts.push(...results.filter(Boolean));
+    contactData.push(...results.filter(Boolean));
   }
 
-  // 3. Upsert en Supabase usando lemlist_contact_id como clave
+  // 3. Upsert en Supabase
   let imported = 0;
   let skipped  = 0;
 
-  for (const c of contacts) {
+  for (const c of contactData) {
     const email = (c.email ?? c.linkedinEmail ?? "").trim().toLowerCase();
     if (!email) { skipped++; continue; }
 
     const row: Record<string, string> = {
       client_id,
       email,
-      lemlist_contact_id: c._contactId,
-      lemlist_lead_id:    c._leadId,
-      lemlist_status:     "active",
+      lemlist_status: "active",
     };
+    // Guardar IDs de Lemlist si las columnas existen (migration puede no haberse corrido aún)
+    if (c._contactId) row.lemlist_contact_id = c._contactId;
+    if (c._leadId)    row.lemlist_lead_id    = c._leadId;
+
     if (c.firstName   ?? c.first_name)   row.first_name   = c.firstName   ?? c.first_name;
     if (c.lastName    ?? c.last_name)    row.last_name    = c.lastName    ?? c.last_name;
     if (c.companyName ?? c.company_name) row.company_name = c.companyName ?? c.company_name;
@@ -100,13 +135,32 @@ export async function POST(req: NextRequest) {
     if (c.linkedinUrl ?? c.linkedin_url) row.linkedin_url = c.linkedinUrl ?? c.linkedin_url;
     if (c.phone)                         row.phone        = c.phone;
 
+    // Intentar upsert por lemlist_contact_id; si falla (columna no existe), insertar por email
     const { error } = await db
       .from("contacts")
-      .upsert(row, { onConflict: "lemlist_contact_id" });
+      .insert(row);
 
-    if (!error) imported++;
-    else skipped++;
+    if (!error) {
+      imported++;
+    } else if ((error as any).code === "23505") {
+      // Duplicado — actualizar el existente por email
+      const { error: updErr } = await db
+        .from("contacts")
+        .update(row)
+        .eq("client_id", client_id)
+        .eq("email", email);
+      if (!updErr) imported++;
+      else skipped++;
+    } else {
+      skipped++;
+    }
   }
 
-  return NextResponse.json({ imported, skipped, total_leads: leads.length, total_contacts_fetched: contacts.length });
+  return NextResponse.json({
+    imported,
+    skipped,
+    total_leads: leads.length,
+    contacts_fetched: contactData.length,
+    contact_fields: Object.keys(debugFirstContact ?? {}),
+  });
 }

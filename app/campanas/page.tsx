@@ -353,14 +353,24 @@ export default function CampanasPage() {
     if (!currentClient?.id) return;
     setImporting(true);
     setImportResult(null);
-    const res = await fetch("/api/lemlist/import-leads", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: currentClient.id }),
-    });
-    const d = await res.json();
-    setImportResult({ imported: d.imported ?? 0, skipped: d.skipped ?? 0 });
-    setImporting(false);
+    try {
+      const res = await fetch("/api/lemlist/import-leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id }),
+      });
+      const d = await res.json();
+      if (d.error) {
+        setError(d.error);
+      } else {
+        setImportResult({ imported: d.imported ?? 0, skipped: d.skipped ?? 0 });
+        loadCampaign();
+      }
+    } catch {
+      setError("Error de conexión al importar desde Lemlist");
+    } finally {
+      setImporting(false);
+    }
   }
 
   // ── Pausar/reanudar lead ──
