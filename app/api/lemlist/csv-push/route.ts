@@ -103,18 +103,14 @@ export async function POST(req: NextRequest) {
 
     pushed++;
 
-    // Guardar en Supabase con upsert por email+client_id
-    const row: Record<string, string | null> = {
-      client_id,
-      email:        contact.email.trim(),
-      first_name:   contact.firstName   || null,
-      last_name:    contact.lastName    || null,
-      job_title:    contact.jobTitle    || null,
-      company_name: contact.companyName || null,
-      linkedin_url: contact.linkedinUrl || null,
-      phone:        contact.phone       || null,
-      lemlist_status: "active",
-    };
+    // Guardar en Supabase con upsert por email+client_id (solo campos con valor)
+    const row: Record<string, string> = { client_id, email: contact.email.trim(), lemlist_status: "active" };
+    if (contact.firstName)   row.first_name   = contact.firstName;
+    if (contact.lastName)    row.last_name    = contact.lastName;
+    if (contact.jobTitle)    row.job_title    = contact.jobTitle;
+    if (contact.companyName) row.company_name = contact.companyName;
+    if (contact.linkedinUrl) row.linkedin_url = contact.linkedinUrl;
+    if (contact.phone)       row.phone        = contact.phone;
     await db.from("contacts").upsert(row, { onConflict: "email,client_id" });
   }
 

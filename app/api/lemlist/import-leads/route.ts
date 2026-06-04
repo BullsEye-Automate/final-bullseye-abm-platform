@@ -35,16 +35,24 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
 
-  // Paginar leads de Lemlist (offset/limit)
-  const allLeads: Record<string, unknown>[] = [];
+  // Paginar leads de Lemlist (máx 100 por página según API)
+  const allLeads: any[] = [];
   let offset = 0;
   const limit = 100;
 
   while (true) {
-    const res = await fetch(
-      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=${limit}&offset=${offset}`,
-      { headers: { Authorization: `Basic ${credentials}` } }
-    );
+    let res: Response;
+    try {
+      res = await fetch(
+        `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=${limit}&offset=${offset}`,
+        {
+          headers: { Authorization: `Basic ${credentials}` },
+          cache: "no-store",
+        }
+      );
+    } catch (err: any) {
+      return NextResponse.json({ error: `Error de red: ${err?.message}` }, { status: 502 });
+    }
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
@@ -53,7 +61,7 @@ export async function POST(req: NextRequest) {
 
     const data = await res.json();
     // Lemlist puede devolver array directo o { leads: [] }
-    const page: Record<string, unknown>[] = Array.isArray(data) ? data : (data.leads ?? []);
+    const page: any[] = Array.isArray(data) ? data : (data.leads ?? []);
     allLeads.push(...page);
 
     if (page.length < limit) break;
@@ -64,22 +72,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ imported: 0, skipped: 0 });
   }
 
-  // Construir rows para upsert
-  const rows = allLeads
-    .filter((l) => typeof l.email === "string" && l.email)
-    .map((l) => ({
-      client_id,
-      email:          (l.email as string).trim(),
-      first_name:     (l.firstName  as string | undefined) ?? null,
-      last_name:      (l.lastName   as string | undefined) ?? null,
-      job_title:      (l.jobTitle   as string | undefined) ?? null,
-      company_name:   (l.companyName as string | undefined) ?? null,
-      linkedin_url:   (l.linkedinUrl as string | undefined) ?? null,
-      phone:          (l.phone      as string | undefined) ?? null,
-      lemlist_status: "active",
-    }));
+  // Normalizar campos igual que campaigns/leads/route.ts (Lemlist mezcla camelCase y snake_case)
+  const normalized = allLeads.map((l: any) => ({
+    email:       (l.email ?? "").trim(),
+    first_name:  l.firstName   ?? l.first_name   ?? null,
+    last_name:   l.lastName    ?? l.last_name     ?? null,
+    company_name: l.companyName ?? l.company_name ?? l.company ?? null,
+    job_title:   l.jobTitle    ?? l.job_title     ?? l.title   ?? null,
+    linkedin_url: l.linkedinUrl ?? l.linkedin_url ?? l.linkedin ?? null,
+    phone:       l.phone ?? null,
+    lemlist_status: "active",
+  }));
 
-  const skipped = allLeads.length - rows.length;
+  const valid   = normalized.filter((r) => r.email);
+  const skipped = allLeads.length - valid.length;
+
+  // Construir rows — solo incluir campos no-nulos para no pisar datos existentes en Supabase
+  const rows = valid.map((r) => {
+    const row: Record<string, string | null> = { client_id, email: r.email, lemlist_status: "active" };
+    if (r.first_name)   row.first_name   = r.first_name;
+    if (r.last_name)    row.last_name    = r.last_name;
+    if (r.company_name) row.company_name = r.company_name;
+    if (r.job_title)    row.job_title    = r.job_title;
+    if (r.linkedin_url) row.linkedin_url = r.linkedin_url;
+    if (r.phone)        row.phone        = r.phone;
+    return row;
+  });
 
   const { error: upsertError } = await db
     .from("contacts")
