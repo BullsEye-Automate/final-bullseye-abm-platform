@@ -753,11 +753,13 @@ function Step5({ client, config, onComplete }: {
             <p className="text-xs font-semibold text-ink uppercase tracking-wide">Rama con email</p>
             <CopyTextarea label="Asunto email inicial" step="Email inicial" value={texts.emailSubject} />
             <CopyTextarea label="Cuerpo email inicial" step="Email inicial" value={texts.emailBody} />
+            <CopyTextarea label="Nota de invitación LinkedIn" step="LinkedIn Invitation (nota de conexión — máx 200 chars)" value={texts.linkedinInvite} />
             <CopyTextarea label="Email follow-up" step="Después de LinkedIn Invitation (no acepta)" value={texts.emailFollowUp} />
             <CopyTextarea label="Email follow-up 2" step="5 días después" value={texts.emailFollowUp2} />
             <CopyTextarea label="Breakup email" step="Último email — rama con email" value={texts.breakupEmail} />
             <CopyTextarea label="LinkedIn Chat (acepta invite)" step="Cuando acepta el invite" value={texts.linkedinIcebreaker} />
             <p className="text-xs font-semibold text-ink uppercase tracking-wide pt-2">Rama sin email</p>
+            <CopyTextarea label="Nota de invitación LinkedIn" step="LinkedIn Invitation (nota de conexión — máx 200 chars)" value={texts.linkedinInvite} />
             <CopyTextarea label="LinkedIn Chat (sin email)" step="Último paso — rama sin email" value={texts.linkedinIcebreakerNoEmail} />
           </div>
         )}

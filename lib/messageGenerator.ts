@@ -55,9 +55,12 @@ export type ContactMessageInput = {
 export type ContactMessages = {
   emailSubject?: string;
   emailBody?: string;
+  linkedinInvite?: string;
   linkedinIcebreaker?: string;
   linkedinIcebreakerNoEmail?: string;
 };
+
+const LINKEDIN_INVITE_MAX_CHARS = 200;
 
 export type RoutingResult = {
   segmentId: string | null;
@@ -238,12 +241,16 @@ export async function generateContactMessages(
               type: "string",
               description: `Cuerpo del email. Debe empezar con "${greeting}" seguido de doble salto de línea. Sin bullets. Termina con pregunta o CTA sutil.`,
             },
+            linkedinInvite: {
+              type: "string",
+              description: "Nota de la solicitud de conexión en LinkedIn (MÁXIMO 200 caracteres estrictos, sin saludo, sin emojis, sin guiones largos)",
+            },
             linkedinIcebreaker: {
               type: "string",
               description: "Mensaje de LinkedIn cuando acepta el invite (máximo 180 caracteres, sin saludo, sin emojis)",
             },
           },
-          required: ["emailSubject", "emailBody", "linkedinIcebreaker"],
+          required: ["emailSubject", "emailBody", "linkedinInvite", "linkedinIcebreaker"],
         },
       }
     : {
@@ -252,12 +259,16 @@ export async function generateContactMessages(
         input_schema: {
           type: "object" as const,
           properties: {
+            linkedinInvite: {
+              type: "string",
+              description: "Nota de la solicitud de conexión en LinkedIn (MÁXIMO 200 caracteres estrictos, sin saludo, sin emojis, sin guiones largos)",
+            },
             linkedinIcebreakerNoEmail: {
               type: "string",
-              description: "Mensaje de LinkedIn (máximo 180 caracteres, sin saludo, sin emojis, directo al valor)",
+              description: "Mensaje de LinkedIn cuando acepta el invite (máximo 180 caracteres, sin saludo, sin emojis, directo al valor)",
             },
           },
-          required: ["linkedinIcebreakerNoEmail"],
+          required: ["linkedinInvite", "linkedinIcebreakerNoEmail"],
         },
       };
 
@@ -297,6 +308,12 @@ Genera los mensajes de outreach personalizados para este contacto usando la herr
   }
 
   const result = toolUse.input as ContactMessages;
-  console.log("[generateContactMessages] OK — subjectLen:", result.emailSubject?.length, "bodyLen:", result.emailBody?.length);
+
+  // Garantizar límite estricto de LinkedIn para invitaciones a conectar
+  if (result.linkedinInvite && result.linkedinInvite.length > LINKEDIN_INVITE_MAX_CHARS) {
+    result.linkedinInvite = result.linkedinInvite.slice(0, LINKEDIN_INVITE_MAX_CHARS).trimEnd();
+  }
+
+  console.log("[generateContactMessages] OK — subjectLen:", result.emailSubject?.length, "bodyLen:", result.emailBody?.length, "inviteLen:", result.linkedinInvite?.length);
   return result;
 }

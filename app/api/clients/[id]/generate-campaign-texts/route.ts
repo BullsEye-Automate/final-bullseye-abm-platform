@@ -7,12 +7,15 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const LINKEDIN_INVITE_MAX_CHARS = 200;
+
 type CampaignTexts = {
   emailSubject: string;
   emailBody: string;
   emailFollowUp: string;
   emailFollowUp2: string;
   breakupEmail: string;
+  linkedinInvite: string;
   linkedinIcebreaker: string;
   linkedinIcebreakerNoEmail: string;
 };
@@ -44,8 +47,9 @@ Generate these 7 texts:
 3. emailFollowUp — Follow-up email sent when LinkedIn invite is NOT accepted (3 days later). Short reference to initial email. Max 3 sentences.
 4. emailFollowUp2 — Second follow-up email (5 days after follow-up). Very concise, 2-3 sentences.
 5. breakupEmail — Final breakup email. Max 2 sentences. Professional, gives an easy out.
-6. linkedinIcebreaker — LinkedIn chat message when invite IS accepted. Max 180 characters. No greeting, no emoji, directly references why they're a fit.
-7. linkedinIcebreakerNoEmail — LinkedIn chat message for contacts WITHOUT email (end of no-email sequence). Max 180 characters. No greeting, no emoji.
+6. linkedinInvite — Note attached to the LinkedIn connection request (STRICT MAXIMUM 200 characters). No greeting, no emoji, no long dashes. Brief and compelling reason to connect.
+7. linkedinIcebreaker — LinkedIn chat message when invite IS accepted. Max 180 characters. No greeting, no emoji, directly references why they're a fit.
+8. linkedinIcebreakerNoEmail — LinkedIn chat message for contacts WITHOUT email (end of no-email sequence). Max 180 characters. No greeting, no emoji.
 
 Respond ONLY with valid JSON, no extra text:
 {
@@ -54,6 +58,7 @@ Respond ONLY with valid JSON, no extra text:
   "emailFollowUp": "...",
   "emailFollowUp2": "...",
   "breakupEmail": "...",
+  "linkedinInvite": "...",
   "linkedinIcebreaker": "...",
   "linkedinIcebreakerNoEmail": "..."
 }`;
@@ -105,5 +110,11 @@ export async function POST(
   }
 
   const texts = JSON.parse(jsonMatch[0]) as CampaignTexts;
+
+  // Garantizar límite estricto de LinkedIn para invitaciones a conectar
+  if (texts.linkedinInvite?.length > LINKEDIN_INVITE_MAX_CHARS) {
+    texts.linkedinInvite = texts.linkedinInvite.slice(0, LINKEDIN_INVITE_MAX_CHARS).trimEnd();
+  }
+
   return NextResponse.json({ texts, language });
 }
