@@ -72,6 +72,8 @@ Usa el contexto del ICP proporcionado para personalizar cada mensaje.
 NUNCA uses guiones largos (—). En su lugar usa comas o puntos según corresponda.
 Responde ÚNICAMENTE con JSON válido, sin texto adicional.`;
 
+const MAX_SOURCES_CHARS = 6000; // evitar prompts gigantes con PDFs largos
+
 function buildSystemPrompt(
   styleGuide?: StyleGuide,
   fewShot?: FewShotExample[],
@@ -80,8 +82,11 @@ function buildSystemPrompt(
   const parts: string[] = [BASE_SYSTEM_PROMPT];
 
   if (segmentCtx?.sources?.trim()) {
+    const sourcesText = segmentCtx.sources.length > MAX_SOURCES_CHARS
+      ? segmentCtx.sources.slice(0, MAX_SOURCES_CHARS) + "\n[... contenido truncado por límite de contexto]"
+      : segmentCtx.sources;
     parts.push(`\n## CONTEXTO ESPECÍFICO DEL SEGMENTO: ${segmentCtx.name.toUpperCase()}`);
-    parts.push(segmentCtx.sources);
+    parts.push(sourcesText);
   }
 
   if (styleGuide?.tone || styleGuide?.rules || styleGuide?.avoid || styleGuide?.emailLength) {
@@ -227,7 +232,7 @@ export async function generateContactMessages(
 
   const message = await anthropic().messages.create({
     model: CLAUDE_MODEL,
-    max_tokens: 1000,
+    max_tokens: 2048,
     system: systemPrompt,
     messages: [{ role: "user", content: userPrompt }],
   });
@@ -239,7 +244,10 @@ export async function generateContactMessages(
     .trim();
 
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error("No se pudo parsear la respuesta de Claude");
+  if (!jsonMatch) {
+    console.error("[generateContactMessages] Claude no devolvió JSON. stop_reason:", message.stop_reason, "raw:", raw.slice(0, 300));
+    throw new Error(`Claude no devolvió JSON válido (stop_reason: ${message.stop_reason})`);
+  }
 
   return JSON.parse(jsonMatch[0]) as ContactMessages;
 }
