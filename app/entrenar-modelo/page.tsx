@@ -35,6 +35,7 @@ type GeneratedMessages = {
   emailSubject?: string;
   emailBody?: string;
   linkedinIcebreaker?: string;
+  linkedinIcebreakerNoEmail?: string;
 };
 
 type Routing = {
@@ -740,15 +741,16 @@ function LabTab({ clientId }: { clientId: string }) {
       const d = await res.json();
       if (!res.ok) { setGenError(d.error ?? "Error al generar"); return; }
       const msgs = d.messages as GeneratedMessages;
-      if (!msgs?.emailSubject && !msgs?.emailBody && !msgs?.linkedinIcebreaker) {
-        setGenError(`DEBUG — respuesta API: ${JSON.stringify(d).slice(0, 500)}`);
+      if (!msgs?.emailSubject && !msgs?.emailBody && !msgs?.linkedinIcebreaker && !msgs?.linkedinIcebreakerNoEmail) {
+        setGenError("Claude no generó contenido. Intenta de nuevo.");
         return;
       }
       setMessages(msgs);
       setEdited({
-        emailSubject:       msgs.emailSubject       ?? "",
-        emailBody:          msgs.emailBody          ?? "",
-        linkedinIcebreaker: msgs.linkedinIcebreaker ?? "",
+        emailSubject:              msgs.emailSubject              ?? "",
+        emailBody:                 msgs.emailBody                 ?? "",
+        linkedinIcebreaker:        msgs.linkedinIcebreaker        ?? "",
+        linkedinIcebreakerNoEmail: msgs.linkedinIcebreakerNoEmail ?? "",
       });
       setRouting(d.routing ?? null);
       setSegmentId(d.routing?.segmentId ?? null);
@@ -958,9 +960,18 @@ function LabTab({ clientId }: { clientId: string }) {
                 {regenerating && <IconLoader2 size={14} className="animate-spin text-ink-muted" />}
               </div>
 
-              <MessageBlock label="Subject {{emailSubject}}" value={edited.emailSubject ?? ""} onChange={setField("emailSubject")} />
-              <MessageBlock label="Email Body {{emailBody}}" value={edited.emailBody ?? ""} onChange={setField("emailBody")} />
-              <MessageBlock label="LinkedIn Icebreaker {{icebreaker}}" value={edited.linkedinIcebreaker ?? ""} onChange={setField("linkedinIcebreaker")} />
+              {(edited.emailSubject || edited.emailBody) && (
+                <>
+                  <MessageBlock label="Subject {{emailSubject}}" value={edited.emailSubject ?? ""} onChange={setField("emailSubject")} />
+                  <MessageBlock label="Email Body {{emailBody}}" value={edited.emailBody ?? ""} onChange={setField("emailBody")} />
+                </>
+              )}
+              {edited.linkedinIcebreaker && (
+                <MessageBlock label="LinkedIn Icebreaker {{icebreaker}}" value={edited.linkedinIcebreaker ?? ""} onChange={setField("linkedinIcebreaker")} />
+              )}
+              {edited.linkedinIcebreakerNoEmail && (
+                <MessageBlock label="LinkedIn (sin email) {{icebreaker}}" value={edited.linkedinIcebreakerNoEmail ?? ""} onChange={setField("linkedinIcebreakerNoEmail")} />
+              )}
 
               <button
                 onClick={saveAsExample}
