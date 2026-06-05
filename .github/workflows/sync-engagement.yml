@@ -1,33 +1,23 @@
-name: Sync engagement (Lemlist → Supabase → HubSpot)
+name: Sync Lemlist → Supabase → HubSpot
 
-# Cada 30 minutos trae actividades nuevas de Lemlist y recalcula engagement,
-# empujándolo a HubSpot. Equivalente al cron de WeCAD4you.
+# Cada 30 minutos refresca contactos: enriquece email/teléfono desde Lemlist,
+# regenera mensajes que falten, calcula engagement_score y sincroniza con HubSpot.
+# Equivalente al cron de WeCAD4you.
 on:
   schedule:
     - cron: "*/30 * * * *"
-  workflow_dispatch:  # permite disparar manualmente desde la pestaña Actions
+  workflow_dispatch: # permite dispararlo manualmente desde la pestaña Actions
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Sync activities Lemlist → Supabase
+      - name: Refresh Lemlist → Supabase → HubSpot
         run: |
-          curl -sS -X POST "${APP_URL}/api/lemlist/sync-activities" \
+          curl -sS -X GET "${APP_URL}/api/cron/refresh-lemlist" \
             -H "Authorization: Bearer ${CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            --max-time 280 \
-            --fail-with-body
-        env:
-          APP_URL:     ${{ secrets.APP_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-
-      - name: Backfill engagement → HubSpot
-        run: |
-          curl -sS -X POST "${APP_URL}/api/contacts/backfill-engagement" \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            -H "Content-Type: application/json" \
-            --max-time 280 \
+            --max-time 540 \
             --fail-with-body
         env:
           APP_URL:     ${{ secrets.APP_URL }}
