@@ -741,7 +741,7 @@ function LabTab({ clientId }: { clientId: string }) {
       if (!res.ok) { setGenError(d.error ?? "Error al generar"); return; }
       const msgs = d.messages as GeneratedMessages;
       if (!msgs?.emailSubject && !msgs?.emailBody && !msgs?.linkedinIcebreaker) {
-        setGenError("Claude no generó contenido. Revisa los logs en Vercel o intenta de nuevo.");
+        setGenError(`DEBUG — respuesta API: ${JSON.stringify(d).slice(0, 500)}`);
         return;
       }
       setMessages(msgs);
