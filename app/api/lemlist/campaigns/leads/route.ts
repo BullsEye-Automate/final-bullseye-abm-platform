@@ -66,19 +66,34 @@ export async function GET(req: NextRequest) {
   const rawLeads: any[] = Array.isArray(leadsData) ? leadsData : (leadsData.leads ?? []);
 
   // Normalizar campos de Lemlist
-  const leads = rawLeads.map((l: any) => ({
-    _id:         l._id ?? l.id ?? l.email,
-    email:       (l.email ?? l._id ?? "").trim().toLowerCase(),
-    firstName:   l.firstName   ?? l.first_name   ?? "",
-    lastName:    l.lastName    ?? l.last_name     ?? "",
-    companyName: l.companyName ?? l.company_name  ?? l.company ?? "",
-    jobTitle:    l.jobTitle    ?? l.job_title     ?? l.title   ?? "",
-    linkedinUrl: l.linkedinUrl ?? l.linkedin_url  ?? l.linkedin ?? "",
-    isPaused:    l.isPaused    ?? l.is_paused     ?? false,
-    isFinished:  l.isFinished  ?? l.is_finished   ?? false,
-    completed:   l.completed   ?? null,
-    addedAt:     l.addedAt     ?? l.added_at      ?? l.createdAt ?? null,
-  }));
+  const leads = rawLeads.map((l: any) => {
+    // Algunos campos pueden estar anidados en l.fields o l.vars
+    const fields = l.fields ?? l.vars ?? {};
+    const firstName = l.firstName ?? l.first_name ?? fields.firstName ?? fields.first_name ?? "";
+    const lastName  = l.lastName  ?? l.last_name  ?? fields.lastName  ?? fields.last_name  ?? "";
+    // fullName directo si existe
+    const rawFullName = (l.fullName ?? l.full_name ?? fields.fullName ?? "").trim();
+    let derivedFirst = firstName;
+    let derivedLast  = lastName;
+    if (!derivedFirst && !derivedLast && rawFullName) {
+      const parts = rawFullName.split(/\s+/);
+      derivedFirst = parts[0] ?? "";
+      derivedLast  = parts.slice(1).join(" ") ?? "";
+    }
+    return {
+      _id:         l._id ?? l.id,
+      email:       (l.email ?? "").trim().toLowerCase(),
+      firstName:   derivedFirst,
+      lastName:    derivedLast,
+      companyName: l.companyName ?? l.company_name ?? fields.companyName ?? fields.company_name ?? l.company ?? "",
+      jobTitle:    l.jobTitle    ?? l.job_title    ?? fields.jobTitle    ?? fields.job_title    ?? l.title ?? "",
+      linkedinUrl: l.linkedinUrl ?? l.linkedin_url ?? fields.linkedinUrl ?? l.linkedin ?? "",
+      isPaused:    l.isPaused    ?? l.is_paused    ?? false,
+      isFinished:  l.isFinished  ?? l.is_finished  ?? false,
+      completed:   l.completed   ?? null,
+      addedAt:     l.addedAt     ?? l.added_at     ?? l.createdAt ?? null,
+    };
+  });
 
   // Enriquecer con datos de Supabase — primero obtener los contactos de Lemlist (que tienen email)
   // para cruzarlos contra contacts en Supabase
