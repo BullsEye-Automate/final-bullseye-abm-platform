@@ -219,64 +219,84 @@ export async function generateContactMessages(
 
   const recipientName = firstName?.trim() ?? null;
   const greeting = recipientName
-    ? (language === "en" ? `Hi ${recipientName},` : `Hola ${recipientName}! ¿Cómo estás?`)
-    : (language === "en" ? "Hi," : "Hola! ¿Cómo estás?");
+    ? (language === "en" ? `Hi ${recipientName},` : `Hola ${recipientName},`)
+    : (language === "en" ? "Hi," : "Hola,");
 
-  let userPrompt: string;
+  // Definición de la herramienta para forzar output estructurado
+  const tool: Anthropic.Tool = hasEmail
+    ? {
+        name: "generate_messages",
+        description: "Genera los mensajes de outreach para la secuencia de Lemlist",
+        input_schema: {
+          type: "object" as const,
+          properties: {
+            emailSubject: {
+              type: "string",
+              description: "Asunto del email (máximo 7 palabras, sin signos de admiración, sin emojis)",
+            },
+            emailBody: {
+              type: "string",
+              description: `Cuerpo del email. Debe empezar con "${greeting}" seguido de doble salto de línea. Sin bullets. Termina con pregunta o CTA sutil.`,
+            },
+            linkedinIcebreaker: {
+              type: "string",
+              description: "Mensaje de LinkedIn cuando acepta el invite (máximo 180 caracteres, sin saludo, sin emojis)",
+            },
+          },
+          required: ["emailSubject", "emailBody", "linkedinIcebreaker"],
+        },
+      }
+    : {
+        name: "generate_messages",
+        description: "Genera el mensaje de LinkedIn para contactos sin email",
+        input_schema: {
+          type: "object" as const,
+          properties: {
+            linkedinIcebreakerNoEmail: {
+              type: "string",
+              description: "Mensaje de LinkedIn (máximo 180 caracteres, sin saludo, sin emojis, directo al valor)",
+            },
+          },
+          required: ["linkedinIcebreakerNoEmail"],
+        },
+      };
 
-  if (hasEmail) {
-    userPrompt = `${langInstruction}\n\nContexto del ICP:\n${icpContext ?? "No disponible"}${deepResearchContext}\n\nDatos del contacto:\n${contactInfo || "No disponibles"}\n\nGenera los mensajes para la secuencia de Lemlist (RAMA CON EMAIL).\n${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar los mensajes con un evento o señal real y verificable de la empresa." : ""}\n1. emailSubject: asunto del email inicial (máximo 7 palabras, sin signos de admiración, sin emojis)\n2. emailBody: cuerpo del email — empieza EXACTAMENTE con "${greeting}\\n\\n", luego el texto. Sin bullets. Termina con una pregunta o CTA sutil.\n3. linkedinIcebreaker: mensaje de chat LinkedIn para cuando acepta el invite (máximo 180 caracteres, sin saludo, sin emojis, directo al contexto relevante)\n\nResponde ÚNICAMENTE con este JSON:\n{"emailSubject":"...","emailBody":"...","linkedinIcebreaker":"..."}`;
-  } else {
-    userPrompt = `${langInstruction}\n\nContexto del ICP:\n${icpContext ?? "No disponible"}${deepResearchContext}\n\nDatos del contacto:\n${contactInfo || "No disponibles"}\n\nGenera el mensaje para la secuencia de Lemlist (RAMA SIN EMAIL).\n${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con un evento real y verificable de la empresa." : ""}\nlinkedinIcebreakerNoEmail: mensaje de chat LinkedIn final (máximo 180 caracteres, sin saludo, sin emojis, directo al contexto relevante del ICP)\n\nResponde ÚNICAMENTE con este JSON:\n{"linkedinIcebreakerNoEmail":"..."}`;
-  }
+  const userPrompt = `${langInstruction}
+
+Contexto del ICP:
+${icpContext ?? "No disponible"}${deepResearchContext}
+
+Datos del contacto:
+${contactInfo || "No disponibles"}
+
+${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa." : ""}
+
+Genera los mensajes de outreach personalizados para este contacto usando la herramienta generate_messages.`;
 
   const message = await anthropic().messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 2048,
     system: systemPrompt,
+    tools: [tool],
+    tool_choice: { type: "any" },
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  const raw = message.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
+  // Extraer el resultado del tool_use
+  const toolUse = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
 
-  console.log("[generateContactMessages] stop_reason:", message.stop_reason, "raw preview:", raw.slice(0, 400));
-
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error(`Claude no devolvió JSON (stop_reason: ${message.stop_reason}). Raw: ${raw.slice(0, 200)}`);
+  if (!toolUse) {
+    // Fallback: intentar parsear texto plano si Claude no usó la herramienta
+    const raw = message.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
+    console.error("[generateContactMessages] Claude no usó tool_use. stop_reason:", message.stop_reason, "raw:", raw.slice(0, 300));
+    throw new Error(`Claude no generó mensajes (stop_reason: ${message.stop_reason})`);
   }
 
-  // Sanitizar newlines literales dentro de strings JSON (bug común de Claude)
-  const sanitized = jsonMatch[0].replace(
-    /"((?:[^"\\]|\\[\s\S])*)"/g,
-    (match) => match.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")
-  );
-
-  let parsed: ContactMessages;
-  try {
-    parsed = JSON.parse(sanitized) as ContactMessages;
-  } catch (e) {
-    console.error("[generateContactMessages] JSON.parse falló. sanitized:", sanitized.slice(0, 400));
-    throw new Error(`No se pudo parsear respuesta de Claude: ${(e as Error).message}`);
-  }
-
-  // Normalizar claves en caso de que Claude use snake_case o variantes
-  const normalized: ContactMessages = {
-    emailSubject:              (parsed as Record<string, string>).emailSubject              ?? (parsed as Record<string, string>).email_subject              ?? "",
-    emailBody:                 (parsed as Record<string, string>).emailBody                 ?? (parsed as Record<string, string>).email_body                 ?? "",
-    linkedinIcebreaker:        (parsed as Record<string, string>).linkedinIcebreaker        ?? (parsed as Record<string, string>).linkedin_icebreaker        ?? "",
-    linkedinIcebreakerNoEmail: (parsed as Record<string, string>).linkedinIcebreakerNoEmail ?? (parsed as Record<string, string>).linkedin_icebreaker_no_email ?? "",
-  };
-
-  console.log("[generateContactMessages] resultado:", {
-    subjectLen: normalized.emailSubject?.length,
-    bodyLen:    normalized.emailBody?.length,
-    icebreakerLen: normalized.linkedinIcebreaker?.length,
-  });
-
-  return normalized;
+  const result = toolUse.input as ContactMessages;
+  console.log("[generateContactMessages] OK — subjectLen:", result.emailSubject?.length, "bodyLen:", result.emailBody?.length);
+  return result;
 }
