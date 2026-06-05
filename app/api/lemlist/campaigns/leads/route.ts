@@ -171,10 +171,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // ── 4. Enriquecer con datos de Supabase donde haya email ─────────────────
-  const emailsToLookup = leads
-    .filter((l) => l.email && (!l.firstName || !l.companyName))
-    .map((l) => l.email);
+  // ── 4. Enriquecer con datos de Supabase para todos los leads con email ──────
+  // Supabase es la fuente más confiable ya que los contactos se guardaron ahí al hacer csv-push.
+  const emailsToLookup = leads.filter((l) => l.email).map((l) => l.email);
 
   if (emailsToLookup.length > 0) {
     const { data: dbContacts } = await db
