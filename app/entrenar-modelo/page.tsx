@@ -696,6 +696,7 @@ function LabTab({ clientId }: { clientId: string }) {
   const [query, setQuery]             = useState("");
   const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
   const [selected, setSelected]       = useState<ContactSuggestion | null>(null);
+  const [searchHasEmail, setSearchHasEmail] = useState(true);
   const [manual, setManual]           = useState({ firstName: "", lastName: "", jobTitle: "", companyName: "", industry: "", companySize: "", hasEmail: true });
   const [generating, setGenerating]   = useState(false);
   const [messages, setMessages]       = useState<GeneratedMessages | null>(null);
@@ -728,8 +729,12 @@ function LabTab({ clientId }: { clientId: string }) {
     if (messages) setRegenerating(true); else setGenerating(true);
 
     const payload: Record<string, unknown> = { client_id: clientId };
-    if (mode === "search" && selected) payload.contact_id = selected.id;
-    else payload.manual = manual;
+    if (mode === "search" && selected) {
+      payload.contact_id = selected.id;
+      payload.has_email_override = searchHasEmail;
+    } else {
+      payload.manual = manual;
+    }
     if (withFeedback) payload.feedback = withFeedback;
 
     try {
@@ -844,13 +849,24 @@ function LabTab({ clientId }: { clientId: string }) {
                 </div>
               )}
               {selected && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(98,224,216,0.1)" }}>
-                  <IconCheck size={14} style={{ color: "#62E0D8" }} />
-                  <span className="text-sm font-medium text-ink">
-                    {[selected.first_name, selected.last_name].filter(Boolean).join(" ")}
-                    {selected.job_title && <span className="font-normal text-ink-muted"> · {selected.job_title}</span>}
-                  </span>
-                  <button onClick={() => { setSelected(null); setQuery(""); }} className="ml-auto text-ink-muted hover:text-ink"><IconX size={13} /></button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(98,224,216,0.1)" }}>
+                    <IconCheck size={14} style={{ color: "#62E0D8" }} />
+                    <span className="text-sm font-medium text-ink">
+                      {[selected.first_name, selected.last_name].filter(Boolean).join(" ")}
+                      {selected.job_title && <span className="font-normal text-ink-muted"> · {selected.job_title}</span>}
+                    </span>
+                    <button onClick={() => { setSelected(null); setQuery(""); }} className="ml-auto text-ink-muted hover:text-ink"><IconX size={13} /></button>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-ink cursor-pointer px-1">
+                    <input
+                      type="checkbox"
+                      checked={searchHasEmail}
+                      onChange={(e) => setSearchHasEmail(e.target.checked)}
+                      className="accent-[#251762]"
+                    />
+                    Generar email + LinkedIn (desmarcar para solo LinkedIn)
+                  </label>
                 </div>
               )}
             </div>

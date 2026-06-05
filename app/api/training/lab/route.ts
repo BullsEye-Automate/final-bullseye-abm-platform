@@ -8,7 +8,7 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { client_id, contact_id, manual } = body;
+  const { client_id, contact_id, manual, has_email_override } = body;
 
   if (!client_id) return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
 
@@ -56,7 +56,8 @@ export async function POST(req: NextRequest) {
     lastName  = contact.last_name  ?? undefined;
     jobTitle  = contact.job_title  ?? undefined;
     linkedinHeadline = contact.linkedin_headline ?? undefined;
-    hasEmail  = Boolean(contact.email?.trim());
+    // Si el frontend envía override explícito, respetarlo; si no, usar si tiene email en DB
+    hasEmail = has_email_override !== undefined ? Boolean(has_email_override) : Boolean(contact.email?.trim());
 
     if (contact.company_id) {
       const { data: company } = await db.from("companies")
