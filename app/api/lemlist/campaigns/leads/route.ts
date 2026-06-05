@@ -149,7 +149,7 @@ export async function GET(req: NextRequest) {
       if (!lead.email && c.email)                lead.email       = c.email.trim().toLowerCase();
       if (!lead.linkedinUrl && c.linkedinUrl)  lead.linkedinUrl = c.linkedinUrl;
 
-      // Nombre: intentar fullName, luego firstName/lastName separados del contacto
+      // Nombre: intentar fullName primero, luego firstName/lastName separados
       if (!lead.firstName && !lead.lastName) {
         const cFull = (c.fullName ?? "").trim();
         if (cFull) {
@@ -157,14 +157,14 @@ export async function GET(req: NextRequest) {
           lead.firstName = parts[0] ?? "";
           lead.lastName  = parts.slice(1).join(" ");
         } else {
-          // Lemlist a veces devuelve firstName/lastName por separado en el contacto
-          const cf2 = c.vars ?? c.fields ?? {};
-          lead.firstName = pick(c, "firstName", "first_name") || pick(cf2, "firstName", "first_name");
-          lead.lastName  = pick(c, "lastName",  "last_name")  || pick(cf2, "lastName",  "last_name");
+          // Lemlist a veces devuelve firstName/lastName separados en el contacto
+          const cv = c.vars ?? c.fields ?? {};
+          lead.firstName = pick(c, "firstName", "first_name") || pick(cv, "firstName", "first_name");
+          lead.lastName  = pick(c, "lastName",  "last_name")  || pick(cv, "lastName",  "last_name");
         }
       }
 
-      // Empresa y cargo desde fields del contacto
+      // Empresa y cargo desde vars/fields del contacto
       const cf = c.vars ?? c.fields ?? {};
       if (!lead.companyName) lead.companyName = pick(c, "companyName", "company") || pick(cf, "companyName", "company_name");
       if (!lead.jobTitle)    lead.jobTitle    = pick(c, "jobTitle")                || pick(cf, "jobTitle", "job_title");
