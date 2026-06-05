@@ -3,6 +3,16 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+// Extrae un string de múltiples posibles claves en un objeto
+function pick(obj: any, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (v && typeof v === "string") return v.trim();
+  }
+  return "";
+}
 
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("client_id");
@@ -16,7 +26,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
   }
 
-  // Obtener ID de campaña del cliente
   const db = supabaseAdmin();
   const { data: config, error: configError } = await db
     .from("client_configs")
@@ -37,14 +46,12 @@ export async function GET(req: NextRequest) {
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
 
+  // ── 1. Traer leads de la campaña ──────────────────────────────────────────
   let lemRes: Response;
   try {
     lemRes = await fetch(
-      `https://api.lemlist.com/api/campaigns/${config.lemlist_campaign_id}/leads?limit=100`,
-      {
-        headers: { Authorization: `Basic ${credentials}` },
-        cache: "no-store",
-      }
+      `https://api.lemlist.com/api/campaigns/${config.lemlist_campaign_id}/leads?limit=500`,
+      { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
     );
   } catch (err: any) {
     return NextResponse.json(
@@ -62,32 +69,34 @@ export async function GET(req: NextRequest) {
   }
 
   const leadsData = await lemRes.json();
-  // Lemlist puede retornar array directo o { leads: [...] }
-  const rawLeads: any[] = Array.isArray(leadsData) ? leadsData : (leadsData.leads ?? []);
+  const rawLeads: any[] = Array.isArray(leadsData) ? leadsData : (leadsData.leads ?? leadsData.list ?? []);
 
-  // Normalizar campos de Lemlist
+  // ── 2. Normalizar cada lead ───────────────────────────────────────────────
+  // Lemlist guarda las variables custom bajo `vars` (a veces `fields`).
+  // Email SÍ viene en el root del lead.
   const leads = rawLeads.map((l: any) => {
-    // Algunos campos pueden estar anidados en l.fields o l.vars
-    const fields = l.fields ?? l.vars ?? {};
-    const firstName = l.firstName ?? l.first_name ?? fields.firstName ?? fields.first_name ?? "";
-    const lastName  = l.lastName  ?? l.last_name  ?? fields.lastName  ?? fields.last_name  ?? "";
-    // fullName directo si existe
-    const rawFullName = (l.fullName ?? l.full_name ?? fields.fullName ?? "").trim();
-    let derivedFirst = firstName;
-    let derivedLast  = lastName;
-    if (!derivedFirst && !derivedLast && rawFullName) {
-      const parts = rawFullName.split(/\s+/);
-      derivedFirst = parts[0] ?? "";
-      derivedLast  = parts.slice(1).join(" ") ?? "";
+    const vars = l.vars ?? l.fields ?? {};
+
+    // Nombre: root > vars > fullName
+    let firstName = pick(l, "firstName", "first_name") || pick(vars, "firstName", "first_name");
+    let lastName  = pick(l, "lastName",  "last_name")  || pick(vars, "lastName",  "last_name");
+
+    const rawFull = pick(l, "fullName", "full_name") || pick(vars, "fullName", "full_name");
+    if (!firstName && !lastName && rawFull) {
+      const parts = rawFull.split(/\s+/);
+      firstName = parts[0] ?? "";
+      lastName  = parts.slice(1).join(" ");
     }
+
     return {
-      _id:         l._id ?? l.id,
-      email:       (l.email ?? "").trim().toLowerCase(),
-      firstName:   derivedFirst,
-      lastName:    derivedLast,
-      companyName: l.companyName ?? l.company_name ?? fields.companyName ?? fields.company_name ?? l.company ?? "",
-      jobTitle:    l.jobTitle    ?? l.job_title    ?? fields.jobTitle    ?? fields.job_title    ?? l.title ?? "",
-      linkedinUrl: l.linkedinUrl ?? l.linkedin_url ?? fields.linkedinUrl ?? l.linkedin ?? "",
+      _id:         l._id ?? l.id ?? "",
+      contactId:   l.contactId ?? null,
+      email:       pick(l, "email"),
+      firstName,
+      lastName,
+      companyName: pick(l, "companyName", "company_name", "company") || pick(vars, "companyName", "company_name"),
+      jobTitle:    pick(l, "jobTitle", "job_title", "title")         || pick(vars, "jobTitle", "job_title"),
+      linkedinUrl: pick(l, "linkedinUrl", "linkedin_url", "linkedin")|| pick(vars, "linkedinUrl", "linkedin_url"),
       isPaused:    l.isPaused    ?? l.is_paused    ?? false,
       isFinished:  l.isFinished  ?? l.is_finished  ?? false,
       completed:   l.completed   ?? null,
@@ -95,95 +104,94 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  // Enriquecer con datos de Supabase — primero obtener los contactos de Lemlist (que tienen email)
-  // para cruzarlos contra contacts en Supabase
-  const contactIds = rawLeads.map((l: any) => l.contactId).filter(Boolean);
+  // ── 3. Enriquecer leads sin datos completos via contactId de Lemlist ──────
+  // Solo los que no tienen email o nombre — así evitamos fetch innecesarios.
+  const incomplete = leads.filter(
+    (lead) => !lead.email || (!lead.firstName && !lead.lastName)
+  );
 
-  if (contactIds.length > 0) {
-    // Fetch en paralelo lotes de 10 para obtener email + linkedinUrl de cada contacto
-    const lemContacts: any[] = [];
-    const BATCH = 10;
+  if (incomplete.length > 0) {
+    // Recopilar contactIds únicos
+    const contactIds = [...new Set(
+      incomplete.map((l) => l.contactId).filter(Boolean) as string[]
+    )];
+
+    const BATCH = 5;
+    const contactMap = new Map<string, any>();
+
     for (let i = 0; i < contactIds.length; i += BATCH) {
       const batch = contactIds.slice(i, i + BATCH);
       const results = await Promise.all(
-        batch.map(async (cid: string) => {
-          const r = await fetch(
-            `https://api.lemlist.com/api/contacts/${cid}`,
-            { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
-          ).catch(() => null);
-          if (!r?.ok) return null;
-          const j = await r.json().catch(() => null);
-          return j ? { ...j, _contactId: cid } : null;
+        batch.map(async (cid) => {
+          try {
+            const r = await fetch(
+              `https://api.lemlist.com/api/contacts/${cid}`,
+              { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
+            );
+            if (!r.ok) return null;
+            const j = await r.json().catch(() => null);
+            return j ? { ...j, _cid: cid } : null;
+          } catch { return null; }
         })
       );
-      lemContacts.push(...results.filter(Boolean));
-    }
-
-    // Mapear contactId → datos de Lemlist
-    const lemByContactId = new Map(lemContacts.map((c: any) => [c._contactId, c]));
-
-    // Buscar en Supabase por email O linkedin_url
-    const emails       = lemContacts.map((c) => c.email).filter(Boolean).map((e) => e.toLowerCase());
-    const linkedinUrls = lemContacts.map((c) => c.linkedinUrl).filter(Boolean);
-
-    const dbByEmail    = new Map<string, any>();
-    const dbByLinkedin = new Map<string, any>();
-
-    if (emails.length > 0) {
-      const { data } = await db
-        .from("contacts")
-        .select("email, linkedin_url, first_name, last_name, company_name, job_title")
-        .eq("client_id", clientId)
-        .in("email", emails);
-      for (const r of data ?? []) {
-        if (r.email) dbByEmail.set(r.email.toLowerCase(), r);
+      for (const c of results) {
+        if (c) contactMap.set(c._cid, c);
       }
+      // Pequeña pausa para no saturar Lemlist
+      if (i + BATCH < contactIds.length) await new Promise((r) => setTimeout(r, 80));
     }
 
-    if (linkedinUrls.length > 0) {
-      const { data } = await db
-        .from("contacts")
-        .select("email, linkedin_url, first_name, last_name, company_name, job_title")
-        .eq("client_id", clientId)
-        .in("linkedin_url", linkedinUrls);
-      for (const r of data ?? []) {
-        if (r.linkedin_url) dbByLinkedin.set(r.linkedin_url, r);
-      }
-    }
+    for (const lead of incomplete) {
+      if (!lead.contactId) continue;
+      const c = contactMap.get(lead.contactId);
+      if (!c) continue;
 
-    // Enriquecer cada lead
-    for (const lead of leads) {
-      const rawLead = rawLeads.find((r: any) => r._id === lead._id);
-      const lemC = rawLead?.contactId ? lemByContactId.get(rawLead.contactId) : null;
-      if (!lemC) continue;
+      if (!lead.email && c.email)       lead.email       = c.email.trim().toLowerCase();
+      if (!lead.linkedinUrl && c.linkedinUrl) lead.linkedinUrl = c.linkedinUrl;
 
-      // Email y LinkedIn vienen del contacto Lemlist
-      if (lemC.email)       lead.email       = lemC.email.toLowerCase();
-      if (lemC.linkedinUrl) lead.linkedinUrl = lemC.linkedinUrl;
-
-      // Nombre desde fullName de Lemlist
-      const fullName = (lemC.fullName ?? "").trim();
-      if (fullName) {
-        const parts = fullName.split(/\s+/);
+      // fullName del contacto
+      const cFull = (c.fullName ?? "").trim();
+      if (!lead.firstName && !lead.lastName && cFull) {
+        const parts = cFull.split(/\s+/);
         lead.firstName = parts[0] ?? "";
-        lead.lastName  = parts.slice(1).join(" ") ?? "";
+        lead.lastName  = parts.slice(1).join(" ");
       }
 
-      // Empresa y title desde fields de Lemlist
-      const fields = lemC.fields ?? {};
-      lead.companyName = fields.companyName ?? fields.company_name ?? lead.companyName;
-      lead.jobTitle    = fields.jobTitle    ?? fields.job_title    ?? lead.jobTitle;
-
-      // Si Supabase tiene datos mejores, usar esos
-      const dbC = dbByEmail.get(lead.email) ?? dbByLinkedin.get(lead.linkedinUrl);
-      if (dbC) {
-        if (dbC.first_name && !lead.firstName)     lead.firstName   = dbC.first_name;
-        if (dbC.last_name && !lead.lastName)       lead.lastName    = dbC.last_name;
-        if (dbC.company_name && !lead.companyName) lead.companyName = dbC.company_name;
-        if (dbC.job_title && !lead.jobTitle)       lead.jobTitle    = dbC.job_title;
-      }
+      // Empresa y cargo desde fields del contacto
+      const cf = c.fields ?? {};
+      if (!lead.companyName) lead.companyName = pick(c, "companyName", "company") || pick(cf, "companyName", "company_name");
+      if (!lead.jobTitle)    lead.jobTitle    = pick(c, "jobTitle")                || pick(cf, "jobTitle", "job_title");
     }
   }
 
-  return NextResponse.json({ leads });
+  // ── 4. Enriquecer con datos de Supabase donde haya email ─────────────────
+  const emailsToLookup = leads
+    .filter((l) => l.email && (!l.firstName || !l.companyName))
+    .map((l) => l.email);
+
+  if (emailsToLookup.length > 0) {
+    const { data: dbContacts } = await db
+      .from("contacts")
+      .select("email, first_name, last_name, company_name, job_title, linkedin_url")
+      .eq("client_id", clientId)
+      .in("email", emailsToLookup);
+
+    const dbMap = new Map((dbContacts ?? []).map((c) => [c.email?.toLowerCase(), c]));
+
+    for (const lead of leads) {
+      if (!lead.email) continue;
+      const dbC = dbMap.get(lead.email);
+      if (!dbC) continue;
+      if (!lead.firstName   && dbC.first_name)   lead.firstName   = dbC.first_name;
+      if (!lead.lastName    && dbC.last_name)    lead.lastName    = dbC.last_name;
+      if (!lead.companyName && dbC.company_name) lead.companyName = dbC.company_name;
+      if (!lead.jobTitle    && dbC.job_title)    lead.jobTitle    = dbC.job_title;
+      if (!lead.linkedinUrl && dbC.linkedin_url) lead.linkedinUrl = dbC.linkedin_url;
+    }
+  }
+
+  // Limpiar campo interno antes de responder
+  const response = leads.map(({ contactId: _c, ...rest }) => rest);
+
+  return NextResponse.json({ leads: response });
 }
