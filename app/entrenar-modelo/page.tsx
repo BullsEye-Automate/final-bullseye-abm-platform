@@ -740,6 +740,10 @@ function LabTab({ clientId }: { clientId: string }) {
       const d = await res.json();
       if (!res.ok) { setGenError(d.error ?? "Error al generar"); return; }
       const msgs = d.messages as GeneratedMessages;
+      if (!msgs?.emailSubject && !msgs?.emailBody && !msgs?.linkedinIcebreaker) {
+        setGenError("Claude no generó contenido. Revisa los logs en Vercel o intenta de nuevo.");
+        return;
+      }
       setMessages(msgs);
       setEdited({
         emailSubject:       msgs.emailSubject       ?? "",

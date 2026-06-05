@@ -243,11 +243,40 @@ export async function generateContactMessages(
     .join("")
     .trim();
 
+  console.log("[generateContactMessages] stop_reason:", message.stop_reason, "raw preview:", raw.slice(0, 400));
+
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    console.error("[generateContactMessages] Claude no devolvió JSON. stop_reason:", message.stop_reason, "raw:", raw.slice(0, 300));
-    throw new Error(`Claude no devolvió JSON válido (stop_reason: ${message.stop_reason})`);
+    throw new Error(`Claude no devolvió JSON (stop_reason: ${message.stop_reason}). Raw: ${raw.slice(0, 200)}`);
   }
 
-  return JSON.parse(jsonMatch[0]) as ContactMessages;
+  // Sanitizar newlines literales dentro de strings JSON (bug común de Claude)
+  const sanitized = jsonMatch[0].replace(
+    /"((?:[^"\\]|\\[\s\S])*)"/g,
+    (match) => match.replace(/\n/g, "\\n").replace(/\r/g, "\\r").replace(/\t/g, "\\t")
+  );
+
+  let parsed: ContactMessages;
+  try {
+    parsed = JSON.parse(sanitized) as ContactMessages;
+  } catch (e) {
+    console.error("[generateContactMessages] JSON.parse falló. sanitized:", sanitized.slice(0, 400));
+    throw new Error(`No se pudo parsear respuesta de Claude: ${(e as Error).message}`);
+  }
+
+  // Normalizar claves en caso de que Claude use snake_case o variantes
+  const normalized: ContactMessages = {
+    emailSubject:              (parsed as Record<string, string>).emailSubject              ?? (parsed as Record<string, string>).email_subject              ?? "",
+    emailBody:                 (parsed as Record<string, string>).emailBody                 ?? (parsed as Record<string, string>).email_body                 ?? "",
+    linkedinIcebreaker:        (parsed as Record<string, string>).linkedinIcebreaker        ?? (parsed as Record<string, string>).linkedin_icebreaker        ?? "",
+    linkedinIcebreakerNoEmail: (parsed as Record<string, string>).linkedinIcebreakerNoEmail ?? (parsed as Record<string, string>).linkedin_icebreaker_no_email ?? "",
+  };
+
+  console.log("[generateContactMessages] resultado:", {
+    subjectLen: normalized.emailSubject?.length,
+    bodyLen:    normalized.emailBody?.length,
+    icebreakerLen: normalized.linkedinIcebreaker?.length,
+  });
+
+  return normalized;
 }
