@@ -117,32 +117,39 @@ export async function POST(req: NextRequest) {
     .eq("client_id", client_id).is("segment_id", null)
     .order("created_at", { ascending: false }).limit(5);
 
-  const msgs = await generateContactMessages({
-    hasEmail,
-    firstName,
-    lastName,
-    jobTitle,
-    linkedinHeadline,
-    companyName,
-    industry,
-    companySize,
-    icpContext,
-    fewShotExamples: (globalExamples ?? []).map((e) => ({
-      emailSubject: e.email_subject,
-      emailBody:    e.email_body,
-      icebreaker:   e.icebreaker ?? "",
-      contactName:  e.contact_name ?? "",
-      jobTitle:     e.job_title    ?? "",
-    })),
-    styleGuide: styleData ? {
-      tone:        styleData.style_tone        ?? "",
-      rules:       styleData.style_rules       ?? "",
-      avoid:       styleData.style_avoid       ?? "",
-      emailLength: styleData.style_email_length ?? "corto",
-    } : undefined,
-    segmentContext,
-    language: "es",
-  });
+  let msgs;
+  try {
+    msgs = await generateContactMessages({
+      hasEmail,
+      firstName,
+      lastName,
+      jobTitle,
+      linkedinHeadline,
+      companyName,
+      industry,
+      companySize,
+      icpContext,
+      fewShotExamples: (globalExamples ?? []).map((e) => ({
+        emailSubject: e.email_subject,
+        emailBody:    e.email_body,
+        icebreaker:   e.icebreaker ?? "",
+        contactName:  e.contact_name ?? "",
+        jobTitle:     e.job_title    ?? "",
+      })),
+      styleGuide: styleData ? {
+        tone:        styleData.style_tone        ?? "",
+        rules:       styleData.style_rules       ?? "",
+        avoid:       styleData.style_avoid       ?? "",
+        emailLength: styleData.style_email_length ?? "corto",
+      } : undefined,
+      segmentContext,
+      language: "es",
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[lab] generateContactMessages falló:", msg);
+    return NextResponse.json({ error: `Error generando mensajes: ${msg}` }, { status: 500 });
+  }
 
   return NextResponse.json({
     messages: msgs,

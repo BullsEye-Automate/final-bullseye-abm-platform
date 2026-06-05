@@ -278,7 +278,7 @@ Genera los mensajes de outreach personalizados para este contacto usando la herr
     max_tokens: 2048,
     system: systemPrompt,
     tools: [tool],
-    tool_choice: { type: "any" },
+    tool_choice: { type: "tool", name: "generate_messages" },
     messages: [{ role: "user", content: userPrompt }],
   });
 
