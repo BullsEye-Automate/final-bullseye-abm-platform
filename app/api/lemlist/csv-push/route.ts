@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     let res: Response;
     try {
       res = await fetch(
-        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?verifyEmail=false`,
+        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true`,
         {
           method: "POST",
           headers: {

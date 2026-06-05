@@ -278,6 +278,8 @@ export default function CampanasPage() {
   const [syncResult, setSyncResult]     = useState<{ updated: number; synced: number } | null>(null);
   const [importing, setImporting]       = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; fields?: string[] } | null>(null);
+  const [enriching, setEnriching]       = useState(false);
+  const [enrichResult, setEnrichResult] = useState<{ enriched: number; already_ok: number; no_linkedin: number; failed: number } | null>(null);
   const [error, setError]               = useState<string | null>(null);
 
   // ── Carga datos de campaña ──
@@ -377,6 +379,35 @@ export default function CampanasPage() {
     }
   }
 
+  // ── Enriquecer leads existentes en Lemlist ──
+  async function enrichInLemlist() {
+    if (!currentClient?.id) return;
+    setEnriching(true);
+    setEnrichResult(null);
+    try {
+      const res = await fetch("/api/lemlist/enrich-existing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id }),
+      });
+      const d = await res.json();
+      if (d.error) {
+        setError(d.error);
+      } else {
+        setEnrichResult({
+          enriched:    d.enriched ?? 0,
+          already_ok:  d.already_ok ?? 0,
+          no_linkedin: d.no_linkedin ?? 0,
+          failed:      d.failed ?? 0,
+        });
+      }
+    } catch {
+      setError("Error de conexión al enriquecer");
+    } finally {
+      setEnriching(false);
+    }
+  }
+
   // ── Pausar/reanudar lead ──
   async function handlePauseToggle(email: string, pause: boolean) {
     if (!currentClient?.id) return;
@@ -455,6 +486,18 @@ export default function CampanasPage() {
             Carga masiva
           </Link>
           <button
+            onClick={enrichInLemlist}
+            disabled={enriching}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
+            title="Enriquecer email + teléfono de los leads ya en Lemlist"
+          >
+            {enriching
+              ? <IconLoader2 size={14} className="animate-spin" />
+              : <IconCloudUpload size={14} style={{ color: "#A855F7" }} />
+            }
+            {enriching ? "Enriqueciendo…" : "Enriquecer en Lemlist"}
+          </button>
+          <button
             onClick={importFromLemlist}
             disabled={importing}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
@@ -519,6 +562,22 @@ export default function CampanasPage() {
           <span className="text-sm font-medium">
             HubSpot sincronizado: {syncResult.synced} contacto{syncResult.synced !== 1 ? "s" : ""} creados/actualizados
             {syncResult.updated > 0 && ` · ${syncResult.updated} enriquecidos con email/teléfono de Lemlist`}
+          </span>
+        </div>
+      )}
+
+      {/* Enrich result */}
+      {enrichResult && (
+        <div className="card border-l-4 px-4 py-3 flex items-center gap-2"
+          style={{ borderColor: "#A855F7", color: "#6B21A8" }}
+        >
+          <IconCloudUpload size={16} style={{ color: "#A855F7" }} />
+          <span className="text-sm font-medium">
+            Lemlist está enriqueciendo {enrichResult.enriched} lead{enrichResult.enriched !== 1 ? "s" : ""}
+            {enrichResult.already_ok > 0 && ` · ${enrichResult.already_ok} ya tenían email`}
+            {enrichResult.no_linkedin > 0 && ` · ${enrichResult.no_linkedin} sin LinkedIn`}
+            {enrichResult.failed > 0 && ` · ${enrichResult.failed} fallaron`}
+            . El email puede tardar unos minutos en aparecer (Lemlist gasta créditos del plan).
           </span>
         </div>
       )}
