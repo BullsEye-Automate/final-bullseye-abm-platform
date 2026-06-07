@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   if (contact_id) {
     const { data: contact, error: contactErr } = await db
       .from("contacts")
-      .select("first_name, last_name, job_title, linkedin_headline, email, company_id, companies(company_name, industry, employee_count)")
+      .select("first_name, last_name, job_title, linkedin_headline, email, company_id, companies(company_name, employee_count)")
       .eq("id", contact_id).maybeSingle();
     if (contactErr || !contact) return NextResponse.json({ error: contactErr?.message ?? "Contacto no encontrado" }, { status: 404 });
 
@@ -61,7 +61,6 @@ export async function POST(req: NextRequest) {
     // Obtener datos de empresa via join (mismo patrón que la API de búsqueda)
     const co = Array.isArray(contact.companies) ? contact.companies[0] : contact.companies as Record<string, unknown> | null;
     companyName = (co?.company_name as string | null) ?? undefined;
-    industry    = (co?.industry    as string | null) ?? undefined;
     companySize = co?.employee_count ? String(co.employee_count) : undefined;
   } else if (manual) {
     firstName   = manual.firstName   || undefined;
