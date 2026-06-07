@@ -46,19 +46,27 @@ export async function POST(req: NextRequest) {
   let hasEmail = true;
 
   if (contact_id) {
-    const { data: contact } = await db
+    const { data: contact, error: contactErr } = await db
       .from("contacts")
-      .select("first_name, last_name, job_title, linkedin_headline, email, company_id, company_name")
+      .select("first_name, last_name, job_title, linkedin_headline, email, company_id")
       .eq("id", contact_id).maybeSingle();
-    if (!contact) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
+    if (contactErr || !contact) return NextResponse.json({ error: contactErr?.message ?? "Contacto no encontrado" }, { status: 404 });
 
     firstName = contact.first_name ?? undefined;
     lastName  = contact.last_name  ?? undefined;
     jobTitle  = contact.job_title  ?? undefined;
     linkedinHeadline = contact.linkedin_headline ?? undefined;
     hasEmail = has_email_override !== undefined ? Boolean(has_email_override) : Boolean(contact.email?.trim());
-    // Usar company_name del contacto como base (puede ser overrideado por la empresa vinculada)
-    companyName = (contact.company_name as string | null) ?? undefined;
+
+    // Intentar obtener company_name directamente (columna que puede o no existir)
+    try {
+      const { data: cRow } = await db
+        .from("contacts")
+        .select("company_name")
+        .eq("id", contact_id)
+        .maybeSingle();
+      companyName = (cRow as Record<string, string> | null)?.company_name ?? undefined;
+    } catch { /* columna no existe, ignorar */ }
 
     if (contact.company_id) {
       const { data: company } = await db.from("companies")
