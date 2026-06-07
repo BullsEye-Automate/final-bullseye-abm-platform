@@ -70,7 +70,11 @@ Generas mensajes de outreach personalizados para secuencias de Lemlist.
 Los mensajes deben ser directos, naturales y enfocados en aportar valor.
 Usa el contexto del ICP proporcionado para personalizar cada mensaje.
 NUNCA uses guiones largos (—). En su lugar usa comas o puntos según corresponda.
-Responde ÚNICAMENTE con JSON válido, sin texto adicional.`;
+
+REGLA CRÍTICA: El "Contexto del ICP" describe la EMPRESA QUE HACE EL OUTREACH (el emisor).
+Los "Datos del contacto" describen al PROSPECTO que recibe el mensaje.
+NUNCA confundas la empresa emisora con la empresa del contacto.
+Si la empresa del contacto es desconocida, NO la inventes ni uses el nombre de la empresa emisora.`;
 
 const MAX_SOURCES_CHARS = 6000; // evitar prompts gigantes con PDFs largos
 
@@ -207,7 +211,7 @@ export async function generateContactMessages(
     firstName && `Nombre: ${firstName}${lastName ? " " + lastName : ""}`,
     jobTitle && `Cargo: ${jobTitle}`,
     linkedinHeadline && `LinkedIn headline: ${linkedinHeadline}`,
-    companyName && `Empresa: ${companyName}`,
+    companyName ? `Empresa donde trabaja el contacto: ${companyName}` : "Empresa del contacto: desconocida (NO asumir que trabaja en la empresa emisora del outreach)",
   ]
     .filter(Boolean)
     .join("\n");
