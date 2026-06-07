@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   if (contact_id) {
     const { data: contact } = await db
       .from("contacts")
-      .select("first_name, last_name, job_title, linkedin_headline, email, company_id")
+      .select("first_name, last_name, job_title, linkedin_headline, email, company_id, company_name")
       .eq("id", contact_id).maybeSingle();
     if (!contact) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
 
@@ -56,14 +56,15 @@ export async function POST(req: NextRequest) {
     lastName  = contact.last_name  ?? undefined;
     jobTitle  = contact.job_title  ?? undefined;
     linkedinHeadline = contact.linkedin_headline ?? undefined;
-    // Si el frontend envía override explícito, respetarlo; si no, usar si tiene email en DB
     hasEmail = has_email_override !== undefined ? Boolean(has_email_override) : Boolean(contact.email?.trim());
+    // Usar company_name del contacto como base (puede ser overrideado por la empresa vinculada)
+    companyName = (contact.company_name as string | null) ?? undefined;
 
     if (contact.company_id) {
       const { data: company } = await db.from("companies")
         .select("company_name, industry, employee_count")
         .eq("id", contact.company_id).maybeSingle();
-      companyName = company?.company_name ?? undefined;
+      if (company?.company_name) companyName = company.company_name;
       industry    = company?.industry     ?? undefined;
       companySize = company?.employee_count ? String(company.employee_count) : undefined;
     }
