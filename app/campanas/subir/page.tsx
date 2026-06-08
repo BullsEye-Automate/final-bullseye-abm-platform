@@ -35,7 +35,14 @@ type ParsedContact = {
 type GeneratedContact = ParsedContact & {
   emailSubject?: string;
   emailBody?: string;
+  emailSubject2?: string;
+  emailBody2?: string;
+  emailSubject3?: string;
+  emailBody3?: string;
+  connectMessage?: string;
   icebreaker?: string;
+  linkedinMsg2?: string;
+  segmentName?: string;
   error?: string;
 };
 
@@ -160,54 +167,88 @@ function ContactRow({
 
       {/* Detalle editable */}
       {open && (
-        <div className="px-4 pb-4 space-y-3 border-t border-[#E5E2F0] pt-3">
+        <div className="px-4 pb-4 space-y-4 border-t border-[#E5E2F0] pt-3">
           {hasError && (
             <div className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">{contact.error}</div>
           )}
+          {contact.segmentName && (
+            <div className="text-[11px] text-ink-muted">Segmento: <span className="font-medium text-ink">{contact.segmentName}</span></div>
+          )}
 
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-              Subject ({`{{emailSubject}}`})
-            </label>
-            <input
-              value={contact.emailSubject ?? ""}
-              onChange={(e) => onChange(index, "emailSubject", e.target.value)}
-              className="mt-1 w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]"
-              placeholder="Asunto del email…"
-            />
-          </div>
+          {/* Emails */}
+          {[
+            { subjectKey: "emailSubject" as const, bodyKey: "emailBody" as const, label: "Email 1", subjectVar: "emailSubject_1", bodyVar: "emailBody_1" },
+            { subjectKey: "emailSubject2" as const, bodyKey: "emailBody2" as const, label: "Email 2 (follow-up)", subjectVar: "emailSubject_2", bodyVar: "emailBody_2" },
+            { subjectKey: "emailSubject3" as const, bodyKey: "emailBody3" as const, label: "Email 3 (follow-up)", subjectVar: "emailSubject_3", bodyVar: "emailBody_3" },
+          ].map(({ subjectKey, bodyKey, label, subjectVar, bodyVar }) =>
+            contact[subjectKey] !== undefined ? (
+              <div key={subjectKey} className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
+                <input
+                  value={contact[subjectKey] ?? ""}
+                  onChange={(e) => onChange(index, subjectKey, e.target.value)}
+                  className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]"
+                  placeholder={`Asunto — {{${subjectVar}}}`}
+                />
+                <textarea
+                  value={contact[bodyKey] ?? ""}
+                  onChange={(e) => onChange(index, bodyKey, e.target.value)}
+                  rows={4}
+                  className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] resize-y"
+                  placeholder={`Cuerpo — {{${bodyVar}}}`}
+                />
+              </div>
+            ) : null
+          )}
 
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-              Email body ({`{{emailBody}}`})
-            </label>
-            <textarea
-              value={contact.emailBody ?? ""}
-              onChange={(e) => onChange(index, "emailBody", e.target.value)}
-              rows={5}
-              className="mt-1 w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] resize-y"
-              placeholder="Cuerpo del email…"
-            />
-          </div>
-
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
-              LinkedIn icebreaker ({`{{icebreaker}}`})
-            </label>
-            <div className="relative">
-              <textarea
-                value={contact.icebreaker ?? ""}
-                onChange={(e) => onChange(index, "icebreaker", e.target.value)}
-                rows={2}
-                maxLength={180}
-                className="mt-1 w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] resize-none"
-                placeholder="Icebreaker de LinkedIn…"
-              />
-              <span className="absolute bottom-2 right-3 text-[10px] text-ink-muted">
-                {(contact.icebreaker ?? "").length}/180
-              </span>
+          {/* Invitación a conectar */}
+          {contact.connectMessage !== undefined && (
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                Invitación a conectar ({`{{connectMessage}}`})
+              </label>
+              <div className="relative">
+                <textarea
+                  value={contact.connectMessage ?? ""}
+                  onChange={(e) => onChange(index, "connectMessage", e.target.value)}
+                  rows={2}
+                  maxLength={300}
+                  className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] resize-none"
+                  placeholder="Nota de invitación LinkedIn…"
+                />
+                <span className="absolute bottom-2 right-3 text-[10px] text-ink-muted">
+                  {(contact.connectMessage ?? "").length}/300
+                </span>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Mensajes LinkedIn */}
+          {[
+            { key: "icebreaker" as const, label: "LinkedIn msg 1", varName: "linkedinMsg_1", max: 180 },
+            { key: "linkedinMsg2" as const, label: "LinkedIn msg 2", varName: "linkedinMsg_2", max: 180 },
+          ].map(({ key, label, varName, max }) =>
+            contact[key] !== undefined ? (
+              <div key={key} className="space-y-1">
+                <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                  {label} ({`{{${varName}}}`})
+                </label>
+                <div className="relative">
+                  <textarea
+                    value={contact[key] ?? ""}
+                    onChange={(e) => onChange(index, key, e.target.value)}
+                    rows={2}
+                    maxLength={max}
+                    className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] resize-none"
+                    placeholder={`Mensaje LinkedIn…`}
+                  />
+                  <span className="absolute bottom-2 right-3 text-[10px] text-ink-muted">
+                    {(contact[key] ?? "").length}/{max}
+                  </span>
+                </div>
+              </div>
+            ) : null
+          )}
         </div>
       )}
     </div>

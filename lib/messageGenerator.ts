@@ -245,11 +245,12 @@ export async function generateContactMessages(
     : (language === "en" ? "Hi," : "Hola,");
 
   // ─── MODO SECUENCIA: más de un email, más de un msg LinkedIn, o connect msg ───
-  if (needsSequence && hasEmail) {
-    // Construir propiedades dinámicas para los emails de la secuencia
+  if (needsSequence) {
+    // Construir propiedades dinámicas para los emails de la secuencia (solo si tiene email)
     const emailProperties: Record<string, unknown> = {};
     const emailRequired: string[] = [];
-    for (let i = 1; i <= emailCount; i++) {
+    const effectiveEmailCount = hasEmail ? emailCount : 0;
+    for (let i = 1; i <= effectiveEmailCount; i++) {
       emailProperties[`email${i}_subject`] = {
         type: "string",
         description: i === 1
@@ -288,7 +289,7 @@ export async function generateContactMessages(
 
     const sequenceTool: Anthropic.Tool = {
       name: "generate_messages",
-      description: `Genera una secuencia completa de outreach: ${emailCount} email(s), ${linkedinMsgCount} mensaje(s) de LinkedIn${includeConnectMsg ? " y mensaje de invitación a conectar" : ""}`,
+      description: `Genera una secuencia completa de outreach: ${effectiveEmailCount > 0 ? effectiveEmailCount + " email(s), " : ""}${linkedinMsgCount} mensaje(s) de LinkedIn${includeConnectMsg ? " y mensaje de invitación a conectar" : ""}`,
       input_schema: {
         type: "object" as const,
         properties: {
@@ -311,8 +312,8 @@ ${contactInfo || "No disponibles"}
 ${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa." : ""}
 
 Genera una secuencia completa de outreach para este contacto:
-- ${emailCount} email(s): el primero es primer contacto frío, los siguientes son follow-ups más cortos que referencian el anterior
-${includeConnectMsg ? "- 1 mensaje de invitación a conectar en LinkedIn: nota muy personal, máximo 300 chars\n" : ""}- ${linkedinMsgCount} mensaje(s) de LinkedIn: mensajes directos post-conexión aceptada, máximo 180 chars cada uno
+${effectiveEmailCount > 0 ? `- ${effectiveEmailCount} email(s): el primero es primer contacto frío, los siguientes son follow-ups más cortos que referencian el anterior\n` : ""}- ${linkedinMsgCount} mensaje(s) de LinkedIn: mensajes directos post-conexión aceptada, máximo 180 chars cada uno
+${includeConnectMsg ? "- 1 mensaje de invitación a conectar en LinkedIn: nota muy personal, máximo 300 chars" : ""}
 
 Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
 
@@ -336,7 +337,7 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
 
     // Construir array de emails a partir de las propiedades dinámicas
     const emails: SequenceEmail[] = [];
-    for (let i = 1; i <= emailCount; i++) {
+    for (let i = 1; i <= effectiveEmailCount; i++) {
       emails.push({
         subject: rawInput[`email${i}_subject`] ?? "",
         body:    rawInput[`email${i}_body`]    ?? "",

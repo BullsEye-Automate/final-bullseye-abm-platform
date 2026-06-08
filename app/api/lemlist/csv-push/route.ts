@@ -15,7 +15,13 @@ type ContactToPush = {
   linkedinUrl?: string;
   emailSubject?: string;
   emailBody?: string;
+  emailSubject2?: string;
+  emailBody2?: string;
+  emailSubject3?: string;
+  emailBody3?: string;
+  connectMessage?: string;
   icebreaker?: string;
+  linkedinMsg2?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -59,14 +65,20 @@ export async function POST(req: NextRequest) {
     }
 
     const payload: Record<string, string | undefined> = {
-      firstName:    contact.firstName    || undefined,
-      lastName:     contact.lastName     || undefined,
-      companyName:  contact.companyName  || undefined,
-      linkedinUrl:  contact.linkedinUrl  || undefined,
-      phone:        contact.phone        || undefined,
-      icebreaker:   contact.icebreaker   || undefined,
-      emailSubject: contact.emailSubject || undefined,
-      emailBody:    contact.emailBody    || undefined,
+      firstName:      contact.firstName     || undefined,
+      lastName:       contact.lastName      || undefined,
+      companyName:    contact.companyName   || undefined,
+      linkedinUrl:    contact.linkedinUrl   || undefined,
+      phone:          contact.phone         || undefined,
+      emailSubject_1: contact.emailSubject  || undefined,
+      emailBody_1:    contact.emailBody     || undefined,
+      emailSubject_2: contact.emailSubject2 || undefined,
+      emailBody_2:    contact.emailBody2    || undefined,
+      emailSubject_3: contact.emailSubject3 || undefined,
+      emailBody_3:    contact.emailBody3    || undefined,
+      connectMessage: contact.connectMessage || undefined,
+      linkedinMsg_1:  contact.icebreaker    || undefined,
+      linkedinMsg_2:  contact.linkedinMsg2  || undefined,
     };
 
     // Eliminar keys undefined
