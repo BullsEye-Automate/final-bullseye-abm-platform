@@ -1018,7 +1018,7 @@ function LabTab({ clientId }: { clientId: string }) {
                 <div key={key}>
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</label>
                   <input
-                    value={(manual as Record<string, string>)[key]}
+                    value={(manual as Record<string, unknown>)[key] as string}
                     onChange={(e) => setManual((p) => ({ ...p, [key]: e.target.value }))}
                     className="mt-1 w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]"
                   />
