@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { generateContactMessages } from "@/lib/messageGenerator";
+import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,48 +23,47 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  const [{ data: client }, { data: config }] = await Promise.all([
-    db.from("clients").select("name").eq("id", body.client_id).maybeSingle(),
+  const [{ data: config }, { data: icpCtx }, { data: tc }, { data: styleData }, { data: segments }] = await Promise.all([
     db.from("client_configs")
       .select("lemlist_campaign_id, hubspot_owner_id")
       .eq("client_id", body.client_id)
       .maybeSingle(),
+    db.from("client_ai_context")
+      .select("content")
+      .eq("client_id", body.client_id)
+      .eq("file_type", "icp")
+      .order("uploaded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db.from("model_training_config")
+      .select("business_description, value_props, talking_points, target_buyer_persona, style_tone, style_rules, style_avoid, style_email_length")
+      .eq("client_id", body.client_id)
+      .maybeSingle(),
+    db.from("model_training_config")
+      .select("style_tone, style_rules, style_avoid, style_email_length")
+      .eq("client_id", body.client_id)
+      .maybeSingle(),
+    db.from("training_segments")
+      .select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg")
+      .eq("client_id", body.client_id)
+      .order("created_at", { ascending: true }),
   ]);
 
   if (!config?.lemlist_campaign_id) {
     return NextResponse.json({ error: "No hay campaña configurada en Config. cliente" }, { status: 400 });
   }
 
-  const { data: icpCtx } = await db
-    .from("client_ai_context")
-    .select("content")
-    .eq("client_id", body.client_id)
-    .eq("file_type", "icp")
-    .order("uploaded_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  let trainingConfig: Record<string, string | null> = {};
-  try {
-    const { data: tc } = await db
-      .from("model_training_config")
-      .select("business_description, value_props, talking_points, target_buyer_persona")
-      .eq("client_id", body.client_id)
-      .maybeSingle();
-    trainingConfig = tc ?? {};
-  } catch { /* tabla puede no existir aún */ }
-
   const icpContext = [
     icpCtx?.content,
-    trainingConfig.business_description && `Descripción del negocio: ${trainingConfig.business_description}`,
-    trainingConfig.value_props          && `Propuestas de valor: ${trainingConfig.value_props}`,
-    trainingConfig.talking_points       && `Puntos clave de conversación: ${trainingConfig.talking_points}`,
-    trainingConfig.target_buyer_persona && `Buyer persona: ${trainingConfig.target_buyer_persona}`,
+    tc?.business_description && `Descripción del negocio: ${tc.business_description}`,
+    tc?.value_props          && `Propuestas de valor: ${tc.value_props}`,
+    tc?.talking_points       && `Puntos clave de conversación: ${tc.talking_points}`,
+    tc?.target_buyer_persona && `Buyer persona: ${tc.target_buyer_persona}`,
   ].filter(Boolean).join("\n\n") || undefined;
 
   let q = db
     .from("contacts")
-    .select("id, first_name, last_name, job_title, linkedin_headline, seniority, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, fit_score")
+    .select("id, first_name, last_name, job_title, linkedin_headline, seniority, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, email_subject_2, email_body_2, email_subject_3, email_body_3, connect_message, linkedin_icebreaker, linkedin_msg_2, fit_score")
     .eq("fit_action", "enrich")
     .is("lemlist_pushed_at", null)
     .neq("status", "discarded");
@@ -82,7 +81,7 @@ export async function POST(req: NextRequest) {
   const companyIds = [...new Set(contacts.map((c) => c.company_id).filter(Boolean))];
   const { data: companies } = await db
     .from("companies")
-    .select("id, company_name, fit_signals, deep_research")
+    .select("id, company_name, company_size, fit_signals, deep_research")
     .in("id", companyIds);
 
   const companyById = new Map((companies ?? []).map((c) => [c.id, c]));
@@ -98,9 +97,10 @@ export async function POST(req: NextRequest) {
     const companyName = company?.company_name ?? "";
     const hasEmail    = Boolean(contact.email?.trim());
 
+    // Verificar si ya tiene mensajes de secuencia completa guardados
     const needsMessages =
-      !contact.email_subject   ||
-      !contact.email_body      ||
+      !contact.email_subject     ||
+      !contact.email_body        ||
       !contact.linkedin_icebreaker ||
       contact.email_body?.includes("{{firstName}}");
 
@@ -117,8 +117,55 @@ export async function POST(req: NextRequest) {
           if (raw) deepResearch = typeof raw === "string" ? JSON.parse(raw) : raw;
         } catch { /* ignorar si no parsea */ }
 
+        // Routing al segmento para obtener configuración de secuencia
+        const routing = await routeContactToSegment(
+          { firstName: contact.first_name ?? undefined, lastName: contact.last_name ?? undefined, jobTitle: contact.job_title ?? undefined, companyName, companySize: company?.company_size ? String(company.company_size) : undefined },
+          segments ?? []
+        );
+
+        const matchedSegment = routing.segmentId
+          ? (segments ?? []).find((s) => s.id === routing.segmentId)
+          : null;
+
+        const emailCount       = (matchedSegment?.email_count        as number | undefined) ?? 3;
+        const linkedinMsgCount = (matchedSegment?.linkedin_msg_count as number | undefined) ?? 2;
+        const includeConnectMsg = (matchedSegment?.include_connect_msg as boolean | undefined) ?? false;
+
+        // Cargar contexto del segmento (fuentes + ejemplos)
+        let segmentContext: SegmentContext | undefined;
+        if (routing.segmentId) {
+          const [{ data: sources }, { data: segExamples }] = await Promise.all([
+            db.from("segment_sources").select("content, title, source_type")
+              .eq("segment_id", routing.segmentId).not("content", "is", null),
+            db.from("message_examples").select("*").eq("segment_id", routing.segmentId)
+              .order("created_at", { ascending: false }).limit(5),
+          ]);
+
+          const sourcesText = (sources ?? [])
+            .map((s) => [s.title && `### ${s.title}`, s.content].filter(Boolean).join("\n"))
+            .join("\n\n");
+
+          segmentContext = {
+            id:       routing.segmentId,
+            name:     routing.segmentName ?? "",
+            sources:  sourcesText,
+            examples: (segExamples ?? []).map((e) => ({
+              emailSubject: e.email_subject,
+              emailBody:    e.email_body,
+              icebreaker:   e.icebreaker ?? "",
+              contactName:  e.contact_name ?? "",
+              jobTitle:     e.job_title    ?? "",
+            })),
+          };
+        }
+
+        // Ejemplos globales como fallback
+        const { data: globalExamples } = await db.from("message_examples").select("*")
+          .eq("client_id", body.client_id).is("segment_id", null)
+          .order("created_at", { ascending: false }).limit(5);
+
         const msgs = await generateContactMessages({
-          hasEmail:         true,
+          hasEmail,
           firstName:        contact.first_name        ?? undefined,
           lastName:         contact.last_name         ?? undefined,
           jobTitle:         contact.job_title         ?? undefined,
@@ -126,22 +173,53 @@ export async function POST(req: NextRequest) {
           companyName:      companyName               || undefined,
           icpContext:       enrichedContext,
           deepResearch,
-          language:         "es",
+          fewShotExamples: (globalExamples ?? []).map((e) => ({
+            emailSubject: e.email_subject,
+            emailBody:    e.email_body,
+            icebreaker:   e.icebreaker ?? "",
+            contactName:  e.contact_name ?? "",
+            jobTitle:     e.job_title    ?? "",
+          })),
+          styleGuide: styleData ? {
+            tone:        styleData.style_tone        ?? "",
+            rules:       styleData.style_rules       ?? "",
+            avoid:       styleData.style_avoid       ?? "",
+            emailLength: styleData.style_email_length ?? "corto",
+          } : undefined,
+          segmentContext,
+          language:          "es",
+          emailCount,
+          linkedinMsgCount,
+          includeConnectMsg,
         });
 
+        // Guardar secuencia completa en contacts
         const update: Record<string, string | undefined> = {};
-        if (msgs.emailSubject)              update.email_subject       = msgs.emailSubject;
-        if (msgs.emailBody)                 update.email_body          = msgs.emailBody;
-        if (msgs.linkedinIcebreaker)        update.linkedin_icebreaker = msgs.linkedinIcebreaker;
-        if (msgs.linkedinIcebreakerNoEmail) update.linkedin_icebreaker = msgs.linkedinIcebreakerNoEmail;
+        if (msgs.emails?.[0]?.subject)    update.email_subject   = msgs.emails[0].subject;
+        if (msgs.emails?.[0]?.body)       update.email_body      = msgs.emails[0].body;
+        if (msgs.emails?.[1]?.subject)    update.email_subject_2 = msgs.emails[1].subject;
+        if (msgs.emails?.[1]?.body)       update.email_body_2    = msgs.emails[1].body;
+        if (msgs.emails?.[2]?.subject)    update.email_subject_3 = msgs.emails[2].subject;
+        if (msgs.emails?.[2]?.body)       update.email_body_3    = msgs.emails[2].body;
+        if (msgs.connectMessage)          update.connect_message   = msgs.connectMessage;
+        if (msgs.linkedinMessages?.[0])   update.linkedin_icebreaker = msgs.linkedinMessages[0];
+        if (msgs.linkedinMessages?.[1])   update.linkedin_msg_2      = msgs.linkedinMessages[1];
+        // Compatibilidad modo simple
+        if (!msgs.emails?.length) {
+          if (msgs.emailSubject)              update.email_subject       = msgs.emailSubject;
+          if (msgs.emailBody)                 update.email_body          = msgs.emailBody;
+          if (msgs.linkedinIcebreaker)        update.linkedin_icebreaker = msgs.linkedinIcebreaker;
+          if (msgs.linkedinIcebreakerNoEmail) update.linkedin_icebreaker = msgs.linkedinIcebreakerNoEmail;
+        }
 
         if (Object.keys(update).length > 0) {
           await db.from("contacts").update(update).eq("id", contact.id);
           Object.assign(contact, update);
           generated++;
         }
-      } catch (err: any) {
-        errors.push({ contact_id: contact.id, error: `Generación mensajes: ${err?.message ?? "error"}` });
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        errors.push({ contact_id: contact.id, error: `Generación mensajes: ${errMsg}` });
       }
     }
 
@@ -155,16 +233,24 @@ export async function POST(req: NextRequest) {
       ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true&findPhone=true`
       : `https://api.lemlist.com/api/campaigns/${campaignId}/leads?${ENRICH}`;
 
+    // Construir payload con las 10 variables de secuencia
     const lemlistPayload: Record<string, string | undefined> = {
-      firstName:          contact.first_name          ?? undefined,
-      lastName:           contact.last_name           ?? undefined,
-      companyName:        companyName                 || undefined,
-      linkedinUrl:        contact.linkedin_url        ?? undefined,
-      phone:              contact.phone               ?? undefined,
-      icebreaker:         contact.linkedin_icebreaker ?? undefined,
-      emailSubject:       contact.email_subject       ?? undefined,
-      emailBody:          contact.email_body          ?? undefined,
-      bullseyeContactId:  contact.id,
+      firstName:       contact.first_name    ?? undefined,
+      lastName:        contact.last_name     ?? undefined,
+      companyName:     companyName           || undefined,
+      linkedinUrl:     contact.linkedin_url  ?? undefined,
+      phone:           contact.phone         ?? undefined,
+      // Variables de secuencia
+      emailSubject_1:  contact.email_subject   ?? undefined,
+      emailBody_1:     contact.email_body      ?? undefined,
+      emailSubject_2:  contact.email_subject_2 ?? undefined,
+      emailBody_2:     contact.email_body_2    ?? undefined,
+      emailSubject_3:  contact.email_subject_3 ?? undefined,
+      emailBody_3:     contact.email_body_3    ?? undefined,
+      connectMessage:  contact.connect_message   ?? undefined,
+      linkedinMsg_1:   contact.linkedin_icebreaker ?? undefined,
+      linkedinMsg_2:   contact.linkedin_msg_2      ?? undefined,
+      bullseyeContactId: contact.id,
     };
     if (hasEmail) lemlistPayload.email = contact.email!;
 
@@ -179,15 +265,16 @@ export async function POST(req: NextRequest) {
         headers: { Authorization: `Basic ${credentials}`, "Content-Type": "application/json" },
         body: JSON.stringify(lemlistPayload),
       });
-    } catch (err: any) {
-      errors.push({ contact_id: contact.id, error: err?.message ?? "Error de red" });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      errors.push({ contact_id: contact.id, error: errMsg ?? "Error de red" });
       continue;
     }
 
     if (!lemRes.ok) {
       const text = await lemRes.text().catch(() => "");
       if (lemRes.status === 409 || text.toLowerCase().includes("already")) {
-        // Ya está — igual marcamos como pushed
+        // Ya está en la campaña — igual marcamos como pushed
       } else {
         errors.push({ contact_id: contact.id, error: `Lemlist ${lemRes.status}: ${text.slice(0, 150)}` });
         continue;
