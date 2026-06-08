@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     db.from("model_training_config")
       .select("style_tone, style_rules, style_avoid, style_email_length")
       .eq("client_id", client_id).maybeSingle(),
-    db.from("training_segments").select("id, name, routing_hint").eq("client_id", client_id)
+    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg").eq("client_id", client_id)
       .order("created_at", { ascending: true }),
   ]);
 
@@ -79,6 +79,14 @@ export async function POST(req: NextRequest) {
     { firstName, lastName, jobTitle, companyName, industry, companySize },
     segments ?? []
   );
+
+  // Obtener configuración de secuencia del segmento asignado
+  const matchedSegment = routing.segmentId
+    ? (segments ?? []).find((s) => s.id === routing.segmentId)
+    : null;
+  const segmentEmailCount       = (matchedSegment as Record<string, unknown> | null)?.email_count       as number | undefined;
+  const segmentLinkedinMsgCount = (matchedSegment as Record<string, unknown> | null)?.linkedin_msg_count as number | undefined;
+  const segmentIncludeConnectMsg = (matchedSegment as Record<string, unknown> | null)?.include_connect_msg as boolean | undefined;
 
   // Cargar fuentes + ejemplos del segmento elegido (en paralelo)
   let segmentContext: SegmentContext | undefined;
@@ -140,6 +148,10 @@ export async function POST(req: NextRequest) {
       } : undefined,
       segmentContext,
       language: "es",
+      // Configuración de secuencia del segmento
+      emailCount:        segmentEmailCount        ?? 1,
+      linkedinMsgCount:  segmentLinkedinMsgCount  ?? 1,
+      includeConnectMsg: segmentIncludeConnectMsg ?? false,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

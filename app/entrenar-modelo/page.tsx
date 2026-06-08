@@ -32,6 +32,11 @@ import {
 type Tab = "segments" | "lab" | "examples" | "style";
 
 type GeneratedMessages = {
+  // Secuencia completa (cuando el segmento tiene email_count > 1, etc.)
+  emails?: { subject: string; body: string }[];
+  linkedinMessages?: string[];
+  connectMessage?: string;
+  // Compatibilidad hacia atrás (modo simple)
   emailSubject?: string;
   emailBody?: string;
   linkedinIcebreaker?: string;
@@ -815,8 +820,26 @@ function LabTab({ clientId }: { clientId: string }) {
     return () => clearTimeout(t);
   }, [query, clientId, mode]);
 
+  // Actualizar campo simple en edited
   const setField = (f: keyof GeneratedMessages) => (v: string) =>
     setEdited((p) => ({ ...p, [f]: v }));
+
+  // Actualizar email[i].subject o email[i].body en la secuencia
+  const setEmailField = (i: number, field: "subject" | "body") => (v: string) =>
+    setEdited((p) => {
+      const emails = [...(p.emails ?? [])];
+      if (!emails[i]) emails[i] = { subject: "", body: "" };
+      emails[i] = { ...emails[i], [field]: v };
+      return { ...p, emails };
+    });
+
+  // Actualizar linkedinMessages[i]
+  const setLinkedinMsg = (i: number) => (v: string) =>
+    setEdited((p) => {
+      const msgs = [...(p.linkedinMessages ?? [])];
+      msgs[i] = v;
+      return { ...p, linkedinMessages: msgs };
+    });
 
   async function generate(withFeedback?: string) {
     setGenError(null);
@@ -843,12 +866,22 @@ function LabTab({ clientId }: { clientId: string }) {
       const d = await res.json();
       if (!res.ok) { setGenError(d.error ?? "Error al generar"); return; }
       const msgs = d.messages as GeneratedMessages;
-      if (!msgs?.emailSubject && !msgs?.emailBody && !msgs?.linkedinIcebreaker && !msgs?.linkedinIcebreakerNoEmail) {
+      // Verificar que se generó algún contenido (secuencia o modo simple)
+      const hasContent =
+        (msgs?.emails && msgs.emails.length > 0) ||
+        (msgs?.linkedinMessages && msgs.linkedinMessages.length > 0) ||
+        msgs?.emailSubject || msgs?.emailBody ||
+        msgs?.linkedinIcebreaker || msgs?.linkedinIcebreakerNoEmail;
+      if (!hasContent) {
         setGenError("Claude no generó contenido. Intenta de nuevo.");
         return;
       }
       setMessages(msgs);
+      // Inicializar edited con el objeto completo de mensajes
       setEdited({
+        emails:                    msgs.emails                    ? [...msgs.emails]                    : undefined,
+        linkedinMessages:          msgs.linkedinMessages          ? [...msgs.linkedinMessages]          : undefined,
+        connectMessage:            msgs.connectMessage            ?? undefined,
         emailSubject:              msgs.emailSubject              ?? "",
         emailBody:                 msgs.emailBody                 ?? "",
         linkedinIcebreaker:        msgs.linkedinIcebreaker        ?? "",
@@ -872,6 +905,9 @@ function LabTab({ clientId }: { clientId: string }) {
       ? [selected.first_name, selected.last_name].filter(Boolean).join(" ")
       : [manual.firstName, manual.lastName].filter(Boolean).join(" ");
 
+    // Usar primer email de la secuencia si existe; si no, campos de compatibilidad
+    const firstEmail = edited.emails?.[0];
+    const firstLinkedin = edited.linkedinMessages?.[0];
     await fetch("/api/training/examples", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -881,9 +917,9 @@ function LabTab({ clientId }: { clientId: string }) {
         contact_name:  contactName || undefined,
         job_title:     (selected?.job_title  ?? manual.jobTitle)    || undefined,
         company_name:  (selected?.company_name ?? manual.companyName) || undefined,
-        email_subject: edited.emailSubject ?? "",
-        email_body:    edited.emailBody    ?? "",
-        icebreaker:    edited.linkedinIcebreaker ?? "",
+        email_subject: firstEmail?.subject ?? edited.emailSubject ?? "",
+        email_body:    firstEmail?.body    ?? edited.emailBody    ?? "",
+        icebreaker:    firstLinkedin ?? edited.linkedinIcebreaker ?? "",
       }),
     });
     setSaving(false);
@@ -1073,17 +1109,81 @@ function LabTab({ clientId }: { clientId: string }) {
                 {regenerating && <IconLoader2 size={14} className="animate-spin text-ink-muted" />}
               </div>
 
-              {(edited.emailSubject || edited.emailBody) && (
+              {/* ── Secuencia de emails ── */}
+              {(edited.emails && edited.emails.length > 0) ? (
+                edited.emails.map((em, i) => (
+                  <div key={i} className="space-y-2 border border-[#E5E2F0] rounded-xl px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "#251762" }}>
+                      📧 Email {i + 1} {i === 0 ? "— Primer contacto" : `— Follow-up ${i}`}
+                    </p>
+                    <MessageBlock
+                      label={`Subject Email ${i + 1}`}
+                      value={em.subject}
+                      onChange={setEmailField(i, "subject")}
+                    />
+                    <MessageBlock
+                      label={`Body Email ${i + 1}`}
+                      value={em.body}
+                      onChange={setEmailField(i, "body")}
+                    />
+                  </div>
+                ))
+              ) : (
+                /* Modo compatibilidad hacia atrás (1 email simple) */
+                (edited.emailSubject || edited.emailBody) && (
+                  <>
+                    <MessageBlock label="Subject {{emailSubject}}" value={edited.emailSubject ?? ""} onChange={setField("emailSubject")} />
+                    <MessageBlock label="Email Body {{emailBody}}" value={edited.emailBody ?? ""} onChange={setField("emailBody")} />
+                  </>
+                )
+              )}
+
+              {/* ── Mensaje de invitación a conectar (LinkedIn) ── */}
+              {edited.connectMessage !== undefined && (
+                <div className="space-y-2 border border-[#E5E2F0] rounded-xl px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "#251762" }}>
+                    💼 LinkedIn — Invitación a conectar
+                  </p>
+                  <div className="space-y-1">
+                    <textarea
+                      value={edited.connectMessage ?? ""}
+                      onChange={(e) => setEdited((p) => ({ ...p, connectMessage: e.target.value }))}
+                      rows={3}
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y bg-white"
+                    />
+                    <p className="text-[10px] text-ink-muted text-right">{(edited.connectMessage ?? "").length}/300 chars</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Mensajes de LinkedIn (post-conexión) ── */}
+              {(edited.linkedinMessages && edited.linkedinMessages.length > 0) ? (
+                edited.linkedinMessages.map((msg, i) => (
+                  <div key={i} className="space-y-2 border border-[#E5E2F0] rounded-xl px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "#251762" }}>
+                      💬 LinkedIn {i + 1}
+                    </p>
+                    <div className="space-y-1">
+                      <textarea
+                        value={msg}
+                        onChange={(e) => setLinkedinMsg(i)(e.target.value)}
+                        rows={2}
+                        className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y bg-white"
+                      />
+                      <p className="text-[10px] text-ink-muted text-right">{msg.length}/180 chars</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                /* Modo compatibilidad hacia atrás */
                 <>
-                  <MessageBlock label="Subject {{emailSubject}}" value={edited.emailSubject ?? ""} onChange={setField("emailSubject")} />
-                  <MessageBlock label="Email Body {{emailBody}}" value={edited.emailBody ?? ""} onChange={setField("emailBody")} />
+                  {edited.linkedinIcebreaker && (
+                    <MessageBlock label="LinkedIn Icebreaker {{icebreaker}}" value={edited.linkedinIcebreaker ?? ""} onChange={setField("linkedinIcebreaker")} />
+                  )}
+                  {edited.linkedinIcebreakerNoEmail && (
+                    <MessageBlock label="LinkedIn (sin email) {{icebreaker}}" value={edited.linkedinIcebreakerNoEmail ?? ""} onChange={setField("linkedinIcebreakerNoEmail")} />
+                  )}
                 </>
-              )}
-              {edited.linkedinIcebreaker && (
-                <MessageBlock label="LinkedIn Icebreaker {{icebreaker}}" value={edited.linkedinIcebreaker ?? ""} onChange={setField("linkedinIcebreaker")} />
-              )}
-              {edited.linkedinIcebreakerNoEmail && (
-                <MessageBlock label="LinkedIn (sin email) {{icebreaker}}" value={edited.linkedinIcebreakerNoEmail ?? ""} onChange={setField("linkedinIcebreakerNoEmail")} />
               )}
 
               <button

@@ -50,9 +50,21 @@ export type ContactMessageInput = {
   styleGuide?: StyleGuide;
   segmentContext?: SegmentContext;
   language?: "es" | "en";
+  // Configuración de secuencia (usado por el laboratorio de entrenamiento)
+  emailCount?: number;          // cuántos emails generar (default 1)
+  linkedinMsgCount?: number;    // cuántos mensajes de LinkedIn (default 1)
+  includeConnectMsg?: boolean;  // incluir nota de invitación a conectar (default false)
 };
 
+// Tipo para un email individual dentro de una secuencia
+export type SequenceEmail = { subject: string; body: string };
+
 export type ContactMessages = {
+  // Secuencia completa (usado cuando emailCount > 1 o linkedinMsgCount > 1)
+  emails?: SequenceEmail[];
+  linkedinMessages?: string[];
+  connectMessage?: string;
+  // Compatibilidad hacia atrás (primer email y primer icebreaker)
   emailSubject?: string;
   emailBody?: string;
   linkedinIcebreaker?: string;
@@ -199,7 +211,13 @@ export async function generateContactMessages(
     styleGuide,
     segmentContext,
     language = "es",
+    emailCount = 1,
+    linkedinMsgCount = 1,
+    includeConnectMsg = false,
   } = input;
+
+  // Determinar si se necesita generar una secuencia completa
+  const needsSequence = emailCount > 1 || linkedinMsgCount > 1 || includeConnectMsg;
 
   const systemPrompt = buildSystemPrompt(styleGuide, fewShotExamples, segmentContext);
 
@@ -225,6 +243,127 @@ export async function generateContactMessages(
   const greeting = recipientName
     ? (language === "en" ? `Hi ${recipientName},` : `Hola ${recipientName},`)
     : (language === "en" ? "Hi," : "Hola,");
+
+  // ─── MODO SECUENCIA: más de un email, más de un msg LinkedIn, o connect msg ───
+  if (needsSequence && hasEmail) {
+    // Construir propiedades dinámicas para los emails de la secuencia
+    const emailProperties: Record<string, unknown> = {};
+    const emailRequired: string[] = [];
+    for (let i = 1; i <= emailCount; i++) {
+      emailProperties[`email${i}_subject`] = {
+        type: "string",
+        description: i === 1
+          ? `Asunto del Email ${i} (primer contacto frío, máximo 7 palabras, sin signos de admiración, sin emojis)`
+          : `Asunto del Email ${i} (follow-up, máximo 7 palabras, diferente al anterior)`,
+      };
+      emailProperties[`email${i}_body`] = {
+        type: "string",
+        description: i === 1
+          ? `Cuerpo del Email ${i} (primer contacto frío). Debe empezar con "${greeting}" seguido de doble salto de línea. Sin bullets. Termina con pregunta o CTA sutil.`
+          : `Cuerpo del Email ${i} (follow-up más corto que referencia el email anterior). Empieza con "${greeting}" + doble salto. 2-3 oraciones máximo.`,
+      };
+      emailRequired.push(`email${i}_subject`, `email${i}_body`);
+    }
+
+    // Propiedades para mensajes de LinkedIn
+    const linkedinProperties: Record<string, unknown> = {};
+    const linkedinRequired: string[] = [];
+    for (let i = 1; i <= linkedinMsgCount; i++) {
+      linkedinProperties[`linkedin_msg_${i}`] = {
+        type: "string",
+        description: `Mensaje de LinkedIn ${i} (post-conexión aceptada, máximo 180 caracteres, sin saludo formal, sin emojis, directo al valor)`,
+      };
+      linkedinRequired.push(`linkedin_msg_${i}`);
+    }
+
+    // Propiedad para mensaje de invitación a conectar (opcional)
+    const connectProperties: Record<string, unknown> = includeConnectMsg
+      ? {
+          connect_message: {
+            type: "string",
+            description: "Nota para la invitación a conectar en LinkedIn (máximo 300 caracteres, muy personal y breve, sin emojis, como si fuera de persona a persona)",
+          },
+        }
+      : {};
+
+    const sequenceTool: Anthropic.Tool = {
+      name: "generate_messages",
+      description: `Genera una secuencia completa de outreach: ${emailCount} email(s), ${linkedinMsgCount} mensaje(s) de LinkedIn${includeConnectMsg ? " y mensaje de invitación a conectar" : ""}`,
+      input_schema: {
+        type: "object" as const,
+        properties: {
+          ...emailProperties,
+          ...connectProperties,
+          ...linkedinProperties,
+        },
+        required: [...emailRequired, ...(includeConnectMsg ? ["connect_message"] : []), ...linkedinRequired],
+      },
+    };
+
+    const sequencePrompt = `${langInstruction}
+
+Contexto del ICP:
+${icpContext ?? "No disponible"}${deepResearchContext}
+
+Datos del contacto:
+${contactInfo || "No disponibles"}
+
+${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa." : ""}
+
+Genera una secuencia completa de outreach para este contacto:
+- ${emailCount} email(s): el primero es primer contacto frío, los siguientes son follow-ups más cortos que referencian el anterior
+${includeConnectMsg ? "- 1 mensaje de invitación a conectar en LinkedIn: nota muy personal, máximo 300 chars\n" : ""}- ${linkedinMsgCount} mensaje(s) de LinkedIn: mensajes directos post-conexión aceptada, máximo 180 chars cada uno
+
+Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
+
+    const seqMessage = await anthropic().messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 4096,
+      system: systemPrompt,
+      tools: [sequenceTool],
+      tool_choice: { type: "tool", name: "generate_messages" },
+      messages: [{ role: "user", content: sequencePrompt }],
+    });
+
+    const seqToolUse = seqMessage.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    if (!seqToolUse) {
+      const raw = seqMessage.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
+      console.error("[generateContactMessages:sequence] Claude no usó tool_use. stop_reason:", seqMessage.stop_reason, "raw:", raw.slice(0, 300));
+      throw new Error(`Claude no generó secuencia de mensajes (stop_reason: ${seqMessage.stop_reason})`);
+    }
+
+    const rawInput = seqToolUse.input as Record<string, string>;
+
+    // Construir array de emails a partir de las propiedades dinámicas
+    const emails: SequenceEmail[] = [];
+    for (let i = 1; i <= emailCount; i++) {
+      emails.push({
+        subject: rawInput[`email${i}_subject`] ?? "",
+        body:    rawInput[`email${i}_body`]    ?? "",
+      });
+    }
+
+    // Construir array de mensajes de LinkedIn
+    const linkedinMessages: string[] = [];
+    for (let i = 1; i <= linkedinMsgCount; i++) {
+      linkedinMessages.push(rawInput[`linkedin_msg_${i}`] ?? "");
+    }
+
+    const result: ContactMessages = {
+      emails,
+      linkedinMessages,
+      connectMessage: includeConnectMsg ? (rawInput["connect_message"] ?? undefined) : undefined,
+      // Compatibilidad hacia atrás con código existente
+      emailSubject:       emails[0]?.subject ?? "",
+      emailBody:          emails[0]?.body    ?? "",
+      linkedinIcebreaker: linkedinMessages[0] ?? "",
+    };
+
+    console.log("[generateContactMessages:sequence] OK — emails:", emails.length, "linkedin:", linkedinMessages.length, "connect:", !!result.connectMessage);
+    return result;
+  }
+
+  // ─── MODO SIMPLE: comportamiento original (1 email, 1 icebreaker) ─────────────
 
   // Definición de la herramienta para forzar output estructurado
   const tool: Anthropic.Tool = hasEmail
