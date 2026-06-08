@@ -59,6 +59,9 @@ type Segment = {
   name: string;
   description: string | null;
   routing_hint: string;
+  email_count: number;
+  linkedin_msg_count: number;
+  include_connect_msg: boolean;
   segment_sources?: Source[];
   created_at: string;
 };
@@ -117,6 +120,71 @@ function MessageBlock({ label, value, onChange }: { label: string; value: string
   );
 }
 
+// ─── Componente: Configuración de secuencia ───────────────────────────────────
+
+function SequenceConfig({
+  emailCount,
+  linkedinMsgCount,
+  includeConnectMsg,
+  onChange,
+}: {
+  emailCount: number;
+  linkedinMsgCount: number;
+  includeConnectMsg: boolean;
+  onChange: (field: string, value: number | boolean) => void;
+}) {
+  return (
+    <div className="space-y-3 pt-1">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted flex items-center gap-1">
+        Configuración de secuencia
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="text-xs text-ink-muted">Cantidad de emails</label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onChange("email_count", Math.max(0, emailCount - 1))}
+              className="w-7 h-7 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center justify-center text-sm font-bold"
+            >−</button>
+            <span className="text-sm font-semibold text-ink w-4 text-center">{emailCount}</span>
+            <button
+              type="button"
+              onClick={() => onChange("email_count", Math.min(10, emailCount + 1))}
+              className="w-7 h-7 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center justify-center text-sm font-bold"
+            >+</button>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-ink-muted">Mensajes de LinkedIn</label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onChange("linkedin_msg_count", Math.max(0, linkedinMsgCount - 1))}
+              className="w-7 h-7 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center justify-center text-sm font-bold"
+            >−</button>
+            <span className="text-sm font-semibold text-ink w-4 text-center">{linkedinMsgCount}</span>
+            <button
+              type="button"
+              onClick={() => onChange("linkedin_msg_count", Math.min(10, linkedinMsgCount + 1))}
+              className="w-7 h-7 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center justify-center text-sm font-bold"
+            >+</button>
+          </div>
+        </div>
+      </div>
+      <label className="flex items-center gap-2 text-sm text-ink cursor-pointer">
+        <input
+          type="checkbox"
+          checked={includeConnectMsg}
+          onChange={(e) => onChange("include_connect_msg", e.target.checked)}
+          className="accent-[#251762]"
+        />
+        Incluir mensaje en invitación a conectar (LinkedIn)
+      </label>
+    </div>
+  );
+}
+
 // ─── TAB: Segmentos ───────────────────────────────────────────────────────────
 
 function SegmentsTab({ clientId }: { clientId: string }) {
@@ -124,7 +192,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [loading, setLoading]         = useState(true);
   const [selected, setSelected]       = useState<string | null>(null);
   const [creating, setCreating]       = useState(false);
-  const [newSeg, setNewSeg]           = useState({ name: "", description: "", routing_hint: "" });
+  const [newSeg, setNewSeg]           = useState({ name: "", description: "", routing_hint: "", email_count: 3, linkedin_msg_count: 2, include_connect_msg: true });
   const [saving, setSaving]           = useState(false);
   const [editSeg, setEditSeg]         = useState<Partial<Segment> | null>(null);
   const [addingSource, setAddingSource] = useState<string | null>(null); // segment id
@@ -154,7 +222,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
     if (res.ok) {
       const d = await res.json();
       setSegments((p) => [...p, { ...d.segment, segment_sources: [] }]);
-      setNewSeg({ name: "", description: "", routing_hint: "" });
+      setNewSeg({ name: "", description: "", routing_hint: "", email_count: 3, linkedin_msg_count: 2, include_connect_msg: true });
       setCreating(false);
       setSelected(d.segment.id);
     }
@@ -349,6 +417,12 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                 placeholder="Criterio de enrutamiento: ¿cuándo debe la IA elegir este segmento? Ej: Empresas con más de 200 empleados en industria fintech o SaaS"
                 className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none"
               />
+              <SequenceConfig
+                emailCount={newSeg.email_count}
+                linkedinMsgCount={newSeg.linkedin_msg_count}
+                includeConnectMsg={newSeg.include_connect_msg}
+                onChange={(f, v) => setNewSeg((p) => ({ ...p, [f]: v }))}
+              />
             </div>
             <div className="flex gap-2">
               <button
@@ -360,7 +434,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                 {saving ? "Guardando…" : "Crear segmento"}
               </button>
               <button
-                onClick={() => { setCreating(false); setNewSeg({ name: "", description: "", routing_hint: "" }); }}
+                onClick={() => { setCreating(false); setNewSeg({ name: "", description: "", routing_hint: "", email_count: 3, linkedin_msg_count: 2, include_connect_msg: true }); }}
                 className="px-3 text-sm rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50"
               >
                 <IconX size={14} />
@@ -485,6 +559,29 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                 <p className="text-[10px] text-ink-muted">
                   La IA lee este criterio para decidir automáticamente qué segmento aplica a cada contacto.
                 </p>
+              </div>
+
+              {/* Configuración de secuencia */}
+              <div className="border-t border-[#F0EEF8] pt-4">
+                {editSeg ? (
+                  <SequenceConfig
+                    emailCount={editSeg.email_count ?? seg.email_count ?? 3}
+                    linkedinMsgCount={editSeg.linkedin_msg_count ?? seg.linkedin_msg_count ?? 2}
+                    includeConnectMsg={editSeg.include_connect_msg ?? seg.include_connect_msg ?? true}
+                    onChange={(f, v) => setEditSeg((p) => ({ ...p, [f]: v }))}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Configuración de secuencia</p>
+                    <div className="flex gap-4 text-sm text-ink">
+                      <span><span className="font-semibold">{seg.email_count ?? 3}</span> email{(seg.email_count ?? 3) !== 1 ? "s" : ""}</span>
+                      <span><span className="font-semibold">{seg.linkedin_msg_count ?? 2}</span> msg LinkedIn</span>
+                      <span className={seg.include_connect_msg ?? true ? "text-ink" : "text-ink-muted"}>
+                        {seg.include_connect_msg ?? true ? "✓" : "✗"} Msg en invitación a conectar
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

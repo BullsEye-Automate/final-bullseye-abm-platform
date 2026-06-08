@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { client_id, name, description, routing_hint } = body;
+  const { client_id, name, description, routing_hint, email_count, linkedin_msg_count, include_connect_msg } = body;
 
   if (!client_id || !name?.trim()) {
     return NextResponse.json({ error: "Se requiere client_id y name" }, { status: 400 });
@@ -30,7 +30,15 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
   const { data, error } = await db
     .from("training_segments")
-    .insert({ client_id, name: name.trim(), description: description ?? null, routing_hint: routing_hint ?? "" })
+    .insert({
+      client_id,
+      name: name.trim(),
+      description: description ?? null,
+      routing_hint: routing_hint ?? "",
+      email_count:         email_count         ?? 3,
+      linkedin_msg_count:  linkedin_msg_count  ?? 2,
+      include_connect_msg: include_connect_msg ?? true,
+    })
     .select()
     .single();
 
