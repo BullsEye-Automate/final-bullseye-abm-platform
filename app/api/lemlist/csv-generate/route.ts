@@ -33,14 +33,14 @@ type GeneratedContact = ParsedContact & {
 };
 
 export async function POST(req: NextRequest) {
-  let body: { client_id: string; contacts: ParsedContact[] };
+  let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { client_id, contacts } = body;
+  const { client_id, contacts, segment_id } = body;
   if (!client_id || !contacts?.length) {
     return NextResponse.json({ error: "Se requiere client_id y contacts" }, { status: 400 });
   }
@@ -123,19 +123,28 @@ export async function POST(req: NextRequest) {
     const batchResults = await Promise.all(
       batch.map(async (c): Promise<GeneratedContact> => {
         try {
-          // Routing de segmento por contacto
-          const routing = await routeContactToSegment(
-            { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
-            segments ?? []
-          );
+          // Usar segmento elegido manualmente; si no hay, hacer routing automático
+          let resolvedSegmentId: string | null = segment_id ?? null;
+          let resolvedSegmentName: string | null = null;
+
+          if (!resolvedSegmentId) {
+            const routing = await routeContactToSegment(
+              { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
+              segments ?? []
+            );
+            resolvedSegmentId   = routing.segmentId;
+            resolvedSegmentName = routing.segmentName;
+          } else {
+            resolvedSegmentName = (segments ?? []).find((s) => s.id === resolvedSegmentId)?.name ?? null;
+          }
 
           let segmentContext: SegmentContext | undefined;
-          const matchedSegment = routing.segmentId
-            ? (segments ?? []).find((s) => s.id === routing.segmentId)
+          const matchedSegment = resolvedSegmentId
+            ? (segments ?? []).find((s) => s.id === resolvedSegmentId)
             : null;
 
-          if (routing.segmentId && routing.segmentName) {
-            segmentContext = await getSegmentContext(routing.segmentId, routing.segmentName);
+          if (resolvedSegmentId && resolvedSegmentName) {
+            segmentContext = await getSegmentContext(resolvedSegmentId, resolvedSegmentName);
           }
 
           const emailCount        = (matchedSegment as Record<string, unknown> | null)?.email_count        as number ?? 3;
@@ -171,7 +180,7 @@ export async function POST(req: NextRequest) {
             connectMessage: msgs.connectMessage,
             icebreaker:    msgs.linkedinMessages?.[0] ?? msgs.linkedinIcebreaker ?? msgs.linkedinIcebreakerNoEmail,
             linkedinMsg2:  msgs.linkedinMessages?.[1],
-            segmentName:   routing.segmentName ?? undefined,
+            segmentName:   resolvedSegmentName ?? undefined,
           };
         } catch (err: any) {
           return { ...c, error: err?.message ?? "Error de generación" };

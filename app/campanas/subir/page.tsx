@@ -46,7 +46,9 @@ type GeneratedContact = ParsedContact & {
   error?: string;
 };
 
-type Stage = "idle" | "parsed" | "generating" | "preview" | "pushing" | "done";
+type Stage = "idle" | "parsed" | "segment" | "generating" | "preview" | "pushing" | "done";
+
+type SegmentOption = { id: string; name: string };
 
 // ─── Mapeo de columnas del CSV/Excel ──────────────────────────────────────────
 
@@ -212,12 +214,12 @@ function ContactRow({
                   value={contact.connectMessage ?? ""}
                   onChange={(e) => onChange(index, "connectMessage", e.target.value)}
                   rows={2}
-                  maxLength={300}
+                  maxLength={200}
                   className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] resize-none"
                   placeholder="Nota de invitación LinkedIn…"
                 />
                 <span className="absolute bottom-2 right-3 text-[10px] text-ink-muted">
-                  {(contact.connectMessage ?? "").length}/300
+                  {(contact.connectMessage ?? "").length}/200
                 </span>
               </div>
             </div>
@@ -267,6 +269,8 @@ export default function SubirCampanaPage() {
   const [genProgress, setGenProgress] = useState(0);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number; errors: any[] } | null>(null);
   const [fileError, setFileError]   = useState<string | null>(null);
+  const [segments, setSegments]     = useState<SegmentOption[]>([]);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string>("");
 
   // ── Procesar archivo ──
   const handleFile = useCallback((file: File) => {
@@ -283,7 +287,15 @@ export default function SubirCampanaPage() {
         }
         setParsed(rows);
         setContacts(rows.map((r) => ({ ...r })));
-        setStage("parsed");
+        // Cargar segmentos y pasar a selección
+        fetch(`/api/training/segments?client_id=${currentClient?.id}`)
+          .then((r) => r.json())
+          .then(({ segments: segs }) => {
+            setSegments((segs ?? []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })));
+            setSelectedSegmentId(segs?.[0]?.id ?? "");
+          })
+          .catch(() => {});
+        setStage("segment");
       } catch {
         setFileError("Error al leer el archivo. Asegurate de que sea un CSV o Excel válido.");
       }
@@ -314,7 +326,11 @@ export default function SubirCampanaPage() {
       const res = await fetch("/api/lemlist/csv-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: currentClient.id, contacts: batch }),
+        body: JSON.stringify({
+          client_id: currentClient.id,
+          contacts: batch,
+          segment_id: selectedSegmentId || undefined,
+        }),
       });
       if (res.ok) {
         const { results } = await res.json();
@@ -359,6 +375,8 @@ export default function SubirCampanaPage() {
     setPushResult(null);
     setGenProgress(0);
     setFileError(null);
+    setSegments([]);
+    setSelectedSegmentId("");
     setStage("idle");
   }
 
@@ -473,6 +491,65 @@ export default function SubirCampanaPage() {
             <IconSparkles size={15} />
             Generar mensajes con IA para {parsed.length} contactos
           </button>
+        </div>
+      )}
+
+      {/* ── ETAPA: segment — elegir segmento ── */}
+      {stage === "segment" && (
+        <div className="space-y-4">
+          <div className="card px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <IconCheck size={16} style={{ color: "#62E0D8" }} />
+              <span className="text-sm font-medium text-ink">
+                {parsed.length} contactos cargados
+              </span>
+            </div>
+            <button onClick={reset} className="text-xs text-ink-muted hover:text-ink transition flex items-center gap-1">
+              <IconX size={12} /> Cambiar archivo
+            </button>
+          </div>
+
+          <div className="card px-5 py-5 space-y-4">
+            <div>
+              <p className="font-semibold text-ink">Elige el segmento para esta carga</p>
+              <p className="text-sm text-ink-muted mt-0.5">
+                Claude usará las fuentes de conocimiento, ejemplos y guía de estilo del segmento seleccionado para generar todos los mensajes.
+              </p>
+            </div>
+
+            {segments.length === 0 ? (
+              <p className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+                No hay segmentos configurados. Los mensajes se generarán con el contexto general del cliente.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {segments.map((seg) => (
+                  <button
+                    key={seg.id}
+                    onClick={() => setSelectedSegmentId(seg.id)}
+                    className={`w-full text-left px-4 py-3 rounded-xl border transition text-sm font-medium ${
+                      selectedSegmentId === seg.id
+                        ? "border-[#62E0D8] bg-[rgba(98,224,216,0.08)] text-ink"
+                        : "border-[#E5E2F0] hover:border-[#62E0D8] text-ink"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full border-2 shrink-0 ${selectedSegmentId === seg.id ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`} />
+                      {seg.name}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={handleGenerate}
+              className="btn-primary flex items-center gap-2 text-sm w-full justify-center"
+            >
+              <IconSparkles size={15} />
+              Generar mensajes con IA para {parsed.length} contactos
+            </button>
+          </div>
         </div>
       )}
 

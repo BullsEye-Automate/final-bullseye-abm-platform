@@ -282,7 +282,7 @@ export async function generateContactMessages(
       ? {
           connect_message: {
             type: "string",
-            description: "Nota para la invitación a conectar en LinkedIn (máximo 300 caracteres, muy personal y breve, sin emojis, como si fuera de persona a persona)",
+            description: "Nota para la invitación a conectar en LinkedIn (máximo 200 caracteres, muy personal y breve, sin emojis, como si fuera de persona a persona)",
           },
         }
       : {};
@@ -313,7 +313,7 @@ ${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación prof
 
 Genera una secuencia completa de outreach para este contacto:
 ${effectiveEmailCount > 0 ? `- ${effectiveEmailCount} email(s): el primero es primer contacto frío, los siguientes son follow-ups más cortos que referencian el anterior\n` : ""}- ${linkedinMsgCount} mensaje(s) de LinkedIn: mensajes directos post-conexión aceptada, máximo 180 chars cada uno
-${includeConnectMsg ? "- 1 mensaje de invitación a conectar en LinkedIn: nota muy personal, máximo 300 chars" : ""}
+${includeConnectMsg ? "- 1 mensaje de invitación a conectar en LinkedIn: nota muy personal, máximo 200 chars" : ""}
 
 Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
 
