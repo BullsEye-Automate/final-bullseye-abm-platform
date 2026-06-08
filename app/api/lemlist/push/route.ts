@@ -228,9 +228,10 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const ENRICH = "findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true";
+    // Teléfono se enriquece vía Clay waterfall, no Lemlist (peor calidad LATAM).
+    const ENRICH = "findEmail=true&verifyEmail=true&linkedinEnrichment=true";
     const lemlistUrl = hasEmail
-      ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true&findPhone=true`
+      ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true`
       : `https://api.lemlist.com/api/campaigns/${campaignId}/leads?${ENRICH}`;
 
     // Construir payload con las 10 variables de secuencia

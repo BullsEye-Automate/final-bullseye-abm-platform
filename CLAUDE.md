@@ -140,6 +140,9 @@ _(Sección para registrar aprendizajes negativos — no recrear estas rutas)_
 - IDs de reconciliación: `bullseye_company_id` y `bullseye_contact_id` en todos los payloads.
 - Clay serializa campos usando el display name (ej. "Bullseye Company Id") — la app normaliza keys en `raw-contacts/route.ts`.
 - Webhooks de Clay usan header `x-webhook-secret: bullseye-clay-2026`.
+- **Tabla "Contacts Approved"** (`t_0tgc3pmHrUCGUPq4QEf`): recibe contactos aprobados por humano para enriquecer teléfono móvil con waterfall **LeadMagic (2cr) → People Data Labs (3cr) → upcell (3.5cr) → Clay Enrichments (4cr) → Wiza (5cr)**. Máximo ~17.5 créditos por contacto. Disparado automáticamente desde `bulk-approve-enrich` y manualmente desde `/telefonos`.
+- Env var del webhook outbound (app → Clay): `CLAY_CONTACTS_APPROVED_WEBHOOK_URL`.
+- Webhook inbound (Clay → app): `/api/clay/phone-enriched` actualiza `phone_clay`, `clay_phone_provider` en Supabase y empuja `bullseye_telefono_clay` + `bullseye_clay_phone_provider` a HubSpot.
 
 ### HubSpot
 

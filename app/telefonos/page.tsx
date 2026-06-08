@@ -64,6 +64,57 @@ export default function TelefonosPage() {
   const [updating, setUpdating]         = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
 
+  // Estado para botones de búsqueda dedicada (Clay / Lemlist)
+  const [searchingClay, setSearchingClay]       = useState(false);
+  const [clayMessage, setClayMessage]           = useState<string | null>(null);
+  const [searchingLemlist, setSearchingLemlist] = useState(false);
+  const [lemlistMessage, setLemlistMessage]     = useState<string | null>(null);
+
+  async function handleSearchClay() {
+    if (!linkedinUrl.trim()) { setClayMessage("Ingresa un LinkedIn URL primero"); return; }
+    setSearchingClay(true);
+    setClayMessage(null);
+    const normalized = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
+    try {
+      const res = await fetch("/api/clay/push-contact-phone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ad_hoc:       true,
+          linkedin_url: normalized,
+          client_id:    currentClient?.id ?? null,
+        }),
+      });
+      const d = await res.json();
+      if (res.ok) setClayMessage("Lemlist está corriendo el waterfall en Clay. El teléfono aparecerá en HubSpot (propiedad Teléfono Clay) en unos minutos.");
+      else        setClayMessage(d.error ?? "Error enviando a Clay");
+    } catch {
+      setClayMessage("Error de conexión al enviar a Clay");
+    } finally {
+      setSearchingClay(false);
+    }
+  }
+
+  async function handleSearchLemlist() {
+    if (!currentClient?.id) { setLemlistMessage("Selecciona un cliente primero"); return; }
+    setSearchingLemlist(true);
+    setLemlistMessage(null);
+    try {
+      const res = await fetch("/api/lemlist/refresh-phones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id }),
+      });
+      const d = await res.json();
+      if (res.ok) setLemlistMessage(`Lemlist sincronizó ${d.refreshed ?? 0} teléfono(s) a Supabase.`);
+      else        setLemlistMessage(d.error ?? "Error en Lemlist");
+    } catch {
+      setLemlistMessage("Error de conexión a Lemlist");
+    } finally {
+      setSearchingLemlist(false);
+    }
+  }
+
   // ── Flujo de búsqueda individual ──────────────────────────
 
   async function handleSearch(e: React.FormEvent) {
@@ -285,9 +336,43 @@ export default function TelefonosPage() {
                 ) : (
                   <IconSearch size={15} />
                 )}
-                {searching ? "Buscando…" : "Buscar"}
+                {searching ? "Buscando…" : "Buscar (Lusha)"}
               </button>
             </div>
+
+            {/* Botones por proveedor de teléfono */}
+            <div className="flex gap-2 mt-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleSearchClay}
+                disabled={searchingClay || !linkedinUrl.trim()}
+                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
+                title="Waterfall LeadMagic → PDL → upcell → Clay → Wiza"
+              >
+                {searchingClay
+                  ? <IconLoader2 size={14} className="animate-spin" />
+                  : <IconPhone size={14} style={{ color: "#62E0D8" }} />}
+                {searchingClay ? "Enviando…" : "Buscar con Clay"}
+              </button>
+              <button
+                type="button"
+                onClick={handleSearchLemlist}
+                disabled={searchingLemlist}
+                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
+                title="Refrescar teléfonos de la campaña activa de Lemlist"
+              >
+                {searchingLemlist
+                  ? <IconLoader2 size={14} className="animate-spin" />
+                  : <IconPhone size={14} style={{ color: "#FF6B6B" }} />}
+                {searchingLemlist ? "Refrescando…" : "Buscar con Lemlist"}
+              </button>
+            </div>
+            {clayMessage && (
+              <p className="text-xs mt-1" style={{ color: "#0F6E56" }}>{clayMessage}</p>
+            )}
+            {lemlistMessage && (
+              <p className="text-xs mt-1" style={{ color: "#0F6E56" }}>{lemlistMessage}</p>
+            )}
             <p className="text-xs text-ink-muted mt-1">
               Tip: aceptamos formato corto (linkedin.com/in/foo) o completo
               (https://www.linkedin.com/in/foo/). Si tiene parámetros de tracking (?utm=...) se

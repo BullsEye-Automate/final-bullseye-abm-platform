@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { pushContactPhoneToClay } from "@/lib/clayPushContactPhone";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,9 +29,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ pushed: 0, errors: 0, message: "No hay contactos por aprobar" });
 
   // Marcar como empujados a Lemlist (lemlist_pushed_at + status = enriched)
-  // El push real a Lemlist se realiza en lib/messageGenerator.ts o similar
-  let pushed = 0;
-  let errors = 0;
+  // y disparar el waterfall de teléfono en Clay (LeadMagic → PDL → upcell → Clay → Wiza).
+  let pushed     = 0;
+  let errors     = 0;
+  let phonePushed = 0;
+  let phoneErrors = 0;
+
   for (const contact of contacts) {
     const { error: updErr } = await db
       .from("contacts")
@@ -39,9 +43,17 @@ export async function POST(req: NextRequest) {
         status: "enriched"
       })
       .eq("id", contact.id);
-    if (updErr) errors++;
-    else pushed++;
+    if (updErr) { errors++; continue; }
+    pushed++;
+
+    // Enriquecimiento de teléfono vía Clay (no bloqueante: si falla, sigue)
+    const result = await pushContactPhoneToClay(db, contact.id);
+    if (result.ok) phonePushed++;
+    else           phoneErrors++;
   }
 
-  return NextResponse.json({ pushed, errors, total: contacts.length });
+  return NextResponse.json({
+    pushed, errors, total: contacts.length,
+    phone_enrichment: { pushed: phonePushed, errors: phoneErrors },
+  });
 }
