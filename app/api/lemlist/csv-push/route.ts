@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
     let res: Response;
     try {
       res = await fetch(
-        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?verifyEmail=false`,
+        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true`,
         {
           method: "POST",
           headers: {
@@ -114,6 +114,16 @@ export async function POST(req: NextRequest) {
     }
 
     pushed++;
+
+    // Guardar en Supabase con upsert por email+client_id (solo campos con valor)
+    const row: Record<string, string> = { client_id, email: contact.email.trim(), lemlist_status: "active" };
+    if (contact.firstName)   row.first_name   = contact.firstName;
+    if (contact.lastName)    row.last_name    = contact.lastName;
+    if (contact.jobTitle)    row.job_title    = contact.jobTitle;
+    if (contact.companyName) row.company_name = contact.companyName;
+    if (contact.linkedinUrl) row.linkedin_url = contact.linkedinUrl;
+    if (contact.phone)       row.phone        = contact.phone;
+    await db.from("contacts").upsert(row, { onConflict: "email,client_id" });
   }
 
   return NextResponse.json({ pushed, skipped, errors });

@@ -274,9 +274,13 @@ export default function CampanasPage() {
   const [loading, setLoading]       = useState(false);
   const [pushing, setPushing]       = useState(false);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number } | null>(null);
-  const [syncing, setSyncing]       = useState(false);
-  const [syncResult, setSyncResult] = useState<{ updated: number; synced: number } | null>(null);
-  const [error, setError]           = useState<string | null>(null);
+  const [syncing, setSyncing]           = useState(false);
+  const [syncResult, setSyncResult]     = useState<{ updated: number; synced: number } | null>(null);
+  const [importing, setImporting]       = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; fields?: string[] } | null>(null);
+  const [enriching, setEnriching]       = useState(false);
+  const [enrichResult, setEnrichResult] = useState<{ enriched: number; already_ok: number; no_linkedin: number; failed: number } | null>(null);
+  const [error, setError]               = useState<string | null>(null);
 
   // ── Carga datos de campaña ──
   const loadCampaign = useCallback(async () => {
@@ -344,6 +348,64 @@ export default function CampanasPage() {
     const d = await res.json();
     setSyncResult({ updated: d.updated ?? 0, synced: d.synced ?? 0 });
     setSyncing(false);
+  }
+
+  // ── Importar leads de Lemlist a Supabase ──
+  async function importFromLemlist() {
+    if (!currentClient?.id) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const res = await fetch("/api/lemlist/import-leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id }),
+      });
+      const d = await res.json();
+      if (d.error) {
+        setError(d.error + (d.debug ? ` | debug: ${JSON.stringify(d.debug)}` : ""));
+      } else {
+        setImportResult({ imported: d.imported ?? 0, skipped: d.skipped ?? 0, fields: d.contact_fields });
+        if (d.sample_contact) {
+          console.log("=== SAMPLE CONTACT DE LEMLIST ===", d.sample_contact);
+          setError("Muestra de contacto: " + JSON.stringify(d.sample_contact).slice(0, 500));
+        }
+        loadCampaign();
+      }
+    } catch {
+      setError("Error de conexión al importar desde Lemlist");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // ── Enriquecer leads existentes en Lemlist ──
+  async function enrichInLemlist() {
+    if (!currentClient?.id) return;
+    setEnriching(true);
+    setEnrichResult(null);
+    try {
+      const res = await fetch("/api/lemlist/enrich-existing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id }),
+      });
+      const d = await res.json();
+      if (d.error) {
+        setError(d.error);
+      } else {
+        setEnrichResult({
+          enriched:    d.enriched ?? 0,
+          already_ok:  d.already_ok ?? 0,
+          no_linkedin: d.no_linkedin ?? 0,
+          failed:      d.failed ?? 0,
+        });
+      }
+    } catch {
+      setError("Error de conexión al enriquecer");
+    } finally {
+      setEnriching(false);
+    }
   }
 
   // ── Pausar/reanudar lead ──
@@ -424,6 +486,30 @@ export default function CampanasPage() {
             Carga masiva
           </Link>
           <button
+            onClick={enrichInLemlist}
+            disabled={enriching}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
+            title="Enriquecer email + teléfono de los leads ya en Lemlist"
+          >
+            {enriching
+              ? <IconLoader2 size={14} className="animate-spin" />
+              : <IconCloudUpload size={14} style={{ color: "#A855F7" }} />
+            }
+            {enriching ? "Enriqueciendo…" : "Enriquecer en Lemlist"}
+          </button>
+          <button
+            onClick={importFromLemlist}
+            disabled={importing}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
+            title="Importar leads de Lemlist a Supabase"
+          >
+            {importing
+              ? <IconLoader2 size={14} className="animate-spin" />
+              : <IconCloudUpload size={14} style={{ color: "#62E0D8" }} />
+            }
+            {importing ? "Importando…" : "Importar de Lemlist"}
+          </button>
+          <button
             onClick={syncHubSpot}
             disabled={syncing}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
@@ -476,6 +562,36 @@ export default function CampanasPage() {
           <span className="text-sm font-medium">
             HubSpot sincronizado: {syncResult.synced} contacto{syncResult.synced !== 1 ? "s" : ""} creados/actualizados
             {syncResult.updated > 0 && ` · ${syncResult.updated} enriquecidos con email/teléfono de Lemlist`}
+          </span>
+        </div>
+      )}
+
+      {/* Enrich result */}
+      {enrichResult && (
+        <div className="card border-l-4 px-4 py-3 flex items-center gap-2"
+          style={{ borderColor: "#A855F7", color: "#6B21A8" }}
+        >
+          <IconCloudUpload size={16} style={{ color: "#A855F7" }} />
+          <span className="text-sm font-medium">
+            Lemlist está enriqueciendo {enrichResult.enriched} lead{enrichResult.enriched !== 1 ? "s" : ""}
+            {enrichResult.already_ok > 0 && ` · ${enrichResult.already_ok} ya tenían email`}
+            {enrichResult.no_linkedin > 0 && ` · ${enrichResult.no_linkedin} sin LinkedIn`}
+            {enrichResult.failed > 0 && ` · ${enrichResult.failed} fallaron`}
+            . El email puede tardar unos minutos en aparecer (Lemlist gasta créditos del plan).
+          </span>
+        </div>
+      )}
+
+      {/* Import result */}
+      {importResult && (
+        <div className="card border-l-4 px-4 py-3 flex items-center gap-2"
+          style={{ borderColor: "#62E0D8", color: "#0F6E56" }}
+        >
+          <IconCheck size={16} />
+          <span className="text-sm font-medium">
+            {importResult.imported} lead{importResult.imported !== 1 ? "s" : ""} importados de Lemlist a Supabase
+            {importResult.skipped > 0 && ` · ${importResult.skipped} saltados (sin email)`}
+            {importResult.fields && ` · campos: ${importResult.fields.join(", ")}`}
           </span>
         </div>
       )}

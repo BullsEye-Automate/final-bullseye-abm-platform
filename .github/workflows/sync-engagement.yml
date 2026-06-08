@@ -1,0 +1,24 @@
+name: Sync Lemlist → Supabase → HubSpot
+
+# Cada 30 minutos refresca contactos: enriquece email/teléfono desde Lemlist,
+# regenera mensajes que falten, calcula engagement_score y sincroniza con HubSpot.
+# Equivalente al cron de WeCAD4you.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch: # permite dispararlo manualmente desde la pestaña Actions
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Refresh Lemlist → Supabase → HubSpot
+        run: |
+          curl -sS -X GET "${APP_URL}/api/cron/refresh-lemlist" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            --max-time 540 \
+            --fail-with-body
+        env:
+          APP_URL:     ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
