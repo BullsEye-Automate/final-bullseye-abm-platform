@@ -1151,7 +1151,7 @@ function LabTab({ clientId }: { clientId: string }) {
                       rows={3}
                       className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y bg-white"
                     />
-                    <p className="text-[10px] text-ink-muted text-right">{(edited.connectMessage ?? "").length}/200 chars</p>
+                    <p className="text-[10px] text-ink-muted text-right">{(edited.connectMessage ?? "").length}/190 chars</p>
                   </div>
                 </div>
               )}

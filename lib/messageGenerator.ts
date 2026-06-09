@@ -83,6 +83,8 @@ Los mensajes deben ser directos, naturales y enfocados en aportar valor.
 Usa el contexto del ICP proporcionado para personalizar cada mensaje.
 NUNCA uses guiones largos (—). En su lugar usa comas o puntos según corresponda.
 
+IDIOMA OBLIGATORIO: Escribe SIEMPRE en español latinoamericano neutro. NUNCA uses palabras, expresiones o modismos del español de Argentina, España u otro país específico. Ejemplos prohibidos: "che", "boludo", "vos" (usar "tú"), "laburo", "pibe", "tío", "vale", "vosotros", "tenés" (usar "tienes"), "hacés" (usar "haces"), "podés" (usar "puedes"). Usa vocabulario neutro entendible en cualquier país de Latinoamérica.
+
 REGLA CRÍTICA: El "Contexto del ICP" describe la EMPRESA QUE HACE EL OUTREACH (el emisor).
 Los "Datos del contacto" describen al PROSPECTO que recibe el mensaje.
 NUNCA confundas la empresa emisora con la empresa del contacto.
@@ -282,7 +284,7 @@ export async function generateContactMessages(
       ? {
           connect_message: {
             type: "string",
-            description: "Nota para la invitación a conectar en LinkedIn (máximo 200 caracteres, muy personal y breve, sin emojis, como si fuera de persona a persona)",
+            description: "Nota para la invitación a conectar en LinkedIn (máximo 190 caracteres, muy personal y breve, sin emojis, como si fuera de persona a persona). IMPORTANTE: el texto no puede superar los 190 caracteres.",
           },
         }
       : {};
@@ -313,7 +315,7 @@ ${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación prof
 
 Genera una secuencia completa de outreach para este contacto:
 ${effectiveEmailCount > 0 ? `- ${effectiveEmailCount} email(s): el primero es primer contacto frío, los siguientes son follow-ups más cortos que referencian el anterior\n` : ""}- ${linkedinMsgCount} mensaje(s) de LinkedIn: mensajes directos post-conexión aceptada, máximo 180 chars cada uno
-${includeConnectMsg ? "- 1 mensaje de invitación a conectar en LinkedIn: nota muy personal, máximo 200 chars" : ""}
+${includeConnectMsg ? "- 1 mensaje de invitación a conectar en LinkedIn: nota muy personal, MÁXIMO 190 chars (obligatorio, no puede exceder)" : ""}
 
 Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
 
