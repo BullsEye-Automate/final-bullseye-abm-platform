@@ -64,7 +64,15 @@ export async function POST(req: NextRequest) {
   let lushaError: string | null = null;
 
   try {
-    // Lusha API v2 usa header api_key (no api_token). Mandamos ambos por compatibilidad.
+    // Lusha API v2 usa header api_key + body con array `contacts`
+    const lushaBody = {
+      contacts: [
+        {
+          contactId:    "lookup-1",
+          linkedinUrl:  canonicalUrl,
+        },
+      ],
+    };
     const postRes = await fetch("https://api.lusha.com/v2/person", {
       method: "POST",
       headers: {
@@ -72,7 +80,7 @@ export async function POST(req: NextRequest) {
         api_token: lushaKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ linkedinUrl: canonicalUrl }),
+      body: JSON.stringify(lushaBody),
       cache: "no-store",
     });
 
@@ -82,10 +90,13 @@ export async function POST(req: NextRequest) {
     if (postRes.ok) {
       let json: any = null;
       try { json = JSON.parse(postBody); } catch {}
-      if (json?.status === "success" && json?.data) {
+      // v2 bulk: { contacts: { "lookup-1": { data: {...} } } }
+      const bulkData = json?.contacts?.["lookup-1"]?.data ?? null;
+      if (bulkData) {
+        lushaData = bulkData;
+      } else if (json?.status === "success" && json?.data) {
         lushaData = json.data;
       } else if (json?.data) {
-        // Algunos endpoints no incluyen status explícito
         lushaData = json.data;
       } else {
         lushaError = json?.message ?? "Lusha no devolvió datos";
