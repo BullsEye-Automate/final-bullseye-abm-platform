@@ -246,13 +246,12 @@ export default function TelefonosPage() {
       <header>
         <div className="label">SDR · ENRICHMENT MANUAL</div>
         <h1 className="text-2xl font-semibold tracking-tight mt-1">
-          ☎ Buscar teléfono con Lusha
+          ☎ Buscar teléfono
         </h1>
         <p className="text-sm text-ink-muted mt-2 max-w-2xl">
-          Pega el LinkedIn URL del contacto. Si está en BullsEye o HubSpot, te muestro el
-          teléfono de Lemlist (si lo tenemos) y consulto Lusha para el otro número. Si NO está
-          en sistema, te muestro lo que Lusha levantó y puedes crearlo con un click. Lusha cobra
-          ~1 crédito solo si devuelve teléfono.
+          Pega el LinkedIn URL del contacto y elige con qué proveedor levantar el teléfono.
+          Cada uno escribe el resultado en su propia propiedad de HubSpot (Teléfono Clay,
+          Teléfono Lemlist o Teléfono Lusha), sin sobreescribirse.
         </p>
       </header>
 
@@ -317,61 +316,58 @@ export default function TelefonosPage() {
         <form onSubmit={handleSearch} className="space-y-3">
           <div>
             <div className="label mb-1">LinkedIn URL</div>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                className="input"
-                placeholder="https://www.linkedin.com/in/usuario/"
-                value={linkedinUrl}
-                onChange={(e) => setLinkedinUrl(e.target.value)}
-                disabled={searching}
-              />
-              <button
-                type="submit"
-                disabled={searching || !linkedinUrl.trim()}
-                className="btn-primary shrink-0"
-              >
-                {searching ? (
-                  <IconLoader2 size={15} className="animate-spin" />
-                ) : (
-                  <IconSearch size={15} />
-                )}
-                {searching ? "Buscando…" : "Buscar (Lusha)"}
-              </button>
-            </div>
+            <input
+              type="url"
+              className="input w-full"
+              placeholder="https://www.linkedin.com/in/usuario/"
+              value={linkedinUrl}
+              onChange={(e) => setLinkedinUrl(e.target.value)}
+              disabled={searching || searchingClay || searchingLemlist}
+            />
 
-            {/* Botones por proveedor de teléfono */}
-            <div className="flex gap-2 mt-2 flex-wrap">
+            {/* 3 botones por proveedor — mismo nivel jerárquico */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
               <button
                 type="button"
                 onClick={handleSearchClay}
                 disabled={searchingClay || !linkedinUrl.trim()}
-                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
                 title="Waterfall LeadMagic → PDL → upcell → Clay → Wiza"
               >
                 {searchingClay
-                  ? <IconLoader2 size={14} className="animate-spin" />
-                  : <IconPhone size={14} style={{ color: "#62E0D8" }} />}
+                  ? <IconLoader2 size={15} className="animate-spin" />
+                  : <IconPhone size={15} style={{ color: "#62E0D8" }} />}
                 {searchingClay ? "Enviando…" : "Buscar con Clay"}
               </button>
               <button
                 type="button"
                 onClick={handleSearchLemlist}
                 disabled={searchingLemlist}
-                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
+                className="flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
                 title="Refrescar teléfonos de la campaña activa de Lemlist"
               >
                 {searchingLemlist
-                  ? <IconLoader2 size={14} className="animate-spin" />
-                  : <IconPhone size={14} style={{ color: "#FF6B6B" }} />}
+                  ? <IconLoader2 size={15} className="animate-spin" />
+                  : <IconPhone size={15} style={{ color: "#FF6B6B" }} />}
                 {searchingLemlist ? "Refrescando…" : "Buscar con Lemlist"}
+              </button>
+              <button
+                type="submit"
+                disabled={searching || !linkedinUrl.trim()}
+                className="flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
+                title="Buscar el teléfono con Lusha (consume 1 crédito si devuelve número)"
+              >
+                {searching
+                  ? <IconLoader2 size={15} className="animate-spin" />
+                  : <IconPhone size={15} style={{ color: "#A855F7" }} />}
+                {searching ? "Buscando…" : "Buscar con Lusha"}
               </button>
             </div>
             {clayMessage && (
-              <p className="text-xs mt-1" style={{ color: "#0F6E56" }}>{clayMessage}</p>
+              <p className="text-xs mt-2" style={{ color: "#0F6E56" }}>{clayMessage}</p>
             )}
             {lemlistMessage && (
-              <p className="text-xs mt-1" style={{ color: "#0F6E56" }}>{lemlistMessage}</p>
+              <p className="text-xs mt-2" style={{ color: "#0F6E56" }}>{lemlistMessage}</p>
             )}
             <p className="text-xs text-ink-muted mt-1">
               Tip: aceptamos formato corto (linkedin.com/in/foo) o completo
