@@ -64,6 +64,12 @@ export default function TelefonosPage() {
   const [updating, setUpdating]         = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
 
+  // Campos opcionales para Lusha (cuando contacto no está en BullsEye)
+  const [firstName, setFirstName]   = useState("");
+  const [lastName, setLastName]     = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [email, setEmail]           = useState("");
+
   // Estado para botones de búsqueda dedicada (Clay / Lemlist)
   const [searchingClay, setSearchingClay]       = useState(false);
   const [clayMessage, setClayMessage]           = useState<string | null>(null);
@@ -179,7 +185,13 @@ export default function TelefonosPage() {
         fetch("/api/lusha/lookup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ linkedin_url: normalizedUrl }),
+          body: JSON.stringify({
+            linkedin_url: normalizedUrl,
+            first_name:   firstName.trim()   || undefined,
+            last_name:    lastName.trim()    || undefined,
+            email:        email.trim()       || undefined,
+            company_name: companyName.trim() || undefined,
+          }),
         }),
       ]);
 
@@ -368,6 +380,47 @@ export default function TelefonosPage() {
             <p className="text-xs text-ink-muted mt-1">
               Tip: aceptamos formato corto (linkedin.com/in/foo) o completo. Parámetros (?utm=...) se ignoran.
             </p>
+
+            {/* Datos opcionales para Lusha (cuando el contacto no está en BullsEye) */}
+            <details className="mt-3">
+              <summary className="text-xs text-ink-muted cursor-pointer hover:text-ink">
+                Datos opcionales para Lusha (si el contacto no está en BullsEye)
+              </summary>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                <input
+                  type="text"
+                  className="input text-sm"
+                  placeholder="Nombre"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="input text-sm"
+                  placeholder="Apellido"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                />
+                <input
+                  type="text"
+                  className="input text-sm"
+                  placeholder="Empresa"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                />
+                <input
+                  type="email"
+                  className="input text-sm"
+                  placeholder="Email (alternativa a nombre+empresa)"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-ink-muted mt-1">
+                Lusha API requiere <strong>email</strong> o <strong>nombre + apellido + empresa</strong>.
+                Clay y Lemlist sí buscan solo por LinkedIn URL.
+              </p>
+            </details>
 
             {/* Un solo botón que lanza los 3 proveedores en paralelo */}
             <button
