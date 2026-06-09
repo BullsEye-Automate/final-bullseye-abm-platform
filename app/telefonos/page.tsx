@@ -126,17 +126,26 @@ export default function TelefonosPage() {
 
   async function handleSearchLemlist() {
     if (!currentClient?.id) { setLemlistMessage("Selecciona un cliente primero"); return; }
+    if (!linkedinUrl.trim()) { setLemlistMessage("Ingresa un LinkedIn URL primero"); return; }
     setSearchingLemlist(true);
-    setLemlistMessage(null);
+    setLemlistMessage("Lemlist está procesando la búsqueda (puede tardar 10-30s)…");
+    const normalized = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
     try {
-      const res = await fetch("/api/lemlist/refresh-phones", {
+      const res = await fetch("/api/lemlist/lookup-phone", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: currentClient.id }),
+        body: JSON.stringify({ client_id: currentClient.id, linkedin_url: normalized }),
       });
       const d = await res.json();
-      if (res.ok) setLemlistMessage(`Lemlist sincronizó ${d.refreshed ?? 0} teléfono(s) a Supabase.`);
-      else        setLemlistMessage(d.error ?? "Error en Lemlist");
+      if (!res.ok) {
+        setLemlistMessage(d.error ?? "Error en Lemlist");
+      } else if (d.found) {
+        setLemlistMessage(`Lemlist encontró: ${d.phone}`);
+      } else if (d.timeout) {
+        setLemlistMessage(d.message ?? "Lemlist está procesando la búsqueda.");
+      } else {
+        setLemlistMessage("Lemlist no encontró teléfono para este contacto.");
+      }
     } catch {
       setLemlistMessage("Error de conexión a Lemlist");
     } finally {
