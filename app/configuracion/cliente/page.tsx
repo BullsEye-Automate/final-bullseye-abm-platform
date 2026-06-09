@@ -17,6 +17,7 @@ import {
 import { useClient } from "@/lib/clientContext";
 
 type Config = {
+  lemlist_api_key:             string;
   lemlist_campaign_id:         string;
   lemlist_staging_campaign_id: string;
   clay_companies_table_id:     string;
@@ -29,6 +30,7 @@ type ClientWebhooks = {
 };
 
 const EMPTY_CONFIG: Config = {
+  lemlist_api_key:             "",
   lemlist_campaign_id:         "",
   lemlist_staging_campaign_id: "",
   clay_companies_table_id:     "",
@@ -110,6 +112,7 @@ export default function ConfigClientePage() {
       .then(([configData, clientData]) => {
         const cfg = configData.config;
         setForm(cfg ? {
+          lemlist_api_key:             cfg.lemlist_api_key             ?? "",
           lemlist_campaign_id:         cfg.lemlist_campaign_id         ?? "",
           lemlist_staging_campaign_id: cfg.lemlist_staging_campaign_id ?? "",
           clay_companies_table_id:     cfg.clay_companies_table_id     ?? "",
@@ -336,6 +339,13 @@ export default function ConfigClientePage() {
             <h2 className="font-semibold flex items-center gap-2">
               <IconMail size={18} className="text-brand" /> Lemlist
             </h2>
+            <Field
+              label="API Key de Lemlist"
+              hint="API key de la cuenta de Lemlist de este cliente. Si se deja vacío, se usa la cuenta principal de BullsEye. Encuéntrala en Lemlist → Settings → Integrations → API."
+              placeholder="••••••••••••••••••"
+              value={form.lemlist_api_key}
+              onChange={set("lemlist_api_key")}
+            />
             <Field
               label="Campaign ID principal"
               hint="ID de la campaña de outreach activa (email + LinkedIn). Se encuentra en la URL de la campaña en Lemlist."
