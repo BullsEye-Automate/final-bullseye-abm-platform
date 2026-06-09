@@ -84,6 +84,9 @@ export async function POST(req: NextRequest) {
       } else {
         lushaError = json?.message ?? "Lusha no devolvió datos";
       }
+    } else if (postRes.status === 404) {
+      // Lusha 404 en v2 = no encontró el contacto
+      return NextResponse.json({ found: false, message: "Lusha no encontró este contacto" });
     } else {
       // Fallback: GET legacy
       const encodedUrl = encodeURIComponent(canonicalUrl);
@@ -99,6 +102,9 @@ export async function POST(req: NextRequest) {
         } else {
           lushaError = json?.message ?? "Lusha no devolvió datos (GET fallback)";
         }
+      } else if (getRes.status === 404) {
+        // Lusha 404 = no encontró el contacto, no es error
+        return NextResponse.json({ found: false, message: "Lusha no encontró este contacto" });
       } else {
         const errText = await getRes.text().catch(() => "");
         lushaError = `Lusha respondió ${getRes.status}: ${errText.slice(0, 200)}`;

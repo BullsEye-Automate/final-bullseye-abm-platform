@@ -24,8 +24,19 @@ export async function POST(req: NextRequest) {
   const phoneRaw  = (body.phone ?? "").toString().trim();
   const provider  = (body.provider ?? "none").toString().trim().toLowerCase() || "none";
 
-  // ad_hoc: no hay contact_id, solo loguear (la UI consulta resultado por LinkedIn)
+  // ad_hoc: no hay contact_id, guardar en phone_lookups para que UI lo consulte por linkedin_url
   if (!contactId) {
+    const db = supabaseAdmin();
+    const linkedinUrl = (body.linkedin_url ?? "").trim();
+    if (linkedinUrl) {
+      await db.from("phone_lookups").insert({
+        linkedin_url: linkedinUrl,
+        phone:        phoneRaw && provider !== "none" ? phoneRaw : null,
+        provider,
+        source:       "clay",
+        client_id:    body.client_id ?? null,
+      });
+    }
     return NextResponse.json({ ok: true, mode: "ad_hoc", phone: phoneRaw, provider });
   }
 

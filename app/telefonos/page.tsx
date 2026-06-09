@@ -67,6 +67,7 @@ export default function TelefonosPage() {
   // Estado para botones de búsqueda dedicada (Clay / Lemlist)
   const [searchingClay, setSearchingClay]       = useState(false);
   const [clayMessage, setClayMessage]           = useState<string | null>(null);
+  const [clayResult, setClayResult]             = useState<{ phone: string | null; provider: string } | null>(null);
   const [searchingLemlist, setSearchingLemlist] = useState(false);
   const [lemlistMessage, setLemlistMessage]     = useState<string | null>(null);
 
@@ -74,7 +75,9 @@ export default function TelefonosPage() {
     if (!linkedinUrl.trim()) { setClayMessage("Ingresa un LinkedIn URL primero"); return; }
     setSearchingClay(true);
     setClayMessage(null);
+    setClayResult(null);
     const normalized = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
+    const since = new Date().toISOString();
     try {
       const res = await fetch("/api/clay/push-contact-phone", {
         method: "POST",
@@ -86,11 +89,37 @@ export default function TelefonosPage() {
         }),
       });
       const d = await res.json();
-      if (res.ok) setClayMessage("Lemlist está corriendo el waterfall en Clay. El teléfono aparecerá en HubSpot (propiedad Teléfono Clay) en unos minutos.");
-      else        setClayMessage(d.error ?? "Error enviando a Clay");
+      if (!res.ok) {
+        setClayMessage(d.error ?? "Error enviando a Clay");
+        setSearchingClay(false);
+        return;
+      }
+
+      setClayMessage("Clay está corriendo el waterfall (LeadMagic → PDL → upcell → Clay → Wiza). Esto puede tardar 1-3 minutos…");
+
+      // Polling: consultar resultado cada 5s por hasta 3 min
+      const deadline = Date.now() + 3 * 60 * 1000;
+      const poll = async () => {
+        if (Date.now() > deadline) {
+          setClayMessage("Tiempo de espera agotado. El resultado aparecerá en HubSpot cuando Clay responda.");
+          setSearchingClay(false);
+          return;
+        }
+        try {
+          const pr = await fetch(`/api/phone-lookups?linkedin_url=${encodeURIComponent(normalized)}&source=clay&since=${encodeURIComponent(since)}`);
+          const pd = await pr.json();
+          if (pd.lookup) {
+            setClayResult({ phone: pd.lookup.phone, provider: pd.lookup.provider });
+            setClayMessage(null);
+            setSearchingClay(false);
+            return;
+          }
+        } catch {}
+        setTimeout(poll, 5000);
+      };
+      setTimeout(poll, 5000);
     } catch {
       setClayMessage("Error de conexión al enviar a Clay");
-    } finally {
       setSearchingClay(false);
     }
   }
@@ -365,6 +394,21 @@ export default function TelefonosPage() {
             </div>
             {clayMessage && (
               <p className="text-xs mt-2" style={{ color: "#0F6E56" }}>{clayMessage}</p>
+            )}
+            {clayResult && (
+              <div className="mt-3 p-3 rounded-lg border" style={{ borderColor: "#62E0D8", background: "#EDF9F8" }}>
+                {clayResult.phone ? (
+                  <div className="text-sm">
+                    <span className="font-semibold" style={{ color: "#0F6E56" }}>Clay encontró:</span>{" "}
+                    <span className="font-mono">{clayResult.phone}</span>
+                    <span className="text-xs ml-2 text-ink-muted">({clayResult.provider})</span>
+                  </div>
+                ) : (
+                  <div className="text-sm" style={{ color: "#92400E" }}>
+                    Clay no encontró teléfono para este contacto. Prueba con Lemlist o Lusha.
+                  </div>
+                )}
+              </div>
             )}
             {lemlistMessage && (
               <p className="text-xs mt-2" style={{ color: "#0F6E56" }}>{lemlistMessage}</p>
