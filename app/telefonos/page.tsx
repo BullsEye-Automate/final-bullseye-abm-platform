@@ -287,9 +287,11 @@ export default function TelefonosPage() {
           ☎ Buscar teléfono
         </h1>
         <p className="text-sm text-ink-muted mt-2 max-w-2xl">
-          Pega el LinkedIn URL del contacto y elige con qué proveedor levantar el teléfono.
-          Cada uno escribe el resultado en su propia propiedad de HubSpot (Teléfono Clay,
-          Teléfono Lemlist o Teléfono Lusha), sin sobreescribirse.
+          Para contactos <strong>que no vinieron del flujo automático</strong> de BullsEye.
+          Pega un LinkedIn URL y la app corre los 3 proveedores en paralelo (Clay waterfall,
+          Lemlist y Lusha) y te muestra todos los teléfonos que cada uno levantó.
+          Los contactos aprobados desde <code>/contactos</code> ya pasan por la cascada automática
+          al aprobarlos — no necesitas usar este módulo para ellos.
         </p>
       </header>
 
@@ -351,7 +353,7 @@ export default function TelefonosPage() {
 
       {/* ── Card: Búsqueda individual ── */}
       <section className="card space-y-4">
-        <form onSubmit={handleSearch} className="space-y-3">
+        <div className="space-y-3">
           <div>
             <div className="label mb-1">LinkedIn URL</div>
             <input
@@ -362,73 +364,96 @@ export default function TelefonosPage() {
               onChange={(e) => setLinkedinUrl(e.target.value)}
               disabled={searching || searchingClay || searchingLemlist}
             />
-
-            {/* 3 botones por proveedor — mismo nivel jerárquico */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
-              <button
-                type="button"
-                onClick={handleSearchClay}
-                disabled={searchingClay || !linkedinUrl.trim()}
-                className="flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
-                title="Waterfall LeadMagic → PDL → upcell → Clay → Wiza"
-              >
-                {searchingClay
-                  ? <IconLoader2 size={15} className="animate-spin" />
-                  : <IconPhone size={15} style={{ color: "#62E0D8" }} />}
-                {searchingClay ? "Enviando…" : "Buscar con Clay"}
-              </button>
-              <button
-                type="button"
-                onClick={handleSearchLemlist}
-                disabled={searchingLemlist}
-                className="flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
-                title="Refrescar teléfonos de la campaña activa de Lemlist"
-              >
-                {searchingLemlist
-                  ? <IconLoader2 size={15} className="animate-spin" />
-                  : <IconPhone size={15} style={{ color: "#FF6B6B" }} />}
-                {searchingLemlist ? "Refrescando…" : "Buscar con Lemlist"}
-              </button>
-              <button
-                type="submit"
-                disabled={searching || !linkedinUrl.trim()}
-                className="flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50"
-                title="Buscar el teléfono con Lusha (consume 1 crédito si devuelve número)"
-              >
-                {searching
-                  ? <IconLoader2 size={15} className="animate-spin" />
-                  : <IconPhone size={15} style={{ color: "#A855F7" }} />}
-                {searching ? "Buscando…" : "Buscar con Lusha"}
-              </button>
-            </div>
-            {clayMessage && (
-              <p className="text-xs mt-2" style={{ color: "#0F6E56" }}>{clayMessage}</p>
-            )}
-            {clayResult && (
-              <div className="mt-3 p-3 rounded-lg border" style={{ borderColor: "#62E0D8", background: "#EDF9F8" }}>
-                {clayResult.phone ? (
-                  <div className="text-sm">
-                    <span className="font-semibold" style={{ color: "#0F6E56" }}>Clay encontró:</span>{" "}
-                    <span className="font-mono">{clayResult.phone}</span>
-                    <span className="text-xs ml-2 text-ink-muted">({clayResult.provider})</span>
-                  </div>
-                ) : (
-                  <div className="text-sm" style={{ color: "#92400E" }}>
-                    Clay no encontró teléfono para este contacto. Prueba con Lemlist o Lusha.
-                  </div>
-                )}
-              </div>
-            )}
-            {lemlistMessage && (
-              <p className="text-xs mt-2" style={{ color: "#0F6E56" }}>{lemlistMessage}</p>
-            )}
             <p className="text-xs text-ink-muted mt-1">
-              Tip: aceptamos formato corto (linkedin.com/in/foo) o completo
-              (https://www.linkedin.com/in/foo/). Si tiene parámetros de tracking (?utm=...) se
-              ignoran.
+              Tip: aceptamos formato corto (linkedin.com/in/foo) o completo. Parámetros (?utm=...) se ignoran.
             </p>
+
+            {/* Un solo botón que lanza los 3 proveedores en paralelo */}
+            <button
+              type="button"
+              onClick={async () => {
+                if (!linkedinUrl.trim()) return;
+                handleSearch({ preventDefault: () => {} } as React.FormEvent);  // Lusha
+                handleSearchClay();
+                handleSearchLemlist();
+              }}
+              disabled={!linkedinUrl.trim() || searching || searchingClay || searchingLemlist}
+              className="btn-primary mt-3 w-full sm:w-auto flex items-center justify-center gap-1.5"
+            >
+              {(searching || searchingClay || searchingLemlist)
+                ? <IconLoader2 size={15} className="animate-spin" />
+                : <IconSearch size={15} />}
+              {(searching || searchingClay || searchingLemlist) ? "Buscando en los 3…" : "Buscar teléfono (Clay + Lemlist + Lusha)"}
+            </button>
           </div>
-        </form>
+
+          {/* 3 cards de resultado lado a lado */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
+            {/* Clay */}
+            <div className="card p-3 border-l-4" style={{ borderColor: "#62E0D8" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <IconPhone size={14} style={{ color: "#62E0D8" }} />
+                <span className="font-semibold text-sm">Clay</span>
+                {searchingClay && <IconLoader2 size={12} className="animate-spin text-ink-muted" />}
+              </div>
+              {!clayResult && !clayMessage && (
+                <div className="text-xs text-ink-muted">Esperando búsqueda…</div>
+              )}
+              {clayMessage && !clayResult && (
+                <div className="text-xs text-ink-muted">{clayMessage}</div>
+              )}
+              {clayResult?.phone && (
+                <div>
+                  <div className="font-mono text-sm font-semibold" style={{ color: "#0F6E56" }}>{clayResult.phone}</div>
+                  <div className="text-xs text-ink-muted">via {clayResult.provider}</div>
+                </div>
+              )}
+              {clayResult && !clayResult.phone && (
+                <div className="text-xs" style={{ color: "#92400E" }}>Sin resultado</div>
+              )}
+            </div>
+
+            {/* Lemlist */}
+            <div className="card p-3 border-l-4" style={{ borderColor: "#FF6B6B" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <IconPhone size={14} style={{ color: "#FF6B6B" }} />
+                <span className="font-semibold text-sm">Lemlist</span>
+                {searchingLemlist && <IconLoader2 size={12} className="animate-spin text-ink-muted" />}
+              </div>
+              {!lemlistMessage && !searchingLemlist && (
+                <div className="text-xs text-ink-muted">Esperando búsqueda…</div>
+              )}
+              {lemlistMessage && (
+                <div className="text-xs" style={{ color: "#0F6E56" }}>{lemlistMessage}</div>
+              )}
+            </div>
+
+            {/* Lusha */}
+            <div className="card p-3 border-l-4" style={{ borderColor: "#A855F7" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <IconPhone size={14} style={{ color: "#A855F7" }} />
+                <span className="font-semibold text-sm">Lusha</span>
+                {searching && <IconLoader2 size={12} className="animate-spin text-ink-muted" />}
+              </div>
+              {!result && !searching && (
+                <div className="text-xs text-ink-muted">Esperando búsqueda…</div>
+              )}
+              {result?.lusha?.phone && (
+                <div>
+                  <div className="font-mono text-sm font-semibold" style={{ color: "#6B21A8" }}>{result.lusha.phone}</div>
+                  {result.lusha.phone_type && (
+                    <div className="text-xs text-ink-muted">{result.lusha.phone_type}</div>
+                  )}
+                </div>
+              )}
+              {result?.lusha && !result.lusha.phone && (
+                <div className="text-xs" style={{ color: "#92400E" }}>
+                  {result.lusha.message ?? "Sin resultado"}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Error de búsqueda */}
         {error && (
