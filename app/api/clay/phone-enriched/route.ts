@@ -69,23 +69,34 @@ export async function POST(req: NextRequest) {
 
   await db.from("contacts").update(update).eq("id", contactId);
 
-  // Push a HubSpot
+  // Cargar más datos del contacto para enriquecer la creación en HubSpot
+  const { data: contactFull } = await db
+    .from("contacts")
+    .select("id, client_id, first_name, last_name, job_title, email, phone, linkedin_url, company_id")
+    .eq("id", contactId)
+    .maybeSingle();
+
+  console.log(`[phone-enriched] contactId=${contactId} email=${contactFull?.email ?? "null"} linkedin=${contactFull?.linkedin_url ?? "null"} phone_clay=${phoneRaw}`);
+
+  // Push a HubSpot (crear o actualizar — siempre, aunque no haya email)
   try {
     const existingId =
       (await searchHSContactByBullseyeId(contact.id)) ??
-      (contact.email ? await searchHSContact(contact.email) : null);
+      (contactFull?.email ? await searchHSContact(contactFull.email) : null);
 
-    if (existingId || contact.email) {
-      await upsertHSContact(
-        {
-          email:                       contact.email ?? undefined,
-          bullseye_contact_id:         contact.id,
-          bullseye_telefono_clay:      phoneRaw && provider !== "none" ? phoneRaw : undefined,
-          bullseye_clay_phone_provider: provider,
-        },
-        existingId
-      );
-    }
+    const hsProps: Record<string, string | undefined> = {
+      email:                        contactFull?.email      ?? undefined,
+      firstname:                    contactFull?.first_name ?? undefined,
+      lastname:                     contactFull?.last_name  ?? undefined,
+      jobtitle:                     contactFull?.job_title  ?? undefined,
+      hs_linkedin_url:              contactFull?.linkedin_url ?? undefined,
+      bullseye_contact_id:          contact.id,
+      bullseye_telefono_clay:       phoneRaw && provider !== "none" ? phoneRaw : undefined,
+      bullseye_clay_phone_provider: provider,
+    };
+
+    const hsId = await upsertHSContact(hsProps, existingId);
+    console.log(`[phone-enriched] HubSpot upsert → hsId=${hsId ?? "null"} (existing=${!!existingId})`);
   } catch (err: any) {
     console.error("[phone-enriched] HubSpot push error:", err?.message);
   }

@@ -43,9 +43,16 @@ export async function POST(req: NextRequest) {
   let phoneErrors = 0;
 
   for (const contact of contacts) {
+    // Marcar lemlist_pushed_at = now() para sacar del bucket "por aprobar".
+    // El push REAL a Lemlist se ejecuta cuando llega el teléfono enriquecido
+    // (phone-enriched → /api/lemlist/push). Si Lemlist push falla, hay un retry manual
+    // disponible en /campañas.
     const { error: updErr } = await db
       .from("contacts")
-      .update({ status: "enriched" })
+      .update({
+        status:             "enriched",
+        lemlist_pushed_at:  new Date().toISOString(),
+      })
       .eq("id", contact.id);
     if (updErr) { errors++; continue; }
     pushed++;

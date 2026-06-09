@@ -61,17 +61,19 @@ export async function POST(req: NextRequest) {
     tc?.target_buyer_persona && `Buyer persona: ${tc.target_buyer_persona}`,
   ].filter(Boolean).join("\n\n") || undefined;
 
+  // Si se pasan contact_ids específicos (flujo automático desde phone-enriched),
+  // no filtramos por lemlist_pushed_at — el contacto puede tener el timestamp puesto
+  // por bulk-approve-enrich como "queued para outreach".
   let q = db
     .from("contacts")
     .select("id, first_name, last_name, job_title, linkedin_headline, seniority, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, email_subject_2, email_body_2, email_subject_3, email_body_3, connect_message, linkedin_icebreaker, linkedin_msg_2, fit_score")
     .eq("fit_action", "enrich")
-    .is("lemlist_pushed_at", null)
     .neq("status", "discarded");
 
   if (body.contact_ids?.length) {
     q = q.in("id", body.contact_ids);
   } else {
-    q = q.eq("client_id", body.client_id);
+    q = q.is("lemlist_pushed_at", null).eq("client_id", body.client_id);
   }
 
   const { data: contacts, error: contactsError } = await q.limit(20);
