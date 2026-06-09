@@ -59,20 +59,60 @@ export async function POST(req: NextRequest) {
 
   const canonicalUrl = `https://www.linkedin.com/in/${slug}`;
 
-  // Llamar a Lusha API — primero POST v2, luego GET legacy como fallback
+  // Lusha v2 NO acepta linkedinUrl directo — requiere email O firstName+lastName+companies.
+  // Si no nos pasaron esos datos, intentar resolverlos desde Supabase por linkedin_url.
+  let firstName: string | undefined = body.first_name;
+  let lastName:  string | undefined = body.last_name;
+  let email:     string | undefined = body.email;
+  let companyName: string | undefined = body.company_name;
+
+  if (!email && (!firstName || !lastName || !companyName)) {
+    const db = supabaseAdmin();
+    const { data: matched } = await db
+      .from("contacts")
+      .select("first_name, last_name, email, company_id")
+      .eq("linkedin_url", canonicalUrl)
+      .limit(1)
+      .maybeSingle();
+    if (matched) {
+      firstName ||= matched.first_name  ?? undefined;
+      lastName  ||= matched.last_name   ?? undefined;
+      email     ||= matched.email       ?? undefined;
+      if (!companyName && matched.company_id) {
+        const { data: co } = await db
+          .from("companies")
+          .select("company_name")
+          .eq("id", matched.company_id)
+          .maybeSingle();
+        companyName ||= co?.company_name ?? undefined;
+      }
+    }
+  }
+
+  const hasEmail   = Boolean(email);
+  const hasNameCo  = Boolean(firstName && lastName && companyName);
+
+  if (!hasEmail && !hasNameCo) {
+    return NextResponse.json({
+      found: false,
+      message: "Lusha API requiere email o nombre+empresa. Este contacto no está en BullsEye con esos datos.",
+    });
+  }
+
   let lushaData: any = null;
   let lushaError: string | null = null;
 
   try {
-    // Lusha API v2 usa header api_key + body con array `contacts`
-    const lushaBody = {
-      contacts: [
-        {
-          contactId:    "lookup-1",
-          linkedinUrl:  canonicalUrl,
-        },
-      ],
-    };
+    // Lusha API v2: body con array `contacts`. Si tenemos email lo priorizamos.
+    const lushaContact: Record<string, unknown> = { contactId: "lookup-1" };
+    if (hasEmail) {
+      lushaContact.email = email;
+    } else {
+      lushaContact.firstName = firstName;
+      lushaContact.lastName  = lastName;
+      lushaContact.companies = [{ name: companyName }];
+    }
+    const lushaBody = { contacts: [lushaContact] };
     const postRes = await fetch("https://api.lusha.com/v2/person", {
       method: "POST",
       headers: {
