@@ -88,6 +88,44 @@ export async function POST(req: NextRequest) {
 
   await db.from("contacts").update(update).eq("id", contactId);
 
+  // ─── Fallback Lusha: si Clay no encontró teléfono, intentar con Lusha sincrónicamente ───
+  let lushaFoundPhone = false;
+  if ((!phoneRaw || provider === "none") && process.env.LUSHA_API_KEY) {
+    try {
+      const { data: lc } = await db
+        .from("contacts")
+        .select("linkedin_url")
+        .eq("id", contactId)
+        .maybeSingle();
+
+      if (lc?.linkedin_url) {
+        console.log(`[phone-enriched] Clay no encontró, intentando Lusha para ${contactId}`);
+        const lushaRes = await fetch("https://api.lusha.com/v2/person", {
+          method: "POST",
+          headers: { api_token: process.env.LUSHA_API_KEY!, "Content-Type": "application/json" },
+          body: JSON.stringify({ linkedinUrl: lc.linkedin_url }),
+        });
+        if (lushaRes.ok) {
+          const lj = await lushaRes.json();
+          const lphone = lj?.data?.phoneNumbers?.[0]?.number ?? lj?.data?.phone ?? null;
+          if (lphone) {
+            await db.from("contacts").update({
+              phone_lusha:  lphone,
+              phone:        lphone,
+              phone_source: "lusha",
+            }).eq("id", contactId);
+            lushaFoundPhone = true;
+            console.log(`[phone-enriched] Lusha encontró: ${lphone}`);
+          } else {
+            console.log(`[phone-enriched] Lusha tampoco encontró teléfono`);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error("[phone-enriched] Lusha fallback error:", err?.message);
+    }
+  }
+
   // Cargar más datos del contacto para enriquecer la creación en HubSpot
   const { data: contactFull } = await db
     .from("contacts")
@@ -114,15 +152,24 @@ export async function POST(req: NextRequest) {
       (await searchHSContactByBullseyeId(contact.id)) ??
       (contactFull?.email ? await searchHSContact(contactFull.email) : null);
 
+    // Recargar para incluir teléfono Lusha si el fallback lo levantó
+    const { data: refreshed } = await db
+      .from("contacts")
+      .select("phone_lusha, phone")
+      .eq("id", contactId)
+      .maybeSingle();
+
     const hsProps: Record<string, string | undefined> = {
       email:                        contactFull?.email      ?? undefined,
       firstname:                    contactFull?.first_name ?? undefined,
       lastname:                     contactFull?.last_name  ?? undefined,
       jobtitle:                     contactFull?.job_title  ?? undefined,
       hs_linkedin_url:              contactFull?.linkedin_url ?? undefined,
+      phone:                        refreshed?.phone ?? undefined,
       bullseye_contact_id:          contact.id,
       bullseye_telefono_clay:       phoneRaw && provider !== "none" ? phoneRaw : undefined,
       bullseye_clay_phone_provider: provider,
+      bullseye_telefono_lusha:      refreshed?.phone_lusha ?? undefined,
     };
 
     const hsId = await upsertHSContact(hsProps, existingId);
