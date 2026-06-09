@@ -133,7 +133,8 @@ export default function ContactosPage() {
     else setBulkApproving(true);
     setNotice(null); setError(null);
 
-    const res = await fetch("/api/lemlist/push", {
+    // Flujo: aprobar → Clay waterfall de teléfono → (callback) HubSpot + push a Lemlist automático
+    const res = await fetch("/api/contacts/bulk-approve-enrich", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ client_id: currentClient.id, contact_ids: contactIds }),
@@ -145,17 +146,17 @@ export default function ContactosPage() {
 
     if (!res.ok) { setError(data.error ?? "Error al enviar"); return; }
     const pushed  = data.pushed  ?? 0;
-    const skipped = data.skipped ?? 0;
-    const errs    = data.errors?.length ?? 0;
-    if (data.reason === "no_contacts") {
-      setError("No se encontraron contactos con fit_action=enrich listos para enviar. Verifica que tengan email y no estén ya en campaña.");
+    const skipped = 0;
+    const errs    = data.errors ?? 0;
+    if (data.message === "No hay contactos por aprobar") {
+      setError("No se encontraron contactos listos para enviar.");
       return;
     }
-    const hsSynced = data.hsSynced ?? 0;
-    const parts = [`${pushed} contacto${pushed !== 1 ? "s" : ""} enviado${pushed !== 1 ? "s" : ""} a Lemlist`];
-    if (hsSynced > 0) parts.push(`${hsSynced} sincronizado${hsSynced !== 1 ? "s" : ""} en HubSpot`);
-    if (skipped > 0)  parts.push(`${skipped} sin email ni LinkedIn`);
-    if (errs > 0)     parts.push(`${errs} con error`);
+    const phoneSent = data.phone_enrichment?.pushed ?? 0;
+    const parts = [`${pushed} contacto${pushed !== 1 ? "s" : ""} aprobado${pushed !== 1 ? "s" : ""}`];
+    if (phoneSent > 0) parts.push(`${phoneSent} enviado${phoneSent !== 1 ? "s" : ""} a Clay para enriquecer teléfono`);
+    parts.push("Lemlist + HubSpot se actualizarán automáticamente al recibir el teléfono");
+    if (errs > 0)      parts.push(`${errs} con error`);
     setNotice(parts.join(" · ") + ".");
     if (data.errors?.length > 0) {
       const detail = data.errors.map((e: any) => e.error).join(" | ");

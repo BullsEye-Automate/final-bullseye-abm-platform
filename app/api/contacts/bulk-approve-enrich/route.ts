@@ -8,20 +8,26 @@ export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
-  const clientId = body.client_id ?? null;
+  const clientId   = body.client_id ?? null;
+  const contactIds: string[] | undefined = body.contact_ids;
   const db = supabaseAdmin();
 
-  // Buscar contactos listos: fit_action='enrich', lemlist aún no empujado, no descartados
+  // Buscar contactos listos. Si se pasan contact_ids específicos, usar esos.
+  // Si no, buscar todos los aprobados (fit_action='enrich', no descartados, no empujados aún).
   let q = db
     .from("contacts")
     .select(
-      "id, first_name, last_name, job_title, linkedin_url, email, company_id, linkedin_icebreaker, email_subject, email_body"
+      "id, first_name, last_name, job_title, linkedin_url, email, company_id, client_id, linkedin_icebreaker, email_subject, email_body"
     )
-    .eq("fit_action", "enrich")
-    .is("lemlist_pushed_at", null)
     .neq("status", "discarded")
     .limit(100);
-  if (clientId) q = q.eq("client_id", clientId);
+
+  if (contactIds?.length) {
+    q = q.in("id", contactIds);
+  } else {
+    q = q.eq("fit_action", "enrich").is("lemlist_pushed_at", null);
+    if (clientId) q = q.eq("client_id", clientId);
+  }
 
   const { data: contacts, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
