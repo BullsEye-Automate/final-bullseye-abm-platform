@@ -616,16 +616,6 @@ export default function CampanasPage() {
             <div className="flex items-center gap-2">
               <IconMail size={16} style={{ color: "#62E0D8" }} />
               <span className="font-semibold text-ink">{campaign.name}</span>
-              <span
-                className="text-[11px] px-2 py-0.5 rounded-full font-medium"
-                style={
-                  campaign.isStarted
-                    ? { background: "#DCFCE7", color: "#166534" }
-                    : { background: "#FEF3C7", color: "#92400E" }
-                }
-              >
-                {campaign.isStarted ? "Activa" : "Pausada"}
-              </span>
             </div>
             <a
               href={`https://app.lemlist.com/campaigns/${campaign._id}`}
