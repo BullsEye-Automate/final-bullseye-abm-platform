@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
-import { searchHSContact, patchHSContact } from "@/lib/hubspot";
+import { searchHSContact, searchHSContactByLinkedinUrl, patchHSContact } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,8 +74,12 @@ export async function POST(req: NextRequest) {
       cache: "no-store",
     });
 
+    const postBody = await postRes.text().catch(() => "");
+    console.log(`[lusha-lookup] POST v2/person → status=${postRes.status} body=${postBody.slice(0, 500)}`);
+
     if (postRes.ok) {
-      const json = await postRes.json();
+      let json: any = null;
+      try { json = JSON.parse(postBody); } catch {}
       if (json?.status === "success" && json?.data) {
         lushaData = json.data;
       } else if (json?.data) {
@@ -146,7 +150,7 @@ export async function POST(req: NextRequest) {
   // Extraer empresa
   const companyName: string | null = lushaData.company?.name ?? null;
 
-  const result = {
+  const result: Record<string, unknown> = {
     found: true,
     phone: firstPhone.number,
     phone_type: firstPhone.localizedType ?? null,
@@ -155,7 +159,21 @@ export async function POST(req: NextRequest) {
     last_name: lushaData.lastName ?? null,
     job_title: lushaData.jobTitle ?? null,
     company_name: companyName,
+    hubspot_updated: false,
   };
+
+  // Auto-update HubSpot si el LinkedIn URL matchea un contacto existente (cualquier contacto en HubSpot, no solo BullsEye)
+  try {
+    const hsId = (await searchHSContactByLinkedinUrl(canonicalUrl).catch(() => null))
+              ?? (firstEmail ? await searchHSContact(firstEmail).catch(() => null) : null);
+    if (hsId) {
+      await patchHSContact(hsId, { bullseye_telefono_lusha: firstPhone.number });
+      result.hubspot_updated = true;
+      console.log(`[lusha-lookup] HubSpot actualizado hsId=${hsId} telefono_lusha=${firstPhone.number}`);
+    }
+  } catch (err: any) {
+    console.error("[lusha-lookup] HubSpot update error:", err?.message);
+  }
 
   // Si se proporcionó contact_id, actualizar Supabase y HubSpot
   if (body.contact_id) {

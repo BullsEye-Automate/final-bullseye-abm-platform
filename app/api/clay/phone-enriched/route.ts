@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { upsertHSContact, upsertHSCompany, searchHSContactByBullseyeId, searchHSContact, searchHSCompany, associateContactCompany } from "@/lib/hubspot";
+import { upsertHSContact, upsertHSCompany, searchHSContactByBullseyeId, searchHSContact, searchHSContactByLinkedinUrl, searchHSCompany, associateContactCompany, patchHSContact } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Sigue siendo ad-hoc: guardar en phone_lookups (para UI de /telefonos) y retornar
+  // Sigue siendo ad-hoc: guardar en phone_lookups y actualizar HubSpot si matchea por linkedin_url
   if (!contactId) {
     if (linkedinUrlRaw) {
       await db.from("phone_lookups").insert({
@@ -56,6 +56,22 @@ export async function POST(req: NextRequest) {
         source:       "clay",
         client_id:    body.client_id ?? null,
       });
+
+      // Auto-update HubSpot si encuentra match por LinkedIn URL
+      if (phoneRaw && provider !== "none") {
+        try {
+          const hsId = await searchHSContactByLinkedinUrl(linkedinUrlRaw).catch(() => null);
+          if (hsId) {
+            await patchHSContact(hsId, {
+              bullseye_telefono_clay:       phoneRaw,
+              bullseye_clay_phone_provider: provider,
+            });
+            console.log(`[phone-enriched] ad-hoc HubSpot actualizado hsId=${hsId}`);
+          }
+        } catch (err: any) {
+          console.error("[phone-enriched] ad-hoc HubSpot error:", err?.message);
+        }
+      }
     }
     console.log(`[phone-enriched] ad_hoc lookup guardado, linkedin=${linkedinUrlRaw}`);
     return NextResponse.json({ ok: true, mode: "ad_hoc", phone: phoneRaw, provider });

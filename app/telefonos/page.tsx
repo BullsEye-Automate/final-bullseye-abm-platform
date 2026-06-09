@@ -140,7 +140,8 @@ export default function TelefonosPage() {
       if (!res.ok) {
         setLemlistMessage(d.error ?? "Error en Lemlist");
       } else if (d.found) {
-        setLemlistMessage(`Lemlist encontró: ${d.phone}`);
+        const hs = d.hubspot_updated ? " · HubSpot actualizado ✓" : "";
+        setLemlistMessage(`Lemlist encontró: ${d.phone}${hs}`);
       } else if (d.timeout) {
         setLemlistMessage(d.message ?? "Lemlist está procesando la búsqueda.");
       } else {

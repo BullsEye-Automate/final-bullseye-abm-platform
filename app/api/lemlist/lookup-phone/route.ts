@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { searchHSContactByLinkedinUrl, patchHSContact } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,7 +70,19 @@ export async function POST(req: NextRequest) {
     const match = leads.find((l) => (l.linkedinUrl ?? "").trim().toLowerCase() === linkedinUrl.toLowerCase());
 
     if (match?.phone?.trim()) {
-      return NextResponse.json({ found: true, phone: match.phone.trim(), source: "lemlist" });
+      const phone = match.phone.trim();
+      let hubspot_updated = false;
+      try {
+        const hsId = await searchHSContactByLinkedinUrl(linkedinUrl).catch(() => null);
+        if (hsId) {
+          await patchHSContact(hsId, { bullseye_telefono_lemlist: phone });
+          hubspot_updated = true;
+          console.log(`[lemlist-lookup] HubSpot actualizado hsId=${hsId} telefono_lemlist=${phone}`);
+        }
+      } catch (err: any) {
+        console.error("[lemlist-lookup] HubSpot update error:", err?.message);
+      }
+      return NextResponse.json({ found: true, phone, source: "lemlist", hubspot_updated });
     }
   }
 
