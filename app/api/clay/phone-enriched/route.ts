@@ -20,27 +20,46 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Body inválido" }, { status: 400 });
 
-  const contactId = body.bullseye_contact_id;
-  const phoneRaw  = (body.phone ?? "").toString().trim();
-  const provider  = (body.provider ?? "none").toString().trim().toLowerCase() || "none";
+  // Clay puede enviar campos vacíos como "" en lugar de null — normalizar
+  const cleanStr = (v: unknown): string => (v ?? "").toString().trim();
+  let contactId         = cleanStr(body.bullseye_contact_id);
+  const linkedinUrlRaw  = cleanStr(body.linkedin_url);
+  const phoneRaw        = cleanStr(body.phone);
+  const provider        = cleanStr(body.provider).toLowerCase() || "none";
 
-  // ad_hoc: no hay contact_id, guardar en phone_lookups para que UI lo consulte por linkedin_url
+  const db = supabaseAdmin();
+
+  // Si no llegó bullseye_contact_id pero sí linkedin_url, intentar resolverlo en Supabase.
+  // Esto cubre el caso donde Clay no reenvía el campo correctamente.
+  if (!contactId && linkedinUrlRaw) {
+    console.log(`[phone-enriched] bullseye_contact_id vacío, buscando por linkedin_url=${linkedinUrlRaw}`);
+    const { data: matched } = await db
+      .from("contacts")
+      .select("id")
+      .eq("linkedin_url", linkedinUrlRaw)
+      .order("clay_phone_requested_at", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    if (matched?.id) {
+      contactId = matched.id;
+      console.log(`[phone-enriched] resuelto contactId=${contactId} desde linkedin_url`);
+    }
+  }
+
+  // Sigue siendo ad-hoc: guardar en phone_lookups (para UI de /telefonos) y retornar
   if (!contactId) {
-    const db = supabaseAdmin();
-    const linkedinUrl = (body.linkedin_url ?? "").trim();
-    if (linkedinUrl) {
+    if (linkedinUrlRaw) {
       await db.from("phone_lookups").insert({
-        linkedin_url: linkedinUrl,
+        linkedin_url: linkedinUrlRaw,
         phone:        phoneRaw && provider !== "none" ? phoneRaw : null,
         provider,
         source:       "clay",
         client_id:    body.client_id ?? null,
       });
     }
+    console.log(`[phone-enriched] ad_hoc lookup guardado, linkedin=${linkedinUrlRaw}`);
     return NextResponse.json({ ok: true, mode: "ad_hoc", phone: phoneRaw, provider });
   }
-
-  const db = supabaseAdmin();
 
   // Buscar contacto
   const { data: contact } = await db
