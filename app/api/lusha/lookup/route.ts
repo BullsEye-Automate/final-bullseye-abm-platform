@@ -64,9 +64,11 @@ export async function POST(req: NextRequest) {
   let lushaError: string | null = null;
 
   try {
+    // Lusha API v2 usa header api_key (no api_token). Mandamos ambos por compatibilidad.
     const postRes = await fetch("https://api.lusha.com/v2/person", {
       method: "POST",
       headers: {
+        api_key: lushaKey,
         api_token: lushaKey,
         "Content-Type": "application/json",
       },

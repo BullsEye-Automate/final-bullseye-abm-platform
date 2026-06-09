@@ -118,7 +118,11 @@ export async function POST(req: NextRequest) {
         console.log(`[phone-enriched] Clay no encontró, intentando Lusha para ${contactId}`);
         const lushaRes = await fetch("https://api.lusha.com/v2/person", {
           method: "POST",
-          headers: { api_token: process.env.LUSHA_API_KEY!, "Content-Type": "application/json" },
+          headers: {
+            api_key:   process.env.LUSHA_API_KEY!,
+            api_token: process.env.LUSHA_API_KEY!,
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({ linkedinUrl: lc.linkedin_url }),
         });
         if (lushaRes.ok) {

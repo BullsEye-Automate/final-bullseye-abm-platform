@@ -54,10 +54,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Lemlist staging ${pushRes?.status}: ${(t ?? "").slice(0, 200)}` }, { status: 502 });
   }
 
-  // Polling: cada 5s buscar el lead en la campaña y revisar si Lemlist ya levantó teléfono
-  const deadline = Date.now() + 30_000;
+  // Polling: cada 4s buscar el lead en la campaña y revisar si Lemlist ya levantó teléfono.
+  // Máx 20s para no chocar con timeout de la función serverless.
+  const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 5000));
+    await new Promise((r) => setTimeout(r, 4000));
 
     const listRes = await fetch(
       `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=200`,
