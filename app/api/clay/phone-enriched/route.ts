@@ -77,8 +77,38 @@ export async function POST(req: NextRequest) {
     }
   } catch (err: any) {
     console.error("[phone-enriched] HubSpot push error:", err?.message);
-    return NextResponse.json({ ok: true, hubspot_error: err?.message ?? "unknown" });
   }
 
-  return NextResponse.json({ ok: true, contact_id: contactId, phone: phoneRaw, provider });
+  // Encadenar push automático a Lemlist (genera mensajes y crea el lead en la campaña)
+  // No bloqueamos: si falla, se puede reintentar manualmente desde /campañas.
+  let lemlist_pushed = false;
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+      ?? (req.headers.get("host") ? `https://${req.headers.get("host")}` : "");
+    if (baseUrl && contact.client_id) {
+      const lemRes = await fetch(`${baseUrl}/api/lemlist/push`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id:   contact.client_id,
+          contact_ids: [contact.id],
+        }),
+      });
+      lemlist_pushed = lemRes.ok;
+      if (!lemRes.ok) {
+        const t = await lemRes.text().catch(() => "");
+        console.error("[phone-enriched] Lemlist push error:", lemRes.status, t.slice(0, 150));
+      }
+    }
+  } catch (err: any) {
+    console.error("[phone-enriched] Lemlist push exception:", err?.message);
+  }
+
+  return NextResponse.json({
+    ok: true,
+    contact_id: contactId,
+    phone: phoneRaw,
+    provider,
+    lemlist_pushed,
+  });
 }

@@ -28,8 +28,9 @@ export async function POST(req: NextRequest) {
   if (!contacts?.length)
     return NextResponse.json({ pushed: 0, errors: 0, message: "No hay contactos por aprobar" });
 
-  // Marcar como empujados a Lemlist (lemlist_pushed_at + status = enriched)
-  // y disparar el waterfall de teléfono en Clay (LeadMagic → PDL → upcell → Clay → Wiza).
+  // Marcar como aprobados (status=enriched) y disparar el waterfall de teléfono en Clay.
+  // El push REAL a Lemlist se encadena automáticamente cuando llega el teléfono enriquecido
+  // (endpoint /api/clay/phone-enriched dispara /api/lemlist/push para ese contacto).
   let pushed     = 0;
   let errors     = 0;
   let phonePushed = 0;
@@ -38,10 +39,7 @@ export async function POST(req: NextRequest) {
   for (const contact of contacts) {
     const { error: updErr } = await db
       .from("contacts")
-      .update({
-        lemlist_pushed_at: new Date().toISOString(),
-        status: "enriched"
-      })
+      .update({ status: "enriched" })
       .eq("id", contact.id);
     if (updErr) { errors++; continue; }
     pushed++;
