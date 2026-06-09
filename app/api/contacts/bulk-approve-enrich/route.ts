@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { pushContactPhoneToClay } from "@/lib/clayPushContactPhone";
+import { syncContactToHubSpot } from "@/lib/syncContactToHubSpot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
@@ -12,13 +13,9 @@ export async function POST(req: NextRequest) {
   const contactIds: string[] | undefined = body.contact_ids;
   const db = supabaseAdmin();
 
-  // Buscar contactos listos. Si se pasan contact_ids específicos, usar esos.
-  // Si no, buscar todos los aprobados (fit_action='enrich', no descartados, no empujados aún).
   let q = db
     .from("contacts")
-    .select(
-      "id, first_name, last_name, job_title, linkedin_url, email, company_id, client_id, linkedin_icebreaker, email_subject, email_body"
-    )
+    .select("id, first_name, last_name, job_title, linkedin_url, email, company_id, client_id, linkedin_icebreaker, email_subject, email_body")
     .neq("status", "discarded")
     .limit(100);
 
@@ -34,19 +31,21 @@ export async function POST(req: NextRequest) {
   if (!contacts?.length)
     return NextResponse.json({ pushed: 0, errors: 0, message: "No hay contactos por aprobar" });
 
-  // Marcar como aprobados (status=enriched) y disparar el waterfall de teléfono en Clay.
-  // El push REAL a Lemlist se encadena automáticamente cuando llega el teléfono enriquecido
-  // (endpoint /api/clay/phone-enriched dispara /api/lemlist/push para ese contacto).
-  let pushed     = 0;
-  let errors     = 0;
-  let phonePushed = 0;
-  let phoneErrors = 0;
+  // Resolver baseUrl para llamar a /api/lemlist/push internamente
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+    ?? (req.headers.get("host") ? `https://${req.headers.get("host")}` : "");
+
+  let pushed       = 0;
+  let errors       = 0;
+  let phonePushed  = 0;
+  let phoneErrors  = 0;
+  let hsPushed     = 0;
+  let hsErrors     = 0;
+  let lemPushed    = 0;
+  let lemErrors    = 0;
 
   for (const contact of contacts) {
-    // Marcar lemlist_pushed_at = now() para sacar del bucket "por aprobar".
-    // El push REAL a Lemlist se ejecuta cuando llega el teléfono enriquecido
-    // (phone-enriched → /api/lemlist/push). Si Lemlist push falla, hay un retry manual
-    // disponible en /campañas.
+    // 1. Marcar como aprobado
     const { error: updErr } = await db
       .from("contacts")
       .update({
@@ -57,14 +56,44 @@ export async function POST(req: NextRequest) {
     if (updErr) { errors++; continue; }
     pushed++;
 
-    // Enriquecimiento de teléfono vía Clay (no bloqueante: si falla, sigue)
-    const result = await pushContactPhoneToClay(db, contact.id);
-    if (result.ok) phonePushed++;
-    else           phoneErrors++;
+    // 2. Push a Clay para waterfall de teléfono (no bloqueante)
+    const clayResult = await pushContactPhoneToClay(db, contact.id);
+    if (clayResult.ok) phonePushed++;
+    else               phoneErrors++;
+
+    // 3. BYPASS: Push directo a HubSpot sin esperar Clay
+    const hsResult = await syncContactToHubSpot(db, contact.id);
+    if (hsResult.ok) hsPushed++;
+    else { hsErrors++; console.error("[bulk-approve-enrich] HubSpot error:", hsResult.error); }
+
+    // 4. BYPASS: Push a Lemlist sin esperar Clay
+    if (baseUrl && contact.client_id) {
+      try {
+        const lemRes = await fetch(`${baseUrl}/api/lemlist/push`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id:   contact.client_id,
+            contact_ids: [contact.id],
+          }),
+        });
+        if (lemRes.ok) lemPushed++;
+        else {
+          lemErrors++;
+          const t = await lemRes.text().catch(() => "");
+          console.error(`[bulk-approve-enrich] Lemlist push ${lemRes.status}:`, t.slice(0, 150));
+        }
+      } catch (err: any) {
+        lemErrors++;
+        console.error("[bulk-approve-enrich] Lemlist push exception:", err?.message);
+      }
+    }
   }
 
   return NextResponse.json({
     pushed, errors, total: contacts.length,
     phone_enrichment: { pushed: phonePushed, errors: phoneErrors },
+    hubspot:          { pushed: hsPushed,    errors: hsErrors },
+    lemlist:          { pushed: lemPushed,   errors: lemErrors },
   });
 }
