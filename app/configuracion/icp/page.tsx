@@ -211,27 +211,28 @@ export default function IcpPage() {
 </header>
 <h1>${fileLabel}</h1>
 <div>${
-      content
-        .split(/\n-{3,}\n/)
-        .map((block) => {
-          const lines = block.split("\n").filter(Boolean);
-          if (lines.length === 0) return "";
-          if (lines[0].match(/^-+$/)) lines.shift();
-          const title = lines.shift() ?? "";
-          if (lines[0]?.match(/^-+$/)) lines.shift();
-          const fields = lines
-            .join("\n")
+      (() => {
+        // El formato serializado es: ---\nTITLE\n---\n\n[label]\nvalue\n\n[label]\nvalue ...repetido por sección
+        const sectionRe = /-{10,}\n(.+?)\n-{10,}\n\n([\s\S]*?)(?=\n\n-{10,}|$)/g;
+        const sections: string[] = [];
+        let m: RegExpExecArray | null;
+        while ((m = sectionRe.exec(content)) !== null) {
+          const title  = m[1].trim();
+          const body   = m[2].trim();
+          const fields = body
             .split(/\n\n+/)
-            .map((f) => {
-              const m = f.match(/^\[(.+?)\]\n([\s\S]+)$/);
-              if (!m) return "";
-              const [, label, value] = m;
-              return `<div class="field"><div class="label">${label}</div><div class="value">${value.replace(/</g, "&lt;")}</div></div>`;
+            .map((blk) => {
+              const fm = blk.match(/^\[(.+?)\]\n([\s\S]+)$/);
+              if (!fm) return "";
+              const [, label, value] = fm;
+              return `<div class="field"><div class="label">${label.replace(/</g, "&lt;")}</div><div class="value">${value.replace(/</g, "&lt;")}</div></div>`;
             })
+            .filter(Boolean)
             .join("");
-          return `<h2>${title}</h2>${fields}`;
-        })
-        .join("")
+          sections.push(`<h2>${title.replace(/</g, "&lt;")}</h2>${fields}`);
+        }
+        return sections.length > 0 ? sections.join("") : `<pre style="white-space: pre-wrap; font-family: inherit;">${content.replace(/</g, "&lt;")}</pre>`;
+      })()
     }</div>
 <footer>Documento generado por BullsEye · ${today}</footer>
 </body>
