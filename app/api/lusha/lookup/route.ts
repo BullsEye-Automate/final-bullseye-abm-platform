@@ -200,8 +200,8 @@ export async function POST(req: NextRequest) {
     lushaData.emailAddresses ?? [];
   const firstEmail = emails[0]?.emailAddress ?? null;
 
-  // Extraer empresa
-  const companyName: string | null = lushaData.company?.name ?? null;
+  // Extraer empresa devuelta por Lusha
+  const lushaCompanyName: string | null = lushaData.company?.name ?? null;
 
   const result: Record<string, unknown> = {
     found: true,
@@ -211,7 +211,7 @@ export async function POST(req: NextRequest) {
     first_name: lushaData.firstName ?? null,
     last_name: lushaData.lastName ?? null,
     job_title: lushaData.jobTitle ?? null,
-    company_name: companyName,
+    company_name: lushaCompanyName,
     hubspot_updated: false,
   };
 
