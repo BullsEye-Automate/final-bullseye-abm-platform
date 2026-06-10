@@ -115,11 +115,12 @@ export async function POST(req: NextRequest) {
     return ctx;
   }
 
-  const BATCH_SIZE = 3;
+  // El frontend ya controla el throttling (1 contacto cada 3s)
+  // Aquí procesamos lo que llegue sin paralelismo adicional
   const results: GeneratedContact[] = [];
 
-  for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
-    const batch = contacts.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < contacts.length; i += 1) {
+    const batch = contacts.slice(i, i + 1);
     const batchResults = await Promise.all(
       batch.map(async (c): Promise<GeneratedContact> => {
         try {
