@@ -103,29 +103,35 @@ export async function POST(req: NextRequest) {
   let lushaError: string | null = null;
 
   try {
-    // Lusha API v2: body con array `contacts`. Si tenemos email lo priorizamos.
-    const lushaContact: Record<string, unknown> = { contactId: "lookup-1" };
-    if (hasEmail) {
-      lushaContact.email = email;
-    } else {
-      lushaContact.firstName = firstName;
-      lushaContact.lastName  = lastName;
-      lushaContact.companies = [{ name: companyName }];
-    }
-    const lushaBody = { contacts: [lushaContact] };
-    const postRes = await fetch("https://api.lusha.com/v2/person", {
-      method: "POST",
-      headers: {
-        api_key: lushaKey,
-        api_token: lushaKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(lushaBody),
-      cache: "no-store",
-    });
+    // Lusha API v2: body con array `contacts`. Incluimos linkedinUrl SIEMPRE como signal adicional,
+    // junto con email O nombre+empresa. Si v2 lo rechaza, reintenta sin él.
+    const baseContact: Record<string, unknown> = { contactId: "lookup-1" };
+    if (hasEmail)    baseContact.email     = email;
+    if (firstName)   baseContact.firstName = firstName;
+    if (lastName)    baseContact.lastName  = lastName;
+    if (companyName) baseContact.companies = [{ name: companyName }];
 
-    const postBody = await postRes.text().catch(() => "");
-    console.log(`[lusha-lookup] POST v2/person → status=${postRes.status} body=${postBody.slice(0, 500)}`);
+    async function callLusha(includeLinkedin: boolean): Promise<{ status: number; ok: boolean; body: string }> {
+      const contact = includeLinkedin ? { ...baseContact, linkedinUrl: canonicalUrl } : baseContact;
+      const payload = { contacts: [contact] };
+      console.log(`[lusha-lookup] payload=${JSON.stringify(payload)}`);
+      const r = await fetch("https://api.lusha.com/v2/person", {
+        method: "POST",
+        headers: { api_key: lushaKey!, api_token: lushaKey!, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      });
+      const text = await r.text().catch(() => "");
+      console.log(`[lusha-lookup] POST v2/person (linkedin=${includeLinkedin}) → status=${r.status} body=${text.slice(0, 800)}`);
+      return { status: r.status, ok: r.ok, body: text };
+    }
+
+    let resp = await callLusha(true);
+    if (resp.status === 400 && /linkedinUrl/i.test(resp.body)) {
+      resp = await callLusha(false);
+    }
+    const postRes  = { status: resp.status, ok: resp.ok };
+    const postBody = resp.body;
 
     if (postRes.ok) {
       let json: any = null;
