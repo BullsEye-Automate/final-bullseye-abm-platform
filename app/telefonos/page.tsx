@@ -212,32 +212,34 @@ export default function TelefonosPage() {
         return;
       }
 
-      // Procesando: seguir reintentando en background hasta 5 minutos (10 reintentos cada 30s).
-      // El endpoint es idempotente porque busca el lead en la campaña antes de pushear.
+      // Procesando: reintentar en background cada 5s hasta 2 min (24 intentos).
+      // El endpoint es idempotente: busca primero en Lemlist y en HubSpot antes de pushear,
+      // así que no consume créditos extra.
       setLemlist({
         status: "running",
         phone: null,
-        detail: "Lemlist está enriqueciendo el contacto. Te avisamos en cuanto aparezca el teléfono (puede tardar 1-5 min)…",
+        detail: "Lemlist está enriqueciendo el contacto. Te avisamos en cuanto aparezca el teléfono…",
       });
 
-      const maxAttempts = 10;
+      const maxAttempts = 24;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        await new Promise((r) => setTimeout(r, 30_000));
+        await new Promise((r) => setTimeout(r, 5_000));
         try {
           const next = await callOnce();
           if (next.ok && next.data.found && next.data.phone) {
             setLemlist({
               status: "found",
               phone: next.data.phone,
-              detail: "Lemlist terminó el enriquecimiento.",
+              detail: next.data.message ?? "Lemlist terminó el enriquecimiento.",
             });
             return;
           }
           // Actualizar mensaje con número de intento
+          const elapsed = attempt * 5;
           setLemlist({
             status: "running",
             phone: null,
-            detail: `Lemlist sigue procesando (intento ${attempt + 1}/${maxAttempts + 1})… puedes seguir trabajando, te aviso cuando esté.`,
+            detail: `Lemlist sigue procesando (${elapsed}s)… puedes seguir trabajando, te aviso cuando esté.`,
           });
         } catch { /* reintenta */ }
       }
@@ -245,7 +247,7 @@ export default function TelefonosPage() {
       setLemlist({
         status: "not_found",
         phone: null,
-        detail: "Después de 5 minutos Lemlist no devolvió teléfono. Reintenta más tarde o avanza a Lusha.",
+        detail: "Después de 2 minutos Lemlist no devolvió teléfono. Reintenta más tarde o avanza a Lusha.",
       });
     } catch {
       setLemlist({ status: "error", phone: null, detail: "Error de conexión con Lemlist" });

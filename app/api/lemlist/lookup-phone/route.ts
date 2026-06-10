@@ -128,14 +128,39 @@ export async function POST(req: NextRequest) {
     return null;
   }
 
-  // Busca en staging + campaña principal antes de pushear (evita consumir créditos si ya lo tenemos).
-  async function findExistingLeadPhone(): Promise<{ phone: string; from: "staging" | "main" } | null> {
+  // Fallback: si Lemlist ya pusheó el número a HubSpot via su sync nativo, lo levantamos de ahí.
+  async function lookupPhoneInHubSpot(): Promise<string | null> {
+    const hsId = await searchHSContactByLinkedinUrl(linkedinUrl).catch(() => null);
+    if (!hsId) return null;
+    const token = process.env.HUBSPOT_ACCESS_TOKEN;
+    if (!token) return null;
+    const props = "phone,mobilephone,bullseye_telefono_lemlist,bullseye_telefono_clay,bullseye_telefono_lusha";
+    const r = await fetch(
+      `https://api.hubapi.com/crm/v3/objects/contacts/${hsId}?properties=${props}`,
+      { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+    ).catch(() => null);
+    if (!r?.ok) return null;
+    const d = await r.json().catch(() => null);
+    const p = d?.properties ?? {};
+    return (
+      p.bullseye_telefono_lemlist?.trim() ||
+      p.phone?.trim() ||
+      p.mobilephone?.trim() ||
+      null
+    );
+  }
+
+  // Busca en staging + campaña principal + HubSpot antes de pushear.
+  async function findExistingLeadPhone(): Promise<{ phone: string; from: "staging" | "main" | "hubspot" } | null> {
     const phoneStaging = await lookupPhoneInCampaign(campaignId);
     if (phoneStaging) return { phone: phoneStaging, from: "staging" };
     if (mainCampaignId) {
       const phoneMain = await lookupPhoneInCampaign(mainCampaignId);
       if (phoneMain) return { phone: phoneMain, from: "main" };
     }
+    // Fallback HubSpot
+    const phoneHs = await lookupPhoneInHubSpot();
+    if (phoneHs) return { phone: phoneHs, from: "hubspot" };
     return null;
   }
 
@@ -150,12 +175,14 @@ export async function POST(req: NextRequest) {
         hubspot_updated = true;
       }
     } catch { /* no bloquear */ }
+    const sourceLabel =
+      preExisting.from === "hubspot" ? "HubSpot (sync de Lemlist)" :
+      preExisting.from === "main"    ? "campaña principal de Lemlist" :
+                                       "campaña staging de Lemlist";
     return NextResponse.json({
       found: true, phone: preExisting.phone, source: "lemlist", hubspot_updated,
       cached: true,
-      message: preExisting.from === "main"
-        ? "Contacto ya estaba en la campaña principal — devolvemos su teléfono sin consumir créditos."
-        : "Contacto ya estaba en la campaña staging — devolvemos su teléfono sin consumir créditos.",
+      message: `Teléfono recuperado desde ${sourceLabel} — sin consumir créditos.`,
     });
   }
 
