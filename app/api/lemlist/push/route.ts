@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
+import { getLemlistApiKey } from "@/lib/lemlistKey";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,10 +19,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
   }
 
-  const apiKey = process.env.LEMLIST_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
-
   const db = supabaseAdmin();
+  const apiKey = await getLemlistApiKey(db, body.client_id);
+  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
 
   const [{ data: config }, { data: icpCtx }, { data: tc }, { data: styleData }, { data: segments }] = await Promise.all([
     db.from("client_configs")
@@ -61,17 +61,19 @@ export async function POST(req: NextRequest) {
     tc?.target_buyer_persona && `Buyer persona: ${tc.target_buyer_persona}`,
   ].filter(Boolean).join("\n\n") || undefined;
 
+  // Si se pasan contact_ids específicos (flujo automático desde phone-enriched),
+  // no filtramos por lemlist_pushed_at — el contacto puede tener el timestamp puesto
+  // por bulk-approve-enrich como "queued para outreach".
   let q = db
     .from("contacts")
-    .select("id, first_name, last_name, job_title, linkedin_headline, seniority, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, email_subject_2, email_body_2, email_subject_3, email_body_3, connect_message, linkedin_icebreaker, linkedin_msg_2, fit_score")
+    .select("id, first_name, last_name, job_title, linkedin_headline, seniority, email, phone, phone_source, phone_clay, clay_phone_provider, clay_phone_received_at, linkedin_url, company_id, email_subject, email_body, email_subject_2, email_body_2, email_subject_3, email_body_3, connect_message, linkedin_icebreaker, linkedin_msg_2, fit_score")
     .eq("fit_action", "enrich")
-    .is("lemlist_pushed_at", null)
     .neq("status", "discarded");
 
   if (body.contact_ids?.length) {
     q = q.in("id", body.contact_ids);
   } else {
-    q = q.eq("client_id", body.client_id);
+    q = q.is("lemlist_pushed_at", null).eq("client_id", body.client_id);
   }
 
   const { data: contacts, error: contactsError } = await q.limit(20);
@@ -165,7 +167,10 @@ export async function POST(req: NextRequest) {
           .order("created_at", { ascending: false }).limit(5);
 
         const msgs = await generateContactMessages({
-          hasEmail,
+          // Generamos emails SIEMPRE, aunque el contacto no tenga email aún —
+          // Lemlist los enriquece con findEmail=true y necesita las variables
+          // {{emailSubject_1}}, {{emailBody_1}}, etc. ya pobladas en el lead.
+          hasEmail: true,
           firstName:        contact.first_name        ?? undefined,
           lastName:         contact.last_name         ?? undefined,
           jobTitle:         contact.job_title         ?? undefined,
@@ -228,10 +233,19 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    const ENRICH = "findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true";
+    // Teléfono se enriquece vía Clay waterfall (mejor calidad LATAM).
+    // Si Clay no encontró teléfono (clay_phone_provider='none' o sin phone_clay),
+    // pedimos a Lemlist que también busque teléfono como fallback.
+    const clayHadNoPhone = (contact as any).clay_phone_provider === "none"
+      || (!(contact as any).phone_clay && (contact as any).clay_phone_received_at);
+    const findPhoneParam = clayHadNoPhone ? "&findPhone=true" : "";
+
+    const ENRICH = `findEmail=true&verifyEmail=true&linkedinEnrichment=true${findPhoneParam}`;
     const lemlistUrl = hasEmail
-      ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true&findPhone=true`
+      ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true${findPhoneParam}`
       : `https://api.lemlist.com/api/campaigns/${campaignId}/leads?${ENRICH}`;
+
+    if (clayHadNoPhone) console.log(`[lemlist-push] Clay no encontró teléfono para ${contact.id} → activando findPhone en Lemlist como fallback`);
 
     // Construir payload con las 10 variables de secuencia
     const lemlistPayload: Record<string, string | undefined> = {

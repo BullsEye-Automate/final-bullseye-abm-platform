@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
+import { getLemlistApiKey } from "@/lib/lemlistKey";
 import {
   searchHSContactByBullseyeId,
   searchHSContact,
@@ -51,10 +52,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
   }
 
-  const apiKey = process.env.LEMLIST_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
-
   const db = supabaseAdmin();
+  const apiKey = await getLemlistApiKey(db, body.client_id);
+  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
 
   const [{ data: client }, { data: config }] = await Promise.all([
