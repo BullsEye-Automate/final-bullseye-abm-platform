@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
+import { getLemlistApiKey } from "@/lib/lemlistKey";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,10 +19,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
   }
 
-  const apiKey = process.env.LEMLIST_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
-
   const db = supabaseAdmin();
+  const apiKey = await getLemlistApiKey(db, body.client_id);
+  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
 
   const [{ data: config }, { data: icpCtx }, { data: tc }, { data: styleData }, { data: segments }] = await Promise.all([
     db.from("client_configs")
