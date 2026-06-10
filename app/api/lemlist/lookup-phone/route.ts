@@ -43,23 +43,27 @@ export async function POST(req: NextRequest) {
 
   const targetNorm = (normalizeLinkedInUrl(linkedinUrl) ?? linkedinUrl).toLowerCase();
 
-  // Extrae teléfono de un lead probando múltiples claves donde Lemlist guarda el número.
+  // Heurística: cualquier clave que contenga "phone" (case-insensitive) y tenga valor string.
   function extractPhone(lead: any): string | null {
-    const candidates = [
-      lead?.phone,
-      lead?.mobilePhone,
-      lead?.mobile_phone,
-      lead?.workPhone,
-      lead?.work_phone,
-      lead?.fields?.phone,
-      lead?.fields?.mobilePhone,
-      lead?.fields?.mobile_phone,
-    ];
-    for (const c of candidates) {
-      const s = (c ?? "").toString().trim();
-      if (s) return s;
+    if (!lead || typeof lead !== "object") return null;
+    const seen = new Set<string>();
+    function scan(obj: any, depth = 0): string | null {
+      if (!obj || typeof obj !== "object" || depth > 3) return null;
+      for (const [k, v] of Object.entries(obj)) {
+        if (seen.has(k + depth)) continue;
+        seen.add(k + depth);
+        if (typeof v === "string" && /phone/i.test(k)) {
+          const s = v.trim();
+          if (s && /\d/.test(s)) return s;
+        }
+        if (v && typeof v === "object") {
+          const inner = scan(v, depth + 1);
+          if (inner) return inner;
+        }
+      }
+      return null;
     }
-    return null;
+    return scan(lead);
   }
 
   // Compara LinkedIn URLs aplicando la misma normalización en ambos lados.
@@ -70,7 +74,25 @@ export async function POST(req: NextRequest) {
     return norm === targetNorm;
   }
 
-  // Busca el lead por linkedinUrl en una campaña concreta (paginando hasta 1000 leads) y devuelve teléfono si existe.
+  // Trae el detalle COMPLETO de un lead/contacto por su id. El listado por campaña a veces
+  // omite campos enriquecidos (phone incluido), pero este endpoint los devuelve todos.
+  async function fetchContactDetail(contactId: string): Promise<any | null> {
+    const endpoints = [
+      `https://api.lemlist.com/api/contacts/${encodeURIComponent(contactId)}`,
+      `https://api.lemlist.com/api/leads/${encodeURIComponent(contactId)}`,
+    ];
+    for (const ep of endpoints) {
+      const r = await fetch(ep, { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }).catch(() => null);
+      if (r?.ok) {
+        const d = await r.json().catch(() => null);
+        if (d) return d;
+      }
+    }
+    return null;
+  }
+
+  // Busca el lead por linkedinUrl en una campaña (paginando hasta 1000 leads).
+  // Si lo encuentra, intenta primero el extractPhone del listado; si no, va al detalle del contacto.
   async function lookupPhoneInCampaign(cId: string): Promise<string | null> {
     let offset = 0;
     const limit = 100;
@@ -84,7 +106,22 @@ export async function POST(req: NextRequest) {
       const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
       if (!leads.length) return null;
       const match = leads.find(sameLinkedin);
-      if (match) return extractPhone(match);
+      if (match) {
+        const fromList = extractPhone(match);
+        if (fromList) return fromList;
+        // Fallback: buscar en el detalle del contacto (el listado trunca campos enriquecidos)
+        const contactId = match.contactId ?? match.contact_id ?? match._id ?? match.id;
+        console.log(`[lemlist-lookup] Lead encontrado en ${cId} sin phone en listado. contactId=${contactId} keys=${Object.keys(match).join(",")}`);
+        if (contactId) {
+          const detail = await fetchContactDetail(contactId.toString());
+          if (detail) {
+            console.log(`[lemlist-lookup] Detalle del contacto keys=${Object.keys(detail).join(",")}`);
+            const fromDetail = extractPhone(detail);
+            if (fromDetail) return fromDetail;
+          }
+        }
+        return null;
+      }
       if (leads.length < limit) return null;
       offset += limit;
     }
