@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getLemlistApiKey } from "@/lib/lemlistKey";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,10 +38,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Se requiere client_id y contacts" }, { status: 400 });
   }
 
-  const apiKey = process.env.LEMLIST_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
-
   const db = supabaseAdmin();
+  const apiKey = await getLemlistApiKey(db, client_id);
+  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
   const { data: config } = await db
     .from("client_configs")
     .select("lemlist_campaign_id")

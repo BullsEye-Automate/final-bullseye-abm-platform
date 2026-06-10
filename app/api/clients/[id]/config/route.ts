@@ -21,6 +21,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   const payload = {
     client_id:                   params.id,
+    lemlist_api_key:             body.lemlist_api_key             ?? null,
     lemlist_campaign_id:         body.lemlist_campaign_id         ?? null,
     lemlist_staging_campaign_id: body.lemlist_staging_campaign_id ?? null,
     clay_companies_table_id:     body.clay_companies_table_id     ?? null,
