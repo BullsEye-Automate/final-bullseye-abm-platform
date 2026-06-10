@@ -262,7 +262,7 @@ export default function TelefonosPage() {
           <IconInfoCircle size={16} /> Cómo funciona
         </div>
         <ol className="text-sm text-ink-muted space-y-1.5 list-decimal list-inside">
-          <li>Pegás el LinkedIn URL del contacto (obligatorio para los 3 proveedores).</li>
+          <li>Pega el LinkedIn URL del contacto (obligatorio para los 3 proveedores).</li>
           <li><strong>Clay</strong> corre un waterfall de 5 proveedores — tarda 1-3 min. Solo necesita LinkedIn URL.</li>
           <li><strong>Lemlist</strong> usa findPhone sobre la campaña staging — tarda 10-30s. Solo necesita LinkedIn URL.</li>
           <li><strong>Lusha</strong> necesita además <em>email</em> ó <em>nombre + apellido + empresa</em>.</li>
@@ -347,7 +347,7 @@ export default function TelefonosPage() {
           <p className={`text-xs mt-2 ${canLusha ? "text-success-fg" : "text-ink-subtle"}`}>
             {canLusha
               ? "✓ Lusha se va a ejecutar"
-              : "Sin email ni nombre+empresa → Lusha se saltea"}
+              : "Sin email ni nombre+empresa → Lusha se omite"}
           </p>
         </div>
 
