@@ -25,6 +25,7 @@ type Result = {
   status: "idle" | "running" | "found" | "not_found" | "error";
   phone: string | null;
   detail: string | null;
+  debug?: any;
 };
 const IDLE: Result = { status: "idle", phone: null, detail: null };
 
@@ -98,6 +99,17 @@ function ResultCard({
       )}
       {result.status === "error" && (
         <p className="text-sm" style={{ color: palette.body }}>{result.detail ?? "Error"}</p>
+      )}
+
+      {result.debug && (result.status === "not_found" || result.status === "running") && (
+        <details className="mt-1">
+          <summary className="text-xs cursor-pointer" style={{ color: palette.body }}>
+            🔍 Detalles técnicos (debug)
+          </summary>
+          <pre className="text-[10px] mt-2 p-2 rounded overflow-auto max-h-96" style={{ background: "#1e1b3a", color: "#e2e8f0" }}>
+            {JSON.stringify(result.debug, null, 2)}
+          </pre>
+        </details>
       )}
     </div>
   );
@@ -207,7 +219,7 @@ export default function TelefonosPage() {
         setLemlist({
           status: "found",
           phone: first.data.phone,
-          detail: first.data.cached ? "Contacto ya estaba en la campaña. Sin consumir créditos." : null,
+          detail: first.data.message ?? (first.data.cached ? "Contacto ya estaba en la campaña. Sin consumir créditos." : null),
         });
         return;
       }
@@ -221,6 +233,7 @@ export default function TelefonosPage() {
         detail: "Lemlist está enriqueciendo el contacto. Te avisamos en cuanto aparezca el teléfono…",
       });
 
+      let lastDebug: any = first.data.debug;
       const maxAttempts = 24;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         await new Promise((r) => setTimeout(r, 5_000));
@@ -234,12 +247,13 @@ export default function TelefonosPage() {
             });
             return;
           }
-          // Actualizar mensaje con número de intento
+          lastDebug = next.data.debug ?? lastDebug;
           const elapsed = attempt * 5;
           setLemlist({
             status: "running",
             phone: null,
             detail: `Lemlist sigue procesando (${elapsed}s)… puedes seguir trabajando, te aviso cuando esté.`,
+            debug: lastDebug,
           });
         } catch { /* reintenta */ }
       }
@@ -248,6 +262,7 @@ export default function TelefonosPage() {
         status: "not_found",
         phone: null,
         detail: "Después de 2 minutos Lemlist no devolvió teléfono. Reintenta más tarde o avanza a Lusha.",
+        debug: lastDebug,
       });
     } catch {
       setLemlist({ status: "error", phone: null, detail: "Error de conexión con Lemlist" });
