@@ -111,11 +111,11 @@ export async function POST(req: NextRequest) {
         if (fromList) return fromList;
         // Fallback: buscar en el detalle del contacto (el listado trunca campos enriquecidos)
         const contactId = match.contactId ?? match.contact_id ?? match._id ?? match.id;
-        console.log(`[lemlist-lookup] Lead encontrado en ${cId} sin phone en listado. contactId=${contactId} keys=${Object.keys(match).join(",")}`);
+        console.log(`[lemlist-lookup] Lead encontrado en ${cId} sin phone en listado. contactId=${contactId} LEAD_RAW=${JSON.stringify(match).slice(0, 2000)}`);
         if (contactId) {
           const detail = await fetchContactDetail(contactId.toString());
           if (detail) {
-            console.log(`[lemlist-lookup] Detalle del contacto keys=${Object.keys(detail).join(",")}`);
+            console.log(`[lemlist-lookup] Detalle DEL CONTACTO=${JSON.stringify(detail).slice(0, 2000)}`);
             const fromDetail = extractPhone(detail);
             if (fromDetail) return fromDetail;
           }
@@ -128,39 +128,14 @@ export async function POST(req: NextRequest) {
     return null;
   }
 
-  // Fallback: si Lemlist ya pusheó el número a HubSpot via su sync nativo, lo levantamos de ahí.
-  async function lookupPhoneInHubSpot(): Promise<string | null> {
-    const hsId = await searchHSContactByLinkedinUrl(linkedinUrl).catch(() => null);
-    if (!hsId) return null;
-    const token = process.env.HUBSPOT_ACCESS_TOKEN;
-    if (!token) return null;
-    const props = "phone,mobilephone,bullseye_telefono_lemlist,bullseye_telefono_clay,bullseye_telefono_lusha";
-    const r = await fetch(
-      `https://api.hubapi.com/crm/v3/objects/contacts/${hsId}?properties=${props}`,
-      { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
-    ).catch(() => null);
-    if (!r?.ok) return null;
-    const d = await r.json().catch(() => null);
-    const p = d?.properties ?? {};
-    return (
-      p.bullseye_telefono_lemlist?.trim() ||
-      p.phone?.trim() ||
-      p.mobilephone?.trim() ||
-      null
-    );
-  }
-
-  // Busca en staging + campaña principal + HubSpot antes de pushear.
-  async function findExistingLeadPhone(): Promise<{ phone: string; from: "staging" | "main" | "hubspot" } | null> {
+  // Busca en staging + campaña principal antes de pushear (evita consumir créditos si ya lo tenemos).
+  async function findExistingLeadPhone(): Promise<{ phone: string; from: "staging" | "main" } | null> {
     const phoneStaging = await lookupPhoneInCampaign(campaignId);
     if (phoneStaging) return { phone: phoneStaging, from: "staging" };
     if (mainCampaignId) {
       const phoneMain = await lookupPhoneInCampaign(mainCampaignId);
       if (phoneMain) return { phone: phoneMain, from: "main" };
     }
-    // Fallback HubSpot
-    const phoneHs = await lookupPhoneInHubSpot();
-    if (phoneHs) return { phone: phoneHs, from: "hubspot" };
     return null;
   }
 
@@ -175,10 +150,9 @@ export async function POST(req: NextRequest) {
         hubspot_updated = true;
       }
     } catch { /* no bloquear */ }
-    const sourceLabel =
-      preExisting.from === "hubspot" ? "HubSpot (sync de Lemlist)" :
-      preExisting.from === "main"    ? "campaña principal de Lemlist" :
-                                       "campaña staging de Lemlist";
+    const sourceLabel = preExisting.from === "main"
+      ? "campaña principal de Lemlist"
+      : "campaña staging de Lemlist";
     return NextResponse.json({
       found: true, phone: preExisting.phone, source: "lemlist", hubspot_updated,
       cached: true,
