@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
   const { data: config } = await db
     .from("client_configs")
-    .select("lemlist_staging_campaign_id")
+    .select("lemlist_staging_campaign_id, lemlist_campaign_id")
     .eq("client_id", clientId)
     .maybeSingle();
 
@@ -38,21 +38,50 @@ export async function POST(req: NextRequest) {
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_staging_campaign_id;
+  const mainCampaignId = config.lemlist_campaign_id ?? null;
 
-  // Helper: busca un lead por linkedinUrl en TODAS las campañas del cliente y devuelve su teléfono si existe.
-  async function findExistingLeadPhone(): Promise<{ phone: string; campaignName?: string } | null> {
-    // Buscar primero en la staging
+  // Busca el lead por linkedinUrl en una campaña concreta y devuelve teléfono si existe.
+  async function lookupPhoneInCampaign(cId: string): Promise<string | null> {
     const listRes = await fetch(
-      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=500`,
+      `https://api.lemlist.com/api/campaigns/${cId}/leads?limit=500`,
       { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
     ).catch(() => null);
-    if (listRes?.ok) {
-      const data = await listRes.json();
-      const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
-      const match = leads.find((l) => (l.linkedinUrl ?? "").trim().toLowerCase() === linkedinUrl.toLowerCase());
-      if (match?.phone?.trim()) return { phone: match.phone.trim() };
+    if (!listRes?.ok) return null;
+    const data = await listRes.json();
+    const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
+    const match = leads.find((l) => (l.linkedinUrl ?? "").trim().toLowerCase() === linkedinUrl.toLowerCase());
+    return match?.phone?.trim() || null;
+  }
+
+  // Busca en staging + campaña principal antes de pushear (evita consumir créditos si ya lo tenemos).
+  async function findExistingLeadPhone(): Promise<{ phone: string; from: "staging" | "main" } | null> {
+    const phoneStaging = await lookupPhoneInCampaign(campaignId);
+    if (phoneStaging) return { phone: phoneStaging, from: "staging" };
+    if (mainCampaignId) {
+      const phoneMain = await lookupPhoneInCampaign(mainCampaignId);
+      if (phoneMain) return { phone: phoneMain, from: "main" };
     }
     return null;
+  }
+
+  // ANTES de pushear: si el contacto ya está en cualquier campaña con teléfono, devolvemos directo.
+  const preExisting = await findExistingLeadPhone();
+  if (preExisting?.phone) {
+    let hubspot_updated = false;
+    try {
+      const hsId = await searchHSContactByLinkedinUrl(linkedinUrl).catch(() => null);
+      if (hsId) {
+        await patchHSContact(hsId, { bullseye_telefono_lemlist: preExisting.phone });
+        hubspot_updated = true;
+      }
+    } catch { /* no bloquear */ }
+    return NextResponse.json({
+      found: true, phone: preExisting.phone, source: "lemlist", hubspot_updated,
+      cached: true,
+      message: preExisting.from === "main"
+        ? "Contacto ya estaba en la campaña principal — devolvemos su teléfono sin consumir créditos."
+        : "Contacto ya estaba en la campaña staging — devolvemos su teléfono sin consumir créditos.",
+    });
   }
 
   // Push del lead a la staging con findPhone activado
