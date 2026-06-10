@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { searchHSContactByLinkedinUrl, patchHSContact } from "@/lib/hubspot";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
+import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,17 +41,54 @@ export async function POST(req: NextRequest) {
   const campaignId  = config.lemlist_staging_campaign_id;
   const mainCampaignId = config.lemlist_campaign_id ?? null;
 
-  // Busca el lead por linkedinUrl en una campaña concreta y devuelve teléfono si existe.
+  const targetNorm = (normalizeLinkedInUrl(linkedinUrl) ?? linkedinUrl).toLowerCase();
+
+  // Extrae teléfono de un lead probando múltiples claves donde Lemlist guarda el número.
+  function extractPhone(lead: any): string | null {
+    const candidates = [
+      lead?.phone,
+      lead?.mobilePhone,
+      lead?.mobile_phone,
+      lead?.workPhone,
+      lead?.work_phone,
+      lead?.fields?.phone,
+      lead?.fields?.mobilePhone,
+      lead?.fields?.mobile_phone,
+    ];
+    for (const c of candidates) {
+      const s = (c ?? "").toString().trim();
+      if (s) return s;
+    }
+    return null;
+  }
+
+  // Compara LinkedIn URLs aplicando la misma normalización en ambos lados.
+  function sameLinkedin(a: any): boolean {
+    const raw = (a?.linkedinUrl ?? a?.linkedin_url ?? a?.linkedin ?? a?.fields?.linkedinUrl ?? "").toString().trim();
+    if (!raw) return false;
+    const norm = (normalizeLinkedInUrl(raw) ?? raw).toLowerCase();
+    return norm === targetNorm;
+  }
+
+  // Busca el lead por linkedinUrl en una campaña concreta (paginando hasta 1000 leads) y devuelve teléfono si existe.
   async function lookupPhoneInCampaign(cId: string): Promise<string | null> {
-    const listRes = await fetch(
-      `https://api.lemlist.com/api/campaigns/${cId}/leads?limit=500`,
-      { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
-    ).catch(() => null);
-    if (!listRes?.ok) return null;
-    const data = await listRes.json();
-    const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
-    const match = leads.find((l) => (l.linkedinUrl ?? "").trim().toLowerCase() === linkedinUrl.toLowerCase());
-    return match?.phone?.trim() || null;
+    let offset = 0;
+    const limit = 100;
+    while (offset < 1000) {
+      const listRes = await fetch(
+        `https://api.lemlist.com/api/campaigns/${cId}/leads?limit=${limit}&offset=${offset}`,
+        { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
+      ).catch(() => null);
+      if (!listRes?.ok) return null;
+      const data = await listRes.json();
+      const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
+      if (!leads.length) return null;
+      const match = leads.find(sameLinkedin);
+      if (match) return extractPhone(match);
+      if (leads.length < limit) return null;
+      offset += limit;
+    }
+    return null;
   }
 
   // Busca en staging + campaña principal antes de pushear (evita consumir créditos si ya lo tenemos).
