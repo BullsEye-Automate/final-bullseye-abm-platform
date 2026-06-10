@@ -118,6 +118,10 @@ export async function POST(req: NextRequest) {
       const data = await listRes.json();
       const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
       if (!leads.length) return null;
+      console.log(`[lemlist-lookup] campaign=${cId} offset=${offset} leads_count=${leads.length} targetSlug=${targetSlug ?? "null"}`);
+      if (leads.length > 0 && offset === 0) {
+        console.log(`[lemlist-lookup] primer lead sample=${JSON.stringify(leads[0]).slice(0, 1500)}`);
+      }
       const match = leads.find(sameLinkedin);
       if (match) {
         const fromList = extractPhone(match);
