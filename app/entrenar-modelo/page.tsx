@@ -32,9 +32,15 @@ import {
 type Tab = "segments" | "lab" | "examples" | "style";
 
 type GeneratedMessages = {
+  // Secuencia completa (cuando el segmento tiene email_count > 1, etc.)
+  emails?: { subject: string; body: string }[];
+  linkedinMessages?: string[];
+  connectMessage?: string;
+  // Compatibilidad hacia atrás (modo simple)
   emailSubject?: string;
   emailBody?: string;
   linkedinIcebreaker?: string;
+  linkedinIcebreakerNoEmail?: string;
 };
 
 type Routing = {
@@ -58,6 +64,9 @@ type Segment = {
   name: string;
   description: string | null;
   routing_hint: string;
+  email_count: number;
+  linkedin_msg_count: number;
+  include_connect_msg: boolean;
   segment_sources?: Source[];
   created_at: string;
 };
@@ -116,6 +125,71 @@ function MessageBlock({ label, value, onChange }: { label: string; value: string
   );
 }
 
+// ─── Componente: Configuración de secuencia ───────────────────────────────────
+
+function SequenceConfig({
+  emailCount,
+  linkedinMsgCount,
+  includeConnectMsg,
+  onChange,
+}: {
+  emailCount: number;
+  linkedinMsgCount: number;
+  includeConnectMsg: boolean;
+  onChange: (field: string, value: number | boolean) => void;
+}) {
+  return (
+    <div className="space-y-3 pt-1">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted flex items-center gap-1">
+        Configuración de secuencia
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <label className="text-xs text-ink-muted">Cantidad de emails</label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onChange("email_count", Math.max(0, emailCount - 1))}
+              className="w-7 h-7 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center justify-center text-sm font-bold"
+            >−</button>
+            <span className="text-sm font-semibold text-ink w-4 text-center">{emailCount}</span>
+            <button
+              type="button"
+              onClick={() => onChange("email_count", Math.min(10, emailCount + 1))}
+              className="w-7 h-7 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center justify-center text-sm font-bold"
+            >+</button>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs text-ink-muted">Mensajes de LinkedIn</label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onChange("linkedin_msg_count", Math.max(0, linkedinMsgCount - 1))}
+              className="w-7 h-7 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center justify-center text-sm font-bold"
+            >−</button>
+            <span className="text-sm font-semibold text-ink w-4 text-center">{linkedinMsgCount}</span>
+            <button
+              type="button"
+              onClick={() => onChange("linkedin_msg_count", Math.min(10, linkedinMsgCount + 1))}
+              className="w-7 h-7 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center justify-center text-sm font-bold"
+            >+</button>
+          </div>
+        </div>
+      </div>
+      <label className="flex items-center gap-2 text-sm text-ink cursor-pointer">
+        <input
+          type="checkbox"
+          checked={includeConnectMsg}
+          onChange={(e) => onChange("include_connect_msg", e.target.checked)}
+          className="accent-[#251762]"
+        />
+        Incluir mensaje en invitación a conectar (LinkedIn)
+      </label>
+    </div>
+  );
+}
+
 // ─── TAB: Segmentos ───────────────────────────────────────────────────────────
 
 function SegmentsTab({ clientId }: { clientId: string }) {
@@ -123,12 +197,12 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [loading, setLoading]         = useState(true);
   const [selected, setSelected]       = useState<string | null>(null);
   const [creating, setCreating]       = useState(false);
-  const [newSeg, setNewSeg]           = useState({ name: "", description: "", routing_hint: "" });
+  const [newSeg, setNewSeg]           = useState({ name: "", description: "", routing_hint: "", email_count: 3, linkedin_msg_count: 2, include_connect_msg: true });
   const [saving, setSaving]           = useState(false);
   const [editSeg, setEditSeg]         = useState<Partial<Segment> | null>(null);
   const [addingSource, setAddingSource] = useState<string | null>(null); // segment id
   const [srcForm, setSrcForm]         = useState({ type: "text" as "text" | "url" | "file", title: "", content: "", url: "" });
-  const [srcFile, setSrcFile]         = useState<File | null>(null);
+  const [srcFiles, setSrcFiles]        = useState<File[]>([]);
   const [srcLoading, setSrcLoading]   = useState(false);
   const [srcError, setSrcError]       = useState<string | null>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
@@ -153,7 +227,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
     if (res.ok) {
       const d = await res.json();
       setSegments((p) => [...p, { ...d.segment, segment_sources: [] }]);
-      setNewSeg({ name: "", description: "", routing_hint: "" });
+      setNewSeg({ name: "", description: "", routing_hint: "", email_count: 3, linkedin_msg_count: 2, include_connect_msg: true });
       setCreating(false);
       setSelected(d.segment.id);
     }
@@ -185,65 +259,92 @@ function SegmentsTab({ clientId }: { clientId: string }) {
 
   function resetSrcForm() {
     setSrcForm({ type: "text", title: "", content: "", url: "" });
-    setSrcFile(null);
+    setSrcFiles([]);
     setSrcError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setSrcFile(file);
+    const newFiles = Array.from(e.target.files ?? []);
+    if (!newFiles.length) return;
+    setSrcFiles((prev) => {
+      // Acumular archivos evitando duplicados por nombre
+      const existing = new Set(prev.map((f) => f.name));
+      const merged = [...prev, ...newFiles.filter((f) => !existing.has(f.name))];
+      return merged;
+    });
     setSrcError(null);
-    if (!srcForm.title) setSrcForm((p) => ({ ...p, title: file.name }));
+    // Reset el input para poder volver a seleccionar los mismos archivos si se desea
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  async function readFileContent(file: File): Promise<string> {
+    const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+    if (isPdf) {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/training/parse-pdf", { method: "POST", body: fd });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error ?? "Error al procesar el PDF");
+      return d.text as string;
+    }
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => resolve((ev.target?.result as string) ?? "");
+      reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
+      reader.readAsText(file, "UTF-8");
+    });
   }
 
   async function addSource(segmentId: string) {
     setSrcLoading(true);
     setSrcError(null);
 
-    let content = srcForm.content;
-
-    if (srcForm.type === "file" && srcFile) {
-      const isPdf = srcFile.name.toLowerCase().endsWith(".pdf") || srcFile.type === "application/pdf";
-
-      if (isPdf) {
-        // PDF: enviar al servidor para extraer texto
+    if (srcForm.type === "file" && srcFiles.length > 0) {
+      const addedSources: Source[] = [];
+      for (const file of srcFiles) {
+        let content: string;
         try {
-          const fd = new FormData();
-          fd.append("file", srcFile);
-          const res = await fetch("/api/training/parse-pdf", { method: "POST", body: fd });
-          const d = await res.json();
-          if (!res.ok) { setSrcError(d.error ?? "Error al procesar el PDF"); setSrcLoading(false); return; }
-          content = d.text;
-        } catch {
-          setSrcError("Error de red al procesar el PDF");
+          content = await readFileContent(file);
+        } catch (err: unknown) {
+          setSrcError((err as Error)?.message ?? "Error al leer archivo");
           setSrcLoading(false);
           return;
         }
-      } else {
-        // Archivos de texto: leer en el cliente
-        try {
-          content = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (ev) => resolve((ev.target?.result as string) ?? "");
-            reader.onerror = () => reject(new Error("No se pudo leer el archivo"));
-            reader.readAsText(srcFile, "UTF-8");
-          });
-        } catch {
-          setSrcError("No se pudo leer el archivo. Asegúrate de que sea un archivo de texto (.txt, .md, .csv).");
+        const body = { source_type: "document", title: file.name, content };
+        const res = await fetch(`/api/training/segments/${segmentId}/sources`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await res.json();
+        if (!res.ok) {
+          setSrcError(d.error ?? `Error al guardar "${file.name}"`);
           setSrcLoading(false);
           return;
         }
+        addedSources.push(d.source as Source);
       }
+      setSegments((p) =>
+        p.map((s) =>
+          s.id === segmentId
+            ? { ...s, segment_sources: [...(s.segment_sources ?? []), ...addedSources] }
+            : s
+        )
+      );
+      setAddingSource(null);
+      resetSrcForm();
+      setSrcLoading(false);
+      return;
     }
 
+    // Flujo texto / URL
     const body: Record<string, string> = {
       source_type: srcForm.type === "file" ? "document" : srcForm.type,
       title: srcForm.title.trim(),
     };
     if (srcForm.type === "url") body.url = srcForm.url;
-    else body.content = content;
+    else body.content = srcForm.content;
 
     const res = await fetch(`/api/training/segments/${segmentId}/sources`, {
       method: "POST",
@@ -321,6 +422,12 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                 placeholder="Criterio de enrutamiento: ¿cuándo debe la IA elegir este segmento? Ej: Empresas con más de 200 empleados en industria fintech o SaaS"
                 className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none"
               />
+              <SequenceConfig
+                emailCount={newSeg.email_count}
+                linkedinMsgCount={newSeg.linkedin_msg_count}
+                includeConnectMsg={newSeg.include_connect_msg}
+                onChange={(f, v) => setNewSeg((p) => ({ ...p, [f]: v }))}
+              />
             </div>
             <div className="flex gap-2">
               <button
@@ -332,7 +439,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                 {saving ? "Guardando…" : "Crear segmento"}
               </button>
               <button
-                onClick={() => { setCreating(false); setNewSeg({ name: "", description: "", routing_hint: "" }); }}
+                onClick={() => { setCreating(false); setNewSeg({ name: "", description: "", routing_hint: "", email_count: 3, linkedin_msg_count: 2, include_connect_msg: true }); }}
                 className="px-3 text-sm rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50"
               >
                 <IconX size={14} />
@@ -458,6 +565,29 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                   La IA lee este criterio para decidir automáticamente qué segmento aplica a cada contacto.
                 </p>
               </div>
+
+              {/* Configuración de secuencia */}
+              <div className="border-t border-[#F0EEF8] pt-4">
+                {editSeg ? (
+                  <SequenceConfig
+                    emailCount={editSeg.email_count ?? seg.email_count ?? 3}
+                    linkedinMsgCount={editSeg.linkedin_msg_count ?? seg.linkedin_msg_count ?? 2}
+                    includeConnectMsg={editSeg.include_connect_msg ?? seg.include_connect_msg ?? true}
+                    onChange={(f, v) => setEditSeg((p) => ({ ...p, [f]: v }))}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Configuración de secuencia</p>
+                    <div className="flex gap-4 text-sm text-ink">
+                      <span><span className="font-semibold">{seg.email_count ?? 3}</span> email{(seg.email_count ?? 3) !== 1 ? "s" : ""}</span>
+                      <span><span className="font-semibold">{seg.linkedin_msg_count ?? 2}</span> msg LinkedIn</span>
+                      <span className={seg.include_connect_msg ?? true ? "text-ink" : "text-ink-muted"}>
+                        {seg.include_connect_msg ?? true ? "✓" : "✗"} Msg en invitación a conectar
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Fuentes de conocimiento */}
@@ -488,7 +618,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     ] as const).map(({ t, label, icon }) => (
                       <button
                         key={t}
-                        onClick={() => { setSrcForm((p) => ({ ...p, type: t })); setSrcFile(null); setSrcError(null); }}
+                        onClick={() => { setSrcForm((p) => ({ ...p, type: t })); setSrcFiles([]); setSrcError(null); }}
                         className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition"
                         style={srcForm.type === t
                           ? { background: "#251762", color: "white", borderColor: "#251762" }
@@ -506,13 +636,15 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     </button>
                   </div>
 
-                  {/* Título */}
-                  <input
-                    value={srcForm.title}
-                    onChange={(e) => setSrcForm((p) => ({ ...p, title: e.target.value }))}
-                    placeholder={srcForm.type === "file" ? "Título (se llena automático)" : "Título (opcional)"}
-                    className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white"
-                  />
+                  {/* Título — se oculta en modo archivo (cada archivo usa su propio nombre) */}
+                  {srcForm.type !== "file" && (
+                    <input
+                      value={srcForm.title}
+                      onChange={(e) => setSrcForm((p) => ({ ...p, title: e.target.value }))}
+                      placeholder="Título (opcional)"
+                      className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white"
+                    />
+                  )}
 
                   {/* Campo según tipo */}
                   {srcForm.type === "text" && (
@@ -536,33 +668,53 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                   )}
 
                   {srcForm.type === "file" && (
-                    <div>
+                    <div className="space-y-2">
                       <input
                         ref={fileInputRef}
                         type="file"
                         accept=".pdf,.txt,.md,.csv,.json,.xml,.html,.htm"
+                        multiple
                         className="hidden"
                         onChange={handleFileSelect}
                       />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="w-full text-sm border-2 border-dashed border-[#E5E2F0] rounded-xl px-4 py-6 text-center hover:border-[#251762] transition"
-                      >
-                        {srcFile ? (
-                          <div className="flex items-center justify-center gap-2 text-ink">
-                            <IconFileText size={16} style={{ color: "#62E0D8" }} />
-                            <span className="font-medium">{srcFile.name}</span>
-                            <span className="text-ink-muted text-xs">({(srcFile.size / 1024).toFixed(0)} KB)</span>
-                          </div>
-                        ) : (
+
+                      {srcFiles.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="w-full text-sm border-2 border-dashed border-[#E5E2F0] rounded-xl px-4 py-8 text-center hover:border-[#251762] transition"
+                        >
                           <div className="text-ink-muted space-y-1">
                             <IconUpload size={20} className="mx-auto opacity-40" />
-                            <p>Haz clic para seleccionar un archivo</p>
-                            <p className="text-xs opacity-60">.pdf · .txt · .md · .csv · .json · .html</p>
+                            <p>Haz clic para seleccionar archivos</p>
+                            <p className="text-xs opacity-60">Puedes seleccionar varios a la vez · .pdf · .txt · .md · .csv</p>
                           </div>
-                        )}
-                      </button>
+                        </button>
+                      ) : (
+                        <div className="border border-[#E5E2F0] rounded-xl overflow-hidden">
+                          {srcFiles.map((f, i) => (
+                            <div key={i} className="flex items-center gap-2 px-3 py-2.5 border-b border-[#F0EEF8] last:border-b-0 bg-white">
+                              <IconFileText size={14} style={{ color: "#62E0D8" }} className="shrink-0" />
+                              <span className="flex-1 truncate text-sm text-ink">{f.name}</span>
+                              <span className="text-xs text-ink-muted shrink-0">{(f.size / 1024).toFixed(0)} KB</span>
+                              <button
+                                type="button"
+                                onClick={() => setSrcFiles((p) => p.filter((_, idx) => idx !== i))}
+                                className="shrink-0 text-red-300 hover:text-red-500 transition"
+                              >
+                                <IconX size={13} />
+                              </button>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-full flex items-center justify-center gap-1.5 text-xs py-2 text-ink-muted hover:bg-gray-50 transition border-t border-[#F0EEF8]"
+                          >
+                            <IconPlus size={12} /> Agregar más archivos
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -580,7 +732,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                       srcLoading ||
                       (srcForm.type === "text" && !srcForm.content.trim()) ||
                       (srcForm.type === "url"  && !srcForm.url.trim()) ||
-                      (srcForm.type === "file" && !srcFile)
+                      (srcForm.type === "file" && srcFiles.length === 0)
                     }
                     className="w-full text-sm py-2.5 rounded-lg text-white disabled:opacity-40 transition flex items-center justify-center gap-2"
                     style={{ background: "#251762" }}
@@ -588,9 +740,11 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     {srcLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconPlus size={13} />}
                     {srcLoading
                       ? srcForm.type === "url"  ? "Obteniendo contenido…"
-                      : srcForm.type === "file" ? "Leyendo archivo…"
+                      : srcForm.type === "file" ? `Procesando${srcFiles.length > 1 ? ` (0/${srcFiles.length})` : ""}…`
                       : "Guardando…"
-                      : "Agregar fuente"
+                      : srcForm.type === "file" && srcFiles.length > 1
+                        ? `Agregar ${srcFiles.length} archivos`
+                        : "Agregar fuente"
                     }
                   </button>
                 </div>
@@ -644,6 +798,7 @@ function LabTab({ clientId }: { clientId: string }) {
   const [query, setQuery]             = useState("");
   const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
   const [selected, setSelected]       = useState<ContactSuggestion | null>(null);
+  const [searchHasEmail, setSearchHasEmail] = useState(true);
   const [manual, setManual]           = useState({ firstName: "", lastName: "", jobTitle: "", companyName: "", industry: "", companySize: "", hasEmail: true });
   const [generating, setGenerating]   = useState(false);
   const [messages, setMessages]       = useState<GeneratedMessages | null>(null);
@@ -665,8 +820,26 @@ function LabTab({ clientId }: { clientId: string }) {
     return () => clearTimeout(t);
   }, [query, clientId, mode]);
 
+  // Actualizar campo simple en edited
   const setField = (f: keyof GeneratedMessages) => (v: string) =>
     setEdited((p) => ({ ...p, [f]: v }));
+
+  // Actualizar email[i].subject o email[i].body en la secuencia
+  const setEmailField = (i: number, field: "subject" | "body") => (v: string) =>
+    setEdited((p) => {
+      const emails = [...(p.emails ?? [])];
+      if (!emails[i]) emails[i] = { subject: "", body: "" };
+      emails[i] = { ...emails[i], [field]: v };
+      return { ...p, emails };
+    });
+
+  // Actualizar linkedinMessages[i]
+  const setLinkedinMsg = (i: number) => (v: string) =>
+    setEdited((p) => {
+      const msgs = [...(p.linkedinMessages ?? [])];
+      msgs[i] = v;
+      return { ...p, linkedinMessages: msgs };
+    });
 
   async function generate(withFeedback?: string) {
     setGenError(null);
@@ -676,8 +849,12 @@ function LabTab({ clientId }: { clientId: string }) {
     if (messages) setRegenerating(true); else setGenerating(true);
 
     const payload: Record<string, unknown> = { client_id: clientId };
-    if (mode === "search" && selected) payload.contact_id = selected.id;
-    else payload.manual = manual;
+    if (mode === "search" && selected) {
+      payload.contact_id = selected.id;
+      payload.has_email_override = searchHasEmail;
+    } else {
+      payload.manual = manual;
+    }
     if (withFeedback) payload.feedback = withFeedback;
 
     try {
@@ -689,11 +866,26 @@ function LabTab({ clientId }: { clientId: string }) {
       const d = await res.json();
       if (!res.ok) { setGenError(d.error ?? "Error al generar"); return; }
       const msgs = d.messages as GeneratedMessages;
+      // Verificar que se generó algún contenido (secuencia o modo simple)
+      const hasContent =
+        (msgs?.emails && msgs.emails.length > 0) ||
+        (msgs?.linkedinMessages && msgs.linkedinMessages.length > 0) ||
+        msgs?.emailSubject || msgs?.emailBody ||
+        msgs?.linkedinIcebreaker || msgs?.linkedinIcebreakerNoEmail;
+      if (!hasContent) {
+        setGenError("Claude no generó contenido. Intenta de nuevo.");
+        return;
+      }
       setMessages(msgs);
+      // Inicializar edited con el objeto completo de mensajes
       setEdited({
-        emailSubject:       msgs.emailSubject       ?? "",
-        emailBody:          msgs.emailBody          ?? "",
-        linkedinIcebreaker: msgs.linkedinIcebreaker ?? "",
+        emails:                    msgs.emails                    ? [...msgs.emails]                    : undefined,
+        linkedinMessages:          msgs.linkedinMessages          ? [...msgs.linkedinMessages]          : undefined,
+        connectMessage:            msgs.connectMessage            ?? undefined,
+        emailSubject:              msgs.emailSubject              ?? "",
+        emailBody:                 msgs.emailBody                 ?? "",
+        linkedinIcebreaker:        msgs.linkedinIcebreaker        ?? "",
+        linkedinIcebreakerNoEmail: msgs.linkedinIcebreakerNoEmail ?? "",
       });
       setRouting(d.routing ?? null);
       setSegmentId(d.routing?.segmentId ?? null);
@@ -713,6 +905,9 @@ function LabTab({ clientId }: { clientId: string }) {
       ? [selected.first_name, selected.last_name].filter(Boolean).join(" ")
       : [manual.firstName, manual.lastName].filter(Boolean).join(" ");
 
+    // Usar primer email de la secuencia si existe; si no, campos de compatibilidad
+    const firstEmail = edited.emails?.[0];
+    const firstLinkedin = edited.linkedinMessages?.[0];
     await fetch("/api/training/examples", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -722,9 +917,9 @@ function LabTab({ clientId }: { clientId: string }) {
         contact_name:  contactName || undefined,
         job_title:     (selected?.job_title  ?? manual.jobTitle)    || undefined,
         company_name:  (selected?.company_name ?? manual.companyName) || undefined,
-        email_subject: edited.emailSubject ?? "",
-        email_body:    edited.emailBody    ?? "",
-        icebreaker:    edited.linkedinIcebreaker ?? "",
+        email_subject: firstEmail?.subject ?? edited.emailSubject ?? "",
+        email_body:    firstEmail?.body    ?? edited.emailBody    ?? "",
+        icebreaker:    firstLinkedin ?? edited.linkedinIcebreaker ?? "",
       }),
     });
     setSaving(false);
@@ -787,13 +982,24 @@ function LabTab({ clientId }: { clientId: string }) {
                 </div>
               )}
               {selected && (
-                <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(98,224,216,0.1)" }}>
-                  <IconCheck size={14} style={{ color: "#62E0D8" }} />
-                  <span className="text-sm font-medium text-ink">
-                    {[selected.first_name, selected.last_name].filter(Boolean).join(" ")}
-                    {selected.job_title && <span className="font-normal text-ink-muted"> · {selected.job_title}</span>}
-                  </span>
-                  <button onClick={() => { setSelected(null); setQuery(""); }} className="ml-auto text-ink-muted hover:text-ink"><IconX size={13} /></button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "rgba(98,224,216,0.1)" }}>
+                    <IconCheck size={14} style={{ color: "#62E0D8" }} />
+                    <span className="text-sm font-medium text-ink">
+                      {[selected.first_name, selected.last_name].filter(Boolean).join(" ")}
+                      {selected.job_title && <span className="font-normal text-ink-muted"> · {selected.job_title}</span>}
+                    </span>
+                    <button onClick={() => { setSelected(null); setQuery(""); }} className="ml-auto text-ink-muted hover:text-ink"><IconX size={13} /></button>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-ink cursor-pointer px-1">
+                    <input
+                      type="checkbox"
+                      checked={searchHasEmail}
+                      onChange={(e) => setSearchHasEmail(e.target.checked)}
+                      className="accent-[#251762]"
+                    />
+                    Generar email + LinkedIn (desmarcar para solo LinkedIn)
+                  </label>
                 </div>
               )}
             </div>
@@ -812,7 +1018,7 @@ function LabTab({ clientId }: { clientId: string }) {
                 <div key={key}>
                   <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{label}</label>
                   <input
-                    value={(manual as Record<string, string>)[key]}
+                    value={(manual as Record<string, unknown>)[key] as string}
                     onChange={(e) => setManual((p) => ({ ...p, [key]: e.target.value }))}
                     className="mt-1 w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]"
                   />
@@ -903,9 +1109,82 @@ function LabTab({ clientId }: { clientId: string }) {
                 {regenerating && <IconLoader2 size={14} className="animate-spin text-ink-muted" />}
               </div>
 
-              <MessageBlock label="Subject {{emailSubject}}" value={edited.emailSubject ?? ""} onChange={setField("emailSubject")} />
-              <MessageBlock label="Email Body {{emailBody}}" value={edited.emailBody ?? ""} onChange={setField("emailBody")} />
-              <MessageBlock label="LinkedIn Icebreaker {{icebreaker}}" value={edited.linkedinIcebreaker ?? ""} onChange={setField("linkedinIcebreaker")} />
+              {/* ── Secuencia de emails ── */}
+              {(edited.emails && edited.emails.length > 0) ? (
+                edited.emails.map((em, i) => (
+                  <div key={i} className="space-y-2 border border-[#E5E2F0] rounded-xl px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "#251762" }}>
+                      📧 Email {i + 1} {i === 0 ? "— Primer contacto" : `— Follow-up ${i}`}
+                    </p>
+                    <MessageBlock
+                      label={`Subject Email ${i + 1}`}
+                      value={em.subject}
+                      onChange={setEmailField(i, "subject")}
+                    />
+                    <MessageBlock
+                      label={`Body Email ${i + 1}`}
+                      value={em.body}
+                      onChange={setEmailField(i, "body")}
+                    />
+                  </div>
+                ))
+              ) : (
+                /* Modo compatibilidad hacia atrás (1 email simple) */
+                (edited.emailSubject || edited.emailBody) && (
+                  <>
+                    <MessageBlock label="Subject {{emailSubject}}" value={edited.emailSubject ?? ""} onChange={setField("emailSubject")} />
+                    <MessageBlock label="Email Body {{emailBody}}" value={edited.emailBody ?? ""} onChange={setField("emailBody")} />
+                  </>
+                )
+              )}
+
+              {/* ── Mensaje de invitación a conectar (LinkedIn) ── */}
+              {edited.connectMessage !== undefined && (
+                <div className="space-y-2 border border-[#E5E2F0] rounded-xl px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "#251762" }}>
+                    💼 LinkedIn — Invitación a conectar
+                  </p>
+                  <div className="space-y-1">
+                    <textarea
+                      value={edited.connectMessage ?? ""}
+                      onChange={(e) => setEdited((p) => ({ ...p, connectMessage: e.target.value }))}
+                      rows={3}
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y bg-white"
+                    />
+                    <p className="text-[10px] text-ink-muted text-right">{(edited.connectMessage ?? "").length}/190 chars</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Mensajes de LinkedIn (post-conexión) ── */}
+              {(edited.linkedinMessages && edited.linkedinMessages.length > 0) ? (
+                edited.linkedinMessages.map((msg, i) => (
+                  <div key={i} className="space-y-2 border border-[#E5E2F0] rounded-xl px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide flex items-center gap-1.5" style={{ color: "#251762" }}>
+                      💬 LinkedIn {i + 1}
+                    </p>
+                    <div className="space-y-1">
+                      <textarea
+                        value={msg}
+                        onChange={(e) => setLinkedinMsg(i)(e.target.value)}
+                        rows={2}
+                        className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y bg-white"
+                      />
+                      <p className="text-[10px] text-ink-muted text-right">{msg.length}/180 chars</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                /* Modo compatibilidad hacia atrás */
+                <>
+                  {edited.linkedinIcebreaker && (
+                    <MessageBlock label="LinkedIn Icebreaker {{icebreaker}}" value={edited.linkedinIcebreaker ?? ""} onChange={setField("linkedinIcebreaker")} />
+                  )}
+                  {edited.linkedinIcebreakerNoEmail && (
+                    <MessageBlock label="LinkedIn (sin email) {{icebreaker}}" value={edited.linkedinIcebreakerNoEmail ?? ""} onChange={setField("linkedinIcebreakerNoEmail")} />
+                  )}
+                </>
+              )}
 
               <button
                 onClick={saveAsExample}

@@ -167,7 +167,10 @@ export async function POST(req: NextRequest) {
           .order("created_at", { ascending: false }).limit(5);
 
         const msgs = await generateContactMessages({
-          hasEmail,
+          // Generamos emails SIEMPRE, aunque el contacto no tenga email aún —
+          // Lemlist los enriquece con findEmail=true y necesita las variables
+          // {{emailSubject_1}}, {{emailBody_1}}, etc. ya pobladas en el lead.
+          hasEmail: true,
           firstName:        contact.first_name        ?? undefined,
           lastName:         contact.last_name         ?? undefined,
           jobTitle:         contact.job_title         ?? undefined,

@@ -8,7 +8,7 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { client_id, contact_id, manual } = body;
+  const { client_id, contact_id, manual, has_email_override } = body;
 
   if (!client_id) return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     db.from("model_training_config")
       .select("style_tone, style_rules, style_avoid, style_email_length")
       .eq("client_id", client_id).maybeSingle(),
-    db.from("training_segments").select("id, name, routing_hint").eq("client_id", client_id)
+    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg").eq("client_id", client_id)
       .order("created_at", { ascending: true }),
   ]);
 
@@ -46,26 +46,22 @@ export async function POST(req: NextRequest) {
   let hasEmail = true;
 
   if (contact_id) {
-    const { data: contact } = await db
+    const { data: contact, error: contactErr } = await db
       .from("contacts")
-      .select("first_name, last_name, job_title, linkedin_headline, email, company_id")
+      .select("first_name, last_name, job_title, linkedin_headline, email, company_id, companies(company_name, company_size)")
       .eq("id", contact_id).maybeSingle();
-    if (!contact) return NextResponse.json({ error: "Contacto no encontrado" }, { status: 404 });
+    if (contactErr || !contact) return NextResponse.json({ error: contactErr?.message ?? "Contacto no encontrado" }, { status: 404 });
 
     firstName = contact.first_name ?? undefined;
     lastName  = contact.last_name  ?? undefined;
     jobTitle  = contact.job_title  ?? undefined;
     linkedinHeadline = contact.linkedin_headline ?? undefined;
-    hasEmail  = Boolean(contact.email?.trim());
+    hasEmail = has_email_override !== undefined ? Boolean(has_email_override) : Boolean(contact.email?.trim());
 
-    if (contact.company_id) {
-      const { data: company } = await db.from("companies")
-        .select("company_name, industry, employee_count")
-        .eq("id", contact.company_id).maybeSingle();
-      companyName = company?.company_name ?? undefined;
-      industry    = company?.industry     ?? undefined;
-      companySize = company?.employee_count ? String(company.employee_count) : undefined;
-    }
+    // Obtener datos de empresa via join (mismo patrón que la API de búsqueda)
+    const co = Array.isArray(contact.companies) ? contact.companies[0] : contact.companies as Record<string, unknown> | null;
+    companyName = (co?.company_name as string | null) ?? undefined;
+    companySize = co?.company_size ? String(co.company_size) : undefined;
   } else if (manual) {
     firstName   = manual.firstName   || undefined;
     lastName    = manual.lastName    || undefined;
@@ -83,6 +79,14 @@ export async function POST(req: NextRequest) {
     { firstName, lastName, jobTitle, companyName, industry, companySize },
     segments ?? []
   );
+
+  // Obtener configuración de secuencia del segmento asignado
+  const matchedSegment = routing.segmentId
+    ? (segments ?? []).find((s) => s.id === routing.segmentId)
+    : null;
+  const segmentEmailCount       = (matchedSegment as Record<string, unknown> | null)?.email_count       as number | undefined;
+  const segmentLinkedinMsgCount = (matchedSegment as Record<string, unknown> | null)?.linkedin_msg_count as number | undefined;
+  const segmentIncludeConnectMsg = (matchedSegment as Record<string, unknown> | null)?.include_connect_msg as boolean | undefined;
 
   // Cargar fuentes + ejemplos del segmento elegido (en paralelo)
   let segmentContext: SegmentContext | undefined;
@@ -117,32 +121,43 @@ export async function POST(req: NextRequest) {
     .eq("client_id", client_id).is("segment_id", null)
     .order("created_at", { ascending: false }).limit(5);
 
-  const msgs = await generateContactMessages({
-    hasEmail,
-    firstName,
-    lastName,
-    jobTitle,
-    linkedinHeadline,
-    companyName,
-    industry,
-    companySize,
-    icpContext,
-    fewShotExamples: (globalExamples ?? []).map((e) => ({
-      emailSubject: e.email_subject,
-      emailBody:    e.email_body,
-      icebreaker:   e.icebreaker ?? "",
-      contactName:  e.contact_name ?? "",
-      jobTitle:     e.job_title    ?? "",
-    })),
-    styleGuide: styleData ? {
-      tone:        styleData.style_tone        ?? "",
-      rules:       styleData.style_rules       ?? "",
-      avoid:       styleData.style_avoid       ?? "",
-      emailLength: styleData.style_email_length ?? "corto",
-    } : undefined,
-    segmentContext,
-    language: "es",
-  });
+  let msgs;
+  try {
+    msgs = await generateContactMessages({
+      hasEmail,
+      firstName,
+      lastName,
+      jobTitle,
+      linkedinHeadline,
+      companyName,
+      industry,
+      companySize,
+      icpContext,
+      fewShotExamples: (globalExamples ?? []).map((e) => ({
+        emailSubject: e.email_subject,
+        emailBody:    e.email_body,
+        icebreaker:   e.icebreaker ?? "",
+        contactName:  e.contact_name ?? "",
+        jobTitle:     e.job_title    ?? "",
+      })),
+      styleGuide: styleData ? {
+        tone:        styleData.style_tone        ?? "",
+        rules:       styleData.style_rules       ?? "",
+        avoid:       styleData.style_avoid       ?? "",
+        emailLength: styleData.style_email_length ?? "corto",
+      } : undefined,
+      segmentContext,
+      language: "es",
+      // Configuración de secuencia del segmento
+      emailCount:        segmentEmailCount        ?? 1,
+      linkedinMsgCount:  segmentLinkedinMsgCount  ?? 1,
+      includeConnectMsg: segmentIncludeConnectMsg ?? false,
+    });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[lab] generateContactMessages falló:", msg);
+    return NextResponse.json({ error: `Error generando mensajes: ${msg}` }, { status: 500 });
+  }
 
   return NextResponse.json({
     messages: msgs,

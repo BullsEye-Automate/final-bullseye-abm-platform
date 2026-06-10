@@ -16,7 +16,13 @@ type ContactToPush = {
   linkedinUrl?: string;
   emailSubject?: string;
   emailBody?: string;
+  emailSubject2?: string;
+  emailBody2?: string;
+  emailSubject3?: string;
+  emailBody3?: string;
+  connectMessage?: string;
   icebreaker?: string;
+  linkedinMsg2?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -59,14 +65,20 @@ export async function POST(req: NextRequest) {
     }
 
     const payload: Record<string, string | undefined> = {
-      firstName:    contact.firstName    || undefined,
-      lastName:     contact.lastName     || undefined,
-      companyName:  contact.companyName  || undefined,
-      linkedinUrl:  contact.linkedinUrl  || undefined,
-      phone:        contact.phone        || undefined,
-      icebreaker:   contact.icebreaker   || undefined,
-      emailSubject: contact.emailSubject || undefined,
-      emailBody:    contact.emailBody    || undefined,
+      firstName:      contact.firstName     || undefined,
+      lastName:       contact.lastName      || undefined,
+      companyName:    contact.companyName   || undefined,
+      linkedinUrl:    contact.linkedinUrl   || undefined,
+      phone:          contact.phone         || undefined,
+      emailSubject_1: contact.emailSubject  || undefined,
+      emailBody_1:    contact.emailBody     || undefined,
+      emailSubject_2: contact.emailSubject2 || undefined,
+      emailBody_2:    contact.emailBody2    || undefined,
+      emailSubject_3: contact.emailSubject3 || undefined,
+      emailBody_3:    contact.emailBody3    || undefined,
+      connectMessage: contact.connectMessage || undefined,
+      linkedinMsg_1:  contact.icebreaker    || undefined,
+      linkedinMsg_2:  contact.linkedinMsg2  || undefined,
     };
 
     // Eliminar keys undefined
@@ -75,7 +87,7 @@ export async function POST(req: NextRequest) {
     let res: Response;
     try {
       res = await fetch(
-        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?verifyEmail=false`,
+        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?findEmail=true&verifyEmail=true&linkedinEnrichment=true`,
         {
           method: "POST",
           headers: {
@@ -102,6 +114,16 @@ export async function POST(req: NextRequest) {
     }
 
     pushed++;
+
+    // Guardar en Supabase con upsert por email+client_id (solo campos con valor)
+    const row: Record<string, string> = { client_id, email: contact.email.trim(), lemlist_status: "active" };
+    if (contact.firstName)   row.first_name   = contact.firstName;
+    if (contact.lastName)    row.last_name    = contact.lastName;
+    if (contact.jobTitle)    row.job_title    = contact.jobTitle;
+    if (contact.companyName) row.company_name = contact.companyName;
+    if (contact.linkedinUrl) row.linkedin_url = contact.linkedinUrl;
+    if (contact.phone)       row.phone        = contact.phone;
+    await db.from("contacts").upsert(row, { onConflict: "email,client_id" });
   }
 
   return NextResponse.json({ pushed, skipped, errors });

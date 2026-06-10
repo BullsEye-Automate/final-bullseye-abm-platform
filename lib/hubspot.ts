@@ -66,6 +66,20 @@ export async function searchHSContact(email: string): Promise<string | null> {
   return d.results?.[0]?.id ?? null;
 }
 
+export async function searchHSContactByLinkedinUrl(linkedinUrl: string): Promise<string | null> {
+  const res = await fetch(`${HS}/crm/v3/objects/contacts/search`, {
+    method: "POST",
+    headers: hsHeaders(),
+    body: JSON.stringify({
+      filterGroups: [{ filters: [{ propertyName: "hs_linkedin_url", operator: "EQ", value: linkedinUrl }] }],
+      limit: 1,
+    }),
+  });
+  if (!res.ok) return null;
+  const d = await res.json();
+  return d.results?.[0]?.id ?? null;
+}
+
 export async function searchHSContactByBullseyeId(contactId: string): Promise<string | null> {
   const res = await fetch(`${HS}/crm/v3/objects/contacts/search`, {
     method: "POST",

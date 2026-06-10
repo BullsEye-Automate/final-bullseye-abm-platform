@@ -13,6 +13,7 @@ import {
   IconFileImport,
   IconChevronDown,
   IconSparkles,
+  IconFileTypePdf,
   IconCopy,
   IconRefresh
 } from "@tabler/icons-react";
@@ -176,6 +177,75 @@ export default function IcpPage() {
     setSavedAt(new Date().toLocaleTimeString());
   }
 
+  function downloadPdf() {
+    if (!currentClient) return;
+    const content = serializeIcpForm(form);
+    const clientLabel = currentClient.name ?? "Cliente";
+    const today = new Date().toLocaleDateString("es-CL", { day: "2-digit", month: "long", year: "numeric" });
+    const fileLabel = (fileName?.trim() || "ICP").replace(/[^\w\sÀ-ÿ-]/g, "");
+
+    const html = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>${fileLabel} — ${clientLabel}</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1040; line-height: 1.55; font-size: 11pt; }
+  header { border-bottom: 2px solid #62E0D8; padding-bottom: 14pt; margin-bottom: 24pt; }
+  header .brand { color: #251762; font-weight: 700; font-size: 18pt; }
+  header .brand span { color: #62E0D8; }
+  header .meta { color: #6B6884; font-size: 10pt; margin-top: 4pt; }
+  h1 { font-size: 20pt; color: #251762; margin: 0 0 4pt; }
+  h2 { font-size: 13pt; color: #251762; border-bottom: 1px solid #E5E2F0; padding-bottom: 4pt; margin-top: 22pt; margin-bottom: 10pt; page-break-after: avoid; }
+  .field { margin-bottom: 12pt; page-break-inside: avoid; }
+  .label { font-size: 9pt; font-weight: 600; color: #6B6884; text-transform: uppercase; letter-spacing: 0.5pt; margin-bottom: 3pt; }
+  .value { white-space: pre-wrap; }
+  footer { margin-top: 32pt; padding-top: 12pt; border-top: 1px solid #E5E2F0; font-size: 9pt; color: #6B6884; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Bulls<span>Eye</span></div>
+  <div class="meta">${clientLabel} · ${today}</div>
+</header>
+<h1>${fileLabel}</h1>
+<div>${
+      (() => {
+        // El formato serializado es: ---\nTITLE\n---\n\n[label]\nvalue\n\n[label]\nvalue ...repetido por sección
+        const sectionRe = /-{10,}\n(.+?)\n-{10,}\n\n([\s\S]*?)(?=\n\n-{10,}|$)/g;
+        const sections: string[] = [];
+        let m: RegExpExecArray | null;
+        while ((m = sectionRe.exec(content)) !== null) {
+          const title  = m[1].trim();
+          const body   = m[2].trim();
+          const fields = body
+            .split(/\n\n+/)
+            .map((blk) => {
+              const fm = blk.match(/^\[(.+?)\]\n([\s\S]+)$/);
+              if (!fm) return "";
+              const [, label, value] = fm;
+              return `<div class="field"><div class="label">${label.replace(/</g, "&lt;")}</div><div class="value">${value.replace(/</g, "&lt;")}</div></div>`;
+            })
+            .filter(Boolean)
+            .join("");
+          sections.push(`<h2>${title.replace(/</g, "&lt;")}</h2>${fields}`);
+        }
+        return sections.length > 0 ? sections.join("") : `<pre style="white-space: pre-wrap; font-family: inherit;">${content.replace(/</g, "&lt;")}</pre>`;
+      })()
+    }</div>
+<footer>Documento generado por BullsEye · ${today}</footer>
+</body>
+</html>`;
+
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+  }
+
   async function remove() {
     if (!currentClient || !doc) return;
     setDeleting(true);
@@ -317,6 +387,16 @@ export default function IcpPage() {
             title="Importa el JSON exportado por el cliente desde el formulario HTML"
           >
             <IconFileImport size={15} /> Importar respuestas
+          </button>
+
+          {/* Descargar ICP como PDF */}
+          <button
+            className="btn-secondary py-1.5 px-3"
+            onClick={downloadPdf}
+            disabled={!hasContent}
+            title="Descargar el ICP de este cliente como PDF"
+          >
+            <IconFileTypePdf size={15} /> Descargar PDF
           </button>
 
           {doc && (

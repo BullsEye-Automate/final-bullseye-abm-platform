@@ -21,20 +21,26 @@ type ParsedContact = {
 type GeneratedContact = ParsedContact & {
   emailSubject?: string;
   emailBody?: string;
+  emailSubject2?: string;
+  emailBody2?: string;
+  emailSubject3?: string;
+  emailBody3?: string;
+  connectMessage?: string;
   icebreaker?: string;
+  linkedinMsg2?: string;
   segmentName?: string;
   error?: string;
 };
 
 export async function POST(req: NextRequest) {
-  let body: { client_id: string; contacts: ParsedContact[] };
+  let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { client_id, contacts } = body;
+  const { client_id, contacts, segment_id } = body;
   if (!client_id || !contacts?.length) {
     return NextResponse.json({ error: "Se requiere client_id y contacts" }, { status: 400 });
   }
@@ -51,7 +57,7 @@ export async function POST(req: NextRequest) {
     db.from("model_training_config")
       .select("style_tone, style_rules, style_avoid, style_email_length")
       .eq("client_id", client_id).maybeSingle(),
-    db.from("training_segments").select("id, name, routing_hint").eq("client_id", client_id)
+    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg").eq("client_id", client_id)
       .order("created_at", { ascending: true }),
     db.from("message_examples").select("*").eq("client_id", client_id).is("segment_id", null)
       .order("created_at", { ascending: false }).limit(5),
@@ -117,22 +123,39 @@ export async function POST(req: NextRequest) {
     const batchResults = await Promise.all(
       batch.map(async (c): Promise<GeneratedContact> => {
         try {
-          // Routing de segmento por contacto
-          const routing = await routeContactToSegment(
-            { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
-            segments ?? []
-          );
+          // Usar segmento elegido manualmente; si no hay, hacer routing automático
+          let resolvedSegmentId: string | null = segment_id ?? null;
+          let resolvedSegmentName: string | null = null;
+
+          if (!resolvedSegmentId) {
+            const routing = await routeContactToSegment(
+              { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
+              segments ?? []
+            );
+            resolvedSegmentId   = routing.segmentId;
+            resolvedSegmentName = routing.segmentName;
+          } else {
+            resolvedSegmentName = (segments ?? []).find((s) => s.id === resolvedSegmentId)?.name ?? null;
+          }
 
           let segmentContext: SegmentContext | undefined;
-          if (routing.segmentId && routing.segmentName) {
-            segmentContext = await getSegmentContext(routing.segmentId, routing.segmentName);
+          const matchedSegment = resolvedSegmentId
+            ? (segments ?? []).find((s) => s.id === resolvedSegmentId)
+            : null;
+
+          if (resolvedSegmentId && resolvedSegmentName) {
+            segmentContext = await getSegmentContext(resolvedSegmentId, resolvedSegmentName);
           }
+
+          const emailCount        = (matchedSegment as Record<string, unknown> | null)?.email_count        as number ?? 3;
+          const linkedinMsgCount  = (matchedSegment as Record<string, unknown> | null)?.linkedin_msg_count as number ?? 2;
+          const includeConnectMsg = (matchedSegment as Record<string, unknown> | null)?.include_connect_msg as boolean ?? false;
 
           const msgs = await generateContactMessages({
             hasEmail:       Boolean(c.email?.trim()),
-            firstName:      c.firstName  || undefined,
-            lastName:       c.lastName   || undefined,
-            jobTitle:       c.jobTitle   || undefined,
+            firstName:      c.firstName   || undefined,
+            lastName:       c.lastName    || undefined,
+            jobTitle:       c.jobTitle    || undefined,
             companyName:    c.companyName || undefined,
             industry:       c.industry   || undefined,
             companySize:    c.companySize || undefined,
@@ -141,14 +164,23 @@ export async function POST(req: NextRequest) {
             styleGuide,
             segmentContext,
             language: "es",
+            emailCount,
+            linkedinMsgCount,
+            includeConnectMsg,
           });
 
           return {
             ...c,
-            emailSubject: msgs.emailSubject,
-            emailBody:    msgs.emailBody,
-            icebreaker:   msgs.linkedinIcebreaker ?? msgs.linkedinIcebreakerNoEmail,
-            segmentName:  routing.segmentName ?? undefined,
+            emailSubject:  msgs.emails?.[0]?.subject ?? msgs.emailSubject,
+            emailBody:     msgs.emails?.[0]?.body    ?? msgs.emailBody,
+            emailSubject2: msgs.emails?.[1]?.subject,
+            emailBody2:    msgs.emails?.[1]?.body,
+            emailSubject3: msgs.emails?.[2]?.subject,
+            emailBody3:    msgs.emails?.[2]?.body,
+            connectMessage: msgs.connectMessage,
+            icebreaker:    msgs.linkedinMessages?.[0] ?? msgs.linkedinIcebreaker ?? msgs.linkedinIcebreakerNoEmail,
+            linkedinMsg2:  msgs.linkedinMessages?.[1],
+            segmentName:   resolvedSegmentName ?? undefined,
           };
         } catch (err: any) {
           return { ...c, error: err?.message ?? "Error de generación" };
