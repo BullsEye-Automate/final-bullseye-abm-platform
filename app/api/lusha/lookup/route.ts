@@ -111,16 +111,32 @@ export async function POST(req: NextRequest) {
   let lushaError: string | null = null;
 
   try {
-    // Lusha API v2: body con array `contacts`. Incluimos linkedinUrl SIEMPRE como signal adicional,
-    // junto con email O nombre+empresa. Si v2 lo rechaza, reintenta sin él.
-    const baseContact: Record<string, unknown> = { contactId: "lookup-1" };
-    if (hasEmail)    baseContact.email     = email;
-    if (firstName)   baseContact.firstName = firstName;
-    if (lastName)    baseContact.lastName  = lastName;
-    if (companyName) baseContact.companies = [{ name: companyName }];
+    // Lusha v2 acepta solo UNO de estos identificadores por contacto (son mutuamente excluyentes):
+    //   1) linkedinUrl  → el más confiable, lo intentamos primero
+    //   2) email        → segundo en confiabilidad
+    //   3) firstName + lastName + companies → último recurso (matching por nombre exacto de empresa)
+    // Probamos en cascada: si el primero no encuentra (404 / 200 sin data), intentamos el siguiente.
+    const identifierAttempts: Array<{ label: string; contact: Record<string, unknown> }> = [];
+    if (canonicalUrl) {
+      identifierAttempts.push({
+        label: "linkedinUrl",
+        contact: { contactId: "lookup-1", linkedinUrl: canonicalUrl },
+      });
+    }
+    if (hasEmail) {
+      identifierAttempts.push({
+        label: "email",
+        contact: { contactId: "lookup-1", email },
+      });
+    }
+    if (firstName && lastName && companyName) {
+      identifierAttempts.push({
+        label: "name+company",
+        contact: { contactId: "lookup-1", firstName, lastName, companies: [{ name: companyName }] },
+      });
+    }
 
-    async function callLusha(includeLinkedin: boolean): Promise<{ status: number; ok: boolean; body: string }> {
-      const contact = includeLinkedin ? { ...baseContact, linkedinUrl: canonicalUrl } : baseContact;
+    async function callLusha(label: string, contact: Record<string, unknown>): Promise<{ status: number; ok: boolean; body: string }> {
       const payload = { contacts: [contact] };
       const r = await fetch("https://api.lusha.com/v2/person", {
         method: "POST",
@@ -132,7 +148,7 @@ export async function POST(req: NextRequest) {
       let parsed: any = null;
       try { parsed = JSON.parse(text); } catch {}
       debug.attempts.push({
-        includeLinkedin,
+        label,
         payload,
         status:        r.status,
         response_body: text.slice(0, 1500),
@@ -141,9 +157,23 @@ export async function POST(req: NextRequest) {
       return { status: r.status, ok: r.ok, body: text };
     }
 
-    let resp = await callLusha(true);
-    if (resp.status === 400 && /linkedinUrl/i.test(resp.body)) {
-      resp = await callLusha(false);
+    // Intentar cada identificador en orden hasta que uno devuelva data
+    let resp: { status: number; ok: boolean; body: string } = { status: 0, ok: false, body: "" };
+    for (const att of identifierAttempts) {
+      resp = await callLusha(att.label, att.contact);
+      if (resp.ok) {
+        // Si vino data útil (con phoneNumbers), cortamos. Si vino vacío, seguimos al próximo identificador.
+        try {
+          const j = JSON.parse(resp.body);
+          const d = j?.contacts?.["lookup-1"]?.data ?? j?.data ?? null;
+          if (d?.phoneNumbers?.length || d?.emailAddresses?.length) break;
+        } catch { /* parsing falló, seguir intentando */ }
+        // Si fue ok pero sin data útil, seguir al próximo identificador
+        continue;
+      }
+      if (resp.status === 404) continue; // probar el próximo identificador
+      if (resp.status === 400) continue; // payload rechazado por este identificador, probar el próximo
+      break; // otro error → cortar
     }
     const postRes  = { status: resp.status, ok: resp.ok };
     const postBody = resp.body;
