@@ -92,10 +92,18 @@ export async function POST(req: NextRequest) {
   const hasEmail   = Boolean(email);
   const hasNameCo  = Boolean(firstName && lastName && companyName);
 
+  // Debug que vuelve en la respuesta para diagnosticar desde la UI sin Vercel logs.
+  const debug: Record<string, any> = {
+    canonical_url: canonicalUrl,
+    inputs:        { hasEmail, hasNameCo, firstName, lastName, companyName, email },
+    attempts:      [] as Array<Record<string, any>>,
+  };
+
   if (!hasEmail && !hasNameCo) {
     return NextResponse.json({
       found: false,
       message: "Lusha API requiere email o nombre+empresa. Este contacto no está en BullsEye con esos datos.",
+      debug,
     });
   }
 
@@ -114,7 +122,6 @@ export async function POST(req: NextRequest) {
     async function callLusha(includeLinkedin: boolean): Promise<{ status: number; ok: boolean; body: string }> {
       const contact = includeLinkedin ? { ...baseContact, linkedinUrl: canonicalUrl } : baseContact;
       const payload = { contacts: [contact] };
-      console.log(`[lusha-lookup] payload=${JSON.stringify(payload)}`);
       const r = await fetch("https://api.lusha.com/v2/person", {
         method: "POST",
         headers: { api_key: lushaKey!, api_token: lushaKey!, "Content-Type": "application/json" },
@@ -122,7 +129,15 @@ export async function POST(req: NextRequest) {
         cache: "no-store",
       });
       const text = await r.text().catch(() => "");
-      console.log(`[lusha-lookup] POST v2/person (linkedin=${includeLinkedin}) → status=${r.status} body=${text.slice(0, 800)}`);
+      let parsed: any = null;
+      try { parsed = JSON.parse(text); } catch {}
+      debug.attempts.push({
+        includeLinkedin,
+        payload,
+        status:        r.status,
+        response_body: text.slice(0, 1500),
+        response_json: parsed,
+      });
       return { status: r.status, ok: r.ok, body: text };
     }
 
@@ -149,7 +164,7 @@ export async function POST(req: NextRequest) {
       }
     } else if (postRes.status === 404) {
       // Lusha 404 en v2 = no encontró el contacto
-      return NextResponse.json({ found: false, message: "Lusha no encontró este contacto" });
+      return NextResponse.json({ found: false, message: "Lusha no encontró este contacto", debug });
     } else {
       // Fallback: GET legacy
       const encodedUrl = encodeURIComponent(canonicalUrl);
@@ -167,7 +182,7 @@ export async function POST(req: NextRequest) {
         }
       } else if (getRes.status === 404) {
         // Lusha 404 = no encontró el contacto, no es error
-        return NextResponse.json({ found: false, message: "Lusha no encontró este contacto" });
+        return NextResponse.json({ found: false, message: "Lusha no encontró este contacto", debug });
       } else {
         const errText = await getRes.text().catch(() => "");
         lushaError = `Lusha respondió ${getRes.status}: ${errText.slice(0, 200)}`;
@@ -185,6 +200,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       found: false,
       message: lushaError ?? "Sin teléfono en Lusha",
+      debug,
     });
   }
 
@@ -196,6 +212,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       found: false,
       message: "Sin resultados en Lusha para esta URL. No se consumió crédito.",
+      debug: { ...debug, lusha_data: lushaData },
     });
   }
 

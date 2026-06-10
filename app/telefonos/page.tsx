@@ -101,7 +101,7 @@ function ResultCard({
         <p className="text-sm" style={{ color: palette.body }}>{result.detail ?? "Error"}</p>
       )}
 
-      {result.debug && (result.status === "not_found" || result.status === "running") && (
+      {result.debug && (result.status === "not_found" || result.status === "running" || result.status === "error") && (
         <details className="mt-1">
           <summary className="text-xs cursor-pointer" style={{ color: palette.body }}>
             🔍 Detalles técnicos (debug)
@@ -290,11 +290,11 @@ export default function TelefonosPage() {
       });
       const d = await r.json();
       if (!r.ok) {
-        setLusha({ status: "error", phone: null, detail: d.error ?? "Error en Lusha" });
+        setLusha({ status: "error", phone: null, detail: d.error ?? "Error en Lusha", debug: d.debug });
       } else if (d.found && d.phone) {
         setLusha({ status: "found", phone: d.phone, detail: null });
       } else {
-        setLusha({ status: "not_found", phone: null, detail: d.message ?? "Lusha no encontró este contacto" });
+        setLusha({ status: "not_found", phone: null, detail: d.message ?? "Lusha no encontró este contacto", debug: d.debug });
       }
     } catch {
       setLusha({ status: "error", phone: null, detail: "Error de conexión con Lusha" });
