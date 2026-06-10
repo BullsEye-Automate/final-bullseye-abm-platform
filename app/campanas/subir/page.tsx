@@ -267,6 +267,7 @@ export default function SubirCampanaPage() {
   const [parsed, setParsed]         = useState<ParsedContact[]>([]);
   const [contacts, setContacts]     = useState<GeneratedContact[]>([]);
   const [genProgress, setGenProgress] = useState(0);
+  const [genErrors, setGenErrors]   = useState(0);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number; errors: any[] } | null>(null);
   const [fileError, setFileError]   = useState<string | null>(null);
   const [segments, setSegments]     = useState<SegmentOption[]>([]);
@@ -313,38 +314,50 @@ export default function SubirCampanaPage() {
     [handleFile]
   );
 
-  // ── Generar mensajes ──
+  // ── Generar mensajes (de a 1 con pausa para respetar rate limits) ──
   async function handleGenerate() {
     if (!currentClient?.id) return;
     setStage("generating");
     setGenProgress(0);
+    setGenErrors(0);
 
-    const BATCH = 5;
     const updated = [...contacts];
+    let errCount = 0;
 
-    for (let i = 0; i < parsed.length; i += BATCH) {
-      const batch = parsed.slice(i, i + BATCH);
-      const res = await fetch("/api/lemlist/csv-generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_id: currentClient.id,
-          contacts: batch,
-          segment_id: selectedSegmentId || undefined,
-        }),
-      });
-      if (res.ok) {
-        const { results } = await res.json();
-        results.forEach((r: GeneratedContact, j: number) => {
-          updated[i + j] = { ...updated[i + j], ...r };
+    for (let i = 0; i < parsed.length; i++) {
+      // Pausa de 3s entre contactos para no superar 30k tokens/min
+      if (i > 0) await new Promise((r) => setTimeout(r, 3000));
+
+      try {
+        const res = await fetch("/api/lemlist/csv-generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id: currentClient.id,
+            contacts: [parsed[i]],
+            segment_id: selectedSegmentId || undefined,
+          }),
         });
+        if (res.ok) {
+          const { results } = await res.json();
+          if (results?.[0]) updated[i] = { ...updated[i], ...results[0] };
+        } else {
+          errCount++;
+          setGenErrors(errCount);
+          updated[i] = { ...updated[i], error: `Error ${res.status}` };
+        }
+      } catch {
+        errCount++;
+        setGenErrors(errCount);
+        updated[i] = { ...updated[i], error: "Error de red" };
       }
-      setGenProgress(Math.min(i + BATCH, parsed.length));
+
+      setGenProgress(i + 1);
       setContacts([...updated]);
     }
 
-    // Seleccionar todos por defecto
-    setSelectedIndexes(new Set(updated.map((_, i) => i)));
+    // Seleccionar solo los que generaron correctamente
+    setSelectedIndexes(new Set(updated.map((c, i) => (!c.error ? i : -1)).filter((i) => i >= 0)));
     setStage("preview");
   }
 
@@ -396,6 +409,7 @@ export default function SubirCampanaPage() {
     setSegments([]);
     setSelectedSegmentId("");
     setSelectedIndexes(new Set());
+    setGenErrors(0);
     setStage("idle");
   }
 
@@ -580,16 +594,22 @@ export default function SubirCampanaPage() {
             <p className="font-semibold text-ink">Generando mensajes con IA…</p>
             <p className="text-sm text-ink-muted mt-1">
               {genProgress} de {parsed.length} contactos procesados
+              {genErrors > 0 && <span className="text-red-500 ml-2">· {genErrors} con error</span>}
             </p>
           </div>
           {/* Barra de progreso */}
           <div className="w-full max-w-sm bg-gray-100 rounded-full h-2">
             <div
-              className="h-2 rounded-full transition-all duration-300"
+              className="h-2 rounded-full transition-all duration-500"
               style={{ width: `${(genProgress / parsed.length) * 100}%`, background: "#62E0D8" }}
             />
           </div>
-          <p className="text-xs text-ink-muted">Esto puede tomar {Math.ceil(parsed.length * 2.5 / 60)} minuto{parsed.length > 24 ? "s" : ""}…</p>
+          <div className="text-center space-y-1">
+            <p className="text-xs text-ink-muted">
+              Tiempo estimado restante: ~{Math.ceil((parsed.length - genProgress) * 3 / 60)} min {((parsed.length - genProgress) * 3) % 60} seg
+            </p>
+            <p className="text-[11px] text-ink-muted opacity-60">Procesando de a 1 para respetar límites de la API</p>
+          </div>
         </div>
       )}
 
