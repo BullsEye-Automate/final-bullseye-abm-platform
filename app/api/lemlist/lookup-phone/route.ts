@@ -43,6 +43,15 @@ export async function POST(req: NextRequest) {
 
   const targetNorm = (normalizeLinkedInUrl(linkedinUrl) ?? linkedinUrl).toLowerCase();
 
+  // Slug de LinkedIn (lo que va después de /in/). Mucho más confiable para matchear
+  // que la URL completa porque Lemlist puede guardar con www., trailing slash, etc.
+  function extractSlug(url: string | undefined | null): string | null {
+    if (!url) return null;
+    const m = url.toString().match(/linkedin\.com\/(?:in|pub)\/([^/?#]+)/i);
+    return m ? m[1].toLowerCase() : null;
+  }
+  const targetSlug = extractSlug(linkedinUrl);
+
   // Heurística: cualquier clave que contenga "phone" (case-insensitive) y tenga valor string.
   function extractPhone(lead: any): string | null {
     if (!lead || typeof lead !== "object") return null;
@@ -66,10 +75,14 @@ export async function POST(req: NextRequest) {
     return scan(lead);
   }
 
-  // Compara LinkedIn URLs aplicando la misma normalización en ambos lados.
+  // Match por slug (más confiable que URL completa). Cae a comparación de URL normalizada si no hay slug.
   function sameLinkedin(a: any): boolean {
     const raw = (a?.linkedinUrl ?? a?.linkedin_url ?? a?.linkedin ?? a?.fields?.linkedinUrl ?? "").toString().trim();
     if (!raw) return false;
+    if (targetSlug) {
+      const slug = extractSlug(raw);
+      if (slug && slug === targetSlug) return true;
+    }
     const norm = (normalizeLinkedInUrl(raw) ?? raw).toLowerCase();
     return norm === targetNorm;
   }
