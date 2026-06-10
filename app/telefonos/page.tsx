@@ -106,7 +106,7 @@ function ResultCard({
           <summary className="text-xs cursor-pointer" style={{ color: palette.body }}>
             🔍 Detalles técnicos (debug)
           </summary>
-          <pre className="text-[10px] mt-2 p-2 rounded overflow-auto max-h-96" style={{ background: "#1e1b3a", color: "#e2e8f0" }}>
+          <pre className="text-[10px] mt-2 p-2 rounded overflow-auto" style={{ background: "#1e1b3a", color: "#e2e8f0", maxHeight: "70vh" }}>
             {JSON.stringify(result.debug, null, 2)}
           </pre>
         </details>
