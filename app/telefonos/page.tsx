@@ -186,24 +186,67 @@ export default function TelefonosPage() {
     const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
     setLemlist({ status: "running", phone: null, detail: "Buscando con Lemlist (findPhone)…" });
 
-    try {
+    async function callOnce() {
       const r = await fetch("/api/lemlist/lookup-phone", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: currentClient.id, linkedin_url: url }),
+        body: JSON.stringify({ client_id: currentClient!.id, linkedin_url: url }),
       });
-      const d = await r.json();
-      if (!r.ok) {
-        setLemlist({ status: "error", phone: null, detail: d.error ?? "Error en Lemlist" });
-      } else if (d.found && d.phone) {
+      const d = await r.json().catch(() => ({}));
+      return { ok: r.ok, data: d };
+    }
+
+    try {
+      // Primer intento
+      const first = await callOnce();
+      if (!first.ok) {
+        setLemlist({ status: "error", phone: null, detail: first.data.error ?? "Error en Lemlist" });
+        return;
+      }
+      if (first.data.found && first.data.phone) {
         setLemlist({
           status: "found",
-          phone: d.phone,
-          detail: d.cached ? "Contacto ya estaba en la campaña. Sin consumir créditos." : null,
+          phone: first.data.phone,
+          detail: first.data.cached ? "Contacto ya estaba en la campaña. Sin consumir créditos." : null,
         });
-      } else {
-        setLemlist({ status: "not_found", phone: null, detail: d.message ?? "Lemlist no encontró teléfono" });
+        return;
       }
+
+      // Procesando: seguir reintentando en background hasta 5 minutos (10 reintentos cada 30s).
+      // El endpoint es idempotente porque busca el lead en la campaña antes de pushear.
+      setLemlist({
+        status: "running",
+        phone: null,
+        detail: "Lemlist está enriqueciendo el contacto. Te avisamos en cuanto aparezca el teléfono (puede tardar 1-5 min)…",
+      });
+
+      const maxAttempts = 10;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        await new Promise((r) => setTimeout(r, 30_000));
+        try {
+          const next = await callOnce();
+          if (next.ok && next.data.found && next.data.phone) {
+            setLemlist({
+              status: "found",
+              phone: next.data.phone,
+              detail: "Lemlist terminó el enriquecimiento.",
+            });
+            return;
+          }
+          // Actualizar mensaje con número de intento
+          setLemlist({
+            status: "running",
+            phone: null,
+            detail: `Lemlist sigue procesando (intento ${attempt + 1}/${maxAttempts + 1})… puedes seguir trabajando, te aviso cuando esté.`,
+          });
+        } catch { /* reintenta */ }
+      }
+
+      setLemlist({
+        status: "not_found",
+        phone: null,
+        detail: "Después de 5 minutos Lemlist no devolvió teléfono. Reintenta más tarde o avanza a Lusha.",
+      });
     } catch {
       setLemlist({ status: "error", phone: null, detail: "Error de conexión con Lemlist" });
     }
