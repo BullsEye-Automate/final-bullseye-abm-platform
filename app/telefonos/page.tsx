@@ -290,13 +290,17 @@ export default function TelefonosPage() {
 
         {/* Separador Lusha */}
         <div>
-          <p className="text-xs font-semibold text-ink-subtle uppercase tracking-wide mb-3">
-            Datos opcionales para Lusha
+          <p className="text-xs font-semibold text-ink-subtle uppercase tracking-wide mb-1">
+            Datos para Lusha
+          </p>
+          <p className="text-xs text-ink-subtle mb-3">
+            Lusha necesita <strong>Email</strong> <em>o</em> los 3 campos (<strong>Nombre + Apellido + Empresa</strong>).
+            Si no completas ninguna de las dos opciones, Lusha se omite.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label flex items-center gap-1 mb-1">
-                <IconMail size={13} /> Email
+                <IconMail size={13} /> Email <span className="text-danger-fg">*</span>
               </label>
               <input
                 className="input text-sm"
@@ -308,7 +312,7 @@ export default function TelefonosPage() {
             </div>
             <div>
               <label className="label flex items-center gap-1 mb-1">
-                <IconUser size={13} /> Nombre
+                <IconUser size={13} /> Nombre <span className="text-danger-fg">*</span>
               </label>
               <input
                 className="input text-sm"
@@ -320,7 +324,7 @@ export default function TelefonosPage() {
             </div>
             <div>
               <label className="label flex items-center gap-1 mb-1">
-                <IconUser size={13} /> Apellido
+                <IconUser size={13} /> Apellido <span className="text-danger-fg">*</span>
               </label>
               <input
                 className="input text-sm"
@@ -332,7 +336,7 @@ export default function TelefonosPage() {
             </div>
             <div>
               <label className="label flex items-center gap-1 mb-1">
-                <IconBuilding size={13} /> Empresa
+                <IconBuilding size={13} /> Empresa <span className="text-danger-fg">*</span>
               </label>
               <input
                 className="input text-sm"
@@ -343,6 +347,9 @@ export default function TelefonosPage() {
               />
             </div>
           </div>
+          <p className="text-[11px] text-ink-subtle mt-1">
+            * Requerido para Lusha: completa <strong>Email</strong> <em>o</em> el trío Nombre+Apellido+Empresa.
+          </p>
           {/* Validación Lusha */}
           <p className={`text-xs mt-2 ${canLusha ? "text-success-fg" : "text-ink-subtle"}`}>
             {canLusha
