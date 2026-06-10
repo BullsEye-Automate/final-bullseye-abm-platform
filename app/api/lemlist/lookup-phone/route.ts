@@ -41,6 +41,14 @@ export async function POST(req: NextRequest) {
   const campaignId  = config.lemlist_staging_campaign_id;
   const mainCampaignId = config.lemlist_campaign_id ?? null;
 
+  // Diagnóstico que vuelve en la respuesta para poder depurar sin Vercel logs.
+  const debug: Record<string, any> = {
+    target_linkedin_url: linkedinUrl,
+    staging_campaign:    campaignId,
+    main_campaign:       mainCampaignId,
+    campaigns_searched:  [] as Array<Record<string, any>>,
+  };
+
   const targetNorm = (normalizeLinkedInUrl(linkedinUrl) ?? linkedinUrl).toLowerCase();
 
   // Slug de LinkedIn (lo que va después de /in/). Mucho más confiable para matchear
@@ -107,34 +115,38 @@ export async function POST(req: NextRequest) {
   // Busca el lead por linkedinUrl en una campaña (paginando hasta 1000 leads).
   // Si lo encuentra, intenta primero el extractPhone del listado; si no, va al detalle del contacto.
   async function lookupPhoneInCampaign(cId: string): Promise<string | null> {
+    const camDebug: Record<string, any> = { id: cId, pages: [], matched: false, sample_keys: null, http: [] };
+    debug.campaigns_searched.push(camDebug);
     let offset = 0;
     const limit = 100;
     while (offset < 1000) {
-      const listRes = await fetch(
-        `https://api.lemlist.com/api/campaigns/${cId}/leads?limit=${limit}&offset=${offset}`,
-        { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
-      ).catch(() => null);
+      const url = `https://api.lemlist.com/api/campaigns/${cId}/leads?limit=${limit}&offset=${offset}`;
+      const listRes = await fetch(url, { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }).catch(() => null);
+      camDebug.http.push({ url, status: listRes?.status ?? "no-response" });
       if (!listRes?.ok) return null;
       const data = await listRes.json();
       const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
+      camDebug.pages.push({ offset, count: leads.length });
       if (!leads.length) return null;
-      console.log(`[lemlist-lookup] campaign=${cId} offset=${offset} leads_count=${leads.length} targetSlug=${targetSlug ?? "null"}`);
-      if (leads.length > 0 && offset === 0) {
-        console.log(`[lemlist-lookup] primer lead sample=${JSON.stringify(leads[0]).slice(0, 1500)}`);
+      if (offset === 0 && leads[0]) {
+        camDebug.sample_keys = Object.keys(leads[0]);
+        camDebug.sample_lead = leads[0];
       }
       const match = leads.find(sameLinkedin);
       if (match) {
+        camDebug.matched = true;
+        camDebug.matched_keys = Object.keys(match);
+        camDebug.matched_lead = match;
         const fromList = extractPhone(match);
-        if (fromList) return fromList;
-        // Fallback: buscar en el detalle del contacto (el listado trunca campos enriquecidos)
+        if (fromList) { camDebug.phone_source = "listing"; return fromList; }
         const contactId = match.contactId ?? match.contact_id ?? match._id ?? match.id;
-        console.log(`[lemlist-lookup] Lead encontrado en ${cId} sin phone en listado. contactId=${contactId} LEAD_RAW=${JSON.stringify(match).slice(0, 2000)}`);
+        camDebug.contact_id = contactId;
         if (contactId) {
           const detail = await fetchContactDetail(contactId.toString());
           if (detail) {
-            console.log(`[lemlist-lookup] Detalle DEL CONTACTO=${JSON.stringify(detail).slice(0, 2000)}`);
+            camDebug.detail = detail;
             const fromDetail = extractPhone(detail);
-            if (fromDetail) return fromDetail;
+            if (fromDetail) { camDebug.phone_source = "detail"; return fromDetail; }
           }
         }
         return null;
@@ -213,6 +225,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       found: false,
       message: "El contacto ya está en la campaña staging pero Lemlist aún no tiene su teléfono. Espera unos minutos y reintenta.",
+      debug,
     });
   }
 
@@ -257,5 +270,6 @@ export async function POST(req: NextRequest) {
     found: false,
     timeout: true,
     message: "Lemlist está procesando la búsqueda. Puede tardar más de 30s; revisa en unos minutos.",
+    debug,
   });
 }
