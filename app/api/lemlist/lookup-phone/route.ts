@@ -51,14 +51,18 @@ export async function POST(req: NextRequest) {
 
   const targetNorm = (normalizeLinkedInUrl(linkedinUrl) ?? linkedinUrl).toLowerCase();
 
-  // Slug de LinkedIn (lo que va después de /in/). Mucho más confiable para matchear
-  // que la URL completa porque Lemlist puede guardar con www., trailing slash, etc.
+  // Slug de LinkedIn (lo que va después de /in/). Decodificamos URI para que matche aunque
+  // un lado tenga "%C3%A9" y el otro la "é" literal (acentos, ñ, etc.).
   function extractSlug(url: string | undefined | null): string | null {
     if (!url) return null;
     const m = url.toString().match(/linkedin\.com\/(?:in|pub)\/([^/?#]+)/i);
-    return m ? m[1].toLowerCase() : null;
+    if (!m) return null;
+    let slug = m[1].toLowerCase();
+    try { slug = decodeURIComponent(slug); } catch { /* slug malformado, lo dejamos crudo */ }
+    return slug;
   }
   const targetSlug = extractSlug(linkedinUrl);
+  debug.target_slug = targetSlug;
 
   // Heurística: cualquier clave que contenga "phone" (case-insensitive) y tenga valor string.
   function extractPhone(lead: any): string | null {
