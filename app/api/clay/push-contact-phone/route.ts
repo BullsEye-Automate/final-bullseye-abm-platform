@@ -12,10 +12,13 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
 
   // Modo ad-hoc: enriquecer un LinkedIn URL sin contacto existente (botón en /telefonos)
+  // Usa la tabla "SDR Waterfall on Demand" para no manchar la tabla principal de Contacts Approved.
   if (body.ad_hoc && body.linkedin_url) {
-    const webhookUrl = process.env.CLAY_CONTACTS_APPROVED_WEBHOOK_URL;
+    const webhookUrl =
+      process.env.CLAY_SDR_WATERFALL_WEBHOOK_URL ??
+      process.env.CLAY_CONTACTS_APPROVED_WEBHOOK_URL;
     if (!webhookUrl) {
-      return NextResponse.json({ error: "CLAY_CONTACTS_APPROVED_WEBHOOK_URL no configurado" }, { status: 500 });
+      return NextResponse.json({ error: "CLAY_SDR_WATERFALL_WEBHOOK_URL no configurado" }, { status: 500 });
     }
     const res = await fetch(webhookUrl, {
       method: "POST",
