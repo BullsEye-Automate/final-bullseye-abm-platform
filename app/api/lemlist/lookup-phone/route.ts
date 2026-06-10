@@ -112,13 +112,17 @@ export async function POST(req: NextRequest) {
     return null;
   }
 
-  // Busca el lead por linkedinUrl en una campaña (paginando hasta 1000 leads).
-  // Si lo encuentra, intenta primero el extractPhone del listado; si no, va al detalle del contacto.
+  // Busca el lead por linkedinUrl en una campaña.
+  // El listado de Lemlist solo trae _id, state, contactId — NO trae linkedinUrl ni phone.
+  // Entonces para cada lead listado hay que hacer GET /api/contacts/{contactId} para
+  // obtener los datos enriquecidos y poder matchear por LinkedIn URL.
   async function lookupPhoneInCampaign(cId: string): Promise<string | null> {
-    const camDebug: Record<string, any> = { id: cId, pages: [], matched: false, sample_keys: null, http: [] };
+    const camDebug: Record<string, any> = { id: cId, http: [], leads_inspected: 0, contacts_checked: 0 };
     debug.campaigns_searched.push(camDebug);
     let offset = 0;
     const limit = 100;
+    // Tope de leads a inspeccionar para evitar explosión de API calls.
+    const maxInspect = 60;
     while (offset < 1000) {
       const url = `https://api.lemlist.com/api/campaigns/${cId}/leads?limit=${limit}&offset=${offset}`;
       const listRes = await fetch(url, { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }).catch(() => null);
@@ -126,29 +130,31 @@ export async function POST(req: NextRequest) {
       if (!listRes?.ok) return null;
       const data = await listRes.json();
       const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
-      camDebug.pages.push({ offset, count: leads.length });
+      camDebug.leads_inspected += leads.length;
       if (!leads.length) return null;
-      if (offset === 0 && leads[0]) {
-        camDebug.sample_keys = Object.keys(leads[0]);
-        camDebug.sample_lead = leads[0];
-      }
-      const match = leads.find(sameLinkedin);
-      if (match) {
-        camDebug.matched = true;
-        camDebug.matched_keys = Object.keys(match);
-        camDebug.matched_lead = match;
-        const fromList = extractPhone(match);
-        if (fromList) { camDebug.phone_source = "listing"; return fromList; }
-        const contactId = match.contactId ?? match.contact_id ?? match._id ?? match.id;
-        camDebug.contact_id = contactId;
-        if (contactId) {
-          const detail = await fetchContactDetail(contactId.toString());
-          if (detail) {
-            camDebug.detail = detail;
-            const fromDetail = extractPhone(detail);
-            if (fromDetail) { camDebug.phone_source = "detail"; return fromDetail; }
-          }
+
+      // Para cada lead, traer detalle y comparar linkedinUrl
+      for (const lead of leads) {
+        if (camDebug.contacts_checked >= maxInspect) break;
+        const contactId = lead.contactId ?? lead.contact_id ?? lead._id ?? lead.id;
+        if (!contactId) continue;
+        const detail = await fetchContactDetail(contactId.toString());
+        camDebug.contacts_checked++;
+        if (!detail) continue;
+        if (camDebug.contacts_checked === 1) {
+          camDebug.sample_contact_keys = Object.keys(detail);
         }
+        if (sameLinkedin(detail)) {
+          camDebug.matched_contact_id = contactId;
+          camDebug.matched_contact_keys = Object.keys(detail);
+          const phone = extractPhone(detail);
+          if (phone) { camDebug.phone_source = "contact_detail"; return phone; }
+          camDebug.matched_but_no_phone = true;
+          return null;
+        }
+      }
+      if (camDebug.contacts_checked >= maxInspect) {
+        camDebug.aborted = `max_inspect_${maxInspect}_alcanzado`;
         return null;
       }
       if (leads.length < limit) return null;
