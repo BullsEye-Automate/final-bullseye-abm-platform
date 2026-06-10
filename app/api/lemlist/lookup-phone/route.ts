@@ -39,6 +39,22 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_staging_campaign_id;
 
+  // Helper: busca un lead por linkedinUrl en TODAS las campañas del cliente y devuelve su teléfono si existe.
+  async function findExistingLeadPhone(): Promise<{ phone: string; campaignName?: string } | null> {
+    // Buscar primero en la staging
+    const listRes = await fetch(
+      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=500`,
+      { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
+    ).catch(() => null);
+    if (listRes?.ok) {
+      const data = await listRes.json();
+      const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
+      const match = leads.find((l) => (l.linkedinUrl ?? "").trim().toLowerCase() === linkedinUrl.toLowerCase());
+      if (match?.phone?.trim()) return { phone: match.phone.trim() };
+    }
+    return null;
+  }
+
   // Push del lead a la staging con findPhone activado
   const pushRes = await fetch(
     `https://api.lemlist.com/api/campaigns/${campaignId}/leads?findEmail=true&verifyEmail=true&findPhone=true&linkedinEnrichment=true&deduplicate=true`,
@@ -49,9 +65,37 @@ export async function POST(req: NextRequest) {
     }
   ).catch(() => null);
 
-  if (!pushRes || (!pushRes.ok && pushRes.status !== 409)) {
-    const t = await pushRes?.text().catch(() => "");
-    return NextResponse.json({ error: `Lemlist staging ${pushRes?.status}: ${(t ?? "").slice(0, 200)}` }, { status: 502 });
+  const pushText = pushRes ? await pushRes.clone().text().catch(() => "") : "";
+  const alreadyInCampaign =
+    pushRes?.status === 409 ||
+    (pushRes?.status === 400 && /already.*campaign|already.*exist/i.test(pushText));
+
+  // Si el lead ya estaba en la campaña, buscar su teléfono actual sin consumir créditos.
+  if (alreadyInCampaign) {
+    const existing = await findExistingLeadPhone();
+    if (existing?.phone) {
+      let hubspot_updated = false;
+      try {
+        const hsId = await searchHSContactByLinkedinUrl(linkedinUrl).catch(() => null);
+        if (hsId) {
+          await patchHSContact(hsId, { bullseye_telefono_lemlist: existing.phone });
+          hubspot_updated = true;
+        }
+      } catch { /* no bloquear */ }
+      return NextResponse.json({
+        found: true, phone: existing.phone, source: "lemlist", hubspot_updated,
+        cached: true, message: "Contacto ya estaba en la campaña — devolvemos su teléfono sin consumir créditos.",
+      });
+    }
+    // Existía pero sin teléfono cargado en Lemlist
+    return NextResponse.json({
+      found: false,
+      message: "El contacto ya está en la campaña staging pero Lemlist aún no tiene su teléfono. Espera unos minutos y reintenta.",
+    });
+  }
+
+  if (!pushRes || !pushRes.ok) {
+    return NextResponse.json({ error: `Lemlist staging ${pushRes?.status}: ${pushText.slice(0, 200)}` }, { status: 502 });
   }
 
   // Polling: cada 4s buscar el lead en la campaña y revisar si Lemlist ya levantó teléfono.

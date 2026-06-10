@@ -12,23 +12,25 @@ import {
   IconMail,
   IconUser,
   IconBuilding,
+  IconArrowRight,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
 
 // ── Tipos ──────────────────────────────────────────────────────
 
-type ProviderResult = {
+type Step = "clay" | "lemlist" | "lusha";
+
+type Result = {
   status: "idle" | "running" | "found" | "not_found" | "error";
   phone: string | null;
   detail: string | null;
 };
-
-const IDLE: ProviderResult = { status: "idle", phone: null, detail: null };
+const IDLE: Result = { status: "idle", phone: null, detail: null };
 
 // ── Helpers ────────────────────────────────────────────────────
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, large = false }: { text: string; large?: boolean }) {
   const [copied, setCopied] = useState(false);
   function copy() {
     navigator.clipboard.writeText(text).then(() => {
@@ -39,72 +41,63 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={copy}
-      className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+      className={`inline-flex items-center gap-1.5 rounded font-medium transition-colors ${large ? "px-4 py-2 text-sm" : "px-3 py-1.5 text-xs"}`}
       style={{
-        background: copied ? "rgba(98,224,216,0.15)" : "rgba(255,255,255,0.08)",
-        color: copied ? "#62E0D8" : "#e2e8f0",
-        border: `1px solid ${copied ? "#62E0D8" : "rgba(255,255,255,0.15)"}`,
+        background: copied ? "#62E0D8" : "#251762",
+        color:      copied ? "#251762" : "#ffffff",
       }}
     >
-      {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+      {copied ? <IconCheck size={large ? 16 : 14} /> : <IconCopy size={large ? 16 : 14} />}
       {copied ? "Copiado" : "Copiar"}
     </button>
   );
 }
 
-function ProviderCard({
+function ResultCard({
   name,
-  logo,
+  emoji,
   result,
   requires,
 }: {
   name: string;
-  logo: React.ReactNode;
-  result: ProviderResult;
+  emoji: string;
+  result: Result;
   requires: string;
 }) {
-  const colors = {
-    idle:      { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.1)",  text: "#94a3b8" },
-    running:   { bg: "rgba(98,224,216,0.06)",  border: "rgba(98,224,216,0.3)",   text: "#62E0D8" },
-    found:     { bg: "rgba(34,197,94,0.08)",   border: "rgba(34,197,94,0.35)",   text: "#4ade80" },
-    not_found: { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.12)", text: "#64748b" },
-    error:     { bg: "rgba(239,68,68,0.08)",   border: "rgba(239,68,68,0.3)",    text: "#f87171" },
-  };
-  const c = colors[result.status];
+  const palette = {
+    idle:      { bg: "#f4f4f7", border: "#e5e5ec", title: "#475569", body: "#64748b" },
+    running:   { bg: "#eef9f8", border: "#62E0D8", title: "#0c5e58", body: "#0c5e58" },
+    found:     { bg: "#e8f6ed", border: "#22c55e", title: "#166534", body: "#15803d" },
+    not_found: { bg: "#f8f9fb", border: "#cbd5e1", title: "#334155", body: "#475569" },
+    error:     { bg: "#fdecec", border: "#ef4444", title: "#991b1b", body: "#991b1b" },
+  }[result.status];
 
   return (
-    <div
-      className="rounded-xl p-4 flex flex-col gap-3 transition-all"
-      style={{ background: c.bg, border: `1px solid ${c.border}` }}
-    >
+    <div className="rounded-xl p-4 space-y-2" style={{ background: palette.bg, border: `1px solid ${palette.border}` }}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {logo}
-          <span className="font-semibold text-sm" style={{ color: c.text }}>{name}</span>
+          <span className="text-base">{emoji}</span>
+          <span className="font-semibold text-sm" style={{ color: palette.title }}>{name}</span>
         </div>
-        {result.status === "running" && <IconLoader2 size={16} className="animate-spin" style={{ color: c.text }} />}
-        {result.status === "found"   && <IconCheck size={16} style={{ color: c.text }} />}
+        {result.status === "running" && <IconLoader2 size={16} className="animate-spin" style={{ color: palette.title }} />}
+        {result.status === "found"   && <IconCheck size={16} style={{ color: palette.title }} />}
       </div>
+      <p className="text-xs" style={{ color: palette.body }}>{requires}</p>
 
-      <p className="text-xs text-ink-subtle">{requires}</p>
-
-      {result.status === "idle" && (
-        <p className="text-xs text-ink-subtle italic">Esperando…</p>
-      )}
       {result.status === "running" && (
-        <p className="text-xs" style={{ color: c.text }}>{result.detail ?? "Buscando…"}</p>
+        <p className="text-sm" style={{ color: palette.body }}>{result.detail ?? "Buscando…"}</p>
       )}
       {result.status === "found" && result.phone && (
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-mono text-base font-semibold" style={{ color: c.text }}>{result.phone}</span>
-          <CopyButton text={result.phone} />
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <span className="font-mono text-lg font-semibold" style={{ color: palette.title }}>{result.phone}</span>
+          <CopyButton text={result.phone} large />
         </div>
       )}
       {result.status === "not_found" && (
-        <p className="text-xs" style={{ color: c.text }}>{result.detail ?? "No encontró teléfono"}</p>
+        <p className="text-sm" style={{ color: palette.body }}>{result.detail ?? "No encontró teléfono"}</p>
       )}
       {result.status === "error" && (
-        <p className="text-xs" style={{ color: c.text }}>{result.detail ?? "Error"}</p>
+        <p className="text-sm" style={{ color: palette.body }}>{result.detail ?? "Error"}</p>
       )}
     </div>
   );
@@ -121,31 +114,35 @@ export default function TelefonosPage() {
   const [lastName,    setLastName]    = useState("");
   const [company,     setCompany]     = useState("");
 
-  const [running, setRunning] = useState(false);
-  const [done,    setDone]    = useState(false);
+  // Estado por proveedor (independiente)
+  const [clay,    setClay]    = useState<Result>(IDLE);
+  const [lemlist, setLemlist] = useState<Result>(IDLE);
+  const [lusha,   setLusha]   = useState<Result>(IDLE);
 
-  const [clay,    setClay]    = useState<ProviderResult>(IDLE);
-  const [lemlist, setLemlist] = useState<ProviderResult>(IDLE);
-  const [lusha,   setLusha]   = useState<ProviderResult>(IDLE);
+  // Indica si se ejecutó al menos Clay (para mostrar la zona de resultados)
+  const [started, setStarted] = useState(false);
 
-  const canLusha = email.trim() || (firstName.trim() && lastName.trim() && company.trim());
+  const canLushaEmail = !!email.trim();
+  const canLushaTrio  = !!firstName.trim() && !!lastName.trim() && !!company.trim();
+  const canLusha      = canLushaEmail || canLushaTrio;
 
-  async function runCascade(e: React.FormEvent) {
-    e.preventDefault();
-    if (!linkedinUrl.trim()) return;
-    if (!currentClient?.id) return;
-
-    const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
-
-    setRunning(true);
-    setDone(false);
+  function resetAll() {
     setClay(IDLE);
     setLemlist(IDLE);
     setLusha(IDLE);
+    setStarted(false);
+  }
 
-    // ── Paso 1: Clay ──────────────────────────────────────────
+  // ── Runners por proveedor ────────────────────────────────────
+
+  async function runClay() {
+    if (!linkedinUrl.trim() || !currentClient?.id) return;
+    const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
+    setStarted(true);
+    setLemlist(IDLE);
+    setLusha(IDLE);
     setClay({ status: "running", phone: null, detail: "Enviando a Clay (waterfall LeadMagic → PDL → upcell → Clay → Wiza)…" });
-    let clayPhone: string | null = null;
+
     try {
       const since = new Date().toISOString();
       const r = await fetch("/api/clay/push-contact-phone", {
@@ -156,36 +153,39 @@ export default function TelefonosPage() {
       const d = await r.json();
       if (!r.ok) {
         setClay({ status: "error", phone: null, detail: d.error ?? "Error enviando a Clay" });
-      } else {
-        setClay({ status: "running", phone: null, detail: "Clay corriendo waterfall (1-3 min)…" });
-        // Poll hasta 3 min
-        const deadline = Date.now() + 3 * 60 * 1000;
-        clayPhone = await new Promise<string | null>((resolve) => {
-          const poll = async () => {
-            if (Date.now() > deadline) { resolve(null); return; }
-            try {
-              const pr = await fetch(`/api/phone-lookups?linkedin_url=${encodeURIComponent(url)}&source=clay&since=${encodeURIComponent(since)}`);
-              const pd = await pr.json();
-              if (pd.lookup) { resolve(pd.lookup.phone ?? null); return; }
-            } catch {}
-            setTimeout(poll, 5000);
-          };
-          setTimeout(poll, 5000);
-        });
+        return;
+      }
+      setClay({ status: "running", phone: null, detail: "Clay corriendo waterfall (1-3 min)…" });
 
-        if (clayPhone) {
-          setClay({ status: "found", phone: clayPhone, detail: null });
-        } else {
-          setClay({ status: "not_found", phone: null, detail: "Clay no encontró teléfono en 3 min — puede llegar tarde a HubSpot automáticamente." });
-        }
+      const deadline = Date.now() + 3 * 60 * 1000;
+      const phone = await new Promise<string | null>((resolve) => {
+        const poll = async () => {
+          if (Date.now() > deadline) { resolve(null); return; }
+          try {
+            const pr = await fetch(`/api/phone-lookups?linkedin_url=${encodeURIComponent(url)}&source=clay&since=${encodeURIComponent(since)}`);
+            const pd = await pr.json();
+            if (pd.lookup) { resolve(pd.lookup.phone ?? null); return; }
+          } catch {}
+          setTimeout(poll, 5000);
+        };
+        setTimeout(poll, 5000);
+      });
+
+      if (phone) {
+        setClay({ status: "found", phone, detail: null });
+      } else {
+        setClay({ status: "not_found", phone: null, detail: "Clay no encontró teléfono en 3 minutos. Puede llegar tarde a HubSpot automáticamente." });
       }
     } catch {
       setClay({ status: "error", phone: null, detail: "Error de conexión con Clay" });
     }
+  }
 
-    // ── Paso 2: Lemlist ───────────────────────────────────────
+  async function runLemlist() {
+    if (!linkedinUrl.trim() || !currentClient?.id) return;
+    const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
     setLemlist({ status: "running", phone: null, detail: "Buscando con Lemlist (findPhone)…" });
-    let lemlistPhone: string | null = null;
+
     try {
       const r = await fetch("/api/lemlist/lookup-phone", {
         method: "POST",
@@ -196,50 +196,57 @@ export default function TelefonosPage() {
       if (!r.ok) {
         setLemlist({ status: "error", phone: null, detail: d.error ?? "Error en Lemlist" });
       } else if (d.found && d.phone) {
-        lemlistPhone = d.phone;
-        setLemlist({ status: "found", phone: d.phone, detail: null });
+        setLemlist({
+          status: "found",
+          phone: d.phone,
+          detail: d.cached ? "Contacto ya estaba en la campaña. Sin consumir créditos." : null,
+        });
       } else {
         setLemlist({ status: "not_found", phone: null, detail: d.message ?? "Lemlist no encontró teléfono" });
       }
     } catch {
       setLemlist({ status: "error", phone: null, detail: "Error de conexión con Lemlist" });
     }
-
-    // ── Paso 3: Lusha ─────────────────────────────────────────
-    if (canLusha) {
-      setLusha({ status: "running", phone: null, detail: "Consultando Lusha…" });
-      try {
-        const r = await fetch("/api/lusha/lookup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            linkedin_url: url,
-            email:        email.trim()     || undefined,
-            first_name:   firstName.trim() || undefined,
-            last_name:    lastName.trim()  || undefined,
-            company_name: company.trim()   || undefined,
-          }),
-        });
-        const d = await r.json();
-        if (!r.ok) {
-          setLusha({ status: "error", phone: null, detail: d.error ?? "Error en Lusha" });
-        } else if (d.found && d.phone) {
-          setLusha({ status: "found", phone: d.phone, detail: null });
-        } else {
-          setLusha({ status: "not_found", phone: null, detail: d.message ?? "Lusha no encontró teléfono" });
-        }
-      } catch {
-        setLusha({ status: "error", phone: null, detail: "Error de conexión con Lusha" });
-      }
-    } else {
-      setLusha({ status: "not_found", phone: null, detail: "Sin datos suficientes — proporciona email o nombre+empresa para activar Lusha." });
-    }
-
-    setRunning(false);
-    setDone(true);
   }
 
-  const found = [clay, lemlist, lusha].filter((r) => r.status === "found");
+  async function runLusha() {
+    if (!canLusha) {
+      setLusha({ status: "not_found", phone: null, detail: "Faltan datos: completa Email o el trío Nombre+Apellido+Empresa." });
+      return;
+    }
+    const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
+    setLusha({ status: "running", phone: null, detail: "Consultando Lusha…" });
+    try {
+      const r = await fetch("/api/lusha/lookup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          linkedin_url: url,
+          email:        email.trim()     || undefined,
+          first_name:   firstName.trim() || undefined,
+          last_name:    lastName.trim()  || undefined,
+          company_name: company.trim()   || undefined,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setLusha({ status: "error", phone: null, detail: d.error ?? "Error en Lusha" });
+      } else if (d.found && d.phone) {
+        setLusha({ status: "found", phone: d.phone, detail: null });
+      } else {
+        setLusha({ status: "not_found", phone: null, detail: d.message ?? "Lusha no encontró este contacto" });
+      }
+    } catch {
+      setLusha({ status: "error", phone: null, detail: "Error de conexión con Lusha" });
+    }
+  }
+
+  // ── Render ───────────────────────────────────────────────────
+
+  const anyRunning = clay.status === "running" || lemlist.status === "running" || lusha.status === "running";
+  const clayDone    = clay.status === "found"    || clay.status === "not_found"    || clay.status === "error";
+  const lemlistDone = lemlist.status === "found" || lemlist.status === "not_found" || lemlist.status === "error";
+  const lushaDone   = lusha.status === "found"   || lusha.status === "not_found"   || lusha.status === "error";
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -248,30 +255,28 @@ export default function TelefonosPage() {
         <div className="label">SDR · Enriquecimiento de Teléfonos</div>
         <h1 className="text-2xl font-semibold tracking-tight mt-1">Buscar teléfono</h1>
         <p className="text-sm text-ink-muted mt-1">
-          Cascada automática: Clay (waterfall completo) → Lemlist (findPhone) → Lusha.
-          Todos los resultados quedan en pantalla listos para copiar.
+          Cascada manual paso a paso: empieza con <strong>Clay</strong>; si el número no sirve,
+          avanza a <strong>Lemlist</strong> y luego a <strong>Lusha</strong>. No consume créditos extra
+          mientras no avances.
         </p>
       </header>
 
       {/* Instrucciones */}
-      <div
-        className="rounded-xl p-4 space-y-3"
-        style={{ background: "rgba(98,224,216,0.06)", border: "1px solid rgba(98,224,216,0.2)" }}
-      >
-        <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: "#62E0D8" }}>
+      <div className="rounded-xl p-4 space-y-2" style={{ background: "#eef9f8", border: "1px solid #62E0D8" }}>
+        <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: "#0c5e58" }}>
           <IconInfoCircle size={16} /> Cómo funciona
         </div>
-        <ol className="text-sm text-ink-muted space-y-1.5 list-decimal list-inside">
-          <li>Pega el LinkedIn URL del contacto (obligatorio para los 3 proveedores).</li>
-          <li><strong>Clay</strong> corre un waterfall de 5 proveedores — tarda 1-3 min. Solo necesita LinkedIn URL.</li>
-          <li><strong>Lemlist</strong> usa findPhone sobre la campaña staging — tarda 10-30s. Solo necesita LinkedIn URL.</li>
-          <li><strong>Lusha</strong> necesita además <em>email</em> ó <em>nombre + apellido + empresa</em>.</li>
-          <li>Los números encontrados aparecen con botón de copiar para pegarlo en HubSpot.</li>
+        <ol className="text-sm space-y-1 list-decimal list-inside" style={{ color: "#0f4f4a" }}>
+          <li>Pega el LinkedIn URL del contacto.</li>
+          <li><strong>Clay</strong> corre primero (waterfall de 5 proveedores, 1-3 min). Solo necesita LinkedIn URL.</li>
+          <li>Si el teléfono de Clay no sirve, presiona <strong>Buscar en Lemlist</strong> (findPhone, 10-30s).</li>
+          <li>Si tampoco, presiona <strong>Buscar en Lusha</strong>. Lusha necesita Email <em>o</em> Nombre+Apellido+Empresa.</li>
+          <li>Cada número aparece con un botón <strong>Copiar</strong> para pegar en HubSpot.</li>
         </ol>
       </div>
 
       {/* Formulario */}
-      <form onSubmit={runCascade} className="card space-y-4">
+      <div className="card space-y-5">
         {/* LinkedIn URL */}
         <div>
           <label className="label flex items-center gap-1.5 mb-1">
@@ -283,78 +288,89 @@ export default function TelefonosPage() {
             placeholder="https://linkedin.com/in/nombre-apellido"
             value={linkedinUrl}
             onChange={(e) => setLinkedinUrl(e.target.value)}
-            disabled={running}
-            required
+            disabled={anyRunning}
           />
         </div>
 
-        {/* Separador Lusha */}
-        <div>
-          <p className="text-xs font-semibold text-ink-subtle uppercase tracking-wide mb-1">
-            Datos para Lusha
-          </p>
-          <p className="text-xs text-ink-subtle mb-3">
-            Lusha necesita <strong>Email</strong> <em>o</em> los 3 campos (<strong>Nombre + Apellido + Empresa</strong>).
-            Si no completas ninguna de las dos opciones, Lusha se omite.
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label flex items-center gap-1 mb-1">
-                <IconMail size={13} /> Email <span className="text-danger-fg">*</span>
-              </label>
-              <input
-                className="input text-sm"
-                placeholder="correo@empresa.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={running}
-              />
+        {/* Datos para Lusha */}
+        <div className="rounded-lg border border-ink-subtle/20 p-4 space-y-3" style={{ background: "#fafafc" }}>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#251762" }}>
+              Datos para Lusha
+            </p>
+            <p className="text-xs text-ink-muted mt-1">
+              Solo necesarios si Clay y Lemlist no encuentran el número. Completa <strong>una</strong> de las dos opciones:
+            </p>
+          </div>
+
+          {/* Opción A: Email */}
+          <div className="rounded p-3" style={{ background: canLushaEmail ? "#e8f6ed" : "#ffffff", border: `1px solid ${canLushaEmail ? "#22c55e" : "#e5e5ec"}` }}>
+            <div className="text-xs font-semibold mb-2" style={{ color: canLushaEmail ? "#166534" : "#251762" }}>
+              OPCIÓN A — Email
             </div>
-            <div>
-              <label className="label flex items-center gap-1 mb-1">
-                <IconUser size={13} /> Nombre <span className="text-danger-fg">*</span>
-              </label>
-              <input
-                className="input text-sm"
-                placeholder="Juan"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                disabled={running}
-              />
+            <label className="label flex items-center gap-1 mb-1">
+              <IconMail size={13} /> Email <span className="text-danger-fg">*</span>
+            </label>
+            <input
+              className="input text-sm"
+              placeholder="correo@empresa.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={anyRunning}
+            />
+          </div>
+
+          <div className="text-center text-xs font-semibold" style={{ color: "#251762" }}>
+            — O —
+          </div>
+
+          {/* Opción B: trío */}
+          <div className="rounded p-3" style={{ background: canLushaTrio ? "#e8f6ed" : "#ffffff", border: `1px solid ${canLushaTrio ? "#22c55e" : "#e5e5ec"}` }}>
+            <div className="text-xs font-semibold mb-2" style={{ color: canLushaTrio ? "#166534" : "#251762" }}>
+              OPCIÓN B — Nombre + Apellido + Empresa (los 3)
             </div>
-            <div>
-              <label className="label flex items-center gap-1 mb-1">
-                <IconUser size={13} /> Apellido <span className="text-danger-fg">*</span>
-              </label>
-              <input
-                className="input text-sm"
-                placeholder="Pérez"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                disabled={running}
-              />
-            </div>
-            <div>
-              <label className="label flex items-center gap-1 mb-1">
-                <IconBuilding size={13} /> Empresa <span className="text-danger-fg">*</span>
-              </label>
-              <input
-                className="input text-sm"
-                placeholder="Empresa S.A."
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                disabled={running}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label className="label flex items-center gap-1 mb-1">
+                  <IconUser size={13} /> Nombre <span className="text-danger-fg">*</span>
+                </label>
+                <input
+                  className="input text-sm"
+                  placeholder="Juan"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  disabled={anyRunning}
+                />
+              </div>
+              <div>
+                <label className="label flex items-center gap-1 mb-1">
+                  <IconUser size={13} /> Apellido <span className="text-danger-fg">*</span>
+                </label>
+                <input
+                  className="input text-sm"
+                  placeholder="Pérez"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  disabled={anyRunning}
+                />
+              </div>
+              <div>
+                <label className="label flex items-center gap-1 mb-1">
+                  <IconBuilding size={13} /> Empresa <span className="text-danger-fg">*</span>
+                </label>
+                <input
+                  className="input text-sm"
+                  placeholder="Empresa S.A."
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                  disabled={anyRunning}
+                />
+              </div>
             </div>
           </div>
-          <p className="text-[11px] text-ink-subtle mt-1">
-            * Requerido para Lusha: completa <strong>Email</strong> <em>o</em> el trío Nombre+Apellido+Empresa.
-          </p>
-          {/* Validación Lusha */}
-          <p className={`text-xs mt-2 ${canLusha ? "text-success-fg" : "text-ink-subtle"}`}>
-            {canLusha
-              ? "✓ Lusha se va a ejecutar"
-              : "Sin email ni nombre+empresa → Lusha se omite"}
+
+          <p className="text-xs" style={{ color: canLusha ? "#15803d" : "#64748b" }}>
+            {canLusha ? "✓ Datos suficientes para ejecutar Lusha cuando lo necesites." : "Sin Email ni el trío completo, Lusha se omite."}
           </p>
         </div>
 
@@ -364,56 +380,119 @@ export default function TelefonosPage() {
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={running || !linkedinUrl.trim() || !currentClient}
-          className="btn-primary w-full flex items-center justify-center gap-2"
-        >
-          {running
-            ? <><IconLoader2 size={16} className="animate-spin" /> Buscando…</>
-            : <><IconPhone size={16} /> Buscar teléfono (Clay → Lemlist → Lusha)</>}
-        </button>
-      </form>
+        {/* Botón inicial: empezar con Clay */}
+        {!started && (
+          <button
+            onClick={runClay}
+            disabled={anyRunning || !linkedinUrl.trim() || !currentClient}
+            className="btn-primary w-full flex items-center justify-center gap-2"
+          >
+            <IconPhone size={16} />
+            Buscar teléfono (empieza por Clay)
+          </button>
+        )}
 
-      {/* Resultados */}
-      {(running || done) && (
-        <div className="space-y-3">
-          <h2 className="font-semibold text-sm text-ink-muted uppercase tracking-wide">Resultados</h2>
+        {started && (
+          <button
+            onClick={() => { resetAll(); }}
+            className="text-xs text-ink-muted hover:text-ink-fg underline"
+          >
+            ← Resetear y buscar otro contacto
+          </button>
+        )}
+      </div>
 
-          <div className="grid grid-cols-1 gap-3">
-            <ProviderCard
-              name="Clay"
-              logo={<span className="text-base">🏗</span>}
-              result={clay}
-              requires="Requiere: LinkedIn URL · Waterfall: LeadMagic → PDL → upcell → Clay → Wiza"
-            />
-            <ProviderCard
+      {/* Resultados paso a paso */}
+      {started && (
+        <div className="space-y-4">
+          <h2 className="font-semibold text-sm uppercase tracking-wide" style={{ color: "#251762" }}>Resultados</h2>
+
+          {/* Paso 1 — Clay */}
+          <ResultCard
+            name="Clay"
+            emoji="🏗"
+            result={clay}
+            requires="Waterfall de 5 proveedores: LeadMagic → PDL → upcell → Clay → Wiza"
+          />
+
+          {/* Si Clay terminó y aún no se corrió Lemlist, mostrar botón de avance */}
+          {clayDone && lemlist.status === "idle" && (
+            <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background: "#fafafc", border: "1px solid #cbd5e1" }}>
+              <p className="text-sm" style={{ color: "#251762" }}>
+                {clay.status === "found"
+                  ? "¿El teléfono de Clay no te sirve? Avanza al siguiente proveedor."
+                  : "Clay no encontró número. Prueba con Lemlist."}
+              </p>
+              <button
+                onClick={runLemlist}
+                disabled={anyRunning}
+                className="btn-secondary flex items-center justify-center gap-2 w-full sm:w-auto"
+              >
+                <IconArrowRight size={15} />
+                Buscar en Lemlist
+              </button>
+            </div>
+          )}
+
+          {/* Paso 2 — Lemlist */}
+          {lemlist.status !== "idle" && (
+            <ResultCard
               name="Lemlist"
-              logo={<span className="text-base">📧</span>}
+              emoji="📧"
               result={lemlist}
-              requires="Requiere: LinkedIn URL · Usa campaña staging con findPhone"
+              requires="findPhone sobre la campaña staging. Si el contacto ya estaba, devolvemos el teléfono guardado sin consumir créditos."
             />
-            <ProviderCard
-              name="Lusha"
-              logo={<span className="text-base">🔍</span>}
-              result={lusha}
-              requires="Requiere: email  ó  nombre + apellido + empresa"
-            />
-          </div>
+          )}
 
-          {/* Resumen */}
-          {done && (
+          {/* Si Lemlist terminó y aún no se corrió Lusha */}
+          {lemlistDone && lusha.status === "idle" && (
+            <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background: "#fafafc", border: "1px solid #cbd5e1" }}>
+              <p className="text-sm" style={{ color: "#251762" }}>
+                {lemlist.status === "found"
+                  ? "¿El teléfono de Lemlist tampoco te sirve? Último intento con Lusha."
+                  : "Lemlist no encontró número. Prueba con Lusha."}
+              </p>
+              {!canLusha && (
+                <p className="text-xs" style={{ color: "#991b1b" }}>
+                  ⚠ Faltan datos para Lusha — completa Email o el trío Nombre+Apellido+Empresa arriba.
+                </p>
+              )}
+              <button
+                onClick={runLusha}
+                disabled={anyRunning || !canLusha}
+                className="btn-secondary flex items-center justify-center gap-2 w-full sm:w-auto"
+              >
+                <IconArrowRight size={15} />
+                Buscar en Lusha
+              </button>
+            </div>
+          )}
+
+          {/* Paso 3 — Lusha */}
+          {lusha.status !== "idle" && (
+            <ResultCard
+              name="Lusha"
+              emoji="🔍"
+              result={lusha}
+              requires="Necesita Email o Nombre + Apellido + Empresa"
+            />
+          )}
+
+          {/* Resumen final cuando todo terminó */}
+          {clayDone && (lemlistDone || lemlist.status === "idle") && (lushaDone || lusha.status === "idle") && (
             <div
               className="rounded-xl p-4 text-sm"
-              style={{
-                background: found.length > 0 ? "rgba(34,197,94,0.08)" : "rgba(255,255,255,0.04)",
-                border:     found.length > 0 ? "1px solid rgba(34,197,94,0.3)" : "1px solid rgba(255,255,255,0.1)",
-                color:      found.length > 0 ? "#4ade80" : "#64748b",
-              }}
+              style={
+                clay.status === "found" || lemlist.status === "found" || lusha.status === "found"
+                  ? { background: "#e8f6ed", border: "1px solid #22c55e", color: "#166534" }
+                  : { background: "#f8f9fb", border: "1px solid #cbd5e1", color: "#475569" }
+              }
             >
-              {found.length > 0
-                ? `✓ ${found.length} proveedor${found.length > 1 ? "es" : ""} encontró teléfono. Copia el que prefieras y pégalo en HubSpot.`
-                : "Ningún proveedor encontró teléfono para este contacto."}
+              {clay.status === "found" || lemlist.status === "found" || lusha.status === "found"
+                ? "✓ Ya tienes al menos un teléfono. Copia el que prefieras y pégalo en HubSpot."
+                : (lushaDone || (lemlistDone && !canLusha))
+                  ? "Ningún proveedor encontró teléfono para este contacto."
+                  : "Sigue avanzando en la cascada para probar otros proveedores."}
             </div>
           )}
         </div>
