@@ -1,6 +1,17 @@
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import type Anthropic from "@anthropic-ai/sdk";
 
+const HAIKU_MODEL = "claude-haiku-4-5-20251001";
+
+const REVIEW_SYSTEM_PROMPT = `Eres un editor de mensajes de outreach B2B. Tu único trabajo es revisar y corregir mensajes generados por otra IA aplicando estas reglas OBLIGATORIAS:
+
+1. IDIOMA: Solo español latinoamericano neutro. Corrige cualquier modismo argentino (vos, tenés, hacés, podés, che, laburo, boludo, pibe) o español de España (vale, tío, vosotros). Reemplaza con español neutro (tú, tienes, haces, puedes, etc.)
+2. LÍMITES DE CARACTERES: connect_message máximo 190 caracteres. linkedin_msg máximo 180 caracteres. Si excede, acorta manteniendo el sentido.
+3. GUIONES LARGOS: Nunca uses —. Reemplaza con coma o punto.
+4. TONO: Directo, profesional, sin exageraciones ni signos de admiración.
+
+Devuelve los mensajes corregidos. Si un mensaje no tiene errores, devuélvelo exactamente igual.`;
+
 export type DeepResearchContext = {
   trigger: string;
   angulo: string;
@@ -363,7 +374,7 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
     };
 
     console.log("[generateContactMessages:sequence] OK — emails:", emails.length, "linkedin:", linkedinMessages.length, "connect:", !!result.connectMessage);
-    return result;
+    return reviewMessages(result);
   }
 
   // ─── MODO SIMPLE: comportamiento original (1 email, 1 icebreaker) ─────────────
@@ -444,5 +455,83 @@ Genera los mensajes de outreach personalizados para este contacto usando la herr
 
   const result = toolUse.input as ContactMessages;
   console.log("[generateContactMessages] OK — subjectLen:", result.emailSubject?.length, "bodyLen:", result.emailBody?.length);
-  return result;
+  return reviewMessages(result);
+}
+
+// ─── Revisión y corrección automática con Haiku ───────────────────────────────
+
+async function reviewMessages(msgs: ContactMessages): Promise<ContactMessages> {
+  // Construir lista de campos a revisar
+  const fields: Record<string, string> = {};
+  if (msgs.emailSubject)              fields.emailSubject              = msgs.emailSubject;
+  if (msgs.emailBody)                 fields.emailBody                 = msgs.emailBody;
+  if (msgs.linkedinIcebreaker)        fields.linkedinIcebreaker        = msgs.linkedinIcebreaker;
+  if (msgs.linkedinIcebreakerNoEmail) fields.linkedinIcebreakerNoEmail = msgs.linkedinIcebreakerNoEmail;
+  if (msgs.connectMessage)            fields.connect_message           = msgs.connectMessage;
+  msgs.emails?.forEach((e, i) => {
+    if (e.subject) fields[`email${i + 1}_subject`] = e.subject;
+    if (e.body)    fields[`email${i + 1}_body`]    = e.body;
+  });
+  msgs.linkedinMessages?.forEach((m, i) => {
+    if (m) fields[`linkedin_msg_${i + 1}`] = m;
+  });
+
+  if (Object.keys(fields).length === 0) return msgs;
+
+  const userPrompt = `Revisa y corrige estos mensajes:\n\n${JSON.stringify(fields, null, 2)}\n\nDevuelve SOLO un JSON con los mismos keys y los valores corregidos. Sin texto adicional.`;
+
+  try {
+    const response = await anthropic().messages.create({
+      model: HAIKU_MODEL,
+      max_tokens: 3000,
+      system: REVIEW_SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userPrompt }],
+    });
+
+    const raw = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
+
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) {
+      console.warn("[reviewMessages] Haiku no devolvió JSON válido, usando original");
+      return msgs;
+    }
+
+    const corrected = JSON.parse(match[0]) as Record<string, string>;
+    console.log("[reviewMessages] OK — revisión completada con Haiku");
+
+    // Aplicar correcciones al resultado
+    const reviewed: ContactMessages = { ...msgs };
+
+    if (corrected.emailSubject)              reviewed.emailSubject              = corrected.emailSubject;
+    if (corrected.emailBody)                 reviewed.emailBody                 = corrected.emailBody;
+    if (corrected.linkedinIcebreaker)        reviewed.linkedinIcebreaker        = corrected.linkedinIcebreaker;
+    if (corrected.linkedinIcebreakerNoEmail) reviewed.linkedinIcebreakerNoEmail = corrected.linkedinIcebreakerNoEmail;
+    if (corrected.connect_message)           reviewed.connectMessage            = corrected.connect_message;
+
+    if (reviewed.emails) {
+      reviewed.emails = reviewed.emails.map((e, i) => ({
+        subject: corrected[`email${i + 1}_subject`] ?? e.subject,
+        body:    corrected[`email${i + 1}_body`]    ?? e.body,
+      }));
+      // Sincronizar compat fields
+      reviewed.emailSubject = reviewed.emails[0]?.subject ?? reviewed.emailSubject;
+      reviewed.emailBody    = reviewed.emails[0]?.body    ?? reviewed.emailBody;
+    }
+
+    if (reviewed.linkedinMessages) {
+      reviewed.linkedinMessages = reviewed.linkedinMessages.map(
+        (m, i) => corrected[`linkedin_msg_${i + 1}`] ?? m
+      );
+      reviewed.linkedinIcebreaker = reviewed.linkedinMessages[0] ?? reviewed.linkedinIcebreaker;
+    }
+
+    return reviewed;
+  } catch (err) {
+    console.warn("[reviewMessages] Error en revisión Haiku, usando original:", err);
+    return msgs;
+  }
 }
