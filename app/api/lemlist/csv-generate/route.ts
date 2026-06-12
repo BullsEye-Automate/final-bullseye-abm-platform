@@ -174,6 +174,11 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Pre-buscar deep research de todas las empresas únicas en paralelo
+  // Así el loop secuencial no espera por Perplexity en cada contacto
+  const uniqueCompanies = [...new Set(contacts.map((c) => c.companyName?.trim()).filter(Boolean))] as string[];
+  await Promise.all(uniqueCompanies.map((name) => getDeepResearch(name)));
+
   // El frontend ya controla el throttling (1 contacto cada 3s)
   // Aquí procesamos lo que llegue sin paralelismo adicional
   const results: GeneratedContact[] = [];
