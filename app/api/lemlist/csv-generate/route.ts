@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
+import { runDeepResearch, type DeepResearchResult } from "@/lib/deep-research";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -115,6 +116,64 @@ export async function POST(req: NextRequest) {
     return ctx;
   }
 
+  // Cache de deep research por nombre de empresa (evita re-buscar para la misma empresa)
+  const deepResearchCache = new Map<string, DeepResearchResult | null>();
+
+  async function getDeepResearch(companyName: string): Promise<DeepResearchResult | null> {
+    const key = companyName.trim().toLowerCase();
+    if (deepResearchCache.has(key)) return deepResearchCache.get(key)!;
+
+    // Buscar empresa en Supabase por nombre (case insensitive)
+    const { data: company } = await db
+      .from("companies")
+      .select("id, company_name, company_website, company_linkedin_url, company_country, deep_research")
+      .eq("client_id", client_id)
+      .ilike("company_name", companyName.trim())
+      .maybeSingle();
+
+    // Si ya tiene deep_research guardado, usarlo directamente
+    if (company?.deep_research) {
+      try {
+        const parsed = typeof company.deep_research === "string"
+          ? JSON.parse(company.deep_research)
+          : company.deep_research;
+        deepResearchCache.set(key, parsed);
+        return parsed;
+      } catch { /* ignorar */ }
+    }
+
+    // Sin ICP no tiene sentido hacer research
+    if (!icpContext?.trim()) {
+      deepResearchCache.set(key, null);
+      return null;
+    }
+
+    // Hacer deep research con Perplexity + Claude
+    try {
+      const result = await runDeepResearch({
+        companyName,
+        companyWebsite:  company?.company_website  ?? null,
+        companyLinkedin: company?.company_linkedin_url ?? null,
+        companyCountry:  company?.company_country  ?? null,
+        icpContent:      icpContext,
+      });
+
+      // Guardar en Supabase si la empresa existe
+      if (company?.id) {
+        await db.from("companies")
+          .update({ deep_research: JSON.stringify(result) })
+          .eq("id", company.id);
+      }
+
+      deepResearchCache.set(key, result);
+      return result;
+    } catch (err) {
+      console.warn(`[csv-generate] Deep research falló para ${companyName}:`, err);
+      deepResearchCache.set(key, null);
+      return null;
+    }
+  }
+
   // El frontend ya controla el throttling (1 contacto cada 3s)
   // Aquí procesamos lo que llegue sin paralelismo adicional
   const results: GeneratedContact[] = [];
@@ -152,6 +211,11 @@ export async function POST(req: NextRequest) {
           const linkedinMsgCount  = (matchedSegment as Record<string, unknown> | null)?.linkedin_msg_count as number ?? 2;
           const includeConnectMsg = (matchedSegment as Record<string, unknown> | null)?.include_connect_msg as boolean ?? false;
 
+          let deepResearch: DeepResearchResult | null = null;
+          if (c.companyName?.trim()) {
+            deepResearch = await getDeepResearch(c.companyName);
+          }
+
           const msgs = await generateContactMessages({
             hasEmail:       Boolean(c.email?.trim()),
             firstName:      c.firstName   || undefined,
@@ -161,6 +225,7 @@ export async function POST(req: NextRequest) {
             industry:       c.industry   || undefined,
             companySize:    c.companySize || undefined,
             icpContext,
+            deepResearch,
             fewShotExamples: fewShotGlobal,
             styleGuide,
             segmentContext,
