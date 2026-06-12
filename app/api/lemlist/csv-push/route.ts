@@ -54,6 +54,8 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
   let pushed = 0, skipped = 0;
   const errors: { email: string; error: string }[] = [];
 
@@ -84,21 +86,33 @@ export async function POST(req: NextRequest) {
     // Eliminar keys undefined
     Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
-    let res: Response;
-    try {
-      res = await fetch(
-        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?findEmail=true&verifyEmail=true&linkedinEnrichment=true`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Basic ${credentials}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
-    } catch (err: any) {
-      errors.push({ email: contact.email, error: err?.message ?? "Error de red" });
+    // Retry con backoff exponencial si Lemlist devuelve 429
+    let res: Response | null = null;
+    let lastError = "";
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await sleep(attempt * 2000);
+      try {
+        res = await fetch(
+          `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?findEmail=true&verifyEmail=true&linkedinEnrichment=true`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Basic ${credentials}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          }
+        );
+        if (res.status !== 429) break;
+        lastError = `Lemlist 429: Too Many Requests`;
+      } catch (err: any) {
+        lastError = err?.message ?? "Error de red";
+        res = null;
+      }
+    }
+
+    if (!res) {
+      errors.push({ email: contact.email, error: lastError });
       continue;
     }
 
@@ -114,6 +128,9 @@ export async function POST(req: NextRequest) {
     }
 
     pushed++;
+
+    // Delay entre leads para no saturar la API de Lemlist
+    await sleep(1200);
 
     // Guardar en Supabase con upsert por email+client_id (solo campos con valor)
     const row: Record<string, string> = { client_id, email: contact.email.trim(), lemlist_status: "active" };
