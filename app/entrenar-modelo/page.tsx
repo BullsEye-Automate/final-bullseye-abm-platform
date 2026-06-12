@@ -1407,6 +1407,9 @@ function StyleTab({ clientId }: { clientId: string }) {
   const [exSaved, setExSaved]           = useState(false);
   const [showExForm, setShowExForm]     = useState(false);
   const [deletingId, setDeletingId]     = useState<string | null>(null);
+  const [editingId, setEditingId]       = useState<string | null>(null);
+  const [editForm, setEditForm]         = useState({ subject: "", body: "", contact_name: "", job_title: "" });
+  const [editSaving, setEditSaving]     = useState(false);
 
   useEffect(() => {
     fetch(`/api/training/style-guide?client_id=${clientId}`)
@@ -1445,6 +1448,29 @@ function StyleTab({ clientId }: { clientId: string }) {
     await fetch(`/api/training/style-examples?id=${id}&client_id=${clientId}`, { method: "DELETE" });
     setExamples((prev) => prev.filter((e) => e.id !== id));
     setDeletingId(null);
+  }
+
+  function startEdit(ex: StyleExample) {
+    setEditingId(ex.id);
+    setEditForm({ subject: ex.email_subject, body: ex.email_body, contact_name: ex.contact_name ?? "", job_title: ex.job_title ?? "" });
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editForm.subject.trim() || !editForm.body.trim()) return;
+    setEditSaving(true);
+    const res = await fetch("/api/training/style-examples", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: editingId, client_id: clientId, email_subject: editForm.subject, email_body: editForm.body, contact_name: editForm.contact_name || null, job_title: editForm.job_title || null }),
+    });
+    if (res.ok) {
+      setExamples((prev) => prev.map((e) => e.id === editingId
+        ? { ...e, email_subject: editForm.subject, email_body: editForm.body, contact_name: editForm.contact_name || undefined, job_title: editForm.job_title || undefined }
+        : e
+      ));
+      setEditingId(null);
+    }
+    setEditSaving(false);
   }
 
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -1644,22 +1670,54 @@ function StyleTab({ clientId }: { clientId: string }) {
         <div className="space-y-3">
           {examples.map((ex) => (
             <div key={ex.id} className="card px-4 py-3 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-ink truncate">{ex.email_subject}</p>
-                  {(ex.contact_name || ex.job_title) && (
-                    <p className="text-[11px] text-ink-muted mt-0.5">{[ex.contact_name, ex.job_title].filter(Boolean).join(" · ")}</p>
-                  )}
+              {editingId === ex.id ? (
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <div className="flex-1 space-y-1">
+                      <label className="text-xs font-medium text-ink-muted">Nombre del contacto</label>
+                      <input value={editForm.contact_name} onChange={(e) => setEditForm((p) => ({ ...p, contact_name: e.target.value }))} placeholder="Opcional" className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2 outline-none focus:border-[#62E0D8]" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <label className="text-xs font-medium text-ink-muted">Cargo</label>
+                      <input value={editForm.job_title} onChange={(e) => setEditForm((p) => ({ ...p, job_title: e.target.value }))} placeholder="Opcional" className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2 outline-none focus:border-[#62E0D8]" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-ink-muted">Asunto</label>
+                    <input value={editForm.subject} onChange={(e) => setEditForm((p) => ({ ...p, subject: e.target.value }))} className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2 outline-none focus:border-[#62E0D8]" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-ink-muted">Cuerpo</label>
+                    <textarea value={editForm.body} onChange={(e) => setEditForm((p) => ({ ...p, body: e.target.value }))} rows={6} className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y" />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setEditingId(null)} className="text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50">Cancelar</button>
+                    <button onClick={saveEdit} disabled={editSaving || !editForm.subject.trim() || !editForm.body.trim()} className="flex items-center gap-1.5 text-xs font-semibold px-4 py-1.5 rounded-lg transition" style={{ background: "#251762", color: "white" }}>
+                      {editSaving ? <IconLoader2 size={12} className="animate-spin" /> : <IconCheck size={12} />} Guardar cambios
+                    </button>
+                  </div>
                 </div>
-                <button
-                  onClick={() => deleteExample(ex.id)}
-                  disabled={deletingId === ex.id}
-                  className="shrink-0 p-1 rounded text-ink-muted hover:text-red-500 hover:bg-red-50 transition"
-                >
-                  {deletingId === ex.id ? <IconLoader2 size={13} className="animate-spin" /> : <IconTrash size={13} />}
-                </button>
-              </div>
-              <p className="text-xs text-ink-muted whitespace-pre-wrap line-clamp-3">{ex.email_body}</p>
+              ) : (
+                <>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-ink truncate">{ex.email_subject}</p>
+                      {(ex.contact_name || ex.job_title) && (
+                        <p className="text-[11px] text-ink-muted mt-0.5">{[ex.contact_name, ex.job_title].filter(Boolean).join(" · ")}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => startEdit(ex)} className="shrink-0 p-1 rounded text-ink-muted hover:text-[#251762] hover:bg-gray-100 transition">
+                        <IconEdit size={13} />
+                      </button>
+                      <button onClick={() => deleteExample(ex.id)} disabled={deletingId === ex.id} className="shrink-0 p-1 rounded text-ink-muted hover:text-red-500 hover:bg-red-50 transition">
+                        {deletingId === ex.id ? <IconLoader2 size={13} className="animate-spin" /> : <IconTrash size={13} />}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-ink-muted whitespace-pre-wrap line-clamp-3">{ex.email_body}</p>
+                </>
+              )}
             </div>
           ))}
         </div>
