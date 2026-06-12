@@ -1385,11 +1385,28 @@ function ExamplesTab({ clientId }: { clientId: string }) {
 
 // ─── TAB: Guía de estilo ──────────────────────────────────────────────────────
 
+type StyleExample = {
+  id: string;
+  email_subject: string;
+  email_body: string;
+  contact_name?: string;
+  job_title?: string;
+  created_at: string;
+};
+
 function StyleTab({ clientId }: { clientId: string }) {
   const [style, setStyle]     = useState<StyleGuide>({ tone: "", rules: "", avoid: "", email_length: "corto" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
+
+  // Ejemplos de correos
+  const [examples, setExamples]         = useState<StyleExample[]>([]);
+  const [exForm, setExForm]             = useState({ subject: "", body: "", contact_name: "", job_title: "" });
+  const [exSaving, setExSaving]         = useState(false);
+  const [exSaved, setExSaved]           = useState(false);
+  const [showExForm, setShowExForm]     = useState(false);
+  const [deletingId, setDeletingId]     = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/training/style-guide?client_id=${clientId}`)
@@ -1397,6 +1414,38 @@ function StyleTab({ clientId }: { clientId: string }) {
       .then((d) => { if (d.style) setStyle(d.style); })
       .finally(() => setLoading(false));
   }, [clientId]);
+
+  useEffect(() => {
+    fetch(`/api/training/style-examples?client_id=${clientId}`)
+      .then((r) => r.json())
+      .then((d) => setExamples(d.examples ?? []));
+  }, [clientId]);
+
+  async function saveExample() {
+    if (!exForm.subject.trim() || !exForm.body.trim()) return;
+    setExSaving(true);
+    const res = await fetch("/api/training/style-examples", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, email_subject: exForm.subject, email_body: exForm.body, contact_name: exForm.contact_name || null, job_title: exForm.job_title || null }),
+    });
+    const d = await res.json();
+    if (res.ok && d.example) {
+      setExamples((prev) => [d.example, ...prev]);
+      setExForm({ subject: "", body: "", contact_name: "", job_title: "" });
+      setShowExForm(false);
+      setExSaved(true);
+      setTimeout(() => setExSaved(false), 3000);
+    }
+    setExSaving(false);
+  }
+
+  async function deleteExample(id: string) {
+    setDeletingId(id);
+    await fetch(`/api/training/style-examples?id=${id}&client_id=${clientId}`, { method: "DELETE" });
+    setExamples((prev) => prev.filter((e) => e.id !== id));
+    setDeletingId(null);
+  }
 
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -1507,6 +1556,114 @@ function StyleTab({ clientId }: { clientId: string }) {
         {saving ? <IconLoader2 size={14} className="animate-spin" /> : saved ? <IconCheck size={14} /> : <IconDeviceFloppy size={14} />}
         {saved ? "Guía guardada" : "Guardar guía de estilo"}
       </button>
+
+      {/* ── Correos de ejemplo ── */}
+      <div className="border-t border-[#E5E2F0] pt-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-ink text-sm">Correos de ejemplo</h3>
+            <p className="text-xs text-ink-muted mt-0.5">Pega correos que te gusten para que Claude aprenda tu estilo.</p>
+          </div>
+          <button
+            onClick={() => setShowExForm((v) => !v)}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition"
+            style={{ borderColor: "#62E0D8", color: "#0F6E56", background: showExForm ? "rgba(98,224,216,0.1)" : "white" }}
+          >
+            <IconPlus size={13} /> Agregar correo
+          </button>
+        </div>
+
+        {showExForm && (
+          <div className="card px-5 py-4 space-y-3 border-2" style={{ borderColor: "#62E0D8" }}>
+            <div className="flex gap-3">
+              <div className="flex-1 space-y-1">
+                <label className="text-xs font-medium text-ink-muted">Nombre del contacto (opcional)</label>
+                <input
+                  value={exForm.contact_name}
+                  onChange={(e) => setExForm((p) => ({ ...p, contact_name: e.target.value }))}
+                  placeholder="Ej: María González"
+                  className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2 outline-none focus:border-[#62E0D8]"
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <label className="text-xs font-medium text-ink-muted">Cargo (opcional)</label>
+                <input
+                  value={exForm.job_title}
+                  onChange={(e) => setExForm((p) => ({ ...p, job_title: e.target.value }))}
+                  placeholder="Ej: Gerente de Tecnología"
+                  className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2 outline-none focus:border-[#62E0D8]"
+                />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-ink-muted">Asunto del correo</label>
+              <input
+                value={exForm.subject}
+                onChange={(e) => setExForm((p) => ({ ...p, subject: e.target.value }))}
+                placeholder="Ej: Re: automatización de procesos en NTT Data"
+                className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2 outline-none focus:border-[#62E0D8]"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-ink-muted">Cuerpo del correo</label>
+              <textarea
+                value={exForm.body}
+                onChange={(e) => setExForm((p) => ({ ...p, body: e.target.value }))}
+                rows={6}
+                placeholder="Pega aquí el correo que te gustó..."
+                className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowExForm(false)} className="text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button
+                onClick={saveExample}
+                disabled={exSaving || !exForm.subject.trim() || !exForm.body.trim()}
+                className="flex items-center gap-1.5 text-xs font-semibold px-4 py-1.5 rounded-lg transition"
+                style={{ background: "#251762", color: "white", opacity: (!exForm.subject.trim() || !exForm.body.trim()) ? 0.5 : 1 }}
+              >
+                {exSaving ? <IconLoader2 size={12} className="animate-spin" /> : <IconCheck size={12} />}
+                Guardar ejemplo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {exSaved && (
+          <div className="flex items-center gap-2 text-sm text-green-700 px-3 py-2 rounded-lg bg-green-50 border border-green-200">
+            <IconCheck size={14} /> Ejemplo guardado correctamente
+          </div>
+        )}
+
+        {examples.length === 0 && !showExForm && (
+          <p className="text-xs text-ink-muted italic">Sin ejemplos aún.</p>
+        )}
+
+        <div className="space-y-3">
+          {examples.map((ex) => (
+            <div key={ex.id} className="card px-4 py-3 space-y-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-ink truncate">{ex.email_subject}</p>
+                  {(ex.contact_name || ex.job_title) && (
+                    <p className="text-[11px] text-ink-muted mt-0.5">{[ex.contact_name, ex.job_title].filter(Boolean).join(" · ")}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => deleteExample(ex.id)}
+                  disabled={deletingId === ex.id}
+                  className="shrink-0 p-1 rounded text-ink-muted hover:text-red-500 hover:bg-red-50 transition"
+                >
+                  {deletingId === ex.id ? <IconLoader2 size={13} className="animate-spin" /> : <IconTrash size={13} />}
+                </button>
+              </div>
+              <p className="text-xs text-ink-muted whitespace-pre-wrap line-clamp-3">{ex.email_body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
