@@ -46,6 +46,30 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ example: data });
 }
 
+// PATCH — editar ejemplo existente
+export async function PATCH(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (!body?.id || !body?.client_id || !body?.email_subject || !body?.email_body) {
+    return NextResponse.json({ error: "id, client_id, email_subject y email_body son requeridos" }, { status: 400 });
+  }
+
+  const db = supabaseAdmin();
+  const { error } = await db
+    .from("message_examples")
+    .update({
+      email_subject: body.email_subject,
+      email_body:    body.email_body,
+      contact_name:  body.contact_name ?? null,
+      job_title:     body.job_title    ?? null,
+    })
+    .eq("id", body.id)
+    .eq("client_id", body.client_id)
+    .is("segment_id", null);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
+
 // DELETE — eliminar ejemplo
 export async function DELETE(req: NextRequest) {
   const id        = req.nextUrl.searchParams.get("id");
