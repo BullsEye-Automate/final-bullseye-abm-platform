@@ -175,9 +175,23 @@ export async function POST(req: NextRequest) {
   }
 
   // Pre-buscar deep research de todas las empresas únicas en paralelo
-  // Así el loop secuencial no espera por Perplexity en cada contacto
   const uniqueCompanies = [...new Set(contacts.map((c) => c.companyName?.trim()).filter(Boolean))] as string[];
   await Promise.all(uniqueCompanies.map((name) => getDeepResearch(name)));
+
+  // Pre-calcular routing de todos los contactos en paralelo (solo si no hay segmento manual)
+  // Cada routeContactToSegment hace una llamada a Claude — hacerlas en paralelo ahorra N×10s
+  const routingCache = new Map<number, { segmentId: string | null; segmentName: string | null }>();
+  if (!segment_id) {
+    await Promise.all(
+      contacts.map(async (c, idx) => {
+        const routing = await routeContactToSegment(
+          { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
+          segments ?? []
+        );
+        routingCache.set(idx, { segmentId: routing.segmentId, segmentName: routing.segmentName });
+      })
+    );
+  }
 
   // El frontend ya controla el throttling (1 contacto cada 3s)
   // Aquí procesamos lo que llegue sin paralelismo adicional
@@ -186,19 +200,17 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < contacts.length; i += 1) {
     const batch = contacts.slice(i, i + 1);
     const batchResults = await Promise.all(
-      batch.map(async (c): Promise<GeneratedContact> => {
+      batch.map(async (c, batchIdx): Promise<GeneratedContact> => {
+        const idx = i + batchIdx;
         try {
-          // Usar segmento elegido manualmente; si no hay, hacer routing automático
+          // Usar segmento elegido manualmente; si no hay, usar routing pre-calculado
           let resolvedSegmentId: string | null = segment_id ?? null;
           let resolvedSegmentName: string | null = null;
 
           if (!resolvedSegmentId) {
-            const routing = await routeContactToSegment(
-              { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
-              segments ?? []
-            );
-            resolvedSegmentId   = routing.segmentId;
-            resolvedSegmentName = routing.segmentName;
+            const cached = routingCache.get(idx);
+            resolvedSegmentId   = cached?.segmentId   ?? null;
+            resolvedSegmentName = cached?.segmentName ?? null;
           } else {
             resolvedSegmentName = (segments ?? []).find((s) => s.id === resolvedSegmentId)?.name ?? null;
           }
