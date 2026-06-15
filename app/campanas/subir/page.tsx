@@ -16,6 +16,7 @@ import {
   IconX,
   IconArrowLeft,
   IconEdit,
+  IconSearch,
 } from "@tabler/icons-react";
 import Link from "next/link";
 
@@ -46,7 +47,7 @@ type GeneratedContact = ParsedContact & {
   error?: string;
 };
 
-type Stage = "idle" | "parsed" | "segment" | "generating" | "preview" | "pushing" | "done";
+type Stage = "idle" | "parsed" | "segment" | "preview" | "pushing" | "done";
 
 type SegmentOption = { id: string; name: string };
 
@@ -126,14 +127,38 @@ function parseSheet(wb: XLSX.WorkBook): ParsedContact[] {
 function ContactRow({
   contact,
   index,
+  pending,
   onChange,
 }: {
   contact: GeneratedContact;
   index: number;
+  pending?: boolean;
   onChange: (i: number, field: keyof GeneratedContact, val: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const hasError = Boolean(contact.error);
+
+  // Tarjeta simplificada mientras se está generando
+  if (pending) {
+    return (
+      <div className="card border border-[#E5E2F0] px-4 py-3 flex items-center gap-3">
+        <div
+          className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold"
+          style={{ background: "#251762" }}
+        >
+          {[contact.firstName?.[0], contact.lastName?.[0]].filter(Boolean).join("").toUpperCase() || "?"}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm text-ink">
+            {[contact.firstName, contact.lastName].filter(Boolean).join(" ") || "—"}
+            {contact.companyName && <span className="text-ink-muted font-normal"> · {contact.companyName}</span>}
+          </div>
+          <div className="text-xs text-ink-muted">{contact.email}</div>
+        </div>
+        <IconLoader2 size={16} className="animate-spin shrink-0" style={{ color: "#62E0D8" }} />
+      </div>
+    );
+  }
 
   return (
     <div className={`card border ${hasError ? "border-red-200" : "border-[#E5E2F0]"}`}>
@@ -268,11 +293,13 @@ export default function SubirCampanaPage() {
   const [contacts, setContacts]     = useState<GeneratedContact[]>([]);
   const [genProgress, setGenProgress] = useState(0);
   const [genErrors, setGenErrors]   = useState(0);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number; errors: any[] } | null>(null);
   const [fileError, setFileError]   = useState<string | null>(null);
   const [segments, setSegments]     = useState<SegmentOption[]>([]);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string>("");
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
+  const [deepResearchSet, setDeepResearchSet] = useState<Set<number>>(new Set());
 
   // ── Procesar archivo ──
   const handleFile = useCallback((file: File) => {
@@ -289,6 +316,7 @@ export default function SubirCampanaPage() {
         }
         setParsed(rows);
         setContacts(rows.map((r) => ({ ...r })));
+        setDeepResearchSet(new Set()); // reiniciar selección de deep research
         // Cargar segmentos y pasar a selección
         fetch(`/api/training/segments?client_id=${currentClient?.id}`)
           .then((r) => r.json())
@@ -317,9 +345,11 @@ export default function SubirCampanaPage() {
   // ── Generar mensajes (de a 1 con pausa para respetar rate limits) ──
   async function handleGenerate() {
     if (!currentClient?.id) return;
-    setStage("generating");
+    // Ir a preview de inmediato y mostrar progreso en tiempo real
+    setIsGenerating(true);
     setGenProgress(0);
     setGenErrors(0);
+    setStage("preview");
 
     const updated = [...contacts];
     let errCount = 0;
@@ -336,6 +366,7 @@ export default function SubirCampanaPage() {
             client_id: currentClient.id,
             contacts: [parsed[i]],
             segment_id: selectedSegmentId || undefined,
+            use_deep_research: deepResearchSet.has(i),
           }),
         });
         if (res.ok) {
@@ -358,7 +389,7 @@ export default function SubirCampanaPage() {
 
     // Seleccionar solo los que generaron correctamente
     setSelectedIndexes(new Set(updated.map((c, i) => (!c.error ? i : -1)).filter((i) => i >= 0)));
-    setStage("preview");
+    setIsGenerating(false);
   }
 
   // ── Editar mensaje generado ──
@@ -399,6 +430,20 @@ export default function SubirCampanaPage() {
     );
   }
 
+  function toggleDeepResearch(i: number) {
+    setDeepResearchSet((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  }
+
+  function toggleDeepResearchAll() {
+    setDeepResearchSet((prev) =>
+      prev.size === parsed.length ? new Set() : new Set(parsed.map((_, i) => i))
+    );
+  }
+
   // ── Reset ──
   function reset() {
     setParsed([]);
@@ -409,7 +454,9 @@ export default function SubirCampanaPage() {
     setSegments([]);
     setSelectedSegmentId("");
     setSelectedIndexes(new Set());
+    setDeepResearchSet(new Set());
     setGenErrors(0);
+    setIsGenerating(false);
     setStage("idle");
   }
 
@@ -575,6 +622,56 @@ export default function SubirCampanaPage() {
               </div>
             )}
 
+            {/* ── Investigación profunda por contacto ── */}
+            <div className="border border-[#E5E2F0] rounded-xl overflow-hidden">
+              <div className="px-4 py-3 bg-gray-50 border-b border-[#E5E2F0]">
+                <div className="flex items-center gap-2">
+                  <IconSearch size={14} style={{ color: "#62E0D8" }} />
+                  <p className="font-semibold text-sm text-ink">Investigación profunda por contacto (Perplexity)</p>
+                </div>
+                <p className="text-xs text-ink-muted mt-0.5">
+                  Actívala para los contactos más importantes. Consume créditos de Perplexity y agrega ~30s por contacto.
+                </p>
+              </div>
+
+              {/* Seleccionar todos */}
+              <div className="px-4 py-2.5 border-b border-[#E5E2F0] flex items-center gap-2">
+                <button
+                  onClick={toggleDeepResearchAll}
+                  className="flex items-center gap-2 text-sm text-ink-muted hover:text-ink transition"
+                >
+                  <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${deepResearchSet.size === parsed.length && parsed.length > 0 ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
+                    {deepResearchSet.size === parsed.length && parsed.length > 0 && <IconCheck size={10} className="text-white" strokeWidth={3} />}
+                  </div>
+                  Activar para todos
+                </button>
+              </div>
+
+              {/* Lista por contacto */}
+              <div className="divide-y divide-[#F0EEF8]">
+                {parsed.map((c, i) => (
+                  <button
+                    key={i}
+                    onClick={() => toggleDeepResearch(i)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition text-left"
+                  >
+                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${deepResearchSet.has(i) ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
+                      {deepResearchSet.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
+                    </div>
+                    <span className="text-sm text-ink font-medium">
+                      {[c.firstName, c.lastName].filter(Boolean).join(" ") || "—"}
+                    </span>
+                    {c.companyName && (
+                      <span className="text-sm text-ink-muted">· {c.companyName}</span>
+                    )}
+                    {c.jobTitle && (
+                      <span className="text-xs text-ink-muted ml-auto shrink-0">{c.jobTitle}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button
               onClick={handleGenerate}
               className="btn-primary flex items-center gap-2 text-sm w-full justify-center"
@@ -586,40 +683,36 @@ export default function SubirCampanaPage() {
         </div>
       )}
 
-      {/* ── ETAPA: generating ── */}
-      {stage === "generating" && (
-        <div className="card px-6 py-10 flex flex-col items-center gap-5">
-          <IconLoader2 size={32} className="animate-spin" style={{ color: "#62E0D8" }} />
-          <div className="text-center">
-            <p className="font-semibold text-ink">Generando mensajes con IA…</p>
-            <p className="text-sm text-ink-muted mt-1">
-              {genProgress} de {parsed.length} contactos procesados
-              {genErrors > 0 && <span className="text-red-500 ml-2">· {genErrors} con error</span>}
-            </p>
-          </div>
-          {/* Barra de progreso */}
-          <div className="w-full max-w-sm bg-gray-100 rounded-full h-2">
-            <div
-              className="h-2 rounded-full transition-all duration-500"
-              style={{ width: `${(genProgress / parsed.length) * 100}%`, background: "#62E0D8" }}
-            />
-          </div>
-          <div className="text-center space-y-1">
-            <p className="text-xs text-ink-muted">
-              Tiempo estimado restante: ~{Math.ceil((parsed.length - genProgress) * 3 / 60)} min {((parsed.length - genProgress) * 3) % 60} seg
-            </p>
-            <p className="text-[11px] text-ink-muted opacity-60">Procesando de a 1 para respetar límites de la API</p>
-          </div>
-        </div>
-      )}
-
-      {/* ── ETAPA: preview — revisar y editar ── */}
+      {/* ── ETAPA: preview — revisar y editar (también muestra progreso mientras isGenerating) ── */}
       {stage === "preview" && (
         <div className="space-y-4">
+          {/* Barra de progreso — solo visible mientras genera */}
+          {isGenerating && (
+            <div className="card px-5 py-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <IconLoader2 size={15} className="animate-spin" style={{ color: "#62E0D8" }} />
+                  <span className="font-medium text-sm text-ink">Generando mensajes…</span>
+                </div>
+                <span className="text-xs text-ink-muted">
+                  {genProgress} de {parsed.length}
+                  {genErrors > 0 && <span className="text-red-500 ml-2">· {genErrors} errores</span>}
+                  {" · "}Tiempo estimado: ~{Math.ceil((parsed.length - genProgress) * 20 / 60)} min
+                </span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-1.5">
+                <div
+                  className="h-1.5 rounded-full transition-all duration-500"
+                  style={{ width: `${parsed.length > 0 ? (genProgress / parsed.length) * 100 : 0}%`, background: "#62E0D8" }}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between">
             <div>
               <p className="font-semibold text-ink">
-                Revisa y edita los mensajes antes de enviar
+                {isGenerating ? "Los mensajes aparecen a medida que se generan" : "Revisa y edita los mensajes antes de enviar"}
               </p>
               <p className="text-sm text-ink-muted">
                 Selecciona los contactos que quieres enviar a Lemlist.
@@ -627,7 +720,7 @@ export default function SubirCampanaPage() {
             </div>
             <button
               onClick={handlePush}
-              disabled={selectedIndexes.size === 0}
+              disabled={isGenerating || selectedIndexes.size === 0}
               className="btn-primary flex items-center gap-2 text-sm shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <IconSend size={14} />
@@ -641,10 +734,10 @@ export default function SubirCampanaPage() {
               onClick={toggleSelectAll}
               className="text-sm flex items-center gap-2 text-ink-muted hover:text-ink transition"
             >
-              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${selectedIndexes.size === contacts.length ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
-                {selectedIndexes.size === contacts.length && <IconCheck size={10} className="text-white" strokeWidth={3} />}
+              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${contacts.length > 0 && selectedIndexes.size === contacts.length ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
+                {contacts.length > 0 && selectedIndexes.size === contacts.length && <IconCheck size={10} className="text-white" strokeWidth={3} />}
               </div>
-              {selectedIndexes.size === contacts.length ? "Deseleccionar todos" : "Seleccionar todos"}
+              {contacts.length > 0 && selectedIndexes.size === contacts.length ? "Deseleccionar todos" : "Seleccionar todos"}
             </button>
             <span className="text-xs text-ink-muted">
               {selectedIndexes.size} de {contacts.length} seleccionados
@@ -652,31 +745,39 @@ export default function SubirCampanaPage() {
           </div>
 
           <div className="space-y-2">
-            {contacts.map((c, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <button
-                  onClick={() => toggleSelect(i)}
-                  className={`mt-3.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${selectedIndexes.has(i) ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300 hover:border-[#62E0D8]"}`}
-                >
-                  {selectedIndexes.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
-                </button>
-                <div className="flex-1 min-w-0">
-                  <ContactRow contact={c} index={i} onChange={handleChange} />
+            {contacts.map((c, i) => {
+              // Contacto aún no generado (sin emailSubject y sin error): mostrar spinner
+              const isPending = isGenerating && i >= genProgress;
+
+              return (
+                <div key={i} className="flex items-start gap-3">
+                  <button
+                    onClick={() => !isPending && toggleSelect(i)}
+                    disabled={isPending}
+                    className={`mt-3.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${isPending ? "border-gray-200 cursor-not-allowed" : selectedIndexes.has(i) ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300 hover:border-[#62E0D8]"}`}
+                  >
+                    {!isPending && selectedIndexes.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <ContactRow contact={c} index={i} pending={isPending} onChange={handleChange} />
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          <div className="flex justify-end pt-2">
-            <button
-              onClick={handlePush}
-              disabled={selectedIndexes.size === 0}
-              className="btn-primary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <IconSend size={14} />
-              Enviar {selectedIndexes.size} a Lemlist
-            </button>
-          </div>
+          {!isGenerating && (
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={handlePush}
+                disabled={selectedIndexes.size === 0}
+                className="btn-primary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <IconSend size={14} />
+                Enviar {selectedIndexes.size} a Lemlist
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -34,14 +34,14 @@ type GeneratedContact = ParsedContact & {
 };
 
 export async function POST(req: NextRequest) {
-  let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string };
+  let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string; use_deep_research?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { client_id, contacts, segment_id } = body;
+  const { client_id, contacts, segment_id, use_deep_research = false } = body;
   if (!client_id || !contacts?.length) {
     return NextResponse.json({ error: "Se requiere client_id y contacts" }, { status: 400 });
   }
@@ -174,23 +174,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Pre-buscar deep research de todas las empresas únicas en paralelo
-  const uniqueCompanies = [...new Set(contacts.map((c) => c.companyName?.trim()).filter(Boolean))] as string[];
-  await Promise.all(uniqueCompanies.map((name) => getDeepResearch(name)));
-
-  // Pre-calcular routing de todos los contactos en paralelo (solo si no hay segmento manual)
-  // Cada routeContactToSegment hace una llamada a Claude — hacerlas en paralelo ahorra N×10s
-  const routingCache = new Map<number, { segmentId: string | null; segmentName: string | null }>();
-  if (!segment_id) {
-    await Promise.all(
-      contacts.map(async (c, idx) => {
-        const routing = await routeContactToSegment(
-          { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
-          segments ?? []
-        );
-        routingCache.set(idx, { segmentId: routing.segmentId, segmentName: routing.segmentName });
-      })
-    );
+  // Pre-buscar deep research de todas las empresas únicas en paralelo (solo si se solicitó)
+  if (use_deep_research) {
+    const uniqueCompanies = [...new Set(contacts.map((c) => c.companyName?.trim()).filter(Boolean))] as string[];
+    await Promise.all(uniqueCompanies.map((name) => getDeepResearch(name)));
   }
 
   // El frontend ya controla el throttling (1 contacto cada 3s)
@@ -200,17 +187,19 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < contacts.length; i += 1) {
     const batch = contacts.slice(i, i + 1);
     const batchResults = await Promise.all(
-      batch.map(async (c, batchIdx): Promise<GeneratedContact> => {
-        const idx = i + batchIdx;
+      batch.map(async (c): Promise<GeneratedContact> => {
         try {
-          // Usar segmento elegido manualmente; si no hay, usar routing pre-calculado
+          // Usar segmento elegido manualmente; si no hay, hacer routing automático
           let resolvedSegmentId: string | null = segment_id ?? null;
           let resolvedSegmentName: string | null = null;
 
           if (!resolvedSegmentId) {
-            const cached = routingCache.get(idx);
-            resolvedSegmentId   = cached?.segmentId   ?? null;
-            resolvedSegmentName = cached?.segmentName ?? null;
+            const routing = await routeContactToSegment(
+              { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
+              segments ?? []
+            );
+            resolvedSegmentId   = routing.segmentId;
+            resolvedSegmentName = routing.segmentName;
           } else {
             resolvedSegmentName = (segments ?? []).find((s) => s.id === resolvedSegmentId)?.name ?? null;
           }
@@ -229,7 +218,7 @@ export async function POST(req: NextRequest) {
           const includeConnectMsg = (matchedSegment as Record<string, unknown> | null)?.include_connect_msg as boolean ?? false;
 
           let deepResearch: DeepResearchResult | null = null;
-          if (c.companyName?.trim()) {
+          if (use_deep_research && c.companyName?.trim()) {
             deepResearch = await getDeepResearch(c.companyName);
           }
 
