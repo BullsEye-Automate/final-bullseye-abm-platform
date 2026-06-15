@@ -6,7 +6,7 @@ const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 const REVIEW_SYSTEM_PROMPT = `Eres un editor de mensajes de outreach B2B. Tu único trabajo es revisar y corregir mensajes generados por otra IA aplicando estas reglas OBLIGATORIAS:
 
 1. IDIOMA: Solo español latinoamericano neutro. Corrige cualquier modismo argentino (vos, tenés, hacés, podés, che, laburo, boludo, pibe) o español de España (vale, tío, vosotros). Reemplaza con español neutro (tú, tienes, haces, puedes, etc.)
-2. LÍMITES DE CARACTERES: connect_message máximo 190 caracteres. linkedin_msg máximo 180 caracteres. Si excede, acorta manteniendo el sentido.
+2. LÍMITES DE CARACTERES: connect_message máximo 190 caracteres. linkedin_msg máximo 400 caracteres. Si excede, acorta manteniendo el sentido.
 3. GUIONES LARGOS: Nunca uses —. Reemplaza con coma o punto.
 4. TONO: Directo, profesional, sin exageraciones ni signos de admiración.
 
@@ -285,7 +285,7 @@ export async function generateContactMessages(
     for (let i = 1; i <= linkedinMsgCount; i++) {
       linkedinProperties[`linkedin_msg_${i}`] = {
         type: "string",
-        description: `Mensaje de LinkedIn ${i} (post-conexión aceptada, máximo 180 caracteres, sin saludo formal, sin emojis, directo al valor)`,
+        description: `Mensaje de LinkedIn ${i} (post-conexión aceptada, máximo 400 caracteres, sin saludo formal, sin emojis, directo al valor)`,
       };
       linkedinRequired.push(`linkedin_msg_${i}`);
     }
@@ -325,7 +325,7 @@ ${contactInfo || "No disponibles"}
 ${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa." : ""}
 
 Genera una secuencia completa de outreach para este contacto:
-${effectiveEmailCount > 0 ? `- ${effectiveEmailCount} email(s): el primero es primer contacto frío, los siguientes son follow-ups más cortos que referencian el anterior\n` : ""}- ${linkedinMsgCount} mensaje(s) de LinkedIn: mensajes directos post-conexión aceptada, máximo 180 chars cada uno
+${effectiveEmailCount > 0 ? `- ${effectiveEmailCount} email(s): el primero es primer contacto frío, los siguientes son follow-ups más cortos que referencian el anterior\n` : ""}- ${linkedinMsgCount} mensaje(s) de LinkedIn: mensajes directos post-conexión aceptada, máximo 400 chars cada uno
 ${includeConnectMsg ? "- 1 mensaje de invitación a conectar en LinkedIn: nota muy personal, MÁXIMO 190 chars (obligatorio, no puede exceder)" : ""}
 
 Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
@@ -397,7 +397,7 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
             },
             linkedinIcebreaker: {
               type: "string",
-              description: "Mensaje de LinkedIn cuando acepta el invite (máximo 180 caracteres, sin saludo, sin emojis)",
+              description: "Mensaje de LinkedIn cuando acepta el invite (máximo 400 caracteres, sin saludo, sin emojis)",
             },
           },
           required: ["emailSubject", "emailBody", "linkedinIcebreaker"],
@@ -411,7 +411,7 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
           properties: {
             linkedinIcebreakerNoEmail: {
               type: "string",
-              description: "Mensaje de LinkedIn (máximo 180 caracteres, sin saludo, sin emojis, directo al valor)",
+              description: "Mensaje de LinkedIn (máximo 400 caracteres, sin saludo, sin emojis, directo al valor)",
             },
           },
           required: ["linkedinIcebreakerNoEmail"],

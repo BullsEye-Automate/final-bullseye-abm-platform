@@ -252,8 +252,8 @@ function ContactRow({
 
           {/* Mensajes LinkedIn */}
           {[
-            { key: "icebreaker" as const, label: "LinkedIn msg 1", varName: "linkedinMsg_1", max: 180 },
-            { key: "linkedinMsg2" as const, label: "LinkedIn msg 2", varName: "linkedinMsg_2", max: 180 },
+            { key: "icebreaker" as const, label: "LinkedIn msg 1", varName: "linkedinMsg_1", max: 400 },
+            { key: "linkedinMsg2" as const, label: "LinkedIn msg 2", varName: "linkedinMsg_2", max: 400 },
           ].map(({ key, label, varName, max }) =>
             contact[key] !== undefined ? (
               <div key={key} className="space-y-1">
