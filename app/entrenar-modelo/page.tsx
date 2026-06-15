@@ -119,7 +119,7 @@ function MessageBlock({ label, value, onChange }: { label: string; value: string
         className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y bg-white"
       />
       {label.includes("Icebreaker") && (
-        <p className="text-[10px] text-ink-muted text-right">{value.length}/180 chars</p>
+        <p className="text-[10px] text-ink-muted text-right">{value.length}/400 chars</p>
       )}
     </div>
   );
@@ -1170,7 +1170,7 @@ function LabTab({ clientId }: { clientId: string }) {
                         rows={2}
                         className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-y bg-white"
                       />
-                      <p className="text-[10px] text-ink-muted text-right">{msg.length}/180 chars</p>
+                      <p className="text-[10px] text-ink-muted text-right">{msg.length}/400 chars</p>
                     </div>
                   </div>
                 ))
