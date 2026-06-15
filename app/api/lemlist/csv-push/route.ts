@@ -60,8 +60,11 @@ export async function POST(req: NextRequest) {
   const errors: { email: string; error: string }[] = [];
 
   for (const contact of contacts) {
-    const hasEmail = Boolean(contact.email?.trim());
-    if (!hasEmail) {
+    const hasEmail    = Boolean(contact.email?.trim());
+    const hasLinkedin = Boolean(contact.linkedinUrl?.trim());
+
+    // Sin email ni LinkedIn no hay forma de identificar al contacto en Lemlist
+    if (!hasEmail && !hasLinkedin) {
       skipped++;
       continue;
     }
@@ -82,9 +85,15 @@ export async function POST(req: NextRequest) {
       linkedinMsg_1:  contact.icebreaker    || undefined,
       linkedinMsg_2:  contact.linkedinMsg2  || undefined,
     };
+    if (hasEmail) payload.email = contact.email;
 
     // Eliminar keys undefined
     Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
+
+    // URL: con email usa el endpoint por email; sin email usa el endpoint genérico
+    const lemlistUrl = hasEmail
+      ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}`
+      : `https://api.lemlist.com/api/campaigns/${campaignId}/leads`;
 
     // Retry con backoff exponencial si Lemlist devuelve 429
     let res: Response | null = null;
@@ -92,8 +101,7 @@ export async function POST(req: NextRequest) {
     for (let attempt = 0; attempt < 4; attempt++) {
       if (attempt > 0) await sleep(attempt * 2000);
       try {
-        res = await fetch(
-          `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?findEmail=true&verifyEmail=true&linkedinEnrichment=true`,
+        res = await fetch(lemlistUrl,
           {
             method: "POST",
             headers: {
@@ -111,8 +119,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const contactId = contact.email || contact.linkedinUrl || "sin-id";
+
     if (!res) {
-      errors.push({ email: contact.email, error: lastError });
+      errors.push({ email: contactId, error: lastError });
       continue;
     }
 
@@ -122,7 +132,7 @@ export async function POST(req: NextRequest) {
         // Ya existe en la campaña — igual cuenta como pushed
         pushed++;
       } else {
-        errors.push({ email: contact.email, error: `Lemlist ${res.status}: ${text.slice(0, 150)}` });
+        errors.push({ email: contactId, error: `Lemlist ${res.status}: ${text.slice(0, 150)}` });
       }
       continue;
     }
