@@ -13,6 +13,7 @@ import {
   IconTool,
   IconUpload,
   IconTrash,
+  IconCopy,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -73,6 +74,14 @@ function Field({
 
 export default function ConfigClientePage() {
   const { currentClient } = useClient();
+  const [copied, setCopied] = useState(false);
+
+  function copyClientId() {
+    if (!currentClient) return;
+    navigator.clipboard.writeText(currentClient.id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
   const [form, setForm]         = useState<Config>(EMPTY_CONFIG);
   const [webhooks, setWebhooks] = useState<ClientWebhooks>(EMPTY_WEBHOOKS);
   const [loading, setLoading]       = useState(false);
@@ -291,13 +300,24 @@ export default function ConfigClientePage() {
           <h1 className="text-2xl font-semibold tracking-tight">
             Integraciones
           </h1>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <div
               className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
               style={{ background: "#251762" }}
             >
               {currentClient.name}
             </div>
+            <button
+              onClick={copyClientId}
+              title="Copiar Client ID"
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono border border-border bg-surface-subtle text-ink-muted hover:text-ink hover:border-ink-subtle transition-colors"
+            >
+              <span className="opacity-60 text-[10px] not-italic font-sans">ID</span>
+              {currentClient.id}
+              {copied
+                ? <IconCheck size={12} className="text-success-fg shrink-0" />
+                : <IconCopy size={12} className="shrink-0" />}
+            </button>
             <span className="text-sm text-ink-muted">
               IDs de Lemlist y Clay para este cliente.
             </span>
