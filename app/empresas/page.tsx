@@ -97,92 +97,54 @@ function extractIcpField(text: string, label: string): string {
   return m ? m[1].trim() : "";
 }
 
-// Construye opciones de región disponibles a partir del texto de geografías del ICP.
-// Si el ICP menciona países específicos, los muestra primero; siempre incluye LATAM y Global como fallback.
+// Mapeo de país → código de región. El orden del array define prioridad de matching
+// cuando un texto puede coincidir con múltiples entradas.
+const COUNTRY_MAP: { re: RegExp; code: string }[] = [
+  { re: /el salvador/,                              code: "SV" },
+  { re: /costa rica/,                               code: "CR" },
+  { re: /rep[uú]blica dominicana/,                  code: "DO" },
+  { re: /chile/,                                    code: "CL" },
+  { re: /m[eé]xico/,                               code: "MX" },
+  { re: /per[uú]/,                                  code: "PE" },
+  { re: /colombia/,                                 code: "CO" },
+  { re: /argentina/,                                code: "AR" },
+  { re: /ecuador/,                                  code: "EC" },
+  { re: /guatemala/,                                code: "GT" },
+  { re: /bolivia/,                                  code: "BO" },
+  { re: /honduras/,                                 code: "HN" },
+  { re: /panam[aá]/,                                code: "PA" },
+  { re: /uruguay/,                                  code: "UY" },
+  { re: /paraguay/,                                 code: "PY" },
+  { re: /espa[nñ]a/,                               code: "ES" },
+  { re: /brasil|brazil/,                            code: "BR" },
+  { re: /estados unidos|united states|\busa?\b/,    code: "US" },
+  { re: /latam|latinoam[eé]rica|am[eé]rica latina|centroam[eé]rica/, code: "LATAM" },
+  { re: /global|mundial|worldwide/,                 code: "GLOBAL" },
+];
+
+// Construye la lista de regiones en el orden exacto en que aparecen en el texto del ICP.
+// No agrega ni quita nada — refleja fielmente las geografías del cliente.
 function buildRegionsFromIcp(geoText: string): { value: string; label: string }[] {
-  const g = geoText.toLowerCase();
-  if (!g) return ALL_REGIONS;
+  if (!geoText.trim()) return ALL_REGIONS;
 
-  const detected: { value: string; label: string }[] = [];
+  // Encontrar la posición de cada país en el texto para respetar el orden del ICP
+  const found: { pos: number; opt: { value: string; label: string } }[] = [];
 
-  const checks: [RegExp, string][] = [
-    [/chile/,                                    "CL"],
-    [/m[eé]xico/,                               "MX"],
-    [/per[uú]/,                                 "PE"],
-    [/colombia/,                                "CO"],
-    [/argentina/,                               "AR"],
-    [/ecuador/,                                 "EC"],
-    [/guatemala/,                               "GT"],
-    [/bolivia/,                                 "BO"],
-    [/el salvador/,                             "SV"],
-    [/honduras/,                                "HN"],
-    [/costa rica/,                              "CR"],
-    [/panam[aá]/,                               "PA"],
-    [/rep[uú]blica dominicana|dominicana/,      "DO"],
-    [/uruguay/,                                 "UY"],
-    [/paraguay/,                                "PY"],
-    [/espa[nñ]a/,                               "ES"],
-    [/brasil|brazil/,                           "BR"],
-    [/estados unidos|united states|\busa?\b/,   "US"],
-    [/latam|latinoam[eé]rica|am[eé]rica latina|centroam[eé]rica/, "LATAM"],
-    [/global|mundial|worldwide/,                "GLOBAL"],
-  ];
-
-  for (const [re, code] of checks) {
-    if (re.test(g)) {
-      const opt = ALL_REGIONS.find((r) => r.value === code);
-      if (opt && !detected.find((d) => d.value === code)) detected.push(opt);
+  for (const { re, code } of COUNTRY_MAP) {
+    const match = re.exec(geoText.toLowerCase());
+    if (!match) continue;
+    const opt = ALL_REGIONS.find((r) => r.value === code);
+    if (opt && !found.find((f) => f.opt.value === code)) {
+      found.push({ pos: match.index, opt });
     }
   }
 
-  // Siempre dejar LATAM como opción base si hay países LATAM y LATAM no fue incluido
-  const hasLatamCountry = detected.some((d) => ["CL","MX","PE","CO","AR"].includes(d.value));
-  if (hasLatamCountry && !detected.find((d) => d.value === "LATAM")) {
-    detected.unshift(ALL_REGIONS.find((r) => r.value === "LATAM")!);
-  }
-
-  return detected.length > 0 ? detected : ALL_REGIONS;
+  found.sort((a, b) => a.pos - b.pos);
+  return found.length > 0 ? found.map((f) => f.opt) : ALL_REGIONS;
 }
 
-// Infiere la región por defecto del ICP (la primera/principal que aparece)
-function inferDefaultRegion(geoText: string, regionOpts: { value: string; label: string }[]): string {
-  const g = geoText.toLowerCase();
-  if (!g) return "LATAM";
-
-  // Si menciona un país específico antes que LATAM → ese país
-  const order: [RegExp, string][] = [
-    [/chile/,                                  "CL"],
-    [/m[eé]xico/,                             "MX"],
-    [/per[uú]/,                               "PE"],
-    [/colombia/,                              "CO"],
-    [/argentina/,                             "AR"],
-    [/ecuador/,                               "EC"],
-    [/guatemala/,                             "GT"],
-    [/bolivia/,                               "BO"],
-    [/el salvador/,                           "SV"],
-    [/honduras/,                              "HN"],
-    [/costa rica/,                            "CR"],
-    [/panam[aá]/,                             "PA"],
-    [/rep[uú]blica dominicana|dominicana/,    "DO"],
-    [/uruguay/,                               "UY"],
-    [/paraguay/,                              "PY"],
-    [/espa[nñ]a/,                             "ES"],
-    [/brasil|brazil/,                         "BR"],
-    [/estados unidos|united states|\busa?\b/, "US"],
-    [/global|mundial/,                        "GLOBAL"],
-  ];
-
-  // Si tiene varios países → LATAM (si está disponible)
-  const countriesFound = order.filter(([re]) => re.test(g)).length;
-  if (countriesFound > 1) {
-    const latam = regionOpts.find((r) => r.value === "LATAM");
-    if (latam) return "LATAM";
-  }
-
-  for (const [re, code] of order) {
-    if (re.test(g) && regionOpts.find((r) => r.value === code)) return code;
-  }
-
+// Selecciona la región por defecto: simplemente la primera del listado del ICP.
+function inferDefaultRegion(_geoText: string, regionOpts: { value: string; label: string }[]): string {
   return regionOpts[0]?.value ?? "LATAM";
 }
 
