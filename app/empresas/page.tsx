@@ -55,7 +55,7 @@ type DeepResearch = {
   fuentes: { title: string; url: string }[];
 };
 
-const REGIONS: { value: string; label: string }[] = [
+const ALL_REGIONS: { value: string; label: string }[] = [
   { value: "LATAM",     label: "LATAM" },
   { value: "CL",        label: "Chile" },
   { value: "MX",        label: "México" },
@@ -63,6 +63,9 @@ const REGIONS: { value: string; label: string }[] = [
   { value: "CO",        label: "Colombia" },
   { value: "AR",        label: "Argentina" },
   { value: "US",        label: "Estados Unidos" },
+  { value: "ES",        label: "España" },
+  { value: "BR",        label: "Brasil" },
+  { value: "GLOBAL",    label: "Global" },
 ];
 
 // Convierte un chip de tamaño del ICP (ej "51–100") a hint de empleados para el prompt
@@ -84,26 +87,73 @@ function extractIcpField(text: string, label: string): string {
   return m ? m[1].trim() : "";
 }
 
-// Infiere la región del ICP a partir del campo "Geografías prioritarias".
-// Orden: países específicos primero; si hay mix LATAM/US, LATAM gana.
-function inferRegionFromIcp(icpContent: string): string | null {
-  const geo = extractIcpField(icpContent, "Geografías prioritarias").toLowerCase();
-  if (!geo) return null;
-  // País único → valor específico
-  const onlyChile     = /chile/.test(geo) && !/colombia|per[uú]|m[eé]xico|argentina|latam/.test(geo);
-  const onlyMexico    = /m[eé]xico/.test(geo) && !/chile|colombia|per[uú]|argentina|latam/.test(geo);
-  const onlyPeru      = /per[uú]/.test(geo) && !/chile|colombia|m[eé]xico|argentina|latam/.test(geo);
-  const onlyColombia  = /colombia/.test(geo) && !/chile|per[uú]|m[eé]xico|argentina|latam/.test(geo);
-  const onlyArgentina = /argentina/.test(geo) && !/chile|colombia|per[uú]|m[eé]xico|latam/.test(geo);
-  if (onlyChile)     return "CL";
-  if (onlyMexico)    return "MX";
-  if (onlyPeru)      return "PE";
-  if (onlyColombia)  return "CO";
-  if (onlyArgentina) return "AR";
-  // Multi-país o LATAM genérico → LATAM
-  if (/latam|latinoam[eé]rica|am[eé]rica latina|hispanohablante|chile|colombia|per[uú]|m[eé]xico|argentina|centroam[eé]rica/.test(geo)) return "LATAM";
-  if (/estados unidos|united states|\bus\b|usa/.test(geo)) return "US";
-  return null;
+// Construye opciones de región disponibles a partir del texto de geografías del ICP.
+// Si el ICP menciona países específicos, los muestra primero; siempre incluye LATAM y Global como fallback.
+function buildRegionsFromIcp(geoText: string): { value: string; label: string }[] {
+  const g = geoText.toLowerCase();
+  if (!g) return ALL_REGIONS;
+
+  const detected: { value: string; label: string }[] = [];
+
+  const checks: [RegExp, string][] = [
+    [/chile/,                              "CL"],
+    [/m[eé]xico/,                         "MX"],
+    [/per[uú]/,                           "PE"],
+    [/colombia/,                          "CO"],
+    [/argentina/,                         "AR"],
+    [/espa[nñ]a/,                         "ES"],
+    [/brasil|brazil/,                     "BR"],
+    [/estados unidos|united states|\busa?\b/, "US"],
+    [/latam|latinoam[eé]rica|am[eé]rica latina|centroam[eé]rica/, "LATAM"],
+    [/global|mundial|worldwide/,          "GLOBAL"],
+  ];
+
+  for (const [re, code] of checks) {
+    if (re.test(g)) {
+      const opt = ALL_REGIONS.find((r) => r.value === code);
+      if (opt && !detected.find((d) => d.value === code)) detected.push(opt);
+    }
+  }
+
+  // Siempre dejar LATAM como opción base si hay países LATAM y LATAM no fue incluido
+  const hasLatamCountry = detected.some((d) => ["CL","MX","PE","CO","AR"].includes(d.value));
+  if (hasLatamCountry && !detected.find((d) => d.value === "LATAM")) {
+    detected.unshift(ALL_REGIONS.find((r) => r.value === "LATAM")!);
+  }
+
+  return detected.length > 0 ? detected : ALL_REGIONS;
+}
+
+// Infiere la región por defecto del ICP (la primera/principal que aparece)
+function inferDefaultRegion(geoText: string, regionOpts: { value: string; label: string }[]): string {
+  const g = geoText.toLowerCase();
+  if (!g) return "LATAM";
+
+  // Si menciona un país específico antes que LATAM → ese país
+  const order: [RegExp, string][] = [
+    [/chile/,        "CL"],
+    [/m[eé]xico/,    "MX"],
+    [/per[uú]/,      "PE"],
+    [/colombia/,     "CO"],
+    [/argentina/,    "AR"],
+    [/espa[nñ]a/,    "ES"],
+    [/brasil|brazil/,"BR"],
+    [/estados unidos|united states|\busa?\b/, "US"],
+    [/global|mundial/, "GLOBAL"],
+  ];
+
+  // Si tiene varios países → LATAM (si está disponible)
+  const countriesFound = order.filter(([re]) => re.test(g)).length;
+  if (countriesFound > 1) {
+    const latam = regionOpts.find((r) => r.value === "LATAM");
+    if (latam) return "LATAM";
+  }
+
+  for (const [re, code] of order) {
+    if (re.test(g) && regionOpts.find((r) => r.value === code)) return code;
+  }
+
+  return regionOpts[0]?.value ?? "LATAM";
 }
 
 // Extrae los chips de tamaño seleccionados en el ICP (lista separada por comas)
@@ -115,10 +165,11 @@ function extractSizeOptsFromIcp(icpContent: string): string[] {
 
 export default function EmpresasPage() {
   const { currentClient } = useClient();
-  const [region,    setRegion]    = useState("LATAM");
-  const [sizeMode,  setSizeMode]  = useState("any");       // "any" | "custom" | chip value
-  const [customMin, setCustomMin] = useState("");
-  const [customMax, setCustomMax] = useState("");
+  const [region,     setRegion]     = useState("LATAM");
+  const [regions,    setRegions]    = useState<{ value: string; label: string }[]>(ALL_REGIONS);
+  const [sizeMode,   setSizeMode]   = useState("any");       // "any" | "custom" | chip value
+  const [customMin,  setCustomMin]  = useState("");
+  const [customMax,  setCustomMax]  = useState("");
   const [icpSizeOpts, setIcpSizeOpts] = useState<string[]>([]);
   const [limit, setLimit] = useState(8);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
@@ -157,17 +208,26 @@ export default function EmpresasPage() {
   const [bulkApproving, setBulkApproving]   = useState(false);
   const [bulkApproveResult, setBulkApproveResult] = useState<{ approved: number } | null>(null);
 
-  // Precarga región y opciones de tamaño desde el ICP del cliente activo
+  // Precarga región y opciones de tamaño desde el ICP activo del cliente
   useEffect(() => {
     if (!currentClient) return;
-    fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" })
+    // Resetear a defaults al cambiar cliente
+    setRegions(ALL_REGIONS);
+    setRegion("LATAM");
+    setIcpSizeOpts([]);
+    setSizeMode("any");
+
+    fetch(`/api/icp?client_id=${currentClient.id}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
-        const icpDoc = (data.items ?? []).find((i: { file_type: string }) => i.file_type === "icp");
-        if (!icpDoc?.content) return;
-        const inferredRegion = inferRegionFromIcp(icpDoc.content);
-        const sizeOpts       = extractSizeOptsFromIcp(icpDoc.content);
-        if (inferredRegion) setRegion(inferredRegion);
+        const notes = data.icp?.notes ?? "";
+        if (!notes) return;
+        const geoText  = extractIcpField(notes, "Geografías prioritarias");
+        const sizeOpts = extractSizeOptsFromIcp(notes);
+        const builtRegions  = buildRegionsFromIcp(geoText);
+        const defaultRegion = inferDefaultRegion(geoText, builtRegions);
+        setRegions(builtRegions);
+        setRegion(defaultRegion);
         setIcpSizeOpts(sizeOpts);
         if (sizeOpts.length > 0) setSizeMode(sizeOpts[0]);
       })
@@ -431,7 +491,7 @@ export default function EmpresasPage() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
               <Field label="Región">
                 <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
-                  {REGIONS.map((r) => (
+                  {regions.map((r) => (
                     <option key={r.value} value={r.value}>
                       {r.label}
                     </option>
