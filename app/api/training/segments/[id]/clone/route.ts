@@ -41,12 +41,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (sources?.length) {
     await db.from("segment_sources").insert(
       sources.map((s) => ({
-        segment_id:   cloned.id,
-        client_id,
-        title:        s.title,
-        content:      s.content,
-        source_type:  s.source_type,
-        source_url:   s.source_url,
+        segment_id:  cloned.id,
+        source_type: s.source_type,
+        title:       s.title,
+        content:     s.content,
+        url:         s.url ?? null,
       }))
     );
   }
