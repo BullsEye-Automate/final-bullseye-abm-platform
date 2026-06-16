@@ -125,7 +125,7 @@ const COUNTRY_MAP: { re: RegExp; code: string }[] = [
 // Construye la lista de regiones en el orden exacto en que aparecen en el texto del ICP.
 // No agrega ni quita nada — refleja fielmente las geografías del cliente.
 function buildRegionsFromIcp(geoText: string): { value: string; label: string }[] {
-  if (!geoText.trim()) return ALL_REGIONS;
+  if (!geoText.trim()) return [];
 
   // Encontrar la posición de cada país en el texto para respetar el orden del ICP
   const found: { pos: number; opt: { value: string; label: string } }[] = [];
@@ -140,12 +140,28 @@ function buildRegionsFromIcp(geoText: string): { value: string; label: string }[
   }
 
   found.sort((a, b) => a.pos - b.pos);
-  return found.length > 0 ? found.map((f) => f.opt) : ALL_REGIONS;
+  return found.map((f) => f.opt);
 }
 
-// Selecciona la región por defecto: simplemente la primera del listado del ICP.
-function inferDefaultRegion(_geoText: string, regionOpts: { value: string; label: string }[]): string {
-  return regionOpts[0]?.value ?? "LATAM";
+// Extrae el texto de geografías del ICP desde el campo serializado o escanea el texto completo.
+function extractGeoFromIcp(notes: string): string {
+  if (!notes) return "";
+  // Intento 1: campo "Geografías prioritarias" (con tilde)
+  let geo = extractIcpField(notes, "Geografías prioritarias");
+  if (geo) return geo;
+  // Intento 2: sin tilde
+  geo = extractIcpField(notes, "Geografias prioritarias");
+  if (geo) return geo;
+  // Intento 3: escanear todas las líneas del notes buscando al menos 3 países conocidos
+  // Si los encuentra, devuelve el bloque completo para que buildRegionsFromIcp lo procese
+  const lines = notes.split("\n").map((l) => l.trim()).filter(Boolean);
+  const countryLines: string[] = [];
+  for (const line of lines) {
+    if (COUNTRY_MAP.some(({ re }) => re.test(line.toLowerCase()))) {
+      countryLines.push(line);
+    }
+  }
+  return countryLines.length >= 2 ? countryLines.join("\n") : notes;
 }
 
 // Extrae los chips de tamaño seleccionados en el ICP (lista separada por comas)
@@ -222,8 +238,7 @@ export default function EmpresasPage() {
         let builtRegions: { value: string; label: string }[] = [];
         const notes = icp.notes ?? "";
         if (notes) {
-          const geoText = extractIcpField(notes, "Geografías prioritarias")
-            || extractIcpField(notes, "Geografias prioritarias");
+          const geoText = extractGeoFromIcp(notes);
           if (geoText) builtRegions = buildRegionsFromIcp(geoText);
         }
 
