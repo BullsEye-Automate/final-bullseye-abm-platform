@@ -157,8 +157,8 @@ function extractSizeOptsFromIcp(icpContent: string): string[] {
 
 export default function EmpresasPage() {
   const { currentClient } = useClient();
-  const [region,     setRegion]     = useState("LATAM");
-  const [regions,    setRegions]    = useState<{ value: string; label: string }[]>(ALL_REGIONS);
+  const [regions,         setRegions]         = useState<{ value: string; label: string }[]>([]);
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [sizeMode,   setSizeMode]   = useState("any");       // "any" | "custom" | chip value
   const [customMin,  setCustomMin]  = useState("");
   const [customMax,  setCustomMax]  = useState("");
@@ -200,30 +200,51 @@ export default function EmpresasPage() {
   const [bulkApproving, setBulkApproving]   = useState(false);
   const [bulkApproveResult, setBulkApproveResult] = useState<{ approved: number } | null>(null);
 
-  // Precarga región y opciones de tamaño desde el ICP activo del cliente
+  // Precarga regiones y tamaños desde el ICP activo del cliente
   useEffect(() => {
     if (!currentClient) return;
-    // Resetear a defaults al cambiar cliente
-    setRegions(ALL_REGIONS);
-    setRegion("LATAM");
+    setRegions([]);
+    setSelectedRegions([]);
     setIcpSizeOpts([]);
     setSizeMode("any");
 
     fetch(`/api/icp?client_id=${currentClient.id}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
-        const notes = data.icp?.notes ?? "";
-        if (!notes) return;
-        const geoText  = extractIcpField(notes, "Geografías prioritarias");
+        const icp = data.icp;
+        if (!icp) return;
+
+        // Fuente 1: notas serializadas del formulario ICP
+        let builtRegions: { value: string; label: string }[] = [];
+        const notes = icp.notes ?? "";
+        if (notes) {
+          const geoText = extractIcpField(notes, "Geografías prioritarias")
+            || extractIcpField(notes, "Geografias prioritarias");
+          if (geoText) builtRegions = buildRegionsFromIcp(geoText);
+        }
+
+        // Fuente 2: columna geographies (jsonb) — array de strings
+        if (builtRegions.length === 0 && Array.isArray(icp.geographies) && icp.geographies.length > 0) {
+          builtRegions = buildRegionsFromIcp(icp.geographies.join("\n"));
+        }
+
+        if (builtRegions.length > 0) {
+          setRegions(builtRegions);
+          setSelectedRegions(builtRegions.map((r) => r.value));
+        } else {
+          // Sin ICP configurado → mostrar todo y dejar que el usuario elija
+          setRegions(ALL_REGIONS);
+          setSelectedRegions([]);
+        }
+
         const sizeOpts = extractSizeOptsFromIcp(notes);
-        const builtRegions  = buildRegionsFromIcp(geoText);
-        const defaultRegion = inferDefaultRegion(geoText, builtRegions);
-        setRegions(builtRegions);
-        setRegion(defaultRegion);
         setIcpSizeOpts(sizeOpts);
         if (sizeOpts.length > 0) setSizeMode(sizeOpts[0]);
       })
-      .catch(() => {});
+      .catch(() => {
+        setRegions(ALL_REGIONS);
+        setSelectedRegions([]);
+      });
   }, [currentClient?.id]);
 
   const unpushedCount = useMemo(
@@ -291,7 +312,7 @@ export default function EmpresasPage() {
     const res = await fetch("/api/companies/recommend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ region, size_hint, limit, client_id: currentClient?.id ?? null })
+      body: JSON.stringify({ region: selectedRegions.join(", ") || "LATAM", size_hint, limit, client_id: currentClient?.id ?? null })
     });
     const data = await res.json();
     setDiscovering(false);
@@ -480,16 +501,56 @@ export default function EmpresasPage() {
         {/* Modo: Recomendación IA */}
         {discoveryMode === "recommend" && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-              <Field label="Región">
-                <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
-                  {regions.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+            <div className="space-y-3">
+              {/* Selector de regiones — chips multi-select */}
+              <div>
+                <label className="label block mb-2">
+                  Región
+                  {selectedRegions.length > 0 && (
+                    <span className="ml-2 text-xs font-normal text-ink-muted">
+                      ({selectedRegions.length} seleccionada{selectedRegions.length !== 1 ? "s" : ""})
+                    </span>
+                  )}
+                </label>
+                {regions.length === 0 ? (
+                  <p className="text-xs text-ink-subtle italic">Cargando geografías del ICP…</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {regions.map((r) => {
+                      const active = selectedRegions.includes(r.value);
+                      return (
+                        <button
+                          key={r.value}
+                          type="button"
+                          onClick={() =>
+                            setSelectedRegions((prev) =>
+                              active ? prev.filter((v) => v !== r.value) : [...prev, r.value]
+                            )
+                          }
+                          className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                            active
+                              ? "text-white border-transparent"
+                              : "bg-white border-border text-ink-muted hover:border-brand-soft"
+                          }`}
+                          style={active ? { background: "#251762", borderColor: "#251762" } : {}}
+                        >
+                          {r.label}
+                        </button>
+                      );
+                    })}
+                    {selectedRegions.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRegions([])}
+                        className="px-3 py-1 rounded-full text-xs text-ink-subtle hover:text-ink border border-dashed border-border"
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <Field label="Tamaño objetivo">
                 <select
                   className="input"
@@ -538,6 +599,7 @@ export default function EmpresasPage() {
                   <IconSparkles size={16} /> {discovering ? "Investigando…" : "Buscar nuevas empresas"}
                 </button>
               </div>
+            </div>
             </div>
             {lastRun && (
               <div className="mt-3 text-sm text-success-fg flex items-center gap-2">
