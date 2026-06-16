@@ -21,6 +21,7 @@ import {
   IconSearch,
   IconPencil
 } from "@tabler/icons-react";
+import { deserializeIcpForm } from "@/lib/icp-form";
 
 type Company = {
   id: string;
@@ -122,14 +123,10 @@ const COUNTRY_MAP: { re: RegExp; code: string }[] = [
   { re: /global|mundial|worldwide/,                 code: "GLOBAL" },
 ];
 
-// Construye la lista de regiones en el orden exacto en que aparecen en el texto del ICP.
-// No agrega ni quita nada — refleja fielmente las geografías del cliente.
+// Construye la lista de regiones en el orden exacto en que aparecen en el texto de geografías.
 function buildRegionsFromIcp(geoText: string): { value: string; label: string }[] {
   if (!geoText.trim()) return [];
-
-  // Encontrar la posición de cada país en el texto para respetar el orden del ICP
   const found: { pos: number; opt: { value: string; label: string } }[] = [];
-
   for (const { re, code } of COUNTRY_MAP) {
     const match = re.exec(geoText.toLowerCase());
     if (!match) continue;
@@ -138,37 +135,14 @@ function buildRegionsFromIcp(geoText: string): { value: string; label: string }[
       found.push({ pos: match.index, opt });
     }
   }
-
   found.sort((a, b) => a.pos - b.pos);
   return found.map((f) => f.opt);
 }
 
-// Extrae el texto de geografías del ICP desde el campo serializado o escanea el texto completo.
-function extractGeoFromIcp(notes: string): string {
-  if (!notes) return "";
-  // Intento 1: campo "Geografías prioritarias" (con tilde)
-  let geo = extractIcpField(notes, "Geografías prioritarias");
-  if (geo) return geo;
-  // Intento 2: sin tilde
-  geo = extractIcpField(notes, "Geografias prioritarias");
-  if (geo) return geo;
-  // Intento 3: escanear todas las líneas del notes buscando al menos 3 países conocidos
-  // Si los encuentra, devuelve el bloque completo para que buildRegionsFromIcp lo procese
-  const lines = notes.split("\n").map((l) => l.trim()).filter(Boolean);
-  const countryLines: string[] = [];
-  for (const line of lines) {
-    if (COUNTRY_MAP.some(({ re }) => re.test(line.toLowerCase()))) {
-      countryLines.push(line);
-    }
-  }
-  return countryLines.length >= 2 ? countryLines.join("\n") : notes;
-}
-
-// Extrae los chips de tamaño seleccionados en el ICP (lista separada por comas)
+// Extrae los chips de tamaño del ICP deserializado
 function extractSizeOptsFromIcp(icpContent: string): string[] {
-  const raw = extractIcpField(icpContent, "Tamaño (empleados / revenue)");
-  if (!raw) return [];
-  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+  const raw = deserializeIcpForm(icpContent).tamano_empresa ?? [];
+  return raw;
 }
 
 export default function EmpresasPage() {
@@ -234,15 +208,20 @@ export default function EmpresasPage() {
           return;
         }
 
-        // Fuente 1: notas serializadas del formulario ICP
+        // Fuente 1: deserializar el formulario ICP (método oficial, mismo que usa la página ICP)
         let builtRegions: { value: string; label: string }[] = [];
         const notes = icp.notes ?? "";
         if (notes) {
-          const geoText = extractGeoFromIcp(notes);
-          if (geoText) builtRegions = buildRegionsFromIcp(geoText);
+          const parsed = deserializeIcpForm(notes);
+          if (parsed.geografias) builtRegions = buildRegionsFromIcp(parsed.geografias);
+          // Tamaños del ICP
+          if (parsed.tamano_empresa?.length > 0) {
+            setIcpSizeOpts(parsed.tamano_empresa);
+            setSizeMode(parsed.tamano_empresa[0]);
+          }
         }
 
-        // Fuente 2: columna geographies (jsonb) — array de strings
+        // Fuente 2: columna geographies (jsonb) si notes no tiene datos
         if (builtRegions.length === 0 && Array.isArray(icp.geographies) && icp.geographies.length > 0) {
           builtRegions = buildRegionsFromIcp(icp.geographies.join("\n"));
         }
@@ -251,14 +230,9 @@ export default function EmpresasPage() {
           setRegions(builtRegions);
           setSelectedRegions(builtRegions.map((r) => r.value));
         } else {
-          // Sin ICP configurado → mostrar todo y dejar que el usuario elija
           setRegions(ALL_REGIONS);
           setSelectedRegions([]);
         }
-
-        const sizeOpts = extractSizeOptsFromIcp(notes);
-        setIcpSizeOpts(sizeOpts);
-        if (sizeOpts.length > 0) setSizeMode(sizeOpts[0]);
       })
       .catch(() => {
         setRegions(ALL_REGIONS);
