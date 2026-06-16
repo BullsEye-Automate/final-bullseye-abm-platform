@@ -25,6 +25,7 @@ import {
   IconEdit,
   IconRoute,
   IconUpload,
+  IconCopy,
 } from "@tabler/icons-react";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -205,6 +206,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [srcFiles, setSrcFiles]        = useState<File[]>([]);
   const [srcLoading, setSrcLoading]   = useState(false);
   const [srcError, setSrcError]       = useState<string | null>(null);
+  const [cloningId, setCloningId]     = useState<string | null>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -255,6 +257,22 @@ function SegmentsTab({ clientId }: { clientId: string }) {
     await fetch(`/api/training/segments/${id}`, { method: "DELETE" });
     setSegments((p) => p.filter((s) => s.id !== id));
     if (selected === id) setSelected(null);
+  }
+
+  async function cloneSegment(id: string) {
+    setCloningId(id);
+    const res = await fetch(`/api/training/segments/${id}/clone`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId }),
+    });
+    if (res.ok) {
+      const { segment } = await res.json();
+      setSegments((p) => [...p, segment]);
+      setSelected(segment.id);
+      setCreating(false);
+    }
+    setCloningId(null);
   }
 
   function resetSrcForm() {
@@ -457,23 +475,37 @@ function SegmentsTab({ clientId }: { clientId: string }) {
         )}
 
         {segments.map((s) => (
-          <button
+          <div
             key={s.id}
-            onClick={() => { setSelected(s.id); setEditSeg(null); setCreating(false); }}
-            className="w-full text-left card px-4 py-3 transition hover:shadow-md"
+            className="card px-4 py-3 transition hover:shadow-md"
             style={selected === s.id ? { borderColor: "#62E0D8", borderWidth: 2 } : {}}
           >
             <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
+              <button
+                className="flex-1 text-left min-w-0"
+                onClick={() => { setSelected(s.id); setEditSeg(null); setCreating(false); }}
+              >
                 <p className="text-sm font-semibold text-ink truncate">{s.name}</p>
                 {s.description && <p className="text-xs text-ink-muted truncate mt-0.5">{s.description}</p>}
                 <p className="text-[11px] text-ink-muted mt-1">
                   {(s.segment_sources ?? []).length} fuente{(s.segment_sources ?? []).length !== 1 ? "s" : ""}
                 </p>
+              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={(e) => { e.stopPropagation(); cloneSegment(s.id); }}
+                  disabled={cloningId === s.id}
+                  title="Clonar segmento"
+                  className="p-1.5 rounded-lg text-ink-muted hover:text-[#251762] hover:bg-gray-100 transition"
+                >
+                  {cloningId === s.id
+                    ? <IconLoader2 size={13} className="animate-spin" />
+                    : <IconCopy size={13} />}
+                </button>
+                <IconChevronRight size={14} className="text-ink-muted" />
               </div>
-              <IconChevronRight size={14} className="text-ink-muted shrink-0" />
             </div>
-          </button>
+          </div>
         ))}
       </div>
 
