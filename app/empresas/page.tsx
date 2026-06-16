@@ -198,34 +198,19 @@ export default function EmpresasPage() {
     setIcpSizeOpts([]);
     setSizeMode("any");
 
-    fetch(`/api/icp?client_id=${currentClient.id}`, { cache: "no-store" })
+    fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
-        const icp = data.icp;
-        if (!icp) {
+        const icp = (data.items ?? []).find((i: { file_type: string; content?: string }) => i.file_type === "icp");
+        if (!icp?.content) {
           setRegions(ALL_REGIONS);
           setSelectedRegions([]);
           return;
         }
 
-        // Fuente 1: deserializar el formulario ICP (método oficial, mismo que usa la página ICP)
-        let builtRegions: { value: string; label: string }[] = [];
-        const notes = icp.notes ?? "";
-        if (notes) {
-          const parsed = deserializeIcpForm(notes);
-          if (parsed.geografias) builtRegions = buildRegionsFromIcp(parsed.geografias);
-          // Tamaños del ICP
-          if (parsed.tamano_empresa?.length > 0) {
-            setIcpSizeOpts(parsed.tamano_empresa);
-            setSizeMode(parsed.tamano_empresa[0]);
-          }
-        }
+        const parsed = deserializeIcpForm(icp.content);
 
-        // Fuente 2: columna geographies (jsonb) si notes no tiene datos
-        if (builtRegions.length === 0 && Array.isArray(icp.geographies) && icp.geographies.length > 0) {
-          builtRegions = buildRegionsFromIcp(icp.geographies.join("\n"));
-        }
-
+        const builtRegions = buildRegionsFromIcp(parsed.geografias ?? "");
         if (builtRegions.length > 0) {
           setRegions(builtRegions);
           setSelectedRegions(builtRegions.map((r) => r.value));
@@ -233,7 +218,11 @@ export default function EmpresasPage() {
           setRegions(ALL_REGIONS);
           setSelectedRegions([]);
         }
-      })
+
+        if (parsed.tamano_empresa?.length > 0) {
+          setIcpSizeOpts(parsed.tamano_empresa);
+          setSizeMode(parsed.tamano_empresa[0]);
+        }
       .catch(() => {
         setRegions(ALL_REGIONS);
         setSelectedRegions([]);
