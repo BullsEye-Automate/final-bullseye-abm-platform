@@ -223,6 +223,7 @@ export default function EmpresasPage() {
           setIcpSizeOpts(parsed.tamano_empresa);
           setSizeMode(parsed.tamano_empresa[0]);
         }
+      })
       .catch(() => {
         setRegions(ALL_REGIONS);
         setSelectedRegions([]);
