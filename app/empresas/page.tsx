@@ -212,7 +212,11 @@ export default function EmpresasPage() {
       .then((r) => r.json())
       .then((data) => {
         const icp = data.icp;
-        if (!icp) return;
+        if (!icp) {
+          setRegions(ALL_REGIONS);
+          setSelectedRegions([]);
+          return;
+        }
 
         // Fuente 1: notas serializadas del formulario ICP
         let builtRegions: { value: string; label: string }[] = [];
