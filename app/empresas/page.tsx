@@ -21,6 +21,7 @@ import {
   IconSearch,
   IconPencil
 } from "@tabler/icons-react";
+import { deserializeIcpForm } from "@/lib/icp-form";
 
 type Company = {
   id: string;
@@ -55,14 +56,27 @@ type DeepResearch = {
   fuentes: { title: string; url: string }[];
 };
 
-const REGIONS: { value: string; label: string }[] = [
+const ALL_REGIONS: { value: string; label: string }[] = [
   { value: "LATAM",     label: "LATAM" },
   { value: "CL",        label: "Chile" },
   { value: "MX",        label: "México" },
   { value: "PE",        label: "Perú" },
   { value: "CO",        label: "Colombia" },
   { value: "AR",        label: "Argentina" },
+  { value: "EC",        label: "Ecuador" },
+  { value: "GT",        label: "Guatemala" },
+  { value: "BO",        label: "Bolivia" },
+  { value: "SV",        label: "El Salvador" },
+  { value: "HN",        label: "Honduras" },
+  { value: "CR",        label: "Costa Rica" },
+  { value: "PA",        label: "Panamá" },
+  { value: "DO",        label: "República Dominicana" },
+  { value: "UY",        label: "Uruguay" },
+  { value: "PY",        label: "Paraguay" },
   { value: "US",        label: "Estados Unidos" },
+  { value: "ES",        label: "España" },
+  { value: "BR",        label: "Brasil" },
+  { value: "GLOBAL",    label: "Global" },
 ];
 
 // Convierte un chip de tamaño del ICP (ej "51–100") a hint de empleados para el prompt
@@ -84,41 +98,60 @@ function extractIcpField(text: string, label: string): string {
   return m ? m[1].trim() : "";
 }
 
-// Infiere la región del ICP a partir del campo "Geografías prioritarias".
-// Orden: países específicos primero; si hay mix LATAM/US, LATAM gana.
-function inferRegionFromIcp(icpContent: string): string | null {
-  const geo = extractIcpField(icpContent, "Geografías prioritarias").toLowerCase();
-  if (!geo) return null;
-  // País único → valor específico
-  const onlyChile     = /chile/.test(geo) && !/colombia|per[uú]|m[eé]xico|argentina|latam/.test(geo);
-  const onlyMexico    = /m[eé]xico/.test(geo) && !/chile|colombia|per[uú]|argentina|latam/.test(geo);
-  const onlyPeru      = /per[uú]/.test(geo) && !/chile|colombia|m[eé]xico|argentina|latam/.test(geo);
-  const onlyColombia  = /colombia/.test(geo) && !/chile|per[uú]|m[eé]xico|argentina|latam/.test(geo);
-  const onlyArgentina = /argentina/.test(geo) && !/chile|colombia|per[uú]|m[eé]xico|latam/.test(geo);
-  if (onlyChile)     return "CL";
-  if (onlyMexico)    return "MX";
-  if (onlyPeru)      return "PE";
-  if (onlyColombia)  return "CO";
-  if (onlyArgentina) return "AR";
-  // Multi-país o LATAM genérico → LATAM
-  if (/latam|latinoam[eé]rica|am[eé]rica latina|hispanohablante|chile|colombia|per[uú]|m[eé]xico|argentina|centroam[eé]rica/.test(geo)) return "LATAM";
-  if (/estados unidos|united states|\bus\b|usa/.test(geo)) return "US";
-  return null;
+// Mapeo de país → código de región. El orden del array define prioridad de matching
+// cuando un texto puede coincidir con múltiples entradas.
+const COUNTRY_MAP: { re: RegExp; code: string }[] = [
+  { re: /el salvador/,                              code: "SV" },
+  { re: /costa rica/,                               code: "CR" },
+  { re: /rep[uú]blica dominicana/,                  code: "DO" },
+  { re: /chile/,                                    code: "CL" },
+  { re: /m[eé]xico/,                               code: "MX" },
+  { re: /per[uú]/,                                  code: "PE" },
+  { re: /colombia/,                                 code: "CO" },
+  { re: /argentina/,                                code: "AR" },
+  { re: /ecuador/,                                  code: "EC" },
+  { re: /guatemala/,                                code: "GT" },
+  { re: /bolivia/,                                  code: "BO" },
+  { re: /honduras/,                                 code: "HN" },
+  { re: /panam[aá]/,                                code: "PA" },
+  { re: /uruguay/,                                  code: "UY" },
+  { re: /paraguay/,                                 code: "PY" },
+  { re: /espa[nñ]a/,                               code: "ES" },
+  { re: /brasil|brazil/,                            code: "BR" },
+  { re: /estados unidos|united states|\busa?\b/,    code: "US" },
+  { re: /latam|latinoam[eé]rica|am[eé]rica latina|centroam[eé]rica/, code: "LATAM" },
+  { re: /global|mundial|worldwide/,                 code: "GLOBAL" },
+];
+
+// Construye la lista de regiones en el orden exacto en que aparecen en el texto de geografías.
+function buildRegionsFromIcp(geoText: string): { value: string; label: string }[] {
+  if (!geoText.trim()) return [];
+  const found: { pos: number; opt: { value: string; label: string } }[] = [];
+  for (const { re, code } of COUNTRY_MAP) {
+    const match = re.exec(geoText.toLowerCase());
+    if (!match) continue;
+    const opt = ALL_REGIONS.find((r) => r.value === code);
+    if (opt && !found.find((f) => f.opt.value === code)) {
+      found.push({ pos: match.index, opt });
+    }
+  }
+  found.sort((a, b) => a.pos - b.pos);
+  return found.map((f) => f.opt);
 }
 
-// Extrae los chips de tamaño seleccionados en el ICP (lista separada por comas)
+// Extrae los chips de tamaño del ICP deserializado
 function extractSizeOptsFromIcp(icpContent: string): string[] {
-  const raw = extractIcpField(icpContent, "Tamaño (empleados / revenue)");
-  if (!raw) return [];
-  return raw.split(",").map((s) => s.trim()).filter(Boolean);
+  const raw = deserializeIcpForm(icpContent).tamano_empresa ?? [];
+  return raw;
 }
 
 export default function EmpresasPage() {
   const { currentClient } = useClient();
-  const [region,    setRegion]    = useState("LATAM");
-  const [sizeMode,  setSizeMode]  = useState("any");       // "any" | "custom" | chip value
-  const [customMin, setCustomMin] = useState("");
-  const [customMax, setCustomMax] = useState("");
+  const [regions,         setRegions]         = useState<{ value: string; label: string }[]>([]);
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
+  const [sizeMode,   setSizeMode]   = useState("any");       // "any" | "custom" | chip value
+  const [customMin,  setCustomMin]  = useState("");
+  const [customMax,  setCustomMax]  = useState("");
   const [icpSizeOpts, setIcpSizeOpts] = useState<string[]>([]);
   const [limit, setLimit] = useState(8);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
@@ -157,21 +190,44 @@ export default function EmpresasPage() {
   const [bulkApproving, setBulkApproving]   = useState(false);
   const [bulkApproveResult, setBulkApproveResult] = useState<{ approved: number } | null>(null);
 
-  // Precarga región y opciones de tamaño desde el ICP del cliente activo
+  // Precarga regiones y tamaños desde el ICP activo del cliente
   useEffect(() => {
     if (!currentClient) return;
+    setRegions([]);
+    setSelectedRegions([]);
+    setIcpSizeOpts([]);
+    setSizeMode("any");
+
     fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" })
       .then((r) => r.json())
       .then((data) => {
-        const icpDoc = (data.items ?? []).find((i: { file_type: string }) => i.file_type === "icp");
-        if (!icpDoc?.content) return;
-        const inferredRegion = inferRegionFromIcp(icpDoc.content);
-        const sizeOpts       = extractSizeOptsFromIcp(icpDoc.content);
-        if (inferredRegion) setRegion(inferredRegion);
-        setIcpSizeOpts(sizeOpts);
-        if (sizeOpts.length > 0) setSizeMode(sizeOpts[0]);
+        const icp = (data.items ?? []).find((i: { file_type: string; content?: string }) => i.file_type === "icp");
+        if (!icp?.content) {
+          setRegions(ALL_REGIONS);
+          setSelectedRegions([]);
+          return;
+        }
+
+        const parsed = deserializeIcpForm(icp.content);
+
+        const builtRegions = buildRegionsFromIcp(parsed.geografias ?? "");
+        if (builtRegions.length > 0) {
+          setRegions(builtRegions);
+          setSelectedRegions(builtRegions.map((r) => r.value));
+        } else {
+          setRegions(ALL_REGIONS);
+          setSelectedRegions([]);
+        }
+
+        if (parsed.tamano_empresa?.length > 0) {
+          setIcpSizeOpts(parsed.tamano_empresa);
+          setSizeMode(parsed.tamano_empresa[0]);
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        setRegions(ALL_REGIONS);
+        setSelectedRegions([]);
+      });
   }, [currentClient?.id]);
 
   const unpushedCount = useMemo(
@@ -239,7 +295,7 @@ export default function EmpresasPage() {
     const res = await fetch("/api/companies/recommend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ region, size_hint, limit, client_id: currentClient?.id ?? null })
+      body: JSON.stringify({ region: selectedRegions.join(", ") || "LATAM", size_hint, limit, client_id: currentClient?.id ?? null })
     });
     const data = await res.json();
     setDiscovering(false);
@@ -428,16 +484,56 @@ export default function EmpresasPage() {
         {/* Modo: Recomendación IA */}
         {discoveryMode === "recommend" && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
-              <Field label="Región">
-                <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>
-                  {REGIONS.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
+            <div className="space-y-3">
+              {/* Selector de regiones — chips multi-select */}
+              <div>
+                <label className="label block mb-2">
+                  Región
+                  {selectedRegions.length > 0 && (
+                    <span className="ml-2 text-xs font-normal text-ink-muted">
+                      ({selectedRegions.length} seleccionada{selectedRegions.length !== 1 ? "s" : ""})
+                    </span>
+                  )}
+                </label>
+                {regions.length === 0 ? (
+                  <p className="text-xs text-ink-subtle italic">Cargando geografías del ICP…</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {regions.map((r) => {
+                      const active = selectedRegions.includes(r.value);
+                      return (
+                        <button
+                          key={r.value}
+                          type="button"
+                          onClick={() =>
+                            setSelectedRegions((prev) =>
+                              active ? prev.filter((v) => v !== r.value) : [...prev, r.value]
+                            )
+                          }
+                          className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                            active
+                              ? "text-white border-transparent"
+                              : "bg-white border-border text-ink-muted hover:border-brand-soft"
+                          }`}
+                          style={active ? { background: "#251762", borderColor: "#251762" } : {}}
+                        >
+                          {r.label}
+                        </button>
+                      );
+                    })}
+                    {selectedRegions.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRegions([])}
+                        className="px-3 py-1 rounded-full text-xs text-ink-subtle hover:text-ink border border-dashed border-border"
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <Field label="Tamaño objetivo">
                 <select
                   className="input"
@@ -486,6 +582,7 @@ export default function EmpresasPage() {
                   <IconSparkles size={16} /> {discovering ? "Investigando…" : "Buscar nuevas empresas"}
                 </button>
               </div>
+            </div>
             </div>
             {lastRun && (
               <div className="mt-3 text-sm text-success-fg flex items-center gap-2">
