@@ -18,6 +18,7 @@ import {
   IconArrowLeft,
   IconEdit,
   IconSearch,
+  IconPlayerStop,
 } from "@tabler/icons-react";
 import Link from "next/link";
 
@@ -46,6 +47,7 @@ type GeneratedContact = ParsedContact & {
   linkedinMsg2?: string;
   segmentName?: string;
   error?: string;
+  cancelled?: boolean;
 };
 
 type Stage = "idle" | "parsed" | "segment" | "preview" | "pushing" | "done";
@@ -137,7 +139,28 @@ function ContactRow({
   onChange: (i: number, field: keyof GeneratedContact, val: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const hasError = Boolean(contact.error);
+  const hasError = Boolean(contact.error) && !contact.cancelled;
+
+  // Contacto cancelado
+  if (contact.cancelled) {
+    return (
+      <div className="card border border-gray-200 px-4 py-3 flex items-center gap-3 opacity-50">
+        <div
+          className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white text-xs font-bold bg-gray-300"
+        >
+          {[contact.firstName?.[0], contact.lastName?.[0]].filter(Boolean).join("").toUpperCase() || "?"}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm text-ink line-through">
+            {[contact.firstName, contact.lastName].filter(Boolean).join(" ") || "—"}
+            {contact.companyName && <span className="text-ink-muted font-normal"> · {contact.companyName}</span>}
+          </div>
+          <div className="text-xs text-ink-muted">{contact.email}</div>
+        </div>
+        <span className="text-xs text-gray-400 shrink-0">Cancelado</span>
+      </div>
+    );
+  }
 
   // Tarjeta simplificada mientras se está generando
   if (pending) {
@@ -682,16 +705,25 @@ export default function SubirCampanaPage() {
                   <IconLoader2 size={15} className="animate-spin" style={{ color: "#62E0D8" }} />
                   <span className="font-medium text-sm text-ink">Generando mensajes…</span>
                 </div>
-                <span className="text-xs text-ink-muted">
-                  {genProgress} de {parsed.length}
-                  {genErrors > 0 && <span className="text-red-500 ml-2">· {genErrors} errores</span>}
-                  {" · "}Tiempo estimado: ~{Math.ceil((parsed.length - genProgress) * 20 / 60)} min
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-ink-muted">
+                    {genProgress} de {generation.contacts.length}
+                    {genErrors > 0 && <span className="text-red-500 ml-2">· {genErrors} errores</span>}
+                    {" · "}Tiempo estimado: ~{Math.ceil((generation.contacts.length - genProgress) * 20 / 60)} min
+                  </span>
+                  <button
+                    onClick={() => generation.cancelAll()}
+                    className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 border border-red-200 hover:border-red-400 px-2.5 py-1 rounded-lg transition"
+                  >
+                    <IconPlayerStop size={12} />
+                    Cancelar todo
+                  </button>
+                </div>
               </div>
               <div className="w-full bg-gray-100 rounded-full h-1.5">
                 <div
                   className="h-1.5 rounded-full transition-all duration-500"
-                  style={{ width: `${parsed.length > 0 ? (genProgress / parsed.length) * 100 : 0}%`, background: "#62E0D8" }}
+                  style={{ width: `${generation.contacts.length > 0 ? (genProgress / generation.contacts.length) * 100 : 0}%`, background: "#62E0D8" }}
                 />
               </div>
             </div>
@@ -737,18 +769,30 @@ export default function SubirCampanaPage() {
               // Contacto aún no generado (sin emailSubject y sin error): mostrar spinner
               const isPending = isGenerating && i >= genProgress;
 
+              const isCancelled = Boolean(c.cancelled);
+
               return (
                 <div key={i} className="flex items-start gap-3">
                   <button
-                    onClick={() => !isPending && toggleSelect(i)}
-                    disabled={isPending}
-                    className={`mt-3.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${isPending ? "border-gray-200 cursor-not-allowed" : selectedIndexes.has(i) ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300 hover:border-[#62E0D8]"}`}
+                    onClick={() => !isPending && !isCancelled && toggleSelect(i)}
+                    disabled={isPending || isCancelled}
+                    className={`mt-3.5 w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${isPending || isCancelled ? "border-gray-200 cursor-not-allowed" : selectedIndexes.has(i) ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300 hover:border-[#62E0D8]"}`}
                   >
-                    {!isPending && selectedIndexes.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
+                    {!isPending && !isCancelled && selectedIndexes.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
                   </button>
                   <div className="flex-1 min-w-0">
                     <ContactRow contact={c} index={i} pending={isPending} onChange={handleChange} />
                   </div>
+                  {/* Botón cancelar contacto individual — solo para pendientes */}
+                  {isPending && !isCancelled && (
+                    <button
+                      onClick={() => generation.cancelContact(i)}
+                      title="Cancelar este contacto"
+                      className="mt-3 p-1 rounded-md text-gray-300 hover:text-red-500 hover:bg-red-50 transition shrink-0"
+                    >
+                      <IconX size={14} />
+                    </button>
+                  )}
                 </div>
               );
             })}

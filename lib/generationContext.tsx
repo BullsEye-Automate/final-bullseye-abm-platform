@@ -27,6 +27,7 @@ export type GeneratedContact = ParsedContact & {
   linkedinMsg2?: string;
   segmentName?: string;
   error?: string;
+  cancelled?: boolean;
 };
 
 type GenerationStage = "idle" | "generating" | "done";
@@ -46,12 +47,14 @@ type GenerationState = {
     segmentId: string;
     deepResearchSet: Set<number>;
   }) => void;
+  cancelContact: (index: number) => void;
+  cancelAll: () => void;
   resetGeneration: () => void;
 };
 
 // ─── Estado inicial ────────────────────────────────────────────────────────────
 
-const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "resetGeneration"> = {
+const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "cancelContact" | "cancelAll" | "resetGeneration"> = {
   isGenerating: false,
   stage: "idle",
   contacts: [],
@@ -67,10 +70,13 @@ const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "resetGeneration"
 const GenerationContext = createContext<GenerationState | null>(null);
 
 export function GenerationProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<Omit<GenerationState, "startGeneration" | "resetGeneration">>(INITIAL_STATE);
+  const [state, setState] = useState<Omit<GenerationState, "startGeneration" | "cancelContact" | "cancelAll" | "resetGeneration">>(INITIAL_STATE);
 
-  // Ref para prevenir que múltiples loops corran en paralelo
   const isRunningRef = useRef(false);
+  // AbortController activo para cancelar el fetch en curso
+  const abortControllerRef = useRef<AbortController | null>(null);
+  // Índices marcados para saltarse antes de procesarse
+  const skippedRef = useRef<Set<number>>(new Set());
 
   const startGeneration = useCallback(async ({
     clientId,
@@ -85,8 +91,8 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
   }) => {
     if (isRunningRef.current) return;
     isRunningRef.current = true;
+    skippedRef.current = new Set();
 
-    // Inicializar estado
     setState({
       isGenerating: true,
       stage: "generating",
@@ -100,10 +106,55 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
 
     const updated: GeneratedContact[] = parsed.map((c) => ({ ...c }));
     let errCount = 0;
+    let aborted = false;
 
     for (let i = 0; i < parsed.length; i++) {
+      // Verificar cancelación total antes de esperar
+      if (aborted) {
+        updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
+        continue;
+      }
+
       // Pausa de 3s entre contactos para no superar límites de rate
-      if (i > 0) await new Promise((r) => setTimeout(r, 3000));
+      if (i > 0) {
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, 3000);
+          // Permitir que cancelAll interrumpa también el delay
+          const check = setInterval(() => {
+            if (abortControllerRef.current?.signal.aborted) {
+              clearTimeout(t);
+              clearInterval(check);
+              resolve();
+            }
+          }, 100);
+          abortControllerRef.current?.signal.addEventListener("abort", () => {
+            clearTimeout(t);
+            clearInterval(check);
+            resolve();
+          }, { once: true });
+        });
+      }
+
+      // Re-verificar tras la pausa
+      if (abortControllerRef.current?.signal.aborted) {
+        aborted = true;
+        updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
+        const snap = [...updated];
+        setState((prev) => ({ ...prev, contacts: snap, genProgress: i + 1 }));
+        continue;
+      }
+
+      // Contacto marcado individualmente para cancelar
+      if (skippedRef.current.has(i)) {
+        updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
+        const snap = [...updated];
+        setState((prev) => ({ ...prev, contacts: snap, genProgress: i + 1 }));
+        continue;
+      }
+
+      // Crear AbortController para este fetch
+      const ac = new AbortController();
+      abortControllerRef.current = ac;
 
       try {
         const res = await fetch("/api/lemlist/csv-generate", {
@@ -115,6 +166,7 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
             segment_id: segmentId || undefined,
             use_deep_research: deepResearchSet.has(i),
           }),
+          signal: ac.signal,
         });
 
         if (res.ok) {
@@ -124,12 +176,16 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
           errCount++;
           updated[i] = { ...updated[i], error: `Error ${res.status}` };
         }
-      } catch {
-        errCount++;
-        updated[i] = { ...updated[i], error: "Error de red" };
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          aborted = true;
+          updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
+        } else {
+          errCount++;
+          updated[i] = { ...updated[i], error: "Error de red" };
+        }
       }
 
-      // Actualizar estado tras cada contacto usando copia del array
       const snapshot = [...updated];
       const progress = i + 1;
       const errors = errCount;
@@ -141,18 +197,41 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
       }));
     }
 
+    abortControllerRef.current = null;
     isRunningRef.current = false;
     setState((prev) => ({ ...prev, isGenerating: false, stage: "done" }));
   }, []);
 
+  // Cancela un contacto pendiente (aún no procesado)
+  const cancelContact = useCallback((index: number) => {
+    skippedRef.current.add(index);
+    // Actualizar UI inmediatamente para quitar el spinner
+    setState((prev) => {
+      const contacts = [...prev.contacts];
+      contacts[index] = { ...contacts[index], cancelled: true, error: "Cancelado" };
+      return { ...prev, contacts };
+    });
+  }, []);
+
+  // Cancela la generación completa
+  const cancelAll = useCallback(() => {
+    abortControllerRef.current?.abort();
+    // Marcar todos los pendientes como cancelados en skippedRef
+    // (el loop los procesará en la próxima iteración)
+  }, []);
+
   const resetGeneration = useCallback(() => {
+    abortControllerRef.current?.abort();
     isRunningRef.current = false;
+    skippedRef.current = new Set();
     setState(INITIAL_STATE);
   }, []);
 
   const value: GenerationState = {
     ...state,
     startGeneration,
+    cancelContact,
+    cancelAll,
     resetGeneration,
   };
 
