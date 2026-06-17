@@ -21,9 +21,11 @@ import {
   IconPlus,
   IconAdjustments,
   IconMapSearch,
-  IconStethoscope
+  IconStethoscope,
+  IconLoader2
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
+import { useGeneration } from "@/lib/generationContext";
 
 type Item = { href: string; label: string; icon: any; disabled?: boolean };
 type Section = { label: string; items: Item[] };
@@ -206,6 +208,8 @@ function ClientSelector() {
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { isGenerating, genProgress, contacts } = useGeneration();
+
   return (
     <aside
       className="w-[230px] shrink-0 h-screen overflow-y-auto text-white px-3 py-5 sticky top-0 flex flex-col"
@@ -260,6 +264,26 @@ export default function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Indicador flotante de generación en progreso */}
+      {isGenerating && (
+        <div className="px-3 pb-2">
+          <Link
+            href="/campanas/subir"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-medium transition hover:opacity-90"
+            style={{
+              background: "rgba(98,224,216,0.15)",
+              color: "#62E0D8",
+              border: "1px solid rgba(98,224,216,0.25)",
+            }}
+          >
+            <IconLoader2 size={13} className="animate-spin shrink-0" />
+            <span className="truncate">
+              Generando mensajes… {genProgress}/{contacts.length}
+            </span>
+          </Link>
+        </div>
+      )}
     </aside>
   );
 }
