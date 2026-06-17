@@ -30,7 +30,7 @@ import {
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type Tab = "segments" | "lab" | "examples" | "style";
+type Tab = "segments" | "lab" | "examples";
 
 type GeneratedMessages = {
   // Secuencia completa (cuando el segmento tiene email_count > 1, etc.)
@@ -2071,10 +2071,9 @@ function StyleTab({ clientId }: { clientId: string }) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 const TAB_CONFIG = [
-  { id: "segments" as Tab, label: "Segmentos",         icon: <IconTag size={16} /> },
-  { id: "lab"      as Tab, label: "Laboratorio",        icon: <IconFlask size={16} /> },
-  { id: "examples" as Tab, label: "Ejemplos",           icon: <IconStarFilled size={16} /> },
-  { id: "style"    as Tab, label: "Guía de estilo",     icon: <IconBrain size={16} /> },
+  { id: "segments" as Tab, label: "Segmentos",  icon: <IconTag size={16} /> },
+  { id: "lab"      as Tab, label: "Laboratorio", icon: <IconFlask size={16} /> },
+  { id: "examples" as Tab, label: "Ejemplos",    icon: <IconStarFilled size={16} /> },
 ];
 
 export default function EntrenarModeloPage() {
@@ -2122,7 +2121,6 @@ export default function EntrenarModeloPage() {
         {tab === "segments" && <SegmentsTab clientId={currentClient.id} />}
         {tab === "lab"      && <LabTab      clientId={currentClient.id} />}
         {tab === "examples" && <ExamplesTab clientId={currentClient.id} />}
-        {tab === "style"    && <StyleTab    clientId={currentClient.id} />}
       </div>
     </div>
   );
