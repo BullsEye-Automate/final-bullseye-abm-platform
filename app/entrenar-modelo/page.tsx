@@ -549,7 +549,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     </>
                   ) : (
                     <>
-                      <button onClick={() => setEditSeg({ name: seg.name, description: seg.description ?? "", routing_hint: seg.routing_hint })} className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center gap-1">
+                      <button onClick={() => setEditSeg({ name: seg.name, description: seg.description ?? "", routing_hint: seg.routing_hint, email_count: seg.email_count ?? 3, linkedin_msg_count: seg.linkedin_msg_count ?? 2, include_connect_msg: seg.include_connect_msg ?? true })} className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center gap-1">
                         <IconEdit size={12} /> Editar
                       </button>
                       <button onClick={() => deleteSegment(seg.id)} className="text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 flex items-center gap-1">
