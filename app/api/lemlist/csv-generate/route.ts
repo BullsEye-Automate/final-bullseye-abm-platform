@@ -93,11 +93,16 @@ export async function POST(req: NextRequest) {
   async function getSegmentContext(segmentId: string, segmentName: string): Promise<SegmentContext> {
     if (segmentCache.has(segmentId)) return segmentCache.get(segmentId)!;
 
-    const [{ data: sources }, { data: examples }] = await Promise.all([
+    const [{ data: sources }, { data: examples }, { data: segStyle }] = await Promise.all([
       db.from("segment_sources").select("content, title").eq("segment_id", segmentId).not("content", "is", null),
       db.from("message_examples").select("*").eq("segment_id", segmentId)
         .order("created_at", { ascending: false }).limit(5),
+      db.from("training_segments")
+        .select("message_focus, style_tone, style_rules, style_avoid, style_email_length")
+        .eq("id", segmentId).maybeSingle(),
     ]);
+
+    const hasSegmentStyle = segStyle?.style_tone || segStyle?.style_rules || segStyle?.style_avoid || segStyle?.style_email_length;
 
     const ctx: SegmentContext = {
       id:      segmentId,
@@ -110,6 +115,13 @@ export async function POST(req: NextRequest) {
         contactName:  e.contact_name ?? "",
         jobTitle:     e.job_title    ?? "",
       })),
+      messageFocus: segStyle?.message_focus ?? undefined,
+      styleGuide: hasSegmentStyle ? {
+        tone:        segStyle?.style_tone         ?? "",
+        rules:       segStyle?.style_rules        ?? "",
+        avoid:       segStyle?.style_avoid        ?? "",
+        emailLength: segStyle?.style_email_length ?? "corto",
+      } : undefined,
     };
 
     segmentCache.set(segmentId, ctx);
