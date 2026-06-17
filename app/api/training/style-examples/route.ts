@@ -4,19 +4,26 @@ import { supabaseAdmin } from "@/lib/supabase";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// GET — listar ejemplos globales de estilo
+// GET — listar ejemplos (globales si no se pasa segment_id, del segmento si se pasa)
 export async function GET(req: NextRequest) {
-  const client_id = req.nextUrl.searchParams.get("client_id");
+  const client_id  = req.nextUrl.searchParams.get("client_id");
+  const segment_id = req.nextUrl.searchParams.get("segment_id");
   if (!client_id) return NextResponse.json({ error: "client_id requerido" }, { status: 400 });
 
   const db = supabaseAdmin();
-  const { data, error } = await db
+  let q = db
     .from("message_examples")
     .select("id, email_subject, email_body, contact_name, job_title, created_at")
     .eq("client_id", client_id)
-    .is("segment_id", null)
     .order("created_at", { ascending: false });
 
+  if (segment_id) {
+    q = q.eq("segment_id", segment_id);
+  } else {
+    q = q.is("segment_id", null);
+  }
+
+  const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ examples: data ?? [] });
 }
@@ -37,7 +44,7 @@ export async function POST(req: NextRequest) {
       email_body:    body.email_body,
       contact_name:  body.contact_name  ?? null,
       job_title:     body.job_title     ?? null,
-      segment_id:    null,
+      segment_id:    body.segment_id    ?? null,
     })
     .select("id, email_subject, email_body, contact_name, job_title, created_at")
     .single();
@@ -63,8 +70,7 @@ export async function PATCH(req: NextRequest) {
       job_title:     body.job_title    ?? null,
     })
     .eq("id", body.id)
-    .eq("client_id", body.client_id)
-    .is("segment_id", null);
+    .eq("client_id", body.client_id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
@@ -81,8 +87,7 @@ export async function DELETE(req: NextRequest) {
     .from("message_examples")
     .delete()
     .eq("id", id)
-    .eq("client_id", client_id)
-    .is("segment_id", null);
+    .eq("client_id", client_id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

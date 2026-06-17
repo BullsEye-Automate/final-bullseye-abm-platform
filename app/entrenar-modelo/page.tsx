@@ -224,9 +224,19 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const fileInputRef                  = useRef<HTMLInputElement>(null);
 
   // Estado de edición de guía de estilo (independiente del editSeg de nombre/routing)
-  const [styleEdit, setStyleEdit]     = useState<SegmentStyle | null>(null);
-  const [styleSaving, setStyleSaving] = useState(false);
-  const [styleSaved, setStyleSaved]   = useState(false);
+  const [styleEdit, setStyleEdit]         = useState<SegmentStyle | null>(null);
+  const [styleSaving, setStyleSaving]     = useState(false);
+  const [styleSaved, setStyleSaved]       = useState(false);
+  // Correos de ejemplo por segmento
+  const [segExamples, setSegExamples]     = useState<StyleExample[]>([]);
+  const [segExLoading, setSegExLoading]   = useState(false);
+  const [segExForm, setSegExForm]         = useState({ subject: "", body: "", contact_name: "", job_title: "" });
+  const [segExShowing, setSegExShowing]   = useState(false);
+  const [segExSaving, setSegExSaving]     = useState(false);
+  const [segExEditId, setSegExEditId]     = useState<string | null>(null);
+  const [segExEditForm, setSegExEditForm] = useState({ subject: "", body: "", contact_name: "", job_title: "" });
+  const [segExEditSaving, setSegExEditSaving] = useState(false);
+  const [segExDeletingId, setSegExDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -236,6 +246,16 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   }, [clientId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Cargar correos de ejemplo del segmento seleccionado
+  useEffect(() => {
+    if (!selected) { setSegExamples([]); return; }
+    setSegExLoading(true);
+    fetch(`/api/training/style-examples?client_id=${clientId}&segment_id=${selected}`)
+      .then((r) => r.json())
+      .then((d) => setSegExamples(d.examples ?? []))
+      .finally(() => setSegExLoading(false));
+  }, [selected, clientId]);
 
   async function createSegment() {
     if (!newSeg.name.trim()) return;
@@ -287,6 +307,48 @@ function SegmentsTab({ clientId }: { clientId: string }) {
       setTimeout(() => setStyleSaved(false), 3000);
     }
     setStyleSaving(false);
+  }
+
+  async function saveSegExample(segId: string) {
+    if (!segExForm.subject.trim() || !segExForm.body.trim()) return;
+    setSegExSaving(true);
+    const res = await fetch("/api/training/style-examples", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, segment_id: segId, email_subject: segExForm.subject, email_body: segExForm.body, contact_name: segExForm.contact_name || null, job_title: segExForm.job_title || null }),
+    });
+    const d = await res.json();
+    if (res.ok && d.example) {
+      setSegExamples((p) => [d.example, ...p]);
+      setSegExForm({ subject: "", body: "", contact_name: "", job_title: "" });
+      setSegExShowing(false);
+    }
+    setSegExSaving(false);
+  }
+
+  async function saveSegExampleEdit() {
+    if (!segExEditId || !segExEditForm.subject.trim() || !segExEditForm.body.trim()) return;
+    setSegExEditSaving(true);
+    const res = await fetch("/api/training/style-examples", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: segExEditId, client_id: clientId, email_subject: segExEditForm.subject, email_body: segExEditForm.body, contact_name: segExEditForm.contact_name || null, job_title: segExEditForm.job_title || null }),
+    });
+    if (res.ok) {
+      setSegExamples((p) => p.map((e) => e.id === segExEditId
+        ? { ...e, email_subject: segExEditForm.subject, email_body: segExEditForm.body, contact_name: segExEditForm.contact_name || undefined, job_title: segExEditForm.job_title || undefined }
+        : e
+      ));
+      setSegExEditId(null);
+    }
+    setSegExEditSaving(false);
+  }
+
+  async function deleteSegExample(id: string) {
+    setSegExDeletingId(id);
+    await fetch(`/api/training/style-examples?id=${id}&client_id=${clientId}`, { method: "DELETE" });
+    setSegExamples((p) => p.filter((e) => e.id !== id));
+    setSegExDeletingId(null);
   }
 
   async function deleteSegment(id: string) {
@@ -796,6 +858,78 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                   )}
                 </div>
               )}
+
+              {/* ── Correos de ejemplo del segmento ── */}
+              <div className="border-t border-[#F0EEF8] pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Correos de ejemplo</p>
+                  <button
+                    onClick={() => { setSegExShowing((p) => !p); setSegExEditId(null); }}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 transition"
+                  >
+                    <IconPlus size={12} /> Agregar correo
+                  </button>
+                </div>
+                <p className="text-xs text-ink-muted -mt-1">Pega correos que te gusten para que Claude aprenda tu estilo en este segmento.</p>
+
+                {segExShowing && (
+                  <div className="border border-[#E5E2F0] rounded-xl px-4 py-4 space-y-3 bg-gray-50/50">
+                    <div className="grid grid-cols-2 gap-2">
+                      <input value={segExForm.contact_name} onChange={(e) => setSegExForm((p) => ({ ...p, contact_name: e.target.value }))} placeholder="Nombre del contacto (opcional)" className="text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white" />
+                      <input value={segExForm.job_title} onChange={(e) => setSegExForm((p) => ({ ...p, job_title: e.target.value }))} placeholder="Cargo (opcional)" className="text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white" />
+                    </div>
+                    <input value={segExForm.subject} onChange={(e) => setSegExForm((p) => ({ ...p, subject: e.target.value }))} placeholder="Asunto del correo" className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white" />
+                    <textarea value={segExForm.body} onChange={(e) => setSegExForm((p) => ({ ...p, body: e.target.value }))} rows={5} placeholder="Cuerpo del correo…" className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white" />
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => { setSegExShowing(false); setSegExForm({ subject: "", body: "", contact_name: "", job_title: "" }); }} className="text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50">Cancelar</button>
+                      <button onClick={() => saveSegExample(seg.id)} disabled={segExSaving || !segExForm.subject.trim() || !segExForm.body.trim()} className="text-xs px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#251762" }}>{segExSaving ? "Guardando…" : "Guardar correo"}</button>
+                    </div>
+                  </div>
+                )}
+
+                {segExLoading ? (
+                  <div className="flex justify-center py-4"><IconLoader2 size={16} className="animate-spin text-ink-muted" /></div>
+                ) : segExamples.length === 0 && !segExShowing ? (
+                  <p className="text-xs text-ink-muted italic">Sin correos de ejemplo. Agrega uno para que Claude aprenda tu estilo.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {segExamples.map((ex) => (
+                      <div key={ex.id} className="border border-[#E5E2F0] rounded-xl px-4 py-3 space-y-2 bg-white">
+                        {segExEditId === ex.id ? (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <input value={segExEditForm.contact_name} onChange={(e) => setSegExEditForm((p) => ({ ...p, contact_name: e.target.value }))} placeholder="Nombre (opcional)" className="text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]" />
+                              <input value={segExEditForm.job_title} onChange={(e) => setSegExEditForm((p) => ({ ...p, job_title: e.target.value }))} placeholder="Cargo (opcional)" className="text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]" />
+                            </div>
+                            <input value={segExEditForm.subject} onChange={(e) => setSegExEditForm((p) => ({ ...p, subject: e.target.value }))} placeholder="Asunto" className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]" />
+                            <textarea value={segExEditForm.body} onChange={(e) => setSegExEditForm((p) => ({ ...p, body: e.target.value }))} rows={5} className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none" />
+                            <div className="flex justify-end gap-2">
+                              <button onClick={() => setSegExEditId(null)} className="text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50">Cancelar</button>
+                              <button onClick={saveSegExampleEdit} disabled={segExEditSaving} className="text-xs px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#251762" }}>{segExEditSaving ? "Guardando…" : "Guardar"}</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="font-semibold text-sm text-ink">{ex.email_subject}</p>
+                                {(ex.contact_name || ex.job_title) && (
+                                  <p className="text-xs text-ink-muted">{[ex.contact_name, ex.job_title].filter(Boolean).join(" · ")}</p>
+                                )}
+                              </div>
+                              <div className="flex gap-1 shrink-0">
+                                <button onClick={() => { setSegExEditId(ex.id); setSegExEditForm({ subject: ex.email_subject, body: ex.email_body, contact_name: ex.contact_name ?? "", job_title: ex.job_title ?? "" }); }} className="p-1.5 rounded-lg text-ink-muted hover:text-[#251762] hover:bg-gray-100 transition"><IconEdit size={13} /></button>
+                                <button onClick={() => deleteSegExample(ex.id)} disabled={segExDeletingId === ex.id} className="p-1.5 rounded-lg text-ink-muted hover:text-red-500 hover:bg-red-50 transition"><IconTrash size={13} /></button>
+                              </div>
+                            </div>
+                            <p className="text-xs text-ink-muted line-clamp-2">{ex.email_body}</p>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Fuentes de conocimiento */}
