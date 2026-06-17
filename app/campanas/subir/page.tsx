@@ -423,6 +423,8 @@ export default function SubirCampanaPage() {
     });
     const d = await res.json();
     setPushResult(d);
+    // Limpiar contexto de generación para que el indicador del sidebar desaparezca
+    generation.resetGeneration();
     setStage("done");
   }
 
@@ -476,8 +478,9 @@ export default function SubirCampanaPage() {
     );
   }
 
-  // Si hay una generación activa para este cliente, redirigir a vista preview
-  const effectiveStage: Stage = isActiveGeneration ? "preview" : stage;
+  // Si hay una generación activa para este cliente, redirigir a vista preview.
+  // Solo aplica cuando el stage local es "idle" (no ha arrancado el push).
+  const effectiveStage: Stage = (isActiveGeneration && stage === "idle") ? "preview" : stage;
 
   return (
     <div className="space-y-5 max-w-3xl">
