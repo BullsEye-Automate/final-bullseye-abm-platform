@@ -70,6 +70,20 @@ type Segment = {
   include_connect_msg: boolean;
   segment_sources?: Source[];
   created_at: string;
+  // Guía de estilo propia del segmento
+  message_focus:      string | null;
+  style_tone:         string | null;
+  style_rules:        string | null;
+  style_avoid:        string | null;
+  style_email_length: string | null;
+};
+
+type SegmentStyle = {
+  message_focus:      string;
+  style_tone:         string;
+  style_rules:        string;
+  style_avoid:        string;
+  style_email_length: string;
 };
 
 type Example = {
@@ -209,6 +223,11 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [cloningId, setCloningId]     = useState<string | null>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
 
+  // Estado de edición de guía de estilo (independiente del editSeg de nombre/routing)
+  const [styleEdit, setStyleEdit]     = useState<SegmentStyle | null>(null);
+  const [styleSaving, setStyleSaving] = useState(false);
+  const [styleSaved, setStyleSaved]   = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch(`/api/training/segments?client_id=${clientId}`);
@@ -250,6 +269,24 @@ function SegmentsTab({ clientId }: { clientId: string }) {
       setEditSeg(null);
     }
     setSaving(false);
+  }
+
+  async function saveStyle(id: string) {
+    if (!styleEdit) return;
+    setStyleSaving(true);
+    const res = await fetch(`/api/training/segments/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(styleEdit),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      setSegments((p) => p.map((s) => s.id === id ? { ...s, ...d.segment } : s));
+      setStyleEdit(null);
+      setStyleSaved(true);
+      setTimeout(() => setStyleSaved(false), 3000);
+    }
+    setStyleSaving(false);
   }
 
   async function deleteSegment(id: string) {
@@ -483,7 +520,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
             <div className="flex items-center justify-between gap-2">
               <button
                 className="flex-1 text-left min-w-0"
-                onClick={() => { setSelected(s.id); setEditSeg(null); setCreating(false); }}
+                onClick={() => { setSelected(s.id); setEditSeg(null); setStyleEdit(null); setCreating(false); }}
               >
                 <p className="text-sm font-semibold text-ink truncate">{s.name}</p>
                 {s.description && <p className="text-xs text-ink-muted truncate mt-0.5">{s.description}</p>}
@@ -620,6 +657,145 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* ── Guía de estilo del segmento ── */}
+            <div className="card px-5 py-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-ink text-sm">Guía de estilo</p>
+                  <p className="text-xs text-ink-muted mt-0.5">Define el tono, las reglas y el foco de los mensajes para este segmento.</p>
+                </div>
+                {!styleEdit ? (
+                  <button
+                    onClick={() => setStyleEdit({
+                      message_focus:      seg.message_focus      ?? "",
+                      style_tone:         seg.style_tone         ?? "",
+                      style_rules:        seg.style_rules        ?? "",
+                      style_avoid:        seg.style_avoid        ?? "",
+                      style_email_length: seg.style_email_length ?? "corto",
+                    })}
+                    className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center gap-1 shrink-0"
+                  >
+                    <IconEdit size={12} /> Editar
+                  </button>
+                ) : (
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => saveStyle(seg.id)}
+                      disabled={styleSaving}
+                      className="text-xs px-3 py-1.5 rounded-lg text-white transition"
+                      style={{ background: "#251762" }}
+                    >
+                      {styleSaving ? "Guardando…" : styleSaved ? "✓ Guardado" : "Guardar"}
+                    </button>
+                    <button
+                      onClick={() => setStyleEdit(null)}
+                      className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {styleEdit ? (
+                <div className="space-y-4">
+                  {/* Foco de mensajes — campo principal */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted flex items-center gap-1">
+                      <IconSparkles size={11} style={{ color: "#62E0D8" }} />
+                      Foco de los mensajes
+                    </label>
+                    <textarea
+                      value={styleEdit.message_focus}
+                      onChange={(e) => setStyleEdit((p) => p && ({ ...p, message_focus: e.target.value }))}
+                      rows={3}
+                      placeholder="Ej: Los mensajes deben enfocarse en cómo reducir el costo de adquisición de clientes, usando como ángulo principal el tiempo que pierden los equipos de ventas en tareas manuales…"
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white"
+                    />
+                    <p className="text-[10px] text-ink-muted">Este texto le dice a la IA cuál debe ser el ángulo y objetivo de todos los mensajes generados para este segmento.</p>
+                  </div>
+
+                  {/* Largo de email */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Largo de email</label>
+                    <div className="flex gap-2">
+                      {(["corto", "medio", "largo"] as const).map((len) => (
+                        <button
+                          key={len}
+                          type="button"
+                          onClick={() => setStyleEdit((p) => p && ({ ...p, style_email_length: len }))}
+                          className="flex-1 py-1.5 text-xs rounded-lg border transition capitalize"
+                          style={styleEdit.style_email_length === len
+                            ? { background: "#251762", color: "white", borderColor: "#251762" }
+                            : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }
+                          }
+                        >
+                          {len}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tono */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Tono y personalidad</label>
+                    <textarea
+                      value={styleEdit.style_tone}
+                      onChange={(e) => setStyleEdit((p) => p && ({ ...p, style_tone: e.target.value }))}
+                      rows={2}
+                      placeholder="Ej: Directo y consultivo, sin ser agresivo. Usa un lenguaje simple y evita el jerga técnica…"
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white"
+                    />
+                  </div>
+
+                  {/* Reglas */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Reglas de escritura</label>
+                    <textarea
+                      value={styleEdit.style_rules}
+                      onChange={(e) => setStyleEdit((p) => p && ({ ...p, style_rules: e.target.value }))}
+                      rows={3}
+                      placeholder="Una regla por línea. Ej:&#10;No uses signos de exclamación&#10;El asunto del email no puede superar 7 palabras&#10;Siempre menciona el nombre de la empresa del prospecto"
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white"
+                    />
+                  </div>
+
+                  {/* Palabras a evitar */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Palabras / frases a evitar</label>
+                    <textarea
+                      value={styleEdit.style_avoid}
+                      onChange={(e) => setStyleEdit((p) => p && ({ ...p, style_avoid: e.target.value }))}
+                      rows={2}
+                      placeholder="Una por línea. Ej:&#10;solución integral&#10;potenciar&#10;sinergia"
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white"
+                    />
+                  </div>
+                </div>
+              ) : (
+                // Vista de solo lectura
+                <div className="space-y-3 text-sm">
+                  {seg.message_focus ? (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted mb-1 flex items-center gap-1">
+                        <IconSparkles size={10} style={{ color: "#62E0D8" }} /> Foco de mensajes
+                      </p>
+                      <p className="text-ink text-sm whitespace-pre-wrap">{seg.message_focus}</p>
+                    </div>
+                  ) : null}
+                  {(seg.style_tone || seg.style_rules || seg.style_avoid || seg.style_email_length) ? (
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-ink-muted">
+                      {seg.style_email_length && <span>Largo: <strong className="text-ink">{seg.style_email_length}</strong></span>}
+                      {seg.style_tone && <span>Tono: <strong className="text-ink">{seg.style_tone.slice(0, 60)}{seg.style_tone.length > 60 ? "…" : ""}</strong></span>}
+                    </div>
+                  ) : null}
+                  {!seg.message_focus && !seg.style_tone && !seg.style_rules && !seg.style_avoid && !seg.style_email_length && (
+                    <p className="text-xs text-ink-muted italic">Sin guía de estilo configurada. La IA usará la guía global del cliente.</p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Fuentes de conocimiento */}

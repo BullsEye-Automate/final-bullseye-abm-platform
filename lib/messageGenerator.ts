@@ -44,6 +44,8 @@ export type SegmentContext = {
   name: string;
   sources: string; // contenido concatenado de las fuentes del segmento
   examples?: FewShotExample[];
+  messageFocus?: string;  // qué ángulo/objetivo deben tener los mensajes
+  styleGuide?: StyleGuide; // guía de estilo propia del segmento (sobreescribe la global)
 };
 
 export type ContactMessageInput = {
@@ -118,12 +120,23 @@ function buildSystemPrompt(
     parts.push(sourcesText);
   }
 
-  if (styleGuide?.tone || styleGuide?.rules || styleGuide?.avoid || styleGuide?.emailLength) {
-    parts.push("\n## GUÍA DE ESTILO DEL CLIENTE (aplica siempre)");
-    if (styleGuide.tone)        parts.push(`Tono: ${styleGuide.tone}`);
-    if (styleGuide.emailLength) parts.push(`Largo de email: ${styleGuide.emailLength} (corto=3 oraciones, medio=4-5, largo=6+)`);
-    if (styleGuide.rules)       parts.push(`Reglas de escritura:\n${styleGuide.rules}`);
-    if (styleGuide.avoid)       parts.push(`NUNCA escribas:\n${styleGuide.avoid}`);
+  // El foco de mensajes define el ángulo/objetivo de todos los mensajes para este segmento
+  if (segmentCtx?.messageFocus?.trim()) {
+    parts.push(`\n## FOCO DE LOS MENSAJES PARA ESTE SEGMENTO`);
+    parts.push(`Todos los mensajes deben girar en torno a este objetivo:\n${segmentCtx.messageFocus}`);
+  }
+
+  // La guía de estilo del segmento tiene prioridad sobre la global
+  const effectiveStyle = segmentCtx?.styleGuide ?? styleGuide;
+  if (effectiveStyle?.tone || effectiveStyle?.rules || effectiveStyle?.avoid || effectiveStyle?.emailLength) {
+    const label = segmentCtx?.styleGuide
+      ? "\n## GUÍA DE ESTILO DEL SEGMENTO (aplica siempre)"
+      : "\n## GUÍA DE ESTILO DEL CLIENTE (aplica siempre)";
+    parts.push(label);
+    if (effectiveStyle.tone)        parts.push(`Tono: ${effectiveStyle.tone}`);
+    if (effectiveStyle.emailLength) parts.push(`Largo de email: ${effectiveStyle.emailLength} (corto=3 oraciones, medio=4-5, largo=6+)`);
+    if (effectiveStyle.rules)       parts.push(`Reglas de escritura:\n${effectiveStyle.rules}`);
+    if (effectiveStyle.avoid)       parts.push(`NUNCA escribas:\n${effectiveStyle.avoid}`);
   }
 
   // Prioriza ejemplos del segmento; si no hay, usa los globales
