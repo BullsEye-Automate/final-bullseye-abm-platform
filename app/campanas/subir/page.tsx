@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useClient } from "@/lib/clientContext";
+import { useGeneration } from "@/lib/generationContext";
 import * as XLSX from "xlsx";
 import {
   IconUpload,
@@ -286,20 +287,37 @@ function ContactRow({
 
 export default function SubirCampanaPage() {
   const { currentClient } = useClient();
+  const generation = useGeneration();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Estado local de UI (no necesita sobrevivir navegación)
   const [stage, setStage]           = useState<Stage>("idle");
   const [parsed, setParsed]         = useState<ParsedContact[]>([]);
-  const [contacts, setContacts]     = useState<GeneratedContact[]>([]);
-  const [genProgress, setGenProgress] = useState(0);
-  const [genErrors, setGenErrors]   = useState(0);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number; errors: any[] } | null>(null);
   const [fileError, setFileError]   = useState<string | null>(null);
   const [segments, setSegments]     = useState<SegmentOption[]>([]);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string>("");
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
   const [deepResearchSet, setDeepResearchSet] = useState<Set<number>>(new Set());
+  const [localEdits, setLocalEdits] = useState<Record<number, Partial<GeneratedContact>>>({});
+
+  // Si hay una generación activa para este cliente, mostrar directamente la preview
+  const isActiveGeneration =
+    generation.stage !== "idle" && generation.clientId === currentClient?.id;
+
+  // Alias para facilitar acceso a datos del contexto cuando está activo
+  const contacts = isActiveGeneration ? generation.contacts : [];
+  const isGenerating = isActiveGeneration ? generation.isGenerating : false;
+  const genProgress = isActiveGeneration ? generation.genProgress : 0;
+  const genErrors = isActiveGeneration ? generation.genErrors : 0;
+
+  // Seleccionar automáticamente los contactos exitosos cuando termina la generación
+  useEffect(() => {
+    if (isActiveGeneration && !isGenerating && contacts.length > 0 && selectedIndexes.size === 0) {
+      setSelectedIndexes(new Set(contacts.map((c, i) => (!c.error ? i : -1)).filter((i) => i >= 0)));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGenerating, isActiveGeneration]);
 
   // ── Procesar archivo ──
   const handleFile = useCallback((file: File) => {
@@ -315,7 +333,6 @@ export default function SubirCampanaPage() {
           return;
         }
         setParsed(rows);
-        setContacts(rows.map((r) => ({ ...r })));
         setDeepResearchSet(new Set()); // reiniciar selección de deep research
         // Cargar segmentos y pasar a selección
         fetch(`/api/training/segments?client_id=${currentClient?.id}`)
@@ -342,70 +359,40 @@ export default function SubirCampanaPage() {
     [handleFile]
   );
 
-  // ── Generar mensajes (de a 1 con pausa para respetar rate limits) ──
-  async function handleGenerate() {
+  // ── Generar mensajes — delega al contexto global para que sobreviva navegación ──
+  function handleGenerate() {
     if (!currentClient?.id) return;
-    // Ir a preview de inmediato y mostrar progreso en tiempo real
-    setIsGenerating(true);
-    setGenProgress(0);
-    setGenErrors(0);
+    // Pasar a vista preview local
     setStage("preview");
-
-    const updated = [...contacts];
-    let errCount = 0;
-
-    for (let i = 0; i < parsed.length; i++) {
-      // Pausa de 3s entre contactos para no superar 30k tokens/min
-      if (i > 0) await new Promise((r) => setTimeout(r, 3000));
-
-      try {
-        const res = await fetch("/api/lemlist/csv-generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            client_id: currentClient.id,
-            contacts: [parsed[i]],
-            segment_id: selectedSegmentId || undefined,
-            use_deep_research: deepResearchSet.has(i),
-          }),
-        });
-        if (res.ok) {
-          const { results } = await res.json();
-          if (results?.[0]) updated[i] = { ...updated[i], ...results[0] };
-        } else {
-          errCount++;
-          setGenErrors(errCount);
-          updated[i] = { ...updated[i], error: `Error ${res.status}` };
-        }
-      } catch {
-        errCount++;
-        setGenErrors(errCount);
-        updated[i] = { ...updated[i], error: "Error de red" };
-      }
-
-      setGenProgress(i + 1);
-      setContacts([...updated]);
-    }
-
-    // Seleccionar solo los que generaron correctamente
-    setSelectedIndexes(new Set(updated.map((c, i) => (!c.error ? i : -1)).filter((i) => i >= 0)));
-    setIsGenerating(false);
-  }
-
-  // ── Editar mensaje generado ──
-  function handleChange(index: number, field: keyof GeneratedContact, val: string) {
-    setContacts((prev) => {
-      const next = [...prev];
-      next[index] = { ...next[index], [field]: val };
-      return next;
+    // Iniciar loop en el contexto global
+    generation.startGeneration({
+      clientId: currentClient.id,
+      parsed,
+      segmentId: selectedSegmentId,
+      deepResearchSet,
     });
   }
+
+  // ── Editar mensaje generado (los datos viven en el contexto) ──
+  // Nota: la edición in-place no requiere persistencia en el contexto;
+  // se usa un estado local de overrides para no interferir con el loop.
+  function handleChange(index: number, field: keyof GeneratedContact, val: string) {
+    setLocalEdits((prev) => ({
+      ...prev,
+      [index]: { ...prev[index], [field]: val },
+    }));
+  }
+
+  // Mezclar datos del contexto con ediciones locales
+  const displayContacts = contacts.map((c, i) =>
+    localEdits[i] ? { ...c, ...localEdits[i] } : c
+  );
 
   // ── Push a Lemlist (solo los seleccionados) ──
   async function handlePush() {
     if (!currentClient?.id) return;
     setStage("pushing");
-    const toSend = contacts.filter((_, i) => selectedIndexes.has(i));
+    const toSend = displayContacts.filter((_, i) => selectedIndexes.has(i));
     const res = await fetch("/api/lemlist/csv-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -426,7 +413,7 @@ export default function SubirCampanaPage() {
 
   function toggleSelectAll() {
     setSelectedIndexes((prev) =>
-      prev.size === contacts.length ? new Set() : new Set(contacts.map((_, i) => i))
+      prev.size === displayContacts.length ? new Set() : new Set(displayContacts.map((_, i) => i))
     );
   }
 
@@ -446,17 +433,15 @@ export default function SubirCampanaPage() {
 
   // ── Reset ──
   function reset() {
+    generation.resetGeneration();
     setParsed([]);
-    setContacts([]);
     setPushResult(null);
-    setGenProgress(0);
     setFileError(null);
     setSegments([]);
     setSelectedSegmentId("");
     setSelectedIndexes(new Set());
     setDeepResearchSet(new Set());
-    setGenErrors(0);
-    setIsGenerating(false);
+    setLocalEdits({});
     setStage("idle");
   }
 
@@ -467,6 +452,9 @@ export default function SubirCampanaPage() {
       </div>
     );
   }
+
+  // Si hay una generación activa para este cliente, redirigir a vista preview
+  const effectiveStage: Stage = isActiveGeneration ? "preview" : stage;
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -488,7 +476,7 @@ export default function SubirCampanaPage() {
       </header>
 
       {/* ── ETAPA: idle — drop zone ── */}
-      {stage === "idle" && (
+      {effectiveStage === "idle" && (
         <div
           className="card border-2 border-dashed border-[#E5E2F0] rounded-2xl flex flex-col items-center justify-center py-16 gap-4 cursor-pointer hover:border-[#62E0D8] transition"
           onDragOver={(e) => e.preventDefault()}
@@ -521,7 +509,7 @@ export default function SubirCampanaPage() {
       )}
 
       {/* ── ETAPA: parsed — confirmar contactos ── */}
-      {stage === "parsed" && (
+      {effectiveStage === "parsed" && (
         <div className="space-y-4">
           <div className="card px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -575,7 +563,7 @@ export default function SubirCampanaPage() {
       )}
 
       {/* ── ETAPA: segment — elegir segmento ── */}
-      {stage === "segment" && (
+      {effectiveStage === "segment" && (
         <div className="space-y-4">
           <div className="card px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -684,7 +672,7 @@ export default function SubirCampanaPage() {
       )}
 
       {/* ── ETAPA: preview — revisar y editar (también muestra progreso mientras isGenerating) ── */}
-      {stage === "preview" && (
+      {effectiveStage === "preview" && (
         <div className="space-y-4">
           {/* Barra de progreso — solo visible mientras genera */}
           {isGenerating && (
@@ -734,18 +722,18 @@ export default function SubirCampanaPage() {
               onClick={toggleSelectAll}
               className="text-sm flex items-center gap-2 text-ink-muted hover:text-ink transition"
             >
-              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${contacts.length > 0 && selectedIndexes.size === contacts.length ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
-                {contacts.length > 0 && selectedIndexes.size === contacts.length && <IconCheck size={10} className="text-white" strokeWidth={3} />}
+              <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${displayContacts.length > 0 && selectedIndexes.size === displayContacts.length ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
+                {displayContacts.length > 0 && selectedIndexes.size === displayContacts.length && <IconCheck size={10} className="text-white" strokeWidth={3} />}
               </div>
-              {contacts.length > 0 && selectedIndexes.size === contacts.length ? "Deseleccionar todos" : "Seleccionar todos"}
+              {displayContacts.length > 0 && selectedIndexes.size === displayContacts.length ? "Deseleccionar todos" : "Seleccionar todos"}
             </button>
             <span className="text-xs text-ink-muted">
-              {selectedIndexes.size} de {contacts.length} seleccionados
+              {selectedIndexes.size} de {displayContacts.length} seleccionados
             </span>
           </div>
 
           <div className="space-y-2">
-            {contacts.map((c, i) => {
+            {displayContacts.map((c, i) => {
               // Contacto aún no generado (sin emailSubject y sin error): mostrar spinner
               const isPending = isGenerating && i >= genProgress;
 
@@ -767,7 +755,18 @@ export default function SubirCampanaPage() {
           </div>
 
           {!isGenerating && (
-            <div className="flex justify-end pt-2">
+            <div className="flex items-center justify-between pt-2">
+              {/* Botón de nueva carga cuando la generación en contexto ya terminó */}
+              {generation.stage === "done" && isActiveGeneration ? (
+                <button
+                  onClick={reset}
+                  className="text-sm border border-[#E5E2F0] px-4 py-2 rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5"
+                >
+                  <IconX size={13} /> Nueva carga
+                </button>
+              ) : (
+                <div />
+              )}
               <button
                 onClick={handlePush}
                 disabled={selectedIndexes.size === 0}
@@ -782,7 +781,7 @@ export default function SubirCampanaPage() {
       )}
 
       {/* ── ETAPA: pushing ── */}
-      {stage === "pushing" && (
+      {effectiveStage === "pushing" && (
         <div className="card px-6 py-10 flex flex-col items-center gap-4">
           <IconLoader2 size={32} className="animate-spin" style={{ color: "#62E0D8" }} />
           <p className="font-semibold text-ink">Enviando contactos a Lemlist…</p>
@@ -790,7 +789,7 @@ export default function SubirCampanaPage() {
       )}
 
       {/* ── ETAPA: done ── */}
-      {stage === "done" && pushResult && (
+      {effectiveStage === "done" && pushResult && (
         <div className="space-y-4">
           <div
             className="card px-5 py-5 border-l-4 space-y-2"
