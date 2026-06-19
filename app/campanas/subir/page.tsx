@@ -131,11 +131,13 @@ function ContactRow({
   contact,
   index,
   pending,
+  deepResearch,
   onChange,
 }: {
   contact: GeneratedContact;
   index: number;
   pending?: boolean;
+  deepResearch?: boolean;
   onChange: (i: number, field: keyof GeneratedContact, val: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -179,6 +181,11 @@ function ContactRow({
           </div>
           <div className="text-xs text-ink-muted">{contact.email}</div>
         </div>
+        {deepResearch && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0" style={{ background: "rgba(98,224,216,0.15)", color: "#0fa89a" }}>
+            <IconSearch size={9} className="inline mr-0.5 -mt-px" />Inv. profunda
+          </span>
+        )}
         <IconLoader2 size={16} className="animate-spin shrink-0" style={{ color: "#62E0D8" }} />
       </div>
     );
@@ -204,6 +211,11 @@ function ContactRow({
           </div>
           <div className="text-xs text-ink-muted">{contact.email}</div>
         </div>
+        {deepResearch && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0" style={{ background: "rgba(98,224,216,0.15)", color: "#0fa89a" }}>
+            <IconSearch size={9} className="inline mr-0.5 -mt-px" />Inv. profunda
+          </span>
+        )}
         {hasError ? (
           <span className="text-xs text-red-500 flex items-center gap-1">
             <IconAlertCircle size={12} /> Error
@@ -784,7 +796,7 @@ export default function SubirCampanaPage() {
                     {!isPending && !isCancelled && selectedIndexes.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
                   </button>
                   <div className="flex-1 min-w-0">
-                    <ContactRow contact={c} index={i} pending={isPending} onChange={handleChange} />
+                    <ContactRow contact={c} index={i} pending={isPending} deepResearch={generation.deepResearchSet.has(i)} onChange={handleChange} />
                   </div>
                   {/* Botón cancelar contacto individual — solo para pendientes */}
                   {isPending && !isCancelled && (
