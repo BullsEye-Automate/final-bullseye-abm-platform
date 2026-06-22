@@ -88,19 +88,24 @@ export async function POST(req: NextRequest) {
   const segmentLinkedinMsgCount = (matchedSegment as Record<string, unknown> | null)?.linkedin_msg_count as number | undefined;
   const segmentIncludeConnectMsg = (matchedSegment as Record<string, unknown> | null)?.include_connect_msg as boolean | undefined;
 
-  // Cargar fuentes + ejemplos del segmento elegido (en paralelo)
+  // Cargar fuentes + ejemplos + guía de estilo del segmento elegido (en paralelo)
   let segmentContext: SegmentContext | undefined;
   if (routing.segmentId) {
-    const [{ data: sources }, { data: segExamples }] = await Promise.all([
+    const [{ data: sources }, { data: segExamples }, { data: segStyle }] = await Promise.all([
       db.from("segment_sources").select("content, title, source_type")
         .eq("segment_id", routing.segmentId).not("content", "is", null),
       db.from("message_examples").select("*").eq("segment_id", routing.segmentId)
         .order("created_at", { ascending: false }).limit(5),
+      db.from("training_segments")
+        .select("message_focus, style_tone, style_rules, style_avoid, style_email_length")
+        .eq("id", routing.segmentId).maybeSingle(),
     ]);
 
     const sourcesText = (sources ?? [])
       .map((s) => [s.title && `### ${s.title}`, s.content].filter(Boolean).join("\n"))
       .join("\n\n");
+
+    const hasSegmentStyle = segStyle?.style_tone || segStyle?.style_rules || segStyle?.style_avoid || segStyle?.style_email_length;
 
     segmentContext = {
       id:       routing.segmentId,
@@ -113,6 +118,13 @@ export async function POST(req: NextRequest) {
         contactName:  e.contact_name ?? "",
         jobTitle:     e.job_title    ?? "",
       })),
+      messageFocus: segStyle?.message_focus ?? undefined,
+      styleGuide: hasSegmentStyle ? {
+        tone:        segStyle?.style_tone         ?? "",
+        rules:       segStyle?.style_rules        ?? "",
+        avoid:       segStyle?.style_avoid        ?? "",
+        emailLength: segStyle?.style_email_length ?? "corto",
+      } : undefined,
     };
   }
 

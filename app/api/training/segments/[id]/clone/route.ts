@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   if (!original) return NextResponse.json({ error: "Segmento no encontrado" }, { status: 404 });
 
-  // Crear nuevo segmento con mismo contenido
+  // Crear nuevo segmento con mismo contenido (incluye guía de estilo)
   const { data: cloned, error } = await db
     .from("training_segments")
     .insert({
@@ -31,6 +31,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       email_count:        original.email_count,
       linkedin_msg_count: original.linkedin_msg_count,
       include_connect_msg: original.include_connect_msg,
+      message_focus:      original.message_focus ?? null,
+      style_tone:         original.style_tone    ?? null,
+      style_rules:        original.style_rules   ?? null,
+      style_avoid:        original.style_avoid   ?? null,
+      style_email_length: original.style_email_length ?? null,
     })
     .select()
     .single();

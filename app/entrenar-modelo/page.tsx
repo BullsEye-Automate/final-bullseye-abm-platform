@@ -30,7 +30,7 @@ import {
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
-type Tab = "segments" | "lab" | "examples" | "style";
+type Tab = "segments" | "lab" | "examples";
 
 type GeneratedMessages = {
   // Secuencia completa (cuando el segmento tiene email_count > 1, etc.)
@@ -70,6 +70,20 @@ type Segment = {
   include_connect_msg: boolean;
   segment_sources?: Source[];
   created_at: string;
+  // Guía de estilo propia del segmento
+  message_focus:      string | null;
+  style_tone:         string | null;
+  style_rules:        string | null;
+  style_avoid:        string | null;
+  style_email_length: string | null;
+};
+
+type SegmentStyle = {
+  message_focus:      string;
+  style_tone:         string;
+  style_rules:        string;
+  style_avoid:        string;
+  style_email_length: string;
 };
 
 type Example = {
@@ -209,6 +223,21 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [cloningId, setCloningId]     = useState<string | null>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
 
+  // Estado de edición de guía de estilo (independiente del editSeg de nombre/routing)
+  const [styleEdit, setStyleEdit]         = useState<SegmentStyle | null>(null);
+  const [styleSaving, setStyleSaving]     = useState(false);
+  const [styleSaved, setStyleSaved]       = useState(false);
+  // Correos de ejemplo por segmento
+  const [segExamples, setSegExamples]     = useState<StyleExample[]>([]);
+  const [segExLoading, setSegExLoading]   = useState(false);
+  const [segExForm, setSegExForm]         = useState({ subject: "", body: "", contact_name: "", job_title: "" });
+  const [segExShowing, setSegExShowing]   = useState(false);
+  const [segExSaving, setSegExSaving]     = useState(false);
+  const [segExEditId, setSegExEditId]     = useState<string | null>(null);
+  const [segExEditForm, setSegExEditForm] = useState({ subject: "", body: "", contact_name: "", job_title: "" });
+  const [segExEditSaving, setSegExEditSaving] = useState(false);
+  const [segExDeletingId, setSegExDeletingId] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch(`/api/training/segments?client_id=${clientId}`);
@@ -217,6 +246,16 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   }, [clientId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Cargar correos de ejemplo del segmento seleccionado
+  useEffect(() => {
+    if (!selected) { setSegExamples([]); return; }
+    setSegExLoading(true);
+    fetch(`/api/training/style-examples?client_id=${clientId}&segment_id=${selected}`)
+      .then((r) => r.json())
+      .then((d) => setSegExamples(d.examples ?? []))
+      .finally(() => setSegExLoading(false));
+  }, [selected, clientId]);
 
   async function createSegment() {
     if (!newSeg.name.trim()) return;
@@ -250,6 +289,66 @@ function SegmentsTab({ clientId }: { clientId: string }) {
       setEditSeg(null);
     }
     setSaving(false);
+  }
+
+  async function saveStyle(id: string) {
+    if (!styleEdit) return;
+    setStyleSaving(true);
+    const res = await fetch(`/api/training/segments/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(styleEdit),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      setSegments((p) => p.map((s) => s.id === id ? { ...s, ...d.segment } : s));
+      setStyleEdit(null);
+      setStyleSaved(true);
+      setTimeout(() => setStyleSaved(false), 3000);
+    }
+    setStyleSaving(false);
+  }
+
+  async function saveSegExample(segId: string) {
+    if (!segExForm.subject.trim() || !segExForm.body.trim()) return;
+    setSegExSaving(true);
+    const res = await fetch("/api/training/style-examples", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, segment_id: segId, email_subject: segExForm.subject, email_body: segExForm.body, contact_name: segExForm.contact_name || null, job_title: segExForm.job_title || null }),
+    });
+    const d = await res.json();
+    if (res.ok && d.example) {
+      setSegExamples((p) => [d.example, ...p]);
+      setSegExForm({ subject: "", body: "", contact_name: "", job_title: "" });
+      setSegExShowing(false);
+    }
+    setSegExSaving(false);
+  }
+
+  async function saveSegExampleEdit() {
+    if (!segExEditId || !segExEditForm.subject.trim() || !segExEditForm.body.trim()) return;
+    setSegExEditSaving(true);
+    const res = await fetch("/api/training/style-examples", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: segExEditId, client_id: clientId, email_subject: segExEditForm.subject, email_body: segExEditForm.body, contact_name: segExEditForm.contact_name || null, job_title: segExEditForm.job_title || null }),
+    });
+    if (res.ok) {
+      setSegExamples((p) => p.map((e) => e.id === segExEditId
+        ? { ...e, email_subject: segExEditForm.subject, email_body: segExEditForm.body, contact_name: segExEditForm.contact_name || undefined, job_title: segExEditForm.job_title || undefined }
+        : e
+      ));
+      setSegExEditId(null);
+    }
+    setSegExEditSaving(false);
+  }
+
+  async function deleteSegExample(id: string) {
+    setSegExDeletingId(id);
+    await fetch(`/api/training/style-examples?id=${id}&client_id=${clientId}`, { method: "DELETE" });
+    setSegExamples((p) => p.filter((e) => e.id !== id));
+    setSegExDeletingId(null);
   }
 
   async function deleteSegment(id: string) {
@@ -483,7 +582,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
             <div className="flex items-center justify-between gap-2">
               <button
                 className="flex-1 text-left min-w-0"
-                onClick={() => { setSelected(s.id); setEditSeg(null); setCreating(false); }}
+                onClick={() => { setSelected(s.id); setEditSeg(null); setStyleEdit(null); setCreating(false); }}
               >
                 <p className="text-sm font-semibold text-ink truncate">{s.name}</p>
                 {s.description && <p className="text-xs text-ink-muted truncate mt-0.5">{s.description}</p>}
@@ -617,6 +716,217 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                         {seg.include_connect_msg ?? true ? "✓" : "✗"} Msg en invitación a conectar
                       </span>
                     </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Guía de estilo del segmento ── */}
+            <div className="card px-5 py-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold text-ink text-sm">Guía de estilo</p>
+                  <p className="text-xs text-ink-muted mt-0.5">Define el tono, las reglas y el foco de los mensajes para este segmento.</p>
+                </div>
+                {!styleEdit ? (
+                  <button
+                    onClick={() => setStyleEdit({
+                      message_focus:      seg.message_focus      ?? "",
+                      style_tone:         seg.style_tone         ?? "",
+                      style_rules:        seg.style_rules        ?? "",
+                      style_avoid:        seg.style_avoid        ?? "",
+                      style_email_length: seg.style_email_length ?? "corto",
+                    })}
+                    className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center gap-1 shrink-0"
+                  >
+                    <IconEdit size={12} /> Editar
+                  </button>
+                ) : (
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => saveStyle(seg.id)}
+                      disabled={styleSaving}
+                      className="text-xs px-3 py-1.5 rounded-lg text-white transition"
+                      style={{ background: "#251762" }}
+                    >
+                      {styleSaving ? "Guardando…" : styleSaved ? "✓ Guardado" : "Guardar"}
+                    </button>
+                    <button
+                      onClick={() => setStyleEdit(null)}
+                      className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {styleEdit ? (
+                <div className="space-y-4">
+                  {/* Foco de mensajes — campo principal */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted flex items-center gap-1">
+                      <IconSparkles size={11} style={{ color: "#62E0D8" }} />
+                      Foco de los mensajes
+                    </label>
+                    <textarea
+                      value={styleEdit.message_focus}
+                      onChange={(e) => setStyleEdit((p) => p && ({ ...p, message_focus: e.target.value }))}
+                      rows={3}
+                      placeholder="Ej: Los mensajes deben enfocarse en cómo reducir el costo de adquisición de clientes, usando como ángulo principal el tiempo que pierden los equipos de ventas en tareas manuales…"
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white"
+                    />
+                    <p className="text-[10px] text-ink-muted">Este texto le dice a la IA cuál debe ser el ángulo y objetivo de todos los mensajes generados para este segmento.</p>
+                  </div>
+
+                  {/* Largo de email */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Largo de email</label>
+                    <div className="flex gap-2">
+                      {(["corto", "medio", "largo"] as const).map((len) => (
+                        <button
+                          key={len}
+                          type="button"
+                          onClick={() => setStyleEdit((p) => p && ({ ...p, style_email_length: len }))}
+                          className="flex-1 py-1.5 text-xs rounded-lg border transition capitalize"
+                          style={styleEdit.style_email_length === len
+                            ? { background: "#251762", color: "white", borderColor: "#251762" }
+                            : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }
+                          }
+                        >
+                          {len}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tono */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Tono y personalidad</label>
+                    <textarea
+                      value={styleEdit.style_tone}
+                      onChange={(e) => setStyleEdit((p) => p && ({ ...p, style_tone: e.target.value }))}
+                      rows={2}
+                      placeholder="Ej: Directo y consultivo, sin ser agresivo. Usa un lenguaje simple y evita el jerga técnica…"
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white"
+                    />
+                  </div>
+
+                  {/* Reglas */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Reglas de escritura</label>
+                    <textarea
+                      value={styleEdit.style_rules}
+                      onChange={(e) => setStyleEdit((p) => p && ({ ...p, style_rules: e.target.value }))}
+                      rows={3}
+                      placeholder="Una regla por línea. Ej:&#10;No uses signos de exclamación&#10;El asunto del email no puede superar 7 palabras&#10;Siempre menciona el nombre de la empresa del prospecto"
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white"
+                    />
+                  </div>
+
+                  {/* Palabras a evitar */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Palabras / frases a evitar</label>
+                    <textarea
+                      value={styleEdit.style_avoid}
+                      onChange={(e) => setStyleEdit((p) => p && ({ ...p, style_avoid: e.target.value }))}
+                      rows={2}
+                      placeholder="Una por línea. Ej:&#10;solución integral&#10;potenciar&#10;sinergia"
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white"
+                    />
+                  </div>
+                </div>
+              ) : (
+                // Vista de solo lectura
+                <div className="space-y-3 text-sm">
+                  {seg.message_focus ? (
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted mb-1 flex items-center gap-1">
+                        <IconSparkles size={10} style={{ color: "#62E0D8" }} /> Foco de mensajes
+                      </p>
+                      <p className="text-ink text-sm whitespace-pre-wrap">{seg.message_focus}</p>
+                    </div>
+                  ) : null}
+                  {(seg.style_tone || seg.style_rules || seg.style_avoid || seg.style_email_length) ? (
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-ink-muted">
+                      {seg.style_email_length && <span>Largo: <strong className="text-ink">{seg.style_email_length}</strong></span>}
+                      {seg.style_tone && <span>Tono: <strong className="text-ink">{seg.style_tone.slice(0, 60)}{seg.style_tone.length > 60 ? "…" : ""}</strong></span>}
+                    </div>
+                  ) : null}
+                  {!seg.message_focus && !seg.style_tone && !seg.style_rules && !seg.style_avoid && !seg.style_email_length && (
+                    <p className="text-xs text-ink-muted italic">Sin guía de estilo configurada. La IA usará la guía global del cliente.</p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Correos de ejemplo del segmento ── */}
+              <div className="border-t border-[#F0EEF8] pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Correos de ejemplo</p>
+                  <button
+                    onClick={() => { setSegExShowing((p) => !p); setSegExEditId(null); }}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 transition"
+                  >
+                    <IconPlus size={12} /> Agregar correo
+                  </button>
+                </div>
+                <p className="text-xs text-ink-muted -mt-1">Pega correos que te gusten para que Claude aprenda tu estilo en este segmento.</p>
+
+                {segExShowing && (
+                  <div className="border border-[#E5E2F0] rounded-xl px-4 py-4 space-y-3 bg-gray-50/50">
+                    <div className="grid grid-cols-2 gap-2">
+                      <input value={segExForm.contact_name} onChange={(e) => setSegExForm((p) => ({ ...p, contact_name: e.target.value }))} placeholder="Nombre del contacto (opcional)" className="text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white" />
+                      <input value={segExForm.job_title} onChange={(e) => setSegExForm((p) => ({ ...p, job_title: e.target.value }))} placeholder="Cargo (opcional)" className="text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white" />
+                    </div>
+                    <input value={segExForm.subject} onChange={(e) => setSegExForm((p) => ({ ...p, subject: e.target.value }))} placeholder="Asunto del correo" className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8] bg-white" />
+                    <textarea value={segExForm.body} onChange={(e) => setSegExForm((p) => ({ ...p, body: e.target.value }))} rows={5} placeholder="Cuerpo del correo…" className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none bg-white" />
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => { setSegExShowing(false); setSegExForm({ subject: "", body: "", contact_name: "", job_title: "" }); }} className="text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50">Cancelar</button>
+                      <button onClick={() => saveSegExample(seg.id)} disabled={segExSaving || !segExForm.subject.trim() || !segExForm.body.trim()} className="text-xs px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#251762" }}>{segExSaving ? "Guardando…" : "Guardar correo"}</button>
+                    </div>
+                  </div>
+                )}
+
+                {segExLoading ? (
+                  <div className="flex justify-center py-4"><IconLoader2 size={16} className="animate-spin text-ink-muted" /></div>
+                ) : segExamples.length === 0 && !segExShowing ? (
+                  <p className="text-xs text-ink-muted italic">Sin correos de ejemplo. Agrega uno para que Claude aprenda tu estilo.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {segExamples.map((ex) => (
+                      <div key={ex.id} className="border border-[#E5E2F0] rounded-xl px-4 py-3 space-y-2 bg-white">
+                        {segExEditId === ex.id ? (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-2">
+                              <input value={segExEditForm.contact_name} onChange={(e) => setSegExEditForm((p) => ({ ...p, contact_name: e.target.value }))} placeholder="Nombre (opcional)" className="text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]" />
+                              <input value={segExEditForm.job_title} onChange={(e) => setSegExEditForm((p) => ({ ...p, job_title: e.target.value }))} placeholder="Cargo (opcional)" className="text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]" />
+                            </div>
+                            <input value={segExEditForm.subject} onChange={(e) => setSegExEditForm((p) => ({ ...p, subject: e.target.value }))} placeholder="Asunto" className="w-full text-sm border border-[#E5E2F0] rounded-lg px-3 py-2 outline-none focus:border-[#62E0D8]" />
+                            <textarea value={segExEditForm.body} onChange={(e) => setSegExEditForm((p) => ({ ...p, body: e.target.value }))} rows={5} className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] resize-none" />
+                            <div className="flex justify-end gap-2">
+                              <button onClick={() => setSegExEditId(null)} className="text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50">Cancelar</button>
+                              <button onClick={saveSegExampleEdit} disabled={segExEditSaving} className="text-xs px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: "#251762" }}>{segExEditSaving ? "Guardando…" : "Guardar"}</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <p className="font-semibold text-sm text-ink">{ex.email_subject}</p>
+                                {(ex.contact_name || ex.job_title) && (
+                                  <p className="text-xs text-ink-muted">{[ex.contact_name, ex.job_title].filter(Boolean).join(" · ")}</p>
+                                )}
+                              </div>
+                              <div className="flex gap-1 shrink-0">
+                                <button onClick={() => { setSegExEditId(ex.id); setSegExEditForm({ subject: ex.email_subject, body: ex.email_body, contact_name: ex.contact_name ?? "", job_title: ex.job_title ?? "" }); }} className="p-1.5 rounded-lg text-ink-muted hover:text-[#251762] hover:bg-gray-100 transition"><IconEdit size={13} /></button>
+                                <button onClick={() => deleteSegExample(ex.id)} disabled={segExDeletingId === ex.id} className="p-1.5 rounded-lg text-ink-muted hover:text-red-500 hover:bg-red-50 transition"><IconTrash size={13} /></button>
+                              </div>
+                            </div>
+                            <p className="text-xs text-ink-muted line-clamp-2">{ex.email_body}</p>
+                          </>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1761,10 +2071,9 @@ function StyleTab({ clientId }: { clientId: string }) {
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 const TAB_CONFIG = [
-  { id: "segments" as Tab, label: "Segmentos",         icon: <IconTag size={16} /> },
-  { id: "lab"      as Tab, label: "Laboratorio",        icon: <IconFlask size={16} /> },
-  { id: "examples" as Tab, label: "Ejemplos",           icon: <IconStarFilled size={16} /> },
-  { id: "style"    as Tab, label: "Guía de estilo",     icon: <IconBrain size={16} /> },
+  { id: "segments" as Tab, label: "Segmentos",  icon: <IconTag size={16} /> },
+  { id: "lab"      as Tab, label: "Laboratorio", icon: <IconFlask size={16} /> },
+  { id: "examples" as Tab, label: "Ejemplos",    icon: <IconStarFilled size={16} /> },
 ];
 
 export default function EntrenarModeloPage() {
@@ -1812,7 +2121,6 @@ export default function EntrenarModeloPage() {
         {tab === "segments" && <SegmentsTab clientId={currentClient.id} />}
         {tab === "lab"      && <LabTab      clientId={currentClient.id} />}
         {tab === "examples" && <ExamplesTab clientId={currentClient.id} />}
-        {tab === "style"    && <StyleTab    clientId={currentClient.id} />}
       </div>
     </div>
   );
