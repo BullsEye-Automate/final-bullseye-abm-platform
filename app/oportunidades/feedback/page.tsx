@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useClient } from "@/lib/clientContext";
 import {
   IconCalendar, IconCheck, IconClock, IconLink, IconPlus,
-  IconUpload, IconX, IconChevronDown, IconMessageCheck, IconAlertCircle
+  IconUpload, IconX, IconMessageCheck, IconAlertCircle, IconRefresh
 } from "@tabler/icons-react";
 
 type Meeting = {
@@ -128,6 +128,7 @@ export default function FeedbackPage() {
   const [showModal, setShowModal] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
+  const [syncing, setSyncing]     = useState(false);
   const [copied, setCopied]       = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -144,6 +145,23 @@ export default function FeedbackPage() {
   }
 
   useEffect(() => { load(); }, [currentClient, desde, hasta]);
+
+  async function handleSync() {
+    setSyncing(true);
+    setImportMsg("");
+    try {
+      const res = await fetch("/api/cron/sync-meetings");
+      const data = await res.json();
+      if (data.error) setImportMsg(`Error: ${data.error}`);
+      else {
+        setImportMsg(`✓ Sync completado — ${data.synced} reuniones sincronizadas desde Google Sheets`);
+        load();
+      }
+    } catch {
+      setImportMsg("Error de conexión al hacer sync");
+    }
+    setSyncing(false);
+  }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -185,6 +203,11 @@ export default function FeedbackPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={handleSync} disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 disabled:opacity-50">
+            <IconRefresh size={15} className={syncing ? "animate-spin" : ""} />
+            {syncing ? "Sincronizando…" : "Sync Google Sheets"}
+          </button>
           <button onClick={() => fileRef.current?.click()}
             disabled={importing}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 disabled:opacity-50">
