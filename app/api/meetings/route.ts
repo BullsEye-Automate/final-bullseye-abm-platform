@@ -1,12 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY!
-);
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const supabase = supabaseAdmin();
   const { searchParams } = new URL(req.url);
   const clientId = searchParams.get("client_id");
   const desde    = searchParams.get("desde");
@@ -27,6 +25,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const supabase = supabaseAdmin();
   const body = await req.json();
   const { data, error } = await supabase
     .from("meetings")

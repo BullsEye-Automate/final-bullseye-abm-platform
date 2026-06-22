@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getSheetRows } from "@/lib/googleSheets";
 
-export const runtime    = "nodejs";
-export const dynamic    = "force-dynamic";
+export const runtime     = "nodejs";
+export const dynamic     = "force-dynamic";
 export const maxDuration = 60;
-
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY!
-);
 
 function parseDate(str: string): string | null {
   if (!str) return null;
@@ -57,6 +52,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, synced: 0, message: "Hoja vacía" });
   }
 
+  const supabase = supabaseAdmin();
   // Cargar clientes para mapear nombre → id
   const { data: clients } = await supabase.from("clients").select("id, name");
   const clientByName = new Map<string, string>();

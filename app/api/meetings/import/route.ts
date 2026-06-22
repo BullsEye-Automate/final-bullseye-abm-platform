@@ -1,10 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY!
-);
+export const dynamic = "force-dynamic";
 
 // Normaliza encabezados del CSV (case insensitive, espacios, tildes)
 function normalizeKey(k: string) {
@@ -50,6 +47,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No se encontraron filas válidas. Verifica que el CSV tenga columna 'Empresa'" }, { status: 400 });
   }
 
+  const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from("meetings")
     .upsert(records, { ignoreDuplicates: false })

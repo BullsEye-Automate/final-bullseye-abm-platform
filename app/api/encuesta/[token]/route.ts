@@ -1,15 +1,13 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY!
-);
+export const dynamic = "force-dynamic";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: { token: string } }
 ) {
+  const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from("meetings")
     .select("id, empresa, contacto_nombre, contacto_cargo, fecha_reunion, realizado, feedback_status, meeting_feedback(*)")
@@ -24,7 +22,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { token: string } }
 ) {
-  // Buscar la reunión por token
+  const supabase = supabaseAdmin();
   const { data: meeting, error: meetingError } = await supabase
     .from("meetings")
     .select("id, feedback_status")
