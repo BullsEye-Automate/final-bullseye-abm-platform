@@ -11,7 +11,6 @@ import {
   IconPhone,
   IconHeadset,
   IconMessage2,
-  IconChartFunnel,
   IconReportAnalytics,
   IconBrain,
   IconSettings,
@@ -22,7 +21,9 @@ import {
   IconAdjustments,
   IconMapSearch,
   IconStethoscope,
-  IconLoader2
+  IconLoader2,
+  IconMessageStar,
+  IconChartBar
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -56,9 +57,10 @@ const SECTIONS: Section[] = [
     ]
   },
   {
-    label: "Ventas",
+    label: "Oportunidades",
     items: [
-      { href: "/funnel", label: "Funnel", icon: IconChartFunnel, disabled: true }
+      { href: "/oportunidades/feedback",   label: "Feedback",    icon: IconMessageStar },
+      { href: "/oportunidades/resultados", label: "Resultados",  icon: IconChartBar },
     ]
   },
   {
