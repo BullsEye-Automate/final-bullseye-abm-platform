@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/sync-meetings",
-      "schedule": "*/30 * * * *"
+      "schedule": "0 9 * * *"
     }
   ],
   "framework": "nextjs",
