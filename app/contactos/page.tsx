@@ -46,11 +46,12 @@ type Contact = {
 };
 
 type Company = { id: string; company_name: string };
-type Bucket = "pending" | "approved_pending" | "enriched" | "discarded";
+type Bucket = "pending" | "manual_review" | "approved_pending" | "enriched" | "discarded";
 type Preview = { emailSubject?: string; emailBody?: string; linkedinIcebreaker?: string; linkedinIcebreakerNoEmail?: string };
 
 const BUCKET_LABELS: Record<Bucket, string> = {
   pending: "Pendientes",
+  manual_review: "Revisión manual",
   approved_pending: "Por aprobar",
   enriched: "En campaña",
   discarded: "Descartados",
@@ -60,7 +61,7 @@ export default function ContactosPage() {
   const { currentClient } = useClient();
   const [bucket, setBucket] = useState<Bucket>("approved_pending");
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [counts, setCounts] = useState<Record<Bucket, number>>({ pending: 0, approved_pending: 0, enriched: 0, discarded: 0 });
+  const [counts, setCounts] = useState<Record<Bucket, number>>({ pending: 0, manual_review: 0, approved_pending: 0, enriched: 0, discarded: 0 });
   const [loading, setLoading] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -278,7 +279,7 @@ export default function ContactosPage() {
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          {(["pending", "approved_pending", "enriched", "discarded"] as Bucket[]).map((b) => {
+          {(["pending", "manual_review", "approved_pending", "enriched", "discarded"] as Bucket[]).map((b) => {
             const active = bucket === b;
             return (
               <button
@@ -295,7 +296,7 @@ export default function ContactosPage() {
           })}
         </div>
         <div className="flex items-center gap-2">
-          {bucket === "approved_pending" && allIds.length > 0 && (
+          {(bucket === "approved_pending" || bucket === "manual_review") && allIds.length > 0 && (
             <button onClick={() => pushToLemlist(allIds)} disabled={bulkApproving} className="btn-primary">
               <IconSend size={14} />
               {bulkApproving ? "Enviando…" : `Aprobar y enviar a Lemlist (${allIds.length})`}
@@ -548,6 +549,26 @@ function ContactCard({
             >
               {isPushing ? <IconLoader2 size={12} className="animate-spin" /> : <IconSend size={12} />}
               {isPushing ? "Enviando…" : "Enviar a campaña"}
+            </button>
+            <button
+              onClick={onDiscard}
+              disabled={isDiscarding || isPushing}
+              className="btn-secondary text-xs py-1.5 px-3 text-danger-fg"
+            >
+              {isDiscarding ? <IconLoader2 size={12} className="animate-spin" /> : <IconTrash size={12} />}
+              {isDiscarding ? "Descartando…" : "Descartar"}
+            </button>
+          </>
+        )}
+        {bucket === "manual_review" && (
+          <>
+            <button
+              onClick={onPushLemlist}
+              disabled={isPushing || isDiscarding}
+              className="btn-primary text-xs py-1.5 px-3"
+            >
+              {isPushing ? <IconLoader2 size={12} className="animate-spin" /> : <IconSend size={12} />}
+              {isPushing ? "Enviando…" : "Aprobar y enviar"}
             </button>
             <button
               onClick={onDiscard}

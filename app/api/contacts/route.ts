@@ -44,13 +44,16 @@ export async function GET(req: NextRequest) {
 
   let q = applyFilters(db.from("contacts").select(CONTACT_COLUMNS));
 
-  // Buckets (sin revisión manual — 4 estados únicamente):
-  //   pending          → prefilter_result='yes', fit_action IS NULL, status='pending'
+  // Buckets:
+  //   pending          → prefilter='yes', fit_action IS NULL, status='pending'
+  //   manual_review    → fit_action='manual_review', status='pending' (Clay evaluó score 4-6, necesita decisión humana)
   //   approved_pending → fit_action='enrich', lemlist_pushed_at IS NULL, status != 'discarded'
   //   enriched         → lemlist_pushed_at IS NOT NULL
-  //   discarded        → prefilter_result='no' OR fit_action='discard' OR status='discarded' OR human_decision='rejected'
+  //   discarded        → prefilter='no' OR fit_action='discard' OR status='discarded' OR human_decision='rejected'
   if (bucket === "pending") {
     q = q.eq("prefilter_result", "yes").is("fit_action", null).eq("status", "pending");
+  } else if (bucket === "manual_review") {
+    q = q.eq("fit_action", "manual_review").eq("status", "pending");
   } else if (bucket === "approved_pending") {
     q = q.eq("fit_action", "enrich").is("lemlist_pushed_at", null).neq("status", "discarded");
   } else if (bucket === "enriched") {
@@ -69,8 +72,9 @@ export async function GET(req: NextRequest) {
     return bucketQ(applyFilters(db.from("contacts").select("id", { count: "exact", head: true })));
   }
 
-  const [pendingRes, approvedPendingRes, enrichedRes, discardedRes] = await Promise.all([
+  const [pendingRes, manualReviewRes, approvedPendingRes, enrichedRes, discardedRes] = await Promise.all([
     countFor((q) => q.eq("prefilter_result", "yes").is("fit_action", null).eq("status", "pending")),
+    countFor((q) => q.eq("fit_action", "manual_review").eq("status", "pending")),
     countFor((q) => q.eq("fit_action", "enrich").is("lemlist_pushed_at", null).neq("status", "discarded")),
     countFor((q) => q.not("lemlist_pushed_at", "is", null)),
     countFor((q) => q.or("prefilter_result.eq.no,fit_action.eq.discard,status.eq.discarded,human_decision.eq.rejected"))
@@ -81,6 +85,7 @@ export async function GET(req: NextRequest) {
       contacts: data ?? [],
       counts: {
         pending:          pendingRes.count          ?? 0,
+        manual_review:    manualReviewRes.count     ?? 0,
         approved_pending: approvedPendingRes.count  ?? 0,
         enriched:         enrichedRes.count         ?? 0,
         discarded:        discardedRes.count        ?? 0
