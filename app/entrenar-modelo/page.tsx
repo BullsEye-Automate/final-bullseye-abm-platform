@@ -219,6 +219,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [srcForm, setSrcForm]         = useState({ type: "text" as "text" | "url" | "file", title: "", content: "", url: "" });
   const [srcFiles, setSrcFiles]        = useState<File[]>([]);
   const [srcLoading, setSrcLoading]   = useState(false);
+  const [srcFileProgress, setSrcFileProgress] = useState(0);
   const [srcError, setSrcError]       = useState<string | null>(null);
   const [cloningId, setCloningId]     = useState<string | null>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
@@ -378,6 +379,8 @@ function SegmentsTab({ clientId }: { clientId: string }) {
     setSrcForm({ type: "text", title: "", content: "", url: "" });
     setSrcFiles([]);
     setSrcError(null);
+    setSrcLoading(false);
+    setSrcFileProgress(0);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -419,7 +422,8 @@ function SegmentsTab({ clientId }: { clientId: string }) {
 
     if (srcForm.type === "file" && srcFiles.length > 0) {
       const addedSources: Source[] = [];
-      for (const file of srcFiles) {
+      for (let fi = 0; fi < srcFiles.length; fi++) {
+        const file = srcFiles[fi];
         let content: string;
         try {
           content = await readFileContent(file);
@@ -429,11 +433,18 @@ function SegmentsTab({ clientId }: { clientId: string }) {
           return;
         }
         const body = { source_type: "document", title: file.name, content };
-        const res = await fetch(`/api/training/segments/${segmentId}/sources`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
+        let res: Response;
+        try {
+          res = await fetch(`/api/training/segments/${segmentId}/sources`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+        } catch {
+          setSrcError(`Error de red al guardar "${file.name}"`);
+          setSrcLoading(false);
+          return;
+        }
         const d = await res.json();
         if (!res.ok) {
           setSrcError(d.error ?? `Error al guardar "${file.name}"`);
@@ -441,6 +452,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
           return;
         }
         addedSources.push(d.source as Source);
+        setSrcFileProgress(fi + 1);
       }
       setSegments((p) =>
         p.map((s) =>
@@ -1082,7 +1094,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     {srcLoading ? <IconLoader2 size={13} className="animate-spin" /> : <IconPlus size={13} />}
                     {srcLoading
                       ? srcForm.type === "url"  ? "Obteniendo contenido…"
-                      : srcForm.type === "file" ? `Procesando${srcFiles.length > 1 ? ` (0/${srcFiles.length})` : ""}…`
+                      : srcForm.type === "file" ? `Procesando${srcFiles.length > 1 ? ` (${srcFileProgress}/${srcFiles.length})` : ""}…`
                       : "Guardando…"
                       : srcForm.type === "file" && srcFiles.length > 1
                         ? `Agregar ${srcFiles.length} archivos`
