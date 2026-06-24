@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   if (clientId) q = q.eq("client_id", clientId);
   const { data: allCompanies } = await q.order("clay_pushed_at", { ascending: false }).limit(500);
 
-  let cq = db.from("contacts").select("company_id");
+  let cq = db.from("contacts").select("company_id").neq("status", "discarded");
   if (clientId) cq = cq.eq("client_id", clientId);
   const { data: contactRows } = await cq;
   const contactCountMap = new Map<string, number>();
