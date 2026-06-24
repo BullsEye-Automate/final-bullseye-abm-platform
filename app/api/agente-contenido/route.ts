@@ -19,6 +19,7 @@ type RecipientInfo = {
   emailType?: string;
   referrerName?: string;
   contextNotes?: string;
+  segmentStyleGuide?: string;
 };
 
 function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, recipient: RecipientInfo): string {
@@ -40,6 +41,10 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, re
     recipient.contextNotes  ? `- Contexto adicional: ${recipient.contextNotes}` : "",
   ].filter(Boolean).join("\n");
 
+  const styleBlock = recipient.segmentStyleGuide
+    ? `\n\nGuía de estilo para esta segmentación (aplica estrictamente):\n${recipient.segmentStyleGuide}`
+    : "";
+
   return `Eres un asistente experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar correos de seguimiento y de más información.
 
 Tu tono es profesional pero cercano. Los correos deben ser cortos (máx 150 palabras en el cuerpo), directos y con un CTA claro.
@@ -47,7 +52,7 @@ Tu tono es profesional pero cercano. Los correos deben ser cortos (máx 150 pala
 ${recipientBlock ? `Datos del destinatario de esta sesión:\n${recipientBlock}\n\nUsa estos datos en todos los correos de esta conversación sin pedirlos de nuevo.` : ""}
 
 Contexto sobre ${ctx.clientName}:
-${contextBlock}${icpBlock}
+${contextBlock}${icpBlock}${styleBlock}
 
 Cuando generes un correo, devuelve SIEMPRE este JSON (sin markdown extra):
 {
@@ -62,20 +67,43 @@ Para cualquier ajuste o variación, aplica los cambios directamente y devuelve e
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { clientId, messages, emailType, recipientName, recipientCompany, recipientTitle, referrerName, contextNotes, save, image } = body;
+  const { clientId, messages, emailType, segmentId, recipientName, recipientCompany, recipientTitle, referrerName, contextNotes, save, image } = body;
 
   if (!clientId || !messages?.length) {
     return NextResponse.json({ error: "clientId y messages son requeridos" }, { status: 400 });
   }
 
+  // Carga guía de estilo del segmento si se seleccionó uno
+  let segmentStyleGuide: string | undefined;
+  if (segmentId) {
+    const db = supabaseAdmin();
+    const { data: seg } = await db
+      .from("training_segments")
+      .select("name, message_focus, style_tone, style_rules, style_avoid, style_email_length")
+      .eq("id", segmentId)
+      .single();
+    if (seg) {
+      const parts = [
+        `Segmento: ${seg.name}`,
+        seg.message_focus     ? `Enfoque del mensaje: ${seg.message_focus}`   : "",
+        seg.style_tone        ? `Tono: ${seg.style_tone}`                     : "",
+        seg.style_email_length? `Largo del correo: ${seg.style_email_length}` : "",
+        seg.style_rules       ? `Reglas de escritura: ${seg.style_rules}`     : "",
+        seg.style_avoid       ? `Evitar: ${seg.style_avoid}`                  : "",
+      ].filter(Boolean);
+      segmentStyleGuide = parts.join("\n");
+    }
+  }
+
   const ctx = await getClientContext(clientId);
   const systemPrompt = buildSystemPrompt(ctx, {
-    name:         recipientName,
-    company:      recipientCompany,
-    title:        recipientTitle,
-    emailType:    emailType,
-    referrerName: referrerName,
-    contextNotes: contextNotes,
+    name:              recipientName,
+    company:           recipientCompany,
+    title:             recipientTitle,
+    emailType:         emailType,
+    referrerName:      referrerName,
+    contextNotes:      contextNotes,
+    segmentStyleGuide: segmentStyleGuide,
   });
 
   // Construye los mensajes del chat

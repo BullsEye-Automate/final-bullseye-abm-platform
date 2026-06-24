@@ -13,6 +13,15 @@ const EMAIL_TYPE_LABELS: Record<EmailType, string> = {
 };
 
 type Client = { id: string; name: string };
+type Segment = {
+  id: string;
+  name: string;
+  message_focus: string | null;
+  style_tone: string | null;
+  style_rules: string | null;
+  style_avoid: string | null;
+  style_email_length: string | null;
+};
 
 function parseEmail(text: string): { subject: string; body: string } | null {
   try {
@@ -96,9 +105,12 @@ function Bubble({ msg }: { msg: Message }) {
 }
 
 export default function ChatPage() {
-  const [clients, setClients]         = useState<Client[]>([]);
-  const [clientId, setClientId]           = useState("");
-  const [clientOpen, setClientOpen]       = useState(false);
+  const [clients, setClients]           = useState<Client[]>([]);
+  const [clientId, setClientId]         = useState("");
+  const [clientOpen, setClientOpen]     = useState(false);
+  const [segments, setSegments]         = useState<Segment[]>([]);
+  const [segmentId, setSegmentId]       = useState("");
+  const [segmentOpen, setSegmentOpen]   = useState(false);
   const [emailType, setEmailType]         = useState<EmailType>("info");
   const [recipientName, setRecipientName] = useState("");
   const [recipientCompany, setRecipientCompany] = useState("");
@@ -117,12 +129,17 @@ export default function ChatPage() {
   useEffect(() => {
     fetch("/api/clients")
       .then((r) => r.json())
-      .then((json) => {
-        console.log("[chat] /api/clients →", json);
-        setClients(json.clients ?? []);
-      })
-      .catch((err) => console.error("[chat] error cargando clientes:", err));
+      .then((json) => setClients(json.clients ?? []))
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!clientId) { setSegments([]); setSegmentId(""); return; }
+    fetch(`/api/training/segments?client_id=${clientId}`)
+      .then((r) => r.json())
+      .then((json) => setSegments(json.segments ?? []))
+      .catch(() => {});
+  }, [clientId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -145,6 +162,7 @@ export default function ChatPage() {
         clientId,
         messages:         apiMessages,
         emailType,
+        segmentId:        segmentId || undefined,
         recipientName,
         recipientCompany,
         recipientTitle,
@@ -192,6 +210,7 @@ export default function ChatPage() {
     setMessages([]);
     setStep("setup");
     setInput("");
+    setSegmentId("");
     setRecipientName("");
     setRecipientCompany("");
     setTitle("");
@@ -313,6 +332,50 @@ export default function ChatPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Segmentación (opcional) */}
+                {segments.length > 0 && (
+                  <div className="relative">
+                    <label className="block text-[11px] uppercase tracking-widest font-medium mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
+                      Guía de estilo <span style={{ opacity: 0.5 }}>(opcional)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setSegmentOpen((v) => !v)}
+                      className="w-full flex items-center justify-between rounded-xl px-4 py-2.5 text-sm text-left"
+                      style={{ background: "rgba(255,255,255,0.06)", border: segmentId ? "1px solid rgba(98,224,216,0.35)" : "1px solid rgba(255,255,255,0.1)", color: segmentId ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.35)" }}
+                    >
+                      <span>{segments.find((s) => s.id === segmentId)?.name ?? "Sin segmentación específica"}</span>
+                      <IconChevronDown size={14} style={{ opacity: 0.5, transform: segmentOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s" }} />
+                    </button>
+                    {segmentOpen && (
+                      <div
+                        className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden z-20"
+                        style={{ background: "#1e1450", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => { setSegmentId(""); setSegmentOpen(false); }}
+                          className="w-full text-left px-4 py-2.5 text-sm transition hover:bg-white/10"
+                          style={{ color: !segmentId ? "#62E0D8" : "rgba(255,255,255,0.5)" }}
+                        >
+                          Sin segmentación específica
+                        </button>
+                        {segments.map((s) => (
+                          <button
+                            type="button"
+                            key={s.id}
+                            onClick={() => { setSegmentId(s.id); setSegmentOpen(false); }}
+                            className="w-full text-left px-4 py-2.5 text-sm transition hover:bg-white/10"
+                            style={{ color: segmentId === s.id ? "#62E0D8" : "rgba(255,255,255,0.8)" }}
+                          >
+                            {s.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Nombre y empresa del destinatario */}
                 <div className="grid grid-cols-2 gap-3">
