@@ -177,7 +177,7 @@ export default function ChatPage() {
   async function handleStart(e: React.FormEvent) {
     e.preventDefault();
     setStep("chat");
-    await send("Genera el correo", true);
+    await send("Genera el correo", true, pendingImage);
   }
 
   async function handleChat(e: React.FormEvent) {
@@ -203,6 +203,8 @@ export default function ChatPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ background: "#0d0825" }}>
+      {/* Input de archivo oculto — accesible desde formulario y chat */}
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImagePick} />
       <div
         className="w-full flex flex-col"
         style={{ maxWidth: 680, height: "calc(100vh - 2rem)", maxHeight: 840 }}
@@ -374,19 +376,49 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                {/* Notas */}
+                {/* Notas + imagen */}
                 <div>
-                  <label className="block text-[11px] uppercase tracking-widest font-medium mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
-                    Contexto adicional <span style={{ opacity: 0.5 }}>(opcional)</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[11px] uppercase tracking-widest font-medium" style={{ color: "rgba(255,255,255,0.4)" }}>
+                      Contexto adicional <span style={{ opacity: 0.5 }}>(opcional)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => fileRef.current?.click()}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition hover:opacity-80"
+                      style={{ background: pendingImage ? "rgba(98,224,216,0.15)" : "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: pendingImage ? "#62E0D8" : "rgba(255,255,255,0.45)" }}
+                    >
+                      <IconPhoto size={13} />
+                      {pendingImage ? "Imagen lista" : "Adjuntar imagen"}
+                    </button>
+                  </div>
                   <textarea
                     value={contextNotes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Ej: El prospecto mencionó que usan tecnología X..."
+                    placeholder="Ej: El cliente me pide esto, ver imagen adjunta..."
                     rows={3}
                     className="w-full rounded-xl px-4 py-2.5 text-sm outline-none resize-none placeholder:opacity-25"
                     style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}
                   />
+                  {/* Preview imagen adjunta */}
+                  {pendingImage && (
+                    <div className="mt-2 relative inline-block">
+                      <img
+                        src={pendingImage.preview}
+                        alt="Imagen adjunta"
+                        className="rounded-xl"
+                        style={{ maxHeight: 140, maxWidth: "100%", objectFit: "contain", border: "1px solid rgba(98,224,216,0.3)" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setPendingImage(null)}
+                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                        style={{ background: "#0d0825", border: "1px solid rgba(255,255,255,0.2)" }}
+                      >
+                        <IconX size={11} style={{ color: "rgba(255,255,255,0.6)" }} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -467,7 +499,6 @@ export default function ChatPage() {
                 )}
                 <form onSubmit={handleChat} className="flex gap-2">
                   {/* Botón adjuntar imagen */}
-                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImagePick} />
                   <button
                     type="button"
                     onClick={() => fileRef.current?.click()}
