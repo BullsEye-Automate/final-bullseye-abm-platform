@@ -23,7 +23,8 @@ import {
   IconStethoscope,
   IconLoader2,
   IconMessageStar,
-  IconChartBar
+  IconChartBar,
+  IconPencilStar
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -51,9 +52,10 @@ const SECTIONS: Section[] = [
   {
     label: "SDR",
     items: [
-      { href: "/telefonos",  label: "Teléfonos",  icon: IconPhone },
-      { href: "/llamadas",   label: "Llamadas",   icon: IconHeadset },
-      { href: "/respuestas", label: "Respuestas", icon: IconMessage2 }
+      { href: "/telefonos",         label: "Teléfonos",         icon: IconPhone },
+      { href: "/llamadas",          label: "Llamadas",           icon: IconHeadset },
+      { href: "/respuestas",        label: "Respuestas",         icon: IconMessage2 },
+      { href: "/agente-contenido",  label: "Agente de Contenido", icon: IconPencilStar },
     ]
   },
   {
