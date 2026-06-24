@@ -23,7 +23,8 @@ import {
   IconStethoscope,
   IconLoader2,
   IconMessageStar,
-  IconChartBar
+  IconChartBar,
+  IconFileText
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -75,6 +76,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/clientes",                label: "Clientes",         icon: IconBuilding },
       { href: "/configuracion/cliente",   label: "Config. cliente",  icon: IconAdjustments },
+      { href: "/configuracion/contexto",  label: "Contexto IA",      icon: IconFileText },
       { href: "/configuracion/icp",       label: "ICP",              icon: IconSettings }
     ]
   }
