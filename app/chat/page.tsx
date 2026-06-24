@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { IconSend, IconCopy, IconCheck, IconSparkles, IconRefresh, IconChevronDown } from "@tabler/icons-react";
+import { IconSend, IconCopy, IconCheck, IconSparkles, IconRefresh, IconChevronDown, IconPhoto, IconX } from "@tabler/icons-react";
 
 type EmailType = "info" | "referral" | "cold";
-type Message   = { role: "user" | "assistant"; content: string };
+type Message   = { role: "user" | "assistant"; content: string; imagePreview?: string };
 
 const EMAIL_TYPE_LABELS: Record<EmailType, string> = {
   info:     "Más información",
@@ -66,7 +66,16 @@ function Bubble({ msg }: { msg: Message }) {
           <IconSparkles size={15} style={{ color: "#62E0D8" }} />
         </div>
       )}
-      <div className="max-w-[75%]">
+      <div className="max-w-[75%] flex flex-col gap-2">
+        {/* Preview de imagen adjunta */}
+        {msg.imagePreview && (
+          <img
+            src={msg.imagePreview}
+            alt="Captura adjunta"
+            className="rounded-xl max-w-full"
+            style={{ maxHeight: 220, objectFit: "contain", border: "1px solid rgba(255,255,255,0.1)" }}
+          />
+        )}
         {parsed ? (
           <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} />
         ) : (
@@ -98,9 +107,11 @@ export default function ChatPage() {
   const [step, setStep]               = useState<"setup" | "chat">("setup");
   const [messages, setMessages]       = useState<Message[]>([]);
   const [input, setInput]             = useState("");
+  const [pendingImage, setPendingImage] = useState<{ base64: string; mediaType: string; preview: string } | null>(null);
   const [loading, setLoading]         = useState(false);
   const [typeOpen, setTypeOpen]       = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef  = useRef<HTMLDivElement>(null);
+  const fileRef    = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/clients")
@@ -112,18 +123,22 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  async function send(userContent: string, isFirst = false) {
+  async function send(userContent: string, isFirst = false, image?: { base64: string; mediaType: string; preview: string } | null) {
     setLoading(true);
-    const newMsg: Message  = { role: "user", content: userContent };
+    const newMsg: Message = { role: "user", content: userContent, imagePreview: image?.preview };
     const updated = [...messages, newMsg];
     setMessages(updated);
+    setPendingImage(null);
+
+    // Para el historial que va a la API, solo mandamos text (las imágenes van aparte en el último mensaje)
+    const apiMessages = updated.map((m) => ({ role: m.role, content: m.content }));
 
     const res = await fetch("/api/agente-contenido", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         clientId,
-        messages: updated,
+        messages:         apiMessages,
         emailType:        isFirst ? emailType        : undefined,
         recipientName:    isFirst ? recipientName    : undefined,
         recipientCompany: isFirst ? recipientCompany : undefined,
@@ -131,12 +146,27 @@ export default function ChatPage() {
         referrerName:     isFirst && emailType === "referral" ? referrerName : undefined,
         contextNotes:     isFirst ? contextNotes     : undefined,
         save:             isFirst,
+        image:            image ? { base64: image.base64, mediaType: image.mediaType } : undefined,
       }),
     });
 
     const data = await res.json();
     setMessages((prev) => [...prev, { role: "assistant", content: data.message ?? "Error al generar." }]);
     setLoading(false);
+  }
+
+  function handleImagePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const [header, base64] = dataUrl.split(",");
+      const mediaType = header.match(/:(.*?);/)?.[1] ?? "image/png";
+      setPendingImage({ base64, mediaType, preview: dataUrl });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
   }
 
   async function handleStart(e: React.FormEvent) {
@@ -147,10 +177,10 @@ export default function ChatPage() {
 
   async function handleChat(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || loading) return;
-    const text = input.trim();
+    if ((!input.trim() && !pendingImage) || loading) return;
+    const text = input.trim() || "Genera una respuesta a esta conversación.";
     setInput("");
-    await send(text, false);
+    await send(text, false, pendingImage);
   }
 
   function reset() {
@@ -396,19 +426,50 @@ export default function ChatPage() {
 
               {/* Input */}
               <div className="shrink-0 px-5 pb-5">
+                {/* Preview imagen pendiente */}
+                {pendingImage && (
+                  <div className="mb-2 relative inline-block">
+                    <img
+                      src={pendingImage.preview}
+                      alt="Imagen a enviar"
+                      className="rounded-xl"
+                      style={{ maxHeight: 120, maxWidth: 220, objectFit: "contain", border: "1px solid rgba(98,224,216,0.3)" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPendingImage(null)}
+                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                      style={{ background: "#0d0825", border: "1px solid rgba(255,255,255,0.2)" }}
+                    >
+                      <IconX size={11} style={{ color: "rgba(255,255,255,0.6)" }} />
+                    </button>
+                  </div>
+                )}
                 <form onSubmit={handleChat} className="flex gap-2">
+                  {/* Botón adjuntar imagen */}
+                  <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImagePick} />
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={loading}
+                    className="shrink-0 px-3 rounded-xl transition hover:opacity-80 disabled:opacity-30"
+                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: pendingImage ? "#62E0D8" : "rgba(255,255,255,0.4)" }}
+                    title="Adjuntar captura de pantalla"
+                  >
+                    <IconPhoto size={17} />
+                  </button>
                   <input
                     type="text"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Pide ajustes, variaciones, otro tono…"
+                    placeholder={pendingImage ? "Añade instrucciones o envía directamente…" : "Pide ajustes, variaciones, otro tono…"}
                     disabled={loading}
                     className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none placeholder:opacity-25"
                     style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}
                   />
                   <button
                     type="submit"
-                    disabled={!input.trim() || loading}
+                    disabled={(!input.trim() && !pendingImage) || loading}
                     className="px-4 rounded-xl transition hover:opacity-80 disabled:opacity-30"
                     style={{ background: "#62E0D8", color: "#0d0825" }}
                   >

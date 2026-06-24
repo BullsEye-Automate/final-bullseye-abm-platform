@@ -34,12 +34,14 @@ Cuando el usuario te pida generar un correo, devuelve SIEMPRE este JSON (sin mar
   "body": "Cuerpo del correo con salto de línea \\n entre párrafos"
 }
 
+Si el usuario adjunta una captura de pantalla de un correo o conversación, léela, entiende qué dijo el prospecto y genera una respuesta adecuada en el mismo formato JSON.
+
 Para cualquier otra pregunta o ajuste, responde en texto plano.`;
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { clientId, messages, emailType, recipientName, recipientCompany, recipientTitle, referrerName, contextNotes, save } = body;
+  const { clientId, messages, emailType, recipientName, recipientCompany, recipientTitle, referrerName, contextNotes, save, image } = body;
 
   if (!clientId || !messages?.length) {
     return NextResponse.json({ error: "clientId y messages son requeridos" }, { status: 400 });
@@ -49,13 +51,23 @@ export async function POST(req: NextRequest) {
   const systemPrompt = buildSystemPrompt(ctx);
 
   // Construye los mensajes del chat
-  const chatMessages = messages.map((m: { role: string; content: string }) => ({
-    role: m.role as "user" | "assistant",
-    content: m.content,
-  }));
+  const chatMessages: any[] = messages.map((m: { role: string; content: string }, idx: number) => {
+    // El último mensaje del usuario puede llevar imagen
+    const isLastUser = m.role === "user" && idx === messages.length - 1;
+    if (isLastUser && image?.base64) {
+      return {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: image.mediaType, data: image.base64 } },
+          { type: "text", text: m.content },
+        ],
+      };
+    }
+    return { role: m.role as "user" | "assistant", content: m.content };
+  });
 
   // Si es el primer mensaje y viene contexto del formulario, lo inyecta
-  if (chatMessages.length === 1 && emailType) {
+  if (messages.length === 1 && emailType) {
     const typeLabel = EMAIL_TYPE_LABELS[emailType] ?? emailType;
     const parts: string[] = [
       `Genera un correo de ${typeLabel}.`,
@@ -65,7 +77,12 @@ export async function POST(req: NextRequest) {
       referrerName    ? `Es una derivación de: ${referrerName}.`            : "",
       contextNotes    ? `Contexto adicional: ${contextNotes}`               : "",
     ].filter(Boolean);
-    chatMessages[0].content = parts.join(" ");
+    // Si hay imagen en el primer mensaje, inyecta el texto en el bloque de texto
+    if (image?.base64) {
+      chatMessages[0].content[1].text = parts.join(" ");
+    } else {
+      chatMessages[0].content = parts.join(" ");
+    }
   }
 
   const response = await anthropic().messages.create({
