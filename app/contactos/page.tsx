@@ -202,7 +202,11 @@ export default function ContactosPage() {
       body: JSON.stringify({ decision: "rejected" }),
     });
     setDiscardingId(null);
-    if (!res.ok) { setError("Error al descartar contacto"); return; }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(`Error al descartar (${res.status}): ${body?.error ?? "sin detalle"}`);
+      return;
+    }
     setContacts(prev => prev.filter(c => c.id !== id));
     setCounts(prev => ({ ...prev, [bucket]: Math.max(0, prev[bucket] - 1), discarded: prev.discarded + 1 }));
   }
