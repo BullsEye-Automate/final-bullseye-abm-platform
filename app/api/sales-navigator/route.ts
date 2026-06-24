@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const now = new Date();
 
   const no_contacts: unknown[] = [];
-  const one_contact: unknown[] = [];
+  const few_contacts: unknown[] = []; // 1, 2 o 3 contactos
   const no_fit: unknown[] = [];
 
   for (const c of allCompanies ?? []) {
@@ -51,10 +51,10 @@ export async function GET(req: NextRequest) {
         signal: hasExplicitSignal ? "clay" : "inferred",
         recent: pushedHoursAgo < GRACE_HOURS
       });
-    } else if (count === 1 && c.sales_nav_status == null) {
-      one_contact.push({ company: c, contact_count: 1 });
+    } else if (count >= 1 && count <= 3 && c.sales_nav_status == null) {
+      few_contacts.push({ company: c, contact_count: count });
     }
   }
 
-  return NextResponse.json({ no_contacts, one_contact, no_fit });
+  return NextResponse.json({ no_contacts, few_contacts, no_fit });
 }

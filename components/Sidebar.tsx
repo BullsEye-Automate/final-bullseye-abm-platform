@@ -38,7 +38,7 @@ const SECTIONS: Section[] = [
       { href: "/dashboard",       label: "Dashboard",       icon: IconLayoutDashboard },
       { href: "/empresas",        label: "Empresas",        icon: IconBuildingFactory2 },
       { href: "/contactos",       label: "Contactos",       icon: IconUsers },
-      { href: "/sales-navigator", label: "Sales Navigator", icon: IconMapSearch }
+      { href: "/sales-navigator", label: "Prospección Manual", icon: IconMapSearch }
     ]
   },
   {
