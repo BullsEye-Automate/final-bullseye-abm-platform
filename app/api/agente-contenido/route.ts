@@ -12,7 +12,16 @@ const EMAIL_TYPE_LABELS: Record<string, string> = {
   cold:     "primer contacto frío",
 };
 
-function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>): string {
+type RecipientInfo = {
+  name?: string;
+  company?: string;
+  title?: string;
+  emailType?: string;
+  referrerName?: string;
+  contextNotes?: string;
+};
+
+function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, recipient: RecipientInfo): string {
   const contextBlock = ctx.aiContext.length
     ? ctx.aiContext.map((t, i) => `--- Documento ${i + 1} ---\n${t}`).join("\n\n")
     : "No hay documentos de contexto cargados para este cliente.";
@@ -21,14 +30,26 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>): s
     ? `\n\nPerfil de cliente ideal (ICP):\n${ctx.icpNotes}`
     : "";
 
+  const typeLabel = EMAIL_TYPE_LABELS[recipient.emailType ?? ""] ?? "";
+  const recipientBlock = [
+    recipient.name    ? `- Nombre: ${recipient.name}`           : "",
+    recipient.company ? `- Empresa: ${recipient.company}`       : "",
+    recipient.title   ? `- Cargo: ${recipient.title}`           : "",
+    typeLabel         ? `- Tipo de correo: ${typeLabel}`        : "",
+    recipient.referrerName  ? `- Derivado por: ${recipient.referrerName}` : "",
+    recipient.contextNotes  ? `- Contexto adicional: ${recipient.contextNotes}` : "",
+  ].filter(Boolean).join("\n");
+
   return `Eres un asistente experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar correos de seguimiento y de más información.
 
 Tu tono es profesional pero cercano. Los correos deben ser cortos (máx 150 palabras en el cuerpo), directos y con un CTA claro.
 
+${recipientBlock ? `Datos del destinatario de esta sesión:\n${recipientBlock}\n\nUsa estos datos en todos los correos de esta conversación sin pedirlos de nuevo.` : ""}
+
 Contexto sobre ${ctx.clientName}:
 ${contextBlock}${icpBlock}
 
-Cuando el usuario te pida generar un correo, devuelve SIEMPRE este JSON (sin markdown extra):
+Cuando generes un correo, devuelve SIEMPRE este JSON (sin markdown extra):
 {
   "subject": "Asunto del correo",
   "body": "Cuerpo del correo con salto de línea \\n entre párrafos"
@@ -36,7 +57,7 @@ Cuando el usuario te pida generar un correo, devuelve SIEMPRE este JSON (sin mar
 
 Si el usuario adjunta una captura de pantalla de un correo o conversación, léela, entiende qué dijo el prospecto y genera una respuesta adecuada en el mismo formato JSON.
 
-Para cualquier otra pregunta o ajuste, responde en texto plano.`;
+Para cualquier ajuste o variación, aplica los cambios directamente y devuelve el correo completo en JSON.`;
 }
 
 export async function POST(req: NextRequest) {
@@ -48,11 +69,17 @@ export async function POST(req: NextRequest) {
   }
 
   const ctx = await getClientContext(clientId);
-  const systemPrompt = buildSystemPrompt(ctx);
+  const systemPrompt = buildSystemPrompt(ctx, {
+    name:         recipientName,
+    company:      recipientCompany,
+    title:        recipientTitle,
+    emailType:    emailType,
+    referrerName: referrerName,
+    contextNotes: contextNotes,
+  });
 
   // Construye los mensajes del chat
   const chatMessages: any[] = messages.map((m: { role: string; content: string }, idx: number) => {
-    // El último mensaje del usuario puede llevar imagen
     const isLastUser = m.role === "user" && idx === messages.length - 1;
     if (isLastUser && image?.base64) {
       return {
@@ -65,25 +92,6 @@ export async function POST(req: NextRequest) {
     }
     return { role: m.role as "user" | "assistant", content: m.content };
   });
-
-  // Si es el primer mensaje y viene contexto del formulario, lo inyecta
-  if (messages.length === 1 && emailType) {
-    const typeLabel = EMAIL_TYPE_LABELS[emailType] ?? emailType;
-    const parts: string[] = [
-      `Genera un correo de ${typeLabel}.`,
-      recipientName   ? `El destinatario se llama: ${recipientName}.`       : "",
-      recipientCompany? `Trabaja en: ${recipientCompany}.`                  : "",
-      recipientTitle  ? `Su cargo es: ${recipientTitle}.`                   : "",
-      referrerName    ? `Es una derivación de: ${referrerName}.`            : "",
-      contextNotes    ? `Contexto adicional: ${contextNotes}`               : "",
-    ].filter(Boolean);
-    // Si hay imagen en el primer mensaje, inyecta el texto en el bloque de texto
-    if (image?.base64) {
-      chatMessages[0].content[1].text = parts.join(" ");
-    } else {
-      chatMessages[0].content = parts.join(" ");
-    }
-  }
 
   const response = await anthropic().messages.create({
     model: CLAUDE_MODEL,
