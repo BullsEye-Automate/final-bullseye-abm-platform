@@ -7,6 +7,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  try {
   const body = await req.json().catch(() => null);
   if (!body?.decision)
     return NextResponse.json({ error: "decision requerido" }, { status: 400 });
@@ -48,4 +49,7 @@ export async function POST(
   }
 
   return NextResponse.json({ error: "decision inválido" }, { status: 400 });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? String(e) }, { status: 500 });
+  }
 }
