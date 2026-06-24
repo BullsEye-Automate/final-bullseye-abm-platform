@@ -98,6 +98,7 @@ function Bubble({ msg }: { msg: Message }) {
 export default function ChatPage() {
   const [clients, setClients]         = useState<Client[]>([]);
   const [clientId, setClientId]           = useState("");
+  const [clientOpen, setClientOpen]       = useState(false);
   const [emailType, setEmailType]         = useState<EmailType>("info");
   const [recipientName, setRecipientName] = useState("");
   const [recipientCompany, setRecipientCompany] = useState("");
@@ -243,23 +244,38 @@ export default function ChatPage() {
                 Configura el contexto del correo y el agente lo redacta por ti.
               </p>
               <form onSubmit={handleStart} className="space-y-5">
-                {/* Cliente */}
-                <div>
+                {/* Cliente — dropdown custom */}
+                <div className="relative">
                   <label className="block text-[11px] uppercase tracking-widest font-medium mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
                     Cliente
                   </label>
-                  <select
-                    value={clientId}
-                    onChange={(e) => setClientId(e.target.value)}
-                    required
-                    className="w-full rounded-xl px-4 py-2.5 text-sm outline-none appearance-none"
-                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: clientId ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.3)" }}
+                  <button
+                    type="button"
+                    onClick={() => setClientOpen((v) => !v)}
+                    className="w-full flex items-center justify-between rounded-xl px-4 py-2.5 text-sm text-left"
+                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: clientId ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.35)" }}
                   >
-                    <option value="">Seleccionar cliente...</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                    <span>{clients.find((c) => c.id === clientId)?.name ?? "Seleccionar cliente..."}</span>
+                    <IconChevronDown size={14} style={{ opacity: 0.5, transform: clientOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s" }} />
+                  </button>
+                  {clientOpen && (
+                    <div
+                      className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-y-auto z-20"
+                      style={{ background: "#1e1450", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 8px 24px rgba(0,0,0,0.4)", maxHeight: 220 }}
+                    >
+                      {clients.map((c) => (
+                        <button
+                          type="button"
+                          key={c.id}
+                          onClick={() => { setClientId(c.id); setClientOpen(false); }}
+                          className="w-full text-left px-4 py-2.5 text-sm transition hover:bg-white/10"
+                          style={{ color: clientId === c.id ? "#62E0D8" : "rgba(255,255,255,0.8)" }}
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Tipo de correo — dropdown custom */}
