@@ -18,12 +18,10 @@ export async function POST(
   };
 
   if (decision === "rejected") {
-    const { data, error } = await db
+    const { error } = await db
       .from("contacts")
       .update({ status: "discarded", human_decision: "rejected" })
-      .eq("id", params.id)
-      .select("id, status, human_decision")
-      .single();
+      .eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // Registrar feedback (tabla opcional — ignorar si no existe)
@@ -37,18 +35,16 @@ export async function POST(
       })
       .catch(() => {});
 
-    return NextResponse.json({ contact: data });
+    return NextResponse.json({ ok: true });
   }
 
   if (decision === "recovered") {
-    const { data, error } = await db
+    const { error } = await db
       .from("contacts")
       .update({ status: "pending", human_decision: null, fit_action: null })
-      .eq("id", params.id)
-      .select("id, status")
-      .single();
+      .eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ contact: data });
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: "decision inválido" }, { status: 400 });
