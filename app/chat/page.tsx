@@ -88,11 +88,13 @@ function Bubble({ msg }: { msg: Message }) {
 
 export default function ChatPage() {
   const [clients, setClients]         = useState<Client[]>([]);
-  const [clientId, setClientId]       = useState("");
-  const [emailType, setEmailType]     = useState<EmailType>("info");
-  const [recipientTitle, setTitle]    = useState("");
-  const [referrerName, setReferrer]   = useState("");
-  const [contextNotes, setNotes]      = useState("");
+  const [clientId, setClientId]           = useState("");
+  const [emailType, setEmailType]         = useState<EmailType>("info");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientCompany, setRecipientCompany] = useState("");
+  const [recipientTitle, setTitle]        = useState("");
+  const [referrerName, setReferrer]       = useState("");
+  const [contextNotes, setNotes]          = useState("");
   const [step, setStep]               = useState<"setup" | "chat">("setup");
   const [messages, setMessages]       = useState<Message[]>([]);
   const [input, setInput]             = useState("");
@@ -122,11 +124,13 @@ export default function ChatPage() {
       body: JSON.stringify({
         clientId,
         messages: updated,
-        emailType:      isFirst ? emailType      : undefined,
-        recipientTitle: isFirst ? recipientTitle : undefined,
-        referrerName:   isFirst && emailType === "referral" ? referrerName : undefined,
-        contextNotes:   isFirst ? contextNotes   : undefined,
-        save:           isFirst,
+        emailType:        isFirst ? emailType        : undefined,
+        recipientName:    isFirst ? recipientName    : undefined,
+        recipientCompany: isFirst ? recipientCompany : undefined,
+        recipientTitle:   isFirst ? recipientTitle   : undefined,
+        referrerName:     isFirst && emailType === "referral" ? referrerName : undefined,
+        contextNotes:     isFirst ? contextNotes     : undefined,
+        save:             isFirst,
       }),
     });
 
@@ -153,6 +157,8 @@ export default function ChatPage() {
     setMessages([]);
     setStep("setup");
     setInput("");
+    setRecipientName("");
+    setRecipientCompany("");
     setTitle("");
     setReferrer("");
     setNotes("");
@@ -256,6 +262,36 @@ export default function ChatPage() {
                   )}
                 </div>
 
+                {/* Nombre y empresa del destinatario */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-widest font-medium mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
+                      Nombre
+                    </label>
+                    <input
+                      type="text"
+                      value={recipientName}
+                      onChange={(e) => setRecipientName(e.target.value)}
+                      placeholder="Ej: María González"
+                      className="w-full rounded-xl px-4 py-2.5 text-sm outline-none placeholder:opacity-25"
+                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-widest font-medium mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
+                      Empresa
+                    </label>
+                    <input
+                      type="text"
+                      value={recipientCompany}
+                      onChange={(e) => setRecipientCompany(e.target.value)}
+                      placeholder="Ej: Clínica Norte"
+                      className="w-full rounded-xl px-4 py-2.5 text-sm outline-none placeholder:opacity-25"
+                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}
+                    />
+                  </div>
+                </div>
+
                 {/* Cargo */}
                 <div>
                   <label className="block text-[11px] uppercase tracking-widest font-medium mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
@@ -326,6 +362,14 @@ export default function ChatPage() {
                 <span style={{ color: "#62E0D8" }}>{selectedClient?.name}</span>
                 <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
                 <span style={{ color: "rgba(255,255,255,0.4)" }}>{EMAIL_TYPE_LABELS[emailType]}</span>
+                {recipientName && (
+                  <>
+                    <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
+                    <span style={{ color: "rgba(255,255,255,0.4)" }}>
+                      {recipientName}{recipientCompany ? ` · ${recipientCompany}` : ""}
+                    </span>
+                  </>
+                )}
                 {recipientTitle && (
                   <>
                     <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>

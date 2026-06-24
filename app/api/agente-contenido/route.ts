@@ -39,7 +39,7 @@ Para cualquier otra pregunta o ajuste, responde en texto plano.`;
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { clientId, messages, emailType, recipientTitle, referrerName, contextNotes, save } = body;
+  const { clientId, messages, emailType, recipientName, recipientCompany, recipientTitle, referrerName, contextNotes, save } = body;
 
   if (!clientId || !messages?.length) {
     return NextResponse.json({ error: "clientId y messages son requeridos" }, { status: 400 });
@@ -59,9 +59,11 @@ export async function POST(req: NextRequest) {
     const typeLabel = EMAIL_TYPE_LABELS[emailType] ?? emailType;
     const parts: string[] = [
       `Genera un correo de ${typeLabel}.`,
-      recipientTitle ? `El destinatario tiene el cargo: ${recipientTitle}.` : "",
-      referrerName   ? `Es una derivación de: ${referrerName}.`            : "",
-      contextNotes   ? `Contexto adicional: ${contextNotes}`               : "",
+      recipientName   ? `El destinatario se llama: ${recipientName}.`       : "",
+      recipientCompany? `Trabaja en: ${recipientCompany}.`                  : "",
+      recipientTitle  ? `Su cargo es: ${recipientTitle}.`                   : "",
+      referrerName    ? `Es una derivación de: ${referrerName}.`            : "",
+      contextNotes    ? `Contexto adicional: ${contextNotes}`               : "",
     ].filter(Boolean);
     chatMessages[0].content = parts.join(" ");
   }
