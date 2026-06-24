@@ -254,6 +254,8 @@ function CompanyList({
 }
 
 function FewContactsList({ items, onReload }: { items: FewContactItem[]; onReload: () => void }) {
+  const [filterCount, setFilterCount] = useState<number | null>(null);
+
   if (items.length === 0) {
     return (
       <div className="card flex items-center gap-3 text-ink-muted">
@@ -262,19 +264,45 @@ function FewContactsList({ items, onReload }: { items: FewContactItem[]; onReloa
       </div>
     );
   }
+
+  const filtered = filterCount === null ? items : items.filter(i => i.contact_count === filterCount);
+  const counts = [1, 2, 3].filter(n => items.some(i => i.contact_count === n));
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      {items.map((item) => (
-        <CompanyCard
-          key={item.company.id}
-          company={item.company}
-          contactCount={item.contact_count}
-          signal="clay"
-          recent={false}
-          onReload={onReload}
-          showMarkNoFit
-        />
-      ))}
+    <div className="space-y-4">
+      {/* Filtro por número de contactos */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-ink-muted">Filtrar:</span>
+        <button
+          onClick={() => setFilterCount(null)}
+          className={`btn text-xs py-1 ${filterCount === null ? "bg-brand text-white" : "bg-white border border-[#E5E2F0] text-ink-muted"}`}
+        >
+          Todos ({items.length})
+        </button>
+        {counts.map(n => (
+          <button
+            key={n}
+            onClick={() => setFilterCount(filterCount === n ? null : n)}
+            className={`btn text-xs py-1 ${filterCount === n ? "bg-brand text-white" : "bg-white border border-[#E5E2F0] text-ink-muted"}`}
+          >
+            {n} {n === 1 ? "contacto" : "contactos"} ({items.filter(i => i.contact_count === n).length})
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {filtered.map((item) => (
+          <CompanyCard
+            key={item.company.id}
+            company={item.company}
+            contactCount={item.contact_count}
+            signal="clay"
+            recent={false}
+            onReload={onReload}
+            showMarkNoFit
+          />
+        ))}
+      </div>
     </div>
   );
 }

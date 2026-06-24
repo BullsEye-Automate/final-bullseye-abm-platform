@@ -56,5 +56,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Ordenar few_contacts por cantidad de contactos ascendente (1 primero, luego 2, luego 3)
+  (few_contacts as any[]).sort((a, b) => a.contact_count - b.contact_count);
+
   return NextResponse.json({ no_contacts, few_contacts, no_fit });
 }
