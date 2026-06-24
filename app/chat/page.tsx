@@ -116,7 +116,11 @@ export default function ChatPage() {
   useEffect(() => {
     fetch("/api/clients")
       .then((r) => r.json())
-      .then(({ clients: data }) => setClients(data ?? []));
+      .then((json) => {
+        console.log("[chat] /api/clients →", json);
+        setClients(json.clients ?? []);
+      })
+      .catch((err) => console.error("[chat] error cargando clientes:", err));
   }, []);
 
   useEffect(() => {
