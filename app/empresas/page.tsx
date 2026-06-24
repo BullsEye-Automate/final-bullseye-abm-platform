@@ -146,7 +146,7 @@ function extractSizeOptsFromIcp(icpContent: string): string[] {
 }
 
 export default function EmpresasPage() {
-  const { currentClient } = useClient();
+  const { currentClient, loading: clientLoading } = useClient();
   const [regions,         setRegions]         = useState<{ value: string; label: string }[]>([]);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [sizeMode,   setSizeMode]   = useState("any");       // "any" | "custom" | chip value
@@ -273,8 +273,8 @@ export default function EmpresasPage() {
   }
 
   useEffect(() => {
-    load();
-  }, [tab, currentClient?.id]);
+    if (!clientLoading) load();
+  }, [tab, currentClient?.id, clientLoading]);
 
   async function discover() {
     setDiscovering(true);

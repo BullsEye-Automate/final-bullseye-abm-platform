@@ -58,7 +58,7 @@ const BUCKET_LABELS: Record<Bucket, string> = {
 };
 
 export default function ContactosPage() {
-  const { currentClient } = useClient();
+  const { currentClient, loading: clientLoading } = useClient();
   const [bucket, setBucket] = useState<Bucket>("approved_pending");
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [counts, setCounts] = useState<Record<Bucket, number>>({ pending: 0, manual_review: 0, approved_pending: 0, enriched: 0, discarded: 0 });
@@ -100,8 +100,8 @@ export default function ContactosPage() {
     if (res.ok) setApprovedCompanies((data.companies ?? []).map((c: any) => ({ id: c.id, company_name: c.company_name })));
   }
 
-  useEffect(() => { load(bucket); }, [bucket, currentClient?.id]);
-  useEffect(() => { loadApprovedCompanies(); }, [currentClient?.id]);
+  useEffect(() => { if (!clientLoading) load(bucket); }, [bucket, currentClient?.id, clientLoading]);
+  useEffect(() => { if (!clientLoading) loadApprovedCompanies(); }, [currentClient?.id, clientLoading]);
 
   function toggleCompany(id: string) {
     setExpandedCompanies(prev => {
@@ -204,7 +204,7 @@ export default function ContactosPage() {
     setDiscardingId(null);
     if (!res.ok) { setError("Error al descartar contacto"); return; }
     setContacts(prev => prev.filter(c => c.id !== id));
-    setCounts(prev => ({ ...prev, approved_pending: Math.max(0, prev.approved_pending - 1) }));
+    setCounts(prev => ({ ...prev, [bucket]: Math.max(0, prev[bucket] - 1), discarded: prev.discarded + 1 }));
   }
 
   async function recoverContact(id: string) {
