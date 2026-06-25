@@ -21,6 +21,7 @@ type FeedbackConfig = {
   pregunta_comentarios: string;
   razones_no_califica: string[];
   propuesta_opciones: string[];
+  sales_managers: string[];
 };
 
 const DEFAULTS: FeedbackConfig = {
@@ -31,6 +32,7 @@ const DEFAULTS: FeedbackConfig = {
   pregunta_comentarios:  "Comentarios adicionales",
   razones_no_califica:   ["No tomaba decisiones", "No presentó interés", "No tenía contexto de nosotros", "Tomó la reunión desde el celular", "Otro"],
   propuesta_opciones:    ["Si", "No", "No aún", "Falta otra reunión"],
+  sales_managers:        [],
 };
 
 function TagListEditor({
@@ -267,6 +269,18 @@ export default function ConfiguracionFeedbackPage() {
               hint='Presiona Enter o "Agregar" para añadir. Haz clic en la x para eliminar.'
               items={config.propuesta_opciones}
               onChange={items => setConfig(c => ({ ...c, propuesta_opciones: items }))}
+            />
+          </div>
+
+          {/* Sección: Sales Managers */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <h2 className="text-base font-semibold text-gray-800 mb-1">Sales Managers</h2>
+            <p className="text-xs text-gray-500 mb-4">Los SDR o Sales Managers que aparecerán como opción en el formulario de encuesta para identificar quién atendió la reunión.</p>
+            <TagListEditor
+              label="Integrantes del equipo de ventas"
+              hint='Presiona Enter o "Agregar" para añadir. Haz clic en la x para eliminar.'
+              items={config.sales_managers}
+              onChange={items => setConfig(c => ({ ...c, sales_managers: items }))}
             />
           </div>
 

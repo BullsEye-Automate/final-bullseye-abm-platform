@@ -260,19 +260,43 @@ function FeedbackInlineModal({ meeting, onClose, onSaved }: { meeting: Meeting; 
           {/* P1 */}
           <div>
             <p className="text-sm font-semibold text-gray-800 mb-3">1. ¿Cómo calificarías esta reunión?</p>
-            <div className="flex gap-1">
-              {Array.from({ length: 10 }, (_, i) => {
-                const n = i + 1;
-                const filled = (hover ?? form.calificacion ?? 0) >= n;
-                return (
-                  <button key={n} type="button"
-                    onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}
-                    onClick={() => setForm(p => ({ ...p, calificacion: n }))}>
-                    <IconStar size={24} fill={filled ? "#f59e0b" : "none"} stroke={filled ? "#f59e0b" : "#d1d5db"} />
-                  </button>
-                );
-              })}
-              {form.calificacion && <span className="ml-2 text-sm text-gray-500 self-center">{form.calificacion}/10</span>}
+            <div className="space-y-2">
+              {/* Números 1–10 */}
+              <div className="flex gap-1">
+                {Array.from({ length: 10 }, (_, i) => {
+                  const n = i + 1;
+                  const active = form.calificacion === n;
+                  const highlighted = (hover ?? form.calificacion ?? 0) >= n;
+                  return (
+                    <button key={n} type="button"
+                      onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}
+                      onClick={() => setForm(p => ({ ...p, calificacion: n }))}
+                      className="flex-1 py-1 rounded-lg text-sm font-semibold transition-all"
+                      style={{
+                        background: active ? "#f59e0b" : highlighted ? "#fef3c7" : "#f9fafb",
+                        color: active ? "#fff" : highlighted ? "#b45309" : "#9ca3af",
+                        border: `1.5px solid ${active ? "#f59e0b" : highlighted ? "#fcd34d" : "#e5e7eb"}`,
+                      }}>
+                      {n}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Estrellas */}
+              <div className="flex gap-0.5 items-center">
+                {Array.from({ length: 10 }, (_, i) => {
+                  const n = i + 1;
+                  const filled = (hover ?? form.calificacion ?? 0) >= n;
+                  return (
+                    <button key={n} type="button"
+                      onMouseEnter={() => setHover(n)} onMouseLeave={() => setHover(null)}
+                      onClick={() => setForm(p => ({ ...p, calificacion: n }))}>
+                      <IconStar size={22} fill={filled ? "#f59e0b" : "none"} stroke={filled ? "#f59e0b" : "#d1d5db"} />
+                    </button>
+                  );
+                })}
+                {form.calificacion && <span className="ml-2 text-sm text-gray-500 self-center">{form.calificacion}/10</span>}
+              </div>
             </div>
           </div>
           {/* P2 */}
@@ -426,6 +450,14 @@ function VerFeedbackModal({ meeting, onClose }: { meeting: Meeting; onClose: () 
           </div>
         ) : (
         <div className="p-6 space-y-5">
+          {/* Sales Manager */}
+          {fb.sdr_seleccionado && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Sales Manager:</span>
+              <span className="px-2.5 py-0.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full border border-purple-100">{fb.sdr_seleccionado}</span>
+            </div>
+          )}
+
           {/* Calificación */}
           <div>
             <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">1. Calificación de la reunión</p>
@@ -521,6 +553,8 @@ export default function FeedbackPage() {
   const [copied, setCopied]       = useState<string | null>(null);
   const [presetOpen, setPresetOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [sdrFilter, setSdrFilter] = useState("Todos");
+  const [salesManagers, setSalesManagers] = useState<string[]>([]);
   const [verFeedbackMeeting, setVerFeedbackMeeting] = useState<Meeting | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -538,6 +572,14 @@ export default function FeedbackPage() {
   }, [currentClient?.id, clientLoading, desde, hasta]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!currentClient?.id || currentClient.id === "__all__") { setSalesManagers([]); return; }
+    fetch(`/api/feedback-config?client_id=${currentClient.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setSalesManagers(data?.config?.sales_managers ?? []))
+      .catch(() => {});
+  }, [currentClient?.id]);
 
   function applyPreset(key: string) {
     setPreset(key);
@@ -596,7 +638,12 @@ export default function FeedbackPage() {
         (m.contacto_cargo ?? "").toLowerCase().includes(q)
       )
     : meetings;
-  const filtered = statusFilter === "Todos" ? searched : searched.filter(m => m.realizado === statusFilter);
+  const byStatus = statusFilter === "Todos" ? searched : searched.filter(m => m.realizado === statusFilter);
+  const filtered = sdrFilter === "Todos" ? byStatus : byStatus.filter(m => {
+    const raw = m.meeting_feedback;
+    const fb: any = Array.isArray(raw) ? raw[0] : raw ?? null;
+    return fb?.sdr_seleccionado === sdrFilter || m.sdr_nombre === sdrFilter;
+  });
   const pendientes  = filtered.filter(m => m.realizado === "Si" && m.feedback_status === "pendiente");
   const conFeedback = filtered.filter(m => m.feedback_status === "con_feedback");
   const otras       = filtered.filter(m => m.realizado !== "Si" && m.feedback_status === "pendiente");
@@ -731,9 +778,18 @@ export default function FeedbackPage() {
           {STATUS_OPTS.map(o => <option key={o}>{o}</option>)}
         </select>
 
+        {/* Filtro por Sales Manager */}
+        {salesManagers.length > 0 && (
+          <select value={sdrFilter} onChange={e => setSdrFilter(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none bg-white">
+            <option value="Todos">Todos los SDR</option>
+            {salesManagers.map(sm => <option key={sm} value={sm}>{sm}</option>)}
+          </select>
+        )}
+
         {/* Reset */}
-        {(preset !== "todo" || statusFilter !== "Todos") && (
-          <button onClick={() => { applyPreset("todo"); setStatusFilter("Todos"); }}
+        {(preset !== "todo" || statusFilter !== "Todos" || sdrFilter !== "Todos") && (
+          <button onClick={() => { applyPreset("todo"); setStatusFilter("Todos"); setSdrFilter("Todos"); }}
             className="text-xs text-gray-400 hover:text-gray-600 underline">
             Limpiar filtros
           </button>
