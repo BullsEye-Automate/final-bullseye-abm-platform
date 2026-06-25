@@ -816,21 +816,20 @@ function SendModal({
     // Guardar mensajes en cada contacto antes de enviar a Lemlist
     await Promise.all(
       results
-        .filter((r) => !r.error && !r.cancelled && (r.emailSubject || r.linkedinIcebreaker))
+        .filter((r) => !r.error && !r.cancelled && (r.emailSubject || r.connectMessage || r.linkedinMsg2))
         .map((r) =>
           fetch(`/api/contacts/${r.contactId}/messages`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              email_subject:      r.emailSubject      ?? null,
-              email_body:         r.emailBody         ?? null,
-              email_subject_2:    r.emailSubject2     ?? null,
-              email_body_2:       r.emailBody2        ?? null,
-              email_subject_3:    r.emailSubject3     ?? null,
-              email_body_3:       r.emailBody3        ?? null,
-              connect_message:    r.connectMessage    ?? null,
-              linkedin_icebreaker: r.linkedinIcebreaker ?? null,
-              linkedin_msg_2:     r.linkedinMsg2      ?? null,
+              email_subject:      r.emailSubject   ?? null,
+              email_body:         r.emailBody      ?? null,
+              email_subject_2:    r.emailSubject2  ?? null,
+              email_body_2:       r.emailBody2     ?? null,
+              email_subject_3:    r.emailSubject3  ?? null,
+              email_body_3:       r.emailBody3     ?? null,
+              connect_message:    r.connectMessage ?? null,
+              linkedin_msg_2:     r.linkedinMsg2   ?? null,
             }),
           })
         )
@@ -839,7 +838,7 @@ function SendModal({
     onConfirm(contactIds);
   }
 
-  const successCount = results.filter((r) => !r.error && !r.cancelled && (r.emailSubject || r.linkedinIcebreaker)).length;
+  const successCount = results.filter((r) => !r.error && !r.cancelled && (r.emailSubject || r.connectMessage || r.linkedinMsg2)).length;
   const errorCount   = results.filter((r) => !!r.error).length;
 
   return (
@@ -955,7 +954,8 @@ function SendModal({
                   </div>
 
                   {/* Mensajes generados (preview) */}
-                  {stage === "preview" && result && !result.cancelled && !result.error && (result.emailSubject || result.linkedinIcebreaker) && (
+                  {stage === "preview" && result && !result.cancelled && !result.error &&
+                   (result.emailSubject || result.connectMessage || result.linkedinMsg2) && (
                     <div className="border-t border-[#F1EEF7] px-4 py-3 space-y-3 bg-[#FAFAFA]">
                       {[
                         { label: "Email 1", subject: result.emailSubject, body: result.emailBody },
@@ -973,23 +973,15 @@ function SendModal({
                       {result.connectMessage && (
                         <div>
                           <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
-                            <IconMessage size={12} /> Mensaje de conexión LinkedIn
+                            <IconMessage size={12} /> LinkedIn — Mensaje de conexión
                           </div>
                           <p className="text-xs text-ink/80 whitespace-pre-line">{result.connectMessage}</p>
-                        </div>
-                      )}
-                      {result.linkedinIcebreaker && (
-                        <div>
-                          <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
-                            <IconMessage size={12} /> LinkedIn icebreaker
-                          </div>
-                          <p className="text-xs text-ink/80 whitespace-pre-line">{result.linkedinIcebreaker}</p>
                         </div>
                       )}
                       {result.linkedinMsg2 && (
                         <div>
                           <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
-                            <IconMessage size={12} /> LinkedIn mensaje 2
+                            <IconMessage size={12} /> LinkedIn — Mensaje 2
                           </div>
                           <p className="text-xs text-ink/80 whitespace-pre-line">{result.linkedinMsg2}</p>
                         </div>
