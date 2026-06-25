@@ -11,6 +11,7 @@ const DEFAULTS = {
   pregunta_comentarios:  "Comentarios adicionales",
   razones_no_califica:   ["No tomaba decisiones", "No presentó interés", "No tenía contexto de nosotros", "Tomó la reunión desde el celular", "Otro"],
   propuesta_opciones:    ["Si", "No", "No aún", "Falta otra reunión"],
+  sales_managers:        [] as string[],
 };
 
 export async function GET(req: NextRequest) {
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
     pregunta_comentarios:  body.pregunta_comentarios  ?? DEFAULTS.pregunta_comentarios,
     razones_no_califica:   body.razones_no_califica   ?? DEFAULTS.razones_no_califica,
     propuesta_opciones:    body.propuesta_opciones     ?? DEFAULTS.propuesta_opciones,
+    sales_managers:        body.sales_managers         ?? DEFAULTS.sales_managers,
     updated_at:            new Date().toISOString(),
   };
 

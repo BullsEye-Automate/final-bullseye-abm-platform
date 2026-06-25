@@ -6,6 +6,7 @@ import { IconStar, IconCheck, IconX } from "@tabler/icons-react";
 
 type MeetingData = {
   id: string;
+  client_id: string;
   empresa: string;
   contacto_nombre: string | null;
   contacto_cargo: string | null;
@@ -14,6 +15,7 @@ type MeetingData = {
 };
 
 type FormState = {
+  sdr_seleccionado: string;
   calificacion: number | null;
   empresa_calificada: boolean | null;
   razon_no_empresa: string;
@@ -45,23 +47,49 @@ const PROPUESTAS = ["Si", "No", "No aún", "Falta otra reunión"];
 
 function StarRating({ value, onChange }: { value: number | null; onChange: (v: number) => void }) {
   const [hover, setHover] = useState<number | null>(null);
+  const display = hover ?? value;
   return (
-    <div className="flex gap-1">
-      {Array.from({ length: 10 }, (_, i) => {
-        const n = i + 1;
-        const filled = (hover ?? value ?? 0) >= n;
-        return (
-          <button key={n} type="button"
-            onMouseEnter={() => setHover(n)}
-            onMouseLeave={() => setHover(null)}
-            onClick={() => onChange(n)}
-            className="transition-transform hover:scale-110">
-            <IconStar size={28} fill={filled ? "#f59e0b" : "none"}
-              stroke={filled ? "#f59e0b" : "#d1d5db"} />
-          </button>
-        );
-      })}
-      {value && <span className="ml-2 text-sm text-gray-600 self-center font-medium">{value}/10</span>}
+    <div className="space-y-3">
+      {/* Números 1–10 */}
+      <div className="flex gap-1">
+        {Array.from({ length: 10 }, (_, i) => {
+          const n = i + 1;
+          const active = value === n;
+          const highlighted = (hover ?? value ?? 0) >= n;
+          return (
+            <button key={n} type="button"
+              onMouseEnter={() => setHover(n)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => onChange(n)}
+              className="flex-1 py-1.5 rounded-lg text-sm font-semibold transition-all"
+              style={{
+                background: active ? "#f59e0b" : highlighted ? "#fef3c7" : "#f9fafb",
+                color: active ? "#fff" : highlighted ? "#b45309" : "#9ca3af",
+                border: `1.5px solid ${active ? "#f59e0b" : highlighted ? "#fcd34d" : "#e5e7eb"}`,
+              }}>
+              {n}
+            </button>
+          );
+        })}
+      </div>
+      {/* Estrellas */}
+      <div className="flex gap-1 items-center">
+        {Array.from({ length: 10 }, (_, i) => {
+          const n = i + 1;
+          const filled = (hover ?? value ?? 0) >= n;
+          return (
+            <button key={n} type="button"
+              onMouseEnter={() => setHover(n)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => onChange(n)}
+              className="transition-transform hover:scale-110">
+              <IconStar size={26} fill={filled ? "#f59e0b" : "none"}
+                stroke={filled ? "#f59e0b" : "#d1d5db"} />
+            </button>
+          );
+        })}
+        {display && <span className="ml-2 text-sm text-gray-500 self-center font-medium">{display}/10</span>}
+      </div>
     </div>
   );
 }
@@ -94,6 +122,7 @@ function BoolBtn({ value, onChange }: { value: boolean | null; onChange: (v: boo
 export default function EncuestaPage() {
   const { token } = useParams() as { token: string };
   const [meeting, setMeeting] = useState<MeetingData | null>(null);
+  const [salesManagers, setSalesManagers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -101,6 +130,7 @@ export default function EncuestaPage() {
   const [error, setError] = useState("");
 
   const [form, setForm] = useState<FormState>({
+    sdr_seleccionado: "",
     calificacion: null,
     empresa_calificada: null,
     razon_no_empresa: "",
@@ -121,6 +151,17 @@ export default function EncuestaPage() {
         if (data.feedback_status === "con_feedback") setSubmitted(true);
         setMeeting(data);
         setLoading(false);
+        // Cargar sales managers del cliente
+        if (data.client_id) {
+          fetch(`/api/feedback-config?client_id=${data.client_id}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(cfg => {
+              if (cfg?.config?.sales_managers?.length) {
+                setSalesManagers(cfg.config.sales_managers);
+              }
+            })
+            .catch(() => {});
+        }
       });
   }, [token]);
 
@@ -212,6 +253,25 @@ export default function EncuestaPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Sales Manager (si hay lista configurada) */}
+          {salesManagers.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-gray-800 mb-1">
+                ¿Quién realizó esta reunión?
+              </h2>
+              <p className="text-xs text-gray-400 mb-4">Selecciona el Sales Manager o SDR responsable</p>
+              <select
+                value={form.sdr_seleccionado}
+                onChange={e => setForm(p => ({ ...p, sdr_seleccionado: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-[#62E0D8]">
+                <option value="">— Selecciona —</option>
+                {salesManagers.map(sm => (
+                  <option key={sm} value={sm}>{sm}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* P1: Calificación */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-gray-800 mb-1">
