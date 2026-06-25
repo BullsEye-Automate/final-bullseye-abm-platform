@@ -97,18 +97,31 @@ function relativeTime(dt: string | null) {
   return "justo ahora";
 }
 
-function groupActivities(activities: Activity[]) {
-  const map = new Map<string, { activity: Activity; count: number; subjects: string[] }>();
+type GroupedActivity = {
+  activity: Activity;
+  count: number;
+  subjects: string[];
+  occurrences: { createdAt: string | null; subject: string | null; stepName: string | null; text: string | null }[];
+};
+
+function groupActivities(activities: Activity[]): GroupedActivity[] {
+  const map = new Map<string, GroupedActivity>();
   for (const act of activities) {
     const existing = map.get(act.type);
     const subj = act.campaignStepName ?? act.subject ?? null;
+    const occ  = { createdAt: act.createdAt, subject: act.subject, stepName: act.campaignStepName, text: act.text };
     if (existing) {
       existing.count++;
       if ((act.createdAt ?? "") > (existing.activity.createdAt ?? "")) existing.activity = act;
       if (subj && !existing.subjects.includes(subj)) existing.subjects.push(subj);
+      existing.occurrences.push(occ);
     } else {
-      map.set(act.type, { activity: act, count: 1, subjects: subj ? [subj] : [] });
+      map.set(act.type, { activity: act, count: 1, subjects: subj ? [subj] : [], occurrences: [occ] });
     }
+  }
+  // sort occurrences by date desc
+  for (const g of map.values()) {
+    g.occurrences.sort((a, b) => (b.createdAt ?? "") > (a.createdAt ?? "") ? 1 : -1);
   }
   return Array.from(map.values()).sort((a, b) => b.activity.score - a.activity.score);
 }
@@ -285,6 +298,49 @@ function MessagesPanel({ messages }: { messages: Messages }) {
   );
 }
 
+// ── Componente: ActivityChip ──────────────────────────────────────────────────
+
+function ActivityChip({ act, count, meta, Icon, occurrences }: {
+  act: Activity; count: number; meta: { icon: any; shortLabel: string } | undefined;
+  Icon: any;
+  occurrences: { createdAt: string | null; subject: string | null; stepName: string | null; text: string | null }[];
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium border w-full text-left hover:opacity-90 transition"
+        style={{ background: act.color + "12", borderColor: act.color + "40", color: act.color }}>
+        <Icon size={12} />
+        <span className="flex-1">
+          {count > 1 ? `${meta?.shortLabel ?? act.label} × ${count}` : (meta?.shortLabel ?? act.label)}
+        </span>
+        {act.createdAt && <span className="opacity-50 text-[10px]">{relativeTime(act.createdAt)}</span>}
+        {count > 0 && (open ? <IconChevronUp size={11} className="opacity-50 ml-1" /> : <IconChevronDown size={11} className="opacity-50 ml-1" />)}
+      </button>
+
+      {open && (
+        <div className="mt-1 ml-2 space-y-1 border-l-2 pl-3" style={{ borderColor: act.color + "40" }}>
+          {occurrences.map((occ, i) => {
+            const label = occ.stepName ?? occ.subject ?? null;
+            return (
+              <div key={i} className="text-[11px] text-gray-600">
+                <span className="text-gray-400 mr-1.5">{occ.createdAt ? relativeTime(occ.createdAt) : "—"}</span>
+                {label && <span className="font-medium">{label}</span>}
+                {occ.text && (
+                  <p className="mt-0.5 text-gray-500 italic bg-gray-50 rounded px-2 py-1 leading-relaxed">"{occ.text}"</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Componente: ContactRow ────────────────────────────────────────────────────
 
 function ContactRow({ contact, clientId, hubspotPortalId, onLabelChange }: {
@@ -328,7 +384,7 @@ function ContactRow({ contact, clientId, hubspotPortalId, onLabelChange }: {
               </div>
               {contact.job_title && <p className="text-xs text-gray-500 mt-0.5">{contact.job_title}</p>}
               {!contact.contact_id && (
-                <p className="text-[10px] text-amber-500 mt-0.5 italic">No encontrado en plataforma</p>
+                <p className="text-[10px] text-gray-400 mt-0.5 italic">Solo en Lemlist</p>
               )}
             </div>
 
@@ -382,22 +438,12 @@ function ContactRow({ contact, clientId, hubspotPortalId, onLabelChange }: {
       {/* Actividad */}
       <div className="mt-3 pt-3 border-t border-gray-100">
         <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Actividad</p>
-        <div className="flex flex-wrap gap-2">
-          {grouped.map(({ activity: act, count, subjects }) => {
+        <div className="flex flex-col gap-2">
+          {grouped.map(({ activity: act, count, occurrences }) => {
             const meta = ACTIVITY_META[act.type];
             const Icon = meta?.icon ?? IconMail;
             return (
-              <div key={act.type} className="flex flex-col gap-0.5">
-                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border"
-                  style={{ background: act.color + "12", borderColor: act.color + "40", color: act.color }}>
-                  <Icon size={11} />
-                  {count > 1 ? `${meta?.shortLabel ?? act.label} × ${count}` : (meta?.shortLabel ?? act.label)}
-                  {act.createdAt && <span className="opacity-60 ml-0.5">· {relativeTime(act.createdAt)}</span>}
-                </div>
-                {subjects.map(s => (
-                  <span key={s} className="text-[10px] text-gray-500 italic pl-1 truncate max-w-[260px]">› {s}</span>
-                ))}
-              </div>
+              <ActivityChip key={act.type} act={act} count={count} meta={meta} Icon={Icon} occurrences={occurrences} />
             );
           })}
         </div>
