@@ -60,8 +60,9 @@ const SECTIONS: Section[] = [
   {
     label: "Oportunidades",
     items: [
-      { href: "/oportunidades/feedback",   label: "Feedback",    icon: IconMessageStar },
-      { href: "/oportunidades/resultados", label: "Resultados",  icon: IconChartBar },
+      { href: "/oportunidades/feedback",               label: "Feedback",         icon: IconMessageStar },
+      { href: "/oportunidades/resultados",             label: "Resultados",       icon: IconChartBar },
+      { href: "/oportunidades/configuracion-feedback", label: "Config. feedback", icon: IconSettings },
     ]
   },
   {
