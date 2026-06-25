@@ -34,7 +34,7 @@ type GenResult = {
   emailSubject3?: string;
   emailBody3?: string;
   connectMessage?: string;
-  linkedinIcebreaker?: string;
+  linkedinMsg1?: string;
   linkedinMsg2?: string;
   error?: string;
   cancelled?: boolean;
@@ -775,9 +775,9 @@ function SendModal({
             emailBody2:        g.emailBody2,
             emailSubject3:     g.emailSubject3,
             emailBody3:        g.emailBody3,
-            connectMessage:    g.connectMessage,
-            linkedinIcebreaker: g.icebreaker ?? g.connectMessage,
-            linkedinMsg2:      g.linkedinMsg2,
+            connectMessage: g.connectMessage,
+            linkedinMsg1:   g.icebreaker,
+            linkedinMsg2:   g.linkedinMsg2,
           };
         } else {
           updated[i] = { ...updated[i], error: `Error ${res.status}` };
@@ -828,8 +828,9 @@ function SendModal({
               email_body_2:       r.emailBody2     ?? null,
               email_subject_3:    r.emailSubject3  ?? null,
               email_body_3:       r.emailBody3     ?? null,
-              connect_message:    r.connectMessage ?? null,
-              linkedin_msg_2:     r.linkedinMsg2   ?? null,
+              connect_message:     r.connectMessage ?? null,
+              linkedin_icebreaker: r.linkedinMsg1  ?? null,
+              linkedin_msg_2:      r.linkedinMsg2  ?? null,
             }),
           })
         )
@@ -902,7 +903,7 @@ function SendModal({
                     {/* Estado */}
                     <div className="shrink-0">
                       {isCurrent && <IconLoader2 size={15} className="animate-spin text-brand" />}
-                      {isDone && !isCurrent && !result?.cancelled && !result?.error && (result?.emailSubject || result?.linkedinIcebreaker)
+                      {isDone && !isCurrent && !result?.cancelled && !result?.error && (result?.emailSubject || result?.connectMessage || result?.linkedinMsg1 || result?.linkedinMsg2)
                         && <IconCheck size={15} className="text-success-fg" />}
                       {isDone && result?.error   && <IconAlertCircle size={15} className="text-danger-fg" />}
                       {isDone && result?.cancelled && <IconX size={15} className="text-ink-muted" />}
@@ -955,7 +956,7 @@ function SendModal({
 
                   {/* Mensajes generados (preview) */}
                   {stage === "preview" && result && !result.cancelled && !result.error &&
-                   (result.emailSubject || result.connectMessage || result.linkedinMsg2) && (
+                   (result.emailSubject || result.connectMessage || result.linkedinMsg1 || result.linkedinMsg2) && (
                     <div className="border-t border-[#F1EEF7] px-4 py-3 space-y-3 bg-[#FAFAFA]">
                       {[
                         { label: "Email 1", subject: result.emailSubject, body: result.emailBody },
@@ -976,6 +977,14 @@ function SendModal({
                             <IconMessage size={12} /> LinkedIn — Mensaje de conexión
                           </div>
                           <p className="text-xs text-ink/80 whitespace-pre-line">{result.connectMessage}</p>
+                        </div>
+                      )}
+                      {result.linkedinMsg1 && (
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
+                            <IconMessage size={12} /> LinkedIn — Mensaje 1
+                          </div>
+                          <p className="text-xs text-ink/80 whitespace-pre-line">{result.linkedinMsg1}</p>
                         </div>
                       )}
                       {result.linkedinMsg2 && (
