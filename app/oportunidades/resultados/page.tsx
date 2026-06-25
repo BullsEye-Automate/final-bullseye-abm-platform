@@ -15,6 +15,7 @@ type Feedback = {
   razon_no_califica: string | null;
   propuesta_comercial: string | null;
   comentarios_adicionales: string | null;
+  probabilidad_cierre: number | null;
 };
 
 type Meeting = {
@@ -257,6 +258,41 @@ export default function ResultadosPage() {
 
   const comentarios = feedbacks.filter(f => f.comentarios_adicionales?.trim()).slice(-5).reverse();
 
+  // ── Probabilidad de cierre ──────────────────────────────────────────────────
+  const conProb = realizadas.filter(m => m.meeting_feedback?.[0]?.probabilidad_cierre !== null && m.meeting_feedback?.[0]?.probabilidad_cierre !== undefined);
+  const probPromedio = conProb.length
+    ? Math.round(conProb.reduce((acc, m) => acc + (m.meeting_feedback![0].probabilidad_cierre ?? 0), 0) / conProb.length)
+    : null;
+
+  // Reuniones con alta probabilidad (>= 60%)
+  const altaProb = conProb
+    .filter(m => (m.meeting_feedback![0].probabilidad_cierre ?? 0) >= 60)
+    .sort((a, b) => (b.meeting_feedback![0].probabilidad_cierre ?? 0) - (a.meeting_feedback![0].probabilidad_cierre ?? 0));
+
+  // Grupos por dimensión para alta prob
+  function groupByProb(items: Meeting[]) {
+    return {
+      cargo:     groupByAvgProb(items, m => m.contacto_cargo ?? ""),
+      industria: groupByAvgProb(items, m => m.industria ?? ""),
+      pais:      groupByAvgProb(items, m => m.pais ?? ""),
+    };
+  }
+  function groupByAvgProb(items: Meeting[], keyFn: (m: Meeting) => string) {
+    const map = new Map<string, { total: number; count: number }>();
+    for (const m of items) {
+      const key = keyFn(m);
+      if (!key) continue;
+      const prob = m.meeting_feedback![0].probabilidad_cierre ?? 0;
+      const cur = map.get(key) ?? { total: 0, count: 0 };
+      map.set(key, { total: cur.total + prob, count: cur.count + 1 });
+    }
+    return Array.from(map.entries())
+      .map(([key, { total, count }]) => ({ key, avg: total / count, count }))
+      .sort((a, b) => b.avg - a.avg);
+  }
+
+  const altaProbGroups = groupByProb(altaProb);
+
   // ── Insights: mejores/peores reuniones ──────────────────────────────────────
   const ratedMeetings = realizadas
     .map(m => ({ m, score: m.meeting_feedback?.[0]?.calificacion ?? null }))
@@ -452,6 +488,111 @@ export default function ResultadosPage() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Probabilidad de cierre */}
+          {conProb.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700">Probabilidad de cierre</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">Estimación del SDR al momento del feedback</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold" style={{ color: probPromedio !== null && probPromedio >= 60 ? "#22c55e" : probPromedio !== null && probPromedio >= 40 ? "#f59e0b" : "#ef4444" }}>
+                    {probPromedio !== null ? `${probPromedio}%` : "—"}
+                  </div>
+                  <div className="text-xs text-gray-400">promedio</div>
+                </div>
+              </div>
+
+              {/* Distribución por rangos */}
+              <div className="grid grid-cols-3 gap-3 mb-5">
+                {[
+                  { label: "Alta (≥60%)", min: 60, color: "#22c55e", bg: "#f0fdf4" },
+                  { label: "Media (30–59%)", min: 30, max: 59, color: "#f59e0b", bg: "#fffbeb" },
+                  { label: "Baja (<30%)", max: 29, color: "#ef4444", bg: "#fef2f2" },
+                ].map(band => {
+                  const count = conProb.filter(m => {
+                    const p = m.meeting_feedback![0].probabilidad_cierre ?? 0;
+                    if (band.min !== undefined && band.max !== undefined) return p >= band.min && p <= band.max;
+                    if (band.min !== undefined) return p >= band.min;
+                    return p <= (band.max ?? 100);
+                  }).length;
+                  return (
+                    <div key={band.label} className="rounded-xl p-3 text-center" style={{ background: band.bg }}>
+                      <div className="text-xl font-bold" style={{ color: band.color }}>{count}</div>
+                      <div className="text-[11px] font-medium mt-0.5" style={{ color: band.color }}>{band.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Lista de alta probabilidad */}
+              {altaProb.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                    Reuniones con alta probabilidad de cierre ({altaProb.length})
+                  </p>
+
+                  {/* Listado de empresas */}
+                  <div className="space-y-2 mb-5">
+                    {altaProb.slice(0, 8).map(m => {
+                      const prob = m.meeting_feedback![0].probabilidad_cierre ?? 0;
+                      const color = prob >= 80 ? "#22c55e" : prob >= 60 ? "#84cc16" : "#f59e0b";
+                      return (
+                        <div key={m.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm text-gray-900 truncate">{m.empresa}</p>
+                            <p className="text-xs text-gray-500 truncate">
+                              {[m.contacto_nombre, m.contacto_cargo, m.industria, m.pais].filter(Boolean).join(" · ")}
+                            </p>
+                          </div>
+                          <div className="shrink-0 flex items-center gap-2">
+                            <div className="w-20 bg-gray-100 rounded-full h-1.5">
+                              <div className="h-full rounded-full" style={{ width: `${prob}%`, background: color }} />
+                            </div>
+                            <span className="text-sm font-bold w-10 text-right" style={{ color }}>{prob}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {altaProb.length > 8 && (
+                      <p className="text-xs text-gray-400 text-center pt-1">+{altaProb.length - 8} más…</p>
+                    )}
+                  </div>
+
+                  {/* Patrones por dimensión */}
+                  <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-100">
+                    {[
+                      { title: "Por cargo", data: altaProbGroups.cargo },
+                      { title: "Por industria", data: altaProbGroups.industria },
+                      { title: "Por país", data: altaProbGroups.pais },
+                    ].map(({ title, data }) => data.length > 0 && (
+                      <div key={title}>
+                        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2">{title}</p>
+                        <div className="space-y-1.5">
+                          {data.slice(0, 5).map(({ key, avg, count }) => {
+                            const color = avg >= 75 ? "#22c55e" : avg >= 60 ? "#84cc16" : "#f59e0b";
+                            return (
+                              <div key={key} className="flex items-center gap-1.5">
+                                <span className="flex-1 text-xs text-gray-700 truncate">{key}</span>
+                                <span className="text-[10px] text-gray-400">({count})</span>
+                                <span className="text-xs font-semibold w-9 text-right" style={{ color }}>{Math.round(avg)}%</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {altaProb.length === 0 && (
+                <p className="text-sm text-gray-400 text-center py-4">Aún no hay reuniones con probabilidad ≥60%</p>
+              )}
             </div>
           )}
 

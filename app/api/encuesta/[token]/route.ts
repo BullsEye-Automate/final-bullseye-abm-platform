@@ -48,6 +48,7 @@ export async function POST(
       razon_no_califica_otro:     body.razon_no_califica_otro ?? null,
       propuesta_comercial:        body.propuesta_comercial,
       comentarios_adicionales:    body.comentarios_adicionales ?? null,
+      probabilidad_cierre:        body.probabilidad_cierre ?? null,
     });
 
   if (fbError) return NextResponse.json({ error: fbError.message }, { status: 500 });
