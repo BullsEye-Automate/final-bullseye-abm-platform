@@ -133,6 +133,8 @@ export default function TelefonosPage() {
 
   // Indica si se ejecutó al menos Clay (para mostrar la zona de resultados)
   const [started, setStarted] = useState(false);
+  // Se activa a los 15s de Lemlist en "running" para desbloquear Lusha sin esperar
+  const [lemlistSlow, setLemlistSlow] = useState(false);
 
   const canLushaEmail = !!email.trim();
   const canLushaTrio  = !!firstName.trim() && !!lastName.trim() && !!company.trim();
@@ -143,6 +145,7 @@ export default function TelefonosPage() {
     setLemlist(IDLE);
     setLusha(IDLE);
     setStarted(false);
+    setLemlistSlow(false);
   }
 
   // ── Runners por proveedor ────────────────────────────────────
@@ -196,7 +199,11 @@ export default function TelefonosPage() {
   async function runLemlist() {
     if (!linkedinUrl.trim() || !currentClient?.id) return;
     const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
+    setLemlistSlow(false);
     setLemlist({ status: "running", phone: null, detail: "Buscando con Lemlist (findPhone)…" });
+
+    // Tras 15s sin respuesta, desbloquear Lusha para que el SDR no espere
+    const slowTimer = setTimeout(() => setLemlistSlow(true), 15_000);
 
     async function callOnce() {
       const r = await fetch("/api/lemlist/lookup-phone", {
@@ -212,10 +219,12 @@ export default function TelefonosPage() {
       // Primer intento
       const first = await callOnce();
       if (!first.ok) {
+        clearTimeout(slowTimer);
         setLemlist({ status: "error", phone: null, detail: first.data.error ?? "Error en Lemlist" });
         return;
       }
       if (first.data.found && first.data.phone) {
+        clearTimeout(slowTimer);
         setLemlist({
           status: "found",
           phone: first.data.phone,
@@ -240,6 +249,8 @@ export default function TelefonosPage() {
         try {
           const next = await callOnce();
           if (next.ok && next.data.found && next.data.phone) {
+            clearTimeout(slowTimer);
+            setLemlistSlow(false);
             setLemlist({
               status: "found",
               phone: next.data.phone,
@@ -258,6 +269,7 @@ export default function TelefonosPage() {
         } catch { /* reintenta */ }
       }
 
+      clearTimeout(slowTimer);
       setLemlist({
         status: "not_found",
         phone: null,
@@ -265,6 +277,7 @@ export default function TelefonosPage() {
         debug: lastDebug,
       });
     } catch {
+      clearTimeout(slowTimer);
       setLemlist({ status: "error", phone: null, detail: "Error de conexión con Lemlist" });
     }
   }
@@ -504,14 +517,25 @@ export default function TelefonosPage() {
             />
           )}
 
-          {/* Si Lemlist terminó y aún no se corrió Lusha */}
-          {lemlistDone && lusha.status === "idle" && (
+          {/* Si Lemlist terminó O lleva más de 15s, mostrar opción de Lusha */}
+          {(lemlistDone || lemlistSlow) && lusha.status === "idle" && (
             <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background: "#fafafc", border: "1px solid #cbd5e1" }}>
-              <p className="text-sm" style={{ color: "#251762" }}>
-                {lemlist.status === "found"
-                  ? "¿El teléfono de Lemlist tampoco te sirve? Último intento con Lusha."
-                  : "Lemlist no encontró número. Prueba con Lusha."}
-              </p>
+              {lemlistSlow && !lemlistDone ? (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium" style={{ color: "#251762" }}>
+                    ⏱ Lemlist está tardando más de lo normal — Lusha disponible ya
+                  </p>
+                  <p className="text-xs" style={{ color: "#64748b" }}>
+                    Lemlist sigue corriendo en background y te avisará si encuentra el número. Puedes probar Lusha mientras tanto.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm" style={{ color: "#251762" }}>
+                  {lemlist.status === "found"
+                    ? "¿El teléfono de Lemlist tampoco te sirve? Último intento con Lusha."
+                    : "Lemlist no encontró número. Prueba con Lusha."}
+                </p>
+              )}
               {!canLusha && (
                 <p className="text-xs" style={{ color: "#991b1b" }}>
                   ⚠ Faltan datos para Lusha — completa Email o el trío Nombre+Apellido+Empresa arriba.
@@ -519,7 +543,7 @@ export default function TelefonosPage() {
               )}
               <button
                 onClick={runLusha}
-                disabled={anyRunning || !canLusha}
+                disabled={lusha.status !== "idle" || !canLusha}
                 className="btn-secondary flex items-center justify-center gap-2 w-full sm:w-auto"
               >
                 <IconArrowRight size={15} />
