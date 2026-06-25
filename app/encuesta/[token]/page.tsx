@@ -257,7 +257,7 @@ export default function EncuestaPage() {
           {/* P4: Siguiente paso */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-gray-800 mb-4">
-              4. ¿Cuál es el siguiente paso con este prospecto?
+              4. ¿Le enviarás una propuesta comercial a este prospecto?
             </h2>
             <div className="grid grid-cols-2 gap-2">
               {PROPUESTAS.map(p => (
