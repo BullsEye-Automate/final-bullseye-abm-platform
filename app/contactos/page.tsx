@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useClient } from "@/lib/clientContext";
 import {
   IconUsers,
@@ -18,7 +18,27 @@ import {
   IconLoader2,
   IconMail,
   IconMessage,
+  IconX,
+  IconSearch,
+  IconPlayerStop,
 } from "@tabler/icons-react";
+
+type Segment = { id: string; name: string };
+
+type GenResult = {
+  contactId: string;
+  emailSubject?: string;
+  emailBody?: string;
+  emailSubject2?: string;
+  emailBody2?: string;
+  emailSubject3?: string;
+  emailBody3?: string;
+  connectMessage?: string;
+  linkedinIcebreaker?: string;
+  linkedinMsg2?: string;
+  error?: string;
+  cancelled?: boolean;
+};
 
 type Contact = {
   id: string;
@@ -79,6 +99,9 @@ export default function ContactosPage() {
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
 
   const [refreshing, setRefreshing] = useState(false);
+
+  // Modal de generación antes de enviar a Lemlist
+  const [sendModal, setSendModal] = useState<{ contactIds: string[]; companyId?: string } | null>(null);
 
   async function load(forBucket: Bucket = bucket) {
     setLoading(true);
@@ -281,6 +304,20 @@ export default function ContactosPage() {
         />
       )}
 
+      {sendModal && currentClient && (
+        <SendModal
+          clientId={currentClient.id}
+          contactIds={sendModal.contactIds}
+          contacts={contacts}
+          companyNameById={companyNameById}
+          onClose={() => setSendModal(null)}
+          onConfirm={async (ids) => {
+            setSendModal(null);
+            await pushToLemlist(ids, sendModal.companyId);
+          }}
+        />
+      )}
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           {(["pending", "manual_review", "approved_pending", "enriched", "discarded"] as Bucket[]).map((b) => {
@@ -301,9 +338,9 @@ export default function ContactosPage() {
         </div>
         <div className="flex items-center gap-2">
           {(bucket === "approved_pending" || bucket === "manual_review") && allIds.length > 0 && (
-            <button onClick={() => pushToLemlist(allIds)} disabled={bulkApproving} className="btn-primary">
+            <button onClick={() => setSendModal({ contactIds: allIds })} disabled={bulkApproving} className="btn-primary">
               <IconSend size={14} />
-              {bulkApproving ? "Enviando…" : `Aprobar y enviar a Lemlist (${allIds.length})`}
+              {`Aprobar y enviar a Lemlist (${allIds.length})`}
             </button>
           )}
           <button className="btn-secondary" onClick={refreshFromLemlist} disabled={refreshing || !currentClient} title="Jala emails/teléfonos enriquecidos de Lemlist y sincroniza con HubSpot">
@@ -369,11 +406,10 @@ export default function ContactosPage() {
                   {bucket === "approved_pending" && approvedIds.length > 0 && (
                     <button
                       className="btn-primary text-xs py-1.5 px-3 shrink-0 ml-3"
-                      disabled={isCompanyPushing || bulkApproving}
-                      onClick={(e) => { e.stopPropagation(); pushToLemlist(approvedIds, companyId); }}
+                      onClick={(e) => { e.stopPropagation(); setSendModal({ contactIds: approvedIds, companyId }); }}
                     >
                       <IconSend size={12} />
-                      {isCompanyPushing ? "Enviando…" : `Enviar ${approvedIds.length} a Lemlist`}
+                      {`Enviar ${approvedIds.length} a Lemlist`}
                     </button>
                   )}
                 </div>
@@ -389,7 +425,7 @@ export default function ContactosPage() {
                         isDiscarding={discardingId === c.id}
                         isPreviewLoading={previewLoading === c.id}
                         preview={previews[c.id]}
-                        onPushLemlist={() => pushToLemlist([c.id])}
+                        onPushLemlist={() => setSendModal({ contactIds: [c.id] })}
                         onDiscard={() => discardContact(c.id)}
                         onRecover={() => recoverContact(c.id)}
                         onPreview={() => generatePreview(c.id)}
@@ -615,6 +651,392 @@ function EmptyState({ bucket, hasApproved }: { bucket: Bucket; hasApproved: bool
     <div className="card text-ink-muted flex items-center gap-2">
       <IconUsers size={18} />
       No hay contactos en {BUCKET_LABELS[bucket].toLowerCase()}.
+    </div>
+  );
+}
+
+// ─── Modal de generación de mensajes antes de enviar a Lemlist ────────────────
+
+function SendModal({
+  clientId, contactIds, contacts, companyNameById, onClose, onConfirm,
+}: {
+  clientId: string;
+  contactIds: string[];
+  contacts: Contact[];
+  companyNameById: Map<string, string>;
+  onClose: () => void;
+  onConfirm: (ids: string[]) => void;
+}) {
+  type Stage = "setup" | "generating" | "preview";
+
+  const selectedContacts = useMemo(
+    () => contacts.filter((c) => contactIds.includes(c.id)),
+    [contacts, contactIds]
+  );
+
+  const [stage, setStage]               = useState<Stage>("setup");
+  const [segments, setSegments]         = useState<Segment[]>([]);
+  const [segmentsLoading, setSegmentsLoading] = useState(true);
+  const [segmentId, setSegmentId]       = useState("");
+  const [deepSet, setDeepSet]           = useState<Set<number>>(new Set());
+  const [results, setResults]           = useState<GenResult[]>([]);
+  const [genProgress, setGenProgress]   = useState(0);
+  const [genError, setGenError]         = useState<string | null>(null);
+  const [saving, setSaving]             = useState(false);
+
+  const abortRef = useRef<AbortController | null>(null);
+  const skippedRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    fetch(`/api/training/segments?client_id=${clientId}`)
+      .then((r) => r.json())
+      .then((d) => { setSegments(d.segments ?? []); if (d.segments?.length) setSegmentId(d.segments[0].id); })
+      .finally(() => setSegmentsLoading(false));
+  }, [clientId]);
+
+  const toggleDeep = useCallback((i: number) => {
+    setDeepSet((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  }, []);
+
+  async function startGeneration() {
+    setStage("generating");
+    setGenProgress(0);
+    setGenError(null);
+    skippedRef.current = new Set();
+
+    const updated: GenResult[] = selectedContacts.map((c) => ({ contactId: c.id }));
+    setResults([...updated]);
+
+    for (let i = 0; i < selectedContacts.length; i++) {
+      if (abortRef.current?.signal.aborted) {
+        updated[i] = { ...updated[i], cancelled: true };
+        continue;
+      }
+      if (skippedRef.current.has(i)) {
+        updated[i] = { ...updated[i], cancelled: true };
+        setResults([...updated]);
+        setGenProgress(i + 1);
+        continue;
+      }
+
+      if (i > 0) {
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, 3000);
+          abortRef.current?.signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+        });
+      }
+
+      if (abortRef.current?.signal.aborted || skippedRef.current.has(i)) {
+        updated[i] = { ...updated[i], cancelled: true };
+        setResults([...updated]);
+        setGenProgress(i + 1);
+        continue;
+      }
+
+      const c = selectedContacts[i];
+      const ac = new AbortController();
+      abortRef.current = ac;
+
+      const parsedContact = {
+        firstName:   c.first_name  ?? "",
+        lastName:    c.last_name   ?? "",
+        email:       c.email       ?? "",
+        phone:       c.phone       ?? undefined,
+        jobTitle:    c.job_title   ?? undefined,
+        companyName: companyNameById.get(c.company_id) ?? undefined,
+        linkedinUrl: c.linkedin_url ?? undefined,
+      };
+
+      try {
+        const res = await fetch("/api/lemlist/csv-generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id:        clientId,
+            contacts:         [parsedContact],
+            segment_id:       segmentId || undefined,
+            use_deep_research: deepSet.has(i),
+          }),
+          signal: ac.signal,
+        });
+
+        if (res.ok) {
+          const { results: r } = await res.json();
+          const g = r?.[0] ?? {};
+          updated[i] = {
+            contactId:         c.id,
+            emailSubject:      g.emailSubject,
+            emailBody:         g.emailBody,
+            emailSubject2:     g.emailSubject2,
+            emailBody2:        g.emailBody2,
+            emailSubject3:     g.emailSubject3,
+            emailBody3:        g.emailBody3,
+            connectMessage:    g.connectMessage,
+            linkedinIcebreaker: g.icebreaker ?? g.connectMessage,
+            linkedinMsg2:      g.linkedinMsg2,
+          };
+        } else {
+          updated[i] = { ...updated[i], error: `Error ${res.status}` };
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === "AbortError") {
+          updated[i] = { ...updated[i], cancelled: true };
+        } else {
+          updated[i] = { ...updated[i], error: "Error de red" };
+        }
+      }
+
+      setResults([...updated]);
+      setGenProgress(i + 1);
+    }
+
+    abortRef.current = null;
+    setStage("preview");
+  }
+
+  function cancelOne(i: number) {
+    skippedRef.current.add(i);
+    setResults((prev) => {
+      const next = [...prev];
+      next[i] = { ...next[i], cancelled: true };
+      return next;
+    });
+  }
+
+  function cancelAll() {
+    abortRef.current?.abort();
+  }
+
+  async function handleConfirm() {
+    setSaving(true);
+    // Guardar mensajes en cada contacto antes de enviar a Lemlist
+    await Promise.all(
+      results
+        .filter((r) => !r.error && !r.cancelled && (r.emailSubject || r.linkedinIcebreaker))
+        .map((r) =>
+          fetch(`/api/contacts/${r.contactId}/messages`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email_subject:      r.emailSubject      ?? null,
+              email_body:         r.emailBody         ?? null,
+              email_subject_2:    r.emailSubject2     ?? null,
+              email_body_2:       r.emailBody2        ?? null,
+              email_subject_3:    r.emailSubject3     ?? null,
+              email_body_3:       r.emailBody3        ?? null,
+              connect_message:    r.connectMessage    ?? null,
+              linkedin_icebreaker: r.linkedinIcebreaker ?? null,
+              linkedin_msg_2:     r.linkedinMsg2      ?? null,
+            }),
+          })
+        )
+    );
+    setSaving(false);
+    onConfirm(contactIds);
+  }
+
+  const successCount = results.filter((r) => !r.error && !r.cancelled && (r.emailSubject || r.linkedinIcebreaker)).length;
+  const errorCount   = results.filter((r) => !!r.error).length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.45)" }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F1EEF7]">
+          <div>
+            <h2 className="font-semibold text-lg text-ink">Preparar envío a Lemlist</h2>
+            <p className="text-sm text-ink-muted mt-0.5">
+              {stage === "setup"      && `${selectedContacts.length} contacto${selectedContacts.length !== 1 ? "s" : ""} · Configura el segmento y genera mensajes`}
+              {stage === "generating" && `Generando mensajes… ${genProgress}/${selectedContacts.length}`}
+              {stage === "preview"    && `${successCount} generado${successCount !== 1 ? "s" : ""}${errorCount > 0 ? ` · ${errorCount} con error` : ""} · Revisa y confirma`}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-ink-muted hover:text-ink p-1 rounded-lg hover:bg-[#F1EEF7]">
+            <IconX size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+          {/* Selector de segmento (setup + generating) */}
+          {stage !== "preview" && (
+            <div>
+              <div className="label mb-1.5">Segmento</div>
+              {segmentsLoading ? (
+                <div className="text-sm text-ink-muted flex items-center gap-2"><IconLoader2 size={14} className="animate-spin" /> Cargando…</div>
+              ) : segments.length === 0 ? (
+                <div className="text-sm text-ink-muted">Sin segmentos creados para este cliente.</div>
+              ) : (
+                <select
+                  className="input"
+                  value={segmentId}
+                  onChange={(e) => setSegmentId(e.target.value)}
+                  disabled={stage === "generating"}
+                >
+                  <option value="">Sin segmento (configuración global)</option>
+                  {segments.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              )}
+            </div>
+          )}
+
+          {/* Lista de contactos */}
+          <div className="space-y-2">
+            {selectedContacts.map((c, i) => {
+              const fullName = [c.first_name, c.last_name].filter(Boolean).join(" ") || "(sin nombre)";
+              const result   = results[i];
+              const isDeep   = deepSet.has(i);
+              const isDone   = stage === "preview" || (stage === "generating" && genProgress > i);
+              const isCurrent = stage === "generating" && genProgress === i;
+              const isPending = stage === "generating" && genProgress < i;
+
+              return (
+                <div key={c.id} className="rounded-xl border border-[#E5E2F0] overflow-hidden">
+                  {/* Fila principal */}
+                  <div className={`flex items-center gap-3 px-4 py-3 ${result?.cancelled ? "opacity-50" : ""}`}>
+                    {/* Estado */}
+                    <div className="shrink-0">
+                      {isCurrent && <IconLoader2 size={15} className="animate-spin text-brand" />}
+                      {isDone && !isCurrent && !result?.cancelled && !result?.error && (result?.emailSubject || result?.linkedinIcebreaker)
+                        && <IconCheck size={15} className="text-success-fg" />}
+                      {isDone && result?.error   && <IconAlertCircle size={15} className="text-danger-fg" />}
+                      {isDone && result?.cancelled && <IconX size={15} className="text-ink-muted" />}
+                      {isPending && <div className="w-3.5 h-3.5 rounded-full border-2 border-[#E5E2F0]" />}
+                      {stage === "setup" && <div className="w-3.5 h-3.5 rounded-full border-2 border-[#E5E2F0]" />}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm text-ink truncate">{fullName}</span>
+                        {c.job_title && <span className="text-xs text-ink-muted truncate">{c.job_title}</span>}
+                        {result?.cancelled && <span className="text-xs text-ink-muted">Cancelado</span>}
+                        {result?.error     && <span className="text-xs text-danger-fg">{result.error}</span>}
+                      </div>
+                      <div className="text-xs text-ink-muted">{companyNameById.get(c.company_id) ?? "—"}</div>
+                    </div>
+
+                    {/* Deep research toggle (solo en setup) */}
+                    {stage === "setup" && (
+                      <button
+                        onClick={() => toggleDeep(i)}
+                        className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition ${
+                          isDeep
+                            ? "border-[#62E0D8] text-[#0fa89a] bg-[rgba(98,224,216,0.1)]"
+                            : "border-[#E5E2F0] text-ink-muted hover:border-[#62E0D8]"
+                        }`}
+                        title="Activar investigación profunda para este contacto"
+                      >
+                        <IconSearch size={11} />
+                        Inv. profunda
+                      </button>
+                    )}
+
+                    {/* Badge inv profunda (generating/preview) */}
+                    {stage !== "setup" && deepSet.has(i) && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0"
+                        style={{ background: "rgba(98,224,216,0.15)", color: "#0fa89a" }}>
+                        <IconSearch size={9} className="inline mr-0.5 -mt-px" />Inv. profunda
+                      </span>
+                    )}
+
+                    {/* Cancelar individual (generating, aún pendiente) */}
+                    {stage === "generating" && (isCurrent || isPending) && !result?.cancelled && (
+                      <button onClick={() => cancelOne(i)} className="text-ink-muted hover:text-danger-fg p-1 rounded" title="Cancelar este contacto">
+                        <IconX size={13} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Mensajes generados (preview) */}
+                  {stage === "preview" && result && !result.cancelled && !result.error && (result.emailSubject || result.linkedinIcebreaker) && (
+                    <div className="border-t border-[#F1EEF7] px-4 py-3 space-y-3 bg-[#FAFAFA] text-sm">
+                      {result.emailSubject && (
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
+                            <IconMail size={12} /> Email 1
+                          </div>
+                          <div className="font-medium text-ink text-xs">{result.emailSubject}</div>
+                          <p className="text-xs text-ink/80 whitespace-pre-line mt-0.5">{result.emailBody}</p>
+                        </div>
+                      )}
+                      {result.emailSubject2 && (
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
+                            <IconMail size={12} /> Email 2
+                          </div>
+                          <div className="font-medium text-ink text-xs">{result.emailSubject2}</div>
+                          <p className="text-xs text-ink/80 whitespace-pre-line mt-0.5">{result.emailBody2}</p>
+                        </div>
+                      )}
+                      {result.linkedinIcebreaker && (
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
+                            <IconMessage size={12} /> LinkedIn
+                          </div>
+                          <p className="text-xs text-ink/80">{result.linkedinIcebreaker}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {genError && (
+            <div className="text-sm text-danger-fg flex items-center gap-2">
+              <IconAlertCircle size={14} /> {genError}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-[#F1EEF7] flex items-center justify-between gap-3">
+          {stage === "setup" && (
+            <>
+              <button onClick={onClose} className="btn-secondary">Cancelar</button>
+              <button
+                onClick={startGeneration}
+                disabled={segmentsLoading}
+                className="btn-primary flex items-center gap-2"
+              >
+                <IconSparkles size={14} /> Generar mensajes
+              </button>
+            </>
+          )}
+          {stage === "generating" && (
+            <>
+              <div className="text-sm text-ink-muted">
+                {genProgress}/{selectedContacts.length} contacto{selectedContacts.length !== 1 ? "s" : ""}
+              </div>
+              <button onClick={cancelAll} className="btn-secondary flex items-center gap-2 text-danger-fg">
+                <IconPlayerStop size={14} /> Cancelar todo
+              </button>
+            </>
+          )}
+          {stage === "preview" && (
+            <>
+              <button onClick={onClose} className="btn-secondary">Cancelar</button>
+              <button
+                onClick={handleConfirm}
+                disabled={saving || successCount === 0}
+                className="btn-primary flex items-center gap-2"
+              >
+                {saving
+                  ? <><IconLoader2 size={14} className="animate-spin" /> Guardando…</>
+                  : <><IconSend size={14} /> Confirmar y enviar a Lemlist ({successCount})</>}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
