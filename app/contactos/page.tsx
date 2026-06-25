@@ -956,31 +956,42 @@ function SendModal({
 
                   {/* Mensajes generados (preview) */}
                   {stage === "preview" && result && !result.cancelled && !result.error && (result.emailSubject || result.linkedinIcebreaker) && (
-                    <div className="border-t border-[#F1EEF7] px-4 py-3 space-y-3 bg-[#FAFAFA] text-sm">
-                      {result.emailSubject && (
-                        <div>
+                    <div className="border-t border-[#F1EEF7] px-4 py-3 space-y-3 bg-[#FAFAFA]">
+                      {[
+                        { label: "Email 1", subject: result.emailSubject, body: result.emailBody },
+                        { label: "Email 2", subject: result.emailSubject2, body: result.emailBody2 },
+                        { label: "Email 3", subject: result.emailSubject3, body: result.emailBody3 },
+                      ].filter((e) => e.subject).map((e) => (
+                        <div key={e.label}>
                           <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
-                            <IconMail size={12} /> Email 1
+                            <IconMail size={12} /> {e.label}
                           </div>
-                          <div className="font-medium text-ink text-xs">{result.emailSubject}</div>
-                          <p className="text-xs text-ink/80 whitespace-pre-line mt-0.5">{result.emailBody}</p>
+                          <div className="font-medium text-ink text-xs">{e.subject}</div>
+                          <p className="text-xs text-ink/80 whitespace-pre-line mt-0.5">{e.body}</p>
                         </div>
-                      )}
-                      {result.emailSubject2 && (
+                      ))}
+                      {result.connectMessage && (
                         <div>
                           <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
-                            <IconMail size={12} /> Email 2
+                            <IconMessage size={12} /> Mensaje de conexión LinkedIn
                           </div>
-                          <div className="font-medium text-ink text-xs">{result.emailSubject2}</div>
-                          <p className="text-xs text-ink/80 whitespace-pre-line mt-0.5">{result.emailBody2}</p>
+                          <p className="text-xs text-ink/80 whitespace-pre-line">{result.connectMessage}</p>
                         </div>
                       )}
                       {result.linkedinIcebreaker && (
                         <div>
                           <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
-                            <IconMessage size={12} /> LinkedIn
+                            <IconMessage size={12} /> LinkedIn icebreaker
                           </div>
-                          <p className="text-xs text-ink/80">{result.linkedinIcebreaker}</p>
+                          <p className="text-xs text-ink/80 whitespace-pre-line">{result.linkedinIcebreaker}</p>
+                        </div>
+                      )}
+                      {result.linkedinMsg2 && (
+                        <div>
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted mb-1">
+                            <IconMessage size={12} /> LinkedIn mensaje 2
+                          </div>
+                          <p className="text-xs text-ink/80 whitespace-pre-line">{result.linkedinMsg2}</p>
                         </div>
                       )}
                     </div>
