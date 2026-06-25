@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
     companyName?: string;
     phone?:       string;
     linkedinUrl?: string;
+    jobTitle?:    string;
   };
 
   const byEmail = new Map<string, AggEntry>();
@@ -161,6 +162,7 @@ export async function GET(req: NextRequest) {
         if (!entry.linkedinUrl && lead.linkedinUrl) entry.linkedinUrl = lead.linkedinUrl;
         if (!entry.firstName   && lead.firstName)   entry.firstName   = lead.firstName;
         if (!entry.lastName    && lead.lastName)     entry.lastName    = lead.lastName;
+        if (!entry.jobTitle    && (lead.jobTitle ?? lead.title)) entry.jobTitle = lead.jobTitle ?? lead.title;
       }
     }
   } catch {
@@ -202,7 +204,7 @@ export async function GET(req: NextRequest) {
         contact_id:         contact?.id ?? null,
         first_name:         contact?.first_name ?? agg.firstName ?? null,
         last_name:          contact?.last_name  ?? agg.lastName  ?? null,
-        job_title:          contact?.job_title  ?? null,
+        job_title:          contact?.job_title  ?? agg.jobTitle ?? null,
         company_name:       company ?? agg.companyName ?? null,
         phone:              contact?.phone ?? contact?.phone_clay ?? agg.phone ?? null,
         linkedin_url:       contact?.linkedin_url ?? agg.linkedinUrl ?? null,
