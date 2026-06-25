@@ -134,7 +134,8 @@ function PropuestaModal({
         </div>
         <div className="overflow-y-auto flex-1 p-4 space-y-3">
           {meetings.map(m => {
-            const fb = m.meeting_feedback?.[0];
+            const raw = m.meeting_feedback as any;
+            const fb = Array.isArray(raw) ? raw[0] : raw ?? null;
             return (
               <div key={m.id} className="border border-gray-100 rounded-xl p-3">
                 <div className="flex items-start justify-between gap-2">
@@ -219,13 +220,20 @@ export default function ResultadosPage() {
   }
 
   // ── Cálculos ────────────────────────────────────────────────────────────────
+  // Normaliza meeting_feedback: Supabase puede devolver objeto o array por el UNIQUE constraint
+  function getFb(m: Meeting): Feedback | null {
+    const raw = m.meeting_feedback as any;
+    if (!raw) return null;
+    return Array.isArray(raw) ? (raw[0] ?? null) : raw;
+  }
+
   const total      = meetings.length;
   const realizadas = meetings.filter(m => m.realizado === "Si");
   const noShow     = meetings.filter(m => m.realizado === "No");
   const pendientes = meetings.filter(m => m.realizado === "Pendiente");
   const reagendar  = meetings.filter(m => m.realizado === "Reagendar");
   const conFb      = meetings.filter(m => m.feedback_status === "con_feedback");
-  const feedbacks  = meetings.flatMap(m => m.meeting_feedback ?? []);
+  const feedbacks  = meetings.map(getFb).filter(Boolean) as Feedback[];
 
   const tasaRealizacion = total > 0 ? Math.round((realizadas.length / total) * 100) : 0;
   const tasaNoShow      = total > 0 ? 100 - tasaRealizacion : 0;
@@ -244,7 +252,7 @@ export default function ResultadosPage() {
   const propuestaMap = new Map<string, Meeting[]>();
   PROPUESTA_OPTIONS.forEach(k => propuestaMap.set(k, []));
   for (const m of conFb) {
-    const fb = m.meeting_feedback?.[0];
+    const fb = getFb(m);
     if (fb?.propuesta_comercial && propuestaMap.has(fb.propuesta_comercial)) {
       propuestaMap.get(fb.propuesta_comercial)!.push(m);
     }
@@ -260,15 +268,15 @@ export default function ResultadosPage() {
   const comentarios = feedbacks.filter(f => f.comentarios_adicionales?.trim()).slice(-5).reverse();
 
   // ── Probabilidad de cierre ──────────────────────────────────────────────────
-  const conProb = conFb.filter(m => m.meeting_feedback?.[0]?.probabilidad_cierre !== null && m.meeting_feedback?.[0]?.probabilidad_cierre !== undefined);
+  const conProb = conFb.filter(m => getFb(m)?.probabilidad_cierre != null);
   const probPromedio = conProb.length
-    ? Math.round(conProb.reduce((acc, m) => acc + (m.meeting_feedback![0].probabilidad_cierre ?? 0), 0) / conProb.length)
+    ? Math.round(conProb.reduce((acc, m) => acc + (getFb(m)?.probabilidad_cierre ?? 0), 0) / conProb.length)
     : null;
 
   // Reuniones con alta probabilidad (>= 60%)
   const altaProb = conProb
-    .filter(m => (m.meeting_feedback![0].probabilidad_cierre ?? 0) >= 60)
-    .sort((a, b) => (b.meeting_feedback![0].probabilidad_cierre ?? 0) - (a.meeting_feedback![0].probabilidad_cierre ?? 0));
+    .filter(m => (getFb(m)?.probabilidad_cierre ?? 0) >= 60)
+    .sort((a, b) => (getFb(b)?.probabilidad_cierre ?? 0) - (getFb(a)?.probabilidad_cierre ?? 0));
 
   // Grupos por dimensión para alta prob
   function groupByProb(items: Meeting[]) {
@@ -283,7 +291,7 @@ export default function ResultadosPage() {
     for (const m of items) {
       const key = keyFn(m);
       if (!key) continue;
-      const prob = m.meeting_feedback![0].probabilidad_cierre ?? 0;
+      const prob = getFb(m)?.probabilidad_cierre ?? 0;
       const cur = map.get(key) ?? { total: 0, count: 0 };
       map.set(key, { total: cur.total + prob, count: cur.count + 1 });
     }
@@ -296,7 +304,7 @@ export default function ResultadosPage() {
 
   // ── Insights: mejores/peores reuniones ──────────────────────────────────────
   const ratedMeetings = realizadas
-    .map(m => ({ m, score: m.meeting_feedback?.[0]?.calificacion ?? null }))
+    .map(m => ({ m, score: getFb(m)?.calificacion ?? null }))
     .filter(({ score }) => score !== null) as { m: Meeting; score: number }[];
 
   const byCargo     = groupByAvg(ratedMeetings.map(({ m, score }) => ({ key: m.contacto_cargo ?? "", score })));
@@ -516,7 +524,7 @@ export default function ResultadosPage() {
                   { label: "Baja (<30%)", max: 29, color: "#ef4444", bg: "#fef2f2" },
                 ].map(band => {
                   const count = conProb.filter(m => {
-                    const p = m.meeting_feedback![0].probabilidad_cierre ?? 0;
+                    const p = getFb(m)?.probabilidad_cierre ?? 0;
                     if (band.min !== undefined && band.max !== undefined) return p >= band.min && p <= band.max;
                     if (band.min !== undefined) return p >= band.min;
                     return p <= (band.max ?? 100);
@@ -540,7 +548,7 @@ export default function ResultadosPage() {
                   {/* Listado de empresas */}
                   <div className="space-y-2 mb-5">
                     {altaProb.slice(0, 8).map(m => {
-                      const prob = m.meeting_feedback![0].probabilidad_cierre ?? 0;
+                      const prob = getFb(m)?.probabilidad_cierre ?? 0;
                       const color = prob >= 80 ? "#22c55e" : prob >= 60 ? "#84cc16" : "#f59e0b";
                       return (
                         <div key={m.id} className="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
