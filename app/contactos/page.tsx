@@ -767,6 +767,7 @@ function SendModal({
         if (res.ok) {
           const { results: r } = await res.json();
           const g = r?.[0] ?? {};
+          console.log("[SendModal] csv-generate result:", JSON.stringify(g, null, 2));
           updated[i] = {
             contactId:         c.id,
             emailSubject:      g.emailSubject,
