@@ -399,10 +399,11 @@ function FeedbackInlineModal({ meeting, onClose, onSaved }: { meeting: Meeting; 
 
 // ── Modal: Ver feedback existente ─────────────────────────────────────────────
 function VerFeedbackModal({ meeting, onClose }: { meeting: Meeting; onClose: () => void }) {
-  const fb = meeting.meeting_feedback?.[0];
-  if (!fb) return null;
+  // meeting_feedback puede ser array o objeto singular según Supabase
+  const raw = meeting.meeting_feedback;
+  const fb: any = Array.isArray(raw) ? raw[0] : raw ?? null;
 
-  const probColor = fb.probabilidad_cierre !== null && fb.probabilidad_cierre !== undefined
+  const probColor = fb?.probabilidad_cierre != null
     ? fb.probabilidad_cierre >= 70 ? "#22c55e" : fb.probabilidad_cierre >= 40 ? "#f59e0b" : "#ef4444"
     : "#9ca3af";
 
@@ -419,6 +420,11 @@ function VerFeedbackModal({ meeting, onClose }: { meeting: Meeting; onClose: () 
           </div>
           <button onClick={onClose}><IconX size={18} className="text-gray-400" /></button>
         </div>
+        {!fb ? (
+          <div className="p-8 text-center text-gray-400 text-sm">
+            No se encontraron datos de feedback para esta reunión.
+          </div>
+        ) : (
         <div className="p-6 space-y-5">
           {/* Calificación */}
           <div>
@@ -492,6 +498,7 @@ function VerFeedbackModal({ meeting, onClose }: { meeting: Meeting; onClose: () 
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );
