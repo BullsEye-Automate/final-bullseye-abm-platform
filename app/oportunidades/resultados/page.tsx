@@ -239,17 +239,18 @@ export default function ResultadosPage() {
   const pctEmpresa  = feedbacks.length ? Math.round((empresasCalificadas / feedbacks.length) * 100) : 0;
   const pctContacto = feedbacks.length ? Math.round((contactosCalificados / feedbacks.length) * 100) : 0;
 
-  // Propuestas: reuniones realizadas con feedback agrupadas por propuesta_comercial
+  // Propuestas: reuniones CON feedback agrupadas por propuesta_comercial
+  // (se usa conFb en vez de realizadas para evitar que un desync de "realizado" excluya reuniones)
   const propuestaMap = new Map<string, Meeting[]>();
   PROPUESTA_OPTIONS.forEach(k => propuestaMap.set(k, []));
-  for (const m of realizadas) {
+  for (const m of conFb) {
     const fb = m.meeting_feedback?.[0];
     if (fb?.propuesta_comercial && propuestaMap.has(fb.propuesta_comercial)) {
       propuestaMap.get(fb.propuesta_comercial)!.push(m);
     }
   }
-  const conPropuesta   = realizadas.filter(m => m.meeting_feedback?.[0]?.propuesta_comercial === "Si").length;
-  const pctPropuesta   = realizadas.length > 0 ? Math.round((conPropuesta / realizadas.length) * 100) : 0;
+  const conPropuesta   = (propuestaMap.get("Si") ?? []).length;
+  const pctPropuesta   = conFb.length > 0 ? Math.round((conPropuesta / conFb.length) * 100) : 0;
 
   const razones: Record<string, number> = {};
   feedbacks.filter(f => f.razon_no_califica).forEach(f => {
@@ -259,7 +260,7 @@ export default function ResultadosPage() {
   const comentarios = feedbacks.filter(f => f.comentarios_adicionales?.trim()).slice(-5).reverse();
 
   // ── Probabilidad de cierre ──────────────────────────────────────────────────
-  const conProb = realizadas.filter(m => m.meeting_feedback?.[0]?.probabilidad_cierre !== null && m.meeting_feedback?.[0]?.probabilidad_cierre !== undefined);
+  const conProb = conFb.filter(m => m.meeting_feedback?.[0]?.probabilidad_cierre !== null && m.meeting_feedback?.[0]?.probabilidad_cierre !== undefined);
   const probPromedio = conProb.length
     ? Math.round(conProb.reduce((acc, m) => acc + (m.meeting_feedback![0].probabilidad_cierre ?? 0), 0) / conProb.length)
     : null;
@@ -401,7 +402,7 @@ export default function ResultadosPage() {
             <div className="flex items-center justify-between mb-1">
               <h3 className="text-sm font-semibold text-gray-700">¿Le enviarás propuesta comercial?</h3>
               <span className="text-xs text-gray-400">
-                {conPropuesta} de {realizadas.length} realizadas ({pctPropuesta}%) con propuesta enviada
+                {conPropuesta} de {conFb.length} con feedback ({pctPropuesta}%) con propuesta enviada
               </span>
             </div>
             <p className="text-xs text-gray-400 mb-4">Haz clic en una tarjeta para ver las empresas y cambiar el estado</p>
@@ -414,9 +415,9 @@ export default function ResultadosPage() {
                     style={{ borderColor: PROPUESTA_COLORS[opt], background: PROPUESTA_BG[opt] }}>
                     <div className="text-2xl font-bold" style={{ color: PROPUESTA_COLORS[opt] }}>{list.length}</div>
                     <div className="text-xs font-medium mt-1" style={{ color: PROPUESTA_COLORS[opt] }}>{opt}</div>
-                    {realizadas.length > 0 && (
+                    {conFb.length > 0 && (
                       <div className="text-[10px] mt-0.5" style={{ color: PROPUESTA_COLORS[opt], opacity: 0.7 }}>
-                        {Math.round((list.length / realizadas.length) * 100)}% de realizadas
+                        {Math.round((list.length / conFb.length) * 100)}% con feedback
                       </div>
                     )}
                   </button>

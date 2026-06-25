@@ -397,6 +397,106 @@ function FeedbackInlineModal({ meeting, onClose, onSaved }: { meeting: Meeting; 
   );
 }
 
+// ── Modal: Ver feedback existente ─────────────────────────────────────────────
+function VerFeedbackModal({ meeting, onClose }: { meeting: Meeting; onClose: () => void }) {
+  const fb = meeting.meeting_feedback?.[0];
+  if (!fb) return null;
+
+  const probColor = fb.probabilidad_cierre !== null && fb.probabilidad_cierre !== undefined
+    ? fb.probabilidad_cierre >= 70 ? "#22c55e" : fb.probabilidad_cierre >= 40 ? "#f59e0b" : "#ef4444"
+    : "#9ca3af";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white rounded-t-2xl px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Feedback — {meeting.empresa}</h2>
+            <p className="text-xs text-gray-400">
+              {meeting.contacto_nombre}
+              {meeting.fecha_reunion ? ` · ${new Date(meeting.fecha_reunion + "T12:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "short" })}` : ""}
+            </p>
+          </div>
+          <button onClick={onClose}><IconX size={18} className="text-gray-400" /></button>
+        </div>
+        <div className="p-6 space-y-5">
+          {/* Calificación */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">1. Calificación de la reunión</p>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-0.5">
+                {Array.from({ length: 10 }, (_, i) => (
+                  <IconStar key={i} size={18}
+                    fill={(fb.calificacion ?? 0) > i ? "#f59e0b" : "none"}
+                    stroke={(fb.calificacion ?? 0) > i ? "#f59e0b" : "#d1d5db"} />
+                ))}
+              </div>
+              <span className="text-sm font-bold text-gray-700">{fb.calificacion ?? "—"}/10</span>
+            </div>
+          </div>
+
+          {/* Empresa calificada */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">2. ¿La empresa era calificada?</p>
+            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${fb.empresa_calificada ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+              {fb.empresa_calificada ? <><IconCheck size={13} /> Sí</> : <><IconX size={13} /> No</>}
+            </span>
+            {fb.empresa_calificada === false && (fb as any).razon_no_empresa && (
+              <p className="text-xs text-gray-500 mt-1">Razón: {(fb as any).razon_no_empresa}{(fb as any).razon_no_empresa_otro ? ` — ${(fb as any).razon_no_empresa_otro}` : ""}</p>
+            )}
+          </div>
+
+          {/* Contacto calificado */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">3. ¿El contacto era el decisor correcto?</p>
+            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${fb.contacto_calificado ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+              {fb.contacto_calificado ? <><IconCheck size={13} /> Sí</> : <><IconX size={13} /> No</>}
+            </span>
+            {fb.contacto_calificado === false && fb.razon_no_califica && (
+              <p className="text-xs text-gray-500 mt-1">Razón: {fb.razon_no_califica}{fb.razon_no_califica_otro ? ` — ${fb.razon_no_califica_otro}` : ""}</p>
+            )}
+          </div>
+
+          {/* Propuesta comercial */}
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">4. ¿Le enviarás propuesta comercial?</p>
+            {fb.propuesta_comercial ? (
+              <span className="inline-block px-3 py-1 rounded-full text-sm font-medium"
+                style={{
+                  background: fb.propuesta_comercial === "Si" ? "#f0fdf4" : fb.propuesta_comercial === "No" ? "#fef2f2" : fb.propuesta_comercial === "No aún" ? "#fffbeb" : "#f5f3ff",
+                  color: fb.propuesta_comercial === "Si" ? "#16a34a" : fb.propuesta_comercial === "No" ? "#dc2626" : fb.propuesta_comercial === "No aún" ? "#d97706" : "#7c3aed",
+                }}>
+                {fb.propuesta_comercial}
+              </span>
+            ) : <span className="text-sm text-gray-400">Sin respuesta</span>}
+          </div>
+
+          {/* Comentarios */}
+          {fb.comentarios_adicionales && (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">5. Comentarios adicionales</p>
+              <p className="text-sm text-gray-700 bg-gray-50 rounded-xl px-4 py-3 italic">"{fb.comentarios_adicionales}"</p>
+            </div>
+          )}
+
+          {/* Probabilidad de cierre */}
+          {fb.probabilidad_cierre !== null && fb.probabilidad_cierre !== undefined && (
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">6. Probabilidad de cierre</p>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 bg-gray-100 rounded-full h-3">
+                  <div className="h-full rounded-full" style={{ width: `${fb.probabilidad_cierre}%`, background: probColor }} />
+                </div>
+                <span className="text-lg font-bold w-12 text-right" style={{ color: probColor }}>{fb.probabilidad_cierre}%</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function FeedbackPage() {
   const { currentClient, loading: clientLoading } = useClient();
@@ -414,6 +514,7 @@ export default function FeedbackPage() {
   const [copied, setCopied]       = useState<string | null>(null);
   const [presetOpen, setPresetOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [verFeedbackMeeting, setVerFeedbackMeeting] = useState<Meeting | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -672,9 +773,15 @@ export default function FeedbackPage() {
                     {m.realizado}
                   </span>
                   {esFeedback && (
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-700">
-                      Con feedback
-                    </span>
+                    <>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-100 text-green-700">
+                        Con feedback
+                      </span>
+                      <button onClick={() => setVerFeedbackMeeting(m)}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border border-teal-200 text-teal-700 hover:bg-teal-50 transition">
+                        <IconMessageCheck size={13} /> Ver feedback
+                      </button>
+                    </>
                   )}
                   {m.realizado === "Si" && !esFeedback && (
                     <button onClick={() => setFeedbackMeeting(m)}
@@ -713,6 +820,12 @@ export default function FeedbackPage() {
           meeting={feedbackMeeting}
           onClose={() => setFeedbackMeeting(null)}
           onSaved={() => { setFeedbackMeeting(null); load(); }}
+        />
+      )}
+      {verFeedbackMeeting && (
+        <VerFeedbackModal
+          meeting={verFeedbackMeeting}
+          onClose={() => setVerFeedbackMeeting(null)}
         />
       )}
 
