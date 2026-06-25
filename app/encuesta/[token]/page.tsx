@@ -21,6 +21,7 @@ type FormState = {
   razon_no_califica_otro: string;
   propuesta_comercial: string;
   comentarios_adicionales: string;
+  probabilidad_cierre: number | null;
 };
 
 const RAZONES = [
@@ -98,6 +99,7 @@ export default function EncuestaPage() {
     razon_no_califica_otro: "",
     propuesta_comercial: "",
     comentarios_adicionales: "",
+    probabilidad_cierre: null,
   });
 
   useEffect(() => {
@@ -286,6 +288,72 @@ export default function EncuestaPage() {
               placeholder="Puntos de dolor mencionados, contexto relevante, próximos pasos acordados…"
               rows={3}
               className="mt-3 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#62E0D8] resize-none" />
+          </div>
+
+          {/* P6: Probabilidad de cierre */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-gray-800 mb-1">
+              6. ¿Cuál es la probabilidad de cierre con este prospecto?
+            </h2>
+            <p className="text-xs text-gray-400 mb-5">Tu estimación intuitiva de que esto termine en negocio</p>
+
+            {/* Valor actual */}
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-gray-500">Baja probabilidad</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-2xl font-bold" style={{
+                  color: form.probabilidad_cierre === null ? "#d1d5db"
+                    : form.probabilidad_cierre >= 70 ? "#22c55e"
+                    : form.probabilidad_cierre >= 40 ? "#f59e0b"
+                    : "#ef4444"
+                }}>
+                  {form.probabilidad_cierre !== null ? `${form.probabilidad_cierre}%` : "—"}
+                </span>
+              </div>
+              <span className="text-xs text-gray-500">Alta probabilidad</span>
+            </div>
+
+            {/* Slider */}
+            <input
+              type="range" min={0} max={100} step={5}
+              value={form.probabilidad_cierre ?? 50}
+              onChange={e => setForm(p => ({ ...p, probabilidad_cierre: Number(e.target.value) }))}
+              onMouseDown={() => { if (form.probabilidad_cierre === null) setForm(p => ({ ...p, probabilidad_cierre: 50 })); }}
+              onTouchStart={() => { if (form.probabilidad_cierre === null) setForm(p => ({ ...p, probabilidad_cierre: 50 })); }}
+              className="w-full h-2 rounded-full outline-none cursor-pointer"
+              style={{
+                accentColor: form.probabilidad_cierre === null ? "#d1d5db"
+                  : form.probabilidad_cierre >= 70 ? "#22c55e"
+                  : form.probabilidad_cierre >= 40 ? "#f59e0b"
+                  : "#ef4444"
+              }} />
+
+            {/* Etiquetas de referencia */}
+            <div className="flex justify-between text-[10px] text-gray-400 mt-2 px-0.5">
+              <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+            </div>
+
+            {/* Chips rápidos */}
+            <div className="flex gap-2 mt-4 flex-wrap">
+              {[
+                { label: "Sin chances", value: 5, color: "#ef4444" },
+                { label: "Poco probable", value: 20, color: "#f97316" },
+                { label: "Posible", value: 40, color: "#f59e0b" },
+                { label: "Probable", value: 65, color: "#84cc16" },
+                { label: "Muy probable", value: 85, color: "#22c55e" },
+              ].map(chip => (
+                <button key={chip.value} type="button"
+                  onClick={() => setForm(p => ({ ...p, probabilidad_cierre: chip.value }))}
+                  className="px-3 py-1 rounded-full text-xs font-medium border-2 transition"
+                  style={{
+                    borderColor: form.probabilidad_cierre === chip.value ? chip.color : "#e5e7eb",
+                    background: form.probabilidad_cierre === chip.value ? chip.color + "18" : "#fff",
+                    color: form.probabilidad_cierre === chip.value ? chip.color : "#6b7280",
+                  }}>
+                  {chip.label} ({chip.value}%)
+                </button>
+              ))}
+            </div>
           </div>
 
           {error && (
