@@ -4,7 +4,6 @@ import { supabaseAdmin } from "@/lib/supabase";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Tipos de actividad Lemlist con su puntaje y etiqueta
 const ACTIVITY_TYPES = [
   { type: "emailsReplied",          score: 10, label: "Respondió email",        color: "#22c55e" },
   { type: "linkedinReplied",        score: 10, label: "Respondió en LinkedIn",  color: "#0a66c2" },
@@ -24,10 +23,9 @@ export async function GET(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Obtener campaña configurada
   const { data: config } = await db
     .from("client_configs")
-    .select("lemlist_campaign_id")
+    .select("lemlist_campaign_id, hubspot_portal_id")
     .eq("client_id", clientId)
     .maybeSingle();
 
@@ -42,8 +40,8 @@ export async function GET(req: NextRequest) {
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
+  const hubspotPortalId = (config as any).hubspot_portal_id ?? process.env.HUBSPOT_PORTAL_ID ?? null;
 
-  // Traer todos los tipos de actividad en paralelo
   const fetches = await Promise.allSettled(
     ACTIVITY_TYPES.map(async ({ type, score, label, color }) => {
       try {
@@ -57,12 +55,15 @@ export async function GET(req: NextRequest) {
         return items
           .map(a => ({
             type, score, label, color,
-            email:      (a.email ?? a.leadEmail ?? "").trim().toLowerCase(),
-            createdAt:  a.createdAt ?? a.date ?? null,
-            activityId: a._id ?? a.id ?? null,
-            firstName:  a.firstName ?? null,
-            lastName:   a.lastName  ?? null,
-            text:       a.text ?? a.body ?? null,
+            email:            (a.email ?? a.leadEmail ?? "").trim().toLowerCase(),
+            createdAt:        a.createdAt ?? a.date ?? null,
+            activityId:       a._id ?? a.id ?? null,
+            firstName:        a.firstName ?? null,
+            lastName:         a.lastName  ?? null,
+            text:             a.text ?? a.body ?? null,
+            campaignStepName: a.campaignStepName ?? a.stepName ?? null,
+            subject:          a.emailSubject ?? a.subject ?? null,
+            stepIndex:        a.stepIndex ?? null,
           }))
           .filter(a => a.email);
       } catch {
@@ -71,7 +72,6 @@ export async function GET(req: NextRequest) {
     })
   );
 
-  // Agregar actividades por email
   type AggEntry = {
     totalScore: number;
     activities: any[];
@@ -87,13 +87,16 @@ export async function GET(req: NextRequest) {
       const entry = byEmail.get(act.email) ?? { totalScore: 0, activities: [] };
       entry.totalScore += act.score;
       entry.activities.push({
-        type:       act.type,
-        score:      act.score,
-        label:      act.label,
-        color:      act.color,
-        createdAt:  act.createdAt,
-        activityId: act.activityId,
-        text:       act.text,
+        type:             act.type,
+        score:            act.score,
+        label:            act.label,
+        color:            act.color,
+        createdAt:        act.createdAt,
+        activityId:       act.activityId,
+        text:             act.text,
+        campaignStepName: act.campaignStepName,
+        subject:          act.subject,
+        stepIndex:        act.stepIndex,
       });
       if (!entry.firstName && act.firstName) entry.firstName = act.firstName;
       if (!entry.lastName  && act.lastName)  entry.lastName  = act.lastName;
@@ -102,12 +105,11 @@ export async function GET(req: NextRequest) {
   }
 
   if (byEmail.size === 0) {
-    return NextResponse.json({ contacts: [] });
+    return NextResponse.json({ contacts: [], hubspot_portal_id: hubspotPortalId });
   }
 
   const emails = Array.from(byEmail.keys());
 
-  // Enriquecer con datos de Supabase
   const { data: contacts } = await db
     .from("contacts")
     .select(`id, email, first_name, last_name, job_title, phone, phone_clay, hubspot_contact_id, company_id,
@@ -118,7 +120,6 @@ export async function GET(req: NextRequest) {
 
   const contactByEmail = new Map((contacts ?? []).map(c => [c.email?.toLowerCase(), c]));
 
-  // Nombres de empresas
   const companyIds = [...new Set((contacts ?? []).map(c => c.company_id).filter(Boolean) as string[])];
   let companyById  = new Map<string, string>();
   if (companyIds.length > 0) {
@@ -129,7 +130,6 @@ export async function GET(req: NextRequest) {
     companyById = new Map((companies ?? []).map(c => [c.id, c.company_name]));
   }
 
-  // Labels SDR
   const contactIds = (contacts ?? []).map(c => c.id).filter(Boolean) as string[];
   let labelByContactId = new Map<string, string>();
   if (contactIds.length > 0) {
@@ -140,17 +140,33 @@ export async function GET(req: NextRequest) {
     labelByContactId = new Map((labels ?? []).map(l => [l.contact_id, l.label]));
   }
 
-  // Construir resultado final
+  // Labels por email (contactos no encontrados en plataforma)
+  let labelByEmail = new Map<string, string>();
+  {
+    const { data: emailLabels } = await db
+      .from("contact_sdr_labels")
+      .select("email, label")
+      .eq("client_id", clientId)
+      .in("email", emails)
+      .is("contact_id", null);
+    if (emailLabels) {
+      labelByEmail = new Map(emailLabels.map(l => [l.email, l.label]));
+    }
+  }
+
   const result = emails
     .map(email => {
       const agg     = byEmail.get(email)!;
       const contact = contactByEmail.get(email);
       const company = contact ? companyById.get(contact.company_id ?? "") : null;
 
-      // Ordenar actividades por fecha desc
       const activities = agg.activities.sort((a, b) =>
         (b.createdAt ?? "") > (a.createdAt ?? "") ? 1 : -1
       );
+
+      const sdrLabel = contact
+        ? (labelByContactId.get(contact.id) ?? null)
+        : (labelByEmail.get(email) ?? null);
 
       return {
         email,
@@ -172,7 +188,7 @@ export async function GET(req: NextRequest) {
           linkedin_msg1:    contact.linkedin_icebreaker,
           linkedin_msg2:    contact.linkedin_msg_2,
         } : null,
-        sdr_label:           contact ? (labelByContactId.get(contact.id) ?? null) : null,
+        sdr_label: sdrLabel,
         status:              contact?.status ?? null,
         lemlist_pushed_at:   contact?.lemlist_pushed_at ?? null,
       };
@@ -180,5 +196,5 @@ export async function GET(req: NextRequest) {
     .filter(c => c.total_score > 0)
     .sort((a, b) => b.total_score - a.total_score);
 
-  return NextResponse.json({ contacts: result });
+  return NextResponse.json({ contacts: result, hubspot_portal_id: hubspotPortalId });
 }
