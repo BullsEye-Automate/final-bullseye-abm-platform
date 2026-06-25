@@ -150,7 +150,7 @@ export default function FeedbackPage() {
     setSyncing(true);
     setImportMsg("");
     try {
-      const res = await fetch("/api/cron/sync-meetings");
+      const res = await fetch("/api/meetings/sync");
       const data = await res.json();
       if (data.error) setImportMsg(`Error: ${data.error}`);
       else {
