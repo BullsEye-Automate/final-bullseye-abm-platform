@@ -190,8 +190,9 @@ function NuevaReunionModal({ clientId, onClose, onSaved }: { clientId: string; o
 }
 
 // ── Modal feedback inline ─────────────────────────────────────────────────────
-function FeedbackInlineModal({ meeting, onClose, onSaved }: { meeting: Meeting; onClose: () => void; onSaved: () => void }) {
+function FeedbackInlineModal({ meeting, salesManagers, onClose, onSaved }: { meeting: Meeting; salesManagers: string[]; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
+    sdr_seleccionado: "",
     calificacion: null as number | null,
     empresa_calificada: null as boolean | null,
     razon_no_empresa: "",
@@ -257,6 +258,19 @@ function FeedbackInlineModal({ meeting, onClose, onSaved }: { meeting: Meeting; 
           <button onClick={onClose}><IconX size={18} className="text-gray-400" /></button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Sales Manager */}
+          {salesManagers.length > 0 && (
+            <div>
+              <p className="text-sm font-semibold text-gray-800 mb-2">¿Quién realizó esta reunión?</p>
+              <select
+                value={form.sdr_seleccionado}
+                onChange={e => setForm(p => ({ ...p, sdr_seleccionado: e.target.value }))}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#62E0D8]">
+                <option value="">— Selecciona —</option>
+                {salesManagers.map(sm => <option key={sm} value={sm}>{sm}</option>)}
+              </select>
+            </div>
+          )}
           {/* P1 */}
           <div>
             <p className="text-sm font-semibold text-gray-800 mb-3">1. ¿Cómo calificarías esta reunión?</p>
@@ -881,6 +895,7 @@ export default function FeedbackPage() {
       {feedbackMeeting && (
         <FeedbackInlineModal
           meeting={feedbackMeeting}
+          salesManagers={salesManagers}
           onClose={() => setFeedbackMeeting(null)}
           onSaved={() => { setFeedbackMeeting(null); load(); }}
         />
