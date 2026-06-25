@@ -7,15 +7,23 @@ const VALID_LABELS = ["reunion_agendada", "no_interesado", "sin_respuesta", "num
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
-  if (!body?.contact_id || !body?.client_id) {
-    return NextResponse.json({ error: "contact_id y client_id son requeridos" }, { status: 400 });
+  if (!body?.client_id) {
+    return NextResponse.json({ error: "client_id es requerido" }, { status: 400 });
+  }
+  if (!body.contact_id && !body.email) {
+    return NextResponse.json({ error: "contact_id o email son requeridos" }, { status: 400 });
   }
 
   const db = supabaseAdmin();
 
   // Si label es null o vacío, eliminar etiqueta
   if (!body.label) {
-    await db.from("contact_sdr_labels").delete().eq("contact_id", body.contact_id);
+    if (body.contact_id) {
+      await db.from("contact_sdr_labels").delete().eq("contact_id", body.contact_id);
+    } else {
+      await db.from("contact_sdr_labels").delete()
+        .eq("email", body.email).eq("client_id", body.client_id).is("contact_id", null);
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -23,17 +31,37 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Etiqueta no válida" }, { status: 400 });
   }
 
-  const { error } = await db
-    .from("contact_sdr_labels")
-    .upsert(
-      {
-        contact_id: body.contact_id,
-        client_id:  body.client_id,
-        label:      body.label,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "contact_id" }
-    );
+  let error: any;
+
+  if (body.contact_id) {
+    const res = await db
+      .from("contact_sdr_labels")
+      .upsert(
+        { contact_id: body.contact_id, client_id: body.client_id, label: body.label, updated_at: new Date().toISOString() },
+        { onConflict: "contact_id" }
+      );
+    error = res.error;
+  } else {
+    // Upsert por email para contactos no encontrados en plataforma
+    const { data: existing } = await db
+      .from("contact_sdr_labels")
+      .select("id")
+      .eq("email", body.email)
+      .eq("client_id", body.client_id)
+      .is("contact_id", null)
+      .maybeSingle();
+
+    if (existing?.id) {
+      const res = await db.from("contact_sdr_labels")
+        .update({ label: body.label, updated_at: new Date().toISOString() })
+        .eq("id", existing.id);
+      error = res.error;
+    } else {
+      const res = await db.from("contact_sdr_labels")
+        .insert({ email: body.email, client_id: body.client_id, label: body.label, updated_at: new Date().toISOString() });
+      error = res.error;
+    }
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
