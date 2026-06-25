@@ -6,6 +6,7 @@ import { IconStar, IconCheck, IconX } from "@tabler/icons-react";
 
 type MeetingData = {
   id: string;
+  client_id: string;
   empresa: string;
   contacto_nombre: string | null;
   contacto_cargo: string | null;
@@ -14,6 +15,7 @@ type MeetingData = {
 };
 
 type FormState = {
+  sdr_seleccionado: string;
   calificacion: number | null;
   empresa_calificada: boolean | null;
   contacto_calificado: boolean | null;
@@ -85,6 +87,7 @@ function BoolBtn({ value, onChange }: { value: boolean | null; onChange: (v: boo
 export default function EncuestaPage() {
   const { token } = useParams() as { token: string };
   const [meeting, setMeeting] = useState<MeetingData | null>(null);
+  const [salesManagers, setSalesManagers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -92,6 +95,7 @@ export default function EncuestaPage() {
   const [error, setError] = useState("");
 
   const [form, setForm] = useState<FormState>({
+    sdr_seleccionado: "",
     calificacion: null,
     empresa_calificada: null,
     contacto_calificado: null,
@@ -110,6 +114,17 @@ export default function EncuestaPage() {
         if (data.feedback_status === "con_feedback") setSubmitted(true);
         setMeeting(data);
         setLoading(false);
+        // Cargar sales managers del cliente
+        if (data.client_id) {
+          fetch(`/api/feedback-config?client_id=${data.client_id}`)
+            .then(r => r.ok ? r.json() : null)
+            .then(cfg => {
+              if (cfg?.config?.sales_managers?.length) {
+                setSalesManagers(cfg.config.sales_managers);
+              }
+            })
+            .catch(() => {});
+        }
       });
   }, [token]);
 
@@ -201,6 +216,25 @@ export default function EncuestaPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Sales Manager (si hay lista configurada) */}
+          {salesManagers.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-gray-800 mb-1">
+                ¿Quién realizó esta reunión?
+              </h2>
+              <p className="text-xs text-gray-400 mb-4">Selecciona el Sales Manager o SDR responsable</p>
+              <select
+                value={form.sdr_seleccionado}
+                onChange={e => setForm(p => ({ ...p, sdr_seleccionado: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-[#62E0D8]">
+                <option value="">— Selecciona —</option>
+                {salesManagers.map(sm => (
+                  <option key={sm} value={sm}>{sm}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* P1: Calificación */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-gray-800 mb-1">

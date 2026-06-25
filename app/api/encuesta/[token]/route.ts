@@ -10,7 +10,7 @@ export async function GET(
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from("meetings")
-    .select("id, empresa, contacto_nombre, contacto_cargo, fecha_reunion, realizado, feedback_status, meeting_feedback(*)")
+    .select("id, client_id, empresa, contacto_nombre, contacto_cargo, fecha_reunion, realizado, feedback_status, meeting_feedback(*)")
     .eq("feedback_token", params.token)
     .single();
 
@@ -49,6 +49,7 @@ export async function POST(
       propuesta_comercial:        body.propuesta_comercial,
       comentarios_adicionales:    body.comentarios_adicionales ?? null,
       probabilidad_cierre:        body.probabilidad_cierre ?? null,
+      sdr_seleccionado:           body.sdr_seleccionado || null,
     });
 
   if (fbError) return NextResponse.json({ error: fbError.message }, { status: 500 });
