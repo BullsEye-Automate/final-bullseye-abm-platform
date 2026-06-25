@@ -16,6 +16,8 @@ type MeetingData = {
 type FormState = {
   calificacion: number | null;
   empresa_calificada: boolean | null;
+  razon_no_empresa: string;
+  razon_no_empresa_otro: string;
   contacto_calificado: boolean | null;
   razon_no_califica: string;
   razon_no_califica_otro: string;
@@ -23,6 +25,13 @@ type FormState = {
   comentarios_adicionales: string;
   probabilidad_cierre: number | null;
 };
+
+const RAZONES_EMPRESA = [
+  "No es de industria objetivo",
+  "No es del tamaño objetivo",
+  "No es del país objetivo",
+  "Otra",
+];
 
 const RAZONES = [
   "No tomaba decisiones",
@@ -94,6 +103,8 @@ export default function EncuestaPage() {
   const [form, setForm] = useState<FormState>({
     calificacion: null,
     empresa_calificada: null,
+    razon_no_empresa: "",
+    razon_no_empresa_otro: "",
     contacto_calificado: null,
     razon_no_califica: "",
     razon_no_califica_otro: "",
@@ -215,7 +226,35 @@ export default function EncuestaPage() {
             <h2 className="text-sm font-semibold text-gray-800 mb-4">
               2. ¿La empresa prospecto era calificada para el servicio?
             </h2>
-            <BoolBtn value={form.empresa_calificada} onChange={v => setForm(p => ({ ...p, empresa_calificada: v }))} />
+            <BoolBtn value={form.empresa_calificada} onChange={v => setForm(p => ({ ...p, empresa_calificada: v, razon_no_empresa: v ? "" : p.razon_no_empresa }))} />
+            {form.empresa_calificada === false && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <p className="text-xs font-medium text-gray-600 mb-3">¿Por qué no calificaba la empresa?</p>
+                <div className="space-y-2">
+                  {RAZONES_EMPRESA.map(r => (
+                    <button key={r} type="button"
+                      onClick={() => setForm(p => ({ ...p, razon_no_empresa: r }))}
+                      className="w-full text-left px-3 py-2 rounded-xl text-sm border-2 transition"
+                      style={{
+                        borderColor: form.razon_no_empresa === r ? "#251762" : "#e5e7eb",
+                        background: form.razon_no_empresa === r ? "rgba(37,23,98,0.05)" : "#fff",
+                        color: form.razon_no_empresa === r ? "#251762" : "#374151",
+                        fontWeight: form.razon_no_empresa === r ? 500 : 400
+                      }}>
+                      {r}
+                    </button>
+                  ))}
+                  {form.razon_no_empresa === "Otra" && (
+                    <textarea
+                      value={form.razon_no_empresa_otro}
+                      onChange={e => setForm(p => ({ ...p, razon_no_empresa_otro: e.target.value }))}
+                      placeholder="Describe el motivo…"
+                      rows={2}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#62E0D8] resize-none mt-1" />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* P3: Contacto calificado */}

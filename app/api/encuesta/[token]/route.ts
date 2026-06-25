@@ -44,6 +44,8 @@ export async function POST(
       calificacion:               body.calificacion,
       empresa_calificada:         body.empresa_calificada,
       contacto_calificado:        body.contacto_calificado,
+      razon_no_empresa:           body.razon_no_empresa || null,
+      razon_no_empresa_otro:      body.razon_no_empresa_otro || null,
       razon_no_califica:          body.razon_no_califica || null,
       razon_no_califica_otro:     body.razon_no_califica_otro || null,
       propuesta_comercial:        body.propuesta_comercial,

@@ -5,7 +5,7 @@ import { useClient } from "@/lib/clientContext";
 import {
   IconCalendar, IconCheck, IconClock, IconLink, IconPlus,
   IconUpload, IconX, IconMessageCheck, IconAlertCircle, IconRefresh,
-  IconChevronDown, IconStar, IconMessage2
+  IconChevronDown, IconStar, IconMessage2, IconSearch
 } from "@tabler/icons-react";
 
 type Meeting = {
@@ -30,12 +30,18 @@ const REALIZADO_COLORS: Record<string, string> = {
   Reagendar: "#8b5cf6",
 };
 
-const RAZONES = [
+const RAZONES_CONTACTO = [
   "No tomaba decisiones",
   "No presentó interés",
   "No tenía contexto de nosotros",
   "Tomó la reunión desde el celular",
   "Otro",
+];
+const RAZONES_EMPRESA = [
+  "No es de industria objetivo",
+  "No es del tamaño objetivo",
+  "No es del país objetivo",
+  "Otra",
 ];
 const PROPUESTAS = ["Si", "No", "No aún", "Falta otra reunión"];
 
@@ -188,12 +194,16 @@ function FeedbackInlineModal({ meeting, onClose, onSaved }: { meeting: Meeting; 
   const [form, setForm] = useState({
     calificacion: null as number | null,
     empresa_calificada: null as boolean | null,
+    razon_no_empresa: "",
+    razon_no_empresa_otro: "",
     contacto_calificado: null as boolean | null,
     razon_no_califica: "",
     razon_no_califica_otro: "",
     propuesta_comercial: "",
     comentarios_adicionales: "",
+    probabilidad_cierre: null as number | null,
   });
+  const [probHover, setProbHover] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [hover, setHover] = useState<number | null>(null);
@@ -268,7 +278,27 @@ function FeedbackInlineModal({ meeting, onClose, onSaved }: { meeting: Meeting; 
           {/* P2 */}
           <div>
             <p className="text-sm font-semibold text-gray-800 mb-3">2. ¿La empresa prospecto era calificada?</p>
-            <BoolBtn value={form.empresa_calificada} onChange={v => setForm(p => ({ ...p, empresa_calificada: v }))} />
+            <BoolBtn value={form.empresa_calificada} onChange={v => setForm(p => ({ ...p, empresa_calificada: v, razon_no_empresa: v ? "" : p.razon_no_empresa }))} />
+            {form.empresa_calificada === false && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <p className="text-xs font-medium text-gray-500 mb-2">¿Por qué no calificaba la empresa?</p>
+                <div className="space-y-1.5">
+                  {RAZONES_EMPRESA.map(r => (
+                    <button key={r} type="button" onClick={() => setForm(p => ({ ...p, razon_no_empresa: r }))}
+                      className="w-full text-left px-3 py-2 rounded-xl text-sm border-2 transition"
+                      style={{ borderColor: form.razon_no_empresa === r ? "#251762" : "#e5e7eb", background: form.razon_no_empresa === r ? "rgba(37,23,98,0.05)" : "#fff", color: form.razon_no_empresa === r ? "#251762" : "#374151" }}>
+                      {r}
+                    </button>
+                  ))}
+                  {form.razon_no_empresa === "Otra" && (
+                    <textarea value={form.razon_no_empresa_otro}
+                      onChange={e => setForm(p => ({ ...p, razon_no_empresa_otro: e.target.value }))}
+                      placeholder="Describe el motivo…" rows={2}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none resize-none mt-1" />
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           {/* P3 */}
           <div>
@@ -276,9 +306,9 @@ function FeedbackInlineModal({ meeting, onClose, onSaved }: { meeting: Meeting; 
             <BoolBtn value={form.contacto_calificado} onChange={v => setForm(p => ({ ...p, contacto_calificado: v, razon_no_califica: v ? "" : p.razon_no_califica }))} />
             {form.contacto_calificado === false && (
               <div className="mt-3 pt-3 border-t border-gray-100">
-                <p className="text-xs font-medium text-gray-500 mb-2">¿Por qué no calificaba?</p>
+                <p className="text-xs font-medium text-gray-500 mb-2">¿Por qué no calificaba el contacto?</p>
                 <div className="space-y-1.5">
-                  {RAZONES.map(r => (
+                  {RAZONES_CONTACTO.map(r => (
                     <button key={r} type="button" onClick={() => setForm(p => ({ ...p, razon_no_califica: r }))}
                       className="w-full text-left px-3 py-2 rounded-xl text-sm border-2 transition"
                       style={{ borderColor: form.razon_no_califica === r ? "#251762" : "#e5e7eb", background: form.razon_no_califica === r ? "rgba(37,23,98,0.05)" : "#fff", color: form.razon_no_califica === r ? "#251762" : "#374151" }}>
@@ -316,6 +346,45 @@ function FeedbackInlineModal({ meeting, onClose, onSaved }: { meeting: Meeting; 
               placeholder="Puntos de dolor, contexto relevante, próximos pasos acordados…" rows={3}
               className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none resize-none" />
           </div>
+          {/* P6: Probabilidad de cierre */}
+          <div>
+            <p className="text-sm font-semibold text-gray-800 mb-1">6. ¿Cuál es la probabilidad de cierre?</p>
+            <p className="text-xs text-gray-400 mb-4">Tu estimación intuitiva de que esto termine en negocio</p>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-gray-400">Baja</span>
+              <span className="text-xl font-bold" style={{
+                color: form.probabilidad_cierre === null ? "#d1d5db"
+                  : form.probabilidad_cierre >= 70 ? "#22c55e"
+                  : form.probabilidad_cierre >= 40 ? "#f59e0b" : "#ef4444"
+              }}>
+                {form.probabilidad_cierre !== null ? `${form.probabilidad_cierre}%` : "—"}
+              </span>
+              <span className="text-xs text-gray-400">Alta</span>
+            </div>
+            <input type="range" min={0} max={100} step={5}
+              value={form.probabilidad_cierre ?? 50}
+              onChange={e => setForm(p => ({ ...p, probabilidad_cierre: Number(e.target.value) }))}
+              onMouseDown={() => { if (form.probabilidad_cierre === null) setForm(p => ({ ...p, probabilidad_cierre: 50 })); }}
+              onTouchStart={() => { if (form.probabilidad_cierre === null) setForm(p => ({ ...p, probabilidad_cierre: 50 })); }}
+              className="w-full h-2 rounded-full outline-none cursor-pointer"
+              style={{ accentColor: form.probabilidad_cierre === null ? "#d1d5db" : form.probabilidad_cierre >= 70 ? "#22c55e" : form.probabilidad_cierre >= 40 ? "#f59e0b" : "#ef4444" }} />
+            <div className="flex gap-2 mt-3 flex-wrap">
+              {[
+                { label: "Sin chances", value: 5 }, { label: "Poco probable", value: 20 },
+                { label: "Posible", value: 40 }, { label: "Probable", value: 65 }, { label: "Muy probable", value: 85 },
+              ].map(chip => {
+                const active = form.probabilidad_cierre === chip.value;
+                const color = chip.value >= 65 ? "#22c55e" : chip.value >= 40 ? "#f59e0b" : "#ef4444";
+                return (
+                  <button key={chip.value} type="button" onClick={() => setForm(p => ({ ...p, probabilidad_cierre: chip.value }))}
+                    className="px-2.5 py-1 rounded-full text-xs font-medium border-2 transition"
+                    style={{ borderColor: active ? color : "#e5e7eb", background: active ? color + "18" : "#fff", color: active ? color : "#6b7280" }}>
+                    {chip.label} ({chip.value}%)
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
           <button type="submit" disabled={submitting}
             className="w-full py-3 rounded-xl text-white font-semibold text-sm disabled:opacity-50"
@@ -344,6 +413,7 @@ export default function FeedbackPage() {
   const [syncing, setSyncing]     = useState(false);
   const [copied, setCopied]       = useState<string | null>(null);
   const [presetOpen, setPresetOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -410,7 +480,15 @@ export default function FeedbackPage() {
   const siConFeedback  = meetings.filter(m => m.realizado === "Si" && m.feedback_status === "con_feedback").length;
 
   // ── Filtrado y orden ─────────────────────────────────────────────────────────
-  const filtered = statusFilter === "Todos" ? meetings : meetings.filter(m => m.realizado === statusFilter);
+  const q = search.trim().toLowerCase();
+  const searched = q
+    ? meetings.filter(m =>
+        m.empresa.toLowerCase().includes(q) ||
+        (m.contacto_nombre ?? "").toLowerCase().includes(q) ||
+        (m.contacto_cargo ?? "").toLowerCase().includes(q)
+      )
+    : meetings;
+  const filtered = statusFilter === "Todos" ? searched : searched.filter(m => m.realizado === statusFilter);
   const pendientes  = filtered.filter(m => m.realizado === "Si" && m.feedback_status === "pendiente");
   const conFeedback = filtered.filter(m => m.feedback_status === "con_feedback");
   const otras       = filtered.filter(m => m.realizado !== "Si" && m.feedback_status === "pendiente");
@@ -487,6 +565,23 @@ export default function FeedbackPage() {
             <div className="text-xs text-teal-600">Realizadas con feedback</div>
           </div>
         </div>
+      </div>
+
+      {/* Buscador */}
+      <div className="relative mb-3">
+        <IconSearch size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Buscar por empresa o contacto…"
+          className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm outline-none focus:border-[#62E0D8] bg-white"
+        />
+        {search && (
+          <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+            <IconX size={14} />
+          </button>
+        )}
       </div>
 
       {/* Filtros */}
