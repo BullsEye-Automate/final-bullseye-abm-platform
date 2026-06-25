@@ -919,7 +919,12 @@ function SendModal({
                         {result?.cancelled && <span className="text-xs text-ink-muted">Cancelado</span>}
                         {result?.error     && <span className="text-xs text-danger-fg">{result.error}</span>}
                       </div>
-                      <div className="text-xs text-ink-muted">{companyNameById.get(c.company_id) ?? "—"}</div>
+                      <div className="text-xs text-ink-muted flex items-center gap-2">
+                        <span>{companyNameById.get(c.company_id) ?? "—"}</span>
+                        {c.email
+                          ? <span className="text-success-fg flex items-center gap-0.5"><IconMail size={10} />{c.email}</span>
+                          : <span className="text-warning-fg flex items-center gap-0.5"><IconMail size={10} />sin email</span>}
+                      </div>
                     </div>
 
                     {/* Deep research toggle (solo en setup) */}
