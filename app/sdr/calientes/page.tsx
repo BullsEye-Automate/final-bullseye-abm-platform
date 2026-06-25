@@ -13,16 +13,9 @@ import {
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 
 type Activity = {
-  type: string;
-  score: number;
-  label: string;
-  color: string;
-  createdAt: string | null;
-  activityId: string | null;
-  text: string | null;
-  campaignStepName: string | null;
-  subject: string | null;
-  stepIndex: number | null;
+  type: string; score: number; label: string; color: string;
+  createdAt: string | null; activityId: string | null; text: string | null;
+  campaignStepName: string | null; subject: string | null; stepIndex: number | null;
 };
 
 type Messages = {
@@ -138,9 +131,7 @@ function groupByCompany(contacts: Contact[]): CompanyGroup[] {
 
 // ── Componente: LabelSelector ─────────────────────────────────────────────────
 
-function LabelSelector({
-  contactId, email, clientId, current, onChange,
-}: {
+function LabelSelector({ contactId, email, clientId, current, onChange }: {
   contactId: string | null; email: string; clientId: string;
   current: string | null; onChange: (l: string | null) => void;
 }) {
@@ -155,9 +146,9 @@ function LabelSelector({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contact_id: contactId ?? undefined,
-        email: contactId ? undefined : email,
-        client_id: clientId,
-        label: key,
+        email:      contactId ? undefined : email,
+        client_id:  clientId,
+        label:      key,
       }),
     });
     onChange(key);
@@ -168,9 +159,7 @@ function LabelSelector({
 
   return (
     <div className="relative">
-      <button
-        onClick={() => setOpen(v => !v)}
-        disabled={saving}
+      <button onClick={() => setOpen(v => !v)} disabled={saving}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition disabled:opacity-50"
         style={currentMeta
           ? { background: currentMeta.bg, borderColor: currentMeta.border, color: currentMeta.color }
@@ -202,22 +191,18 @@ function LabelSelector({
 
 // ── Componente: PhoneButton ───────────────────────────────────────────────────
 
-function PhoneButton({ contactId, clientId, onFound }: {
-  contactId: string; clientId: string; onFound: (phone: string) => void;
+function PhoneButton({ email, clientId, onFound }: {
+  email: string; clientId: string; onFound: (phone: string, companyName?: string) => void;
 }) {
   const [status, setStatus] = useState<"idle" | "loading" | "notfound">("idle");
 
   async function lookup() {
     setStatus("loading");
     try {
-      const res = await fetch("/api/lemlist/lookup-phone", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contact_id: contactId, client_id: clientId }),
-      });
+      const res = await fetch(`/api/lemlist/lead-data?client_id=${clientId}&email=${encodeURIComponent(email)}`);
       const data = await res.json();
       if (data.found && data.phone) {
-        onFound(data.phone);
+        onFound(data.phone, data.company_name ?? undefined);
       } else {
         setStatus("notfound");
         setTimeout(() => setStatus("idle"), 3000);
@@ -307,6 +292,7 @@ function ContactRow({ contact, clientId, hubspotPortalId, onLabelChange }: {
   onLabelChange: (email: string, label: string | null) => void;
 }) {
   const [phone, setPhone]             = useState(contact.phone);
+  const [companyName, setCompanyName] = useState(contact.company_name);
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
   const colors   = scoreColor(contact.total_score);
@@ -382,12 +368,12 @@ function ContactRow({ contact, clientId, hubspotPortalId, onLabelChange }: {
                 {copiedPhone ? <IconCheck size={11} className="text-green-500" /> : <IconPhone size={11} />}
                 {phone}
               </button>
-            ) : contact.contact_id ? (
-              <PhoneButton contactId={contact.contact_id} clientId={clientId} onFound={setPhone} />
             ) : (
-              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border border-dashed border-gray-200 text-gray-400">
-                <IconPhone size={11} /> Sin teléfono
-              </span>
+              <PhoneButton
+                email={contact.email}
+                clientId={clientId}
+                onFound={(p, co) => { setPhone(p); if (co && !companyName) setCompanyName(co); }}
+              />
             )}
           </div>
         </div>
@@ -408,7 +394,7 @@ function ContactRow({ contact, clientId, hubspotPortalId, onLabelChange }: {
                   {count > 1 ? `${meta?.shortLabel ?? act.label} × ${count}` : (meta?.shortLabel ?? act.label)}
                   {act.createdAt && <span className="opacity-60 ml-0.5">· {relativeTime(act.createdAt)}</span>}
                 </div>
-                {subjects.length > 0 && subjects.map(s => (
+                {subjects.map(s => (
                   <span key={s} className="text-[10px] text-gray-500 italic pl-1 truncate max-w-[260px]">› {s}</span>
                 ))}
               </div>
@@ -457,8 +443,7 @@ function CompanyCard({ group, clientId, hubspotPortalId, onLabelChange }: {
 
   return (
     <div className="rounded-2xl border-2 overflow-hidden" style={{ borderColor: colors.border }}>
-      <button
-        onClick={() => setExpanded(v => !v)}
+      <button onClick={() => setExpanded(v => !v)}
         className="w-full flex items-center gap-4 px-5 py-4 text-left transition hover:bg-gray-50"
         style={{ background: colors.bg + "80" }}>
         <div className="shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
@@ -533,13 +518,13 @@ const MIN_SCORE_OPTS = [
 
 export default function ContactosCalientesPage() {
   const { currentClient, loading: clientLoading } = useClient();
-  const [contacts, setContacts]             = useState<Contact[]>([]);
+  const [contacts, setContacts]               = useState<Contact[]>([]);
   const [hubspotPortalId, setHubspotPortalId] = useState<string | null>(null);
-  const [loading, setLoading]               = useState(false);
-  const [error, setError]                   = useState("");
-  const [search, setSearch]                 = useState("");
-  const [labelFilter, setLabelFilter]       = useState("todos");
-  const [minScore, setMinScore]             = useState(0);
+  const [loading, setLoading]                 = useState(false);
+  const [error, setError]                     = useState("");
+  const [search, setSearch]                   = useState("");
+  const [labelFilter, setLabelFilter]         = useState("todos");
+  const [minScore, setMinScore]               = useState(0);
 
   const load = useCallback(async () => {
     if (clientLoading || !currentClient?.id || currentClient.id === "__all__") return;
@@ -665,7 +650,7 @@ export default function ContactosCalientesPage() {
           )}
           {!loading && contacts.length > 0 && (
             groups.length === 0 ? (
-              <div className="text-center py-16 text-gray-400 text-sm">Sin resultados para esta búsqueda o filtro</div>
+              <div className="text-center py-16 text-gray-400 text-sm">Sin resultados para esta búsqueda</div>
             ) : (
               <div className="space-y-4">
                 <p className="text-xs text-gray-500 font-medium">

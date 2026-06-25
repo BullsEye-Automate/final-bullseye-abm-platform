@@ -16,7 +16,6 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Si label es null o vacío, eliminar etiqueta
   if (!body.label) {
     if (body.contact_id) {
       await db.from("contact_sdr_labels").delete().eq("contact_id", body.contact_id);
@@ -34,27 +33,17 @@ export async function POST(req: NextRequest) {
   let error: any;
 
   if (body.contact_id) {
-    const res = await db
-      .from("contact_sdr_labels")
-      .upsert(
-        { contact_id: body.contact_id, client_id: body.client_id, label: body.label, updated_at: new Date().toISOString() },
-        { onConflict: "contact_id" }
-      );
+    const res = await db.from("contact_sdr_labels").upsert(
+      { contact_id: body.contact_id, client_id: body.client_id, label: body.label, updated_at: new Date().toISOString() },
+      { onConflict: "contact_id" }
+    );
     error = res.error;
   } else {
-    // Upsert por email para contactos no encontrados en plataforma
-    const { data: existing } = await db
-      .from("contact_sdr_labels")
-      .select("id")
-      .eq("email", body.email)
-      .eq("client_id", body.client_id)
-      .is("contact_id", null)
-      .maybeSingle();
-
+    const { data: existing } = await db.from("contact_sdr_labels").select("id")
+      .eq("email", body.email).eq("client_id", body.client_id).is("contact_id", null).maybeSingle();
     if (existing?.id) {
       const res = await db.from("contact_sdr_labels")
-        .update({ label: body.label, updated_at: new Date().toISOString() })
-        .eq("id", existing.id);
+        .update({ label: body.label, updated_at: new Date().toISOString() }).eq("id", existing.id);
       error = res.error;
     } else {
       const res = await db.from("contact_sdr_labels")
