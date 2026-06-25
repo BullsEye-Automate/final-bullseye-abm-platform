@@ -570,6 +570,8 @@ export default function FeedbackPage() {
   const [sdrFilter, setSdrFilter] = useState("Todos");
   const [salesManagers, setSalesManagers] = useState<string[]>([]);
   const [verFeedbackMeeting, setVerFeedbackMeeting] = useState<Meeting | null>(null);
+  const [clientFeedbackToken, setClientFeedbackToken] = useState<string | null>(null);
+  const [copiedClientLink, setCopiedClientLink] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -592,6 +594,17 @@ export default function FeedbackPage() {
     fetch(`/api/feedback-config?client_id=${currentClient.id}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => setSalesManagers(data?.config?.sales_managers ?? []))
+      .catch(() => {});
+  }, [currentClient?.id]);
+
+  useEffect(() => {
+    if (!currentClient?.id || currentClient.id === "__all__") { setClientFeedbackToken(null); return; }
+    fetch(`/api/clients`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        const c = (data?.clients ?? []).find((cl: any) => cl.id === currentClient.id);
+        setClientFeedbackToken(c?.feedback_token ?? null);
+      })
       .catch(() => {});
   }, [currentClient?.id]);
 
@@ -674,6 +687,18 @@ export default function FeedbackPage() {
           <p className="text-sm text-gray-500 mt-1">Comparte el link de encuesta con tu cliente después de cada reunión realizada</p>
         </div>
         <div className="flex items-center gap-2">
+          {clientFeedbackToken && (
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/feedback-cliente/${clientFeedbackToken}`);
+                setCopiedClientLink(true);
+                setTimeout(() => setCopiedClientLink(false), 2000);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-teal-200 text-teal-700 bg-teal-50 hover:bg-teal-100">
+              {copiedClientLink ? <IconCheck size={15} /> : <IconLink size={15} />}
+              {copiedClientLink ? "¡Link copiado!" : "Link de cliente"}
+            </button>
+          )}
           <button onClick={handleSync} disabled={syncing}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 disabled:opacity-50">
             <IconRefresh size={15} className={syncing ? "animate-spin" : ""} />
