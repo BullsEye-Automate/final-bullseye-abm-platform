@@ -64,14 +64,14 @@ export default function IcpPage() {
   const [fpLoading,    setFpLoading]    = useState(false);
   const [fpError,      setFpError]      = useState<string | null>(null);
   const [fpCopied,     setFpCopied]     = useState<string | null>(null);
-  // Modo ICP (solo para clientes que no son BullsEye ni Acid Labs)
-  const [icpMode,      setIcpMode]      = useState<"general" | "by_industry" | null>(null);
+  // Modo ICP
+  const [icpMode,        setIcpMode]        = useState<"general" | "by_industry">("general");
   const [icpModeLoading, setIcpModeLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
 
-  // Clientes legacy que mantienen la experiencia original sin toggle
-  const isLegacyClient = currentClient?.slug === "bullseye" || currentClient?.slug === "acid-labs";
+  // Solo BullsEye mantiene la experiencia original sin toggle (ICP monolítico heredado)
+  const isLegacyClient = currentClient?.slug === "bullseye";
 
   function setField(key: keyof IcpFormData, value: string | string[]) {
     setForm((prev: IcpFormData) => ({ ...prev, [key]: value }));
@@ -90,15 +90,12 @@ export default function IcpPage() {
     if (!currentClient) return;
     setLoading(true);
     setError(null);
-    const requests: Promise<Response>[] = [
+    const [ctxRes, promptRes, fpRes, modeRes] = await Promise.all([
       fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" }),
       fetch(`/api/clients/${currentClient.id}/clay-scoring-prompt`, { cache: "no-store" }),
       fetch(`/api/clients/${currentClient.id}/generate-clay-config`, { cache: "no-store" }),
-    ];
-    if (!isLegacyClient) {
-      requests.push(fetch(`/api/clients/${currentClient.id}/icp-mode`, { cache: "no-store" }));
-    }
-    const [ctxRes, promptRes, fpRes, modeRes] = await Promise.all(requests);
+      fetch(`/api/clients/${currentClient.id}/icp-mode`, { cache: "no-store" }),
+    ]);
     const j = await ctxRes.json();
     setLoading(false);
     if (j.error) { setError(j.error); return; }
@@ -478,8 +475,8 @@ export default function IcpPage() {
         </div>
       )}
 
-      {/* ── Toggle ICP General / Por Industria (solo para clientes nuevos) ── */}
-      {!isLegacyClient && icpMode !== null && (
+      {/* ── Toggle ICP General / Por Industria ── */}
+      {!isLegacyClient && (
         <div className="card py-3 px-4" style={{ background: "rgba(37,23,98,0.04)", border: "1px solid rgba(37,23,98,0.1)" }}>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-xs font-semibold text-ink">Modalidad del ICP</span>
@@ -587,7 +584,7 @@ export default function IcpPage() {
           </IcpSection>
 
           {/* ── Secciones 2–7: solo en modo general ── */}
-          {(isLegacyClient || icpMode !== "by_industry") && (<>
+          {(isLegacyClient || icpMode === "general") && (<>
 
           {/* ── Sección 2: Perfil de empresa objetivo ── */}
           <IcpSection num={2} title="PERFIL DE EMPRESA OBJETIVO (ICP)" desc="Define el tipo ideal de cliente">
@@ -771,7 +768,7 @@ export default function IcpPage() {
           </>)}
 
           {/* ── Modo por industria: panel de industrias (secciones 2–7 por industria) ── */}
-          {!isLegacyClient && icpMode === "by_industry" && currentClient && (
+          {!isLegacyClient && icpMode === "by_industry" && currentClient && !loading && (
             <IndustriesPanel clientId={currentClient.id} />
           )}
         </div>
