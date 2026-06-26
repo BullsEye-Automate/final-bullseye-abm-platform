@@ -744,7 +744,8 @@ function SendModal({
       const parsedContact = {
         firstName:   c.first_name  ?? "",
         lastName:    c.last_name   ?? "",
-        email:       c.email       ?? "",
+        // Placeholder para forzar generación de emails aunque no esté enriquecido aún (Lemlist lo reemplaza)
+        email:       c.email?.trim() || "pending@lemlist.com",
         phone:       c.phone       ?? undefined,
         jobTitle:    c.job_title   ?? undefined,
         companyName: companyNameById.get(c.company_id) ?? undefined,
@@ -767,7 +768,6 @@ function SendModal({
         if (res.ok) {
           const { results: r } = await res.json();
           const g = r?.[0] ?? {};
-          console.log("[SendModal] csv-generate result:", JSON.stringify(g, null, 2));
           updated[i] = {
             contactId:         c.id,
             emailSubject:      g.emailSubject,
