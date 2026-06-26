@@ -152,7 +152,6 @@ export function chipsFrom(text: string, label: string): string[] {
   return val ? val.split(",").map((s) => s.trim()).filter(Boolean) : [];
 }
 
-<<<<<<< HEAD
 // ── Tipos y helpers para ICP multi-industria ───────────────────────────
 export type IndustrySectionKey =
   | "target_company"
