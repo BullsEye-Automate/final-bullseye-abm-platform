@@ -15,7 +15,9 @@ import {
   IconSparkles,
   IconFileTypePdf,
   IconCopy,
-  IconRefresh
+  IconRefresh,
+  IconBuilding,
+  IconList,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import {
@@ -25,6 +27,7 @@ import {
   DEPTO_OPTS, SENIORITY_OPTS, TONO_OPTS, IDIOMA_OPTS, CTA_OPTS, CANALES_OPTS,
   serializeIcpForm, deserializeIcpForm, parseFormJson
 } from "@/lib/icp-form";
+import IndustriesPanel from "./IndustriesPanel";
 
 // ── Types ──────────────────────────────────────────────────────────────
 type IcpDoc = {
@@ -61,8 +64,14 @@ export default function IcpPage() {
   const [fpLoading,    setFpLoading]    = useState(false);
   const [fpError,      setFpError]      = useState<string | null>(null);
   const [fpCopied,     setFpCopied]     = useState<string | null>(null);
+  // Modo ICP (solo para clientes que no son BullsEye ni Acid Labs)
+  const [icpMode,      setIcpMode]      = useState<"general" | "by_industry" | null>(null);
+  const [icpModeLoading, setIcpModeLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
+
+  // Clientes legacy que mantienen la experiencia original sin toggle
+  const isLegacyClient = currentClient?.slug === "bullseye" || currentClient?.slug === "acid-labs";
 
   function setField(key: keyof IcpFormData, value: string | string[]) {
     setForm((prev: IcpFormData) => ({ ...prev, [key]: value }));
@@ -81,11 +90,15 @@ export default function IcpPage() {
     if (!currentClient) return;
     setLoading(true);
     setError(null);
-    const [ctxRes, promptRes, fpRes] = await Promise.all([
+    const requests: Promise<Response>[] = [
       fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" }),
       fetch(`/api/clients/${currentClient.id}/clay-scoring-prompt`, { cache: "no-store" }),
       fetch(`/api/clients/${currentClient.id}/generate-clay-config`, { cache: "no-store" }),
-    ]);
+    ];
+    if (!isLegacyClient) {
+      requests.push(fetch(`/api/clients/${currentClient.id}/icp-mode`, { cache: "no-store" }));
+    }
+    const [ctxRes, promptRes, fpRes, modeRes] = await Promise.all(requests);
     const j = await ctxRes.json();
     setLoading(false);
     if (j.error) { setError(j.error); return; }
@@ -107,6 +120,22 @@ export default function IcpPage() {
       setFpExcluded(fj.excluded_titles ?? null);
       setFpLocation(fj.location_filter ?? null);
     }
+    if (modeRes?.ok) {
+      const mj = await modeRes.json();
+      setIcpMode(mj.icp_mode ?? "general");
+    }
+  }
+
+  async function changeIcpMode(mode: "general" | "by_industry") {
+    if (!currentClient) return;
+    setIcpModeLoading(true);
+    await fetch(`/api/clients/${currentClient.id}/icp-mode`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ icp_mode: mode }),
+    });
+    setIcpMode(mode);
+    setIcpModeLoading(false);
   }
 
   useEffect(() => { load(); }, [currentClient?.id]);
@@ -449,6 +478,47 @@ export default function IcpPage() {
         </div>
       )}
 
+      {/* ── Toggle ICP General / Por Industria (solo para clientes nuevos) ── */}
+      {!isLegacyClient && icpMode !== null && (
+        <div className="card py-3 px-4" style={{ background: "rgba(37,23,98,0.04)", border: "1px solid rgba(37,23,98,0.1)" }}>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs font-semibold text-ink">Modalidad del ICP</span>
+            {icpModeLoading && <IconLoader2 size={13} className="animate-spin text-ink-muted" />}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => changeIcpMode("general")}
+              disabled={icpModeLoading}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+                icpMode === "general"
+                  ? "text-white border-transparent"
+                  : "bg-white border-[#E5E2F0] text-ink hover:border-brand-soft"
+              }`}
+              style={icpMode === "general" ? { background: "#251762" } : {}}
+            >
+              <IconList size={15} /> ICP general
+            </button>
+            <button
+              onClick={() => changeIcpMode("by_industry")}
+              disabled={icpModeLoading}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+                icpMode === "by_industry"
+                  ? "text-white border-transparent"
+                  : "bg-white border-[#E5E2F0] text-ink hover:border-brand-soft"
+              }`}
+              style={icpMode === "by_industry" ? { background: "#251762" } : {}}
+            >
+              <IconBuilding size={15} /> ICP por industria
+            </button>
+          </div>
+          {icpMode === "by_industry" && (
+            <p className="text-[11px] text-ink-muted mt-2">
+              Los datos del cliente son compartidos para todas las industrias. Cada industria tiene su propio perfil, señales, buyer persona, propuesta de valor, outreach y clientes de referencia.
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Banner explicativo de las dos opciones */}
       <div className="card py-3 px-4 space-y-2 text-sm" style={{ background: "rgba(37,23,98,0.04)", border: "1px solid rgba(37,23,98,0.1)" }}>
         <p className="font-medium text-ink">Dos maneras de completar el ICP:</p>
@@ -515,6 +585,9 @@ export default function IcpPage() {
               onChange={(v) => setField("descripcion_negocio", v)}
             />
           </IcpSection>
+
+          {/* ── Secciones 2–7: solo en modo general ── */}
+          {(isLegacyClient || icpMode !== "by_industry") && (<>
 
           {/* ── Sección 2: Perfil de empresa objetivo ── */}
           <IcpSection num={2} title="PERFIL DE EMPRESA OBJETIVO (ICP)" desc="Define el tipo ideal de cliente">
@@ -693,6 +766,13 @@ export default function IcpPage() {
                 day: "2-digit", month: "short", year: "numeric",
               })}
             </p>
+          )}
+
+          </>)}
+
+          {/* ── Modo por industria: panel de industrias (secciones 2–7 por industria) ── */}
+          {!isLegacyClient && icpMode === "by_industry" && currentClient && (
+            <IndustriesPanel clientId={currentClient.id} />
           )}
         </div>
       )}

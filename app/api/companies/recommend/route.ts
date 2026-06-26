@@ -7,20 +7,22 @@ export const dynamic    = "force-dynamic";
 export const maxDuration = 120;
 
 type Body = {
-  region?:     string;
-  size?:       "small" | "medium" | "large";
-  size_hint?:  string | null;
-  limit?:      number;
-  client_id?:  string | null;
+  region?:       string;
+  size?:         "small" | "medium" | "large";
+  size_hint?:    string | null;
+  limit?:        number;
+  client_id?:    string | null;
+  industry_id?:  string | null;
 };
 
 export async function POST(req: NextRequest) {
   const body     = (await req.json().catch(() => ({}))) as Body;
-  const region   = body.region ?? "US";
-  const size     = body.size   ?? "small";
-  const sizeHint = body.size_hint !== undefined ? body.size_hint : undefined;
-  const limit    = Math.min(Math.max(body.limit ?? 8, 1), 15);
-  const clientId = body.client_id ?? null;
+  const region     = body.region ?? "US";
+  const size       = body.size   ?? "small";
+  const sizeHint   = body.size_hint !== undefined ? body.size_hint : undefined;
+  const limit      = Math.min(Math.max(body.limit ?? 8, 1), 15);
+  const clientId   = body.client_id ?? null;
+  const industryId = body.industry_id ?? null;
 
   if (!clientId) {
     return NextResponse.json(
@@ -31,7 +33,7 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Lee el ICP del cliente desde client_ai_context (texto libre, guardado en /configuracion/icp)
+  // Lee el ICP del cliente desde client_ai_context (datos base compartidos)
   const { data: icpCtx, error: icpErr } = await db
     .from("client_ai_context")
     .select("content")
@@ -53,6 +55,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Si se pasa industry_id, componer el ICP con las secciones específicas de esa industria
+  let icpContent = icpCtx.content;
+  if (industryId) {
+    const { data: industrySections } = await db
+      .from("icp_industry_sections")
+      .select("content")
+      .eq("industry_id", industryId);
+
+    const industrySectionTexts = (industrySections ?? [])
+      .map((s: { content: string }) => s.content)
+      .filter(Boolean)
+      .join("\n\n");
+
+    // Extraer solo la sección "DATOS DEL CLIENTE" del ICP base compartido
+    const clientDataMatch = icpCtx.content.match(
+      /-{10,}\nDATOS DEL CLIENTE\n-{10,}\n\n[\s\S]*?(?=\n\n-{10,}|$)/
+    );
+    const clientDataSection = clientDataMatch ? clientDataMatch[0] : icpCtx.content;
+
+    icpContent = [clientDataSection, industrySectionTexts].filter(Boolean).join("\n\n");
+  }
+
   // Empresas ya existentes + excluidas manualmente, para evitar duplicados y re-sugerir descartadas
   const [{ data: existing, error: exErr }, { data: excluded }] = await Promise.all([
     db.from("companies").select("company_name").eq("client_id", clientId).limit(1000),
@@ -68,7 +92,7 @@ export async function POST(req: NextRequest) {
   let discovered;
   try {
     discovered = await discoverCompanies({
-      icpContent: icpCtx.content,
+      icpContent,
       region,
       size,
       sizeHint,

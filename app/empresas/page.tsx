@@ -190,38 +190,57 @@ export default function EmpresasPage() {
   const [bulkApproving, setBulkApproving]   = useState(false);
   const [bulkApproveResult, setBulkApproveResult] = useState<{ approved: number } | null>(null);
 
-  // Precarga regiones y tamaños desde el ICP activo del cliente
+  // ICP por industria
+  const [icpMode,           setIcpMode]           = useState<"general" | "by_industry" | null>(null);
+  const [industries,        setIndustries]        = useState<{ id: string; name: string }[]>([]);
+  const [selectedIndustry,  setSelectedIndustry]  = useState<string>("");
+
+  // Precarga regiones, tamaños e industrias desde el ICP activo del cliente
   useEffect(() => {
     if (!currentClient) return;
     setRegions([]);
     setSelectedRegions([]);
     setIcpSizeOpts([]);
     setSizeMode("any");
+    setIcpMode(null);
+    setIndustries([]);
+    setSelectedIndustry("");
 
-    fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((data) => {
-        const icp = (data.items ?? []).find((i: { file_type: string; content?: string }) => i.file_type === "icp");
-        if (!icp?.content) {
-          setRegions(ALL_REGIONS);
-          setSelectedRegions([]);
-          return;
-        }
-
-        const parsed = deserializeIcpForm(icp.content);
-
-        const builtRegions = buildRegionsFromIcp(parsed.geografias ?? "");
-        if (builtRegions.length > 0) {
-          setRegions(builtRegions);
-          setSelectedRegions(builtRegions.map((r) => r.value));
+    Promise.all([
+      fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" }).then((r) => r.json()),
+      fetch(`/api/clients/${currentClient.id}/icp-mode`, { cache: "no-store" }).then((r) => r.json()),
+    ])
+      .then(([ctxData, modeData]) => {
+        const icp = (ctxData.items ?? []).find((i: { file_type: string; content?: string }) => i.file_type === "icp");
+        if (icp?.content) {
+          const parsed = deserializeIcpForm(icp.content);
+          const builtRegions = buildRegionsFromIcp(parsed.geografias ?? "");
+          if (builtRegions.length > 0) {
+            setRegions(builtRegions);
+            setSelectedRegions(builtRegions.map((r) => r.value));
+          } else {
+            setRegions(ALL_REGIONS);
+            setSelectedRegions([]);
+          }
+          if (parsed.tamano_empresa?.length > 0) {
+            setIcpSizeOpts(parsed.tamano_empresa);
+            setSizeMode(parsed.tamano_empresa[0]);
+          }
         } else {
           setRegions(ALL_REGIONS);
           setSelectedRegions([]);
         }
 
-        if (parsed.tamano_empresa?.length > 0) {
-          setIcpSizeOpts(parsed.tamano_empresa);
-          setSizeMode(parsed.tamano_empresa[0]);
+        const mode = modeData?.icp_mode ?? "general";
+        setIcpMode(mode);
+
+        if (mode === "by_industry") {
+          fetch(`/api/clients/${currentClient.id}/industries`, { cache: "no-store" })
+            .then((r) => r.json())
+            .then((j) => {
+              setIndustries(j.industries ?? []);
+              if ((j.industries ?? []).length > 0) setSelectedIndustry(j.industries[0].id);
+            });
         }
       })
       .catch(() => {
@@ -295,7 +314,13 @@ export default function EmpresasPage() {
     const res = await fetch("/api/companies/recommend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ region: selectedRegions.join(", ") || "LATAM", size_hint, limit, client_id: currentClient?.id ?? null })
+      body: JSON.stringify({
+        region: selectedRegions.join(", ") || "LATAM",
+        size_hint,
+        limit,
+        client_id: currentClient?.id ?? null,
+        industry_id: icpMode === "by_industry" && selectedIndustry ? selectedIndustry : null,
+      })
     });
     const data = await res.json();
     setDiscovering(false);
@@ -533,6 +558,39 @@ export default function EmpresasPage() {
                   </div>
                 )}
               </div>
+            {/* Selector de industria — solo cuando el cliente usa ICP por industria */}
+            {icpMode === "by_industry" && industries.length > 0 && (
+              <div>
+                <label className="label block mb-2">Industria</label>
+                <div className="flex flex-wrap gap-2">
+                  {industries.map((ind) => {
+                    const active = selectedIndustry === ind.id;
+                    return (
+                      <button
+                        key={ind.id}
+                        type="button"
+                        onClick={() => setSelectedIndustry(ind.id)}
+                        className={`px-3 py-1 rounded-full text-sm font-medium border transition-colors ${
+                          active
+                            ? "text-white border-transparent"
+                            : "bg-white border-border text-ink-muted hover:border-brand-soft"
+                        }`}
+                        style={active ? { background: "#251762", borderColor: "#251762" } : {}}
+                      >
+                        {ind.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {icpMode === "by_industry" && industries.length === 0 && (
+              <div className="text-xs text-warning-fg flex items-center gap-1.5">
+                <IconAlertCircle size={13} />
+                Este cliente no tiene industrias configuradas. Ve a SISTEMA → ICP para crearlas.
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
               <Field label="Tamaño objetivo">
                 <select
