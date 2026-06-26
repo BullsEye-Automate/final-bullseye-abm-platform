@@ -152,6 +152,41 @@ export function chipsFrom(text: string, label: string): string[] {
   return val ? val.split(",").map((s) => s.trim()).filter(Boolean) : [];
 }
 
+// ── Tipos y helpers para ICP multi-industria ───────────────────────────
+export type IndustrySectionKey =
+  | "target_company"
+  | "fit_signals"
+  | "buyer_persona"
+  | "value_prop"
+  | "outreach"
+  | "reference_clients";
+
+export const INDUSTRY_SECTION_LABELS: Record<IndustrySectionKey, { num: number; title: string; desc: string }> = {
+  target_company:    { num: 2, title: "PERFIL DE EMPRESA OBJETIVO", desc: "Tamaño, industria, geografía, modelo" },
+  fit_signals:       { num: 3, title: "SEÑALES DE FIT", desc: "Señales positivas/negativas, tech stack, disparadores" },
+  buyer_persona:     { num: 4, title: "BUYER PERSONA", desc: "Cargos, departamentos, seniority, perfil psicográfico" },
+  value_prop:        { num: 5, title: "PROPUESTA DE VALOR", desc: "Propuesta, problemas, resultados, diferenciadores" },
+  outreach:          { num: 6, title: "OUTREACH — TONO Y MENSAJES", desc: "Tono, idioma, CTA, canales, objeciones" },
+  reference_clients: { num: 7, title: "CLIENTES DE REFERENCIA", desc: "Mejores/peores clientes, ticket/ACV" },
+};
+
+export const SECTION_FIELDS: Record<IndustrySectionKey, (keyof IcpFormData)[]> = {
+  target_company:    ["industrias_objetivo","industrias_excluidas","tamano_empresa","facturacion","geografias","modelo_empresa","etapa_empresa"],
+  fit_signals:       ["senales_positivas","senales_negativas","tech_stack","eventos_disparadores"],
+  buyer_persona:     ["cargos_decisores","cargos_influenciadores","cargos_evitar","departamentos","seniority","perfil_psicografico"],
+  value_prop:        ["propuesta_valor","problemas","resultados","competidores","diferenciadores"],
+  outreach:          ["tono","idioma","cta_primer_contacto","canales","mensajes_exitosos","objeciones"],
+  reference_clients: ["mejores_clientes","peores_clientes","ticket_acv"],
+};
+
+export function serializeSectionForm(sectionKey: IndustrySectionKey, form: IcpFormData): string {
+  const partial: IcpFormData = { ...EMPTY_FORM };
+  for (const key of SECTION_FIELDS[sectionKey]) {
+    (partial as Record<string, unknown>)[key] = form[key as keyof IcpFormData];
+  }
+  return serializeIcpForm(partial);
+}
+
 export function deserializeIcpForm(text: string): IcpFormData {
   return {
     nombre_empresa:         extractField(text, "Nombre de la empresa"),

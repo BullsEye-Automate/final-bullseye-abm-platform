@@ -121,6 +121,9 @@ export default function EmpresasPage() {
   const [customMax, setCustomMax] = useState("");
   const [icpSizeOpts, setIcpSizeOpts] = useState<string[]>([]);
   const [limit, setLimit] = useState(8);
+  const [icpMode, setIcpMode] = useState<"general" | "by_industry">("general");
+  const [industries, setIndustries] = useState<{ id: string; name: string }[]>([]);
+  const [selectedIndustry, setSelectedIndustry] = useState<string | null>(null);
   const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [statusCounts, setStatusCounts] = useState<{ pending: number; approved: number; rejected: number }>({
@@ -157,19 +160,37 @@ export default function EmpresasPage() {
   const [bulkApproving, setBulkApproving]   = useState(false);
   const [bulkApproveResult, setBulkApproveResult] = useState<{ approved: number } | null>(null);
 
-  // Precarga región y opciones de tamaño desde el ICP del cliente activo
+  // Precarga región, opciones de tamaño y modo ICP desde el cliente activo
   useEffect(() => {
     if (!currentClient) return;
-    fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" })
-      .then((r) => r.json())
-      .then((data) => {
+    setIcpMode("general");
+    setIndustries([]);
+    setSelectedIndustry(null);
+    Promise.all([
+      fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" }).then((r) => r.json()),
+      fetch(`/api/clients/${currentClient.id}/icp-mode`, { cache: "no-store" }).then((r) => r.json()),
+    ])
+      .then(([data, modeData]) => {
         const icpDoc = (data.items ?? []).find((i: { file_type: string }) => i.file_type === "icp");
-        if (!icpDoc?.content) return;
-        const inferredRegion = inferRegionFromIcp(icpDoc.content);
-        const sizeOpts       = extractSizeOptsFromIcp(icpDoc.content);
-        if (inferredRegion) setRegion(inferredRegion);
-        setIcpSizeOpts(sizeOpts);
-        if (sizeOpts.length > 0) setSizeMode(sizeOpts[0]);
+        if (icpDoc?.content) {
+          const inferredRegion = inferRegionFromIcp(icpDoc.content);
+          const sizeOpts       = extractSizeOptsFromIcp(icpDoc.content);
+          if (inferredRegion) setRegion(inferredRegion);
+          setIcpSizeOpts(sizeOpts);
+          if (sizeOpts.length > 0) setSizeMode(sizeOpts[0]);
+        }
+        const mode = modeData.icp_mode ?? "general";
+        setIcpMode(mode);
+        if (mode === "by_industry") {
+          fetch(`/api/clients/${currentClient.id}/industries`, { cache: "no-store" })
+            .then((r) => r.json())
+            .then((ind) => {
+              const list = ind.industries ?? [];
+              setIndustries(list);
+              if (list.length > 0) setSelectedIndustry(list[0].id);
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {});
   }, [currentClient?.id]);
@@ -239,7 +260,11 @@ export default function EmpresasPage() {
     const res = await fetch("/api/companies/recommend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ region, size_hint, limit, client_id: currentClient?.id ?? null })
+      body: JSON.stringify({
+        region, size_hint, limit,
+        client_id: currentClient?.id ?? null,
+        industry_id: icpMode === "by_industry" && selectedIndustry ? selectedIndustry : null,
+      })
     });
     const data = await res.json();
     setDiscovering(false);
@@ -428,6 +453,27 @@ export default function EmpresasPage() {
         {/* Modo: Recomendación IA */}
         {discoveryMode === "recommend" && (
           <>
+            {icpMode === "by_industry" && industries.length > 0 && (
+              <div className="mb-1">
+                <p className="text-xs text-ink-muted mb-2 font-medium">Industria a buscar:</p>
+                <div className="flex flex-wrap gap-2">
+                  {industries.map((ind) => (
+                    <button
+                      key={ind.id}
+                      onClick={() => setSelectedIndustry(ind.id)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                        selectedIndustry === ind.id
+                          ? "text-white"
+                          : "text-ink-muted bg-surface-alt hover:bg-surface-hover"
+                      }`}
+                      style={selectedIndustry === ind.id ? { background: "#251762" } : {}}
+                    >
+                      {ind.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
               <Field label="Región">
                 <select className="input" value={region} onChange={(e) => setRegion(e.target.value)}>

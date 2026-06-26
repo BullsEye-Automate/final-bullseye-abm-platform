@@ -7,11 +7,12 @@ export const dynamic    = "force-dynamic";
 export const maxDuration = 120;
 
 type Body = {
-  region?:     string;
-  size?:       "small" | "medium" | "large";
-  size_hint?:  string | null;
-  limit?:      number;
-  client_id?:  string | null;
+  region?:      string;
+  size?:        "small" | "medium" | "large";
+  size_hint?:   string | null;
+  limit?:       number;
+  client_id?:   string | null;
+  industry_id?: string | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -20,7 +21,8 @@ export async function POST(req: NextRequest) {
   const size     = body.size   ?? "small";
   const sizeHint = body.size_hint !== undefined ? body.size_hint : undefined;
   const limit    = Math.min(Math.max(body.limit ?? 8, 1), 15);
-  const clientId = body.client_id ?? null;
+  const clientId   = body.client_id   ?? null;
+  const industryId = body.industry_id ?? null;
 
   if (!clientId) {
     return NextResponse.json(
@@ -43,14 +45,31 @@ export async function POST(req: NextRequest) {
 
   if (icpErr) return NextResponse.json({ error: icpErr.message }, { status: 500 });
 
-  if (!icpCtx?.content?.trim()) {
-    return NextResponse.json(
+  if (!icpCtx?.content?.trim()) {    return NextResponse.json(
       {
         error:
           "Este cliente no tiene ICP configurado. Ve a SISTEMA → ICP para configurarlo antes de buscar empresas."
       },
       { status: 400 }
     );
+  }
+
+  // Compone el contenido del ICP: si hay industria, combina datos del cliente + secciones de la industria
+  let icpContent = icpCtx.content;
+  if (industryId) {
+    const { data: industrySections } = await db
+      .from("icp_industry_sections")
+      .select("content")
+      .eq("industry_id", industryId);
+    const sectionTexts = (industrySections ?? [])
+      .map((s: { content: string }) => s.content)
+      .filter(Boolean)
+      .join("\n\n");
+    const clientDataMatch = icpCtx.content.match(
+      /-{10,}\nDATOS DEL CLIENTE\n-{10,}\n\n[\s\S]*?(?=\n\n-{10,}|$)/
+    );
+    const clientDataSection = clientDataMatch ? clientDataMatch[0] : icpCtx.content;
+    icpContent = [clientDataSection, sectionTexts].filter(Boolean).join("\n\n");
   }
 
   // Empresas ya existentes + excluidas manualmente, para evitar duplicados y re-sugerir descartadas
@@ -68,7 +87,7 @@ export async function POST(req: NextRequest) {
   let discovered;
   try {
     discovered = await discoverCompanies({
-      icpContent: icpCtx.content,
+      icpContent,
       region,
       size,
       sizeHint,

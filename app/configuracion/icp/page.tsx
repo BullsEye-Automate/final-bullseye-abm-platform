@@ -14,9 +14,12 @@ import {
   IconChevronDown,
   IconSparkles,
   IconCopy,
-  IconRefresh
+  IconRefresh,
+  IconBuilding,
+  IconList
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
+import IndustriesPanel from "./IndustriesPanel";
 import {
   IcpFormData,
   EMPTY_FORM,
@@ -53,6 +56,11 @@ export default function IcpPage() {
   const [clayCopied,       setClayCopied]       = useState(false);
   const [clayError,        setClayError]        = useState<string | null>(null);
 
+  const [icpMode,       setIcpMode]       = useState<"general" | "by_industry">("general");
+  const [icpModeLoading, setIcpModeLoading] = useState(false);
+
+  const isLegacyClient = currentClient?.slug === "bullseye";
+
   const [fpTitles,     setFpTitles]     = useState<string | null>(null);
   const [fpKeywords,   setFpKeywords]   = useState<string | null>(null);
   const [fpExcluded,   setFpExcluded]   = useState<string | null>(null);
@@ -80,10 +88,11 @@ export default function IcpPage() {
     if (!currentClient) return;
     setLoading(true);
     setError(null);
-    const [ctxRes, promptRes, fpRes] = await Promise.all([
+    const [ctxRes, promptRes, fpRes, modeRes] = await Promise.all([
       fetch(`/api/clients/${currentClient.id}/context`, { cache: "no-store" }),
       fetch(`/api/clients/${currentClient.id}/clay-scoring-prompt`, { cache: "no-store" }),
       fetch(`/api/clients/${currentClient.id}/generate-clay-config`, { cache: "no-store" }),
+      fetch(`/api/clients/${currentClient.id}/icp-mode`, { cache: "no-store" }),
     ]);
     const j = await ctxRes.json();
     setLoading(false);
@@ -106,6 +115,22 @@ export default function IcpPage() {
       setFpExcluded(fj.excluded_titles ?? null);
       setFpLocation(fj.location_filter ?? null);
     }
+    if (modeRes.ok) {
+      const mj = await modeRes.json();
+      setIcpMode(mj.icp_mode ?? "general");
+    }
+  }
+
+  async function changeIcpMode(mode: "general" | "by_industry") {
+    if (!currentClient) return;
+    setIcpModeLoading(true);
+    await fetch(`/api/clients/${currentClient.id}/icp-mode`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ icp_mode: mode }),
+    });
+    setIcpMode(mode);
+    setIcpModeLoading(false);
   }
 
   useEffect(() => { load(); }, [currentClient?.id]);
@@ -369,6 +394,40 @@ export default function IcpPage() {
         </div>
       )}
 
+      {/* Toggle ICP general / por industria (no aplica a clientes legacy) */}
+      {!isLegacyClient && (
+        <div className="card py-3 px-4 flex items-center gap-4">
+          <span className="text-sm font-medium text-ink shrink-0">Modo ICP:</span>
+          <div className="flex gap-2">
+            <button
+              onClick={() => changeIcpMode("general")}
+              disabled={icpModeLoading}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                icpMode === "general"
+                  ? "text-white"
+                  : "text-ink-muted bg-surface-alt hover:bg-surface-hover"
+              }`}
+              style={icpMode === "general" ? { background: "#251762" } : {}}
+            >
+              <IconList size={14} /> ICP general
+            </button>
+            <button
+              onClick={() => changeIcpMode("by_industry")}
+              disabled={icpModeLoading}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                icpMode === "by_industry"
+                  ? "text-white"
+                  : "text-ink-muted bg-surface-alt hover:bg-surface-hover"
+              }`}
+              style={icpMode === "by_industry" ? { background: "#251762" } : {}}
+            >
+              <IconBuilding size={14} /> ICP por industria
+            </button>
+          </div>
+          {icpModeLoading && <IconLoader2 size={14} className="animate-spin text-ink-muted" />}
+        </div>
+      )}
+
       {/* Banner explicativo de las dos opciones */}
       <div className="card py-3 px-4 space-y-2 text-sm" style={{ background: "rgba(37,23,98,0.04)", border: "1px solid rgba(37,23,98,0.1)" }}>
         <p className="font-medium text-ink">Dos maneras de completar el ICP:</p>
@@ -435,6 +494,9 @@ export default function IcpPage() {
               onChange={(v) => setField("descripcion_negocio", v)}
             />
           </IcpSection>
+
+          {/* Secciones 2–7: solo en modo general o cliente legacy */}
+          {(isLegacyClient || icpMode === "general") && (<>
 
           {/* ── Sección 2: Perfil de empresa objetivo ── */}
           <IcpSection num={2} title="PERFIL DE EMPRESA OBJETIVO (ICP)" desc="Define el tipo ideal de cliente">
@@ -606,7 +668,14 @@ export default function IcpPage() {
             </div>
           </IcpSection>
 
-          {doc && (
+          </>)}
+
+          {/* Panel de industrias: solo en modo by_industry para clientes no legacy */}
+          {!isLegacyClient && icpMode === "by_industry" && currentClient && !loading && (
+            <IndustriesPanel clientId={currentClient.id} />
+          )}
+
+          {doc && (isLegacyClient || icpMode === "general") && (
             <p className="text-xs text-ink-subtle">
               Última actualización:{" "}
               {new Date(doc.uploaded_at).toLocaleDateString("es", {
