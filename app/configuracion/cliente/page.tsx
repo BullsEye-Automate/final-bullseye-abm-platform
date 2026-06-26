@@ -13,10 +13,12 @@ import {
   IconTool,
   IconUpload,
   IconTrash,
+  IconCopy,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
 type Config = {
+  lemlist_api_key:             string;
   lemlist_campaign_id:         string;
   lemlist_staging_campaign_id: string;
   clay_companies_table_id:     string;
@@ -29,6 +31,7 @@ type ClientWebhooks = {
 };
 
 const EMPTY_CONFIG: Config = {
+  lemlist_api_key:             "",
   lemlist_campaign_id:         "",
   lemlist_staging_campaign_id: "",
   clay_companies_table_id:     "",
@@ -71,6 +74,15 @@ function Field({
 
 export default function ConfigClientePage() {
   const { currentClient } = useClient();
+  const [copied, setCopied] = useState(false);
+
+  function copyClientId() {
+    if (!currentClient) return;
+    navigator.clipboard.writeText(currentClient.id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   const [form, setForm]         = useState<Config>(EMPTY_CONFIG);
   const [webhooks, setWebhooks] = useState<ClientWebhooks>(EMPTY_WEBHOOKS);
   const [loading, setLoading]       = useState(false);
@@ -110,6 +122,7 @@ export default function ConfigClientePage() {
       .then(([configData, clientData]) => {
         const cfg = configData.config;
         setForm(cfg ? {
+          lemlist_api_key:             cfg.lemlist_api_key             ?? "",
           lemlist_campaign_id:         cfg.lemlist_campaign_id         ?? "",
           lemlist_staging_campaign_id: cfg.lemlist_staging_campaign_id ?? "",
           clay_companies_table_id:     cfg.clay_companies_table_id     ?? "",
@@ -288,13 +301,24 @@ export default function ConfigClientePage() {
           <h1 className="text-2xl font-semibold tracking-tight">
             Integraciones
           </h1>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <div
               className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
               style={{ background: "#251762" }}
             >
               {currentClient.name}
             </div>
+            <button
+              onClick={copyClientId}
+              title="Copiar Client ID"
+              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono border border-border bg-surface-subtle text-ink-muted hover:text-ink hover:border-ink-subtle transition-colors"
+            >
+              <span className="opacity-60 text-[10px] not-italic font-sans">ID</span>
+              {currentClient.id}
+              {copied
+                ? <IconCheck size={12} className="text-success-fg shrink-0" />
+                : <IconCopy size={12} className="shrink-0" />}
+            </button>
             <span className="text-sm text-ink-muted">
               IDs de Lemlist y Clay para este cliente.
             </span>
@@ -336,6 +360,13 @@ export default function ConfigClientePage() {
             <h2 className="font-semibold flex items-center gap-2">
               <IconMail size={18} className="text-brand" /> Lemlist
             </h2>
+            <Field
+              label="API Key de Lemlist"
+              hint="API key de la cuenta de Lemlist de este cliente. Si se deja vacío, se usa la cuenta principal de BullsEye. Encuéntrala en Lemlist → Settings → Integrations → API."
+              placeholder="••••••••••••••••••"
+              value={form.lemlist_api_key}
+              onChange={set("lemlist_api_key")}
+            />
             <Field
               label="Campaign ID principal"
               hint="ID de la campaña de outreach activa (email + LinkedIn). Se encuentra en la URL de la campaña en Lemlist."

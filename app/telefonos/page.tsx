@@ -3,458 +3,583 @@
 import { useState } from "react";
 import {
   IconPhone,
-  IconSearch,
+  IconCopy,
   IconCheck,
   IconAlertCircle,
-  IconRefresh,
   IconLoader2,
+  IconInfoCircle,
+  IconBrandLinkedin,
+  IconMail,
+  IconUser,
+  IconBuilding,
+  IconArrowRight,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
 
-// ────────────────────────────────────────────────────────────
-// Tipos
-// ────────────────────────────────────────────────────────────
+// ── Tipos ──────────────────────────────────────────────────────
 
-type LushaResult = {
-  found: boolean;
-  phone?: string;
-  phone_type?: string;
-  email?: string;
-  first_name?: string;
-  last_name?: string;
-  company_name?: string;
-  job_title?: string;
-  message?: string;
+type Step = "clay" | "lemlist" | "lusha";
+
+type Result = {
+  status: "idle" | "running" | "found" | "not_found" | "error";
+  phone: string | null;
+  detail: string | null;
+  debug?: any;
 };
+const IDLE: Result = { status: "idle", phone: null, detail: null };
 
-type SearchResult = {
-  in_bullseye: boolean;
-  contact?: {
-    id: string;
-    first_name: string | null;
-    last_name: string | null;
-    job_title: string | null;
-    phone: string | null;
-    phone_source: string | null;
-    company_name: string | null;
-  };
-  lusha?: LushaResult;
-};
+// ── Helpers ────────────────────────────────────────────────────
 
-// ────────────────────────────────────────────────────────────
-// Página principal
-// ────────────────────────────────────────────────────────────
+function CopyButton({ text, large = false }: { text: string; large?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    });
+  }
+  return (
+    <button
+      onClick={copy}
+      className={`inline-flex items-center gap-1.5 rounded font-medium transition-colors ${large ? "px-4 py-2 text-sm" : "px-3 py-1.5 text-xs"}`}
+      style={{
+        background: copied ? "#62E0D8" : "#251762",
+        color:      copied ? "#251762" : "#ffffff",
+      }}
+    >
+      {copied ? <IconCheck size={large ? 16 : 14} /> : <IconCopy size={large ? 16 : 14} />}
+      {copied ? "Copiado" : "Copiar"}
+    </button>
+  );
+}
+
+function ResultCard({
+  name,
+  emoji,
+  result,
+  requires,
+}: {
+  name: string;
+  emoji: string;
+  result: Result;
+  requires: string;
+}) {
+  const palette = {
+    idle:      { bg: "#f4f4f7", border: "#e5e5ec", title: "#475569", body: "#64748b" },
+    running:   { bg: "#eef9f8", border: "#62E0D8", title: "#0c5e58", body: "#0c5e58" },
+    found:     { bg: "#e8f6ed", border: "#22c55e", title: "#166534", body: "#15803d" },
+    not_found: { bg: "#f8f9fb", border: "#cbd5e1", title: "#334155", body: "#475569" },
+    error:     { bg: "#fdecec", border: "#ef4444", title: "#991b1b", body: "#991b1b" },
+  }[result.status];
+
+  return (
+    <div className="rounded-xl p-4 space-y-2" style={{ background: palette.bg, border: `1px solid ${palette.border}` }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-base">{emoji}</span>
+          <span className="font-semibold text-sm" style={{ color: palette.title }}>{name}</span>
+        </div>
+        {result.status === "running" && <IconLoader2 size={16} className="animate-spin" style={{ color: palette.title }} />}
+        {result.status === "found"   && <IconCheck size={16} style={{ color: palette.title }} />}
+      </div>
+      <p className="text-xs" style={{ color: palette.body }}>{requires}</p>
+
+      {result.status === "running" && (
+        <p className="text-sm" style={{ color: palette.body }}>{result.detail ?? "Buscando…"}</p>
+      )}
+      {result.status === "found" && result.phone && (
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <span className="font-mono text-lg font-semibold" style={{ color: palette.title }}>{result.phone}</span>
+          <CopyButton text={result.phone} large />
+        </div>
+      )}
+      {result.status === "not_found" && (
+        <p className="text-sm" style={{ color: palette.body }}>{result.detail ?? "No encontró teléfono"}</p>
+      )}
+      {result.status === "error" && (
+        <p className="text-sm" style={{ color: palette.body }}>{result.detail ?? "Error"}</p>
+      )}
+
+      {result.debug && (result.status === "not_found" || result.status === "running" || result.status === "error") && (
+        <details className="mt-1">
+          <summary className="text-xs cursor-pointer" style={{ color: palette.body }}>
+            🔍 Detalles técnicos (debug)
+          </summary>
+          <pre className="text-[10px] mt-2 p-2 rounded overflow-auto" style={{ background: "#1e1b3a", color: "#e2e8f0", maxHeight: "70vh" }}>
+            {JSON.stringify(result.debug, null, 2)}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// ── Página ─────────────────────────────────────────────────────
 
 export default function TelefonosPage() {
   const { currentClient } = useClient();
 
-  // Estado del buscador individual
   const [linkedinUrl, setLinkedinUrl] = useState("");
-  const [searching, setSearching]     = useState(false);
-  const [error, setError]             = useState<string | null>(null);
-  const [result, setResult]           = useState<SearchResult | null>(null);
+  const [email,       setEmail]       = useState("");
+  const [firstName,   setFirstName]   = useState("");
+  const [lastName,    setLastName]    = useState("");
+  const [company,     setCompany]     = useState("");
 
-  // Estado del botón "Levantar teléfonos de Lemlist"
-  const [refreshing, setRefreshing]       = useState(false);
-  const [refreshResult, setRefreshResult] = useState<string | null>(null);
-  const [refreshError, setRefreshError]   = useState<string | null>(null);
+  // Estado por proveedor (independiente)
+  const [clay,    setClay]    = useState<Result>(IDLE);
+  const [lemlist, setLemlist] = useState<Result>(IDLE);
+  const [lusha,   setLusha]   = useState<Result>(IDLE);
 
-  // Estado para "Actualizar en BullsEye" (Lusha → Supabase)
-  const [updating, setUpdating]         = useState(false);
-  const [updateSuccess, setUpdateSuccess] = useState(false);
+  // Indica si se ejecutó al menos Clay (para mostrar la zona de resultados)
+  const [started, setStarted] = useState(false);
+  // Se activa a los 15s de Lemlist en "running" para desbloquear Lusha sin esperar
+  const [lemlistSlow, setLemlistSlow] = useState(false);
 
-  // ── Flujo de búsqueda individual ──────────────────────────
+  const canLushaEmail = !!email.trim();
+  const canLushaTrio  = !!firstName.trim() && !!lastName.trim() && !!company.trim();
+  const canLusha      = canLushaEmail || canLushaTrio;
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!linkedinUrl.trim()) return;
+  function resetAll() {
+    setClay(IDLE);
+    setLemlist(IDLE);
+    setLusha(IDLE);
+    setStarted(false);
+    setLemlistSlow(false);
+  }
 
-    setSearching(true);
-    setError(null);
-    setResult(null);
-    setUpdateSuccess(false);
+  // ── Runners por proveedor ────────────────────────────────────
 
-    // Normalizar URL antes de enviar
-    const normalizedUrl = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
+  async function runClay() {
+    if (!linkedinUrl.trim() || !currentClient?.id) return;
+    const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
+    setStarted(true);
+    setLemlist(IDLE);
+    setLusha(IDLE);
+    setClay({ status: "running", phone: null, detail: "Enviando a Clay (waterfall LeadMagic → PDL → upcell → Clay → Wiza)…" });
 
     try {
-      // Buscar en BullsEye y consultar Lusha en paralelo
-      const [bsRes, lushaRes] = await Promise.all([
-        fetch(
-          `/api/contacts/search?linkedin_url=${encodeURIComponent(normalizedUrl)}${
-            currentClient ? `&client_id=${currentClient.id}` : ""
-          }`
-        ),
-        fetch("/api/lusha/lookup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ linkedin_url: normalizedUrl }),
-        }),
-      ]);
-
-      const [bsData, lushaData] = await Promise.all([bsRes.json(), lushaRes.json()]);
-
-      if (!bsRes.ok) {
-        throw new Error(bsData.error ?? "Error buscando en BullsEye");
+      const since = new Date().toISOString();
+      const r = await fetch("/api/clay/push-contact-phone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ad_hoc: true, linkedin_url: url, client_id: currentClient.id }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setClay({ status: "error", phone: null, detail: d.error ?? "Error enviando a Clay" });
+        return;
       }
-      // Lusha puede fallar con 500 si no hay API key — lo manejamos graciosamente
-      const lusha: LushaResult = lushaRes.ok ? lushaData : { found: false, message: lushaData.error };
+      setClay({ status: "running", phone: null, detail: "Clay corriendo waterfall (1-3 min)…" });
 
-      if (bsData.found) {
-        setResult({
-          in_bullseye: true,
-          contact: bsData.contact,
-          lusha,
-        });
+      const deadline = Date.now() + 3 * 60 * 1000;
+      const phone = await new Promise<string | null>((resolve) => {
+        const poll = async () => {
+          if (Date.now() > deadline) { resolve(null); return; }
+          try {
+            const pr = await fetch(`/api/phone-lookups?linkedin_url=${encodeURIComponent(url)}&source=clay&since=${encodeURIComponent(since)}`);
+            const pd = await pr.json();
+            if (pd.lookup) { resolve(pd.lookup.phone ?? null); return; }
+          } catch {}
+          setTimeout(poll, 5000);
+        };
+        setTimeout(poll, 5000);
+      });
+
+      if (phone) {
+        setClay({ status: "found", phone, detail: null });
       } else {
-        setResult({
-          in_bullseye: false,
-          lusha,
-        });
+        setClay({ status: "not_found", phone: null, detail: "Clay no encontró teléfono en 3 minutos. Puede llegar tarde a HubSpot automáticamente." });
       }
-    } catch (err: any) {
-      setError(err?.message ?? "Error inesperado al buscar");
-    } finally {
-      setSearching(false);
+    } catch {
+      setClay({ status: "error", phone: null, detail: "Error de conexión con Clay" });
     }
   }
 
-  // ── Actualizar teléfono Lusha en BullsEye ─────────────────
+  async function runLemlist() {
+    if (!linkedinUrl.trim() || !currentClient?.id) return;
+    const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
+    setLemlistSlow(false);
+    setLemlist({ status: "running", phone: null, detail: "Buscando con Lemlist (findPhone)…" });
 
-  async function updatePhone() {
-    if (!result?.contact?.id || !result?.lusha?.phone) return;
-    setUpdating(true);
+    // Tras 15s sin respuesta, desbloquear Lusha para que el SDR no espere
+    const slowTimer = setTimeout(() => setLemlistSlow(true), 15_000);
+
+    async function callOnce() {
+      const r = await fetch("/api/lemlist/lookup-phone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient!.id, linkedin_url: url }),
+      });
+      const d = await r.json().catch(() => ({}));
+      return { ok: r.ok, data: d };
+    }
+
     try {
-      const res = await fetch("/api/lusha/lookup", {
+      // Primer intento
+      const first = await callOnce();
+      if (!first.ok) {
+        clearTimeout(slowTimer);
+        setLemlist({ status: "error", phone: null, detail: first.data.error ?? "Error en Lemlist" });
+        return;
+      }
+      if (first.data.found && first.data.phone) {
+        clearTimeout(slowTimer);
+        setLemlist({
+          status: "found",
+          phone: first.data.phone,
+          detail: first.data.message ?? (first.data.cached ? "Contacto ya estaba en la campaña. Sin consumir créditos." : null),
+        });
+        return;
+      }
+
+      // Procesando: reintentar en background cada 5s hasta 2 min (24 intentos).
+      // El endpoint es idempotente: busca primero en Lemlist y en HubSpot antes de pushear,
+      // así que no consume créditos extra.
+      setLemlist({
+        status: "running",
+        phone: null,
+        detail: "Lemlist está enriqueciendo el contacto. Te avisamos en cuanto aparezca el teléfono…",
+      });
+
+      let lastDebug: any = first.data.debug;
+      const maxAttempts = 24;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        await new Promise((r) => setTimeout(r, 5_000));
+        try {
+          const next = await callOnce();
+          if (next.ok && next.data.found && next.data.phone) {
+            clearTimeout(slowTimer);
+            setLemlistSlow(false);
+            setLemlist({
+              status: "found",
+              phone: next.data.phone,
+              detail: next.data.message ?? "Lemlist terminó el enriquecimiento.",
+            });
+            return;
+          }
+          lastDebug = next.data.debug ?? lastDebug;
+          const elapsed = attempt * 5;
+          setLemlist({
+            status: "running",
+            phone: null,
+            detail: `Lemlist sigue procesando (${elapsed}s)… puedes seguir trabajando, te aviso cuando esté.`,
+            debug: lastDebug,
+          });
+        } catch { /* reintenta */ }
+      }
+
+      clearTimeout(slowTimer);
+      setLemlist({
+        status: "not_found",
+        phone: null,
+        detail: "Después de 2 minutos Lemlist no devolvió teléfono. Reintenta más tarde o avanza a Lusha.",
+        debug: lastDebug,
+      });
+    } catch {
+      clearTimeout(slowTimer);
+      setLemlist({ status: "error", phone: null, detail: "Error de conexión con Lemlist" });
+    }
+  }
+
+  async function runLusha() {
+    if (!canLusha) {
+      setLusha({ status: "not_found", phone: null, detail: "Faltan datos: completa Email o el trío Nombre+Apellido+Empresa." });
+      return;
+    }
+    const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
+    setLusha({ status: "running", phone: null, detail: "Consultando Lusha…" });
+    try {
+      const r = await fetch("/api/lusha/lookup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          linkedin_url: linkedinUrl.trim(),
-          contact_id: result.contact.id,
+          linkedin_url: url,
+          email:        email.trim()     || undefined,
+          first_name:   firstName.trim() || undefined,
+          last_name:    lastName.trim()  || undefined,
+          company_name: company.trim()   || undefined,
         }),
       });
-      if (res.ok) {
-        setUpdateSuccess(true);
-        // Reflejar el cambio en el estado local
-        setResult((prev) =>
-          prev
-            ? {
-                ...prev,
-                contact: prev.contact
-                  ? { ...prev.contact, phone: result.lusha?.phone ?? prev.contact.phone, phone_source: "lusha" }
-                  : prev.contact,
-              }
-            : prev
-        );
-      }
-    } catch {
-      // silently fail — usuario puede reintentar
-    } finally {
-      setUpdating(false);
-    }
-  }
-
-  // ── Levantar teléfonos de Lemlist ─────────────────────────
-
-  async function handleRefreshLemlist() {
-    if (!currentClient) return;
-    setRefreshing(true);
-    setRefreshResult(null);
-    setRefreshError(null);
-    try {
-      const res = await fetch("/api/lemlist/refresh-phones", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: currentClient.id }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setRefreshError(data.error ?? "Error al levantar teléfonos");
+      const d = await r.json();
+      if (!r.ok) {
+        setLusha({ status: "error", phone: null, detail: d.error ?? "Error en Lusha", debug: d.debug });
+      } else if (d.found && d.phone) {
+        setLusha({ status: "found", phone: d.phone, detail: null });
       } else {
-        setRefreshResult(
-          data.refreshed === 0
-            ? "Sin contactos nuevos con teléfono en Lemlist."
-            : `${data.refreshed} contacto${data.refreshed > 1 ? "s" : ""} actualizado${data.refreshed > 1 ? "s" : ""} con teléfono de Lemlist.`
-        );
+        setLusha({ status: "not_found", phone: null, detail: d.message ?? "Lusha no encontró este contacto", debug: d.debug });
       }
     } catch {
-      setRefreshError("Error de red al contactar Lemlist");
-    } finally {
-      setRefreshing(false);
+      setLusha({ status: "error", phone: null, detail: "Error de conexión con Lusha" });
     }
   }
 
-  // ────────────────────────────────────────────────────────────
-  // Render
-  // ────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────
+
+  const anyRunning = clay.status === "running" || lemlist.status === "running" || lusha.status === "running";
+  const clayDone    = clay.status === "found"    || clay.status === "not_found"    || clay.status === "error";
+  const lemlistDone = lemlist.status === "found" || lemlist.status === "not_found" || lemlist.status === "error";
+  const lushaDone   = lusha.status === "found"   || lusha.status === "not_found"   || lusha.status === "error";
 
   return (
-    <div className="space-y-6">
-      {/* ── Header ── */}
+    <div className="space-y-6 max-w-2xl">
+      {/* Header */}
       <header>
-        <div className="label">SDR · ENRICHMENT MANUAL</div>
-        <h1 className="text-2xl font-semibold tracking-tight mt-1">
-          ☎ Buscar teléfono con Lusha
-        </h1>
-        <p className="text-sm text-ink-muted mt-2 max-w-2xl">
-          Pega el LinkedIn URL del contacto. Si está en BullsEye o HubSpot, te muestro el
-          teléfono de Lemlist (si lo tenemos) y consulto Lusha para el otro número. Si NO está
-          en sistema, te muestro lo que Lusha levantó y puedes crearlo con un click. Lusha cobra
-          ~1 crédito solo si devuelve teléfono.
+        <div className="label">SDR · Enriquecimiento de Teléfonos</div>
+        <h1 className="text-2xl font-semibold tracking-tight mt-1">Buscar teléfono</h1>
+        <p className="text-sm text-ink-muted mt-1">
+          Cascada manual paso a paso: empieza con <strong>Clay</strong>; si el número no sirve,
+          avanza a <strong>Lemlist</strong> y luego a <strong>Lusha</strong>. No consume créditos extra
+          mientras no avances.
         </p>
       </header>
 
-      {/* ── Card: Levantar teléfonos de Lemlist ── */}
-      <section className="card">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="flex-1">
-            <h2 className="font-semibold flex items-center gap-2 mb-2">
-              <IconPhone size={16} style={{ color: "#62E0D8" }} />
-              Teléfonos de Lemlist → HubSpot
-            </h2>
-            <p className="text-sm text-ink-muted leading-relaxed">
-              Todos los contactos que la app empuja a Lemlist ya salen con phone enrichment
-              activado (findPhone), pero Lemlist tarda en levantar el número. Este botón recorre
-              los contactos en campaña que todavía no tienen teléfono de Lemlist, se lo pide a
-              Lemlist y lo escribe en Supabase (campo phone + phone_source=&apos;lemlist&apos;).
-              Córrelo cada tanto — es idempotente.
-            </p>
-          </div>
+      {/* Instrucciones */}
+      <div className="rounded-xl p-4 space-y-2" style={{ background: "#eef9f8", border: "1px solid #62E0D8" }}>
+        <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: "#0c5e58" }}>
+          <IconInfoCircle size={16} /> Cómo funciona
+        </div>
+        <ol className="text-sm space-y-1 list-decimal list-inside" style={{ color: "#0f4f4a" }}>
+          <li>Pega el LinkedIn URL del contacto.</li>
+          <li><strong>Clay</strong> corre primero (waterfall de 5 proveedores, 1-3 min). Solo necesita LinkedIn URL.</li>
+          <li>Si el teléfono de Clay no sirve, presiona <strong>Buscar en Lemlist</strong> (findPhone, 10-30s).</li>
+          <li>Si tampoco, presiona <strong>Buscar en Lusha</strong>. Lusha necesita Email <em>o</em> Nombre+Apellido+Empresa.</li>
+          <li>Cada número aparece con un botón <strong>Copiar</strong> para pegar en HubSpot.</li>
+        </ol>
+      </div>
 
-          <button
-            onClick={handleRefreshLemlist}
-            disabled={refreshing || !currentClient}
-            className="btn-secondary shrink-0"
-            title={!currentClient ? "Selecciona un cliente primero" : undefined}
-          >
-            {refreshing ? (
-              <IconLoader2 size={15} className="animate-spin" />
-            ) : (
-              <IconRefresh size={15} />
-            )}
-            {refreshing ? "Levantando…" : "Levantar teléfonos de Lemlist"}
-          </button>
+      {/* Formulario */}
+      <div className="card space-y-5">
+        {/* LinkedIn URL */}
+        <div>
+          <label className="label flex items-center gap-1.5 mb-1">
+            <IconBrandLinkedin size={14} />
+            LinkedIn URL <span className="text-danger-fg">*</span>
+          </label>
+          <input
+            className="input"
+            placeholder="https://linkedin.com/in/nombre-apellido"
+            value={linkedinUrl}
+            onChange={(e) => setLinkedinUrl(e.target.value)}
+            disabled={anyRunning}
+          />
         </div>
 
-        {/* Resultado del refresh */}
-        {refreshResult && (
-          <div
-            className="mt-4 flex items-center gap-2 text-sm rounded-lg px-4 py-3"
-            style={{ background: "rgba(98,224,216,0.1)", color: "#0F6E56" }}
-          >
-            <IconCheck size={16} />
-            {refreshResult}
-          </div>
-        )}
-        {refreshError && (
-          <div className="mt-4 flex items-center gap-2 text-sm text-danger-fg">
-            <IconAlertCircle size={16} />
-            {refreshError}
-          </div>
-        )}
-
-        {!currentClient && (
-          <p className="mt-3 text-xs text-ink-muted">
-            Selecciona un cliente en el sidebar para usar esta función.
-          </p>
-        )}
-      </section>
-
-      {/* ── Card: Búsqueda individual ── */}
-      <section className="card space-y-4">
-        <form onSubmit={handleSearch} className="space-y-3">
+        {/* Datos para Lusha */}
+        <div className="rounded-lg border border-ink-subtle/20 p-4 space-y-3" style={{ background: "#fafafc" }}>
           <div>
-            <div className="label mb-1">LinkedIn URL</div>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                className="input"
-                placeholder="https://www.linkedin.com/in/usuario/"
-                value={linkedinUrl}
-                onChange={(e) => setLinkedinUrl(e.target.value)}
-                disabled={searching}
-              />
-              <button
-                type="submit"
-                disabled={searching || !linkedinUrl.trim()}
-                className="btn-primary shrink-0"
-              >
-                {searching ? (
-                  <IconLoader2 size={15} className="animate-spin" />
-                ) : (
-                  <IconSearch size={15} />
-                )}
-                {searching ? "Buscando…" : "Buscar"}
-              </button>
-            </div>
+            <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#251762" }}>
+              Datos para Lusha
+            </p>
             <p className="text-xs text-ink-muted mt-1">
-              Tip: aceptamos formato corto (linkedin.com/in/foo) o completo
-              (https://www.linkedin.com/in/foo/). Si tiene parámetros de tracking (?utm=...) se
-              ignoran.
+              Solo necesarios si Clay y Lemlist no encuentran el número. Completa <strong>una</strong> de las dos opciones:
             </p>
           </div>
-        </form>
 
-        {/* Error de búsqueda */}
-        {error && (
-          <div className="flex items-center gap-2 text-sm text-danger-fg">
-            <IconAlertCircle size={15} />
-            {error}
+          {/* Opción A: Email */}
+          <div className="rounded p-3" style={{ background: canLushaEmail ? "#e8f6ed" : "#ffffff", border: `1px solid ${canLushaEmail ? "#22c55e" : "#e5e5ec"}` }}>
+            <div className="text-xs font-semibold mb-2" style={{ color: canLushaEmail ? "#166534" : "#251762" }}>
+              OPCIÓN A — Email
+            </div>
+            <label className="label flex items-center gap-1 mb-1">
+              <IconMail size={13} /> Email <span className="text-danger-fg">*</span>
+            </label>
+            <input
+              className="input text-sm"
+              placeholder="correo@empresa.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={anyRunning}
+            />
+          </div>
+
+          <div className="text-center text-xs font-semibold" style={{ color: "#251762" }}>
+            — O —
+          </div>
+
+          {/* Opción B: trío */}
+          <div className="rounded p-3" style={{ background: canLushaTrio ? "#e8f6ed" : "#ffffff", border: `1px solid ${canLushaTrio ? "#22c55e" : "#e5e5ec"}` }}>
+            <div className="text-xs font-semibold mb-2" style={{ color: canLushaTrio ? "#166534" : "#251762" }}>
+              OPCIÓN B — Nombre + Apellido + Empresa (los 3)
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label className="label flex items-center gap-1 mb-1">
+                  <IconUser size={13} /> Nombre <span className="text-danger-fg">*</span>
+                </label>
+                <input
+                  className="input text-sm"
+                  placeholder="Juan"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  disabled={anyRunning}
+                />
+              </div>
+              <div>
+                <label className="label flex items-center gap-1 mb-1">
+                  <IconUser size={13} /> Apellido <span className="text-danger-fg">*</span>
+                </label>
+                <input
+                  className="input text-sm"
+                  placeholder="Pérez"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  disabled={anyRunning}
+                />
+              </div>
+              <div>
+                <label className="label flex items-center gap-1 mb-1">
+                  <IconBuilding size={13} /> Empresa <span className="text-danger-fg">*</span>
+                </label>
+                <input
+                  className="input text-sm"
+                  placeholder="Empresa S.A."
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                  disabled={anyRunning}
+                />
+              </div>
+            </div>
+          </div>
+
+          <p className="text-xs" style={{ color: canLusha ? "#15803d" : "#64748b" }}>
+            {canLusha ? "✓ Datos suficientes para ejecutar Lusha cuando lo necesites." : "Sin Email ni el trío completo, Lusha se omite."}
+          </p>
+        </div>
+
+        {!currentClient && (
+          <div className="flex items-center gap-2 text-warning-fg text-sm">
+            <IconAlertCircle size={15} /> Selecciona un cliente en el sidebar primero.
           </div>
         )}
-      </section>
 
-      {/* ── Resultado de búsqueda ── */}
-      {result && (
-        <section className="card space-y-4">
-          {result.in_bullseye && result.contact ? (
-            // ── CASO 1: Encontrado en BullsEye ──
-            <>
-              <div className="flex items-center gap-2">
-                <IconCheck size={18} style={{ color: "#62E0D8" }} />
-                <span className="font-medium">Encontrado en BullsEye</span>
-              </div>
+        {/* Botón inicial: empezar con Clay */}
+        {!started && (
+          <button
+            onClick={runClay}
+            disabled={anyRunning || !linkedinUrl.trim() || !currentClient}
+            className="btn-primary w-full flex items-center justify-center gap-2"
+          >
+            <IconPhone size={16} />
+            Buscar teléfono (empieza por Clay)
+          </button>
+        )}
 
-              <p className="text-sm">
-                <span className="font-medium">
-                  {[result.contact.first_name, result.contact.last_name]
-                    .filter(Boolean)
-                    .join(" ") || "—"}
-                </span>
-                {result.contact.company_name && (
-                  <span className="text-ink-muted"> · {result.contact.company_name}</span>
-                )}
-                {result.contact.job_title && (
-                  <span className="text-ink-muted"> · {result.contact.job_title}</span>
-                )}
+        {started && (
+          <button
+            onClick={() => { resetAll(); }}
+            className="text-xs text-ink-muted hover:text-ink-fg underline"
+          >
+            ← Resetear y buscar otro contacto
+          </button>
+        )}
+      </div>
+
+      {/* Resultados paso a paso */}
+      {started && (
+        <div className="space-y-4">
+          <h2 className="font-semibold text-sm uppercase tracking-wide" style={{ color: "#251762" }}>Resultados</h2>
+
+          {/* Paso 1 — Clay */}
+          <ResultCard
+            name="Clay"
+            emoji="🏗"
+            result={clay}
+            requires="Waterfall de 5 proveedores: LeadMagic → PDL → upcell → Clay → Wiza"
+          />
+
+          {/* Si Clay terminó y aún no se corrió Lemlist, mostrar botón de avance */}
+          {clayDone && lemlist.status === "idle" && (
+            <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background: "#fafafc", border: "1px solid #cbd5e1" }}>
+              <p className="text-sm" style={{ color: "#251762" }}>
+                {clay.status === "found"
+                  ? "¿El teléfono de Clay no te sirve? Avanza al siguiente proveedor."
+                  : "Clay no encontró número. Prueba con Lemlist."}
               </p>
-
-              <div className="text-sm">
-                <span className="text-ink-muted">Teléfono Lemlist: </span>
-                {result.contact.phone ? (
-                  <span className="font-medium">{result.contact.phone}</span>
-                ) : (
-                  <span className="text-ink-muted italic">No disponible</span>
-                )}
-                {result.contact.phone_source && (
-                  <span className="text-xs text-ink-muted ml-2">
-                    (fuente: {result.contact.phone_source})
-                  </span>
-                )}
-              </div>
-
-              {/* Resultado de Lusha */}
-              {result.lusha?.found && result.lusha.phone && (
-                <div
-                  className="rounded-lg px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3"
-                  style={{ background: "rgba(98,224,216,0.08)" }}
-                >
-                  <div className="flex-1 text-sm">
-                    <span className="text-ink-muted">Lusha encontró: </span>
-                    <span className="font-medium">{result.lusha.phone}</span>
-                    {result.lusha.phone_type && (
-                      <span className="text-xs text-ink-muted ml-2">
-                        (tipo: {result.lusha.phone_type})
-                      </span>
-                    )}
-                  </div>
-                  {updateSuccess ? (
-                    <span
-                      className="text-xs font-medium flex items-center gap-1"
-                      style={{ color: "#0F6E56" }}
-                    >
-                      <IconCheck size={13} />
-                      Actualizado
-                    </span>
-                  ) : (
-                    <button
-                      onClick={updatePhone}
-                      disabled={updating}
-                      className="text-xs underline shrink-0 flex items-center gap-1"
-                      style={{ color: "#62E0D8" }}
-                    >
-                      {updating && <IconLoader2 size={12} className="animate-spin" />}
-                      Actualizar en BullsEye
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Lusha sin teléfono */}
-              {result.lusha && !result.lusha.found && (
-                <p className="text-sm text-ink-muted">
-                  {result.lusha.message ?? "Sin resultados en Lusha para esta URL. No se consumió crédito."}
-                </p>
-              )}
-            </>
-          ) : !result.in_bullseye && result.lusha?.found ? (
-            // ── CASO 2: No en BullsEye, pero Lusha encontró datos ──
-            <>
-              <div className="flex items-center gap-2">
-                <IconAlertCircle size={18} style={{ color: "#F59E0B" }} />
-                <span className="font-medium">No está en BullsEye</span>
-              </div>
-
-              <div className="space-y-2">
-                <div className="label mb-2">Resultado Lusha</div>
-                <div className="rounded-lg p-4 space-y-2 text-sm" style={{ background: "rgba(98,224,216,0.06)" }}>
-                  {(result.lusha.first_name || result.lusha.last_name) && (
-                    <div>
-                      <span className="text-ink-muted">Nombre: </span>
-                      <span className="font-medium">
-                        {[result.lusha.first_name, result.lusha.last_name]
-                          .filter(Boolean)
-                          .join(" ")}
-                      </span>
-                    </div>
-                  )}
-                  {result.lusha.company_name && (
-                    <div>
-                      <span className="text-ink-muted">Empresa: </span>
-                      <span className="font-medium">{result.lusha.company_name}</span>
-                    </div>
-                  )}
-                  {result.lusha.job_title && (
-                    <div>
-                      <span className="text-ink-muted">Cargo: </span>
-                      <span className="font-medium">{result.lusha.job_title}</span>
-                    </div>
-                  )}
-                  {result.lusha.phone && (
-                    <div>
-                      <span className="text-ink-muted">Teléfono: </span>
-                      <span className="font-medium">{result.lusha.phone}</span>
-                      {result.lusha.phone_type && (
-                        <span className="text-xs text-ink-muted ml-1">
-                          ({result.lusha.phone_type})
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {result.lusha.email && (
-                    <div>
-                      <span className="text-ink-muted">Email: </span>
-                      <span className="font-medium">{result.lusha.email}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* TODO: Botón crear contacto */}
-              <button className="btn-secondary opacity-50 cursor-not-allowed text-sm" disabled title="Próximamente">
-                Crear contacto en BullsEye
+              <button
+                onClick={runLemlist}
+                disabled={anyRunning}
+                className="btn-secondary flex items-center justify-center gap-2 w-full sm:w-auto"
+              >
+                <IconArrowRight size={15} />
+                Buscar en Lemlist
               </button>
-            </>
-          ) : (
-            // ── CASO 3: Ni en BullsEye ni en Lusha ──
-            <div className="flex items-center gap-2 text-sm text-ink-muted">
-              <IconAlertCircle size={16} />
-              {result.lusha?.message ??
-                "Sin resultados en Lusha para esta URL. No se consumió crédito."}
             </div>
           )}
-        </section>
+
+          {/* Paso 2 — Lemlist */}
+          {lemlist.status !== "idle" && (
+            <ResultCard
+              name="Lemlist"
+              emoji="📧"
+              result={lemlist}
+              requires="findPhone sobre la campaña staging. Si el contacto ya estaba, devolvemos el teléfono guardado sin consumir créditos."
+            />
+          )}
+
+          {/* Si Lemlist terminó O lleva más de 15s, mostrar opción de Lusha */}
+          {(lemlistDone || lemlistSlow) && lusha.status === "idle" && (
+            <div className="rounded-xl p-4 flex flex-col gap-3" style={{ background: "#fafafc", border: "1px solid #cbd5e1" }}>
+              {lemlistSlow && !lemlistDone ? (
+                <div className="space-y-1">
+                  <p className="text-sm font-medium" style={{ color: "#251762" }}>
+                    ⏱ Lemlist está tardando más de lo normal — Lusha disponible ya
+                  </p>
+                  <p className="text-xs" style={{ color: "#64748b" }}>
+                    Lemlist sigue corriendo en background y te avisará si encuentra el número. Puedes probar Lusha mientras tanto.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm" style={{ color: "#251762" }}>
+                  {lemlist.status === "found"
+                    ? "¿El teléfono de Lemlist tampoco te sirve? Último intento con Lusha."
+                    : "Lemlist no encontró número. Prueba con Lusha."}
+                </p>
+              )}
+              {!canLusha && (
+                <p className="text-xs" style={{ color: "#991b1b" }}>
+                  ⚠ Faltan datos para Lusha — completa Email o el trío Nombre+Apellido+Empresa arriba.
+                </p>
+              )}
+              <button
+                onClick={runLusha}
+                disabled={lusha.status !== "idle" || !canLusha}
+                className="btn-secondary flex items-center justify-center gap-2 w-full sm:w-auto"
+              >
+                <IconArrowRight size={15} />
+                Buscar en Lusha
+              </button>
+            </div>
+          )}
+
+          {/* Paso 3 — Lusha */}
+          {lusha.status !== "idle" && (
+            <ResultCard
+              name="Lusha"
+              emoji="🔍"
+              result={lusha}
+              requires="Necesita Email o Nombre + Apellido + Empresa"
+            />
+          )}
+
+          {/* Resumen final cuando todo terminó */}
+          {clayDone && (lemlistDone || lemlist.status === "idle") && (lushaDone || lusha.status === "idle") && (
+            <div
+              className="rounded-xl p-4 text-sm"
+              style={
+                clay.status === "found" || lemlist.status === "found" || lusha.status === "found"
+                  ? { background: "#e8f6ed", border: "1px solid #22c55e", color: "#166534" }
+                  : { background: "#f8f9fb", border: "1px solid #cbd5e1", color: "#475569" }
+              }
+            >
+              {clay.status === "found" || lemlist.status === "found" || lusha.status === "found"
+                ? "✓ Ya tienes al menos un teléfono. Copia el que prefieras y pégalo en HubSpot."
+                : (lushaDone || (lemlistDone && !canLusha))
+                  ? "Ningún proveedor encontró teléfono para este contacto."
+                  : "Sigue avanzando en la cascada para probar otros proveedores."}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

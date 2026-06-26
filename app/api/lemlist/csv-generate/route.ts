@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
+import { runDeepResearch, type DeepResearchResult } from "@/lib/deep-research";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,20 +22,26 @@ type ParsedContact = {
 type GeneratedContact = ParsedContact & {
   emailSubject?: string;
   emailBody?: string;
+  emailSubject2?: string;
+  emailBody2?: string;
+  emailSubject3?: string;
+  emailBody3?: string;
+  connectMessage?: string;
   icebreaker?: string;
+  linkedinMsg2?: string;
   segmentName?: string;
   error?: string;
 };
 
 export async function POST(req: NextRequest) {
-  let body: { client_id: string; contacts: ParsedContact[] };
+  let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string; use_deep_research?: boolean };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { client_id, contacts } = body;
+  const { client_id, contacts, segment_id, use_deep_research = false } = body;
   if (!client_id || !contacts?.length) {
     return NextResponse.json({ error: "Se requiere client_id y contacts" }, { status: 400 });
   }
@@ -51,7 +58,7 @@ export async function POST(req: NextRequest) {
     db.from("model_training_config")
       .select("style_tone, style_rules, style_avoid, style_email_length")
       .eq("client_id", client_id).maybeSingle(),
-    db.from("training_segments").select("id, name, routing_hint").eq("client_id", client_id)
+    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg").eq("client_id", client_id)
       .order("created_at", { ascending: true }),
     db.from("message_examples").select("*").eq("client_id", client_id).is("segment_id", null)
       .order("created_at", { ascending: false }).limit(5),
@@ -86,11 +93,16 @@ export async function POST(req: NextRequest) {
   async function getSegmentContext(segmentId: string, segmentName: string): Promise<SegmentContext> {
     if (segmentCache.has(segmentId)) return segmentCache.get(segmentId)!;
 
-    const [{ data: sources }, { data: examples }] = await Promise.all([
+    const [{ data: sources }, { data: examples }, { data: segStyle }] = await Promise.all([
       db.from("segment_sources").select("content, title").eq("segment_id", segmentId).not("content", "is", null),
       db.from("message_examples").select("*").eq("segment_id", segmentId)
         .order("created_at", { ascending: false }).limit(5),
+      db.from("training_segments")
+        .select("message_focus, style_tone, style_rules, style_avoid, style_email_length")
+        .eq("id", segmentId).maybeSingle(),
     ]);
+
+    const hasSegmentStyle = segStyle?.style_tone || segStyle?.style_rules || segStyle?.style_avoid || segStyle?.style_email_length;
 
     const ctx: SegmentContext = {
       id:      segmentId,
@@ -103,52 +115,156 @@ export async function POST(req: NextRequest) {
         contactName:  e.contact_name ?? "",
         jobTitle:     e.job_title    ?? "",
       })),
+      messageFocus: segStyle?.message_focus ?? undefined,
+      styleGuide: hasSegmentStyle ? {
+        tone:        segStyle?.style_tone         ?? "",
+        rules:       segStyle?.style_rules        ?? "",
+        avoid:       segStyle?.style_avoid        ?? "",
+        emailLength: segStyle?.style_email_length ?? "corto",
+      } : undefined,
     };
 
     segmentCache.set(segmentId, ctx);
     return ctx;
   }
 
-  const BATCH_SIZE = 3;
+  // Cache de deep research por nombre de empresa (evita re-buscar para la misma empresa)
+  const deepResearchCache = new Map<string, DeepResearchResult | null>();
+
+  async function getDeepResearch(companyName: string): Promise<DeepResearchResult | null> {
+    const key = companyName.trim().toLowerCase();
+    if (deepResearchCache.has(key)) return deepResearchCache.get(key)!;
+
+    // Buscar empresa en Supabase por nombre (case insensitive)
+    const { data: company } = await db
+      .from("companies")
+      .select("id, company_name, company_website, company_linkedin_url, company_country, deep_research")
+      .eq("client_id", client_id)
+      .ilike("company_name", companyName.trim())
+      .maybeSingle();
+
+    // Si ya tiene deep_research guardado, usarlo directamente
+    if (company?.deep_research) {
+      try {
+        const parsed = typeof company.deep_research === "string"
+          ? JSON.parse(company.deep_research)
+          : company.deep_research;
+        deepResearchCache.set(key, parsed);
+        return parsed;
+      } catch { /* ignorar */ }
+    }
+
+    // Sin ICP no tiene sentido hacer research
+    if (!icpContext?.trim()) {
+      deepResearchCache.set(key, null);
+      return null;
+    }
+
+    // Hacer deep research con Perplexity + Claude
+    try {
+      const result = await runDeepResearch({
+        companyName,
+        companyWebsite:  company?.company_website  ?? null,
+        companyLinkedin: company?.company_linkedin_url ?? null,
+        companyCountry:  company?.company_country  ?? null,
+        icpContent:      icpContext,
+      });
+
+      // Guardar en Supabase si la empresa existe
+      if (company?.id) {
+        await db.from("companies")
+          .update({ deep_research: JSON.stringify(result) })
+          .eq("id", company.id);
+      }
+
+      deepResearchCache.set(key, result);
+      return result;
+    } catch (err) {
+      console.warn(`[csv-generate] Deep research falló para ${companyName}:`, err);
+      deepResearchCache.set(key, null);
+      return null;
+    }
+  }
+
+  // Pre-buscar deep research de todas las empresas únicas en paralelo (solo si se solicitó)
+  if (use_deep_research) {
+    const uniqueCompanies = [...new Set(contacts.map((c) => c.companyName?.trim()).filter(Boolean))] as string[];
+    await Promise.all(uniqueCompanies.map((name) => getDeepResearch(name)));
+  }
+
+  // El frontend ya controla el throttling (1 contacto cada 3s)
+  // Aquí procesamos lo que llegue sin paralelismo adicional
   const results: GeneratedContact[] = [];
 
-  for (let i = 0; i < contacts.length; i += BATCH_SIZE) {
-    const batch = contacts.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < contacts.length; i += 1) {
+    const batch = contacts.slice(i, i + 1);
     const batchResults = await Promise.all(
       batch.map(async (c): Promise<GeneratedContact> => {
         try {
-          // Routing de segmento por contacto
-          const routing = await routeContactToSegment(
-            { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
-            segments ?? []
-          );
+          // Usar segmento elegido manualmente; si no hay, hacer routing automático
+          let resolvedSegmentId: string | null = segment_id ?? null;
+          let resolvedSegmentName: string | null = null;
+
+          if (!resolvedSegmentId) {
+            const routing = await routeContactToSegment(
+              { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
+              segments ?? []
+            );
+            resolvedSegmentId   = routing.segmentId;
+            resolvedSegmentName = routing.segmentName;
+          } else {
+            resolvedSegmentName = (segments ?? []).find((s) => s.id === resolvedSegmentId)?.name ?? null;
+          }
 
           let segmentContext: SegmentContext | undefined;
-          if (routing.segmentId && routing.segmentName) {
-            segmentContext = await getSegmentContext(routing.segmentId, routing.segmentName);
+          const matchedSegment = resolvedSegmentId
+            ? (segments ?? []).find((s) => s.id === resolvedSegmentId)
+            : null;
+
+          if (resolvedSegmentId && resolvedSegmentName) {
+            segmentContext = await getSegmentContext(resolvedSegmentId, resolvedSegmentName);
+          }
+
+          const emailCount        = (matchedSegment as Record<string, unknown> | null)?.email_count        as number ?? 3;
+          const linkedinMsgCount  = (matchedSegment as Record<string, unknown> | null)?.linkedin_msg_count as number ?? 2;
+          const includeConnectMsg = (matchedSegment as Record<string, unknown> | null)?.include_connect_msg as boolean ?? false;
+
+          let deepResearch: DeepResearchResult | null = null;
+          if (use_deep_research && c.companyName?.trim()) {
+            deepResearch = await getDeepResearch(c.companyName);
           }
 
           const msgs = await generateContactMessages({
             hasEmail:       Boolean(c.email?.trim()),
-            firstName:      c.firstName  || undefined,
-            lastName:       c.lastName   || undefined,
-            jobTitle:       c.jobTitle   || undefined,
+            firstName:      c.firstName   || undefined,
+            lastName:       c.lastName    || undefined,
+            jobTitle:       c.jobTitle    || undefined,
             companyName:    c.companyName || undefined,
             industry:       c.industry   || undefined,
             companySize:    c.companySize || undefined,
             icpContext,
+            deepResearch,
             fewShotExamples: fewShotGlobal,
             styleGuide,
             segmentContext,
             language: "es",
+            emailCount,
+            linkedinMsgCount,
+            includeConnectMsg,
           });
 
           return {
             ...c,
-            emailSubject: msgs.emailSubject,
-            emailBody:    msgs.emailBody,
-            icebreaker:   msgs.linkedinIcebreaker ?? msgs.linkedinIcebreakerNoEmail,
-            segmentName:  routing.segmentName ?? undefined,
+            emailSubject:  msgs.emails?.[0]?.subject ?? msgs.emailSubject,
+            emailBody:     msgs.emails?.[0]?.body    ?? msgs.emailBody,
+            emailSubject2: msgs.emails?.[1]?.subject,
+            emailBody2:    msgs.emails?.[1]?.body,
+            emailSubject3: msgs.emails?.[2]?.subject,
+            emailBody3:    msgs.emails?.[2]?.body,
+            connectMessage: msgs.connectMessage,
+            icebreaker:    msgs.linkedinMessages?.[0] ?? msgs.linkedinIcebreaker ?? msgs.linkedinIcebreakerNoEmail,
+            linkedinMsg2:  msgs.linkedinMessages?.[1],
+            segmentName:   resolvedSegmentName ?? undefined,
           };
         } catch (err: any) {
           return { ...c, error: err?.message ?? "Error de generación" };

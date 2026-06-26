@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   if (clientId) q = q.eq("client_id", clientId);
   const { data: allCompanies } = await q.order("clay_pushed_at", { ascending: false }).limit(500);
 
-  let cq = db.from("contacts").select("company_id");
+  let cq = db.from("contacts").select("company_id").neq("status", "discarded");
   if (clientId) cq = cq.eq("client_id", clientId);
   const { data: contactRows } = await cq;
   const contactCountMap = new Map<string, number>();
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const now = new Date();
 
   const no_contacts: unknown[] = [];
-  const one_contact: unknown[] = [];
+  const few_contacts: unknown[] = []; // 1, 2 o 3 contactos
   const no_fit: unknown[] = [];
 
   for (const c of allCompanies ?? []) {
@@ -51,10 +51,13 @@ export async function GET(req: NextRequest) {
         signal: hasExplicitSignal ? "clay" : "inferred",
         recent: pushedHoursAgo < GRACE_HOURS
       });
-    } else if (count === 1 && c.sales_nav_status == null) {
-      one_contact.push({ company: c, contact_count: 1 });
+    } else if (count >= 1 && count <= 3 && c.sales_nav_status == null) {
+      few_contacts.push({ company: c, contact_count: count });
     }
   }
 
-  return NextResponse.json({ no_contacts, one_contact, no_fit });
+  // Ordenar few_contacts por cantidad de contactos ascendente (1 primero, luego 2, luego 3)
+  (few_contacts as any[]).sort((a, b) => a.contact_count - b.contact_count);
+
+  return NextResponse.json({ no_contacts, few_contacts, no_fit });
 }

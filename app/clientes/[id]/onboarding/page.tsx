@@ -115,7 +115,8 @@ function WizardStepper({
         const n = i + 1;
         const done = n <= completed;
         const active = n === current;
-        const clickable = n <= completed + 1;
+        // Permitir saltar a cualquier paso para trabajar en paralelo (no bloquear por ICP).
+        const clickable = true;
         return (
           <div key={n} className="flex items-center">
             <button
@@ -1002,7 +1003,7 @@ export default function OnboardingPage({ params }: { params: { id: string } }) {
       </div>
 
       <WizardStepper current={activeStep} completed={client.onboarding_step}
-        onStepClick={n => { if (n <= client.onboarding_step + 1) setActiveStep(n); }} />
+        onStepClick={n => setActiveStep(n)} />
 
       <div className="card">
         <div className="flex items-center gap-2 mb-6">

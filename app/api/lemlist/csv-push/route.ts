@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getLemlistApiKey } from "@/lib/lemlistKey";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,7 +16,13 @@ type ContactToPush = {
   linkedinUrl?: string;
   emailSubject?: string;
   emailBody?: string;
+  emailSubject2?: string;
+  emailBody2?: string;
+  emailSubject3?: string;
+  emailBody3?: string;
+  connectMessage?: string;
   icebreaker?: string;
+  linkedinMsg2?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -31,10 +38,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Se requiere client_id y contacts" }, { status: 400 });
   }
 
-  const apiKey = process.env.LEMLIST_API_KEY;
-  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
-
   const db = supabaseAdmin();
+  const apiKey = await getLemlistApiKey(db, client_id);
+  if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
   const { data: config } = await db
     .from("client_configs")
     .select("lemlist_campaign_id")
@@ -48,45 +54,75 @@ export async function POST(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const campaignId  = config.lemlist_campaign_id;
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
   let pushed = 0, skipped = 0;
   const errors: { email: string; error: string }[] = [];
 
   for (const contact of contacts) {
-    const hasEmail = Boolean(contact.email?.trim());
-    if (!hasEmail) {
+    const hasEmail    = Boolean(contact.email?.trim());
+    const hasLinkedin = Boolean(contact.linkedinUrl?.trim());
+
+    // Sin email ni LinkedIn no hay forma de identificar al contacto en Lemlist
+    if (!hasEmail && !hasLinkedin) {
       skipped++;
       continue;
     }
 
     const payload: Record<string, string | undefined> = {
-      firstName:    contact.firstName    || undefined,
-      lastName:     contact.lastName     || undefined,
-      companyName:  contact.companyName  || undefined,
-      linkedinUrl:  contact.linkedinUrl  || undefined,
-      phone:        contact.phone        || undefined,
-      icebreaker:   contact.icebreaker   || undefined,
-      emailSubject: contact.emailSubject || undefined,
-      emailBody:    contact.emailBody    || undefined,
+      firstName:      contact.firstName     || undefined,
+      lastName:       contact.lastName      || undefined,
+      companyName:    contact.companyName   || undefined,
+      linkedinUrl:    contact.linkedinUrl   || undefined,
+      phone:          contact.phone         || undefined,
+      emailSubject_1: contact.emailSubject  || undefined,
+      emailBody_1:    contact.emailBody     || undefined,
+      emailSubject_2: contact.emailSubject2 || undefined,
+      emailBody_2:    contact.emailBody2    || undefined,
+      emailSubject_3: contact.emailSubject3 || undefined,
+      emailBody_3:    contact.emailBody3    || undefined,
+      connectMessage: contact.connectMessage || undefined,
+      linkedinMsg_1:  contact.icebreaker    || undefined,
+      linkedinMsg_2:  contact.linkedinMsg2  || undefined,
     };
+    if (hasEmail) payload.email = contact.email;
 
     // Eliminar keys undefined
     Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
-    let res: Response;
-    try {
-      res = await fetch(
-        `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}?verifyEmail=false`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Basic ${credentials}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(payload),
-        }
-      );
-    } catch (err: any) {
-      errors.push({ email: contact.email, error: err?.message ?? "Error de red" });
+    // URL: con email usa el endpoint por email; sin email usa el endpoint genérico
+    const lemlistUrl = hasEmail
+      ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}`
+      : `https://api.lemlist.com/api/campaigns/${campaignId}/leads`;
+
+    // Retry con backoff exponencial si Lemlist devuelve 429
+    let res: Response | null = null;
+    let lastError = "";
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await sleep(attempt * 2000);
+      try {
+        res = await fetch(lemlistUrl,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Basic ${credentials}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          }
+        );
+        if (res.status !== 429) break;
+        lastError = `Lemlist 429: Too Many Requests`;
+      } catch (err: any) {
+        lastError = err?.message ?? "Error de red";
+        res = null;
+      }
+    }
+
+    const contactId = contact.email || contact.linkedinUrl || "sin-id";
+
+    if (!res) {
+      errors.push({ email: contactId, error: lastError });
       continue;
     }
 
@@ -96,21 +132,42 @@ export async function POST(req: NextRequest) {
         // Ya existe en la campaña — igual cuenta como pushed
         pushed++;
       } else {
-        errors.push({ email: contact.email, error: `Lemlist ${res.status}: ${text.slice(0, 150)}` });
+        errors.push({ email: contactId, error: `Lemlist ${res.status}: ${text.slice(0, 150)}` });
       }
       continue;
     }
 
     pushed++;
 
-    // Guardar en Supabase con upsert por email+client_id (solo campos con valor)
-    const row: Record<string, string> = { client_id, email: contact.email.trim(), lemlist_status: "active" };
-    if (contact.firstName)   row.first_name   = contact.firstName;
-    if (contact.lastName)    row.last_name    = contact.lastName;
-    if (contact.jobTitle)    row.job_title    = contact.jobTitle;
-    if (contact.companyName) row.company_name = contact.companyName;
-    if (contact.linkedinUrl) row.linkedin_url = contact.linkedinUrl;
-    if (contact.phone)       row.phone        = contact.phone;
+    // Delay entre leads para no saturar la API de Lemlist
+    await sleep(1200);
+
+    // Guardar en Supabase con upsert — campos de clasificación incluidos para que
+    // el contacto sea visible en la plataforma (Contactos, Laboratorio, etc.)
+    const row: Record<string, string> = {
+      client_id,
+      email:              contact.email.trim(),
+      lemlist_status:     "active",
+      fit_action:         "enrich",
+      prefilter_result:   "yes",
+      status:             "enriched",
+      lemlist_pushed_at:  new Date().toISOString(),
+    };
+    if (contact.firstName)      row.first_name        = contact.firstName;
+    if (contact.lastName)       row.last_name         = contact.lastName;
+    if (contact.jobTitle)       row.job_title         = contact.jobTitle;
+    if (contact.companyName)    row.company_name      = contact.companyName;
+    if (contact.linkedinUrl)    row.linkedin_url      = contact.linkedinUrl;
+    if (contact.phone)          row.phone             = contact.phone;
+    if (contact.emailSubject)   row.email_subject     = contact.emailSubject;
+    if (contact.emailBody)      row.email_body        = contact.emailBody;
+    if (contact.emailSubject2)  row.email_subject_2   = contact.emailSubject2;
+    if (contact.emailBody2)     row.email_body_2      = contact.emailBody2;
+    if (contact.emailSubject3)  row.email_subject_3   = contact.emailSubject3;
+    if (contact.emailBody3)     row.email_body_3      = contact.emailBody3;
+    if (contact.connectMessage) row.connect_message   = contact.connectMessage;
+    if (contact.icebreaker)     row.linkedin_icebreaker = contact.icebreaker;
+    if (contact.linkedinMsg2)   row.linkedin_msg_2    = contact.linkedinMsg2;
     await db.from("contacts").upsert(row, { onConflict: "email,client_id" });
   }
 

@@ -48,7 +48,7 @@ export async function intakeContactsForCompany(
 
   const { data: existing, error: exErr } = await db
     .from("contacts")
-    .select("id, linkedin_url, linkedin_headline, seniority")
+    .select("id, linkedin_url, linkedin_headline, seniority, status")
     .eq("company_id", companyId);
   if (exErr) return { ok: false, status: 500, error: exErr.message };
 
@@ -68,26 +68,34 @@ export async function intakeContactsForCompany(
     const normalized = normalizeLinkedInUrl(c.linkedin_url);
     const linkedin = (normalized ?? "").toLowerCase();
     if (linkedin && seen.has(linkedin)) {
-      // Actualizar headline/seniority si llegaron nuevos y el contacto no los tenía
       const prev = existingByUrl.get(linkedin);
-      if (prev) {
-        const update: Record<string, string | null> = {};
-        if (c.linkedin_headline?.trim() && !prev.linkedin_headline) {
-          update.linkedin_headline = c.linkedin_headline;
-          // Limpiar mensajes para que se regeneren con el nuevo headline
-          update.email_subject       = null;
-          update.email_body          = null;
-          update.linkedin_icebreaker = null;
+      // Si el contacto existe pero fue descartado por pre-filter, borrarlo y reinsertarlo
+      // para que el nuevo cargo (posiblemente fit) sea re-evaluado
+      if (prev && prev.status === "discarded") {
+        await db.from("contacts").delete().eq("id", prev.id);
+        existingByUrl.delete(linkedin);
+        seen.delete(linkedin);
+        // Continúa el flujo normal para insertar el contacto actualizado
+      } else {
+        // Contacto activo — actualizar headline/seniority si llegaron nuevos
+        if (prev) {
+          const update: Record<string, string | null> = {};
+          if (c.linkedin_headline?.trim() && !prev.linkedin_headline) {
+            update.linkedin_headline = c.linkedin_headline;
+            update.email_subject       = null;
+            update.email_body          = null;
+            update.linkedin_icebreaker = null;
+          }
+          if (c.seniority?.trim() && !prev.seniority) {
+            update.seniority = c.seniority;
+          }
+          if (Object.keys(update).length > 0) {
+            await db.from("contacts").update(update).eq("id", prev.id);
+          }
         }
-        if (c.seniority?.trim() && !prev.seniority) {
-          update.seniority = c.seniority;
-        }
-        if (Object.keys(update).length > 0) {
-          await db.from("contacts").update(update).eq("id", prev.id);
-        }
+        summary.skipped += 1;
+        continue;
       }
-      summary.skipped += 1;
-      continue;
     }
     if (linkedin) seen.add(linkedin);
 

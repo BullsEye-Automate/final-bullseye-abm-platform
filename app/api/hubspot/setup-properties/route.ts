@@ -19,6 +19,15 @@ const CONTACT_PROPERTIES = [
   { name: "bullseye_email_body",          label: "Email Body (BullsEye)",         type: "string", fieldType: "textarea" },
   { name: "bullseye_linkedin_icebreaker", label: "LinkedIn Icebreaker",           type: "string", fieldType: "textarea" },
   { name: "bullseye_telefono_lusha",      label: "Teléfono Lusha",               type: "string", fieldType: "text"     },
+  { name: "bullseye_telefono_lemlist",    label: "Teléfono Lemlist",             type: "string", fieldType: "text"     },
+  { name: "bullseye_telefono_clay",       label: "Teléfono Clay",                type: "string", fieldType: "text"     },
+  {
+    name: "bullseye_clay_phone_provider",
+    label: "Proveedor Clay (Teléfono)",
+    type: "string",
+    fieldType: "text",
+    description: "Proveedor del waterfall Clay que encontró el teléfono (leadmagic, pdl, upcell, clay, wiza, none).",
+  },
   { name: "bullseye_fit_score",           label: "Fit Score (BullsEye)",          type: "number", fieldType: "number"   },
   {
     name: "bullseye_engagement_score",

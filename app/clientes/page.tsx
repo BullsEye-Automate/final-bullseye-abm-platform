@@ -15,6 +15,7 @@ import {
   IconPhoto,
   IconSettings,
   IconTrash,
+  IconCopy,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -387,6 +388,13 @@ function ClientCard({
   onDelete: () => void;
 }) {
   const isOnboarding = client.status === "onboarding" && client.onboarding_step > 0;
+  const [copied, setCopied] = useState(false);
+
+  function copyId() {
+    navigator.clipboard.writeText(client.id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
 
   return (
     <div className="card mb-3" style={{ opacity: client.is_active ? 1 : 0.55 }}>
@@ -433,6 +441,17 @@ function ClientCard({
               )}
             </div>
             <p className="text-xs text-ink-subtle">/{client.slug}</p>
+            <button
+              onClick={copyId}
+              title="Copiar Client ID"
+              className="inline-flex items-center gap-1 mt-0.5 text-[10px] font-mono text-ink-subtle hover:text-ink transition-colors"
+            >
+              <span className="font-sans opacity-60 text-[9px]">ID</span>
+              {client.id}
+              {copied
+                ? <IconCheck size={10} className="text-success-fg shrink-0" />
+                : <IconCopy size={10} className="shrink-0 opacity-60" />}
+            </button>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">

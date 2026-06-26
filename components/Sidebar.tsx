@@ -11,7 +11,6 @@ import {
   IconPhone,
   IconHeadset,
   IconMessage2,
-  IconChartFunnel,
   IconReportAnalytics,
   IconBrain,
   IconSettings,
@@ -21,9 +20,15 @@ import {
   IconPlus,
   IconAdjustments,
   IconMapSearch,
-  IconStethoscope
+  IconStethoscope,
+  IconLoader2,
+  IconMessageStar,
+  IconChartBar,
+  IconFileText,
+  IconFlame,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
+import { useGeneration } from "@/lib/generationContext";
 
 type Item = { href: string; label: string; icon: any; disabled?: boolean };
 type Section = { label: string; items: Item[] };
@@ -35,7 +40,7 @@ const SECTIONS: Section[] = [
       { href: "/dashboard",       label: "Dashboard",       icon: IconLayoutDashboard },
       { href: "/empresas",        label: "Empresas",        icon: IconBuildingFactory2 },
       { href: "/contactos",       label: "Contactos",       icon: IconUsers },
-      { href: "/sales-navigator", label: "Sales Navigator", icon: IconMapSearch }
+      { href: "/sales-navigator", label: "Prospección Manual", icon: IconMapSearch }
     ]
   },
   {
@@ -48,15 +53,18 @@ const SECTIONS: Section[] = [
   {
     label: "SDR",
     items: [
-      { href: "/telefonos",  label: "Teléfonos",  icon: IconPhone },
-      { href: "/llamadas",   label: "Llamadas",   icon: IconHeadset },
-      { href: "/respuestas", label: "Respuestas", icon: IconMessage2 }
+      { href: "/sdr/calientes", label: "Contactos calientes", icon: IconFlame },
+      { href: "/telefonos",     label: "Teléfonos",           icon: IconPhone },
+      { href: "/llamadas",      label: "Llamadas",            icon: IconHeadset },
+      { href: "/respuestas",    label: "Respuestas",          icon: IconMessage2 },
     ]
   },
   {
-    label: "Ventas",
+    label: "Oportunidades",
     items: [
-      { href: "/funnel", label: "Funnel", icon: IconChartFunnel, disabled: true }
+      { href: "/oportunidades/feedback",               label: "Feedback",         icon: IconMessageStar },
+      { href: "/oportunidades/resultados",             label: "Resultados",       icon: IconChartBar },
+      { href: "/oportunidades/configuracion-feedback", label: "Config. feedback", icon: IconSettings },
     ]
   },
   {
@@ -71,6 +79,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/clientes",                label: "Clientes",         icon: IconBuilding },
       { href: "/configuracion/cliente",   label: "Config. cliente",  icon: IconAdjustments },
+      { href: "/configuracion/contexto",  label: "Contexto IA",      icon: IconFileText },
       { href: "/configuracion/icp",       label: "ICP",              icon: IconSettings }
     ]
   }
@@ -206,6 +215,8 @@ function ClientSelector() {
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const { isGenerating, genProgress, contacts } = useGeneration();
+
   return (
     <aside
       className="w-[230px] shrink-0 h-screen overflow-y-auto text-white px-3 py-5 sticky top-0 flex flex-col"
@@ -260,6 +271,26 @@ export default function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Indicador flotante de generación en progreso */}
+      {isGenerating && (
+        <div className="px-3 pb-2">
+          <Link
+            href="/campanas/subir"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] font-medium transition hover:opacity-90"
+            style={{
+              background: "rgba(98,224,216,0.15)",
+              color: "#62E0D8",
+              border: "1px solid rgba(98,224,216,0.25)",
+            }}
+          >
+            <IconLoader2 size={13} className="animate-spin shrink-0" />
+            <span className="truncate">
+              Generando mensajes… {genProgress}/{contacts.length}
+            </span>
+          </Link>
+        </div>
+      )}
     </aside>
   );
 }

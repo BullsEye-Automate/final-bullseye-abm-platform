@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
-import { searchHSContact, patchHSContact } from "@/lib/hubspot";
+import { searchHSContact, searchHSContactByLinkedinUrl, patchHSContact } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,31 +59,142 @@ export async function POST(req: NextRequest) {
 
   const canonicalUrl = `https://www.linkedin.com/in/${slug}`;
 
-  // Llamar a Lusha API — primero POST v2, luego GET legacy como fallback
+  // Lusha v2 NO acepta linkedinUrl directo — requiere email O firstName+lastName+companies.
+  // Si no nos pasaron esos datos, intentar resolverlos desde Supabase por linkedin_url.
+  let firstName: string | undefined = body.first_name;
+  let lastName:  string | undefined = body.last_name;
+  let email:     string | undefined = body.email;
+  let companyName: string | undefined = body.company_name;
+
+  if (!email && (!firstName || !lastName || !companyName)) {
+    const db = supabaseAdmin();
+    const { data: matched } = await db
+      .from("contacts")
+      .select("first_name, last_name, email, company_id")
+      .eq("linkedin_url", canonicalUrl)
+      .limit(1)
+      .maybeSingle();
+    if (matched) {
+      firstName ||= matched.first_name  ?? undefined;
+      lastName  ||= matched.last_name   ?? undefined;
+      email     ||= matched.email       ?? undefined;
+      if (!companyName && matched.company_id) {
+        const { data: co } = await db
+          .from("companies")
+          .select("company_name")
+          .eq("id", matched.company_id)
+          .maybeSingle();
+        companyName ||= co?.company_name ?? undefined;
+      }
+    }
+  }
+
+  const hasEmail   = Boolean(email);
+  const hasNameCo  = Boolean(firstName && lastName && companyName);
+
+  // Debug que vuelve en la respuesta para diagnosticar desde la UI sin Vercel logs.
+  const debug: Record<string, any> = {
+    canonical_url: canonicalUrl,
+    inputs:        { hasEmail, hasNameCo, firstName, lastName, companyName, email },
+    attempts:      [] as Array<Record<string, any>>,
+  };
+
+  if (!hasEmail && !hasNameCo) {
+    return NextResponse.json({
+      found: false,
+      message: "Lusha API requiere email o nombre+empresa. Este contacto no está en BullsEye con esos datos.",
+      debug,
+    });
+  }
+
   let lushaData: any = null;
   let lushaError: string | null = null;
 
   try {
-    const postRes = await fetch("https://api.lusha.com/v2/person", {
-      method: "POST",
-      headers: {
-        api_token: lushaKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ linkedinUrl: canonicalUrl }),
-      cache: "no-store",
-    });
+    // Lusha v2 acepta solo UNO de estos identificadores por contacto (son mutuamente excluyentes):
+    //   1) linkedinUrl  → el más confiable, lo intentamos primero
+    //   2) email        → segundo en confiabilidad
+    //   3) firstName + lastName + companies → último recurso (matching por nombre exacto de empresa)
+    // Probamos en cascada: si el primero no encuentra (404 / 200 sin data), intentamos el siguiente.
+    const identifierAttempts: Array<{ label: string; contact: Record<string, unknown> }> = [];
+    if (canonicalUrl) {
+      identifierAttempts.push({
+        label: "linkedinUrl",
+        contact: { contactId: "lookup-1", linkedinUrl: canonicalUrl },
+      });
+    }
+    if (hasEmail) {
+      identifierAttempts.push({
+        label: "email",
+        contact: { contactId: "lookup-1", email },
+      });
+    }
+    if (firstName && lastName && companyName) {
+      identifierAttempts.push({
+        label: "name+company",
+        contact: { contactId: "lookup-1", firstName, lastName, companies: [{ name: companyName }] },
+      });
+    }
+
+    async function callLusha(label: string, contact: Record<string, unknown>): Promise<{ status: number; ok: boolean; body: string }> {
+      const payload = { contacts: [contact] };
+      const r = await fetch("https://api.lusha.com/v2/person", {
+        method: "POST",
+        headers: { api_key: lushaKey!, api_token: lushaKey!, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        cache: "no-store",
+      });
+      const text = await r.text().catch(() => "");
+      let parsed: any = null;
+      try { parsed = JSON.parse(text); } catch {}
+      debug.attempts.push({
+        label,
+        payload,
+        status:        r.status,
+        response_body: text.slice(0, 1500),
+        response_json: parsed,
+      });
+      return { status: r.status, ok: r.ok, body: text };
+    }
+
+    // Intentar cada identificador en orden hasta que uno devuelva data
+    let resp: { status: number; ok: boolean; body: string } = { status: 0, ok: false, body: "" };
+    for (const att of identifierAttempts) {
+      resp = await callLusha(att.label, att.contact);
+      if (resp.ok) {
+        // Si vino data útil (con phoneNumbers), cortamos. Si vino vacío, seguimos al próximo identificador.
+        try {
+          const j = JSON.parse(resp.body);
+          const d = j?.contacts?.["lookup-1"]?.data ?? j?.data ?? null;
+          if (d?.phoneNumbers?.length || d?.emailAddresses?.length) break;
+        } catch { /* parsing falló, seguir intentando */ }
+        // Si fue ok pero sin data útil, seguir al próximo identificador
+        continue;
+      }
+      if (resp.status === 404) continue; // probar el próximo identificador
+      if (resp.status === 400) continue; // payload rechazado por este identificador, probar el próximo
+      break; // otro error → cortar
+    }
+    const postRes  = { status: resp.status, ok: resp.ok };
+    const postBody = resp.body;
 
     if (postRes.ok) {
-      const json = await postRes.json();
-      if (json?.status === "success" && json?.data) {
+      let json: any = null;
+      try { json = JSON.parse(postBody); } catch {}
+      // v2 bulk: { contacts: { "lookup-1": { data: {...} } } }
+      const bulkData = json?.contacts?.["lookup-1"]?.data ?? null;
+      if (bulkData) {
+        lushaData = bulkData;
+      } else if (json?.status === "success" && json?.data) {
         lushaData = json.data;
       } else if (json?.data) {
-        // Algunos endpoints no incluyen status explícito
         lushaData = json.data;
       } else {
         lushaError = json?.message ?? "Lusha no devolvió datos";
       }
+    } else if (postRes.status === 404) {
+      // Lusha 404 en v2 = no encontró el contacto
+      return NextResponse.json({ found: false, message: "Lusha no encontró este contacto", debug });
     } else {
       // Fallback: GET legacy
       const encodedUrl = encodeURIComponent(canonicalUrl);
@@ -99,6 +210,9 @@ export async function POST(req: NextRequest) {
         } else {
           lushaError = json?.message ?? "Lusha no devolvió datos (GET fallback)";
         }
+      } else if (getRes.status === 404) {
+        // Lusha 404 = no encontró el contacto, no es error
+        return NextResponse.json({ found: false, message: "Lusha no encontró este contacto", debug });
       } else {
         const errText = await getRes.text().catch(() => "");
         lushaError = `Lusha respondió ${getRes.status}: ${errText.slice(0, 200)}`;
@@ -116,6 +230,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       found: false,
       message: lushaError ?? "Sin teléfono en Lusha",
+      debug,
     });
   }
 
@@ -127,6 +242,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       found: false,
       message: "Sin resultados en Lusha para esta URL. No se consumió crédito.",
+      debug: { ...debug, lusha_data: lushaData },
     });
   }
 
@@ -137,10 +253,10 @@ export async function POST(req: NextRequest) {
     lushaData.emailAddresses ?? [];
   const firstEmail = emails[0]?.emailAddress ?? null;
 
-  // Extraer empresa
-  const companyName: string | null = lushaData.company?.name ?? null;
+  // Extraer empresa devuelta por Lusha
+  const lushaCompanyName: string | null = lushaData.company?.name ?? null;
 
-  const result = {
+  const result: Record<string, unknown> = {
     found: true,
     phone: firstPhone.number,
     phone_type: firstPhone.localizedType ?? null,
@@ -148,8 +264,22 @@ export async function POST(req: NextRequest) {
     first_name: lushaData.firstName ?? null,
     last_name: lushaData.lastName ?? null,
     job_title: lushaData.jobTitle ?? null,
-    company_name: companyName,
+    company_name: lushaCompanyName,
+    hubspot_updated: false,
   };
+
+  // Auto-update HubSpot si el LinkedIn URL matchea un contacto existente (cualquier contacto en HubSpot, no solo BullsEye)
+  try {
+    const hsId = (await searchHSContactByLinkedinUrl(canonicalUrl).catch(() => null))
+              ?? (firstEmail ? await searchHSContact(firstEmail).catch(() => null) : null);
+    if (hsId) {
+      await patchHSContact(hsId, { bullseye_telefono_lusha: firstPhone.number });
+      result.hubspot_updated = true;
+      console.log(`[lusha-lookup] HubSpot actualizado hsId=${hsId} telefono_lusha=${firstPhone.number}`);
+    }
+  } catch (err: any) {
+    console.error("[lusha-lookup] HubSpot update error:", err?.message);
+  }
 
   // Si se proporcionó contact_id, actualizar Supabase y HubSpot
   if (body.contact_id) {

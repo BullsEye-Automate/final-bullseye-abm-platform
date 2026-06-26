@@ -66,7 +66,7 @@ export const TAMANO_OPTS     = ["1–10", "11–50", "51–100", "101–200", "2
 export const FACTURACION_OPTS = ["< $500K", "$500K–$2M", "$2–10M", "$10–50M", "$50M+"];
 export const MODELO_OPTS     = ["B2B", "B2B2C", "SaaS", "Marketplace", "Servicios"];
 export const ETAPA_OPTS      = ["Startup", "Scale-up", "Empresa establecida", "Corporativo"];
-export const DEPTO_OPTS      = ["Ventas", "Marketing", "Operaciones", "C-Suite", "Revenue Ops", "Producto", "Tecnología", "RRHH"];
+export const DEPTO_OPTS      = ["Ventas", "Marketing", "Operaciones", "C-Suite", "Revenue Ops", "Producto", "Tecnología", "RRHH", "Canales", "Experiencia del Cliente"];
 export const SENIORITY_OPTS  = ["Manager", "Senior Manager", "Director", "VP / Head of", "C-Level", "Founder / Owner"];
 export const TONO_OPTS       = ["Formal / corporativo", "Profesional amigable", "Casual / directo", "Consultivo / experto", "Challenger (provocador)"];
 export const IDIOMA_OPTS     = ["Español", "Inglés", "Portugués", "Mixto por mercado"];
@@ -152,6 +152,7 @@ export function chipsFrom(text: string, label: string): string[] {
   return val ? val.split(",").map((s) => s.trim()).filter(Boolean) : [];
 }
 
+<<<<<<< HEAD
 // ── Tipos y helpers para ICP multi-industria ───────────────────────────
 export type IndustrySectionKey =
   | "target_company"
