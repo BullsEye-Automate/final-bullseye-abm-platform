@@ -9,6 +9,7 @@ import {
   IconCheck,
   IconAlertCircle,
   IconCopy,
+  IconSparkles,
 } from "@tabler/icons-react";
 import {
   IcpFormData,
@@ -55,6 +56,8 @@ export default function IndustriesPanel({ clientId }: { clientId: string }) {
   const [savingNew, setSavingNew]         = useState(false);
   const [expandedId, setExpandedId]       = useState<string | null>(null);
   const [deletingId, setDeletingId]       = useState<string | null>(null);
+  const [linkLoadingId, setLinkLoadingId] = useState<string | null>(null);
+  const [linkCopiedId, setLinkCopiedId]   = useState<string | null>(null);
   // Map: industryId → { sectionKey → SectionState }
   const [sectionStates, setSectionStates] = useState<
     Record<string, Record<string, SectionState>>
@@ -96,6 +99,18 @@ export default function IndustriesPanel({ clientId }: { clientId: string }) {
     if (!res.ok) return;
     setIndustries((prev) => prev.filter((i) => i.id !== id));
     if (expandedId === id) setExpandedId(null);
+  }
+
+  async function generateIndustryLink(industryId: string) {
+    setLinkLoadingId(industryId);
+    const res = await fetch(`/api/clients/${clientId}/form-token?industry_id=${industryId}`);
+    const j = await res.json();
+    setLinkLoadingId(null);
+    if (j.error || !j.url) return;
+    navigator.clipboard.writeText(j.url).then(() => {
+      setLinkCopiedId(industryId);
+      setTimeout(() => setLinkCopiedId(null), 2500);
+    });
   }
 
   async function expandIndustry(id: string) {
@@ -255,7 +270,22 @@ export default function IndustriesPanel({ clientId }: { clientId: string }) {
                 />
               </button>
               <button
-                className="ml-3 p-1 rounded hover:bg-white/10 transition-colors"
+                className="ml-2 flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+                style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8", border: "1px solid rgba(98,224,216,0.3)" }}
+                onClick={() => generateIndustryLink(industry.id)}
+                disabled={linkLoadingId === industry.id}
+                title="Generar link mágico para este ICP de industria"
+              >
+                {linkLoadingId === industry.id ? (
+                  <IconLoader2 size={13} className="animate-spin" />
+                ) : linkCopiedId === industry.id ? (
+                  <><IconCheck size={13} /> ¡Copiado!</>
+                ) : (
+                  <><IconSparkles size={13} /> Link</>
+                )}
+              </button>
+              <button
+                className="ml-1 p-1 rounded hover:bg-white/10 transition-colors"
                 onClick={() => deleteIndustry(industry.id)}
                 disabled={deletingId === industry.id}
                 title="Eliminar industria"

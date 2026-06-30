@@ -22,9 +22,11 @@ type Props = {
   token: string;
   clientName: string;
   initialContent: string | null;
+  industryId?: string;
+  industryName?: string;
 };
 
-export default function IcpPublicForm({ token, clientName, initialContent }: Props) {
+export default function IcpPublicForm({ token, clientName, initialContent, industryId, industryName }: Props) {
   const [form,    setForm]    = useState<IcpFormData>(
     initialContent ? deserializeIcpForm(initialContent) : EMPTY_FORM
   );
@@ -53,7 +55,7 @@ export default function IcpPublicForm({ token, clientName, initialContent }: Pro
     const r = await fetch(`/api/forms/icp/${token}`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ content }),
+      body:    JSON.stringify({ content, ...(industryId ? { industry_id: industryId } : {}) }),
     });
     const j = await r.json();
     setSaving(false);
@@ -84,6 +86,11 @@ export default function IcpPublicForm({ token, clientName, initialContent }: Pro
           <div style={{ fontSize: 13, fontWeight: 600, color: "#251762" }}>
             {clientName}
           </div>
+          {industryName && (
+            <div style={{ fontSize: 11, color: "#62E0D8", fontWeight: 600 }}>
+              Industria: {industryName}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: "#8B90AA" }}>Formulario confidencial</div>
         </div>
       </header>
@@ -91,10 +98,15 @@ export default function IcpPublicForm({ token, clientName, initialContent }: Pro
       {/* ── Banner ── */}
       <div style={{ background: "linear-gradient(135deg,#251762 0%,#3a2485 100%)", padding: "32px 40px", borderBottom: "3px solid #62E0D8" }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, color: "#fff", marginBottom: 8, letterSpacing: -0.5 }}>
-          ICP — <span style={{ color: "#62E0D8" }}>Ideal Customer Profile</span>
+          ICP — <span style={{ color: "#62E0D8" }}>
+            {industryName ? `Industria: ${industryName}` : "Ideal Customer Profile"}
+          </span>
         </h1>
         <p style={{ color: "rgba(255,255,255,0.65)", fontSize: 14, maxWidth: 600, lineHeight: 1.7 }}>
-          Esta información es la base de toda la estrategia de prospección. Mientras más específico seas, mejores serán los leads que encontremos para <strong style={{ color: "#fff" }}>{clientName}</strong>.
+          {industryName
+            ? <>Esta información define el ICP específico para la industria <strong style={{ color: "#fff" }}>{industryName}</strong> de <strong style={{ color: "#fff" }}>{clientName}</strong>. Mientras más específico seas, mejores serán los leads.</>
+            : <>Esta información es la base de toda la estrategia de prospección. Mientras más específico seas, mejores serán los leads que encontremos para <strong style={{ color: "#fff" }}>{clientName}</strong>.</>
+          }
         </p>
         {saved && (
           <div style={{ marginTop: 16, display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(98,224,216,0.15)", color: "#62E0D8", padding: "8px 16px", borderRadius: 8, border: "1px solid rgba(98,224,216,0.3)", fontSize: 13, fontWeight: 500 }}>
