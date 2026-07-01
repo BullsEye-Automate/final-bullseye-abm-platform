@@ -612,12 +612,12 @@ export default function FeedbackPage() {
       .catch(() => {});
   }, [currentClient?.id]);
 
-  // Detecta reuniones sin client_id asignado (posiblemente importadas antes del multi-tenant)
+  // Detecta reuniones huérfanas (sin client_id) que SÍ tienen feedback guardado
   useEffect(() => {
     if (!currentClient?.id || currentClient.id === "__all__") { setHuerfanas(null); return; }
     fetch("/api/meetings/reasignar")
       .then(r => r.ok ? r.json() : null)
-      .then(data => setHuerfanas(data?.huerfanas ?? 0))
+      .then(data => setHuerfanas(data?.conFeedback ?? 0))
       .catch(() => {});
   }, [currentClient?.id]);
 
@@ -781,10 +781,10 @@ export default function FeedbackPage() {
         <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-between gap-4">
           <div>
             <p className="text-sm font-medium text-amber-800">
-              Se encontraron {huerfanas} reunión{huerfanas !== 1 ? "es" : ""} sin cliente asignado
+              ⚠️ Se detectaron {huerfanas} reunión{huerfanas !== 1 ? "es" : ""} con feedback guardado que no aparecen
             </p>
             <p className="text-xs text-amber-600 mt-0.5">
-              Estas reuniones no aparecen porque fueron importadas antes de seleccionar un cliente. Puedes asignarlas a <strong>{currentClient.name}</strong> con un clic.
+              Hay feedback completado que quedó desvinculado del cliente. Recupéralo asignándolo a <strong>{currentClient.name}</strong> — solo se recuperan los que tienen feedback real.
             </p>
           </div>
           <button
@@ -792,7 +792,7 @@ export default function FeedbackPage() {
             disabled={reasignando}
             className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
             style={{ background: "#251762" }}>
-            {reasignando ? "Reasignando…" : `Asignar a ${currentClient.name}`}
+            {reasignando ? "Recuperando…" : `Recuperar ${huerfanas} feedback${huerfanas !== 1 ? "s" : ""}`}
           </button>
         </div>
       )}
