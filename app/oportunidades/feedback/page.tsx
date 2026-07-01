@@ -574,6 +574,8 @@ export default function FeedbackPage() {
   const [copiedClientLink, setCopiedClientLink] = useState(false);
   const [huerfanas, setHuerfanas] = useState<number | null>(null);
   const [reasignando, setReasignando] = useState(false);
+  const [desincronizados, setDesincronizados] = useState<number | null>(null);
+  const [corrigiendo, setCorrigiendo] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -631,6 +633,30 @@ export default function FeedbackPage() {
     setReasignando(false);
     if (data.error) { alert(`Error: ${data.error}`); return; }
     setHuerfanas(0);
+    load();
+  }
+
+  // Detecta meetings con feedback guardado pero feedback_status desincronizado
+  useEffect(() => {
+    if (!currentClient?.id || currentClient.id === "__all__") { setDesincronizados(null); return; }
+    fetch(`/api/meetings/fix-status?client_id=${currentClient.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setDesincronizados(data?.desincronizados ?? 0))
+      .catch(() => {});
+  }, [currentClient?.id, meetings]);
+
+  async function handleFixStatus() {
+    if (!currentClient?.id || currentClient.id === "__all__") return;
+    setCorrigiendo(true);
+    const res = await fetch("/api/meetings/fix-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient.id }),
+    });
+    const data = await res.json();
+    setCorrigiendo(false);
+    if (data.error) { alert(`Error: ${data.error}`); return; }
+    setDesincronizados(0);
     load();
   }
 
@@ -767,6 +793,27 @@ export default function FeedbackPage() {
             className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
             style={{ background: "#251762" }}>
             {reasignando ? "Reasignando…" : `Asignar a ${currentClient.name}`}
+          </button>
+        </div>
+      )}
+
+      {/* Banner de recuperación: feedback guardado pero status desincronizado */}
+      {desincronizados !== null && desincronizados > 0 && currentClient?.id && currentClient.id !== "__all__" && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-red-800">
+              ⚠️ Se detectaron {desincronizados} feedback{desincronizados !== 1 ? "s" : ""} guardados que no aparecen como completados
+            </p>
+            <p className="text-xs text-red-600 mt-0.5">
+              El contenido del feedback está en la base de datos pero el estado no se actualizó correctamente. Haz clic para recuperarlos.
+            </p>
+          </div>
+          <button
+            onClick={handleFixStatus}
+            disabled={corrigiendo}
+            className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+            style={{ background: "#dc2626" }}>
+            {corrigiendo ? "Recuperando…" : `Recuperar ${desincronizados} feedback${desincronizados !== 1 ? "s" : ""}`}
           </button>
         </div>
       )}
