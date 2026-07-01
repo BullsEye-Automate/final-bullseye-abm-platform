@@ -57,10 +57,15 @@ export async function POST(
   if (fbError) return NextResponse.json({ error: fbError.message }, { status: 500 });
 
   // Actualizar estado de la reunión
-  await supabase
+  const { error: statusError } = await supabase
     .from("meetings")
     .update({ feedback_status: "con_feedback" })
     .eq("id", meeting.id);
+
+  if (statusError) {
+    // El feedback se guardó — intentar al menos retornar ok pero loguear el error
+    console.error("Error actualizando feedback_status:", statusError.message);
+  }
 
   return NextResponse.json({ ok: true });
 }
