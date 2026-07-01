@@ -572,6 +572,8 @@ export default function FeedbackPage() {
   const [verFeedbackMeeting, setVerFeedbackMeeting] = useState<Meeting | null>(null);
   const [clientFeedbackToken, setClientFeedbackToken] = useState<string | null>(null);
   const [copiedClientLink, setCopiedClientLink] = useState(false);
+  const [huerfanas, setHuerfanas] = useState<number | null>(null);
+  const [reasignando, setReasignando] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -608,6 +610,30 @@ export default function FeedbackPage() {
       .catch(() => {});
   }, [currentClient?.id]);
 
+  // Detecta reuniones sin client_id asignado (posiblemente importadas antes del multi-tenant)
+  useEffect(() => {
+    if (!currentClient?.id || currentClient.id === "__all__") { setHuerfanas(null); return; }
+    fetch("/api/meetings/reasignar")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setHuerfanas(data?.huerfanas ?? 0))
+      .catch(() => {});
+  }, [currentClient?.id]);
+
+  async function handleReasignar() {
+    if (!currentClient?.id || currentClient.id === "__all__") return;
+    setReasignando(true);
+    const res = await fetch("/api/meetings/reasignar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient.id }),
+    });
+    const data = await res.json();
+    setReasignando(false);
+    if (data.error) { alert(`Error: ${data.error}`); return; }
+    setHuerfanas(0);
+    load();
+  }
+
   function applyPreset(key: string) {
     setPreset(key);
     setPresetOpen(false);
@@ -635,6 +661,7 @@ export default function FeedbackPage() {
     if (!file) return;
     setImporting(true); setImportMsg("");
     const fd = new FormData(); fd.append("file", file);
+    if (currentClient?.id && currentClient.id !== "__all__") fd.append("client_id", currentClient.id);
     const res = await fetch("/api/meetings/import", { method: "POST", body: fd });
     const data = await res.json();
     setImporting(false);
@@ -720,6 +747,27 @@ export default function FeedbackPage() {
       {importMsg && (
         <div className={`mb-4 px-4 py-2 rounded-lg text-sm ${importMsg.startsWith("Error") ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}`}>
           {importMsg}
+        </div>
+      )}
+
+      {/* Banner de recuperación: reuniones sin cliente asignado */}
+      {huerfanas !== null && huerfanas > 0 && currentClient?.id && currentClient.id !== "__all__" && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-amber-800">
+              Se encontraron {huerfanas} reunión{huerfanas !== 1 ? "es" : ""} sin cliente asignado
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Estas reuniones no aparecen porque fueron importadas antes de seleccionar un cliente. Puedes asignarlas a <strong>{currentClient.name}</strong> con un clic.
+            </p>
+          </div>
+          <button
+            onClick={handleReasignar}
+            disabled={reasignando}
+            className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+            style={{ background: "#251762" }}>
+            {reasignando ? "Reasignando…" : `Asignar a ${currentClient.name}`}
+          </button>
         </div>
       )}
 
