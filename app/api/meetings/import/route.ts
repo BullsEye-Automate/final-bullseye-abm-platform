@@ -28,12 +28,15 @@ export async function POST(req: NextRequest) {
   const file = formData.get("file") as File | null;
   if (!file) return NextResponse.json({ error: "No se recibió archivo" }, { status: 400 });
 
+  // client_id enviado desde el frontend (cliente seleccionado actualmente)
+  const formClientId = (formData.get("client_id") as string | null) || null;
+
   const text = await file.text();
   const rows = parseCSV(text);
   if (rows.length === 0) return NextResponse.json({ error: "CSV vacío o mal formateado" }, { status: 400 });
 
   const records = rows.map(r => ({
-    client_id:       r["id_cliente"] || r["client_id"] || null,
+    client_id:       r["id_cliente"] || r["client_id"] || formClientId || null,
     empresa:         r["empresa"] || r["company"] || "",
     contacto_nombre: r["contacto_nombre"] || r["contacto"] || r["nombre"] || null,
     contacto_cargo:  r["contacto_cargo"] || r["cargo"] || null,
