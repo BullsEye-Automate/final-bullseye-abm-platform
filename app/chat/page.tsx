@@ -125,13 +125,13 @@ export default function ChatPage() {
   const [segmentOpen, setSegmentOpen]   = useState(false);
   const [emailType, setEmailType]       = useState<EmailType>("info");
   const [channel, setChannel]           = useState<Channel>("email");
-  const [channelOpen, setChannelOpen]   = useState(false);
+
   const [recipientName, setRecipientName] = useState("");
   const [recipientCompany, setRecipientCompany] = useState("");
   const [recipientTitle, setTitle]        = useState("");
   const [referrerName, setReferrer]       = useState("");
   const [contextNotes, setNotes]          = useState("");
-  const [step, setStep]               = useState<"setup" | "chat">("setup");
+
   const [messages, setMessages]       = useState<Message[]>([]);
   const [input, setInput]             = useState("");
   const [pendingImage, setPendingImage] = useState<{ base64: string; mediaType: string; preview: string } | null>(null);
@@ -209,7 +209,8 @@ export default function ChatPage() {
 
   async function handleStart(e: React.FormEvent) {
     e.preventDefault();
-    setStep("chat");
+    if (!clientId) return;
+    setMessages([]);
     await send("Genera el correo", true, pendingImage);
   }
 
@@ -223,64 +224,53 @@ export default function ChatPage() {
 
   function reset() {
     setMessages([]);
-    setStep("setup");
     setInput("");
-    setSegmentId("");
-    setChannel("email");
-    setRecipientName("");
-    setRecipientCompany("");
-    setTitle("");
-    setReferrer("");
-    setNotes("");
+    setPendingImage(null);
   }
 
-  const selectedClient = clients.find((c) => c.id === clientId);
-
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{ background: "#0d0825" }}>
-      {/* Input de archivo oculto — accesible desde formulario y chat */}
+    <div className="min-h-screen flex flex-col" style={{ background: "#0d0825" }}>
+      {/* Input de archivo oculto */}
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImagePick} />
-      <div
-        className="w-full flex flex-col"
-        style={{ maxWidth: 680, height: "calc(100vh - 2rem)", maxHeight: 840 }}
-      >
-        {/* Header */}
-        <div
-          className="shrink-0 flex items-center justify-between px-6 py-4 rounded-t-2xl"
-          style={{ background: "#160e3a", borderBottom: "1px solid rgba(255,255,255,0.07)" }}
-        >
-          <div className="flex items-center gap-3">
-            <div className="text-[18px] font-bold tracking-tight leading-none">
-              <span className="text-white">Bulls</span>
-              <span style={{ color: "#62E0D8" }}>Eye</span>
-            </div>
-            <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: "rgba(98,224,216,0.1)", color: "#62E0D8" }}>
-              Agente de Contenido
-            </span>
-          </div>
-          {step === "chat" && (
-            <button
-              onClick={reset}
-              className="flex items-center gap-1.5 text-[12px] transition-opacity hover:opacity-60"
-              style={{ color: "rgba(255,255,255,0.4)" }}
-            >
-              <IconRefresh size={13} /> Nuevo
-            </button>
-          )}
-        </div>
 
-        {/* Cuerpo */}
+      {/* Header */}
+      <div
+        className="shrink-0 flex items-center justify-between px-6 py-4"
+        style={{ background: "#160e3a", borderBottom: "1px solid rgba(255,255,255,0.07)" }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="text-[18px] font-bold tracking-tight leading-none">
+            <span className="text-white">Bulls</span>
+            <span style={{ color: "#62E0D8" }}>Eye</span>
+          </div>
+          <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: "rgba(98,224,216,0.1)", color: "#62E0D8" }}>
+            Agente de Contenido
+          </span>
+        </div>
+        {messages.length > 0 && (
+          <button
+            onClick={reset}
+            className="flex items-center gap-1.5 text-[12px] transition-opacity hover:opacity-60"
+            style={{ color: "rgba(255,255,255,0.4)" }}
+          >
+            <IconRefresh size={13} /> Limpiar chat
+          </button>
+        )}
+      </div>
+
+      {/* Cuerpo — dos columnas */}
+      <div className="flex-1 flex overflow-hidden" style={{ height: "calc(100vh - 57px)" }}>
+
+        {/* ── Panel izquierdo: formulario ── */}
         <div
-          className="flex-1 overflow-hidden flex flex-col"
-          style={{ background: "#110c30", borderLeft: "1px solid rgba(255,255,255,0.06)", borderRight: "1px solid rgba(255,255,255,0.06)" }}
+          className="shrink-0 flex flex-col overflow-y-auto"
+          style={{ width: 360, background: "#110c30", borderRight: "1px solid rgba(255,255,255,0.07)" }}
         >
-          {step === "setup" ? (
-            /* ── Formulario de contexto ── */
-            <div className="flex-1 overflow-y-auto px-6 py-6">
-              <p className="text-[13px] mb-6" style={{ color: "rgba(255,255,255,0.45)" }}>
-                Configura el contexto del correo y el agente lo redacta por ti.
-              </p>
-              <form onSubmit={handleStart} className="space-y-5">
+          <div className="px-6 py-6">
+            <p className="text-[12px] mb-5" style={{ color: "rgba(255,255,255,0.4)" }}>
+              Configura el contexto y el agente redacta el mensaje por ti.
+            </p>
+            <form onSubmit={handleStart} className="space-y-5">
                 {/* Cliente — dropdown custom */}
                 <div className="relative">
                   <label className="block text-[11px] uppercase tracking-widest font-medium mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
@@ -531,118 +521,94 @@ export default function ChatPage() {
                   style={{ background: "#62E0D8", color: "#0d0825" }}
                 >
                   <IconSparkles size={15} />
-                  Generar correo
+                  {messages.length > 0 ? "Regenerar" : "Generar correo"}
                 </button>
               </form>
             </div>
-          ) : (
-            /* ── Chat ── */
-            <>
-              {/* Info del contexto seleccionado */}
-              <div
-                className="shrink-0 flex items-center gap-3 px-5 py-2.5 text-[11px]"
-                style={{ background: "rgba(98,224,216,0.05)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}
-              >
-                <span style={{ color: "rgba(255,255,255,0.4)" }}>Cliente:</span>
-                <span style={{ color: "#62E0D8" }}>{selectedClient?.name}</span>
-                <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
-                <span style={{ color: "rgba(255,255,255,0.4)" }}>{CHANNEL_LABELS[channel]}</span>
-                <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
-                <span style={{ color: "rgba(255,255,255,0.4)" }}>{MSG_TYPE_LABELS[emailType]}</span>
-                {recipientName && (
-                  <>
-                    <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
-                    <span style={{ color: "rgba(255,255,255,0.4)" }}>
-                      {recipientName}{recipientCompany ? ` · ${recipientCompany}` : ""}
-                    </span>
-                  </>
-                )}
-                {recipientTitle && (
-                  <>
-                    <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
-                    <span style={{ color: "rgba(255,255,255,0.4)" }}>{recipientTitle}</span>
-                  </>
-                )}
-              </div>
-
-              {/* Mensajes */}
-              <div className="flex-1 overflow-y-auto px-5 py-5">
-                {messages.map((msg, i) => <Bubble key={i} msg={msg} channel={channel} />)}
-                {loading && (
-                  <div className="flex gap-3 mb-5">
-                    <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(98,224,216,0.12)" }}>
-                      <IconSparkles size={15} style={{ color: "#62E0D8" }} />
-                    </div>
-                    <div className="rounded-2xl px-4 py-3 text-sm" style={{ background: "#1a1040", border: "1px solid rgba(255,255,255,0.07)" }}>
-                      <span className="animate-pulse" style={{ color: "rgba(255,255,255,0.35)" }}>Escribiendo...</span>
-                    </div>
-                  </div>
-                )}
-                <div ref={bottomRef} />
-              </div>
-
-              {/* Input */}
-              <div className="shrink-0 px-5 pb-5">
-                {/* Preview imagen pendiente */}
-                {pendingImage && (
-                  <div className="mb-2 relative inline-block">
-                    <img
-                      src={pendingImage.preview}
-                      alt="Imagen a enviar"
-                      className="rounded-xl"
-                      style={{ maxHeight: 120, maxWidth: 220, objectFit: "contain", border: "1px solid rgba(98,224,216,0.3)" }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setPendingImage(null)}
-                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
-                      style={{ background: "#0d0825", border: "1px solid rgba(255,255,255,0.2)" }}
-                    >
-                      <IconX size={11} style={{ color: "rgba(255,255,255,0.6)" }} />
-                    </button>
-                  </div>
-                )}
-                <form onSubmit={handleChat} className="flex gap-2">
-                  {/* Botón adjuntar imagen */}
-                  <button
-                    type="button"
-                    onClick={() => fileRef.current?.click()}
-                    disabled={loading}
-                    className="shrink-0 px-3 rounded-xl transition hover:opacity-80 disabled:opacity-30"
-                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: pendingImage ? "#62E0D8" : "rgba(255,255,255,0.4)" }}
-                    title="Adjuntar captura de pantalla"
-                  >
-                    <IconPhoto size={17} />
-                  </button>
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    placeholder={pendingImage ? "Añade instrucciones o envía directamente…" : "Pide ajustes, variaciones, otro tono…"}
-                    disabled={loading}
-                    className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none placeholder:opacity-25"
-                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}
-                  />
-                  <button
-                    type="submit"
-                    disabled={(!input.trim() && !pendingImage) || loading}
-                    className="px-4 rounded-xl transition hover:opacity-80 disabled:opacity-30"
-                    style={{ background: "#62E0D8", color: "#0d0825" }}
-                  >
-                    <IconSend size={16} />
-                  </button>
-                </form>
-              </div>
-            </>
-          )}
         </div>
 
-        {/* Footer */}
-        <div
-          className="shrink-0 text-center py-3 rounded-b-2xl text-[11px]"
-          style={{ background: "#160e3a", color: "rgba(255,255,255,0.2)", borderTop: "1px solid rgba(255,255,255,0.07)" }}
-        >
-          BullsEye — Agente de Contenido
+        {/* ── Panel derecho: chat ── */}
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#0d0825" }}>
+          {messages.length === 0 && !loading ? (
+            /* Estado vacío */
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 px-8">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "rgba(98,224,216,0.08)", border: "1px solid rgba(98,224,216,0.15)" }}>
+                <IconSparkles size={22} style={{ color: "#62E0D8", opacity: 0.6 }} />
+              </div>
+              <p className="text-sm text-center" style={{ color: "rgba(255,255,255,0.25)", maxWidth: 260 }}>
+                Completa el formulario y haz clic en <strong style={{ color: "rgba(255,255,255,0.4)" }}>Generar correo</strong> para empezar.
+              </p>
+            </div>
+          ) : (
+            /* Mensajes */
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              {messages.map((msg, i) => <Bubble key={i} msg={msg} channel={channel} />)}
+              {loading && (
+                <div className="flex gap-3 mb-5">
+                  <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(98,224,216,0.12)" }}>
+                    <IconSparkles size={15} style={{ color: "#62E0D8" }} />
+                  </div>
+                  <div className="rounded-2xl px-4 py-3 text-sm" style={{ background: "#1a1040", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <span className="animate-pulse" style={{ color: "rgba(255,255,255,0.35)" }}>Escribiendo...</span>
+                  </div>
+                </div>
+              )}
+              <div ref={bottomRef} />
+            </div>
+          )}
+
+          {/* Input del chat (siempre visible si hay mensajes o está cargando) */}
+          {(messages.length > 0 || loading) && (
+            <div className="shrink-0 px-6 pb-6 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+              {pendingImage && (
+                <div className="mb-2 relative inline-block">
+                  <img
+                    src={pendingImage.preview}
+                    alt="Imagen a enviar"
+                    className="rounded-xl"
+                    style={{ maxHeight: 100, maxWidth: 200, objectFit: "contain", border: "1px solid rgba(98,224,216,0.3)" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPendingImage(null)}
+                    className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center"
+                    style={{ background: "#0d0825", border: "1px solid rgba(255,255,255,0.2)" }}
+                  >
+                    <IconX size={11} style={{ color: "rgba(255,255,255,0.6)" }} />
+                  </button>
+                </div>
+              )}
+              <form onSubmit={handleChat} className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={loading}
+                  className="shrink-0 px-3 rounded-xl transition hover:opacity-80 disabled:opacity-30"
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: pendingImage ? "#62E0D8" : "rgba(255,255,255,0.4)" }}
+                  title="Adjuntar captura"
+                >
+                  <IconPhoto size={17} />
+                </button>
+                <input
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={pendingImage ? "Añade instrucciones o envía directamente…" : "Pide ajustes, variaciones, otro tono…"}
+                  disabled={loading}
+                  className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none placeholder:opacity-25"
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}
+                />
+                <button
+                  type="submit"
+                  disabled={(!input.trim() && !pendingImage) || loading}
+                  className="px-4 rounded-xl transition hover:opacity-80 disabled:opacity-30"
+                  style={{ background: "#62E0D8", color: "#0d0825" }}
+                >
+                  <IconSend size={16} />
+                </button>
+              </form>
+            </div>
+          )}
         </div>
       </div>
     </div>
