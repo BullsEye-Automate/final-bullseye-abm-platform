@@ -4,12 +4,19 @@ import { useState, useRef, useEffect } from "react";
 import { IconSend, IconCopy, IconCheck, IconSparkles, IconRefresh, IconChevronDown, IconPhoto, IconX } from "@tabler/icons-react";
 
 type EmailType = "info" | "referral" | "cold";
+type Channel   = "email" | "whatsapp" | "linkedin";
 type Message   = { role: "user" | "assistant"; content: string; imagePreview?: string };
 
-const EMAIL_TYPE_LABELS: Record<EmailType, string> = {
+const MSG_TYPE_LABELS: Record<EmailType, string> = {
   info:     "Más información",
   referral: "Derivación / Referido",
   cold:     "Primer contacto",
+};
+
+const CHANNEL_LABELS: Record<Channel, string> = {
+  email:    "Email",
+  whatsapp: "WhatsApp",
+  linkedin: "LinkedIn",
 };
 
 type Client = { id: string; name: string };
@@ -31,40 +38,45 @@ function parseEmail(text: string): { subject: string; body: string } | null {
   return null;
 }
 
-function EmailCard({ subject, body }: { subject: string; body: string }) {
+function EmailCard({ subject, body, showSubject = true }: { subject: string; body: string; showSubject?: boolean }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
-    await navigator.clipboard.writeText(`Asunto: ${subject}\n\n${body}`);
+    const text = showSubject && subject ? `Asunto: ${subject}\n\n${body}` : body;
+    await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: "#1a1040", border: "1px solid rgba(98,224,216,0.25)" }}>
-      <div className="flex items-start justify-between gap-3 px-5 py-4" style={{ borderBottom: "1px solid rgba(98,224,216,0.12)" }}>
-        <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-widest mb-1 font-medium" style={{ color: "#62E0D8", opacity: 0.7 }}>Asunto</p>
-          <p className="text-sm font-semibold text-white">{subject}</p>
+      {showSubject && subject && (
+        <div className="flex items-start justify-between gap-3 px-5 py-4" style={{ borderBottom: "1px solid rgba(98,224,216,0.12)" }}>
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-widest mb-1 font-medium" style={{ color: "#62E0D8", opacity: 0.7 }}>Asunto</p>
+            <p className="text-sm font-semibold text-white">{subject}</p>
+          </div>
         </div>
-        <button
-          onClick={copy}
-          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-opacity hover:opacity-70"
-          style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8" }}
-        >
-          {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
-          {copied ? "Copiado" : "Copiar"}
-        </button>
-      </div>
+      )}
       <div className="px-5 py-4">
-        <p className="text-[10px] uppercase tracking-widest mb-2 font-medium" style={{ color: "#62E0D8", opacity: 0.7 }}>Cuerpo</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] uppercase tracking-widest font-medium" style={{ color: "#62E0D8", opacity: 0.7 }}>Mensaje</p>
+          <button
+            onClick={copy}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium transition-opacity hover:opacity-70"
+            style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8" }}
+          >
+            {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+            {copied ? "Copiado" : "Copiar"}
+          </button>
+        </div>
         <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "rgba(255,255,255,0.82)" }}>{body}</p>
       </div>
     </div>
   );
 }
 
-function Bubble({ msg }: { msg: Message }) {
+function Bubble({ msg, channel }: { msg: Message; channel: string }) {
   const isUser = msg.role === "user";
   const parsed = !isUser ? parseEmail(msg.content) : null;
 
@@ -86,7 +98,7 @@ function Bubble({ msg }: { msg: Message }) {
           />
         )}
         {parsed ? (
-          <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} />
+          <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={channel === "email"} />
         ) : (
           <div
             className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
@@ -111,7 +123,9 @@ export default function ChatPage() {
   const [segments, setSegments]         = useState<Segment[]>([]);
   const [segmentId, setSegmentId]       = useState("");
   const [segmentOpen, setSegmentOpen]   = useState(false);
-  const [emailType, setEmailType]         = useState<EmailType>("info");
+  const [emailType, setEmailType]       = useState<EmailType>("info");
+  const [channel, setChannel]           = useState<Channel>("email");
+  const [channelOpen, setChannelOpen]   = useState(false);
   const [recipientName, setRecipientName] = useState("");
   const [recipientCompany, setRecipientCompany] = useState("");
   const [recipientTitle, setTitle]        = useState("");
@@ -162,6 +176,7 @@ export default function ChatPage() {
         clientId,
         messages:         apiMessages,
         emailType,
+        channel,
         segmentId:        segmentId || undefined,
         recipientName,
         recipientCompany,
@@ -211,6 +226,7 @@ export default function ChatPage() {
     setStep("setup");
     setInput("");
     setSegmentId("");
+    setChannel("email");
     setRecipientName("");
     setRecipientCompany("");
     setTitle("");
@@ -299,10 +315,10 @@ export default function ChatPage() {
                   )}
                 </div>
 
-                {/* Tipo de correo — dropdown custom */}
+                {/* Tipo de mensaje — dropdown custom */}
                 <div className="relative">
                   <label className="block text-[11px] uppercase tracking-widest font-medium mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
-                    Tipo de correo
+                    Tipo de mensaje
                   </label>
                   <button
                     type="button"
@@ -310,7 +326,7 @@ export default function ChatPage() {
                     className="w-full flex items-center justify-between rounded-xl px-4 py-2.5 text-sm text-left"
                     style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.9)" }}
                   >
-                    <span>{EMAIL_TYPE_LABELS[emailType]}</span>
+                    <span>{MSG_TYPE_LABELS[emailType]}</span>
                     <IconChevronDown size={14} style={{ opacity: 0.5, transform: typeOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s" }} />
                   </button>
                   {typeOpen && (
@@ -318,7 +334,7 @@ export default function ChatPage() {
                       className="absolute left-0 right-0 top-full mt-1 rounded-xl overflow-hidden z-20"
                       style={{ background: "#1e1450", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}
                     >
-                      {(Object.entries(EMAIL_TYPE_LABELS) as [EmailType, string][]).map(([val, label]) => (
+                      {(Object.entries(MSG_TYPE_LABELS) as [EmailType, string][]).map(([val, label]) => (
                         <button
                           type="button"
                           key={val}
@@ -331,6 +347,30 @@ export default function ChatPage() {
                       ))}
                     </div>
                   )}
+                </div>
+
+                {/* Canal */}
+                <div className="relative">
+                  <label className="block text-[11px] uppercase tracking-widest font-medium mb-2" style={{ color: "rgba(255,255,255,0.4)" }}>
+                    Canal
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(Object.entries(CHANNEL_LABELS) as [Channel, string][]).map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        onClick={() => setChannel(val)}
+                        className="py-2.5 rounded-xl text-sm font-medium transition"
+                        style={{
+                          background: channel === val ? "rgba(98,224,216,0.12)" : "rgba(255,255,255,0.05)",
+                          border:     channel === val ? "1px solid rgba(98,224,216,0.4)" : "1px solid rgba(255,255,255,0.08)",
+                          color:      channel === val ? "#62E0D8" : "rgba(255,255,255,0.5)",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Segmentación (opcional) */}
@@ -506,7 +546,9 @@ export default function ChatPage() {
                 <span style={{ color: "rgba(255,255,255,0.4)" }}>Cliente:</span>
                 <span style={{ color: "#62E0D8" }}>{selectedClient?.name}</span>
                 <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
-                <span style={{ color: "rgba(255,255,255,0.4)" }}>{EMAIL_TYPE_LABELS[emailType]}</span>
+                <span style={{ color: "rgba(255,255,255,0.4)" }}>{CHANNEL_LABELS[channel]}</span>
+                <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
+                <span style={{ color: "rgba(255,255,255,0.4)" }}>{MSG_TYPE_LABELS[emailType]}</span>
                 {recipientName && (
                   <>
                     <span className="mx-1" style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
@@ -525,7 +567,7 @@ export default function ChatPage() {
 
               {/* Mensajes */}
               <div className="flex-1 overflow-y-auto px-5 py-5">
-                {messages.map((msg, i) => <Bubble key={i} msg={msg} />)}
+                {messages.map((msg, i) => <Bubble key={i} msg={msg} channel={channel} />)}
                 {loading && (
                   <div className="flex gap-3 mb-5">
                     <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "rgba(98,224,216,0.12)" }}>

@@ -12,11 +12,18 @@ const EMAIL_TYPE_LABELS: Record<string, string> = {
   cold:     "primer contacto frío",
 };
 
+const CHANNEL_INSTRUCTIONS: Record<string, { label: string; length: string; hasSubject: boolean }> = {
+  email:    { label: "Email",    length: "máximo 150 palabras en el cuerpo",                    hasSubject: true  },
+  whatsapp: { label: "WhatsApp", length: "máximo 50 palabras, 3-4 líneas, tono conversacional", hasSubject: false },
+  linkedin: { label: "LinkedIn", length: "máximo 80 palabras, tono profesional pero breve",     hasSubject: false },
+};
+
 type RecipientInfo = {
   name?: string;
   company?: string;
   title?: string;
   emailType?: string;
+  channel?: string;
   referrerName?: string;
   contextNotes?: string;
   segmentStyleGuide?: string;
@@ -31,43 +38,45 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, re
     ? `\n\nPerfil de cliente ideal (ICP):\n${ctx.icpNotes}`
     : "";
 
-  const typeLabel = EMAIL_TYPE_LABELS[recipient.emailType ?? ""] ?? "";
+  const typeLabel    = EMAIL_TYPE_LABELS[recipient.emailType ?? ""] ?? "";
+  const channelInfo  = CHANNEL_INSTRUCTIONS[recipient.channel ?? "email"] ?? CHANNEL_INSTRUCTIONS.email;
   const recipientBlock = [
     recipient.name    ? `- Nombre: ${recipient.name}`           : "",
     recipient.company ? `- Empresa: ${recipient.company}`       : "",
     recipient.title   ? `- Cargo: ${recipient.title}`           : "",
-    typeLabel         ? `- Tipo de correo: ${typeLabel}`        : "",
-    recipient.referrerName  ? `- Derivado por: ${recipient.referrerName}` : "",
-    recipient.contextNotes  ? `- Contexto adicional: ${recipient.contextNotes}` : "",
+    typeLabel         ? `- Tipo de mensaje: ${typeLabel}`       : "",
+    recipient.referrerName ? `- Derivado por: ${recipient.referrerName}` : "",
+    recipient.contextNotes ? `- Contexto adicional: ${recipient.contextNotes}` : "",
   ].filter(Boolean).join("\n");
 
   const styleBlock = recipient.segmentStyleGuide
     ? `\n\nGuía de estilo para esta segmentación (aplica estrictamente):\n${recipient.segmentStyleGuide}`
     : "";
 
-  return `Eres un asistente experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar correos de seguimiento y de más información.
+  const jsonFormat = channelInfo.hasSubject
+    ? `{\n  "subject": "Asunto del mensaje",\n  "body": "Cuerpo con salto de línea \\n entre párrafos"\n}`
+    : `{\n  "subject": "",\n  "body": "Texto del mensaje"\n}`;
 
-Tu tono es profesional pero cercano. Los correos deben ser cortos (máx 150 palabras en el cuerpo), directos y con un CTA claro.
+  return `Eres un asistente experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar mensajes de seguimiento y de más información.
 
-${recipientBlock ? `Datos del destinatario de esta sesión:\n${recipientBlock}\n\nUsa estos datos en todos los correos de esta conversación sin pedirlos de nuevo.` : ""}
+Canal de esta sesión: ${channelInfo.label}. Extensión: ${channelInfo.length}. Adapta el tono y formato al canal.${channelInfo.hasSubject ? "" : " No incluyas asunto."}
+
+${recipientBlock ? `Datos del destinatario de esta sesión:\n${recipientBlock}\n\nUsa estos datos en todos los mensajes sin pedirlos de nuevo.` : ""}
 
 Contexto sobre ${ctx.clientName}:
 ${contextBlock}${icpBlock}${styleBlock}
 
-Cuando generes un correo, devuelve SIEMPRE este JSON (sin markdown extra):
-{
-  "subject": "Asunto del correo",
-  "body": "Cuerpo del correo con salto de línea \\n entre párrafos"
-}
+Cuando generes un mensaje, devuelve SIEMPRE este JSON (sin markdown extra):
+${jsonFormat}
 
-Si el usuario adjunta una captura de pantalla de un correo o conversación, léela, entiende qué dijo el prospecto y genera una respuesta adecuada en el mismo formato JSON.
+Si el usuario adjunta una captura de pantalla, léela, entiende qué dijo el prospecto y genera una respuesta adecuada en el mismo formato JSON.
 
-Para cualquier ajuste o variación, aplica los cambios directamente y devuelve el correo completo en JSON.`;
+Para cualquier ajuste o variación, aplica los cambios directamente y devuelve el mensaje completo en JSON.`;
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { clientId, messages, emailType, segmentId, recipientName, recipientCompany, recipientTitle, referrerName, contextNotes, save, image } = body;
+  const { clientId, messages, emailType, channel, segmentId, recipientName, recipientCompany, recipientTitle, referrerName, contextNotes, save, image } = body;
 
   if (!clientId || !messages?.length) {
     return NextResponse.json({ error: "clientId y messages son requeridos" }, { status: 400 });
@@ -101,6 +110,7 @@ export async function POST(req: NextRequest) {
     company:           recipientCompany,
     title:             recipientTitle,
     emailType:         emailType,
+    channel:           channel ?? "email",
     referrerName:      referrerName,
     contextNotes:      contextNotes,
     segmentStyleGuide: segmentStyleGuide,
