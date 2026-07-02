@@ -125,7 +125,7 @@ export type Company = {
   research_summary: string | null;
   research_sources: Array<{ title: string; url: string }>;
   competitor_match: string | null;
-  status: "pending" | "approved" | "rejected";
+  status: "pending" | "approved" | "rejected" | "client_approved" | "client_rejected";
   reject_reason: string | null;
   approved_by: string | null;
   approved_at: string | null;
