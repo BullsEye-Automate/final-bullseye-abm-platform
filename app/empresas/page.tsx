@@ -19,7 +19,9 @@ import {
   IconUser,
   IconUpload,
   IconSearch,
-  IconPencil
+  IconPencil,
+  IconShare,
+  IconUsers
 } from "@tabler/icons-react";
 import { deserializeIcpForm } from "@/lib/icp-form";
 
@@ -179,13 +181,19 @@ export default function EmpresasPage() {
   const [icpMode, setIcpMode] = useState<"general" | "by_industry">("general");
   const [industries, setIndustries] = useState<{ id: string; name: string }[]>([]);
   const [selectedIndustry, setSelectedIndustry] = useState<string | null>(null);
-  const [tab, setTab] = useState<"pending" | "approved" | "rejected">("pending");
+  const [tab, setTab] = useState<"pending" | "approved" | "rejected" | "client_review">("pending");
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [statusCounts, setStatusCounts] = useState<{ pending: number; approved: number; rejected: number }>({
+  const [statusCounts, setStatusCounts] = useState<{ pending: number; approved: number; rejected: number; client_review: number }>({
     pending: 0,
     approved: 0,
-    rejected: 0
+    rejected: 0,
+    client_review: 0,
   });
+
+  // Compartir con cliente
+  const [sharing, setSharing]     = useState(false);
+  const [shareUrl, setShareUrl]   = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [discovering, setDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -297,7 +305,29 @@ export default function EmpresasPage() {
     load("approved");
   }
 
-  async function load(forStatus: "pending" | "approved" | "rejected" = tab) {
+  async function shareWithClient() {
+    if (!currentClient) return;
+    setSharing(true);
+    setShareUrl(null);
+    setShareCopied(false);
+    const res = await fetch(`/api/clients/${currentClient.id}/company-review-sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    setSharing(false);
+    if (!res.ok) {
+      setError(data.error ?? "Error generando link");
+      return;
+    }
+    setShareUrl(data.url);
+    navigator.clipboard.writeText(data.url).catch(() => {});
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 3000);
+  }
+
+  async function load(forStatus: "pending" | "approved" | "rejected" | "client_review" = tab) {
     setLoading(true);
     const clientParam = currentClient ? `&client_id=${currentClient.id}` : "";
     const res = await fetch(`/api/companies?status=${forStatus}${clientParam}`, { cache: "no-store" });
@@ -809,25 +839,32 @@ export default function EmpresasPage() {
       </section>
 
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          {(["pending", "approved", "rejected"] as const).map((s) => {
-            const label = s === "pending" ? "Pendientes" : s === "approved" ? "Aprobadas" : "Rechazadas";
-            const count = statusCounts[s];
-            const active = tab === s;
+        <div className="flex items-center gap-2 flex-wrap">
+          {(
+            [
+              { key: "pending",       label: "Pendientes"   },
+              { key: "approved",      label: "Aprobadas"    },
+              { key: "rejected",      label: "Rechazadas"   },
+              { key: "client_review", label: "Por cliente"  },
+            ] as const
+          ).map(({ key, label }) => {
+            const count  = statusCounts[key] ?? 0;
+            const active = tab === key;
             return (
               <button
-                key={s}
-                onClick={() => setTab(s)}
+                key={key}
+                onClick={() => setTab(key)}
                 className={`btn ${
                   active
                     ? "bg-brand text-white"
                     : "bg-white border border-[#E5E2F0] text-ink hover:border-brand-soft"
                 }`}
               >
+                {key === "client_review" && <IconUsers size={13} className="mr-1" />}
                 {label}
                 <span
                   className={`ml-2 inline-flex items-center justify-center min-w-[20px] h-[20px] px-1.5 rounded-full text-[11px] font-semibold ${
-                    active ? "bg-white/20 text-white" : "bg-[#F1EEF7] text-ink-muted"
+                    active ? "bg-white/20 text-white" : count > 0 && key === "client_review" ? "bg-[#62E0D8]/20 text-[#0E7A73]" : "bg-[#F1EEF7] text-ink-muted"
                   }`}
                 >
                   {count}
@@ -835,6 +872,24 @@ export default function EmpresasPage() {
               </button>
             );
           })}
+
+          {/* Botón compartir con cliente — solo en pestaña Pendientes */}
+          {tab === "pending" && currentClient && (
+            <button
+              onClick={shareWithClient}
+              disabled={sharing}
+              className="btn bg-white border border-[#E5E2F0] text-ink hover:border-brand-soft"
+              title="Genera un link para que el cliente revise las empresas pendientes"
+            >
+              {sharing ? (
+                <><IconLoader2 size={14} className="animate-spin" /> Generando…</>
+              ) : shareCopied ? (
+                <><IconCheck size={14} className="text-success-fg" /> ¡Copiado!</>
+              ) : (
+                <><IconShare size={14} /> Compartir con cliente</>
+              )}
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-3 text-xs flex-wrap">
           <ScoreChip label="alto" color="success" count={counts.high ?? 0} />
@@ -905,6 +960,29 @@ export default function EmpresasPage() {
         </div>
       )}
 
+      {shareUrl && (
+        <div className="card text-sm flex flex-col gap-2 border" style={{ borderColor: "#62E0D8", background: "rgba(98,224,216,0.06)" }}>
+          <div className="flex items-center gap-2">
+            <IconShare size={14} style={{ color: "#0E7A73" }} />
+            <span className="font-medium">Link generado y copiado al portapapeles</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={shareUrl}
+              className="input flex-1 text-xs bg-white"
+              onClick={(e) => (e.target as HTMLInputElement).select()}
+            />
+            <button
+              className="btn-secondary text-xs shrink-0"
+              onClick={() => { navigator.clipboard.writeText(shareUrl); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); }}
+            >
+              {shareCopied ? <><IconCheck size={13} /> Copiado</> : "Copiar"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-ink-muted">Cargando…</div>
       ) : companies.length === 0 ? (
@@ -912,6 +990,8 @@ export default function EmpresasPage() {
           <IconBuildingFactory2 size={18} />
           {tab === "pending"
             ? "No hay empresas pendientes. Corre una búsqueda nueva arriba."
+            : tab === "client_review"
+            ? "No hay empresas en revisión del cliente."
             : `No hay empresas en estado ${tab}.`}
         </div>
       ) : (
@@ -1137,6 +1217,16 @@ function CompanyCard({
               {deepResearch && (
                 <span className="badge" style={{ background: "rgba(98,224,216,0.15)", color: "#0E7A73", fontSize: "10px" }}>
                   ✦ enriquecida
+                </span>
+              )}
+              {c.status === "client_approved" && (
+                <span className="badge" style={{ background: "rgba(98,224,216,0.15)", color: "#0E7A73" }}>
+                  ✓ cliente aprobó
+                </span>
+              )}
+              {c.status === "client_rejected" && (
+                <span className="badge bg-danger-bg text-danger-fg">
+                  ✗ cliente rechazó
                 </span>
               )}
               {c.competitor_match && (
