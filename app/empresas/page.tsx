@@ -148,13 +148,16 @@ function extractSizeOptsFromIcp(icpContent: string): string[] {
 function AutoTextarea({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (v: string) => void }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
-    if (ref.current) { ref.current.style.height = "auto"; ref.current.style.height = ref.current.scrollHeight + "px"; }
+    const t = ref.current;
+    if (!t) return;
+    t.style.height = "auto";
+    t.style.height = t.scrollHeight + "px";
   }, [value]);
   return (
     <textarea
       ref={ref}
-      className="input resize-none overflow-hidden"
-      style={{ minHeight: "36px", lineHeight: "1.5" }}
+      className="input resize-none overflow-hidden flex-1 min-w-0"
+      style={{ minHeight: "36px", lineHeight: "1.5", width: "100%" }}
       placeholder={placeholder}
       value={value}
       rows={1}
