@@ -1381,17 +1381,19 @@ function CompanyCard({
             </div>
           )}
           {rejecting ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-end gap-2">
               <textarea
-                className="input resize-none overflow-hidden min-h-[36px] leading-snug py-1.5"
+                className="input resize-none overflow-hidden"
+                style={{ minHeight: "36px", lineHeight: "1.4" }}
                 placeholder="Razón del rechazo"
                 value={reason}
                 rows={1}
-                onChange={(e) => {
-                  setReason(e.target.value);
-                  e.target.style.height = "auto";
-                  e.target.style.height = e.target.scrollHeight + "px";
+                onInput={(e) => {
+                  const t = e.currentTarget;
+                  t.style.height = "auto";
+                  t.style.height = t.scrollHeight + "px";
                 }}
+                onChange={(e) => setReason(e.target.value)}
                 autoFocus
               />
               <button
