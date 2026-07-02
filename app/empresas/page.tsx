@@ -1382,11 +1382,16 @@ function CompanyCard({
           )}
           {rejecting ? (
             <div className="flex items-center gap-2">
-              <input
-                className="input"
+              <textarea
+                className="input resize-none overflow-hidden min-h-[36px] leading-snug py-1.5"
                 placeholder="Razón del rechazo"
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                rows={1}
+                onChange={(e) => {
+                  setReason(e.target.value);
+                  e.target.style.height = "auto";
+                  e.target.style.height = e.target.scrollHeight + "px";
+                }}
                 autoFocus
               />
               <button
