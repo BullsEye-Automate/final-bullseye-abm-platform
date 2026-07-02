@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useClient } from "@/lib/clientContext";
 import {
   IconSparkles,
@@ -143,6 +143,25 @@ function buildRegionsFromIcp(geoText: string): { value: string; label: string }[
 function extractSizeOptsFromIcp(icpContent: string): string[] {
   const raw = deserializeIcpForm(icpContent).tamano_empresa ?? [];
   return raw;
+}
+
+function AutoTextarea({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (ref.current) { ref.current.style.height = "auto"; ref.current.style.height = ref.current.scrollHeight + "px"; }
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      className="input resize-none overflow-hidden"
+      style={{ minHeight: "36px", lineHeight: "1.5" }}
+      placeholder={placeholder}
+      value={value}
+      rows={1}
+      autoFocus
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
 }
 
 export default function EmpresasPage() {
@@ -1382,19 +1401,10 @@ function CompanyCard({
           )}
           {rejecting ? (
             <div className="flex items-end gap-2">
-              <textarea
-                className="input resize-none overflow-hidden"
-                style={{ minHeight: "36px", lineHeight: "1.4" }}
+              <AutoTextarea
                 placeholder="Razón del rechazo"
                 value={reason}
-                rows={1}
-                onInput={(e) => {
-                  const t = e.currentTarget;
-                  t.style.height = "auto";
-                  t.style.height = t.scrollHeight + "px";
-                }}
-                onChange={(e) => setReason(e.target.value)}
-                autoFocus
+                onChange={setReason}
               />
               <button
                 onClick={() => decide("rejected", reason)}
