@@ -124,6 +124,13 @@ function buildSystemPrompt(
   if (segmentCtx?.messageFocus?.trim()) {
     parts.push(`\n## FOCO DE LOS MENSAJES PARA ESTE SEGMENTO`);
     parts.push(`Todos los mensajes deben girar en torno a este objetivo:\n${segmentCtx.messageFocus}`);
+    parts.push(
+      `\nRESTRICCIÓN DE INDUSTRIA: El foco anterior define la industria y contexto de este segmento. ` +
+      `Puedes usar libremente la información general del cliente (propuesta de valor, capacidades, casos de éxito genéricos). ` +
+      `Sin embargo, cuando hagas referencias específicas de industria (datos, problemas, terminología, empresas de ejemplo), ` +
+      `limítate ESTRICTAMENTE al contexto descrito en el foco. ` +
+      `Si en el contexto disponible hay información de otras industrias, IGNÓRALA completamente al escribir este mensaje.`
+    );
   }
 
   // La guía de estilo del segmento tiene prioridad sobre la global
