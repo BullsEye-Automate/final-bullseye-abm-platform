@@ -1540,20 +1540,24 @@ function CompanyCard({
             <IconCheck size={14} /> Aprobar
           </button>
           {rejecting ? (
-            <div className="flex items-center gap-2 flex-1">
-              <input
-                className="input"
-                placeholder="Razón"
+            <div className="flex flex-col gap-2 flex-1">
+              <AutoTextarea
+                placeholder="Razón del rechazo"
                 value={reason}
-                onChange={(e) => setReason(e.target.value)}
+                onChange={setReason}
               />
-              <button
-                onClick={() => decide("rejected", reason)}
-                disabled={busy || !reason.trim()}
-                className="btn-danger"
-              >
-                <IconX size={14} /> Confirmar
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => decide("rejected", reason)}
+                  disabled={busy || !reason.trim()}
+                  className="btn-danger flex-1"
+                >
+                  <IconX size={14} /> Confirmar rechazo
+                </button>
+                <button onClick={() => { setRejecting(false); setReason(""); }} disabled={busy} className="btn-secondary">
+                  Cancelar
+                </button>
+              </div>
             </div>
           ) : (
             <button onClick={() => setRejecting(true)} className="btn-danger flex-1">
