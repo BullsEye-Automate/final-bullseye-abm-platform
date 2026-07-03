@@ -152,14 +152,14 @@ function AutoTextarea({ placeholder, value, onChange }: { placeholder: string; v
   useEffect(() => {
     const t = ref.current;
     if (!t) return;
-    t.style.height = "auto";
+    t.style.height = "0px";
     t.style.height = t.scrollHeight + "px";
   }, [value]);
   return (
     <textarea
       ref={ref}
-      className="input resize-none overflow-hidden flex-1 min-w-0"
-      style={{ minHeight: "36px", lineHeight: "1.5", width: "100%" }}
+      className="input resize-none flex-1 min-w-0"
+      style={{ minHeight: "36px", lineHeight: "1.5", overflow: "hidden" }}
       placeholder={placeholder}
       value={value}
       rows={1}
