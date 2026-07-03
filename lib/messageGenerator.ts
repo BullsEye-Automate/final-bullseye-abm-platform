@@ -159,6 +159,13 @@ function buildSystemPrompt(
     parts.push("\nIMPORTANTE: estos ejemplos muestran el tono, largo y estilo exacto. Adapta el contenido al nuevo contacto pero mantén el mismo estilo.");
   }
 
+  parts.push(
+    `\nREGLA DE CAUSALIDAD: Cuando menciones datos o estadísticas, evita conclusiones causales absolutas. ` +
+    `Usa lenguaje que sugiera posibilidad o contribución parcial ("en parte", "entre otros factores", "puede deberse a", "una de las razones") ` +
+    `en lugar de afirmaciones definitivas ("precisamente porque", "es exactamente por esto", "la razón es"). ` +
+    `Esto aplica siempre, incluso cuando el argumento sea persuasivo.`
+  );
+
   return parts.join("\n");
 }
 
