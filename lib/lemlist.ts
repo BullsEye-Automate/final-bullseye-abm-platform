@@ -26,17 +26,30 @@ export async function getClientLemlistConfig(
 ): Promise<{
   lemlist_campaign_id: string | null;
   lemlist_staging_campaign_id: string | null;
+  lemlist_manual_search_campaign_id: string | null;
 } | null> {
   const { data } = await db
     .from("client_configs")
-    .select("lemlist_campaign_id, lemlist_staging_campaign_id")
+    .select("lemlist_campaign_id, lemlist_staging_campaign_id, lemlist_manual_search_campaign_id")
     .eq("client_id", clientId)
     .maybeSingle();
   if (!data) return null;
   return {
     lemlist_campaign_id: data.lemlist_campaign_id ?? null,
     lemlist_staging_campaign_id: data.lemlist_staging_campaign_id ?? null,
+    lemlist_manual_search_campaign_id: (data as any).lemlist_manual_search_campaign_id ?? null,
   };
+}
+
+// La Campaña puente de Búsqueda manual es idealmente una campaña separada de
+// lemlist_staging_campaign_id (que usa /api/lemlist/lookup-phone para
+// enriquecer teléfonos 1 a 1) — compartirla mezcla leads de ambos procesos.
+// Si el cliente todavía no configuró una dedicada, cae a la compartida.
+export function resolveManualSearchCampaignId(config: {
+  lemlist_staging_campaign_id: string | null;
+  lemlist_manual_search_campaign_id: string | null;
+} | null): string | null {
+  return config?.lemlist_manual_search_campaign_id ?? config?.lemlist_staging_campaign_id ?? null;
 }
 
 function pick(obj: Record<string, unknown> | undefined, ...keys: string[]): string {
