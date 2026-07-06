@@ -49,10 +49,14 @@ ${results.content.slice(0, 4000)}`
     return NextResponse.json({ found: 0, summary: { yes: 0, no: 0, skipped: 0 } });
   }
 
-  const intakeResult = await intakeContactsForCompany(db, params.id, people).catch(() => null);
-  if (!intakeResult || !intakeResult.ok) {
-    return NextResponse.json({ found: people.length, summary: { yes: 0, no: 0, skipped: 0 } });
+  const intakeResult = await intakeContactsForCompany(db, params.id, people).catch((err) => ({
+    ok: false as const,
+    status: 500,
+    error: String(err?.message ?? err),
+  }));
+  if (!intakeResult.ok) {
+    return NextResponse.json({ error: intakeResult.error }, { status: intakeResult.status });
   }
 
-  return NextResponse.json({ found: people.length, summary: intakeResult });
+  return NextResponse.json({ found: people.length, summary: intakeResult.summary });
 }

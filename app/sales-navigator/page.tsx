@@ -72,7 +72,7 @@ type StagingLead = {
 };
 
 type ImportResult = {
-  summary?: { yes: number; no: number };
+  summary?: { yes: number; no: number; duplicates?: number };
   staged_total?: number;
   error?: string;
 };
@@ -613,7 +613,10 @@ function CompanyCard({
           ) : (
             <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm bg-warning-bg text-warning-fg">
               <IconAlertCircle size={15} className="shrink-0" />
-              0 contactos importados — todos existían o no pasaron el pre-filter
+              0 contactos importados
+              {importResult.summary?.duplicates ? ` — ${importResult.summary.duplicates} ya existían en otra empresa de este cliente` : ""}
+              {importResult.summary?.no ? ` — ${importResult.summary.no} no pasaron el pre-filter` : ""}
+              {!importResult.summary?.duplicates && !importResult.summary?.no ? " — revisá si ya estaban cargados en esta empresa" : ""}
             </div>
           )}
         </div>
