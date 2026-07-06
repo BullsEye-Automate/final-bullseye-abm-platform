@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
-import { getClientLemlistConfig, getCampaignLeadsWithDetails } from "@/lib/lemlist";
+import { getClientLemlistConfig, getCampaignLeadsWithDetails, resolveManualSearchCampaignId } from "@/lib/lemlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
 
   const config = await getClientLemlistConfig(db, clientId);
-  const stagingId = config?.lemlist_staging_campaign_id;
+  const stagingId = resolveManualSearchCampaignId(config);
   if (!stagingId) {
     return NextResponse.json({ error: "No hay Campaña puente configurada para este cliente. Agrégala en Config. cliente." }, { status: 400 });
   }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
-import { getClientLemlistConfig, getCampaignLeadsWithDetails, type LemlistLeadDetail } from "@/lib/lemlist";
+import { getClientLemlistConfig, getCampaignLeadsWithDetails, resolveManualSearchCampaignId, type LemlistLeadDetail } from "@/lib/lemlist";
 import { intakeContactsForCompany, type RawContact } from "@/lib/contactsIntake";
 import { researchOneCompanyFast } from "@/lib/companyResearchFast";
 import { computeContactFitScore, getClientBuyerPersonaRoles } from "@/lib/contactFitScore";
@@ -32,8 +32,10 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
 
   // 1. Resolver la Campaña puente del CLIENTE ACTIVO — nunca una env var global.
+  // Preferimos la campaña dedicada a búsqueda manual; si no está configurada,
+  // caemos a la compartida con lookup-phone (mezcla leads de ambos procesos).
   const config = await getClientLemlistConfig(db, clientId);
-  const stagingId = config?.lemlist_staging_campaign_id;
+  const stagingId = resolveManualSearchCampaignId(config);
   if (!stagingId) {
     return NextResponse.json({ error: "No hay Campaña puente configurada para este cliente. Agrégala en Config. cliente." }, { status: 400 });
   }

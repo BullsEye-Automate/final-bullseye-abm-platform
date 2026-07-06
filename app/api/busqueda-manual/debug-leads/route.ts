@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
-import { getClientLemlistConfig } from "@/lib/lemlist";
+import { getClientLemlistConfig, resolveManualSearchCampaignId } from "@/lib/lemlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,13 +11,19 @@ export const dynamic = "force-dynamic";
 // Borrar una vez resuelto el parseo de fechas/empresa en lib/lemlist.ts.
 async function listClientsHint(db: ReturnType<typeof supabaseAdmin>) {
   const { data: clients } = await db.from("clients").select("id, name").order("name");
-  const { data: configs } = await db.from("client_configs").select("client_id, lemlist_staging_campaign_id");
-  const configByClient = new Map((configs ?? []).map((c) => [c.client_id, c.lemlist_staging_campaign_id]));
-  return (clients ?? []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    has_staging_campaign: Boolean(configByClient.get(c.id)),
-  }));
+  const { data: configs } = await db
+    .from("client_configs")
+    .select("client_id, lemlist_staging_campaign_id, lemlist_manual_search_campaign_id");
+  const configByClient = new Map((configs ?? []).map((c) => [c.client_id, c]));
+  return (clients ?? []).map((c) => {
+    const cfg = configByClient.get(c.id) as any;
+    return {
+      id: c.id,
+      name: c.name,
+      has_staging_campaign: Boolean(cfg?.lemlist_staging_campaign_id),
+      has_manual_search_campaign: Boolean(cfg?.lemlist_manual_search_campaign_id),
+    };
+  });
 }
 
 export async function GET(req: NextRequest) {
@@ -29,7 +35,7 @@ export async function GET(req: NextRequest) {
   }
 
   const config = await getClientLemlistConfig(db, clientId);
-  const stagingId = config?.lemlist_staging_campaign_id;
+  const stagingId = resolveManualSearchCampaignId(config);
   if (!stagingId) {
     return NextResponse.json(
       { error: "No hay Campaña puente configurada para ese client_id", clients: await listClientsHint(db) },
@@ -61,6 +67,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     staging_campaign_id: stagingId,
+    used_dedicated_manual_search_campaign: Boolean(config?.lemlist_manual_search_campaign_id),
     list_status: listRes.status,
     list_response_top_level_keys: Object.keys(listRaw),
     list_total_returned: listLeads.length,

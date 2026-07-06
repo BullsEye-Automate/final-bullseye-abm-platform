@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { intakeContactsForCompany } from "@/lib/contactsIntake";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
-import { getClientLemlistConfig, getCampaignLeadsWithDetails } from "@/lib/lemlist";
+import { getClientLemlistConfig, getCampaignLeadsWithDetails, resolveManualSearchCampaignId } from "@/lib/lemlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (!company.client_id) return NextResponse.json({ error: "La empresa no tiene cliente asignado" }, { status: 400 });
 
   const config = await getClientLemlistConfig(db, company.client_id);
-  const stagingId = config?.lemlist_staging_campaign_id;
+  const stagingId = resolveManualSearchCampaignId(config);
   if (!stagingId) return NextResponse.json({ error: "No hay Campaña puente configurada. Agrégala en Config. cliente." }, { status: 400 });
 
   const apiKey = await getLemlistApiKey(db, company.client_id);
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!company.client_id) return NextResponse.json({ error: "La empresa no tiene cliente asignado" }, { status: 400 });
 
   const config = await getClientLemlistConfig(db, company.client_id);
-  const stagingId = config?.lemlist_staging_campaign_id;
+  const stagingId = resolveManualSearchCampaignId(config);
   if (!stagingId) return NextResponse.json({ error: "No hay Campaña puente configurada. Agrégala en Config. cliente." }, { status: 400 });
 
   const apiKey = await getLemlistApiKey(db, company.client_id);

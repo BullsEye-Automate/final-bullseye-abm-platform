@@ -18,11 +18,12 @@ import {
 import { useClient } from "@/lib/clientContext";
 
 type Config = {
-  lemlist_api_key:             string;
-  lemlist_campaign_id:         string;
-  lemlist_staging_campaign_id: string;
-  clay_companies_table_id:     string;
-  clay_contacts_table_id:      string;
+  lemlist_api_key:                    string;
+  lemlist_campaign_id:                string;
+  lemlist_staging_campaign_id:        string;
+  lemlist_manual_search_campaign_id:  string;
+  clay_companies_table_id:            string;
+  clay_contacts_table_id:             string;
 };
 
 type ClientWebhooks = {
@@ -31,11 +32,12 @@ type ClientWebhooks = {
 };
 
 const EMPTY_CONFIG: Config = {
-  lemlist_api_key:             "",
-  lemlist_campaign_id:         "",
-  lemlist_staging_campaign_id: "",
-  clay_companies_table_id:     "",
-  clay_contacts_table_id:      "",
+  lemlist_api_key:                    "",
+  lemlist_campaign_id:                "",
+  lemlist_staging_campaign_id:        "",
+  lemlist_manual_search_campaign_id:  "",
+  clay_companies_table_id:            "",
+  clay_contacts_table_id:             "",
 };
 
 const EMPTY_WEBHOOKS: ClientWebhooks = {
@@ -122,11 +124,12 @@ export default function ConfigClientePage() {
       .then(([configData, clientData]) => {
         const cfg = configData.config;
         setForm(cfg ? {
-          lemlist_api_key:             cfg.lemlist_api_key             ?? "",
-          lemlist_campaign_id:         cfg.lemlist_campaign_id         ?? "",
-          lemlist_staging_campaign_id: cfg.lemlist_staging_campaign_id ?? "",
-          clay_companies_table_id:     cfg.clay_companies_table_id     ?? "",
-          clay_contacts_table_id:      cfg.clay_contacts_table_id      ?? "",
+          lemlist_api_key:                    cfg.lemlist_api_key                    ?? "",
+          lemlist_campaign_id:                cfg.lemlist_campaign_id                ?? "",
+          lemlist_staging_campaign_id:        cfg.lemlist_staging_campaign_id        ?? "",
+          lemlist_manual_search_campaign_id:  cfg.lemlist_manual_search_campaign_id  ?? "",
+          clay_companies_table_id:            cfg.clay_companies_table_id            ?? "",
+          clay_contacts_table_id:             cfg.clay_contacts_table_id             ?? "",
         } : EMPTY_CONFIG);
 
         const cl = clientData.client;
@@ -375,11 +378,18 @@ export default function ConfigClientePage() {
               onChange={set("lemlist_campaign_id")}
             />
             <Field
-              label="Campaign ID puente (staging)"
-              hint="Campaña sin pasos usada para importar leads desde Sales Navigator. El SDR la usa con la extensión de Lemlist."
+              label="Campaign ID puente — Teléfonos (lookup 1 a 1)"
+              hint="Campaña sin pasos usada por 'Buscar teléfono' para enriquecer un contacto puntual. No la compartas con la de Búsqueda manual de abajo — mezclar ambos procesos hace que los leads se pisen entre sí."
               placeholder="cam_xxxxxxxxxxxxxxxxxx"
               value={form.lemlist_staging_campaign_id}
               onChange={set("lemlist_staging_campaign_id")}
+            />
+            <Field
+              label="Campaign ID puente — Búsqueda manual"
+              hint="Campaña sin pasos exclusiva para /busqueda-manual: acá el SDR agrega los leads encontrados a mano en Sales Navigator con la extensión de Lemlist. Si se deja vacío, se usa la campaña de Teléfonos de arriba (no recomendado)."
+              placeholder="cam_xxxxxxxxxxxxxxxxxx"
+              value={form.lemlist_manual_search_campaign_id}
+              onChange={set("lemlist_manual_search_campaign_id")}
             />
           </section>
 
