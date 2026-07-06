@@ -9,14 +9,33 @@ export const dynamic = "force-dynamic";
 // Endpoint temporal de debug — ver la estructura real de un lead de la
 // Campaña puente tal como la devuelve Lemlist, sin ninguna normalización.
 // Borrar una vez resuelto el parseo de fechas/empresa en lib/lemlist.ts.
+async function listClientsHint(db: ReturnType<typeof supabaseAdmin>) {
+  const { data: clients } = await db.from("clients").select("id, name").order("name");
+  const { data: configs } = await db.from("client_configs").select("client_id, lemlist_staging_campaign_id");
+  const configByClient = new Map((configs ?? []).map((c) => [c.client_id, c.lemlist_staging_campaign_id]));
+  return (clients ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    has_staging_campaign: Boolean(configByClient.get(c.id)),
+  }));
+}
+
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("client_id");
-  if (!clientId) return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
-
   const db = supabaseAdmin();
+
+  if (!clientId) {
+    return NextResponse.json({ error: "Se requiere client_id", clients: await listClientsHint(db) }, { status: 400 });
+  }
+
   const config = await getClientLemlistConfig(db, clientId);
   const stagingId = config?.lemlist_staging_campaign_id;
-  if (!stagingId) return NextResponse.json({ error: "No hay Campaña puente configurada" }, { status: 400 });
+  if (!stagingId) {
+    return NextResponse.json(
+      { error: "No hay Campaña puente configurada para ese client_id", clients: await listClientsHint(db) },
+      { status: 400 }
+    );
+  }
 
   const apiKey = await getLemlistApiKey(db, clientId);
   if (!apiKey) return NextResponse.json({ error: "No hay API key de Lemlist" }, { status: 500 });
