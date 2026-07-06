@@ -234,19 +234,20 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Teléfono se enriquece vía Clay waterfall (mejor calidad LATAM).
-    // Si Clay no encontró teléfono (clay_phone_provider='none' o sin phone_clay),
-    // pedimos a Lemlist que también busque teléfono como fallback.
-    const clayHadNoPhone = (contact as any).clay_phone_provider === "none"
-      || (!(contact as any).phone_clay && (contact as any).clay_phone_received_at);
-    const findPhoneParam = clayHadNoPhone ? "&findPhone=true" : "";
+    // Teléfono se enriquece vía Clay waterfall (mejor calidad LATAM) cuando
+    // el contacto pasó por Clay. Si todavía no tiene teléfono — porque Clay
+    // no lo encontró, o porque nunca pasó por Clay (ej. búsqueda manual,
+    // que va directo a Lemlist sin Clay) — le pedimos a Lemlist que también
+    // busque teléfono.
+    const stillNoPhone = !contact.phone?.trim() && !(contact as any).phone_clay?.trim();
+    const findPhoneParam = stillNoPhone ? "&findPhone=true" : "";
 
     const ENRICH = `findEmail=true&verifyEmail=true&linkedinEnrichment=true${findPhoneParam}`;
     const lemlistUrl = hasEmail
       ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true${findPhoneParam}`
       : `https://api.lemlist.com/api/campaigns/${campaignId}/leads?${ENRICH}`;
 
-    if (clayHadNoPhone) console.log(`[lemlist-push] Clay no encontró teléfono para ${contact.id} → activando findPhone en Lemlist como fallback`);
+    if (stillNoPhone) console.log(`[lemlist-push] Sin teléfono para ${contact.id} → activando findPhone en Lemlist`);
 
     // Construir payload con las 10 variables de secuencia
     const lemlistPayload: Record<string, string | undefined> = {
