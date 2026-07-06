@@ -68,6 +68,16 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     staging_campaign_id: stagingId,
     used_dedicated_manual_search_campaign: Boolean(config?.lemlist_manual_search_campaign_id),
+    raw_config: {
+      lemlist_campaign_id: config?.lemlist_campaign_id ?? null,
+      lemlist_staging_campaign_id: config?.lemlist_staging_campaign_id ?? null,
+      lemlist_manual_search_campaign_id: config?.lemlist_manual_search_campaign_id ?? null,
+      warning_same_campaign_for_both:
+        Boolean(config?.lemlist_staging_campaign_id) &&
+        config?.lemlist_staging_campaign_id === config?.lemlist_manual_search_campaign_id
+          ? "lemlist_staging_campaign_id y lemlist_manual_search_campaign_id apuntan a la MISMA campaña — Teléfonos y Búsqueda manual se van a seguir mezclando."
+          : null,
+    },
     list_status: listRes.status,
     list_response_top_level_keys: Object.keys(listRaw),
     list_total_returned: listLeads.length,
