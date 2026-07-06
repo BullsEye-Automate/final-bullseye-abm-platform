@@ -19,6 +19,9 @@ import {
   IconEdit,
   IconSearch,
   IconPlayerStop,
+  IconShare,
+  IconLink,
+  IconClipboard,
 } from "@tabler/icons-react";
 import Link from "next/link";
 
@@ -335,6 +338,7 @@ export default function SubirCampanaPage() {
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
   const [deepResearchSet, setDeepResearchSet] = useState<Set<number>>(new Set());
   const [localEdits, setLocalEdits] = useState<Record<number, Partial<GeneratedContact>>>({});
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
 
   // Si hay una generación activa para este cliente, mostrar directamente la preview
   const isActiveGeneration =
@@ -753,14 +757,25 @@ export default function SubirCampanaPage() {
                 Selecciona los contactos que quieres enviar a Lemlist.
               </p>
             </div>
-            <button
-              onClick={handlePush}
-              disabled={isGenerating || selectedIndexes.size === 0}
-              className="btn-primary flex items-center gap-2 text-sm shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <IconSend size={14} />
-              Enviar {selectedIndexes.size} a Lemlist
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              {!isGenerating && generation.contacts.some(c => !c.error && !c.cancelled && (c.emailSubject || c.connectMessage)) && (
+                <button
+                  onClick={() => setReviewModalOpen(true)}
+                  className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg border border-[#E5E2F0] hover:border-[#62E0D8] text-ink-muted hover:text-ink transition"
+                >
+                  <IconShare size={14} />
+                  Compartir revisión
+                </button>
+              )}
+              <button
+                onClick={handlePush}
+                disabled={isGenerating || selectedIndexes.size === 0}
+                className="btn-primary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <IconSend size={14} />
+                Enviar {selectedIndexes.size} a Lemlist
+              </button>
+            </div>
           </div>
 
           {/* Barra de selección */}
@@ -884,6 +899,151 @@ export default function SubirCampanaPage() {
           </div>
         </div>
       )}
+
+      {reviewModalOpen && (
+        <ReviewModal
+          contacts={generation.contacts}
+          clientId={currentClient?.id ?? ""}
+          clientName={currentClient?.name ?? ""}
+          onClose={() => setReviewModalOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Modal de revisión compartible ────────────────────────────────────────────
+
+function ReviewModal({
+  contacts, clientId, clientName, onClose,
+}: {
+  contacts: GeneratedContact[];
+  clientId: string;
+  clientName: string;
+  onClose: () => void;
+}) {
+  const eligible = contacts.filter((c) => !c.error && !c.cancelled && (c.emailSubject || c.connectMessage));
+  const [selected, setSelected] = useState<Set<number>>(new Set(eligible.map((_, i) => i)));
+  const [creating, setCreating] = useState(false);
+  const [link, setLink]         = useState<string | null>(null);
+  const [copied, setCopied]     = useState(false);
+
+  function toggleOne(i: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(i) ? next.delete(i) : next.add(i);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelected((prev) => prev.size === eligible.length ? new Set() : new Set(eligible.map((_, i) => i)));
+  }
+
+  async function createLink() {
+    setCreating(true);
+    const toShare = eligible.filter((_, i) => selected.has(i));
+    const res = await fetch("/api/review-sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId || null, client_name: clientName || null, contacts: toShare }),
+    });
+    const data = await res.json();
+    setCreating(false);
+    if (res.ok) {
+      const url = `${window.location.origin}/revision/${data.token}`;
+      setLink(url);
+    }
+  }
+
+  async function copyLink() {
+    if (!link) return;
+    await navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.45)" }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#F1EEF7]">
+          <div>
+            <h2 className="font-semibold text-lg text-ink">Compartir para revisión</h2>
+            <p className="text-sm text-ink-muted mt-0.5">Elige qué contactos incluir en el link</p>
+          </div>
+          <button onClick={onClose} className="text-ink-muted hover:text-ink p-1 rounded-lg hover:bg-[#F1EEF7]">
+            <IconX size={18} />
+          </button>
+        </div>
+
+        {!link && (
+          <>
+            <div className="px-6 py-3 border-b border-[#F1EEF7] flex items-center justify-between">
+              <button onClick={toggleAll} className="text-sm text-ink-muted hover:text-ink flex items-center gap-2">
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${selected.size === eligible.length ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
+                  {selected.size === eligible.length && <IconCheck size={10} className="text-white" strokeWidth={3} />}
+                </div>
+                {selected.size === eligible.length ? "Deseleccionar todos" : "Seleccionar todos"}
+              </button>
+              <span className="text-xs text-ink-muted">{selected.size} seleccionado{selected.size !== 1 ? "s" : ""}</span>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-3 space-y-1">
+              {eligible.map((c, i) => {
+                const fullName = [c.firstName, c.lastName].filter(Boolean).join(" ") || "(sin nombre)";
+                const isSelected = selected.has(i);
+                return (
+                  <button
+                    key={i}
+                    onClick={() => toggleOne(i)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left ${isSelected ? "bg-[rgba(98,224,216,0.08)] border border-[rgba(98,224,216,0.3)]" : "hover:bg-[#F8F6FC] border border-transparent"}`}
+                  >
+                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${isSelected ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
+                      {isSelected && <IconCheck size={10} className="text-white" strokeWidth={3} />}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-medium text-sm text-ink truncate">{fullName}</div>
+                      {c.companyName && <div className="text-xs text-ink-muted truncate">{c.companyName}</div>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {link && (
+          <div className="flex-1 flex flex-col items-center justify-center px-6 py-8 space-y-4">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "rgba(98,224,216,0.15)" }}>
+              <IconLink size={22} style={{ color: "#62E0D8" }} />
+            </div>
+            <div className="text-center">
+              <p className="font-semibold text-ink">Link generado</p>
+              <p className="text-sm text-ink-muted mt-1">Válido por 7 días · {selected.size} contacto{selected.size !== 1 ? "s" : ""}</p>
+            </div>
+            <div className="w-full bg-[#F8F6FC] rounded-xl px-4 py-3 text-xs text-ink-muted font-mono break-all border border-[#E5E2F0]">
+              {link}
+            </div>
+            <button onClick={copyLink} className="btn-primary w-full flex items-center justify-center gap-2">
+              {copied ? <><IconCheck size={14} /> Copiado</> : <><IconClipboard size={14} /> Copiar link</>}
+            </button>
+          </div>
+        )}
+
+        {!link && (
+          <div className="px-6 py-4 border-t border-[#F1EEF7] flex items-center justify-between">
+            <button onClick={onClose} className="btn-secondary">Cancelar</button>
+            <button
+              onClick={createLink}
+              disabled={creating || selected.size === 0}
+              className="btn-primary flex items-center gap-2 disabled:opacity-40"
+            >
+              {creating
+                ? <><IconLoader2 size={14} className="animate-spin" /> Generando…</>
+                : <><IconShare size={14} /> Generar link ({selected.size})</>}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

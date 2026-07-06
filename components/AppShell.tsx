@@ -7,7 +7,7 @@ import Sidebar from "./Sidebar";
 // Las rutas /forms/* se renderizan sin sidebar (formularios públicos para clientes).
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPublic = pathname?.startsWith("/forms/") || pathname?.startsWith("/review/") || pathname?.startsWith("/chat") || pathname?.startsWith("/encuesta/") || pathname?.startsWith("/feedback-cliente/");
+  const isPublic = pathname?.startsWith("/forms/") || pathname?.startsWith("/review/") || pathname?.startsWith("/chat") || pathname?.startsWith("/encuesta/") || pathname?.startsWith("/feedback-cliente/") || pathname?.startsWith("/revision/");
 
   if (isPublic) {
     return <>{children}</>;
