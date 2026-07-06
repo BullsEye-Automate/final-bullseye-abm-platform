@@ -75,6 +75,7 @@ type ContactOutcome = {
   name: string;
   linkedin_url: string | null;
   outcome: "yes" | "no" | "already_exists" | "duplicate_other_company";
+  detail?: string;
 };
 
 type ImportResult = {
@@ -636,11 +637,14 @@ function CompanyCard({
           {importResult.outcomes && importResult.outcomes.length > 0 && (
             <div className="rounded-lg border border-[#E5E2F0] divide-y divide-[#E5E2F0] text-xs overflow-hidden">
               {importResult.outcomes.map((o, i) => (
-                <div key={i} className="flex items-center justify-between gap-2 px-3 py-1.5">
-                  <span className="text-ink truncate">{o.name}</span>
-                  <span className={o.outcome === "yes" ? "text-success-fg" : "text-ink-muted"}>
-                    {OUTCOME_LABEL[o.outcome]}
-                  </span>
+                <div key={i} className="flex flex-col gap-0.5 px-3 py-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-ink truncate">{o.name}</span>
+                    <span className={o.outcome === "yes" ? "text-success-fg" : "text-ink-muted"}>
+                      {OUTCOME_LABEL[o.outcome]}
+                    </span>
+                  </div>
+                  {o.detail && <span className="text-ink-muted">{o.detail}</span>}
                 </div>
               ))}
             </div>

@@ -34,7 +34,26 @@ export type ContactOutcome = {
   name: string;
   linkedin_url: string | null;
   outcome: "yes" | "no" | "already_exists" | "duplicate_other_company";
+  detail?: string;
 };
+
+// Traduce el estado real del contacto existente a algo accionable: "ya existe" no dice
+// si nunca llegó a Lemlist, está atascado en Clay, o ya fue contactado — y esa es
+// justamente la pregunta que hace el usuario cuando ve "ya existía en esta empresa".
+function describeExistingStatus(prev: {
+  status?: string | null;
+  fit_action?: string | null;
+  lemlist_pushed_at?: string | null;
+  clay_push_error?: string | null;
+}): string {
+  if (prev.lemlist_pushed_at) return "ya está en la campaña de Lemlist";
+  if (prev.fit_action === "enrich") return "aprobado en Clay, pendiente de enviar a Lemlist";
+  if (prev.fit_action === "manual_review") return "en revisión manual pendiente (Clay)";
+  if (prev.fit_action === "discard") return "descartado por el scoring de Clay";
+  if (prev.clay_push_error) return `nunca llegó a Clay — error: ${prev.clay_push_error}`;
+  if (prev.status === "pending") return "pendiente de scoring en Clay";
+  return `estado actual: ${prev.status ?? "desconocido"}`;
+}
 
 export type IntakeResult =
   | { ok: true; summary: IntakeSummary; pushDetails: PushDetail[]; outcomes: ContactOutcome[] }
@@ -61,7 +80,7 @@ export async function intakeContactsForCompany(
   const clientId = (company as any).client_id ?? null;
   const existingQuery = db
     .from("contacts")
-    .select("id, company_id, linkedin_url, linkedin_headline, seniority, status");
+    .select("id, company_id, linkedin_url, linkedin_headline, seniority, status, fit_action, lemlist_pushed_at, clay_push_error");
   const { data: existing, error: exErr } = clientId
     ? await existingQuery.eq("client_id", clientId)
     : await existingQuery.eq("company_id", companyId);
@@ -91,7 +110,7 @@ export async function intakeContactsForCompany(
         // cliente — insertarlo violaría el índice único, así que lo salteamos.
         summary.duplicates += 1;
         summary.skipped += 1;
-        outcomes.push({ name, linkedin_url: normalized, outcome: "duplicate_other_company" });
+        outcomes.push({ name, linkedin_url: normalized, outcome: "duplicate_other_company", detail: describeExistingStatus(prev) });
         continue;
       }
       // Si el contacto existe pero fue descartado por pre-filter, borrarlo y reinsertarlo
@@ -119,7 +138,7 @@ export async function intakeContactsForCompany(
           }
         }
         summary.skipped += 1;
-        outcomes.push({ name, linkedin_url: normalized, outcome: "already_exists" });
+        outcomes.push({ name, linkedin_url: normalized, outcome: "already_exists", detail: prev ? describeExistingStatus(prev) : undefined });
         continue;
       }
     }
