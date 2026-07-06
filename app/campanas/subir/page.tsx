@@ -574,32 +574,38 @@ export default function SubirCampanaPage() {
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Empresa</th>
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Cargo</th>
                   <th className="text-left px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Email</th>
+                  <th className="px-4 py-2.5" />
                 </tr>
               </thead>
               <tbody>
-                {parsed.slice(0, 8).map((c, i) => (
-                  <tr key={i} className="border-b border-[#F0EEF8] last:border-0">
+                {parsed.map((c, i) => (
+                  <tr key={i} className="border-b border-[#F0EEF8] last:border-0 group">
                     <td className="px-4 py-2.5 font-medium text-ink">{[c.firstName, c.lastName].filter(Boolean).join(" ") || "—"}</td>
                     <td className="px-4 py-2.5 text-ink-muted">{c.companyName || "—"}</td>
                     <td className="px-4 py-2.5 text-ink-muted">{c.jobTitle || "—"}</td>
                     <td className="px-4 py-2.5 text-ink-muted">{c.email || <span className="text-red-400">Sin email</span>}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button
+                        onClick={() => setParsed((prev) => prev.filter((_, j) => j !== i))}
+                        className="opacity-0 group-hover:opacity-100 transition text-gray-400 hover:text-red-500"
+                        title="Eliminar contacto"
+                      >
+                        <IconX size={14} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {parsed.length > 8 && (
-              <p className="text-xs text-center text-ink-muted py-2 border-t border-[#E5E2F0]">
-                …y {parsed.length - 8} más
-              </p>
-            )}
           </div>
 
           <button
             onClick={handleGenerate}
             className="btn-primary flex items-center gap-2 text-sm"
+            disabled={parsed.length === 0}
           >
             <IconSparkles size={15} />
-            Generar mensajes con IA para {parsed.length} contactos
+            Generar mensajes con IA para {parsed.length} contacto{parsed.length !== 1 ? "s" : ""}
           </button>
         </div>
       )}
