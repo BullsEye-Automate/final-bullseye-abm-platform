@@ -18,7 +18,7 @@ export async function syncContactToHubSpot(
 ): Promise<{ ok: boolean; hsId?: string; error?: string }> {
   const { data: contact } = await db
     .from("contacts")
-    .select("id, client_id, first_name, last_name, job_title, email, phone, phone_clay, phone_lusha, linkedin_url, company_id")
+    .select("id, client_id, first_name, last_name, job_title, email, phone, phone_clay, phone_lusha, linkedin_url, company_id, fit_score")
     .eq("id", contactId)
     .maybeSingle();
 
@@ -39,7 +39,7 @@ export async function syncContactToHubSpot(
       (await searchHSContactByBullseyeId(contact.id)) ??
       (contact.email ? await searchHSContact(contact.email) : null);
 
-    const hsProps: Record<string, string | undefined> = {
+    const hsProps: Record<string, string | number | undefined> = {
       email:                   contact.email        ?? undefined,
       firstname:               contact.first_name   ?? undefined,
       lastname:                contact.last_name    ?? undefined,
@@ -49,6 +49,7 @@ export async function syncContactToHubSpot(
       bullseye_contact_id:     contact.id,
       bullseye_telefono_clay:  contact.phone_clay   ?? undefined,
       bullseye_telefono_lusha: contact.phone_lusha  ?? undefined,
+      bullseye_fit_score:      contact.fit_score    ?? undefined,
       ...extraProps,
     };
 

@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { intakeContactsForCompany } from "@/lib/contactsIntake";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
 import { getClientLemlistConfig, getCampaignLeadsWithDetails, resolveManualSearchCampaignId } from "@/lib/lemlist";
+import { computeContactFitScore, getClientBuyerPersonaRoles } from "@/lib/contactFitScore";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -132,17 +133,29 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const outcomes = intakeResult?.ok ? intakeResult.outcomes : [];
 
   let autoPushResults: Record<string, unknown>[] = [];
-  if (autoPushLemlist && summary.yes > 0) {
+  if (summary.yes > 0) {
     const { data: yesContacts } = await db
       .from("contacts")
-      .select("id")
+      .select("id, job_title, fit_score")
       .eq("company_id", params.id)
       .eq("prefilter_result", "yes")
       .is("lemlist_pushed_at", null)
       .neq("status", "discarded");
 
+    // Lead scoring por cargo: mismo criterio que /busqueda-manual/import-manual,
+    // contra el buyer persona del ICP del cliente (decisores/influenciadores/a evitar).
+    const missingScore = (yesContacts ?? []).filter((c) => c.fit_score == null);
+    if (missingScore.length > 0 && company.client_id) {
+      const roles = await getClientBuyerPersonaRoles(db, company.client_id);
+      await Promise.all(
+        missingScore.map((c) =>
+          db.from("contacts").update({ fit_score: computeContactFitScore({ jobTitle: c.job_title, roles }) }).eq("id", c.id)
+        )
+      );
+    }
+
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? (req.headers.get("host") ? `https://${req.headers.get("host")}` : "");
-    if (baseUrl && yesContacts?.length) {
+    if (autoPushLemlist && baseUrl && yesContacts?.length) {
       const CHUNK = 3;
       for (let i = 0; i < yesContacts.length; i += CHUNK) {
         const slice = yesContacts.slice(i, i + CHUNK);
