@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
-  let body: { client_id: string; contact_ids?: string[] };
+  let body: { client_id: string; contact_ids?: string[]; force_regenerate?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -101,6 +101,7 @@ export async function POST(req: NextRequest) {
 
     // Verificar si ya tiene mensajes de secuencia completa guardados
     const needsMessages =
+      body.force_regenerate ||
       !contact.email_subject     ||
       !contact.email_body        ||
       !contact.linkedin_icebreaker ||

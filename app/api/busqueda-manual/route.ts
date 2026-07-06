@@ -3,6 +3,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+// Cola de empresas ya aprobadas donde Clay no pudo prospectar, en 3 buckets:
+// sin contactos, con solo 1 contacto, y sin contactos fit (marcadas a mano).
 export async function GET(req: NextRequest) {
   const clientId      = req.nextUrl.searchParams.get("client_id") || null;
   const includeRecent = req.nextUrl.searchParams.get("include_recent") === "1";
@@ -27,7 +29,7 @@ export async function GET(req: NextRequest) {
   const now = new Date();
 
   const no_contacts: unknown[] = [];
-  const few_contacts: unknown[] = []; // 1, 2 o 3 contactos
+  const one_contact: unknown[] = [];
   const no_fit: unknown[] = [];
 
   for (const c of allCompanies ?? []) {
@@ -51,13 +53,10 @@ export async function GET(req: NextRequest) {
         signal: hasExplicitSignal ? "clay" : "inferred",
         recent: pushedHoursAgo < GRACE_HOURS
       });
-    } else if (count >= 1 && count <= 3 && c.sales_nav_status == null) {
-      few_contacts.push({ company: c, contact_count: count });
+    } else if (count === 1 && c.sales_nav_status == null) {
+      one_contact.push({ company: c, contact_count: count });
     }
   }
 
-  // Ordenar few_contacts por cantidad de contactos ascendente (1 primero, luego 2, luego 3)
-  (few_contacts as any[]).sort((a, b) => a.contact_count - b.contact_count);
-
-  return NextResponse.json({ no_contacts, few_contacts, no_fit });
+  return NextResponse.json({ no_contacts, one_contact, no_fit });
 }

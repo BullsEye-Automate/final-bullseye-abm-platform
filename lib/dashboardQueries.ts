@@ -187,10 +187,11 @@ export async function computeDashboard(
     .map(([reason, count]) => ({ reason, count }));
 
   // ── Usage (range-bound) ───────────────────────────────────────────
-  let wcq = db.from("companies").select("id", { count: "exact", head: true })
+  let wcq = db.from("companies").select("id")
     .gte("clay_pushed_at", start.toISOString()).lte("clay_pushed_at", end.toISOString());
   if (cid) wcq = wcq.eq("client_id", cid);
-  const { count: totalWorked } = await wcq;
+  const { data: clayPushedCompanies } = await wcq;
+  const clayPushedSet = new Set((clayPushedCompanies ?? []).map((c) => c.id));
 
   let srcq = db.from("contacts").select("company_id, source")
     .gte("created_at", start.toISOString()).lte("created_at", end.toISOString());
@@ -205,6 +206,10 @@ export async function computeDashboard(
   }
   const totalContacts = clayContacts + navContacts;
   const companiesWithContacts = new Set([...claySet, ...navSet]).size;
+  // "Empresa trabajada" = pasó por Clay (clay_pushed_at en rango) O recibió
+  // contactos por vía manual (source != 'clay', ej. búsqueda manual) en el
+  // rango — así lo hecho en /busqueda-manual también cuenta en reportería.
+  const totalWorked = new Set([...clayPushedSet, ...navSet]).size;
 
   // ── Evolution 8 months ───────────────────────────────────────────
   const now = new Date();
@@ -299,7 +304,7 @@ export async function computeDashboard(
     distribution: { company_types, fit_actions },
     quality: { human_agreement_rate, discard_reasons },
     usage: {
-      total_companies_worked: totalWorked ?? 0,
+      total_companies_worked: totalWorked,
       clay_companies: claySet.size,
       clay_contacts: clayContacts,
       sales_nav_companies: navSet.size,

@@ -363,7 +363,9 @@ empiece con "Hi {firstName}," o sin saludo según corresponda.
 - `app/reporteria/page.tsx` — vista al cliente.
 - `app/empresas/page.tsx` — discovery + revisión empresas.
 - `app/contactos/page.tsx` — 5 buckets de contactos.
-- `app/sales-navigator/page.tsx` — empresas que Clay no pudo.
+- `app/busqueda-manual/page.tsx` — import manual desde Campaña puente +
+  empresas que Clay no pudo.
+- `app/busqueda-manual/instrucciones/page.tsx` — guía SDR paso a paso.
 - `app/telefonos/page.tsx` — Lusha + Lemlist phone enrichment.
 - `app/llamadas/page.tsx` + `[id]/page.tsx` + `reporte/page.tsx`.
 - `app/respuestas/page.tsx`.
@@ -395,10 +397,15 @@ empiece con "Hi {firstName}," o sin saludo según corresponda.
   People da 0.
 - `app/api/clay/push-company/route.ts` y `push-contact/route.ts` —
   push manual a Clay.
-- `app/api/sales-navigator/route.ts` — lista de empresas para Sales Nav.
-- `app/api/sales-navigator/[id]/import/route.ts` — import desde Campaña
-  puente con auto-push directo a Lemlist.
-- `app/api/sales-navigator/staged-leads/route.ts` — preview leads.
+- `app/api/busqueda-manual/import-manual/route.ts` — import manual agrupado
+  por empresa desde la Campaña puente del cliente activo.
+- `app/api/busqueda-manual/staged-leads/route.ts` — preview leads de la puente.
+- `app/api/busqueda-manual/route.ts` — cola de empresas que Clay no pudo.
+- `app/api/busqueda-manual/[id]/import/route.ts` — import por empresa desde
+  Campaña puente con auto-push directo a Lemlist.
+- `app/api/busqueda-manual/[id]/mark/route.ts` — marcar/reactivar sin fit.
+- `app/api/busqueda-manual/icp-roles/route.ts` — cargos y filtros de Sales
+  Nav recomendados a partir del ICP del cliente.
 - `app/api/lemlist/refresh-phones/route.ts` — pull phones.
 - `app/api/lemlist/sync-activities/route.ts` — pull email/LinkedIn events.
 - `app/api/lemlist/outreach/route.ts` — agregados outreach.

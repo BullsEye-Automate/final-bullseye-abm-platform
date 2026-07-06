@@ -59,11 +59,18 @@ export type IntakeResult =
   | { ok: true; summary: IntakeSummary; pushDetails: PushDetail[]; outcomes: ContactOutcome[] }
   | { ok: false; status: number; error: string };
 
+export type IntakeOptions = {
+  auto_push_clay?: boolean; // default true — false salta el push a Clay (ej. búsqueda manual, que va directo a Lemlist)
+};
+
 export async function intakeContactsForCompany(
   db: SupabaseClient,
   companyId: string,
-  raws: RawContact[]
+  raws: RawContact[],
+  source: string = "clay",
+  opts: IntakeOptions = {}
 ): Promise<IntakeResult> {
+  const autoPushClay = opts.auto_push_clay ?? true;
   const { data: company, error: cErr } = await db
     .from("companies")
     .select("id, company_type, company_name, client_id")
@@ -173,7 +180,8 @@ export async function intakeContactsForCompany(
       seniority:        c.seniority        ?? null,
       tenure:           c.tenure           ?? null,
       prefilter_result: prefilter,
-      status:           prefilter === "yes" ? "pending" : "discarded"
+      status:           prefilter === "yes" ? "pending" : "discarded",
+      source
     });
   }
 
@@ -186,6 +194,10 @@ export async function intakeContactsForCompany(
   if (insertErr) return { ok: false, status: 500, error: insertErr.message };
 
   summary.inserted = rows.length;
+
+  if (!autoPushClay) {
+    return { ok: true, summary, pushDetails: [], outcomes };
+  }
 
   // Auto-push a Clay: contactos con prefilter_result = 'yes' recién insertados.
   const yesList = (inserted ?? []).filter((r) => r.prefilter_result === "yes");
