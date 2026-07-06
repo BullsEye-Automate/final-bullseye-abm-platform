@@ -350,7 +350,11 @@ ${icpContext ?? "No disponible"}${deepResearchContext}
 Datos del contacto:
 ${contactInfo || "No disponibles"}
 
-${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa." : ""}
+${deepResearch
+  ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa."
+  : companyName
+    ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
+    : ""}
 
 Genera una secuencia completa de outreach para este contacto:
 ${effectiveEmailCount > 0 ? `- ${effectiveEmailCount} email(s): el primero es primer contacto frío, los siguientes son follow-ups más cortos que referencian el anterior\n` : ""}- ${linkedinMsgCount} mensaje(s) de LinkedIn: mensajes directos post-conexión aceptada, máximo 400 chars cada uno
@@ -439,7 +443,11 @@ ${icpContext ?? "No disponible"}${deepResearchContext}
 Datos del contacto:
 ${contactInfo || "No disponibles"}
 
-${deepResearch ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa." : ""}
+${deepResearch
+  ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa."
+  : companyName
+    ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
+    : ""}
 
 Genera los mensajes de outreach personalizados para este contacto usando la herramienta generate_messages.`;
 
