@@ -686,24 +686,32 @@ export default function SubirCampanaPage() {
               {/* Lista por contacto */}
               <div className="divide-y divide-[#F0EEF8]">
                 {parsed.map((c, i) => (
-                  <button
-                    key={i}
-                    onClick={() => toggleDeepResearch(i)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition text-left"
-                  >
-                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${deepResearchSet.has(i) ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
-                      {deepResearchSet.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
-                    </div>
-                    <span className="text-sm text-ink font-medium">
-                      {[c.firstName, c.lastName].filter(Boolean).join(" ") || "—"}
-                    </span>
-                    {c.companyName && (
-                      <span className="text-sm text-ink-muted">· {c.companyName}</span>
-                    )}
-                    {c.jobTitle && (
-                      <span className="text-xs text-ink-muted ml-auto shrink-0">{c.jobTitle}</span>
-                    )}
-                  </button>
+                  <div key={i} className="group flex items-center hover:bg-gray-50 transition">
+                    <button
+                      onClick={() => toggleDeepResearch(i)}
+                      className="flex-1 flex items-center gap-3 px-4 py-2.5 text-left"
+                    >
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${deepResearchSet.has(i) ? "border-[#62E0D8] bg-[#62E0D8]" : "border-gray-300"}`}>
+                        {deepResearchSet.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
+                      </div>
+                      <span className="text-sm text-ink font-medium">
+                        {[c.firstName, c.lastName].filter(Boolean).join(" ") || "—"}
+                      </span>
+                      {c.companyName && (
+                        <span className="text-sm text-ink-muted">· {c.companyName}</span>
+                      )}
+                      {c.jobTitle && (
+                        <span className="text-xs text-ink-muted ml-auto shrink-0">{c.jobTitle}</span>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => setParsed((prev) => prev.filter((_, j) => j !== i))}
+                      className="opacity-0 group-hover:opacity-100 transition px-3 text-gray-400 hover:text-red-500 shrink-0"
+                      title="Eliminar contacto"
+                    >
+                      <IconX size={14} />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
