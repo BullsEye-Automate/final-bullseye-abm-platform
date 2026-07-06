@@ -49,6 +49,7 @@ type GeneratedContact = ParsedContact & {
   icebreaker?: string;
   linkedinMsg2?: string;
   segmentName?: string;
+  deepResearchUsed?: boolean;
   error?: string;
   cancelled?: boolean;
 };
@@ -215,9 +216,19 @@ function ContactRow({
           <div className="text-xs text-ink-muted">{contact.email}</div>
         </div>
         {deepResearch && (
-          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0" style={{ background: "rgba(98,224,216,0.15)", color: "#0fa89a" }}>
-            <IconSearch size={9} className="inline mr-0.5 -mt-px" />Inv. profunda
-          </span>
+          contact.deepResearchUsed === true ? (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0" style={{ background: "rgba(98,224,216,0.15)", color: "#0fa89a" }}>
+              <IconSearch size={9} className="inline mr-0.5 -mt-px" />Inv. profunda
+            </span>
+          ) : contact.deepResearchUsed === false ? (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0 bg-amber-50 text-amber-600">
+              <IconSearch size={9} className="inline mr-0.5 -mt-px" />Sin datos
+            </span>
+          ) : (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0" style={{ background: "rgba(98,224,216,0.08)", color: "#62b8b0" }}>
+              <IconSearch size={9} className="inline mr-0.5 -mt-px" />Investigando…
+            </span>
+          )
         )}
         {hasError ? (
           <span className="text-xs text-red-500 flex items-center gap-1">
@@ -239,6 +250,11 @@ function ContactRow({
           )}
           {contact.segmentName && (
             <div className="text-[11px] text-ink-muted">Segmento: <span className="font-medium text-ink">{contact.segmentName}</span></div>
+          )}
+          {deepResearch && contact.deepResearchUsed === false && (
+            <div className="text-[11px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+              No se encontró la empresa en Supabase ni en Perplexity — el mensaje se generó sin investigación profunda.
+            </div>
           )}
 
           {/* Emails */}

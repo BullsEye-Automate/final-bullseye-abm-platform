@@ -135,12 +135,13 @@ export async function POST(req: NextRequest) {
     const key = companyName.trim().toLowerCase();
     if (deepResearchCache.has(key)) return deepResearchCache.get(key)!;
 
-    // Buscar empresa en Supabase por nombre (case insensitive)
+    // Buscar empresa en Supabase por nombre (tolerante: coincidencia parcial)
     const { data: company } = await db
       .from("companies")
       .select("id, company_name, company_website, company_linkedin_url, company_country, deep_research")
       .eq("client_id", client_id)
-      .ilike("company_name", companyName.trim())
+      .ilike("company_name", `%${companyName.trim()}%`)
+      .limit(1)
       .maybeSingle();
 
     // Si ya tiene deep_research guardado, usarlo directamente
@@ -255,16 +256,17 @@ export async function POST(req: NextRequest) {
 
           return {
             ...c,
-            emailSubject:  msgs.emails?.[0]?.subject ?? msgs.emailSubject,
-            emailBody:     msgs.emails?.[0]?.body    ?? msgs.emailBody,
-            emailSubject2: msgs.emails?.[1]?.subject,
-            emailBody2:    msgs.emails?.[1]?.body,
-            emailSubject3: msgs.emails?.[2]?.subject,
-            emailBody3:    msgs.emails?.[2]?.body,
-            connectMessage: msgs.connectMessage,
-            icebreaker:    msgs.linkedinMessages?.[0] ?? msgs.linkedinIcebreaker ?? msgs.linkedinIcebreakerNoEmail,
-            linkedinMsg2:  msgs.linkedinMessages?.[1],
-            segmentName:   resolvedSegmentName ?? undefined,
+            emailSubject:      msgs.emails?.[0]?.subject ?? msgs.emailSubject,
+            emailBody:         msgs.emails?.[0]?.body    ?? msgs.emailBody,
+            emailSubject2:     msgs.emails?.[1]?.subject,
+            emailBody2:        msgs.emails?.[1]?.body,
+            emailSubject3:     msgs.emails?.[2]?.subject,
+            emailBody3:        msgs.emails?.[2]?.body,
+            connectMessage:    msgs.connectMessage,
+            icebreaker:        msgs.linkedinMessages?.[0] ?? msgs.linkedinIcebreaker ?? msgs.linkedinIcebreakerNoEmail,
+            linkedinMsg2:      msgs.linkedinMessages?.[1],
+            segmentName:       resolvedSegmentName ?? undefined,
+            deepResearchUsed:  use_deep_research ? (deepResearch !== null) : undefined,
           };
         } catch (err: any) {
           return { ...c, error: err?.message ?? "Error de generación" };
