@@ -50,7 +50,7 @@ function fallback(sections: { target_company: string; fit_signals: string; buyer
 const SYSTEM = `Eres un experto en LinkedIn Sales Navigator. A partir del ICP de un cliente B2B, generá recomendaciones de filtros de búsqueda concretos y listos para pegar.
 
 Reglas:
-- job_title_chips: convertí los cargos decisores/influenciadores (a veces descriptivos, ej. "Director or VP of Operations") en cargos CONCRETOS Y CORTOS aptos para el filtro "Current Job Title" de Sales Nav (ej. "Director of Operations", "VP of Operations"). Separá combinaciones con "or"/"y"/"/" en chips individuales, propagando el sufijo común. Máximo 24 chips, sin duplicados.
+- job_title_chips: convierte los cargos decisores/influenciadores (a veces descriptivos, ej. "Director or VP of Operations") en cargos CONCRETOS Y CORTOS aptos para el filtro "Current Job Title" de Sales Nav (ej. "Director of Operations", "VP of Operations"). Separa combinaciones con "or"/"y"/"/" en chips individuales, propagando el sufijo común. Máximo 24 chips, sin duplicados.
 - headcount_bands: elegí de esta lista exacta las bandas de "Company headcount" que cubran el tamaño objetivo: ["1-10","11-50","51-200","201-500","501-1000","1001-5000","5001-10000","10001+"].
 - industries: nombres de industria aptos para el filtro "Industry" de Sales Nav (taxonomía tipo LinkedIn, ej. "Hospitals and Health Care").
 - locations: ubicaciones para "Headquarters location", por prioridad.

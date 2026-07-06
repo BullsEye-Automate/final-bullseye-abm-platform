@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   const config = await getClientLemlistConfig(db, clientId);
   const stagingId = config?.lemlist_staging_campaign_id;
   if (!stagingId) {
-    return NextResponse.json({ error: "No hay Campaña puente configurada para este cliente. Agregala en Config. cliente." }, { status: 400 });
+    return NextResponse.json({ error: "No hay Campaña puente configurada para este cliente. Agrégala en Config. cliente." }, { status: 400 });
   }
 
   const apiKey = await getLemlistApiKey(db, clientId);

@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const config = await getClientLemlistConfig(db, company.client_id);
   const stagingId = config?.lemlist_staging_campaign_id;
-  if (!stagingId) return NextResponse.json({ error: "No hay Campaña puente configurada. Agregala en Config. cliente." }, { status: 400 });
+  if (!stagingId) return NextResponse.json({ error: "No hay Campaña puente configurada. Agrégala en Config. cliente." }, { status: 400 });
 
   const apiKey = await getLemlistApiKey(db, company.client_id);
   if (!apiKey) return NextResponse.json({ error: "No hay API key de Lemlist configurada" }, { status: 500 });
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const config = await getClientLemlistConfig(db, company.client_id);
   const stagingId = config?.lemlist_staging_campaign_id;
-  if (!stagingId) return NextResponse.json({ error: "No hay Campaña puente configurada. Agregala en Config. cliente." }, { status: 400 });
+  if (!stagingId) return NextResponse.json({ error: "No hay Campaña puente configurada. Agrégala en Config. cliente." }, { status: 400 });
 
   const apiKey = await getLemlistApiKey(db, company.client_id);
   if (!apiKey) return NextResponse.json({ error: "No hay API key de Lemlist configurada" }, { status: 500 });

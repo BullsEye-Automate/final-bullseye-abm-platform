@@ -271,10 +271,10 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
       <div className="rounded-lg p-3 text-xs space-y-1.5" style={{ background: "rgba(37,23,98,0.04)", border: "1px solid rgba(37,23,98,0.08)" }}>
         <div className="font-semibold text-ink-muted uppercase tracking-wide mb-1">Cómo funciona</div>
         {[
-          "Buscá empresas y contactos fit en Sales Navigator (o Lemlist People).",
-          "Con la extensión de Lemlist, agregalos a la Campaña puente enriqueciendo LinkedIn + email.",
-          "Volvé acá y hacé clic en \"Importar desde Lemlist\".",
-          "Revisá el resultado por empresa, generá los mensajes con IA y enviá a la campaña real.",
+          "Busca empresas y contactos fit en Sales Navigator (o Lemlist People).",
+          "Con la extensión de Lemlist, agrégalos a la Campaña puente enriqueciendo LinkedIn + email.",
+          "Vuelve aquí y haz clic en \"Importar desde Lemlist\".",
+          "Revisa el resultado por empresa, genera los mensajes con IA y envíalos a la campaña real.",
         ].map((s, i) => (
           <div key={i} className="flex gap-2">
             <span className="font-bold text-brand shrink-0">{i + 1}.</span>

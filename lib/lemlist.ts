@@ -1,8 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-// Datos normalizados de un lead de campaña de Lemlist, ya enriquecidos con
-// GET /api/contacts/{contactId} (el list endpoint de campaña es minimalista:
-// solo trae { _id, state, contactId }).
+// Datos normalizados de un lead de campaña de Lemlist, ya completos.
 export type LemlistLeadDetail = {
   id: string;
   contact_id: string | null;
@@ -41,24 +39,51 @@ export async function getClientLemlistConfig(
   };
 }
 
-function extractLeadFields(raw: Record<string, unknown>): LemlistLeadDetail {
-  const f = (raw.fields ?? {}) as Record<string, unknown>;
-  const firstName = (f.firstName ?? raw.firstName ?? raw.first_name ?? "") as string;
-  const lastName = (f.lastName ?? raw.lastName ?? raw.last_name ?? "") as string;
-  const jobTitle = (f.jobTitle ?? raw.jobTitle ?? raw.job_title ?? f.tagline ?? "") as string;
-  const email = (raw.email ?? f.email ?? null) as string | null;
-  const linkedinUrl = (raw.linkedinUrl ?? raw.linkedin_url ?? null) as string | null;
-  const phone = (raw.phone ?? f.phone ?? null) as string | null;
-  const id = (raw._id ?? raw.contactId ?? email ?? linkedinUrl ?? "") as string;
-  const contactId = (raw.contactId ?? null) as string | null;
-  const addedAt = (raw.createdAt ?? raw.addedAt ?? raw.added_at ?? null) as string | null;
+function pick(obj: Record<string, unknown> | undefined, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = obj?.[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "";
+}
 
-  let companyName = (f.companyName ?? raw.companyName ?? raw.company_name ?? "") as string;
+function orNull(v: string): string | null {
+  return v || null;
+}
+
+// El list endpoint de campaña (GET /api/campaigns/{id}/leads) ya trae bastante
+// más que solo { _id, state, contactId } — trae los datos capturados al momento
+// de agregar el lead a ESA campaña (incluyendo companyName/jobTitle/addedAt
+// propios de esa campaña), bajo `vars` (a veces `fields`) o en la raíz. Estos
+// valores son la fuente de verdad y NO deben pisarse con datos del contacto
+// (GET /api/contacts/{contactId}), que son globales del workspace y pueden
+// venir de otra campaña o de otro momento — por eso el fetch de detalle del
+// contacto solo RELLENA huecos (campos vacíos), nunca sobrescribe.
+function mapRawLead(raw: Record<string, unknown>): LemlistLeadDetail {
+  const vars = (raw.vars ?? raw.fields ?? {}) as Record<string, unknown>;
+
+  let firstName = pick(raw, "firstName", "first_name") || pick(vars, "firstName", "first_name");
+  let lastName = pick(raw, "lastName", "last_name") || pick(vars, "lastName", "last_name");
+  if (!firstName && !lastName) {
+    const fullName = pick(raw, "fullName", "full_name") || pick(vars, "fullName", "full_name");
+    if (fullName) {
+      const parts = fullName.split(/\s+/);
+      firstName = parts[0] ?? "";
+      lastName = parts.slice(1).join(" ");
+    }
+  }
+
+  const email = pick(raw, "email") || pick(vars, "email");
+  const linkedinUrl = pick(raw, "linkedinUrl", "linkedin_url") || pick(vars, "linkedinUrl", "linkedin_url");
+  const phone = pick(raw, "phone") || pick(vars, "phone");
+  const jobTitle = pick(raw, "jobTitle", "job_title", "title") || pick(vars, "jobTitle", "job_title", "tagline");
+  let companyName = pick(raw, "companyName", "company_name", "company") || pick(vars, "companyName", "company_name", "company");
+
   if (!companyName) {
-    const signalKey = Object.keys(f).find((k) => k.startsWith("lastSignalData_"));
+    const signalKey = Object.keys(vars).find((k) => k.startsWith("lastSignalData_"));
     if (signalKey) {
       try {
-        const sd = JSON.parse(f[signalKey] as string);
+        const sd = JSON.parse(vars[signalKey] as string);
         companyName = sd?.data?.company?.fields?.name ?? "";
       } catch {
         /* ignorar */
@@ -66,26 +91,31 @@ function extractLeadFields(raw: Record<string, unknown>): LemlistLeadDetail {
     }
   }
 
+  // addedAt: fecha en que ESTE lead entró a ESTA campaña — nunca del contacto.
+  const addedAt = pick(raw, "addedAt", "added_at", "createdAt", "created_at") || null;
+
+  const contactId = (raw.contactId ?? null) as string | null;
+  const id = (raw._id ?? contactId ?? email ?? linkedinUrl ?? "") as string;
+
   return {
     id,
     contact_id: contactId,
-    email,
+    email: orNull(email),
     first_name: firstName,
     last_name: lastName,
     company_name: companyName,
     job_title: jobTitle,
-    linkedin_url: linkedinUrl,
-    phone,
+    linkedin_url: orNull(linkedinUrl),
+    phone: orNull(phone),
     added_at: addedAt,
   };
 }
 
 // Trae TODOS los leads de una campaña de Lemlist con sus datos completos.
-// ⚠️ Gotcha: el list endpoint a nivel campaña (GET /api/campaigns/{id}/leads)
-// es minimalista — solo devuelve { _id, state, contactId }. Para traer
-// firstName/lastName/jobTitle/companyName/linkedinUrl/email/phone hay que
-// pedir GET /api/contacts/{contactId} por cada lead, en paralelo por chunks.
-// Usar SIEMPRE esta función, nunca el list crudo.
+// Los datos base salen del list endpoint (por campaña); los leads que quedan
+// incompletos (sin email/nombre/empresa) se completan con
+// GET /api/contacts/{contactId}, SIN pisar los datos ya capturados por la
+// campaña. Usar SIEMPRE esta función, nunca el list crudo.
 export async function getCampaignLeadsWithDetails(
   campaignId: string,
   apiKey: string
@@ -107,24 +137,53 @@ export async function getCampaignLeadsWithDetails(
   const payload = await leadsRes.json().catch(() => ({}));
   const rawLeads = (payload.items ?? (Array.isArray(payload) ? payload : [])) as Record<string, unknown>[];
 
+  const leads = rawLeads.map(mapRawLead);
+
+  const incomplete = leads.filter((l) => !l.email || (!l.first_name && !l.last_name) || !l.company_name);
+  const contactIds = Array.from(new Set(incomplete.map((l) => l.contact_id).filter((v): v is string => Boolean(v))));
+
   const CHUNK = 5;
-  const enriched: Record<string, unknown>[] = [];
-  for (let i = 0; i < rawLeads.length; i += CHUNK) {
-    const slice = rawLeads.slice(i, i + CHUNK);
+  const contactMap = new Map<string, Record<string, unknown>>();
+  for (let i = 0; i < contactIds.length; i += CHUNK) {
+    const slice = contactIds.slice(i, i + CHUNK);
     const results = await Promise.all(
-      slice.map(async (lead) => {
-        const contactId = lead.contactId as string | undefined;
-        if (!contactId) return lead;
-        const res = await fetch(`https://api.lemlist.com/api/contacts/${contactId}`, {
-          headers: { Authorization: creds },
-        }).catch(() => null);
-        if (!res?.ok) return lead;
-        const contact = await res.json().catch(() => ({}));
-        return { ...contact, ...lead };
+      slice.map(async (cid) => {
+        const res = await fetch(`https://api.lemlist.com/api/contacts/${cid}`, { headers: { Authorization: creds } }).catch(() => null);
+        if (!res?.ok) return null;
+        const contact = await res.json().catch(() => null);
+        return contact ? ([cid, contact] as const) : null;
       })
     );
-    enriched.push(...results);
+    for (const r of results) {
+      if (r) contactMap.set(r[0], r[1]);
+    }
   }
 
-  return { ok: true, leads: enriched.map(extractLeadFields), matched_url };
+  for (const lead of incomplete) {
+    if (!lead.contact_id) continue;
+    const c = contactMap.get(lead.contact_id);
+    if (!c) continue;
+    const cVars = (c.vars ?? c.fields ?? {}) as Record<string, unknown>;
+
+    if (!lead.email) lead.email = orNull(pick(c, "email") || pick(cVars, "email"));
+    if (!lead.linkedin_url) lead.linkedin_url = orNull(pick(c, "linkedinUrl", "linkedin_url") || pick(cVars, "linkedinUrl", "linkedin_url"));
+    if (!lead.phone) lead.phone = orNull(pick(c, "phone") || pick(cVars, "phone"));
+
+    if (!lead.first_name && !lead.last_name) {
+      const fullName = pick(c, "fullName", "full_name");
+      if (fullName) {
+        const parts = fullName.split(/\s+/);
+        lead.first_name = parts[0] ?? "";
+        lead.last_name = parts.slice(1).join(" ");
+      } else {
+        lead.first_name = pick(c, "firstName", "first_name") || pick(cVars, "firstName", "first_name");
+        lead.last_name = pick(c, "lastName", "last_name") || pick(cVars, "lastName", "last_name");
+      }
+    }
+
+    if (!lead.company_name) lead.company_name = pick(c, "companyName", "company_name", "company") || pick(cVars, "companyName", "company_name", "company");
+    if (!lead.job_title) lead.job_title = pick(c, "jobTitle", "job_title", "title") || pick(cVars, "jobTitle", "job_title");
+  }
+
+  return { ok: true, leads, matched_url };
 }

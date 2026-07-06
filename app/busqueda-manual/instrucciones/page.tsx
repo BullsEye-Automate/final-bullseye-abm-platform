@@ -126,40 +126,40 @@ export default function InstruccionesPage() {
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">Setup inicial (una vez por cliente + SDR)</h2>
         <ol className="space-y-3 text-sm">
-          <li><strong>1.</strong> Creá 2 listas de <strong>leads</strong> en Sales Navigator: <ListName>{leadsNoProspectar}</ListName> y <ListName>{leadsYaProspectado}</ListName>.</li>
-          <li><strong>2.</strong> Creá 2 listas de <strong>accounts</strong>: <ListName>{accountsNoFit}</ListName> y <ListName>{accountsFit}</ListName>.</li>
+          <li><strong>1.</strong> Crea 2 listas de <strong>leads</strong> en Sales Navigator: <ListName>{leadsNoProspectar}</ListName> y <ListName>{leadsYaProspectado}</ListName>.</li>
+          <li><strong>2.</strong> Crea 2 listas de <strong>accounts</strong>: <ListName>{accountsNoFit}</ListName> y <ListName>{accountsFit}</ListName>.</li>
           <li>
-            <strong>3.</strong> Creá una <strong>búsqueda de leads</strong> filtrada por <em>Current Job Title</em> con los cargos del ICP (chips abajo, uno por uno). En <em>Account list</em> incluí <ListName>{accountsFit}</ListName>; en <em>Lead list</em> excluí <ListName>{leadsNoProspectar}</ListName> y <ListName>{leadsYaProspectado}</ListName>.
+            <strong>3.</strong> Crea una <strong>búsqueda de leads</strong> filtrada por <em>Current Job Title</em> con los cargos del ICP (chips abajo, uno por uno). En <em>Account list</em> incluye <ListName>{accountsFit}</ListName>; en <em>Lead list</em> excluye <ListName>{leadsNoProspectar}</ListName> y <ListName>{leadsYaProspectado}</ListName>.
           </li>
-          <li><strong>4.</strong> Guardala con "Save search to get notified of new results" como <ListName>{savedLeadsSearch}</ListName>.</li>
+          <li><strong>4.</strong> Guárdala con "Save search to get notified of new results" como <ListName>{savedLeadsSearch}</ListName>.</li>
           <li>
-            <strong>5.</strong> Creá una <strong>búsqueda de accounts</strong> con los filtros del ICP (recomendados abajo). En <em>Account lists</em> excluí <ListName>{accountsNoFit}</ListName> y <ListName>{accountsFit}</ListName>.
+            <strong>5.</strong> Crea una <strong>búsqueda de accounts</strong> con los filtros del ICP (recomendados abajo). En <em>Account lists</em> excluye <ListName>{accountsNoFit}</ListName> y <ListName>{accountsFit}</ListName>.
           </li>
-          <li><strong>6.</strong> Guardala como <ListName>{savedAccountsSearch}</ListName>.</li>
+          <li><strong>6.</strong> Guárdala como <ListName>{savedAccountsSearch}</ListName>.</li>
         </ol>
       </section>
 
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">Prospección día a día</h2>
         <ol className="space-y-3 text-sm" start={7}>
-          <li><strong>7.</strong> Recorré la búsqueda de accounts: las <strong>fit</strong> a <ListName>{accountsFit}</ListName>, las <strong>no fit</strong> a <ListName>{accountsNoFit}</ListName>.</li>
-          <li><strong>8.</strong> En la búsqueda guardada de leads, "Add to Lemlist" (cuidando la cuenta de Lemlist del cliente correcto) → agregalos a la <strong>Campaña puente</strong> marcando enriquecer LinkedIn + email.</li>
-          <li><strong>9.</strong> Antes de desmarcarlos: agregalos a <ListName>{leadsYaProspectado}</ListName>; si alguno no era fit, a <ListName>{leadsNoProspectar}</ListName>.</li>
-          <li><strong>10.</strong> Volvé a la app → <Link href="/busqueda-manual" className="text-brand hover:underline">Importar desde Lemlist</Link> → generá los mensajes con IA y enviá a la campaña real.</li>
+          <li><strong>7.</strong> Recorre la búsqueda de accounts: las <strong>fit</strong> a <ListName>{accountsFit}</ListName>, las <strong>no fit</strong> a <ListName>{accountsNoFit}</ListName>.</li>
+          <li><strong>8.</strong> En la búsqueda guardada de leads, "Add to Lemlist" (cuidando la cuenta de Lemlist del cliente correcto) → agrégalos a la <strong>Campaña puente</strong> marcando enriquecer LinkedIn + email.</li>
+          <li><strong>9.</strong> Antes de desmarcarlos: agrégalos a <ListName>{leadsYaProspectado}</ListName>; si alguno no era fit, a <ListName>{leadsNoProspectar}</ListName>.</li>
+          <li><strong>10.</strong> Vuelve a la app → <Link href="/busqueda-manual" className="text-brand hover:underline">Importar desde Lemlist</Link> → genera los mensajes con IA y envíalos a la campaña real.</li>
         </ol>
       </section>
 
       <section className="card space-y-3">
         <h2 className="text-lg font-semibold">Cargos para copiar y pegar (Current Job Title)</h2>
-        <p className="text-sm text-ink-muted">Sacados del ICP del cliente activo. Pegalos uno por uno en el filtro de Sales Nav.</p>
+        <p className="text-sm text-ink-muted">Sacados del ICP del cliente activo. Pégalos uno por uno en el filtro de Sales Nav.</p>
         {!currentClient || currentClient.id === "__all__" ? (
-          <p className="text-sm text-ink-muted">Seleccioná un cliente en el sidebar para ver sus cargos.</p>
+          <p className="text-sm text-ink-muted">Selecciona un cliente en el sidebar para ver sus cargos.</p>
         ) : loadingRecs ? (
           <div className="flex items-center gap-2 text-ink-muted text-sm"><IconLoader2 size={16} className="animate-spin" /> Cargando ICP…</div>
         ) : recsError ? (
           <div className="flex items-center gap-2 text-sm text-danger-fg"><IconAlertCircle size={15} /> {recsError}</div>
         ) : !recs?.length ? (
-          <p className="text-sm text-ink-muted">Este cliente todavía no tiene ICP por industria configurado en /configuracion/icp.</p>
+          <p className="text-sm text-ink-muted">Este cliente todavía no tiene ICP configurado en /configuracion/icp.</p>
         ) : (
           recs.map((ind) => (
             <div key={ind.id} className="space-y-4 pt-2 first:pt-0">
