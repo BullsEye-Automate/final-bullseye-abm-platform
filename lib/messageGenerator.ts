@@ -289,7 +289,8 @@ export async function generateContactMessages(
     // Construir propiedades dinámicas para los emails de la secuencia (solo si tiene email)
     const emailProperties: Record<string, unknown> = {};
     const emailRequired: string[] = [];
-    const effectiveEmailCount = hasEmail ? emailCount : 0;
+    // Siempre generar emails aunque el contacto no tenga email registrado aún — Lemlist lo enriquece después
+    const effectiveEmailCount = emailCount;
     for (let i = 1; i <= effectiveEmailCount; i++) {
       emailProperties[`email${i}_subject`] = {
         type: "string",
@@ -406,44 +407,29 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
 
   // ─── MODO SIMPLE: comportamiento original (1 email, 1 icebreaker) ─────────────
 
-  // Definición de la herramienta para forzar output estructurado
-  const tool: Anthropic.Tool = hasEmail
-    ? {
-        name: "generate_messages",
-        description: "Genera los mensajes de outreach para la secuencia de Lemlist",
-        input_schema: {
-          type: "object" as const,
-          properties: {
-            emailSubject: {
-              type: "string",
-              description: "Asunto del email (máximo 7 palabras, sin signos de admiración, sin emojis)",
-            },
-            emailBody: {
-              type: "string",
-              description: `Cuerpo del email. Debe empezar con "${greeting}" seguido de doble salto de línea. Sin bullets. Termina con pregunta o CTA sutil.`,
-            },
-            linkedinIcebreaker: {
-              type: "string",
-              description: "Mensaje de LinkedIn cuando acepta el invite (máximo 400 caracteres, sin saludo, sin emojis)",
-            },
-          },
-          required: ["emailSubject", "emailBody", "linkedinIcebreaker"],
+  // Siempre generar email + LinkedIn — Lemlist enriquece el email aunque no esté disponible aún
+  const tool: Anthropic.Tool = {
+    name: "generate_messages",
+    description: "Genera los mensajes de outreach para la secuencia de Lemlist",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        emailSubject: {
+          type: "string",
+          description: "Asunto del email (máximo 7 palabras, sin signos de admiración, sin emojis)",
         },
-      }
-    : {
-        name: "generate_messages",
-        description: "Genera el mensaje de LinkedIn para contactos sin email",
-        input_schema: {
-          type: "object" as const,
-          properties: {
-            linkedinIcebreakerNoEmail: {
-              type: "string",
-              description: "Mensaje de LinkedIn (máximo 400 caracteres, sin saludo, sin emojis, directo al valor)",
-            },
-          },
-          required: ["linkedinIcebreakerNoEmail"],
+        emailBody: {
+          type: "string",
+          description: `Cuerpo del email. Debe empezar con "${greeting}" seguido de doble salto de línea. Sin bullets. Termina con pregunta o CTA sutil.`,
         },
-      };
+        linkedinIcebreaker: {
+          type: "string",
+          description: "Mensaje de LinkedIn cuando acepta el invite (máximo 400 caracteres, sin saludo, sin emojis)",
+        },
+      },
+      required: ["emailSubject", "emailBody", "linkedinIcebreaker"],
+    },
+  };
 
   const userPrompt = `${langInstruction}
 
