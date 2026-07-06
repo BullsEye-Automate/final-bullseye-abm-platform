@@ -39,12 +39,16 @@ type Body = {
   city?: string;
   country?: string;
   client_id?: string | null;
+  require_linkedin?: boolean;
 };
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Body;
   if (!body.name?.trim()) {
     return NextResponse.json({ error: "El campo 'name' es requerido" }, { status: 400 });
+  }
+  if (body.require_linkedin && !body.linkedin_url?.trim()) {
+    return NextResponse.json({ error: "El LinkedIn de la empresa es obligatorio" }, { status: 400 });
   }
 
   const db = supabaseAdmin();
@@ -107,10 +111,17 @@ export async function POST(req: NextRequest) {
     extracted.company_linkedin_url = normalizeLinkedInUrl(extracted.company_linkedin_url as string);
   }
 
+  // Si el usuario proveyó el LinkedIn de la empresa a mano, es la fuente de verdad:
+  // no dejamos que la extracción de Claude lo pise ni lo vacíe (regla "solo si aparece
+  // literal en la evidencia" puede descartarlo aunque el usuario ya lo confirmó).
+  // Sin esto, Clay recibe linkedin_url vacío y la columna "Find People" queda bloqueada
+  // con "Company Identifier is blank".
+  const userLinkedin = body.linkedin_url?.trim() ? normalizeLinkedInUrl(body.linkedin_url) : null;
+
   const row = {
     company_name:         (extracted.company_name as string) || name,
     company_website:      (extracted.company_website as string | null) ?? null,
-    company_linkedin_url: (extracted.company_linkedin_url as string | null) ?? null,
+    company_linkedin_url: userLinkedin ?? (extracted.company_linkedin_url as string | null) ?? null,
     company_city:         (extracted.company_city as string | null) ?? null,
     company_country:      (extracted.company_country as string | null) ?? null,
     company_size:         (extracted.company_size as number | null) ?? null,

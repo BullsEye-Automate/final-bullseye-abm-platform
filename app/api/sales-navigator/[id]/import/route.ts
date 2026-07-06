@@ -163,12 +163,25 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
 
   const intakeResult = contacts.length > 0
-    ? await intakeContactsForCompany(db, params.id, contacts).catch(() => null)
+    ? await intakeContactsForCompany(db, params.id, contacts).catch((err) => ({
+        ok: false as const,
+        status: 500,
+        error: String(err?.message ?? err),
+      }))
     : null;
 
+  if (intakeResult && !intakeResult.ok) {
+    return NextResponse.json({ error: intakeResult.error }, { status: intakeResult.status });
+  }
+
   const summary = intakeResult?.ok
-    ? { yes: intakeResult.yes, no: intakeResult.no, skipped: intakeResult.skipped }
-    : { yes: 0, no: 0, skipped: 0 };
+    ? {
+        yes: intakeResult.summary.yes,
+        no: intakeResult.summary.no,
+        skipped: intakeResult.summary.skipped,
+        duplicates: intakeResult.summary.duplicates,
+      }
+    : { yes: 0, no: 0, skipped: 0, duplicates: 0 };
 
   if (summary.yes > 0) {
     await db.from("companies")

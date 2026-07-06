@@ -20,6 +20,7 @@ export type IntakeSummary = {
   yes: number;
   no: number;
   skipped: number;
+  duplicates: number;
 };
 
 export type PushDetail = {
@@ -46,10 +47,18 @@ export async function intakeContactsForCompany(
   if (cErr) return { ok: false, status: 500, error: cErr.message };
   if (!company) return { ok: false, status: 404, error: "Company not found" };
 
-  const { data: existing, error: exErr } = await db
+  // El índice único de la tabla es (client_id, lower(linkedin_url)) — es decir,
+  // el mismo linkedin_url no puede repetirse en ningún company_id del mismo cliente.
+  // Por eso el chequeo de duplicados debe hacerse por client_id, no solo por company_id,
+  // o el INSERT de abajo falla por violación de constraint cuando el contacto ya
+  // existe bajo otra empresa del mismo cliente.
+  const clientId = (company as any).client_id ?? null;
+  const existingQuery = db
     .from("contacts")
-    .select("id, linkedin_url, linkedin_headline, seniority, status")
-    .eq("company_id", companyId);
+    .select("id, company_id, linkedin_url, linkedin_headline, seniority, status");
+  const { data: existing, error: exErr } = clientId
+    ? await existingQuery.eq("client_id", clientId)
+    : await existingQuery.eq("company_id", companyId);
   if (exErr) return { ok: false, status: 500, error: exErr.message };
 
   // Mapa linkedin_url → registro existente para actualizar headline/seniority
@@ -61,7 +70,7 @@ export async function intakeContactsForCompany(
 
   const seen = new Set(existingByUrl.keys());
 
-  const summary: IntakeSummary = { inserted: 0, yes: 0, no: 0, skipped: 0 };
+  const summary: IntakeSummary = { inserted: 0, yes: 0, no: 0, skipped: 0, duplicates: 0 };
   const rows: any[] = [];
 
   for (const c of raws) {
@@ -69,6 +78,13 @@ export async function intakeContactsForCompany(
     const linkedin = (normalized ?? "").toLowerCase();
     if (linkedin && seen.has(linkedin)) {
       const prev = existingByUrl.get(linkedin);
+      if (prev && prev.company_id !== companyId) {
+        // Ya existe con este mismo linkedin_url pero bajo otra empresa del mismo
+        // cliente — insertarlo violaría el índice único, así que lo salteamos.
+        summary.duplicates += 1;
+        summary.skipped += 1;
+        continue;
+      }
       // Si el contacto existe pero fue descartado por pre-filter, borrarlo y reinsertarlo
       // para que el nuevo cargo (posiblemente fit) sea re-evaluado
       if (prev && prev.status === "discarded") {
