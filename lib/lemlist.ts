@@ -64,14 +64,16 @@ function orNull(v: string): string | null {
   return v || null;
 }
 
-// El list endpoint de campaña (GET /api/campaigns/{id}/leads) ya trae bastante
-// más que solo { _id, state, contactId } — trae los datos capturados al momento
-// de agregar el lead a ESA campaña (incluyendo companyName/jobTitle/addedAt
-// propios de esa campaña), bajo `vars` (a veces `fields`) o en la raíz. Estos
-// valores son la fuente de verdad y NO deben pisarse con datos del contacto
-// (GET /api/contacts/{contactId}), que son globales del workspace y pueden
-// venir de otra campaña o de otro momento — por eso el fetch de detalle del
-// contacto solo RELLENA huecos (campos vacíos), nunca sobrescribe.
+// ⚠️ Confirmado con datos reales: el list endpoint de campaña
+// (GET /api/campaigns/{id}/leads) SÍ es minimalista — solo trae
+// { _id, state, contactId }. No hay company/nombre/fecha ahí. Todo eso sale
+// de GET /api/contacts/{contactId} (campo `fields`, no `vars` — se deja el
+// fallback a `vars` por si Lemlist lo agrega en el futuro). El contacto
+// tampoco tiene una fecha por-campaña — su único campo de fecha es
+// `createdAt`, global al workspace. Para una campaña puente DEDICADA (que
+// solo recibe leads nuevos) es una aproximación razonable de "cuándo se
+// agregó"; si el mismo contacto ya existía de otra campaña, puede ser más
+// vieja que el alta real a esta campaña — limitación conocida de la API.
 function mapRawLead(raw: Record<string, unknown>): LemlistLeadDetail {
   const vars = (raw.vars ?? raw.fields ?? {}) as Record<string, unknown>;
 
@@ -196,6 +198,7 @@ export async function getCampaignLeadsWithDetails(
 
     if (!lead.company_name) lead.company_name = pick(c, "companyName", "company_name", "company") || pick(cVars, "companyName", "company_name", "company");
     if (!lead.job_title) lead.job_title = pick(c, "jobTitle", "job_title", "title") || pick(cVars, "jobTitle", "job_title");
+    if (!lead.added_at) lead.added_at = pick(c, "createdAt", "created_at") || null;
   }
 
   return { ok: true, leads, matched_url };
