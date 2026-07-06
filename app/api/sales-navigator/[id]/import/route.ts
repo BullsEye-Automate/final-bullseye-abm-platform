@@ -189,5 +189,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .eq("id", params.id);
   }
 
-  return NextResponse.json({ staged_total: leads.length, summary });
+  const outcomes = intakeResult?.ok ? intakeResult.outcomes : [];
+
+  return NextResponse.json({ staged_total: leads.length, summary, outcomes });
 }

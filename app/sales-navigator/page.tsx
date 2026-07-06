@@ -71,10 +71,24 @@ type StagingLead = {
   matched: boolean;
 };
 
+type ContactOutcome = {
+  name: string;
+  linkedin_url: string | null;
+  outcome: "yes" | "no" | "already_exists" | "duplicate_other_company";
+};
+
 type ImportResult = {
   summary?: { yes: number; no: number; duplicates?: number };
   staged_total?: number;
+  outcomes?: ContactOutcome[];
   error?: string;
+};
+
+const OUTCOME_LABEL: Record<ContactOutcome["outcome"], string> = {
+  yes: "importado, pasó el pre-filter",
+  no: "no pasó el pre-filter",
+  already_exists: "ya existía en esta empresa",
+  duplicate_other_company: "ya existía en otra empresa de este cliente",
 };
 
 type Tab = "no_contacts" | "few_contacts" | "no_fit";
@@ -599,7 +613,7 @@ function CompanyCard({
 
       {/* Resultado */}
       {importResult && !stagingLeads && (
-        <div>
+        <div className="flex flex-col gap-2">
           {importResult.error ? (
             <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm bg-danger-bg text-danger-fg">
               <IconAlertCircle size={15} className="shrink-0" />
@@ -616,7 +630,19 @@ function CompanyCard({
               0 contactos importados
               {importResult.summary?.duplicates ? ` — ${importResult.summary.duplicates} ya existían en otra empresa de este cliente` : ""}
               {importResult.summary?.no ? ` — ${importResult.summary.no} no pasaron el pre-filter` : ""}
-              {!importResult.summary?.duplicates && !importResult.summary?.no ? " — revisá si ya estaban cargados en esta empresa" : ""}
+              {!importResult.summary?.duplicates && !importResult.summary?.no ? " — revisá el detalle abajo" : ""}
+            </div>
+          )}
+          {importResult.outcomes && importResult.outcomes.length > 0 && (
+            <div className="rounded-lg border border-[#E5E2F0] divide-y divide-[#E5E2F0] text-xs overflow-hidden">
+              {importResult.outcomes.map((o, i) => (
+                <div key={i} className="flex items-center justify-between gap-2 px-3 py-1.5">
+                  <span className="text-ink truncate">{o.name}</span>
+                  <span className={o.outcome === "yes" ? "text-success-fg" : "text-ink-muted"}>
+                    {OUTCOME_LABEL[o.outcome]}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
