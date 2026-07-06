@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { anthropic, CLAUDE_MODEL } from "./claude";
 
 // Datos normalizados de un lead de campaña de Lemlist, ya completos.
 export type LemlistLeadDetail = {
@@ -62,6 +63,30 @@ function pick(obj: Record<string, unknown> | undefined, ...keys: string[]): stri
 
 function orNull(v: string): string | null {
   return v || null;
+}
+
+// ⚠️ Confirmado con datos reales: cuando el lead se agrega desde LinkedIn
+// Sales Navigator (linkedinUrlSalesNav presente), el enrich de Lemlist NO
+// devuelve companyName como campo estructurado — solo bio/summary/
+// jobDescription/companyDescription/tagline en texto libre. Muchas veces el
+// nombre de la empresa SÍ aparece mencionado en ese texto (ej. "actualmente
+// Marketing Manager en VGroup"), así que como último recurso se lo pedimos a
+// Claude en vez de dejar el contacto "sin empresa".
+async function inferCompanyNameFromBio(bio: string): Promise<string> {
+  try {
+    const msg = await anthropic().messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 30,
+      system: `Te doy la bio de LinkedIn de una persona. Respondé SOLO con el nombre de la empresa donde trabaja actualmente, tal como aparece mencionado en el texto — nada más, sin explicación. Si el texto no menciona el nombre de una empresa actual, respondé exactamente: NINGUNA`,
+      messages: [{ role: "user", content: bio.slice(0, 3000) }],
+    });
+    const text = msg.content.find((b: { type: string }) => b.type === "text") as { type: "text"; text: string } | undefined;
+    const answer = text?.text.trim() ?? "";
+    if (!answer || /^ninguna$/i.test(answer)) return "";
+    return answer.replace(/^["'.]+|["'.]+$/g, "").slice(0, 120);
+  } catch {
+    return "";
+  }
 }
 
 // ⚠️ Confirmado con datos reales: el list endpoint de campaña
@@ -174,6 +199,7 @@ export async function getCampaignLeadsWithDetails(
     }
   }
 
+  const bioByLeadId = new Map<string, string>();
   for (const lead of incomplete) {
     if (!lead.contact_id) continue;
     const c = contactMap.get(lead.contact_id);
@@ -199,6 +225,26 @@ export async function getCampaignLeadsWithDetails(
     if (!lead.company_name) lead.company_name = pick(c, "companyName", "company_name", "company") || pick(cVars, "companyName", "company_name", "company");
     if (!lead.job_title) lead.job_title = pick(c, "jobTitle", "job_title", "title") || pick(cVars, "jobTitle", "job_title");
     if (!lead.added_at) lead.added_at = pick(c, "createdAt", "created_at") || null;
+
+    // Último recurso: inferir la empresa desde la bio de LinkedIn (ver nota en inferCompanyNameFromBio).
+    if (!lead.company_name) {
+      const bio = [pick(cVars, "summary"), pick(cVars, "jobDescription"), pick(cVars, "companyDescription"), pick(cVars, "tagline")]
+        .filter(Boolean)
+        .join("\n\n");
+      if (bio) bioByLeadId.set(lead.id, bio);
+    }
+  }
+
+  const BIO_CHUNK = 5;
+  const bioEntries = Array.from(bioByLeadId.entries());
+  for (let i = 0; i < bioEntries.length; i += BIO_CHUNK) {
+    const slice = bioEntries.slice(i, i + BIO_CHUNK);
+    await Promise.all(
+      slice.map(async ([leadId, bio]) => {
+        const lead = leads.find((l) => l.id === leadId);
+        if (lead) lead.company_name = await inferCompanyNameFromBio(bio);
+      })
+    );
   }
 
   return { ok: true, leads, matched_url };
