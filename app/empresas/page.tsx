@@ -409,7 +409,7 @@ export default function EmpresasPage() {
 
   // Buscar una empresa por nombre
   async function searchOne() {
-    if (!searchName.trim()) return;
+    if (!searchName.trim() || !searchLinkedin.trim()) return;
     setSearchingOne(true);
     setSearchOneResult(null);
     const res = await fetch("/api/companies/research-one", {
@@ -417,7 +417,8 @@ export default function EmpresasPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: searchName.trim(),
-        linkedin_url: searchLinkedin.trim() || undefined,
+        linkedin_url: searchLinkedin.trim(),
+        require_linkedin: true,
         client_id: currentClient?.id ?? null
       })
     });
@@ -708,18 +709,21 @@ export default function EmpresasPage() {
                   onKeyDown={(e) => { if (e.key === "Enter") searchOne(); }}
                 />
               </Field>
-              <Field label="LinkedIn URL (opcional)">
+              <Field label="LinkedIn URL">
                 <input
                   className="input"
-                  placeholder="https://linkedin.com/company/..."
+                  placeholder="https://linkedin.com/company/... (obligatorio)"
                   value={searchLinkedin}
                   onChange={(e) => setSearchLinkedin(e.target.value)}
                 />
               </Field>
             </div>
+            <p className="text-xs text-ink-muted">
+              El LinkedIn de la empresa es obligatorio: sin él, Clay no puede buscar los contactos (columna &quot;Find People&quot;).
+            </p>
             <button
               onClick={searchOne}
-              disabled={searchingOne || !searchName.trim()}
+              disabled={searchingOne || !searchName.trim() || !searchLinkedin.trim()}
               className="btn-primary"
             >
               {searchingOne ? (
