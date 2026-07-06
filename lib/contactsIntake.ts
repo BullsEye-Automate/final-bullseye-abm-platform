@@ -30,8 +30,14 @@ export type PushDetail = {
   error?: string;
 };
 
+export type ContactOutcome = {
+  name: string;
+  linkedin_url: string | null;
+  outcome: "yes" | "no" | "already_exists" | "duplicate_other_company";
+};
+
 export type IntakeResult =
-  | { ok: true; summary: IntakeSummary; pushDetails: PushDetail[] }
+  | { ok: true; summary: IntakeSummary; pushDetails: PushDetail[]; outcomes: ContactOutcome[] }
   | { ok: false; status: number; error: string };
 
 export async function intakeContactsForCompany(
@@ -72,8 +78,10 @@ export async function intakeContactsForCompany(
 
   const summary: IntakeSummary = { inserted: 0, yes: 0, no: 0, skipped: 0, duplicates: 0 };
   const rows: any[] = [];
+  const outcomes: ContactOutcome[] = [];
 
   for (const c of raws) {
+    const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "Sin nombre";
     const normalized = normalizeLinkedInUrl(c.linkedin_url);
     const linkedin = (normalized ?? "").toLowerCase();
     if (linkedin && seen.has(linkedin)) {
@@ -83,6 +91,7 @@ export async function intakeContactsForCompany(
         // cliente — insertarlo violaría el índice único, así que lo salteamos.
         summary.duplicates += 1;
         summary.skipped += 1;
+        outcomes.push({ name, linkedin_url: normalized, outcome: "duplicate_other_company" });
         continue;
       }
       // Si el contacto existe pero fue descartado por pre-filter, borrarlo y reinsertarlo
@@ -110,6 +119,7 @@ export async function intakeContactsForCompany(
           }
         }
         summary.skipped += 1;
+        outcomes.push({ name, linkedin_url: normalized, outcome: "already_exists" });
         continue;
       }
     }
@@ -129,6 +139,7 @@ export async function intakeContactsForCompany(
     }
     if (prefilter === "yes") summary.yes += 1;
     else summary.no += 1;
+    outcomes.push({ name, linkedin_url: normalized, outcome: prefilter });
 
     rows.push({
       company_id:       companyId,
@@ -147,7 +158,7 @@ export async function intakeContactsForCompany(
     });
   }
 
-  if (rows.length === 0) return { ok: true, summary, pushDetails: [] };
+  if (rows.length === 0) return { ok: true, summary, pushDetails: [], outcomes };
 
   const { data: inserted, error: insertErr } = await db
     .from("contacts")
@@ -175,5 +186,5 @@ export async function intakeContactsForCompany(
     error:   !res.ok ? res.error : undefined,
   }));
 
-  return { ok: true, summary, pushDetails };
+  return { ok: true, summary, pushDetails, outcomes };
 }
