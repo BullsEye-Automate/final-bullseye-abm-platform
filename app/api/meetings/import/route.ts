@@ -35,8 +35,17 @@ export async function POST(req: NextRequest) {
   const rows = parseCSV(text);
   if (rows.length === 0) return NextResponse.json({ error: "CSV vacío o mal formateado" }, { status: 400 });
 
-  const records = rows.map(r => ({
-    client_id:       r["id_cliente"] || r["client_id"] || formClientId || null,
+  // Detecta si el CSV tiene columna de ID cliente. Si la tiene, respetamos su valor
+  // (vacío → null). Solo usamos formClientId como fallback si la columna no existe en absoluto.
+  const hasClientIdCol = rows.length > 0 && ("id_cliente" in rows[0] || "client_id" in rows[0]);
+
+  const records = rows.map(r => {
+    const rowClientId = r["id_cliente"] || r["client_id"] || null;
+    // Si el CSV tiene columna de ID: usar su valor (puede ser null si está vacío).
+    // Si el CSV no tiene columna de ID: aplicar el cliente seleccionado en la UI.
+    const client_id = hasClientIdCol ? rowClientId : (rowClientId || formClientId || null);
+    return {
+    client_id,
     empresa:         r["empresa"] || r["company"] || "",
     contacto_nombre: r["contacto_nombre"] || r["contacto"] || r["nombre"] || null,
     contacto_cargo:  r["contacto_cargo"] || r["cargo"] || null,
@@ -44,7 +53,8 @@ export async function POST(req: NextRequest) {
     realizado:       r["realizado"] || "Pendiente",
     notas:           r["notas"] || r["notes"] || null,
     sdr_nombre:      r["sdr"] || r["sdr_nombre"] || null,
-  })).filter(r => r.empresa);
+  };
+  }).filter(r => r.empresa);
 
   if (records.length === 0) {
     return NextResponse.json({ error: "No se encontraron filas válidas. Verifica que el CSV tenga columna 'Empresa'" }, { status: 400 });
