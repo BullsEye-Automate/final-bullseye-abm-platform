@@ -88,11 +88,27 @@ function matchesAny(jobTitle: string, roles: string[]): boolean {
 // los cargos decisores/influenciadores/a evitar del ICP del cliente. No requiere
 // llamada a IA — es determinístico y rápido, pensado para correr en paralelo
 // sobre listas grandes de contactos importados manualmente (sin scoring de Clay).
-export function computeContactFitScore(input: { jobTitle: string | null; roles: BuyerPersonaRoles }): number {
+//
+// companyFit (fit_signals/fit_score de la empresa, ya investigada por
+// researchOneCompanyFast) limita el score hacia arriba: un cargo decisor en
+// una empresa que la IA clasificó como bajo/medio fit para el ICP no debería
+// salir con 9 solo porque el cargo matchea — el caso real que motivó esto es
+// un CEO cuyo cargo actual es en una empresa fuera de ICP (ej. una isapre),
+// aunque también figure como board member en la empresa target real.
+export function computeContactFitScore(input: {
+  jobTitle: string | null;
+  roles: BuyerPersonaRoles;
+  companyFit?: "high" | "medium" | "low" | null;
+}): number {
   const jobTitle = input.jobTitle ?? "";
-  if (!jobTitle.trim()) return 5;
-  if (matchesAny(jobTitle, input.roles.avoid)) return 2;
-  if (matchesAny(jobTitle, input.roles.decisionMakers)) return 9;
-  if (matchesAny(jobTitle, input.roles.influencers)) return 6;
-  return 5;
+  let score: number;
+  if (!jobTitle.trim()) score = 5;
+  else if (matchesAny(jobTitle, input.roles.avoid)) score = 2;
+  else if (matchesAny(jobTitle, input.roles.decisionMakers)) score = 9;
+  else if (matchesAny(jobTitle, input.roles.influencers)) score = 6;
+  else score = 5;
+
+  if (input.companyFit === "low") return Math.min(score, 4);
+  if (input.companyFit === "medium") return Math.min(score, 7);
+  return score;
 }

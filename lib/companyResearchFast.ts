@@ -25,7 +25,6 @@ Con lo que tengas, clasifica la empresa de forma breve y conservadora. Si no hay
 
 Devuelve SOLO JSON válido:
 {
-  "company_type": "other",
   "fit_signals": string,
   "fit_score": "high" | "medium" | "low",
   "research_summary": string
@@ -60,7 +59,11 @@ export async function researchOneCompanyFast(hints: FastResearchHints, icpContex
 
     const parsed = JSON.parse(jsonMatch) as Partial<FastResearchResult>;
     return {
-      company_type: parsed.company_type || "other",
+      // company_type tiene un CHECK constraint legacy (lab/multi_clinic/dso/other)
+      // de la vertical dental original — no generaliza a otras industrias, así
+      // que acá siempre es "other" en vez de dejar que la IA invente un valor
+      // que rompa el insert (ej. "insurance", "healthcare").
+      company_type: "other",
       fit_signals: parsed.fit_signals ?? "",
       fit_score: parsed.fit_score ?? "medium",
       research_summary: parsed.research_summary || FALLBACK.research_summary,

@@ -244,7 +244,7 @@ export async function POST(req: NextRequest) {
             await chunked(yesContacts, 5, async (c) => {
               let fitScore = c.fit_score;
               if (fitScore == null) {
-                fitScore = computeContactFitScore({ jobTitle: c.job_title, roles: buyerPersonaRoles });
+                fitScore = computeContactFitScore({ jobTitle: c.job_title, roles: buyerPersonaRoles, companyFit: companyRow?.fit_score as "high" | "medium" | "low" | null });
                 await db.from("contacts").update({ fit_score: fitScore }).eq("id", c.id);
               }
               const mismatch = detectNameEmailMismatch(c.first_name, c.last_name, c.email);

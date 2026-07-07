@@ -104,6 +104,7 @@ type StagingLead = {
 };
 
 const LOW_FIT_MAX = 4;
+const HIGH_FIT_MIN = 8;
 
 export default function BusquedaManualPage() {
   const { currentClient } = useClient();
@@ -186,32 +187,40 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
 
   const okCompanies = useMemo(() => (result?.companies ?? []).filter((c) => !c.error), [result]);
 
-  const lowFitContacts = useMemo(
-    () =>
-      okCompanies.flatMap((c) =>
-        c.contacts
-          .filter((ct) => ct.fit_score != null && ct.fit_score <= LOW_FIT_MAX)
-          .map((ct) => ({ ...ct, company_name: c.company_name }))
-      ),
-    [okCompanies]
-  );
-
-  const sendableByCompany = useMemo(
+  // Agrupa primero por empresa y, dentro de cada empresa, por tier de fit:
+  // bajo (1-4, para descartar en bloque), medio (5-7, revisión 1 a 1) y
+  // alto (8-10, para enviar juntos). Sin score conocido cae en "medio"
+  // (revisión 1 a 1, no se manda a ciegas en el envío masivo de alto fit).
+  const companiesWithTiers = useMemo(
     () =>
       okCompanies
-        .map((c) => ({
-          ...c,
-          contacts: c.contacts.filter((ct) => ct.fit_score == null || ct.fit_score > LOW_FIT_MAX),
-        }))
-        .filter((c) => c.contacts.length > 0),
+        .map((c) => {
+          const low: ImportContact[] = [];
+          const mid: ImportContact[] = [];
+          const high: ImportContact[] = [];
+          for (const ct of c.contacts) {
+            if (ct.fit_score != null && ct.fit_score <= LOW_FIT_MAX) low.push(ct);
+            else if (ct.fit_score != null && ct.fit_score >= HIGH_FIT_MIN) high.push(ct);
+            else mid.push(ct);
+          }
+          return { ...c, low, mid, high };
+        })
+        .filter((c) => c.low.length + c.mid.length + c.high.length > 0),
     [okCompanies]
   );
 
-  const pendingSendable = useMemo(
-    () => sendableByCompany.flatMap((c) => c.contacts).filter((ct) => !sent.has(ct.id) && !discarded.has(ct.id)),
-    [sendableByCompany, sent, discarded]
+  const pending = useCallback((list: ImportContact[]) => list.filter((ct) => !sent.has(ct.id) && !discarded.has(ct.id)), [sent, discarded]);
+
+  const pendingHighAll = useMemo(
+    () => companiesWithTiers.flatMap((c) => pending(c.high)),
+    [companiesWithTiers, pending]
   );
-  const pendingLowFit = useMemo(() => lowFitContacts.filter((ct) => !discarded.has(ct.id)), [lowFitContacts, discarded]);
+
+  const allContacts = useMemo(
+    () => companiesWithTiers.flatMap((c) => [...c.low, ...c.mid, ...c.high]),
+    [companiesWithTiers]
+  );
+  const allDone = allContacts.length > 0 && pending(allContacts).length === 0;
 
   async function sendOne(id: string) {
     setSending((s) => new Set(s).add(id));
@@ -336,93 +345,121 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
             </div>
           )}
 
-          {pendingLowFit.length > 0 && (
-            <div className="rounded-lg border border-warning-bg overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2 bg-warning-bg/40">
-                <span className="text-xs font-semibold text-warning-fg uppercase tracking-wide">
-                  Bajo fit (1–{LOW_FIT_MAX}) — {pendingLowFit.length}
-                </span>
-                <button
-                  onClick={() => discardMany(pendingLowFit.map((c) => c.id))}
-                  disabled={bulkBusy}
-                  className="btn-danger text-xs"
-                >
-                  <IconTrash size={12} /> Descartar todos ({pendingLowFit.length})
-                </button>
-              </div>
-              <div className="divide-y divide-[#E5E2F0]">
-                {pendingLowFit.map((ct) => (
-                  <ContactRow
-                    key={ct.id}
-                    contact={ct}
-                    companyName={(ct as any).company_name}
-                    sending={sending.has(ct.id)}
-                    discarding={discarding.has(ct.id)}
-                    sent={sent.has(ct.id)}
-                    discarded={discarded.has(ct.id)}
-                    error={sendErrors[ct.id]}
-                    onDiscard={() => discardOne(ct.id)}
-                    lowFit
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {sendableByCompany.length > 0 && (
-            <div className="flex flex-col gap-3">
+          {companiesWithTiers.length > 0 && (
+            <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Listos para enviar</h3>
-                {pendingSendable.length > 0 && (
-                  <button onClick={() => sendMany(pendingSendable.map((c) => c.id))} disabled={bulkBusy} className="btn-primary text-xs">
+                <h3 className="text-sm font-semibold">Por empresa</h3>
+                {pendingHighAll.length > 0 && (
+                  <button onClick={() => sendMany(pendingHighAll.map((c) => c.id))} disabled={bulkBusy} className="btn-primary text-xs">
                     {bulkBusy ? <IconLoader2 size={13} className="animate-spin" /> : <IconSend size={13} />}
-                    Generar mensajes y enviar a Lemlist todos ({pendingSendable.length})
+                    Generar mensajes y enviar a Lemlist todos los fit {HIGH_FIT_MIN}-10 ({pendingHighAll.length})
                   </button>
                 )}
               </div>
 
-              {sendableByCompany.map((c) => {
-                const companyPending = c.contacts.filter((ct) => !sent.has(ct.id) && !discarded.has(ct.id));
+              {companiesWithTiers.map((c) => {
+                const pendingHigh = pending(c.high);
+                const pendingLow = pending(c.low);
+                const total = c.low.length + c.mid.length + c.high.length;
                 return (
                   <div key={c.company_id ?? c.company_name} className="rounded-lg border border-[#E5E2F0] overflow-hidden">
-                    <div className="flex items-center justify-between gap-2 px-3 py-2 bg-[#F9F8FC]">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-semibold text-sm truncate">{c.company_name}</span>
-                        {c.created && <span className="badge bg-brand-tint text-brand">nueva</span>}
-                        <span className="text-xs text-ink-muted">{c.contacts.length} contacto{c.contacts.length === 1 ? "" : "s"}</span>
+                    <div className="flex items-center gap-2 px-3 py-2 bg-[#F9F8FC]">
+                      <span className="font-semibold text-sm truncate">{c.company_name}</span>
+                      {c.created && <span className="badge bg-brand-tint text-brand">nueva</span>}
+                      <span className="text-xs text-ink-muted">{total} contacto{total === 1 ? "" : "s"}</span>
+                    </div>
+
+                    {c.low.length > 0 && (
+                      <div className="border-t border-[#E5E2F0]">
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-warning-bg/40">
+                          <span className="text-xs font-semibold text-warning-fg uppercase tracking-wide">
+                            Bajo fit (1–{LOW_FIT_MAX})
+                          </span>
+                          {pendingLow.length > 0 && (
+                            <button onClick={() => discardMany(pendingLow.map((ct) => ct.id))} disabled={bulkBusy} className="btn-danger text-xs">
+                              <IconTrash size={12} /> Descartar todos ({pendingLow.length})
+                            </button>
+                          )}
+                        </div>
+                        <div className="divide-y divide-[#E5E2F0]">
+                          {c.low.map((ct) => (
+                            <ContactRow
+                              key={ct.id}
+                              contact={ct}
+                              sending={sending.has(ct.id)}
+                              discarding={discarding.has(ct.id)}
+                              sent={sent.has(ct.id)}
+                              discarded={discarded.has(ct.id)}
+                              error={sendErrors[ct.id]}
+                              onDiscard={() => discardOne(ct.id)}
+                              lowFit
+                            />
+                          ))}
+                        </div>
                       </div>
-                      {companyPending.length > 0 && (
-                        <button
-                          onClick={() => sendMany(companyPending.map((ct) => ct.id))}
-                          disabled={bulkBusy}
-                          className="btn-secondary text-xs shrink-0"
-                        >
-                          <IconSend size={12} /> Generar y enviar {companyPending.length} a Lemlist
-                        </button>
-                      )}
-                    </div>
-                    <div className="divide-y divide-[#E5E2F0]">
-                      {c.contacts.map((ct) => (
-                        <ContactRow
-                          key={ct.id}
-                          contact={ct}
-                          sending={sending.has(ct.id)}
-                          discarding={discarding.has(ct.id)}
-                          sent={sent.has(ct.id)}
-                          discarded={discarded.has(ct.id)}
-                          error={sendErrors[ct.id]}
-                          onSend={() => sendOne(ct.id)}
-                          onDiscard={() => discardOne(ct.id)}
-                        />
-                      ))}
-                    </div>
+                    )}
+
+                    {c.mid.length > 0 && (
+                      <div className="border-t border-[#E5E2F0]">
+                        <div className="px-3 py-1.5 bg-[#F1EEF7]">
+                          <span className="text-xs font-semibold text-ink-muted uppercase tracking-wide">
+                            Fit medio (5–{HIGH_FIT_MIN - 1}) — revisión 1 a 1
+                          </span>
+                        </div>
+                        <div className="divide-y divide-[#E5E2F0]">
+                          {c.mid.map((ct) => (
+                            <ContactRow
+                              key={ct.id}
+                              contact={ct}
+                              sending={sending.has(ct.id)}
+                              discarding={discarding.has(ct.id)}
+                              sent={sent.has(ct.id)}
+                              discarded={discarded.has(ct.id)}
+                              error={sendErrors[ct.id]}
+                              onSend={() => sendOne(ct.id)}
+                              onDiscard={() => discardOne(ct.id)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {c.high.length > 0 && (
+                      <div className="border-t border-[#E5E2F0]">
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-success-bg/40">
+                          <span className="text-xs font-semibold text-success-fg uppercase tracking-wide">
+                            Fit alto ({HIGH_FIT_MIN}–10)
+                          </span>
+                          {pendingHigh.length > 0 && (
+                            <button onClick={() => sendMany(pendingHigh.map((ct) => ct.id))} disabled={bulkBusy} className="btn-secondary text-xs">
+                              <IconSend size={12} /> Generar y enviar {pendingHigh.length} a Lemlist
+                            </button>
+                          )}
+                        </div>
+                        <div className="divide-y divide-[#E5E2F0]">
+                          {c.high.map((ct) => (
+                            <ContactRow
+                              key={ct.id}
+                              contact={ct}
+                              sending={sending.has(ct.id)}
+                              discarding={discarding.has(ct.id)}
+                              sent={sent.has(ct.id)}
+                              discarded={discarded.has(ct.id)}
+                              error={sendErrors[ct.id]}
+                              onSend={() => sendOne(ct.id)}
+                              onDiscard={() => discardOne(ct.id)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           )}
 
-          {okCompanies.length > 0 && sendableByCompany.length === 0 && pendingLowFit.length === 0 && (
+          {allDone && (
             <div className="flex items-center gap-2 text-ink-muted text-sm">
               <IconCheck size={16} className="text-success-fg" /> Todos los contactos importados ya fueron enviados o descartados.
             </div>
