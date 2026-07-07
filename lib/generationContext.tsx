@@ -50,11 +50,12 @@ type GenerationState = {
   cancelContact: (index: number) => void;
   cancelAll: () => void;
   resetGeneration: () => void;
+  updateContact: (index: number, fields: Partial<GeneratedContact>) => void;
 };
 
 // ─── Estado inicial ────────────────────────────────────────────────────────────
 
-const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "cancelContact" | "cancelAll" | "resetGeneration"> = {
+const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "cancelContact" | "cancelAll" | "resetGeneration" | "updateContact"> = {
   isGenerating: false,
   stage: "idle",
   contacts: [],
@@ -70,7 +71,7 @@ const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "cancelContact" |
 const GenerationContext = createContext<GenerationState | null>(null);
 
 export function GenerationProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<Omit<GenerationState, "startGeneration" | "cancelContact" | "cancelAll" | "resetGeneration">>(INITIAL_STATE);
+  const [state, setState] = useState<Omit<GenerationState, "startGeneration" | "cancelContact" | "cancelAll" | "resetGeneration" | "updateContact">>(INITIAL_STATE);
 
   const isRunningRef = useRef(false);
   // AbortController activo para cancelar el fetch en curso
@@ -238,12 +239,21 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
     setState(INITIAL_STATE);
   }, []);
 
+  const updateContact = useCallback((index: number, fields: Partial<GeneratedContact>) => {
+    setState((prev) => {
+      const next = [...prev.contacts];
+      if (next[index]) next[index] = { ...next[index], ...fields };
+      return { ...prev, contacts: next };
+    });
+  }, []);
+
   const value: GenerationState = {
     ...state,
     startGeneration,
     cancelContact,
     cancelAll,
     resetGeneration,
+    updateContact,
   };
 
   return (

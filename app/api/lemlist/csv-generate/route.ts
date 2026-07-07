@@ -30,6 +30,7 @@ type GeneratedContact = ParsedContact & {
   icebreaker?: string;
   linkedinMsg2?: string;
   segmentName?: string;
+  deepResearchUsed?: boolean;
   error?: string;
 };
 

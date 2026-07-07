@@ -19,6 +19,7 @@ import {
   IconEdit,
   IconSearch,
   IconPlayerStop,
+  IconRefresh,
   IconShare,
   IconLink,
   IconClipboard,
@@ -137,15 +138,28 @@ function ContactRow({
   pending,
   deepResearch,
   onChange,
+  onRegenerate,
 }: {
   contact: GeneratedContact;
   index: number;
   pending?: boolean;
   deepResearch?: boolean;
   onChange: (i: number, field: keyof GeneratedContact, val: string) => void;
+  onRegenerate?: (i: number) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const hasError = Boolean(contact.error) && !contact.cancelled;
+
+  async function handleRegenerate(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!onRegenerate || regenerating) return;
+    setRegenerating(true);
+    setOpen(false);
+    await onRegenerate(index);
+    setRegenerating(false);
+    setOpen(true);
+  }
 
   // Contacto cancelado
   if (contact.cancelled) {
@@ -236,7 +250,11 @@ function ContactRow({
             </span>
           )
         )}
-        {hasError ? (
+        {regenerating ? (
+          <span className="text-xs text-ink-muted flex items-center gap-1 shrink-0">
+            <IconLoader2 size={12} className="animate-spin" /> Regenerando…
+          </span>
+        ) : hasError ? (
           <span className="text-xs text-red-500 flex items-center gap-1">
             <IconAlertCircle size={12} /> Error
           </span>
@@ -245,6 +263,15 @@ function ContactRow({
             <IconCheck size={12} /> Generado
           </span>
         ) : null}
+        {onRegenerate && !regenerating && (
+          <button
+            onClick={handleRegenerate}
+            className="shrink-0 text-xs text-ink-muted hover:text-[#251762] transition flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-gray-100"
+            title="Regenerar mensajes"
+          >
+            <IconRefresh size={13} />
+          </button>
+        )}
         {open ? <IconChevronUp size={14} className="text-ink-muted shrink-0" /> : <IconChevronDown size={14} className="text-ink-muted shrink-0" />}
       </button>
 
@@ -448,6 +475,47 @@ export default function SubirCampanaPage() {
       segmentId: selectedSegmentId,
       deepResearchSet,
     });
+  }
+
+  // ── Regenerar un contacto individual ──
+  async function handleRegenerate(index: number) {
+    if (!currentClient?.id) return;
+    const contact = displayContacts[index];
+    if (!contact) return;
+
+    // Limpiar mensajes previos y error del contacto en el contexto
+    generation.updateContact(index, {
+      emailSubject: undefined, emailBody: undefined,
+      emailSubject2: undefined, emailBody2: undefined,
+      emailSubject3: undefined, emailBody3: undefined,
+      connectMessage: undefined, icebreaker: undefined, linkedinMsg2: undefined,
+      error: undefined, cancelled: undefined,
+    });
+
+    try {
+      const res = await fetch("/api/lemlist/csv-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: currentClient.id,
+          contacts: [contact],
+          segment_id: generation.segmentId || undefined,
+          use_deep_research: generation.deepResearchSet?.has(index) ?? false,
+        }),
+      });
+      if (res.ok) {
+        const { results } = await res.json();
+        if (results?.[0]) {
+          generation.updateContact(index, results[0]);
+          // Limpiar ediciones locales para mostrar el resultado nuevo
+          setLocalEdits((prev) => { const next = { ...prev }; delete next[index]; return next; });
+        }
+      } else {
+        generation.updateContact(index, { error: `Error ${res.status}` });
+      }
+    } catch {
+      generation.updateContact(index, { error: "Error de red" });
+    }
   }
 
   // ── Editar mensaje generado (los datos viven en el contexto) ──
@@ -869,7 +937,7 @@ export default function SubirCampanaPage() {
                     {!isPending && !isCancelled && selectedIndexes.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
                   </button>
                   <div className="flex-1 min-w-0">
-                    <ContactRow contact={c} index={i} pending={isPending} deepResearch={generation.deepResearchSet.has(i)} onChange={handleChange} />
+                    <ContactRow contact={c} index={i} pending={isPending} deepResearch={generation.deepResearchSet.has(i)} onChange={handleChange} onRegenerate={!isPending ? handleRegenerate : undefined} />
                   </div>
                   {/* Botón cancelar contacto individual — solo para pendientes */}
                   {isPending && !isCancelled && (
