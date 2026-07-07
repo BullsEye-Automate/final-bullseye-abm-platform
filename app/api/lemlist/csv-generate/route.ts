@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     db.from("model_training_config")
       .select("style_tone, style_rules, style_avoid, style_email_length")
       .eq("client_id", client_id).maybeSingle(),
-    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg").eq("client_id", client_id)
+    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg, icp_industry_id").eq("client_id", client_id)
       .order("created_at", { ascending: true }),
     db.from("message_examples").select("*").eq("client_id", client_id).is("segment_id", null)
       .order("created_at", { ascending: false }).limit(5),
@@ -127,6 +127,22 @@ export async function POST(req: NextRequest) {
 
     segmentCache.set(segmentId, ctx);
     return ctx;
+  }
+
+  // Cache de ICP por industria (evita re-fetching para el mismo icp_industry_id)
+  const industryIcpCache = new Map<string, string | null>();
+
+  async function getIndustryIcpContext(industryId: string): Promise<string | null> {
+    if (industryIcpCache.has(industryId)) return industryIcpCache.get(industryId)!;
+    const { data: sections } = await db
+      .from("icp_industry_sections")
+      .select("section_key, content")
+      .eq("industry_id", industryId)
+      .neq("content", "");
+    if (!sections?.length) { industryIcpCache.set(industryId, null); return null; }
+    const content = sections.map((s) => `## ${s.section_key}\n${s.content}`).join("\n\n");
+    industryIcpCache.set(industryId, content);
+    return content;
   }
 
   // Cache de deep research por nombre de empresa (evita re-buscar para la misma empresa)
@@ -230,6 +246,14 @@ export async function POST(req: NextRequest) {
           const emailCount        = (matchedSegment as Record<string, unknown> | null)?.email_count        as number ?? 3;
           const linkedinMsgCount  = (matchedSegment as Record<string, unknown> | null)?.linkedin_msg_count as number ?? 2;
           const includeConnectMsg = (matchedSegment as Record<string, unknown> | null)?.include_connect_msg as boolean ?? false;
+          const icpIndustryId     = (matchedSegment as Record<string, unknown> | null)?.icp_industry_id    as string | null ?? null;
+
+          // Usar ICP de industria del segmento si está configurado; si no, usar ICP general del cliente
+          let effectiveIcpContext = icpContext;
+          if (icpIndustryId) {
+            const industryCtx = await getIndustryIcpContext(icpIndustryId);
+            if (industryCtx) effectiveIcpContext = industryCtx;
+          }
 
           let deepResearch: DeepResearchResult | null = null;
           if (use_deep_research && c.companyName?.trim()) {
@@ -244,7 +268,7 @@ export async function POST(req: NextRequest) {
             companyName:    c.companyName || undefined,
             industry:       c.industry   || undefined,
             companySize:    c.companySize || undefined,
-            icpContext,
+            icpContext: effectiveIcpContext,
             deepResearch,
             fewShotExamples: fewShotGlobal,
             styleGuide,

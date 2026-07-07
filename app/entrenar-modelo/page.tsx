@@ -26,6 +26,7 @@ import {
   IconRoute,
   IconUpload,
   IconCopy,
+  IconBuildingFactory2,
 } from "@tabler/icons-react";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -76,6 +77,13 @@ type Segment = {
   style_rules:        string | null;
   style_avoid:        string | null;
   style_email_length: string | null;
+  // ICP de industria específico para este segmento
+  icp_industry_id:    string | null;
+};
+
+type IcpIndustry = {
+  id: string;
+  name: string;
 };
 
 type SegmentStyle = {
@@ -239,6 +247,9 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [segExEditSaving, setSegExEditSaving] = useState(false);
   const [segExDeletingId, setSegExDeletingId] = useState<string | null>(null);
 
+  // ICP industries del cliente
+  const [icpIndustries, setIcpIndustries] = useState<IcpIndustry[]>([]);
+
   const load = useCallback(async () => {
     setLoading(true);
     const res = await fetch(`/api/training/segments?client_id=${clientId}`);
@@ -247,6 +258,12 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   }, [clientId]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    fetch(`/api/clients/${clientId}/industries`)
+      .then((r) => r.ok ? r.json() : { industries: [] })
+      .then((d) => setIcpIndustries(d.industries ?? []));
+  }, [clientId]);
 
   // Cargar correos de ejemplo del segmento seleccionado
   useEffect(() => {
@@ -660,7 +677,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     </>
                   ) : (
                     <>
-                      <button onClick={() => setEditSeg({ name: seg.name, description: seg.description ?? "", routing_hint: seg.routing_hint, email_count: seg.email_count ?? 3, linkedin_msg_count: seg.linkedin_msg_count ?? 2, include_connect_msg: seg.include_connect_msg ?? true })} className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center gap-1">
+                      <button onClick={() => setEditSeg({ name: seg.name, description: seg.description ?? "", routing_hint: seg.routing_hint, email_count: seg.email_count ?? 3, linkedin_msg_count: seg.linkedin_msg_count ?? 2, include_connect_msg: seg.include_connect_msg ?? true, icp_industry_id: seg.icp_industry_id ?? null })} className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-gray-50 flex items-center gap-1">
                         <IconEdit size={12} /> Editar
                       </button>
                       <button onClick={() => deleteSegment(seg.id)} className="text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 flex items-center gap-1">
@@ -708,6 +725,37 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                   La IA lee este criterio para decidir automáticamente qué segmento aplica a cada contacto.
                 </p>
               </div>
+
+              {/* ICP de industria */}
+              {(editSeg || seg.icp_industry_id) && icpIndustries.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <IconBuildingFactory2 size={13} style={{ color: "#0891B2" }} />
+                    <label className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                      ICP de industria (opcional)
+                    </label>
+                  </div>
+                  {editSeg ? (
+                    <select
+                      value={editSeg.icp_industry_id ?? ""}
+                      onChange={(e) => setEditSeg((p) => ({ ...p, icp_industry_id: e.target.value || null }))}
+                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] bg-white"
+                    >
+                      <option value="">— Usar ICP general del cliente —</option>
+                      {icpIndustries.map((ind) => (
+                        <option key={ind.id} value={ind.id}>{ind.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="text-sm text-ink px-3 py-2 rounded-xl" style={{ background: "rgba(8,145,178,0.06)", border: "1px solid rgba(8,145,178,0.15)" }}>
+                      {icpIndustries.find((i) => i.id === seg.icp_industry_id)?.name ?? <span className="text-ink-muted italic">ICP general</span>}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-ink-muted">
+                    Si se selecciona, la generación de mensajes para este segmento usará el ICP de la industria en lugar del ICP general.
+                  </p>
+                </div>
+              )}
 
               {/* Configuración de secuencia */}
               <div className="border-t border-[#F0EEF8] pt-4">
