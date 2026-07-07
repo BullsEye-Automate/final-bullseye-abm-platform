@@ -355,7 +355,8 @@ export default function SubirCampanaPage() {
   const [parsed, setParsed]         = useState<ParsedContact[]>([]);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number; errors: any[] } | null>(null);
   const [fileError, setFileError]   = useState<string | null>(null);
-  const [segments, setSegments]     = useState<SegmentOption[]>([]);
+  const [segments, setSegments]         = useState<SegmentOption[]>([]);
+  const [segmentsLoading, setSegmentsLoading] = useState(false);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string>("");
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
   const [deepResearchSet, setDeepResearchSet] = useState<Set<number>>(new Set());
@@ -394,16 +395,26 @@ export default function SubirCampanaPage() {
           return;
         }
         setParsed(rows);
-        setDeepResearchSet(new Set()); // reiniciar selección de deep research
-        // Cargar segmentos y pasar a selección
-        fetch(`/api/training/segments?client_id=${currentClient?.id}`)
-          .then((r) => r.json())
-          .then(({ segments: segs }) => {
-            setSegments((segs ?? []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })));
-            setSelectedSegmentId(segs?.[0]?.id ?? "");
-          })
-          .catch(() => {});
+        setDeepResearchSet(new Set());
         setStage("segment");
+        // Cargar segmentos con reintentos automáticos
+        setSegmentsLoading(true);
+        (async () => {
+          const MAX_ATTEMPTS = 4;
+          for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            try {
+              const r = await fetch(`/api/training/segments?client_id=${currentClient?.id}`);
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              const { segments: segs } = await r.json();
+              setSegments((segs ?? []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })));
+              setSelectedSegmentId(segs?.[0]?.id ?? "");
+              break;
+            } catch {
+              if (attempt < MAX_ATTEMPTS - 1) await new Promise((res) => setTimeout(res, 800 * (attempt + 1)));
+            }
+          }
+          setSegmentsLoading(false);
+        })();
       } catch {
         setFileError("Error al leer el archivo. Asegurate de que sea un CSV o Excel válido.");
       }
@@ -655,7 +666,12 @@ export default function SubirCampanaPage() {
               </p>
             </div>
 
-            {segments.length === 0 ? (
+            {segmentsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-ink-muted py-1">
+                <IconLoader2 size={14} className="animate-spin shrink-0" style={{ color: "#62E0D8" }} />
+                Cargando segmentos…
+              </div>
+            ) : segments.length === 0 ? (
               <p className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
                 No hay segmentos configurados. Los mensajes se generarán con el contexto general del cliente.
               </p>
@@ -740,10 +756,11 @@ export default function SubirCampanaPage() {
 
             <button
               onClick={handleGenerate}
-              className="btn-primary flex items-center gap-2 text-sm w-full justify-center"
+              disabled={segmentsLoading || parsed.length === 0}
+              className="btn-primary flex items-center gap-2 text-sm w-full justify-center disabled:opacity-50"
             >
-              <IconSparkles size={15} />
-              Generar mensajes con IA para {parsed.length} contactos
+              {segmentsLoading ? <IconLoader2 size={15} className="animate-spin" /> : <IconSparkles size={15} />}
+              {segmentsLoading ? "Cargando segmentos…" : `Generar mensajes con IA para ${parsed.length} contactos`}
             </button>
           </div>
         </div>
