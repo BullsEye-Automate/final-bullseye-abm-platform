@@ -183,7 +183,10 @@ function ContactRow({
             {[contact.firstName, contact.lastName].filter(Boolean).join(" ") || "—"}
             {contact.companyName && <span className="text-ink-muted font-normal"> · {contact.companyName}</span>}
           </div>
-          <div className="text-xs text-ink-muted">{contact.email}</div>
+          <div className="text-xs text-ink-muted">
+            {contact.jobTitle && <span className="mr-2">{contact.jobTitle}</span>}
+            {contact.email}
+          </div>
         </div>
         {deepResearch && (
           <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0" style={{ background: "rgba(98,224,216,0.15)", color: "#0fa89a" }}>
@@ -213,7 +216,10 @@ function ContactRow({
             {[contact.firstName, contact.lastName].filter(Boolean).join(" ") || "—"}
             {contact.companyName && <span className="text-ink-muted font-normal"> · {contact.companyName}</span>}
           </div>
-          <div className="text-xs text-ink-muted">{contact.email}</div>
+          <div className="text-xs text-ink-muted">
+            {contact.jobTitle && <span className="mr-2">{contact.jobTitle}</span>}
+            {contact.email}
+          </div>
         </div>
         {deepResearch && (
           contact.deepResearchUsed === true ? (
