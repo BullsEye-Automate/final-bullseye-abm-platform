@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
 import { getClientLemlistConfig, getCampaignLeadsWithDetails, resolveManualSearchCampaignId, type LemlistLeadDetail } from "@/lib/lemlist";
 import { intakeContactsForCompany, type RawContact } from "@/lib/contactsIntake";
+import { recordAndResolveFirstSeen } from "@/lib/leadFirstSeen";
 import { researchOneCompanyFast } from "@/lib/companyResearchFast";
 import { computeContactFitScore, getClientBuyerPersonaRoles } from "@/lib/contactFitScore";
 import { detectNameEmailMismatch } from "@/lib/nameEmailMismatch";
@@ -48,6 +49,16 @@ export async function POST(req: NextRequest) {
   if (!leadsResult.ok) return NextResponse.json({ error: leadsResult.error }, { status: 502 });
 
   const stagedTotal = leadsResult.leads.length;
+
+  // 2.5. La fecha de Lemlist (added_at) puede salir vieja si el contacto ya
+  // existía en el workspace de antes (ver nota en lib/lemlist.ts) — la
+  // pisamos con nuestra propia fecha de "primera vez que la app vio este
+  // lead en esta campaña", que es confiable siempre.
+  const firstSeenMap = await recordAndResolveFirstSeen(db, stagingId, leadsResult.leads.map((l) => l.id));
+  for (const lead of leadsResult.leads) {
+    const firstSeen = firstSeenMap.get(lead.id);
+    if (firstSeen) lead.added_at = firstSeen;
+  }
 
   // 3. Filtro de fecha opcional (con holgura). Si Lemlist no trajo fechas para
   // ningún lead, el filtro se ignora y se avisa en la respuesta.
