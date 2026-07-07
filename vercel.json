@@ -10,5 +10,12 @@
     }
   ],
   "framework": "nextjs",
-  "buildCommand": "next build"
+  "buildCommand": "next build",
+  "functions": {
+    "app/api/lemlist/csv-generate/route.ts": { "maxDuration": 60 },
+    "app/api/contacts/[id]/preview-messages/route.ts": { "maxDuration": 60 },
+    "app/api/companies/[id]/deep-research/route.ts": { "maxDuration": 60 },
+    "app/api/companies/research-one/route.ts": { "maxDuration": 60 },
+    "app/api/training/lab/route.ts": { "maxDuration": 60 }
+  }
 }

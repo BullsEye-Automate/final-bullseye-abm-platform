@@ -156,34 +156,45 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
       const ac = new AbortController();
       abortControllerRef.current = ac;
 
-      try {
-        const res = await fetch("/api/lemlist/csv-generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            client_id: clientId,
-            contacts: [parsed[i]],
-            segment_id: segmentId || undefined,
-            use_deep_research: deepResearchSet.has(i),
-          }),
-          signal: ac.signal,
-        });
+      const MAX_RETRIES = 2;
+      let lastError = "";
+      let success = false;
 
-        if (res.ok) {
-          const { results } = await res.json();
-          if (results?.[0]) updated[i] = { ...updated[i], ...results[0] };
-        } else {
-          errCount++;
-          updated[i] = { ...updated[i], error: `Error ${res.status}` };
+      for (let attempt = 0; attempt <= MAX_RETRIES && !success && !aborted; attempt++) {
+        try {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+          const res = await fetch("/api/lemlist/csv-generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              client_id: clientId,
+              contacts: [parsed[i]],
+              segment_id: segmentId || undefined,
+              use_deep_research: deepResearchSet.has(i),
+            }),
+            signal: ac.signal,
+          });
+
+          if (res.ok) {
+            const { results } = await res.json();
+            if (results?.[0]) updated[i] = { ...updated[i], ...results[0] };
+            success = true;
+          } else {
+            lastError = `Error ${res.status}`;
+          }
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name === "AbortError") {
+            aborted = true;
+            updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
+            break;
+          }
+          lastError = "Error de red";
         }
-      } catch (err: unknown) {
-        if (err instanceof Error && err.name === "AbortError") {
-          aborted = true;
-          updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
-        } else {
-          errCount++;
-          updated[i] = { ...updated[i], error: "Error de red" };
-        }
+      }
+
+      if (!success && !aborted) {
+        errCount++;
+        updated[i] = { ...updated[i], error: lastError };
       }
 
       const snapshot = [...updated];
