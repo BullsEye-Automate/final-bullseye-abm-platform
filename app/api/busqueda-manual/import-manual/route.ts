@@ -253,9 +253,12 @@ export async function POST(req: NextRequest) {
             }
 
             await chunked(yesContacts, 5, async (c) => {
-              let fitScore = c.fit_score;
-              if (fitScore == null) {
-                fitScore = computeContactFitScore({ jobTitle: c.job_title, roles: buyerPersonaRoles, companyFit: companyRow?.fit_score as "high" | "medium" | "low" | null });
+              // Recalcula siempre (no solo si falta): el score depende del fit
+              // de la empresa asociada, que puede haberse recalculado o
+              // reusado desde otra corrida, y la fórmula de scoring puede
+              // haber cambiado desde la última vez que se calculó.
+              const fitScore = computeContactFitScore({ jobTitle: c.job_title, roles: buyerPersonaRoles, companyFit: companyRow?.fit_score as "high" | "medium" | "low" | null });
+              if (fitScore !== c.fit_score) {
                 await db.from("contacts").update({ fit_score: fitScore }).eq("id", c.id);
               }
               const mismatch = detectNameEmailMismatch(c.first_name, c.last_name, c.email);
