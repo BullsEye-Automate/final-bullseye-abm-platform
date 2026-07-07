@@ -143,14 +143,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .neq("status", "discarded");
 
     // Lead scoring por cargo: mismo criterio que /busqueda-manual/import-manual,
-    // contra el buyer persona del ICP del cliente (decisores/influenciadores/a evitar).
-    const missingScore = (yesContacts ?? []).filter((c) => c.fit_score == null);
-    if (missingScore.length > 0 && company.client_id) {
+    // contra el buyer persona del ICP del cliente (decisores/influenciadores/a
+    // evitar). Se recalcula siempre (no solo si falta) porque depende del fit
+    // de la empresa, que puede haberse reusado de otra corrida.
+    if (yesContacts?.length && company.client_id) {
       const roles = await getClientBuyerPersonaRoles(db, company.client_id);
       await Promise.all(
-        missingScore.map((c) =>
-          db.from("contacts").update({ fit_score: computeContactFitScore({ jobTitle: c.job_title, roles, companyFit: company.fit_score }) }).eq("id", c.id)
-        )
+        yesContacts.map((c) => {
+          const fitScore = computeContactFitScore({ jobTitle: c.job_title, roles, companyFit: company.fit_score });
+          return fitScore === c.fit_score ? null : db.from("contacts").update({ fit_score: fitScore }).eq("id", c.id);
+        })
       );
     }
 
