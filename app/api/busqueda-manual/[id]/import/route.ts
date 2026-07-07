@@ -149,7 +149,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       const roles = await getClientBuyerPersonaRoles(db, company.client_id);
       await Promise.all(
         missingScore.map((c) =>
-          db.from("contacts").update({ fit_score: computeContactFitScore({ jobTitle: c.job_title, roles }) }).eq("id", c.id)
+          db.from("contacts").update({ fit_score: computeContactFitScore({ jobTitle: c.job_title, roles, companyFit: company.fit_score }) }).eq("id", c.id)
         )
       );
     }
