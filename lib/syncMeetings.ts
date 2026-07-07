@@ -1,6 +1,14 @@
 import { supabaseAdmin } from "./supabase";
 import { getSheetRows } from "./googleSheets";
 
+// Normaliza nombres de cliente para matching: minúsculas, sin tildes, sin espacios extras
+function normalizeName(s: string): string {
+  return s.toLowerCase().trim()
+    .replace(/á/g, "a").replace(/é/g, "e").replace(/í/g, "i")
+    .replace(/ó/g, "o").replace(/ú/g, "u").replace(/ü/g, "u").replace(/ñ/g, "n")
+    .replace(/\s+/g, " ");
+}
+
 function parseDate(str: string): string | null {
   if (!str) return null;
   const parts = str.split(/[\/\-]/);
@@ -43,9 +51,13 @@ export async function runMeetingsSync(): Promise<{
   }
 
   const supabase = supabaseAdmin();
-  const { data: clients } = await supabase.from("clients").select("id, name");
+  const { data: clients } = await supabase.from("clients").select("id, name, slug");
   const clientByName = new Map<string, string>();
-  (clients ?? []).forEach((c) => clientByName.set(c.name.toLowerCase().trim(), c.id));
+  (clients ?? []).forEach((c) => {
+    // Indexar por nombre normalizado y por slug para máxima tolerancia de variaciones
+    clientByName.set(normalizeName(c.name), c.id);
+    if (c.slug) clientByName.set(normalizeName(c.slug), c.id);
+  });
 
   let synced = 0;
   let skipped = 0;
@@ -57,8 +69,20 @@ export async function runMeetingsSync(): Promise<{
 
     let clientId: string | null = row["ID Cliente"]?.trim() || null;
     if (!clientId) {
-      const clientNombre = row["Cliente"]?.trim().toLowerCase();
-      if (clientNombre) clientId = clientByName.get(clientNombre) ?? null;
+      const clientNombre = row["Cliente"]?.trim();
+      if (clientNombre) {
+        const normalized = normalizeName(clientNombre);
+        clientId = clientByName.get(normalized) ?? null;
+        // Fallback: buscar coincidencia parcial (ej: "Nisum Peru" matchea "Nisum Perú SA")
+        if (!clientId) {
+          for (const [key, id] of clientByName.entries()) {
+            if (key.startsWith(normalized) || normalized.startsWith(key)) {
+              clientId = id;
+              break;
+            }
+          }
+        }
+      }
     }
 
     const sheetRowKey = `${spreadsheetId}::${row.__rowIndex}`;
