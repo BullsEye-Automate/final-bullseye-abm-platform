@@ -5,7 +5,8 @@ import { useClient } from "@/lib/clientContext";
 import {
   IconCalendar, IconCheck, IconClock, IconLink, IconPlus,
   IconUpload, IconX, IconMessageCheck, IconAlertCircle, IconRefresh,
-  IconChevronDown, IconStar, IconMessage2, IconSearch
+  IconChevronDown, IconStar, IconMessage2, IconSearch,
+  IconEdit, IconTrash, IconAlertTriangle,
 } from "@tabler/icons-react";
 
 type Meeting = {
@@ -436,21 +437,84 @@ function FeedbackInlineModal({ meeting, salesManagers, onClose, onSaved }: { mee
 }
 
 // ── Modal: Ver feedback existente ─────────────────────────────────────────────
-function VerFeedbackModal({ meeting, onClose }: { meeting: Meeting; onClose: () => void }) {
-  // meeting_feedback puede ser array o objeto singular según Supabase
+function VerFeedbackModal({
+  meeting,
+  onClose,
+  onDeleted,
+  onSaved,
+  salesManagers,
+}: {
+  meeting: Meeting;
+  onClose: () => void;
+  onDeleted?: () => void;
+  onSaved?: () => void;
+  salesManagers?: string[];
+}) {
   const raw = meeting.meeting_feedback;
   const fb: any = Array.isArray(raw) ? raw[0] : raw ?? null;
 
-  const probColor = fb?.probabilidad_cierre != null
-    ? fb.probabilidad_cierre >= 70 ? "#22c55e" : fb.probabilidad_cierre >= 40 ? "#f59e0b" : "#ef4444"
-    : "#9ca3af";
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Estado del formulario de edición — inicializado con valores actuales del feedback
+  const [form, setForm] = useState({
+    calificacion:          fb?.calificacion ?? 5,
+    empresa_calificada:    fb?.empresa_calificada ?? true,
+    razon_no_empresa:      fb?.razon_no_empresa ?? "",
+    razon_no_empresa_otro: fb?.razon_no_empresa_otro ?? "",
+    contacto_calificado:   fb?.contacto_calificado ?? true,
+    razon_no_califica:     fb?.razon_no_califica ?? "",
+    razon_no_califica_otro:fb?.razon_no_califica_otro ?? "",
+    propuesta_comercial:   fb?.propuesta_comercial ?? "",
+    comentarios_adicionales: fb?.comentarios_adicionales ?? "",
+    probabilidad_cierre:   fb?.probabilidad_cierre ?? null as number | null,
+    sdr_seleccionado:      fb?.sdr_seleccionado ?? "",
+  });
+
+  const probColor = (p: number | null) =>
+    p == null ? "#9ca3af" : p >= 70 ? "#22c55e" : p >= 40 ? "#f59e0b" : "#ef4444";
+
+  async function handleSave() {
+    setSaving(true);
+    const body: Record<string, unknown> = { ...form };
+    if (!form.empresa_calificada) { body.razon_no_empresa = form.razon_no_empresa; }
+    else { body.razon_no_empresa = null; body.razon_no_empresa_otro = null; }
+    if (!form.contacto_calificado) { body.razon_no_califica = form.razon_no_califica; }
+    else { body.razon_no_califica = null; body.razon_no_califica_otro = null; }
+
+    const res = await fetch(`/api/meetings/${meeting.id}/feedback`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setSaving(false);
+    if (!res.ok) { alert("Error al guardar. Intenta nuevamente."); return; }
+    setEditing(false);
+    onSaved?.();
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    const res = await fetch(`/api/meetings/${meeting.id}/feedback`, { method: "DELETE" });
+    setDeleting(false);
+    if (!res.ok) { alert("Error al eliminar. Intenta nuevamente."); return; }
+    onDeleted?.();
+  }
+
+  const displayFb = fb ?? form;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
         <div className="sticky top-0 bg-white rounded-t-2xl px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Feedback — {meeting.empresa}</h2>
+            <h2 className="text-base font-semibold text-gray-900">
+              {editing ? "Editar feedback" : "Feedback"} — {meeting.empresa}
+            </h2>
             <p className="text-xs text-gray-400">
               {meeting.contacto_nombre}
               {meeting.fecha_reunion ? ` · ${new Date(meeting.fecha_reunion + "T12:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "short" })}` : ""}
@@ -458,93 +522,351 @@ function VerFeedbackModal({ meeting, onClose }: { meeting: Meeting; onClose: () 
           </div>
           <button onClick={onClose}><IconX size={18} className="text-gray-400" /></button>
         </div>
+
+        {/* Diálogo de confirmación de eliminación */}
+        {confirmDelete && (
+          <div className="mx-6 mt-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+            <div className="flex items-start gap-3">
+              <IconAlertTriangle size={20} className="text-red-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-red-800">¿Eliminar este feedback?</p>
+                <p className="text-xs text-red-600 mt-1">
+                  Esta acción es irreversible. Se eliminará el feedback completo y la reunión
+                  volverá al estado "pendiente".
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="px-4 py-1.5 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">
+                    {deleting ? "Eliminando…" : "Sí, eliminar"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(false)}
+                    disabled={deleting}
+                    className="px-4 py-1.5 rounded-lg text-sm text-gray-600 border border-gray-200 hover:bg-gray-50">
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {!fb ? (
           <div className="p-8 text-center text-gray-400 text-sm">
             No se encontraron datos de feedback para esta reunión.
           </div>
-        ) : (
-        <div className="p-6 space-y-5">
-          {/* Sales Manager */}
-          {fb.sdr_seleccionado && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Sales Manager:</span>
-              <span className="px-2.5 py-0.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full border border-purple-100">{fb.sdr_seleccionado}</span>
-            </div>
-          )}
+        ) : editing ? (
+          /* ── MODO EDICIÓN ───────────────────────────────────────────── */
+          <div className="p-6 space-y-5">
+            {/* Sales Manager */}
+            {(salesManagers?.length ?? 0) > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Sales Manager</p>
+                <select
+                  value={form.sdr_seleccionado}
+                  onChange={e => setForm(f => ({ ...f, sdr_seleccionado: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none">
+                  <option value="">Sin asignar</option>
+                  {salesManagers!.map(sm => <option key={sm} value={sm}>{sm}</option>)}
+                </select>
+              </div>
+            )}
 
-          {/* Calificación */}
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">1. Calificación de la reunión</p>
-            <div className="flex items-center gap-2">
-              <div className="flex gap-0.5">
-                {Array.from({ length: 10 }, (_, i) => (
-                  <IconStar key={i} size={18}
-                    fill={(fb.calificacion ?? 0) > i ? "#f59e0b" : "none"}
-                    stroke={(fb.calificacion ?? 0) > i ? "#f59e0b" : "#d1d5db"} />
+            {/* Calificación */}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">1. Calificación de la reunión</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
+                  <button key={n} onClick={() => setForm(f => ({ ...f, calificacion: n }))}
+                    className={`w-9 h-9 rounded-lg text-sm font-semibold border transition ${form.calificacion === n ? "border-yellow-400 bg-yellow-50 text-yellow-700" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                    {n}
+                  </button>
                 ))}
               </div>
-              <span className="text-sm font-bold text-gray-700">{fb.calificacion ?? "—"}/10</span>
             </div>
-          </div>
 
-          {/* Empresa calificada */}
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">2. ¿La empresa era calificada?</p>
-            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${fb.empresa_calificada ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-              {fb.empresa_calificada ? <><IconCheck size={13} /> Sí</> : <><IconX size={13} /> No</>}
-            </span>
-            {fb.empresa_calificada === false && (fb as any).razon_no_empresa && (
-              <p className="text-xs text-gray-500 mt-1">Razón: {(fb as any).razon_no_empresa}{(fb as any).razon_no_empresa_otro ? ` — ${(fb as any).razon_no_empresa_otro}` : ""}</p>
-            )}
-          </div>
+            {/* Empresa calificada */}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">2. ¿La empresa era calificada?</p>
+              <div className="flex gap-2">
+                {[true, false].map(v => (
+                  <button key={String(v)} onClick={() => setForm(f => ({ ...f, empresa_calificada: v }))}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${form.empresa_calificada === v ? (v ? "bg-green-100 border-green-300 text-green-700" : "bg-red-100 border-red-300 text-red-700") : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}>
+                    {v ? "Sí" : "No"}
+                  </button>
+                ))}
+              </div>
+              {!form.empresa_calificada && (
+                <div className="mt-2 space-y-1.5">
+                  <select value={form.razon_no_empresa} onChange={e => setForm(f => ({ ...f, razon_no_empresa: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none">
+                    <option value="">Seleccionar razón</option>
+                    {RAZONES_EMPRESA.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  {form.razon_no_empresa === "Otra" && (
+                    <input value={form.razon_no_empresa_otro} onChange={e => setForm(f => ({ ...f, razon_no_empresa_otro: e.target.value }))}
+                      placeholder="Especificar…" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                  )}
+                </div>
+              )}
+            </div>
 
-          {/* Contacto calificado */}
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">3. ¿El contacto era el decisor correcto?</p>
-            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${fb.contacto_calificado ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-              {fb.contacto_calificado ? <><IconCheck size={13} /> Sí</> : <><IconX size={13} /> No</>}
-            </span>
-            {fb.contacto_calificado === false && fb.razon_no_califica && (
-              <p className="text-xs text-gray-500 mt-1">Razón: {fb.razon_no_califica}{fb.razon_no_califica_otro ? ` — ${fb.razon_no_califica_otro}` : ""}</p>
-            )}
-          </div>
+            {/* Contacto calificado */}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">3. ¿El contacto era el decisor correcto?</p>
+              <div className="flex gap-2">
+                {[true, false].map(v => (
+                  <button key={String(v)} onClick={() => setForm(f => ({ ...f, contacto_calificado: v }))}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${form.contacto_calificado === v ? (v ? "bg-green-100 border-green-300 text-green-700" : "bg-red-100 border-red-300 text-red-700") : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}>
+                    {v ? "Sí" : "No"}
+                  </button>
+                ))}
+              </div>
+              {!form.contacto_calificado && (
+                <div className="mt-2 space-y-1.5">
+                  <select value={form.razon_no_califica} onChange={e => setForm(f => ({ ...f, razon_no_califica: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none">
+                    <option value="">Seleccionar razón</option>
+                    {RAZONES_CONTACTO.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  {form.razon_no_califica === "Otro" && (
+                    <input value={form.razon_no_califica_otro} onChange={e => setForm(f => ({ ...f, razon_no_califica_otro: e.target.value }))}
+                      placeholder="Especificar…" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm outline-none" />
+                  )}
+                </div>
+              )}
+            </div>
 
-          {/* Propuesta comercial */}
-          <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">4. ¿Le enviarás propuesta comercial?</p>
-            {fb.propuesta_comercial ? (
-              <span className="inline-block px-3 py-1 rounded-full text-sm font-medium"
-                style={{
-                  background: fb.propuesta_comercial === "Si" ? "#f0fdf4" : fb.propuesta_comercial === "No" ? "#fef2f2" : fb.propuesta_comercial === "No aún" ? "#fffbeb" : "#f5f3ff",
-                  color: fb.propuesta_comercial === "Si" ? "#16a34a" : fb.propuesta_comercial === "No" ? "#dc2626" : fb.propuesta_comercial === "No aún" ? "#d97706" : "#7c3aed",
-                }}>
-                {fb.propuesta_comercial}
-              </span>
-            ) : <span className="text-sm text-gray-400">Sin respuesta</span>}
-          </div>
+            {/* Propuesta comercial */}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">4. ¿Le enviarás propuesta comercial?</p>
+              <div className="flex gap-2 flex-wrap">
+                {PROPUESTAS.map(p => (
+                  <button key={p} onClick={() => setForm(f => ({ ...f, propuesta_comercial: p }))}
+                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition ${form.propuesta_comercial === p ? "bg-purple-100 border-purple-300 text-purple-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}>
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-          {/* Comentarios */}
-          {fb.comentarios_adicionales && (
+            {/* Comentarios */}
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">5. Comentarios adicionales</p>
-              <p className="text-sm text-gray-700 bg-gray-50 rounded-xl px-4 py-3 italic">"{fb.comentarios_adicionales}"</p>
+              <textarea
+                value={form.comentarios_adicionales}
+                onChange={e => setForm(f => ({ ...f, comentarios_adicionales: e.target.value }))}
+                placeholder="Opcional…"
+                rows={3}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none resize-none focus:border-[#62E0D8]"
+              />
             </div>
-          )}
 
-          {/* Probabilidad de cierre */}
-          {fb.probabilidad_cierre !== null && fb.probabilidad_cierre !== undefined && (
+            {/* Probabilidad de cierre */}
             <div>
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">6. Probabilidad de cierre</p>
               <div className="flex items-center gap-3">
-                <div className="flex-1 bg-gray-100 rounded-full h-3">
-                  <div className="h-full rounded-full" style={{ width: `${fb.probabilidad_cierre}%`, background: probColor }} />
+                <input type="range" min={0} max={100} step={5}
+                  value={form.probabilidad_cierre ?? 0}
+                  onChange={e => setForm(f => ({ ...f, probabilidad_cierre: Number(e.target.value) }))}
+                  className="flex-1" />
+                <span className="text-lg font-bold w-12 text-right" style={{ color: probColor(form.probabilidad_cierre) }}>
+                  {form.probabilidad_cierre ?? 0}%
+                </span>
+              </div>
+            </div>
+
+            {/* Botones guardar/cancelar */}
+            <div className="flex gap-2 pt-2 border-t border-gray-100">
+              <button onClick={handleSave} disabled={saving}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                style={{ background: "#251762" }}>
+                {saving ? "Guardando…" : "Guardar cambios"}
+              </button>
+              <button onClick={() => setEditing(false)} disabled={saving}
+                className="px-4 py-2 rounded-xl text-sm border border-gray-200 text-gray-600 hover:bg-gray-50">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* ── MODO LECTURA ───────────────────────────────────────────── */
+          <div className="p-6 space-y-5">
+            {fb.sdr_seleccionado && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Sales Manager:</span>
+                <span className="px-2.5 py-0.5 bg-purple-50 text-purple-700 text-xs font-medium rounded-full border border-purple-100">{fb.sdr_seleccionado}</span>
+              </div>
+            )}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">1. Calificación de la reunión</p>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-0.5">
+                  {Array.from({ length: 10 }, (_, i) => (
+                    <IconStar key={i} size={18}
+                      fill={(fb.calificacion ?? 0) > i ? "#f59e0b" : "none"}
+                      stroke={(fb.calificacion ?? 0) > i ? "#f59e0b" : "#d1d5db"} />
+                  ))}
                 </div>
-                <span className="text-lg font-bold w-12 text-right" style={{ color: probColor }}>{fb.probabilidad_cierre}%</span>
+                <span className="text-sm font-bold text-gray-700">{fb.calificacion ?? "—"}/10</span>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">2. ¿La empresa era calificada?</p>
+              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${fb.empresa_calificada ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                {fb.empresa_calificada ? <><IconCheck size={13} /> Sí</> : <><IconX size={13} /> No</>}
+              </span>
+              {fb.empresa_calificada === false && fb.razon_no_empresa && (
+                <p className="text-xs text-gray-500 mt-1">Razón: {fb.razon_no_empresa}{fb.razon_no_empresa_otro ? ` — ${fb.razon_no_empresa_otro}` : ""}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">3. ¿El contacto era el decisor correcto?</p>
+              <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${fb.contacto_calificado ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                {fb.contacto_calificado ? <><IconCheck size={13} /> Sí</> : <><IconX size={13} /> No</>}
+              </span>
+              {fb.contacto_calificado === false && fb.razon_no_califica && (
+                <p className="text-xs text-gray-500 mt-1">Razón: {fb.razon_no_califica}{fb.razon_no_califica_otro ? ` — ${fb.razon_no_califica_otro}` : ""}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">4. ¿Le enviarás propuesta comercial?</p>
+              {fb.propuesta_comercial ? (
+                <span className="inline-block px-3 py-1 rounded-full text-sm font-medium"
+                  style={{
+                    background: fb.propuesta_comercial === "Si" ? "#f0fdf4" : fb.propuesta_comercial === "No" ? "#fef2f2" : fb.propuesta_comercial === "No aún" ? "#fffbeb" : "#f5f3ff",
+                    color: fb.propuesta_comercial === "Si" ? "#16a34a" : fb.propuesta_comercial === "No" ? "#dc2626" : fb.propuesta_comercial === "No aún" ? "#d97706" : "#7c3aed",
+                  }}>
+                  {fb.propuesta_comercial}
+                </span>
+              ) : <span className="text-sm text-gray-400">Sin respuesta</span>}
+            </div>
+            {fb.comentarios_adicionales && (
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">5. Comentarios adicionales</p>
+                <p className="text-sm text-gray-700 bg-gray-50 rounded-xl px-4 py-3 italic">"{fb.comentarios_adicionales}"</p>
+              </div>
+            )}
+            {fb.probabilidad_cierre !== null && fb.probabilidad_cierre !== undefined && (
+              <div>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">6. Probabilidad de cierre</p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-gray-100 rounded-full h-3">
+                    <div className="h-full rounded-full" style={{ width: `${fb.probabilidad_cierre}%`, background: probColor(fb.probabilidad_cierre) }} />
+                  </div>
+                  <span className="text-lg font-bold w-12 text-right" style={{ color: probColor(fb.probabilidad_cierre) }}>{fb.probabilidad_cierre}%</span>
+                </div>
+              </div>
+            )}
+
+            {/* Acciones de administrador */}
+            {!confirmDelete && (
+              <div className="flex gap-2 pt-2 border-t border-gray-100">
+                <button onClick={() => setEditing(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition">
+                  <IconEdit size={14} /> Editar feedback
+                </button>
+                <button onClick={() => setConfirmDelete(true)}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-red-200 text-red-600 hover:bg-red-50 transition">
+                  <IconTrash size={14} /> Eliminar feedback
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Modal cambio de estado de reunión ─────────────────────────────────────────
+const REALIZADO_OPTS = ["Si", "No", "Pendiente", "Reagendar"] as const;
+
+function ChangeStatusModal({
+  meeting,
+  onClose,
+  onSaved,
+}: {
+  meeting: Meeting;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [selected, setSelected] = useState<string>(meeting.realizado);
+  const [confirming, setConfirming] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function handleConfirm() {
+    setSaving(true);
+    const res = await fetch(`/api/meetings/${meeting.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ realizado: selected }),
+    });
+    setSaving(false);
+    if (!res.ok) { alert("Error al cambiar estado. Intenta nuevamente."); return; }
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Cambiar estado de reunión</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{meeting.empresa}</p>
+          </div>
+          <button onClick={onClose}><IconX size={18} className="text-gray-400" /></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            {REALIZADO_OPTS.map(opt => (
+              <button key={opt} onClick={() => { setSelected(opt); setConfirming(false); }}
+                className={`py-2.5 rounded-xl text-sm font-semibold border-2 transition ${selected === opt ? "border-[#251762] bg-[#251762]/5 text-[#251762]" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}>
+                {opt}
+              </button>
+            ))}
+          </div>
+
+          {selected !== meeting.realizado && !confirming && (
+            <div className="pt-2">
+              <button onClick={() => setConfirming(true)}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ background: "#251762" }}>
+                Cambiar a "{selected}"
+              </button>
+            </div>
+          )}
+
+          {confirming && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <div className="flex items-start gap-2">
+                <IconAlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-amber-800">¿Confirmar cambio?</p>
+                  <p className="text-xs text-amber-600 mt-1">
+                    Vas a cambiar el estado de <strong>{meeting.empresa}</strong> de{" "}
+                    <strong>{meeting.realizado}</strong> a <strong>{selected}</strong>.
+                    {selected !== "Si" && meeting.feedback_status === "con_feedback"
+                      ? " El feedback guardado se mantendrá pero la reunión dejará de contarse como realizada."
+                      : ""}
+                  </p>
+                  <div className="flex gap-2 mt-3">
+                    <button onClick={handleConfirm} disabled={saving}
+                      className="px-4 py-1.5 rounded-lg text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50">
+                      {saving ? "Guardando…" : "Confirmar"}
+                    </button>
+                    <button onClick={() => setConfirming(false)} disabled={saving}
+                      className="px-4 py-1.5 rounded-lg text-sm text-gray-600 border border-gray-200 hover:bg-gray-50">
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}
         </div>
-        )}
       </div>
     </div>
   );
@@ -576,6 +898,7 @@ export default function FeedbackPage() {
   const [reasignando, setReasignando] = useState(false);
   const [desincronizados, setDesincronizados] = useState<number | null>(null);
   const [corrigiendo, setCorrigiendo] = useState(false);
+  const [changeStatusMeeting, setChangeStatusMeeting] = useState<Meeting | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -993,6 +1316,11 @@ export default function FeedbackPage() {
                       {copied === m.feedback_token ? "Copiado" : "Copiar link"}
                     </button>
                   )}
+                  <button onClick={() => setChangeStatusMeeting(m)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border border-gray-200 text-gray-500 hover:bg-gray-50 transition"
+                    title="Cambiar estado de la reunión">
+                    <IconEdit size={13} /> Estado
+                  </button>
                 </div>
               </div>
             );
@@ -1023,7 +1351,17 @@ export default function FeedbackPage() {
       {verFeedbackMeeting && (
         <VerFeedbackModal
           meeting={verFeedbackMeeting}
+          salesManagers={salesManagers}
           onClose={() => setVerFeedbackMeeting(null)}
+          onDeleted={() => { setVerFeedbackMeeting(null); load(); }}
+          onSaved={() => { setVerFeedbackMeeting(null); load(); }}
+        />
+      )}
+      {changeStatusMeeting && (
+        <ChangeStatusModal
+          meeting={changeStatusMeeting}
+          onClose={() => setChangeStatusMeeting(null)}
+          onSaved={() => { setChangeStatusMeeting(null); load(); }}
         />
       )}
 
