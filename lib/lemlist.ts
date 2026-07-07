@@ -72,18 +72,24 @@ function orNull(v: string): string | null {
 // nombre de la empresa SÍ aparece mencionado en ese texto (ej. "actualmente
 // Marketing Manager en VGroup"), así que como último recurso se lo pedimos a
 // Claude en vez de dejar el contacto "sin empresa".
+// Variante sin try/catch — para que el endpoint de debug pueda ver el error
+// real si Claude falla, en vez de que quede silenciado como "".
+export async function inferCompanyNameFromBioRaw(bio: string): Promise<string> {
+  const msg = await anthropic().messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 30,
+    system: `Te doy la bio de LinkedIn de una persona. Respondé SOLO con el nombre de la empresa donde trabaja actualmente, tal como aparece mencionado en el texto — nada más, sin explicación. Si el texto no menciona el nombre de una empresa actual, respondé exactamente: NINGUNA`,
+    messages: [{ role: "user", content: bio.slice(0, 3000) }],
+  });
+  const text = msg.content.find((b: { type: string }) => b.type === "text") as { type: "text"; text: string } | undefined;
+  const answer = text?.text.trim() ?? "";
+  if (!answer || /^ninguna$/i.test(answer)) return "";
+  return answer.replace(/^["'.]+|["'.]+$/g, "").slice(0, 120);
+}
+
 async function inferCompanyNameFromBio(bio: string): Promise<string> {
   try {
-    const msg = await anthropic().messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 30,
-      system: `Te doy la bio de LinkedIn de una persona. Respondé SOLO con el nombre de la empresa donde trabaja actualmente, tal como aparece mencionado en el texto — nada más, sin explicación. Si el texto no menciona el nombre de una empresa actual, respondé exactamente: NINGUNA`,
-      messages: [{ role: "user", content: bio.slice(0, 3000) }],
-    });
-    const text = msg.content.find((b: { type: string }) => b.type === "text") as { type: "text"; text: string } | undefined;
-    const answer = text?.text.trim() ?? "";
-    if (!answer || /^ninguna$/i.test(answer)) return "";
-    return answer.replace(/^["'.]+|["'.]+$/g, "").slice(0, 120);
+    return await inferCompanyNameFromBioRaw(bio);
   } catch {
     return "";
   }
