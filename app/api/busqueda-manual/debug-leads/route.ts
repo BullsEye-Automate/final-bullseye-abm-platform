@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
-import { getClientLemlistConfig, resolveManualSearchCampaignId } from "@/lib/lemlist";
+import { getClientLemlistConfig, getCampaignLeadsWithDetails, resolveManualSearchCampaignId, inferCompanyNameFromBioRaw } from "@/lib/lemlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,9 +65,35 @@ export async function GET(req: NextRequest) {
     contactRaw = await contactRes.json().catch(() => ({ error: `status ${contactRes.status}` }));
   }
 
+  // Corre el pipeline real de extracción (mapRawLead + enrichment + fallback
+  // de bio por IA) para ver el resultado final, no solo los datos crudos.
+  const processed = await getCampaignLeadsWithDetails(stagingId, apiKey);
+
+  // Prueba directa del fallback de IA sobre la bio del primer contacto, sin
+  // try/catch, para ver el error real si Claude falla en vez de "".
+  let bioInferenceTest: { bio_used: string | null; result?: string; error?: string } = { bio_used: null };
+  if (contactRaw && typeof contactRaw === "object") {
+    const cf = (contactRaw as any).fields ?? (contactRaw as any).vars ?? {};
+    const bio = [cf.summary, cf.jobDescription, cf.companyDescription, cf.tagline].filter((v) => typeof v === "string" && v.trim()).join("\n\n");
+    if (bio) {
+      bioInferenceTest.bio_used = bio.slice(0, 300) + (bio.length > 300 ? "…" : "");
+      try {
+        bioInferenceTest.result = await inferCompanyNameFromBioRaw(bio);
+      } catch (err: any) {
+        bioInferenceTest.error = err?.message ?? String(err);
+      }
+    }
+  }
+
+  const { error: firstSeenTableError } = await db.from("lemlist_lead_first_seen").select("campaign_id").limit(1);
+
   return NextResponse.json({
     staging_campaign_id: stagingId,
     used_dedicated_manual_search_campaign: Boolean(config?.lemlist_manual_search_campaign_id),
+    lemlist_lead_first_seen_migration_ok: !firstSeenTableError,
+    lemlist_lead_first_seen_error: firstSeenTableError?.message ?? null,
+    processed_leads: processed.ok ? processed.leads : { error: processed.error },
+    bio_inference_test: bioInferenceTest,
     raw_config: {
       lemlist_campaign_id: config?.lemlist_campaign_id ?? null,
       lemlist_staging_campaign_id: config?.lemlist_staging_campaign_id ?? null,
