@@ -411,7 +411,7 @@ export default function SubirCampanaPage() {
     reader.onload = (e) => {
       try {
         const data = e.target?.result;
-        const wb = XLSX.read(data, { type: "array" });
+        const wb = XLSX.read(data, { type: "array", codepage: 65001 });
         const rows = parseSheet(wb);
         if (rows.length === 0) {
           setFileError("No se encontraron contactos en el archivo. Verificá que el formato de columnas sea correcto.");
