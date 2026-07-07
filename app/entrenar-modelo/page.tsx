@@ -727,7 +727,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
               </div>
 
               {/* ICP de industria */}
-              {(editSeg || seg.icp_industry_id) && icpIndustries.length > 0 && (
+              {(editSeg || seg.icp_industry_id) && (
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-1.5">
                     <IconBuildingFactory2 size={13} style={{ color: "#0891B2" }} />
@@ -736,24 +736,32 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                     </label>
                   </div>
                   {editSeg ? (
-                    <select
-                      value={editSeg.icp_industry_id ?? ""}
-                      onChange={(e) => setEditSeg((p) => ({ ...p, icp_industry_id: e.target.value || null }))}
-                      className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] bg-white"
-                    >
-                      <option value="">— Usar ICP general del cliente —</option>
-                      {icpIndustries.map((ind) => (
-                        <option key={ind.id} value={ind.id}>{ind.name}</option>
-                      ))}
-                    </select>
+                    icpIndustries.length > 0 ? (
+                      <select
+                        value={editSeg.icp_industry_id ?? ""}
+                        onChange={(e) => setEditSeg((p) => ({ ...p, icp_industry_id: e.target.value || null }))}
+                        className="w-full text-sm border border-[#E5E2F0] rounded-xl px-3 py-2.5 outline-none focus:border-[#62E0D8] bg-white"
+                      >
+                        <option value="">— Usar ICP general del cliente —</option>
+                        {icpIndustries.map((ind) => (
+                          <option key={ind.id} value={ind.id}>{ind.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p className="text-xs text-ink-muted italic px-1">
+                        Este cliente no tiene industrias de ICP configuradas. Agrégalas en la sección de ICP.
+                      </p>
+                    )
                   ) : (
                     <div className="text-sm text-ink px-3 py-2 rounded-xl" style={{ background: "rgba(8,145,178,0.06)", border: "1px solid rgba(8,145,178,0.15)" }}>
                       {icpIndustries.find((i) => i.id === seg.icp_industry_id)?.name ?? <span className="text-ink-muted italic">ICP general</span>}
                     </div>
                   )}
-                  <p className="text-[10px] text-ink-muted">
-                    Si se selecciona, la generación de mensajes para este segmento usará el ICP de la industria en lugar del ICP general.
-                  </p>
+                  {icpIndustries.length > 0 && (
+                    <p className="text-[10px] text-ink-muted">
+                      Si se selecciona, la generación de mensajes para este segmento usará el ICP de la industria en lugar del ICP general.
+                    </p>
+                  )}
                 </div>
               )}
 
