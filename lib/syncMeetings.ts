@@ -87,9 +87,21 @@ export async function runMeetingsSync(): Promise<{
 
     const sheetRowKey = `${spreadsheetId}::${row.__rowIndex}`;
 
+    // Verificar si la reunión ya existe en BD y tiene feedback — en ese caso NO cambiar client_id
+    // para evitar que el sync mueva reuniones con feedback a otro cliente.
+    const { data: existing } = await supabase
+      .from("meetings")
+      .select("id, client_id, feedback_status")
+      .eq("sheet_row_key", sheetRowKey)
+      .maybeSingle();
+
+    const safeClientId = (existing?.feedback_status === "con_feedback" && existing?.client_id)
+      ? existing.client_id   // mantener el client_id actual si ya tiene feedback
+      : clientId;
+
     const record = {
       sheet_row_key:         sheetRowKey,
-      client_id:             clientId,
+      client_id:             safeClientId,
       empresa,
       contacto_nombre:       row["Contacto"]                 || null,
       contacto_cargo:        row["Cargo"]                    || null,
