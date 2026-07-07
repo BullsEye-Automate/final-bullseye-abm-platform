@@ -506,6 +506,31 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* 4.5 Búsqueda manual: Campaña puente → app → campaña real */}
+          <div className="card">
+            <h2 className="font-semibold mb-1">Búsqueda manual (Sales Navigator)</h2>
+            <p className="text-xs text-ink-muted mb-4">
+              Contactos que el equipo prospectó a mano, desde que entran a la Campaña puente de Lemlist hasta que salen a la campaña real.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <KpiCard
+                label="Empresas importadas"
+                value={data.manual_prospecting.companies_imported.current}
+                delta={data.manual_prospecting.companies_imported}
+              />
+              <KpiCard
+                label="Contactos: puente → app"
+                value={data.manual_prospecting.contacts_imported.current}
+                delta={data.manual_prospecting.contacts_imported}
+              />
+              <KpiCard
+                label="Contactos: app → campaña real"
+                value={data.manual_prospecting.contacts_sent_to_lemlist.current}
+                delta={data.manual_prospecting.contacts_sent_to_lemlist}
+              />
+            </div>
+          </div>
+
           {/* 5. Gráfico de evolución 8 meses */}
           <EvolutionChart data={data.evolution_8mo} />
 
