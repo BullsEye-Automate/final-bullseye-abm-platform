@@ -7,9 +7,13 @@ export type BuyerPersonaRoles = {
   avoid: string[];
 };
 
+// Cada línea del ICP suele traer varias variantes separadas por "/", ej.
+// "Director Comercial / Director de Ventas / Director de Marketing" — hay
+// que partirlas en frases individuales, si no toda la línea se compara como
+// un solo bloque de texto y el matching pierde precisión.
 function splitRoles(text: string): string[] {
   return text
-    .split(/[,\n]/)
+    .split(/[,\n/]/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -22,6 +26,40 @@ function normalize(s: string): string {
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// Los cargos en el ICP suelen estar en español y los de LinkedIn en inglés
+// (ej. "Commercial Director" vs "Director Comercial") — mismo cargo, orden
+// de palabras y ortografía distintos. Sin esto, el matching por substring
+// nunca los conecta. Mapea cognados comunes de roles B2B a una forma
+// canónica en español para poder comparar por conjunto de palabras.
+const ROLE_WORD_SYNONYMS: Record<string, string> = {
+  commercial: "comercial",
+  sales: "ventas",
+  growth: "crecimiento",
+  head: "jefe",
+  chief: "jefe",
+  officer: "oficial",
+  president: "presidente",
+  founder: "fundador",
+  owner: "dueno",
+  business: "negocios",
+  development: "desarrollo",
+  revenue: "ingresos",
+  operations: "operaciones",
+  executive: "ejecutivo",
+  manager: "gerente",
+  lead: "lider",
+  regional: "regional",
+};
+
+const ROLE_STOPWORDS = new Set(["de", "del", "la", "el", "los", "las", "of", "the", "and", "y", "para", "en", "a"]);
+
+function roleTokens(s: string): string[] {
+  return normalize(s)
+    .split(" ")
+    .filter((w) => w && !ROLE_STOPWORDS.has(w))
+    .map((w) => ROLE_WORD_SYNONYMS[w] ?? w);
 }
 
 function collectRoles(content: string, target: BuyerPersonaRoles) {
@@ -74,13 +112,22 @@ export async function getClientBuyerPersonaRoles(
   };
 }
 
+// Matchea por conjunto de palabras (canonicalizadas), no por substring
+// literal — así "Commercial Director" (LinkedIn, inglés) matchea contra
+// "Director Comercial" (ICP, español) sin importar idioma ni orden.
+// Requiere que el cargo más corto de los dos esté completamente contenido
+// en el más largo, para no matchear cargos solo parcialmente relacionados
+// (ej. "Sales Manager" no debería matchear "Director de Ventas").
 function matchesAny(jobTitle: string, roles: string[]): boolean {
-  const nJob = normalize(jobTitle);
-  if (!nJob) return false;
+  const jobTokens = new Set(roleTokens(jobTitle));
+  if (jobTokens.size === 0) return false;
   return roles.some((r) => {
-    const nRole = normalize(r);
-    if (!nRole) return false;
-    return nJob.includes(nRole) || nRole.includes(nJob);
+    const rTokens = roleTokens(r);
+    if (rTokens.length === 0) return false;
+    const roleSet = new Set(rTokens);
+    const roleInJob = rTokens.every((t) => jobTokens.has(t));
+    const jobInRole = Array.from(jobTokens).every((t) => roleSet.has(t));
+    return roleInJob || jobInRole;
   });
 }
 
