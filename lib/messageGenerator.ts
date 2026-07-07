@@ -1,5 +1,6 @@
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import type Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
@@ -64,6 +65,7 @@ export type ContactMessageInput = {
   segmentContext?: SegmentContext;
   language?: "es" | "en";
   // Configuración de secuencia (usado por el laboratorio de entrenamiento)
+  clientId?: string;             // para logging de uso
   emailCount?: number;          // cuántos emails generar (default 1)
   linkedinMsgCount?: number;    // cuántos mensajes de LinkedIn (default 1)
   includeConnectMsg?: boolean;  // incluir nota de invitación a conectar (default false)
@@ -219,6 +221,7 @@ export async function routeContactToSegment(
       .join("")
       .trim();
 
+    void logAiUsage({ functionName: "segment_routing", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return { segmentId: null, segmentName: null, reasoning: "No se pudo parsear la respuesta" };
 
@@ -250,6 +253,7 @@ export async function generateContactMessages(
     fewShotExamples,
     styleGuide,
     segmentContext,
+    clientId,
     language = "es",
     emailCount = 1,
     linkedinMsgCount = 1,
@@ -371,6 +375,7 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
       messages: [{ role: "user", content: sequencePrompt }],
     });
 
+    void logAiUsage({ clientId, functionName: "message_generation_sequence", model: CLAUDE_MODEL, inputTokens: seqMessage.usage.input_tokens, outputTokens: seqMessage.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
     const seqToolUse = seqMessage.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (!seqToolUse) {
       const raw = seqMessage.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
@@ -460,6 +465,7 @@ Genera los mensajes de outreach personalizados para este contacto usando la herr
     messages: [{ role: "user", content: userPrompt }],
   });
 
+  void logAiUsage({ clientId, functionName: "message_generation_simple", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
   // Extraer el resultado del tool_use
   const toolUse = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
 
@@ -509,6 +515,7 @@ async function reviewMessages(msgs: ContactMessages): Promise<ContactMessages> {
       messages: [{ role: "user", content: userPrompt }],
     });
 
+    void logAiUsage({ functionName: "message_review_haiku", model: HAIKU_MODEL, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
     const raw = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)

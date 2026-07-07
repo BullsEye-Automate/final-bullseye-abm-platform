@@ -248,6 +248,7 @@ export async function POST(req: NextRequest) {
             fewShotExamples: fewShotGlobal,
             styleGuide,
             segmentContext,
+            clientId: client_id,
             language: "es",
             emailCount,
             linkedinMsgCount,

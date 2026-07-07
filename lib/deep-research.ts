@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { anthropic, CLAUDE_MODEL } from "./claude";
 import { perplexitySearch } from "./perplexity";
+import { logAiUsage } from "./aiUsageLogger";
 
 export type DeepResearchResult = {
   trigger: string;
@@ -87,6 +88,8 @@ Extrae el ángulo de personalización para el outreach de BullsEye hacia esta em
       }
     ]
   });
+
+  void logAiUsage({ functionName: "deep_research", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { companyName } });
 
   const text = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")

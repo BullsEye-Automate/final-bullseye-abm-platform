@@ -80,7 +80,8 @@ const SECTIONS: Section[] = [
       { href: "/clientes",                label: "Clientes",         icon: IconBuilding },
       { href: "/configuracion/cliente",   label: "Config. cliente",  icon: IconAdjustments },
       { href: "/configuracion/contexto",  label: "Contexto IA",      icon: IconFileText },
-      { href: "/configuracion/icp",       label: "ICP",              icon: IconSettings }
+      { href: "/configuracion/icp",       label: "ICP",              icon: IconSettings },
+      { href: "/admin/uso-ia",            label: "Uso de IA",        icon: IconChartBar },
     ]
   }
 ];
