@@ -30,6 +30,12 @@ export type DashboardData = {
     sales_nav_companies: number; sales_nav_contacts: number;
     avg_contacts_per_company: number | null;
   };
+  // Búsqueda manual: Campaña puente de Lemlist → app → campaña real de Lemlist.
+  manual_prospecting: {
+    companies_imported: Delta;      // empresas con ≥1 contacto de búsqueda manual, creadas en el rango
+    contacts_imported: Delta;       // contactos de búsqueda manual traídos de la Campaña puente al rango
+    contacts_sent_to_lemlist: Delta; // de esos, cuántos se enviaron a la campaña real de Lemlist en el rango
+  };
   evolution_8mo: Array<{ month: string; label: string; companies_clay_push: number; contacts_total: number }>;
   clay_funnel: { total_from_clay: number; fit: number; in_lemlist: number };
   coverage: { total_in_clay: number; no_contacts: number; one_contact: number; two_plus_contacts: number };
@@ -57,11 +63,23 @@ async function countTable(
   extra?: (q: any) => any,
   clientId?: string | null
 ): Promise<number> {
+  return countByDateColumn(db, table, "created_at", start, end, extra, clientId);
+}
+
+async function countByDateColumn(
+  db: SupabaseClient,
+  table: "companies" | "contacts",
+  dateColumn: string,
+  start: Date,
+  end: Date,
+  extra?: (q: any) => any,
+  clientId?: string | null
+): Promise<number> {
   let q = db
     .from(table)
     .select("id", { count: "exact", head: true })
-    .gte("created_at", start.toISOString())
-    .lte("created_at", end.toISOString());
+    .gte(dateColumn, start.toISOString())
+    .lte(dateColumn, end.toISOString());
   if (clientId) q = q.eq("client_id", clientId);
   if (extra) q = extra(q);
   const { count } = await q;
@@ -211,6 +229,25 @@ export async function computeDashboard(
   // rango — así lo hecho en /busqueda-manual también cuenta en reportería.
   const totalWorked = new Set([...clayPushedSet, ...navSet]).size;
 
+  // ── Búsqueda manual: Campaña puente → app → campaña real ───────────
+  let srcPrevQ = db.from("contacts").select("company_id, source")
+    .gte("created_at", previous.start.toISOString()).lte("created_at", previous.end.toISOString());
+  if (cid) srcPrevQ = srcPrevQ.eq("client_id", cid);
+  const { data: contactsSrcPrev } = await srcPrevQ;
+  const navSetPrev = new Set<string>();
+  let navContactsPrev = 0;
+  for (const r of contactsSrcPrev ?? []) {
+    if ((r.source ?? "clay") === "sales_navigator") {
+      navContactsPrev++;
+      if (r.company_id) navSetPrev.add(r.company_id);
+    }
+  }
+
+  const [manualSentToLemlist, manualSentToLemlistPrev] = await Promise.all([
+    countByDateColumn(db, "contacts", "lemlist_pushed_at", start, end, (q: any) => q.eq("source", "sales_navigator"), cid),
+    countByDateColumn(db, "contacts", "lemlist_pushed_at", previous.start, previous.end, (q: any) => q.eq("source", "sales_navigator"), cid),
+  ]);
+
   // ── Evolution 8 months ───────────────────────────────────────────
   const now = new Date();
   const months = Array.from({ length: 8 }, (_, i) => {
@@ -310,6 +347,11 @@ export async function computeDashboard(
       sales_nav_companies: navSet.size,
       sales_nav_contacts: navContacts,
       avg_contacts_per_company: companiesWithContacts === 0 ? null : totalContacts / companiesWithContacts
+    },
+    manual_prospecting: {
+      companies_imported: mkDelta(navSet.size, navSetPrev.size),
+      contacts_imported: mkDelta(navContacts, navContactsPrev),
+      contacts_sent_to_lemlist: mkDelta(manualSentToLemlist, manualSentToLemlistPrev),
     },
     evolution_8mo,
     clay_funnel: { total_from_clay: clayCt, fit: clayFit, in_lemlist: clayLem },
