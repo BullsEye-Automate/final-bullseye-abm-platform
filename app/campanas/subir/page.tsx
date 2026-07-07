@@ -381,6 +381,29 @@ export default function SubirCampanaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGenerating, isActiveGeneration]);
 
+  // ── Cargar segmentos del cliente (se ejecuta al montar y cuando cambia el cliente) ──
+  useEffect(() => {
+    if (!currentClient?.id) return;
+    setSegmentsLoading(true);
+    (async () => {
+      const MAX_ATTEMPTS = 4;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        try {
+          const r = await fetch(`/api/training/segments?client_id=${currentClient.id}`);
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const { segments: segs } = await r.json();
+          const mapped = (segs ?? []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name }));
+          setSegments(mapped);
+          setSelectedSegmentId((prev) => prev || mapped[0]?.id || "");
+          break;
+        } catch {
+          if (attempt < MAX_ATTEMPTS - 1) await new Promise((res) => setTimeout(res, 800 * (attempt + 1)));
+        }
+      }
+      setSegmentsLoading(false);
+    })();
+  }, [currentClient?.id]);
+
   // ── Procesar archivo ──
   const handleFile = useCallback((file: File) => {
     setFileError(null);
@@ -397,24 +420,6 @@ export default function SubirCampanaPage() {
         setParsed(rows);
         setDeepResearchSet(new Set());
         setStage("segment");
-        // Cargar segmentos con reintentos automáticos
-        setSegmentsLoading(true);
-        (async () => {
-          const MAX_ATTEMPTS = 4;
-          for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-            try {
-              const r = await fetch(`/api/training/segments?client_id=${currentClient?.id}`);
-              if (!r.ok) throw new Error(`HTTP ${r.status}`);
-              const { segments: segs } = await r.json();
-              setSegments((segs ?? []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name })));
-              setSelectedSegmentId(segs?.[0]?.id ?? "");
-              break;
-            } catch {
-              if (attempt < MAX_ATTEMPTS - 1) await new Promise((res) => setTimeout(res, 800 * (attempt + 1)));
-            }
-          }
-          setSegmentsLoading(false);
-        })();
       } catch {
         setFileError("Error al leer el archivo. Asegurate de que sea un CSV o Excel válido.");
       }
