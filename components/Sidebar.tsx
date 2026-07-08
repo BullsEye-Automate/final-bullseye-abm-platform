@@ -26,9 +26,12 @@ import {
   IconFileText,
   IconFlame,
   IconUserSearch,
+  IconLogout,
 } from "@tabler/icons-react";
+import { useRouter } from "next/navigation";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
+import { supabaseBrowser } from "@/lib/supabase/client";
 
 type Item = { href: string; label: string; icon: any; disabled?: boolean };
 type Section = { label: string; items: Item[] };
@@ -216,7 +219,14 @@ function ClientSelector() {
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { isGenerating, genProgress, contacts } = useGeneration();
+
+  async function handleLogout() {
+    await supabaseBrowser().auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <aside
@@ -292,6 +302,18 @@ export default function Sidebar() {
           </Link>
         </div>
       )}
+
+      {/* Cerrar sesión */}
+      <div className="px-3 pt-2 mt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] transition hover:bg-white/10"
+          style={{ color: "rgba(255,255,255,0.6)" }}
+        >
+          <IconLogout size={15} stroke={1.5} />
+          Cerrar sesión
+        </button>
+      </div>
     </aside>
   );
 }

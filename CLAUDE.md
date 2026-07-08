@@ -54,7 +54,22 @@ LEMLIST_API_KEY=configurada
 HUBSPOT_ACCESS_TOKEN=configurada
 LUSHA_API_KEY=configurada
 CLAY_WEBHOOK_SECRET=bullseye-clay-2026
+NEXT_PUBLIC_SUPABASE_URL=https://ihxjjbbwldrdjhlvzkix.supabase.co   -- requerido por el login (Supabase Auth)
+NEXT_PUBLIC_SUPABASE_ANON_KEY=                                      -- ⚠️ verificar que esté seteada en Vercel
 ```
+
+---
+
+## Autenticación
+
+Todas las rutas internas (todo excepto los links mágicos de abajo) requieren sesión de **Supabase Auth**. Se implementa en `middleware.ts` (raíz del repo) usando `@supabase/ssr`.
+
+- **Crear un usuario del equipo:** Supabase Studio → Authentication → Users → "Add user" (email + password). No hay pantalla de signup pública a propósito — es una herramienta interna.
+- **Login:** `/login`. **Logout:** botón al final del `Sidebar`.
+- **Rutas públicas sin login** (protegidas por su propio token/secreto, no por sesión — ver lista exacta en `middleware.ts`):
+  - `/feedback-cliente/[token]`, `/encuesta/[token]`, `/forms/icp/[token]`, `/review/empresas/[token]`, `/revision/[token]` — links que se comparten con clientes externos.
+  - `/api/cron/*` (Vercel Cron, valida `CRON_SECRET`) y los webhooks entrantes de Clay (`x-webhook-secret`).
+- Antes de agregar una ruta nueva a esa lista blanca, confirmar que valida un token o secreto propio — si no, queda expuesta sin sesión.
 
 ---
 
