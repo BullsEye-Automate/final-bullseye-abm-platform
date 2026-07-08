@@ -17,6 +17,8 @@ export type DeepResearchContext = {
   trigger: string;
   angulo: string;
   resumen_ejecutivo: string;
+  senales?: string[];
+  decisores?: string[];
 };
 
 export type FewShotExample = {
@@ -275,7 +277,18 @@ export async function generateContactMessages(
   const systemPrompt = buildSystemPrompt(styleGuide, fewShotExamples, segmentContext);
 
   const deepResearchContext = deepResearch
-    ? `\nInvestigación profunda de la empresa:\n- Trigger actual: ${deepResearch.trigger}\n- Ángulo de mensaje: ${deepResearch.angulo}\n- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`
+    ? [
+        "\nInvestigación profunda de la empresa:",
+        `- Trigger actual: ${deepResearch.trigger}`,
+        `- Ángulo de mensaje: ${deepResearch.angulo}`,
+        deepResearch.senales?.length
+          ? `- Señales concretas verificadas:\n${deepResearch.senales.map((s) => `  • ${s}`).join("\n")}`
+          : null,
+        deepResearch.decisores?.length
+          ? `- Decisores identificados: ${deepResearch.decisores.join(", ")}`
+          : null,
+        `- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`,
+      ].filter(Boolean).join("\n")
     : "";
 
   const contactInfo = [
@@ -364,7 +377,7 @@ Datos del contacto:
 ${contactInfo || "No disponibles"}
 
 ${deepResearch
-  ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa."
+  ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
     : ""}
@@ -458,7 +471,7 @@ Datos del contacto:
 ${contactInfo || "No disponibles"}
 
 ${deepResearch
-  ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa."
+  ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
     : ""}
