@@ -20,7 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const body = await req.json();
   const {
     name, description, routing_hint, email_count, linkedin_msg_count, include_connect_msg,
-    message_focus, style_tone, style_rules, style_avoid, style_email_length,
+    message_focus, style_tone, style_rules, style_avoid, style_email_length, icp_industry_id,
   } = body;
 
   const update: Record<string, unknown> = {};
@@ -35,6 +35,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (style_rules        !== undefined) update.style_rules        = style_rules;
   if (style_avoid        !== undefined) update.style_avoid        = style_avoid;
   if (style_email_length !== undefined) update.style_email_length = style_email_length;
+  if (icp_industry_id    !== undefined) update.icp_industry_id    = icp_industry_id;
 
   const db = supabaseAdmin();
   const { data, error } = await db
