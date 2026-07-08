@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
     db.from("model_training_config")
       .select("style_tone, style_rules, style_avoid, style_email_length")
       .eq("client_id", client_id).maybeSingle(),
-    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg").eq("client_id", client_id)
+    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg, icp_industry_id").eq("client_id", client_id)
       .order("created_at", { ascending: true }),
     db.from("message_examples").select("*").eq("client_id", client_id).is("segment_id", null)
       .order("created_at", { ascending: false }).limit(5),
@@ -188,6 +188,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Pre-cargar ICP de industria de todos los segmentos que lo tengan configurado
+  const uniqueIndustryIds = [...new Set((segments ?? []).map((s) => (s as Record<string, unknown>).icp_industry_id as string | null).filter(Boolean))] as string[];
+  await Promise.all(uniqueIndustryIds.map((id) => getIndustryIcpContext(id)));
+
+  // Segmentos enriquecidos con su ICP de industria para enrutamiento
+  const enrichedSegments = (segments ?? []).map((s) => {
+    const icpId = (s as Record<string, unknown>).icp_industry_id as string | null;
+    return {
+      ...s,
+      icpIndustryContent: icpId ? (industryIcpCache.get(icpId) ?? null) : null,
+    };
+  });
+
   // Pre-buscar deep research de todas las empresas únicas en paralelo (solo si se solicitó)
   if (use_deep_research) {
     const uniqueCompanies = [...new Set(contacts.map((c) => c.companyName?.trim()).filter(Boolean))] as string[];
@@ -210,7 +223,7 @@ export async function POST(req: NextRequest) {
           if (!resolvedSegmentId) {
             const routing = await routeContactToSegment(
               { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
-              segments ?? []
+              enrichedSegments
             );
             resolvedSegmentId   = routing.segmentId;
             resolvedSegmentName = routing.segmentName;
