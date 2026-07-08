@@ -204,6 +204,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Pre-cargar ICP de industria de todos los segmentos que lo tengan configurado
+  const uniqueIndustryIds = [...new Set((segments ?? []).map((s) => (s as Record<string, unknown>).icp_industry_id as string | null).filter(Boolean))] as string[];
+  await Promise.all(uniqueIndustryIds.map((id) => getIndustryIcpContext(id)));
+
+  // Segmentos enriquecidos con su ICP de industria para enrutamiento
+  const enrichedSegments = (segments ?? []).map((s) => {
+    const icpId = (s as Record<string, unknown>).icp_industry_id as string | null;
+    return {
+      ...s,
+      icpIndustryContent: icpId ? (industryIcpCache.get(icpId) ?? null) : null,
+    };
+  });
+
   // Pre-buscar deep research de todas las empresas únicas en paralelo (solo si se solicitó)
   if (use_deep_research) {
     const uniqueCompanies = [...new Set(contacts.map((c) => c.companyName?.trim()).filter(Boolean))] as string[];
@@ -226,7 +239,7 @@ export async function POST(req: NextRequest) {
           if (!resolvedSegmentId) {
             const routing = await routeContactToSegment(
               { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
-              segments ?? []
+              enrichedSegments
             );
             resolvedSegmentId   = routing.segmentId;
             resolvedSegmentName = routing.segmentName;

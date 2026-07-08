@@ -38,6 +38,9 @@ export type Segment = {
   id: string;
   name: string;
   routing_hint: string;
+  icp_industry_id?: string | null;
+  // Contenido del ICP de industria pre-cargado (opcional, para enrutamiento)
+  icpIndustryContent?: string | null;
 };
 
 export type SegmentContext = {
@@ -188,8 +191,14 @@ export async function routeContactToSegment(
   }
 
   const segmentList = segments
-    .map((s, i) => `${i + 1}. ID: "${s.id}" | Nombre: ${s.name} | Criterio: ${s.routing_hint}`)
-    .join("\n");
+    .map((s, i) => {
+      let entry = `${i + 1}. ID: "${s.id}" | Nombre: ${s.name} | Criterio: ${s.routing_hint}`;
+      if (s.icpIndustryContent) {
+        entry += `\n   ICP de industria:\n${s.icpIndustryContent.split("\n").map((l) => `   ${l}`).join("\n")}`;
+      }
+      return entry;
+    })
+    .join("\n\n");
 
   const contactProfile = [
     (contact.firstName || contact.lastName) && `Nombre: ${[contact.firstName, contact.lastName].filter(Boolean).join(" ")}`,
