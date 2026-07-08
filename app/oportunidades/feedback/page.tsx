@@ -899,8 +899,9 @@ export default function FeedbackPage() {
   const [desincronizados, setDesincronizados] = useState<number | null>(null);
   const [corrigiendo, setCorrigiendo] = useState(false);
   const [changeStatusMeeting, setChangeStatusMeeting] = useState<Meeting | null>(null);
-  const [feedbacksOtroCliente, setFeedbacksOtroCliente] = useState<any[]>([]);
-  const [recuperandoSync, setRecuperandoSync] = useState(false);
+  const [syncPreview, setSyncPreview] = useState<any[] | null>(null);
+  const [deletingMeeting, setDeletingMeeting] = useState<Meeting | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -970,31 +971,6 @@ export default function FeedbackPage() {
       .catch(() => {});
   }, [currentClient?.id, meetings]);
 
-  // Detecta feedbacks que el sync movió a otro cliente (por cambio de client_id)
-  useEffect(() => {
-    if (!currentClient?.id || currentClient.id === "__all__") { setFeedbacksOtroCliente([]); return; }
-    fetch(`/api/meetings/recover-feedback?client_id=${currentClient.id}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => setFeedbacksOtroCliente(data?.con_feedback_otro_cliente ?? []))
-      .catch(() => {});
-  }, [currentClient?.id, meetings]);
-
-  async function handleRecuperarSyncFeedbacks() {
-    if (!currentClient?.id || currentClient.id === "__all__") return;
-    setRecuperandoSync(true);
-    const ids = feedbacksOtroCliente.map((m: any) => m.id);
-    const res = await fetch("/api/meetings/recover-feedback", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: currentClient.id, meeting_ids: ids }),
-    });
-    const data = await res.json();
-    setRecuperandoSync(false);
-    if (data.error) { alert(`Error: ${data.error}`); return; }
-    setFeedbacksOtroCliente([]);
-    load();
-  }
-
   async function handleFixStatus() {
     if (!currentClient?.id || currentClient.id === "__all__") return;
     setCorrigiendo(true);
@@ -1021,15 +997,55 @@ export default function FeedbackPage() {
     }
   }
 
+  // Paso 1: preview — muestra alerta si hay feedbacks que se protegerán o filas sin cliente
   async function handleSync() {
-    setSyncing(true); setImportMsg("");
+    setSyncing(true); setImportMsg(""); setSyncPreview(null);
+    try {
+      const prev = await fetch("/api/meetings/sync?preview=1");
+      const data = await prev.json();
+      if (data.error) { setImportMsg(`Error: ${data.error}`); setSyncing(false); return; }
+
+      const conFeedback = (data.preview ?? []).filter((p: any) => p.reason === "feedback_protegido");
+      const sinCliente  = (data.preview ?? []).filter((p: any) => p.reason === "sin_cliente");
+
+      // Si hay feedbacks que cambiarían de cliente → mostrar alerta y pedir confirmación
+      if (conFeedback.length > 0) {
+        setSyncPreview(data.preview ?? []);
+        setSyncing(false);
+        return;
+      }
+
+      // Si no hay riesgo de feedback, ejecutar directo
+      await doSync(sinCliente.length);
+    } catch { setImportMsg("Error de conexión al hacer sync"); setSyncing(false); }
+  }
+
+  // Paso 2: sync real (después de confirmar o cuando no hay feedbacks en riesgo)
+  async function doSync(sinClienteCount?: number) {
+    setSyncing(true); setSyncPreview(null);
     try {
       const res = await fetch("/api/meetings/sync");
       const data = await res.json();
       if (data.error) setImportMsg(`Error: ${data.error}`);
-      else { setImportMsg(`✓ Sync completado — ${data.synced} reuniones sincronizadas desde Google Sheets`); load(); }
+      else {
+        const partes = [`✓ Sync completado — ${data.synced} reuniones sincronizadas`];
+        if (data.skipped_sin_cliente) partes.push(`${data.skipped_sin_cliente} omitidas (sin cliente)`);
+        if (data.feedbacks_protegidos) partes.push(`${data.feedbacks_protegidos} con feedback protegidas`);
+        setImportMsg(partes.join(" · "));
+        load();
+      }
     } catch { setImportMsg("Error de conexión al hacer sync"); }
     setSyncing(false);
+  }
+
+  async function handleDeleteMeeting() {
+    if (!deletingMeeting) return;
+    setDeletingBusy(true);
+    const res = await fetch(`/api/meetings/${deletingMeeting.id}`, { method: "DELETE" });
+    setDeletingBusy(false);
+    if (!res.ok) { alert("Error al eliminar. Intenta nuevamente."); return; }
+    setDeletingMeeting(null);
+    load();
   }
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1126,35 +1142,38 @@ export default function FeedbackPage() {
         </div>
       )}
 
-      {/* Banner de recuperación: feedbacks movidos a otro cliente por el sync */}
-      {feedbacksOtroCliente.length > 0 && currentClient?.id && currentClient.id !== "__all__" && (
-        <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-300 flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <p className="text-sm font-semibold text-red-800">
-              🚨 {feedbacksOtroCliente.length} feedback{feedbacksOtroCliente.length !== 1 ? "s" : ""} de {currentClient.name} quedaron asignados a otro cliente (probablemente por el último Sync)
-            </p>
-            <p className="text-xs text-red-600 mt-0.5 mb-2">
-              El sync sobreescribió el cliente de estas reuniones. El feedback sigue guardado — recupéralo ahora.
-            </p>
-            <div className="flex flex-wrap gap-1">
-              {feedbacksOtroCliente.slice(0, 8).map((m: any) => (
-                <span key={m.id} className="px-2 py-0.5 bg-red-100 text-red-700 text-xs rounded-full">
-                  {m.empresa}
-                </span>
-              ))}
-              {feedbacksOtroCliente.length > 8 && (
-                <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs rounded-full">
-                  +{feedbacksOtroCliente.length - 8} más
-                </span>
-              )}
+      {/* Alerta pre-sync: hay feedbacks cuyo cliente cambiaría en el sheet */}
+      {syncPreview && syncPreview.filter((p: any) => p.reason === "feedback_protegido").length > 0 && (
+        <div className="mb-4 px-4 py-4 rounded-xl bg-amber-50 border border-amber-300">
+          <div className="flex items-start gap-3">
+            <IconAlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-800 mb-1">
+                ⚠️ El sync detectó {syncPreview.filter((p: any) => p.reason === "feedback_protegido").length} reunión(es) con feedback cuyo cliente cambió en el sheet
+              </p>
+              <p className="text-xs text-amber-700 mb-2">
+                Para proteger los feedbacks, estas reuniones <strong>NO se moverán de cliente</strong>. Si quieres cambiar su cliente, hazlo manualmente desde el botón "Estado" de cada tarjeta.
+              </p>
+              <div className="space-y-1 mb-3">
+                {syncPreview.filter((p: any) => p.reason === "feedback_protegido").map((p: any, i: number) => (
+                  <div key={i} className="text-xs text-amber-700 flex items-center gap-2">
+                    <span className="font-medium">{p.empresa}</span>
+                    <span className="text-amber-500">cliente actual: {p.clienteActual} → sheet dice: {p.clienteNuevo ?? "vacío"}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => doSync()}
+                  className="px-4 py-1.5 rounded-lg text-sm font-medium text-white bg-amber-600 hover:bg-amber-700">
+                  Entendido, sincronizar igual (protegiendo feedbacks)
+                </button>
+                <button onClick={() => setSyncPreview(null)}
+                  className="px-4 py-1.5 rounded-lg text-sm text-amber-700 border border-amber-300 hover:bg-amber-100">
+                  Cancelar
+                </button>
+              </div>
             </div>
           </div>
-          <button
-            onClick={handleRecuperarSyncFeedbacks}
-            disabled={recuperandoSync}
-            className="shrink-0 px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">
-            {recuperandoSync ? "Recuperando…" : `Recuperar ${feedbacksOtroCliente.length}`}
-          </button>
         </div>
       )}
 
@@ -1380,10 +1399,51 @@ export default function FeedbackPage() {
                     title="Cambiar estado de la reunión">
                     <IconEdit size={13} /> Estado
                   </button>
+                  <button onClick={() => setDeletingMeeting(m)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border border-red-200 text-red-500 hover:bg-red-50 transition"
+                    title="Eliminar esta reunión del listado">
+                    <IconTrash size={13} />
+                  </button>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal confirmación eliminar reunión */}
+      {deletingMeeting && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <IconAlertTriangle size={22} className="text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-gray-900">¿Eliminar esta reunión?</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  <strong>{deletingMeeting.empresa}</strong>
+                  {deletingMeeting.contacto_nombre ? ` · ${deletingMeeting.contacto_nombre}` : ""}
+                </p>
+                {deletingMeeting.feedback_status === "con_feedback" && (
+                  <p className="mt-2 text-xs font-semibold text-red-700 bg-red-50 px-3 py-2 rounded-lg">
+                    ⚠️ Esta reunión tiene feedback guardado. Al eliminarla se borrará el feedback también. Esta acción es irreversible.
+                  </p>
+                )}
+                {deletingMeeting.feedback_status !== "con_feedback" && (
+                  <p className="text-xs text-gray-400 mt-1">Esta acción es irreversible.</p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleDeleteMeeting} disabled={deletingBusy}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">
+                {deletingBusy ? "Eliminando…" : "Sí, eliminar"}
+              </button>
+              <button onClick={() => setDeletingMeeting(null)} disabled={deletingBusy}
+                className="flex-1 py-2 rounded-xl text-sm border border-gray-200 text-gray-600 hover:bg-gray-50">
+                Cancelar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -27,3 +27,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+
+// DELETE /api/meetings/[id] — elimina la reunión (y su feedback por cascade)
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const db = supabaseAdmin();
+
+  // Verificar si tiene feedback antes de eliminar (para que el cliente decida)
+  const { data: meeting } = await db
+    .from("meetings")
+    .select("id, empresa, feedback_status")
+    .eq("id", params.id)
+    .maybeSingle();
+
+  if (!meeting) return NextResponse.json({ error: "Reunión no encontrada" }, { status: 404 });
+
+  const { error } = await db.from("meetings").delete().eq("id", params.id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true, tenia_feedback: meeting.feedback_status === "con_feedback" });
+}
