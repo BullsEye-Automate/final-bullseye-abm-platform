@@ -243,8 +243,13 @@ export async function POST(req: NextRequest) {
     const findPhoneParam = stillNoPhone ? "&findPhone=true" : "";
 
     const ENRICH = `findEmail=true&verifyEmail=true&linkedinEnrichment=true${findPhoneParam}`;
+    // linkedinEnrichment=true es necesario en AMBAS rutas: sin él, findPhone no
+    // tiene de dónde sacar el teléfono (Lemlist lo saca del perfil de LinkedIn
+    // enriquecido, no de la URL cruda que mandamos en el payload). Faltaba acá
+    // cuando el contacto ya tenía email — por eso llegaba el email pero nunca
+    // el teléfono, aunque el botón manual "find phone" en Lemlist sí lo encontraba.
     const lemlistUrl = hasEmail
-      ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true${findPhoneParam}`
+      ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email!)}?verifyEmail=true&linkedinEnrichment=true${findPhoneParam}`
       : `https://api.lemlist.com/api/campaigns/${campaignId}/leads?${ENRICH}`;
 
     if (stillNoPhone) console.log(`[lemlist-push] Sin teléfono para ${contact.id} → activando findPhone en Lemlist`);
