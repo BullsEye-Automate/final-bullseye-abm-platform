@@ -94,13 +94,27 @@ export async function POST(req: NextRequest) {
       .eq("id", segmentId)
       .single();
     if (seg) {
+      // Filtrar reglas de secuencia (Correo 1/2/3, LinkedIn 1/2) — son para carga masiva, no para el agente SDR
+      // Solo conservar reglas de estilo, tono, puntuación y restricciones generales
+      const filteredRules = seg.style_rules
+        ? seg.style_rules
+            .split("\n")
+            .filter((line: string) => {
+              const l = line.trim().toLowerCase();
+              return l && !l.startsWith("- correo ") && !l.startsWith("- linkedin ") &&
+                !l.match(/^-\s*(correo|email|e-mail)\s*\d/i) &&
+                !l.match(/^-\s*linkedin\s*\d/i);
+            })
+            .join("\n")
+        : "";
+
       const parts = [
         `Segmento: ${seg.name}`,
-        seg.message_focus     ? `Enfoque del mensaje: ${seg.message_focus}`   : "",
-        seg.style_tone        ? `Tono: ${seg.style_tone}`                     : "",
-        seg.style_email_length? `Largo del correo: ${seg.style_email_length}` : "",
-        seg.style_rules       ? `Reglas de escritura: ${seg.style_rules}`     : "",
-        seg.style_avoid       ? `Evitar: ${seg.style_avoid}`                  : "",
+        seg.message_focus      ? `Enfoque del mensaje: ${seg.message_focus}`   : "",
+        seg.style_tone         ? `Tono: ${seg.style_tone}`                     : "",
+        seg.style_email_length ? `Largo del correo: ${seg.style_email_length}` : "",
+        filteredRules          ? `Reglas de escritura:\n${filteredRules}`       : "",
+        seg.style_avoid        ? `Evitar: ${seg.style_avoid}`                  : "",
       ].filter(Boolean);
       segmentStyleGuide = parts.join("\n");
     }
