@@ -101,9 +101,16 @@ export async function POST(req: NextRequest) {
             .split("\n")
             .filter((line: string) => {
               const l = line.trim().toLowerCase();
-              return l && !l.startsWith("- correo ") && !l.startsWith("- linkedin ") &&
-                !l.match(/^-\s*(correo|email|e-mail)\s*\d/i) &&
-                !l.match(/^-\s*linkedin\s*\d/i);
+              if (!l) return false;
+              // Excluir instrucciones de secuencia (Correo 1/2/3, LinkedIn 1/2)
+              if (l.match(/^-\s*(correo|email|e-mail)\s*\d/i)) return false;
+              if (l.match(/^-\s*linkedin\s*\d/i)) return false;
+              // Excluir reglas que bloquean la generación si no hay señal fechada
+              if (l.includes("debe decirlo explícitamente") || l.includes("debe decirlo explicitamente")) return false;
+              if (l.includes("no puedo generar") || l.includes("no puede generar")) return false;
+              if (l.includes("señal concreta") && l.includes("últimos") && l.includes("meses")) return false;
+              if (l.includes("si no dispone")) return false;
+              return true;
             })
             .join("\n")
         : "";
