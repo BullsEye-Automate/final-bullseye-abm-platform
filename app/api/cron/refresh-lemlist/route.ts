@@ -11,7 +11,6 @@ import {
   patchHSContact,
   computeEngagementScore,
 } from "@/lib/hubspot";
-import { generateSdrScript } from "@/lib/sdrScript";
 import { generateContactMessages } from "@/lib/messageGenerator";
 
 export const runtime = "nodejs";
@@ -135,12 +134,6 @@ async function refreshClientContacts(
     trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
   ].filter(Boolean).join("\n\n") || undefined;
 
-  const trainingCtxForScript = [
-    trainingConfig.business_description && `Negocio: ${trainingConfig.business_description}`,
-    trainingConfig.value_props          && `Propuesta de valor: ${trainingConfig.value_props}`,
-    trainingConfig.talking_points       && `Puntos clave: ${trainingConfig.talking_points}`,
-  ].filter(Boolean).join("\n") || null;
-
   let updated = 0, synced = 0, generated = 0;
 
   for (const contact of contacts) {
@@ -261,27 +254,6 @@ async function refreshClientContacts(
       if (!hsContactId) { synced++; continue; }
 
       if (hsCompanyId) await associateContactCompany(hsContactId, hsCompanyId);
-
-      if (contact.email) {
-        try {
-          const script = await generateSdrScript({
-            firstName:   contact.first_name ?? "",
-            lastName:    contact.last_name  ?? "",
-            jobTitle:    contact.job_title  ?? "",
-            companyName, fitSignals,
-            icpContext:  icpContext ?? null,
-            trainingCtx: trainingCtxForScript,
-            emailBody:   contact.email_body          ?? null,
-            icebreaker:  contact.linkedin_icebreaker ?? null,
-          });
-          const scriptOk = await patchHSContact(hsContactId, { bullseye_script_sdr_ia: script });
-          if (!scriptOk) {
-            console.error(`[sdr-script] patchHSContact falló para contacto ${contact.id} (hsId=${hsContactId})`);
-          }
-        } catch (err: any) {
-          console.error(`[sdr-script] error generando script para contacto ${contact.id}:`, err?.message);
-        }
-      }
 
       synced++;
     } catch (err: any) {

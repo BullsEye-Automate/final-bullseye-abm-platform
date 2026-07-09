@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,6 +83,14 @@ ${call.notes_clean}`;
         model: CLAUDE_MODEL,
         max_tokens: 512,
         messages: [{ role: "user", content: prompt }],
+      });
+
+      void logAiUsage({
+        clientId: body.client_id,
+        functionName: "hubspot_calls_analyze",
+        model: CLAUDE_MODEL,
+        inputTokens: message.usage.input_tokens,
+        outputTokens: message.usage.output_tokens,
       });
 
       const textContent = message.content.find(
