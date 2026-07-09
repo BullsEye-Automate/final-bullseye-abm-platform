@@ -26,6 +26,7 @@ export type GeneratedContact = ParsedContact & {
   icebreaker?: string;
   linkedinMsg2?: string;
   segmentName?: string;
+  icpWarning?: boolean;
   error?: string;
   cancelled?: boolean;
 };

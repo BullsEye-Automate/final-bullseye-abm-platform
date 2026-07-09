@@ -31,6 +31,7 @@ type GeneratedContact = ParsedContact & {
   linkedinMsg2?: string;
   segmentName?: string;
   deepResearchUsed?: boolean;
+  icpWarning?: boolean; // true si el enrutamiento automático tuvo baja confianza
   error?: string;
 };
 
@@ -129,6 +130,22 @@ export async function POST(req: NextRequest) {
     return ctx;
   }
 
+  // Cache de ICP por industria (evita re-fetching para el mismo icp_industry_id)
+  const industryIcpCache = new Map<string, string | null>();
+
+  async function getIndustryIcpContext(industryId: string): Promise<string | null> {
+    if (industryIcpCache.has(industryId)) return industryIcpCache.get(industryId)!;
+    const { data: sections } = await db
+      .from("icp_industry_sections")
+      .select("section_key, content")
+      .eq("industry_id", industryId)
+      .neq("content", "");
+    if (!sections?.length) { industryIcpCache.set(industryId, null); return null; }
+    const content = sections.map((s) => `## ${s.section_key}\n${s.content}`).join("\n\n");
+    industryIcpCache.set(industryId, content);
+    return content;
+  }
+
   // Cache de deep research por nombre de empresa (evita re-buscar para la misma empresa)
   const deepResearchCache = new Map<string, DeepResearchResult | null>();
 
@@ -208,6 +225,7 @@ export async function POST(req: NextRequest) {
           // Usar segmento elegido manualmente; si no hay, hacer routing automático
           let resolvedSegmentId: string | null = segment_id ?? null;
           let resolvedSegmentName: string | null = null;
+          let icpWarning = false;
 
           if (!resolvedSegmentId) {
             const routing = await routeContactToSegment(
@@ -216,6 +234,7 @@ export async function POST(req: NextRequest) {
             );
             resolvedSegmentId   = routing.segmentId;
             resolvedSegmentName = routing.segmentName;
+            icpWarning          = routing.lowConfidence === true;
           } else {
             resolvedSegmentName = (segments ?? []).find((s) => s.id === resolvedSegmentId)?.name ?? null;
           }
@@ -232,6 +251,14 @@ export async function POST(req: NextRequest) {
           const emailCount        = (matchedSegment as Record<string, unknown> | null)?.email_count        as number ?? 3;
           const linkedinMsgCount  = (matchedSegment as Record<string, unknown> | null)?.linkedin_msg_count as number ?? 2;
           const includeConnectMsg = (matchedSegment as Record<string, unknown> | null)?.include_connect_msg as boolean ?? false;
+          const icpIndustryId     = (matchedSegment as Record<string, unknown> | null)?.icp_industry_id    as string | null ?? null;
+
+          // Usar ICP de industria del segmento si está configurado; si no, usar ICP general del cliente
+          let effectiveIcpContext = icpContext;
+          if (icpIndustryId) {
+            const industryCtx = await getIndustryIcpContext(icpIndustryId);
+            if (industryCtx) effectiveIcpContext = industryCtx;
+          }
 
           let deepResearch: DeepResearchResult | null = null;
           if (use_deep_research && c.companyName?.trim()) {
@@ -246,7 +273,7 @@ export async function POST(req: NextRequest) {
             companyName:    c.companyName || undefined,
             industry:       c.industry   || undefined,
             companySize:    c.companySize || undefined,
-            icpContext,
+            icpContext: effectiveIcpContext,
             deepResearch,
             fewShotExamples: fewShotGlobal,
             styleGuide,
@@ -271,6 +298,7 @@ export async function POST(req: NextRequest) {
             linkedinMsg2:      msgs.linkedinMessages?.[1],
             segmentName:       resolvedSegmentName ?? undefined,
             deepResearchUsed:  use_deep_research ? (deepResearch !== null) : undefined,
+            icpWarning:        icpWarning || undefined,
           };
         } catch (err: any) {
           return { ...c, error: err?.message ?? "Error de generación" };

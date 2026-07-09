@@ -51,6 +51,7 @@ type GeneratedContact = ParsedContact & {
   linkedinMsg2?: string;
   segmentName?: string;
   deepResearchUsed?: boolean;
+  icpWarning?: boolean;
   error?: string;
   cancelled?: boolean;
 };
@@ -282,7 +283,19 @@ function ContactRow({
             <div className="text-xs text-red-500 bg-red-50 px-3 py-2 rounded-lg">{contact.error}</div>
           )}
           {contact.segmentName && (
-            <div className="text-[11px] text-ink-muted">Segmento: <span className="font-medium text-ink">{contact.segmentName}</span></div>
+            <div className="text-[11px] text-ink-muted flex items-center gap-2 flex-wrap">
+              <span>Segmento: <span className="font-medium text-ink">{contact.segmentName}</span></span>
+              {contact.icpWarning && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
+                  <IconAlertCircle size={10} /> Revisar: posible desajuste con ICP
+                </span>
+              )}
+            </div>
+          )}
+          {contact.icpWarning && !contact.segmentName && (
+            <div className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
+              <IconAlertCircle size={10} /> Revisar: posible desajuste con ICP
+            </div>
           )}
           {deepResearch && contact.deepResearchUsed === false && (
             <div className="text-[11px] text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
