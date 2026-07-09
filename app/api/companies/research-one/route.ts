@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { perplexitySearch, PerplexityCitation } from "@/lib/perplexity";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,6 +96,10 @@ export async function POST(req: NextRequest) {
       content: `Empresa a analizar: "${name}"\n\nInvestigación web:\n${research.content.slice(0, 5000)}`
     }]
   }).catch(() => null);
+
+  if (msg) {
+    void logAiUsage({ clientId: body.client_id, functionName: "company_research_one", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+  }
 
   const rawText = msg?.content?.find((b: { type: string }) => b.type === "text")
     ? (msg!.content.find((b: { type: string }) => b.type === "text") as { type: "text"; text: string }).text

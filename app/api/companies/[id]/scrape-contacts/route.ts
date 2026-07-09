@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { perplexitySearch } from "@/lib/perplexity";
 import { intakeContactsForCompany } from "@/lib/contactsIntake";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,6 +39,10 @@ Research:
 ${results.content.slice(0, 4000)}`
     }]
   }).catch(() => null);
+
+  if (msg) {
+    void logAiUsage({ clientId: company.client_id, functionName: "company_scrape_contacts", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+  }
 
   const raw = msg?.content?.find((b: { type: string }) => b.type === "text")
     ? (msg!.content.find((b: { type: string }) => b.type === "text") as { type: "text"; text: string }).text

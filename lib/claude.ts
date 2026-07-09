@@ -13,3 +13,4 @@ export function anthropic(): Anthropic {
 }
 
 export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
+export const HAIKU_MODEL  = process.env.CLAUDE_HAIKU_MODEL || "claude-haiku-4-5-20251001";

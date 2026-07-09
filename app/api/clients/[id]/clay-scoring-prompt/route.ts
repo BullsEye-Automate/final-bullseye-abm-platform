@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import type Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime    = "nodejs";
 export const dynamic    = "force-dynamic";
@@ -92,6 +93,8 @@ export async function POST(
       }
     ]
   });
+
+  void logAiUsage({ clientId: params.id, functionName: "client_clay_scoring_prompt", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
 
   const generatedText = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")

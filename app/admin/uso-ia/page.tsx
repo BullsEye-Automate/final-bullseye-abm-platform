@@ -15,12 +15,26 @@ type UsageData = {
 };
 
 const FUNCTION_LABELS: Record<string, string> = {
-  message_generation_sequence: "Generación de mensajes (secuencia)",
-  message_generation_simple:   "Generación de mensajes (simple)",
-  message_review_haiku:        "Revisión de mensajes (Haiku)",
-  segment_routing:             "Clasificación de segmento",
-  prefilter:                   "Pre-filtro de contactos",
-  deep_research:               "Investigación profunda",
+  message_generation_sequence:    "Generación de mensajes (secuencia)",
+  message_generation_simple:      "Generación de mensajes (simple)",
+  message_review_haiku:           "Revisión de mensajes (Haiku)",
+  segment_routing:                "Clasificación de segmento",
+  prefilter:                      "Pre-filtro de contactos",
+  deep_research:                  "Investigación profunda",
+  agente_contenido_chat:          "Chat agente SDR",
+  company_research_fast:          "Investigación rápida de empresa",
+  discovery_recommendation:       "Discovery de empresas",
+  infer_company_name_from_bio:    "Inferir empresa desde bio (Lemlist)",
+  sales_nav_recommendations:      "Recomendaciones Sales Navigator",
+  training_parse_pdf:             "Parseo de PDF (entrenamiento)",
+  hubspot_calls_analyze:          "Análisis de llamadas (HubSpot)",
+  company_scrape_contacts:        "Extracción de contactos de empresa",
+  company_diagnose:               "Diagnóstico de empresa",
+  company_research_diagnostic:    "Investigación de empresa (diagnóstico)",
+  company_research_one:           "Investigación de empresa (una)",
+  client_generate_campaign_texts: "Generación de textos de campaña",
+  client_generate_clay_config:    "Generación de config de Clay",
+  client_clay_scoring_prompt:     "Generación de prompt de scoring (Clay)",
 };
 
 function fmt(n: number, decimals = 4) {

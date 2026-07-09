@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { getClientContext } from "@/lib/getClientContext";
 import { supabaseAdmin } from "@/lib/supabase";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -185,6 +186,8 @@ export async function POST(req: NextRequest) {
     system: systemPrompt,
     messages: chatMessages,
   });
+
+  void logAiUsage({ clientId, functionName: "agente_contenido_chat", model: CLAUDE_MODEL, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
 
   const assistantText = (response.content[0] as { type: string; text: string }).text ?? "";
 

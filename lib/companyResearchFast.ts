@@ -1,4 +1,5 @@
 import { anthropic, CLAUDE_MODEL } from "./claude";
+import { logAiUsage } from "./aiUsageLogger";
 
 // Research rápido de una empresa usando SOLO Claude (sin Perplexity ni el
 // salvataje de LinkedIn corporativo). Pensado para "búsqueda manual": el SDR
@@ -50,6 +51,8 @@ export async function researchOneCompanyFast(hints: FastResearchHints, icpContex
       system: SYSTEM,
       messages: [{ role: "user", content: lines.join("\n") }],
     });
+
+    void logAiUsage({ functionName: "company_research_fast", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
 
     const text = msg.content.find((b: { type: string }) => b.type === "text") as
       | { type: "text"; text: string }
