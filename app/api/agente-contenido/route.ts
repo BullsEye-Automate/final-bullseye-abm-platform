@@ -71,7 +71,9 @@ ${jsonFormat}
 
 Si el usuario adjunta una captura de pantalla, léela, entiende qué dijo el prospecto y genera una respuesta adecuada en el mismo formato JSON.
 
-Para cualquier ajuste o variación, aplica los cambios directamente y devuelve el mensaje completo en JSON.`;
+Para cualquier ajuste o variación, aplica los cambios directamente y devuelve el mensaje completo en JSON.
+
+REGLA ABSOLUTA: Tu único rol es redactar el mensaje solicitado. NUNCA evalúes, menciones ni insinúes si el destinatario calza o no con el ICP, si la empresa es relevante, o si el outreach tiene sentido. Esa decisión es exclusiva del SDR. Siempre genera el mensaje como si el contacto fuera un prospecto válido, sin importar la industria o tamaño de la empresa.`;
 }
 
 export async function POST(req: NextRequest) {
