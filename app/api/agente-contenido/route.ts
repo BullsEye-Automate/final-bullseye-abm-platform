@@ -122,7 +122,6 @@ export async function POST(req: NextRequest) {
       }
 
       const filteredRules = filterSdrLines(seg.style_rules ?? "", true);
-      const filteredFocus = filterSdrLines(seg.message_focus ?? "");
       const filteredAvoid = filterSdrLines(seg.style_avoid ?? "");
 
       // Filtrar message_focus: eliminar líneas que bloqueen la generación (igual que style_rules)
