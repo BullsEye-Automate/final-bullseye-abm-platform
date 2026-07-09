@@ -149,8 +149,9 @@ function buildSystemPrompt(
     parts.push(label);
     if (effectiveStyle.tone)        parts.push(`Tono: ${effectiveStyle.tone}`);
     if (effectiveStyle.emailLength) parts.push(`Largo de email: ${effectiveStyle.emailLength} (corto=3 oraciones, medio=4-5, largo=6+)`);
-    if (effectiveStyle.rules)       parts.push(`Reglas de escritura:\n${effectiveStyle.rules}`);
-    if (effectiveStyle.avoid)       parts.push(`NUNCA escribas:\n${effectiveStyle.avoid}`);
+    if (effectiveStyle.rules)       parts.push(`Reglas de escritura (OBLIGATORIAS, sin excepciones):\n${effectiveStyle.rules}`);
+    if (effectiveStyle.avoid)       parts.push(`NUNCA escribas (regla absoluta, sin excepciones):\n${effectiveStyle.avoid}`);
+    parts.push(`PUNTUACIÓN OBLIGATORIA: toda pregunta DEBE llevar signo de apertura (¿) Y cierre (?). Ejemplo: "¿Te interesa agendar una llamada?". Nunca omitas el signo de apertura.`);
   }
 
   // Prioriza ejemplos del segmento; si no hay, usa los globales
