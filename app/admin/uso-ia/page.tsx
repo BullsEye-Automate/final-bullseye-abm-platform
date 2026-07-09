@@ -31,17 +31,19 @@ function fmtTokens(n: number) {
   return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
 }
 
+const AUTO_REFRESH_MS = 30_000;
+
 export default function UsoIAPage() {
   const [days, setDays]     = useState(7);
   const [data, setData]     = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState<string | null>(null);
 
-  async function load() {
+  async function load(days: number) {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`/api/admin/ai-usage?days=${days}`);
+      const r = await fetch(`/api/admin/ai-usage?days=${days}`, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
       setData(json);
@@ -51,7 +53,15 @@ export default function UsoIAPage() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, [days]);
+  useEffect(() => {
+    load(days);
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") load(days);
+    }, AUTO_REFRESH_MS);
+
+    return () => clearInterval(interval);
+  }, [days]);
 
   const byFn     = data ? Object.entries(data.by_function).sort((a, b) => b[1].cost_usd - a[1].cost_usd) : [];
   const byClient = data ? Object.entries(data.by_client).sort((a, b) => b[1].cost_usd - a[1].cost_usd) : [];
@@ -77,7 +87,7 @@ export default function UsoIAPage() {
             {d === 1 ? "Hoy" : d === 2 ? "2 días" : d === 7 ? "7 días" : "30 días"}
           </button>
         ))}
-        <button onClick={load} className="btn bg-white border border-[#E5E2F0] text-ink ml-auto" disabled={loading}>
+        <button onClick={() => load(days)} className="btn bg-white border border-[#E5E2F0] text-ink ml-auto" disabled={loading}>
           {loading ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
           Refrescar
         </button>
