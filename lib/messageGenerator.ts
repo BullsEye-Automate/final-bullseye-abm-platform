@@ -95,6 +95,7 @@ export type RoutingResult = {
   segmentId: string | null;
   segmentName: string | null;
   reasoning: string;
+  lowConfidence?: boolean; // true si el contacto no calza claramente con ningún segmento
 };
 
 const BASE_SYSTEM_PROMPT = `Eres un experto en copywriting B2B y outbound sales.
@@ -174,6 +175,13 @@ function buildSystemPrompt(
     `Esto aplica siempre, incluso cuando el argumento sea persuasivo.`
   );
 
+  parts.push(
+    `\nREGLA ABSOLUTA — ROL DEL MODELO: Tu único rol es redactar el mensaje de outreach con el contexto que recibes. ` +
+    `NUNCA evalúes, menciones ni insinúes si el prospecto calza o no con el ICP, si la empresa es relevante, ` +
+    `o si el outreach tiene sentido para ese contacto. Esa decisión es exclusiva del equipo humano. ` +
+    `Siempre genera el mensaje como si el contacto fuera un prospecto válido.`
+  );
+
   return parts.join("\n");
 }
 
@@ -222,7 +230,7 @@ export async function routeContactToSegment(
       messages: [
         {
           role: "user",
-          content: `Perfil del contacto:\n${contactProfile || "Sin datos específicos"}\n\nSegmentos disponibles:\n${segmentList}\n\nElige el segmento más apropiado para este contacto. Si ninguno aplica claramente, elige el más cercano.\n\nResponde ÚNICAMENTE con este JSON:\n{"segment_id":"<id exacto del segmento>","reasoning":"<razón breve en 1 oración>"}`,
+          content: `Perfil del contacto:\n${contactProfile || "Sin datos específicos"}\n\nSegmentos disponibles:\n${segmentList}\n\nElige el segmento más apropiado para este contacto. Si ninguno aplica claramente, elige el más cercano pero marca confidence como "low".\n\nResponde ÚNICAMENTE con este JSON:\n{"segment_id":"<id exacto del segmento>","reasoning":"<razón breve en 1 oración>","confidence":"high|medium|low"}`,
         },
       ],
     });
@@ -241,9 +249,10 @@ export async function routeContactToSegment(
     const matched = segments.find((s) => s.id === parsed.segment_id);
 
     return {
-      segmentId:   matched?.id   ?? null,
-      segmentName: matched?.name ?? null,
-      reasoning:   parsed.reasoning ?? "",
+      segmentId:    matched?.id   ?? null,
+      segmentName:  matched?.name ?? null,
+      reasoning:    parsed.reasoning ?? "",
+      lowConfidence: parsed.confidence === "low",
     };
   } catch {
     return { segmentId: null, segmentName: null, reasoning: "Error en routing" };

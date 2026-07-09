@@ -31,6 +31,7 @@ type GeneratedContact = ParsedContact & {
   linkedinMsg2?: string;
   segmentName?: string;
   deepResearchUsed?: boolean;
+  icpWarning?: boolean; // true si el enrutamiento automático tuvo baja confianza
   error?: string;
 };
 
@@ -224,6 +225,7 @@ export async function POST(req: NextRequest) {
           // Usar segmento elegido manualmente; si no hay, hacer routing automático
           let resolvedSegmentId: string | null = segment_id ?? null;
           let resolvedSegmentName: string | null = null;
+          let icpWarning = false;
 
           if (!resolvedSegmentId) {
             const routing = await routeContactToSegment(
@@ -232,6 +234,7 @@ export async function POST(req: NextRequest) {
             );
             resolvedSegmentId   = routing.segmentId;
             resolvedSegmentName = routing.segmentName;
+            icpWarning          = routing.lowConfidence === true;
           } else {
             resolvedSegmentName = (segments ?? []).find((s) => s.id === resolvedSegmentId)?.name ?? null;
           }
@@ -295,6 +298,7 @@ export async function POST(req: NextRequest) {
             linkedinMsg2:      msgs.linkedinMessages?.[1],
             segmentName:       resolvedSegmentName ?? undefined,
             deepResearchUsed:  use_deep_research ? (deepResearch !== null) : undefined,
+            icpWarning:        icpWarning || undefined,
           };
         } catch (err: any) {
           return { ...c, error: err?.message ?? "Error de generación" };
