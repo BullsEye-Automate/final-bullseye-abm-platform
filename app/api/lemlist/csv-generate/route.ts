@@ -161,17 +161,6 @@ export async function POST(req: NextRequest) {
       .limit(1)
       .maybeSingle();
 
-    // Si ya tiene deep_research guardado, usarlo directamente
-    if (company?.deep_research) {
-      try {
-        const parsed = typeof company.deep_research === "string"
-          ? JSON.parse(company.deep_research)
-          : company.deep_research;
-        deepResearchCache.set(key, parsed);
-        return parsed;
-      } catch { /* ignorar */ }
-    }
-
     // Sin ICP no tiene sentido hacer research
     if (!icpContext?.trim()) {
       deepResearchCache.set(key, null);
