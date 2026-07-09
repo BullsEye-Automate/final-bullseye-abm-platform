@@ -94,42 +94,36 @@ export async function POST(req: NextRequest) {
       .eq("id", segmentId)
       .single();
     if (seg) {
-      // Filtrar reglas de secuencia (Correo 1/2/3, LinkedIn 1/2) — son para carga masiva, no para el agente SDR
-      // Solo conservar reglas de estilo, tono, puntuación y restricciones generales
-      const filteredRules = seg.style_rules
-        ? seg.style_rules
-            .split("\n")
-            .filter((line: string) => {
-              const l = line.trim().toLowerCase();
-              if (!l) return false;
-              // Excluir instrucciones de secuencia (Correo 1/2/3, LinkedIn 1/2)
+      // Elimina líneas que bloquearían la generación en el agente SDR
+      // (reglas de secuencia y requisitos de señal fechada — solo aplican a carga masiva)
+      function filterSdrLines(text: string, removeSequenceLines = false): string {
+        if (!text) return "";
+        const lower = text.toLowerCase();
+        // Si el campo completo contiene la regla bloqueante, descartarlo entero
+        if (lower.includes("señal concreta") && lower.includes("fechada")) return "";
+        if (lower.includes("no puedo generar") || lower.includes("no puede generar")) return "";
+        if (lower.includes("si no dispone")) return "";
+        return text
+          .split("\n")
+          .filter((line: string) => {
+            const l = line.trim().toLowerCase();
+            if (!l) return false;
+            if (removeSequenceLines) {
               if (l.match(/^-\s*(correo|email|e-mail)\s*\d/i)) return false;
               if (l.match(/^-\s*linkedin\s*\d/i)) return false;
-              // Excluir reglas que bloquean la generación si no hay señal fechada
-              if (l.includes("debe decirlo explícitamente") || l.includes("debe decirlo explicitamente")) return false;
-              if (l.includes("no puedo generar") || l.includes("no puede generar")) return false;
-              if (l.includes("señal concreta") && l.includes("últimos") && l.includes("meses")) return false;
-              if (l.includes("si no dispone")) return false;
-              return true;
-            })
-            .join("\n")
-        : "";
+            }
+            if (l.includes("debe decirlo explícitamente") || l.includes("debe decirlo explicitamente")) return false;
+            if (l.includes("no puedo generar") || l.includes("no puede generar")) return false;
+            if (l.includes("señal concreta")) return false;
+            if (l.includes("si no dispone")) return false;
+            return true;
+          })
+          .join("\n");
+      }
 
-      // Filtrar message_focus: eliminar líneas que bloqueen la generación (igual que style_rules)
-      const filteredFocus = seg.message_focus
-        ? seg.message_focus
-            .split("\n")
-            .filter((line: string) => {
-              const l = line.trim().toLowerCase();
-              if (!l) return false;
-              if (l.includes("debe decirlo explícitamente") || l.includes("debe decirlo explicitamente")) return false;
-              if (l.includes("no puedo generar") || l.includes("no puede generar")) return false;
-              if (l.includes("señal concreta") && l.includes("últimos") && l.includes("meses")) return false;
-              if (l.includes("si no dispone")) return false;
-              return true;
-            })
-            .join("\n")
-        : "";
+      const filteredRules = filterSdrLines(seg.style_rules ?? "", true);
+      const filteredFocus = filterSdrLines(seg.message_focus ?? "");
+      const filteredAvoid = filterSdrLines(seg.style_avoid ?? "");
 
       const parts = [
         `Segmento: ${seg.name}`,
@@ -137,7 +131,7 @@ export async function POST(req: NextRequest) {
         seg.style_tone         ? `Tono: ${seg.style_tone}`                     : "",
         seg.style_email_length ? `Largo del correo: ${seg.style_email_length}` : "",
         filteredRules          ? `Reglas de escritura:\n${filteredRules}`       : "",
-        seg.style_avoid        ? `Evitar: ${seg.style_avoid}`                  : "",
+        filteredAvoid          ? `Evitar: ${filteredAvoid}`                     : "",
       ].filter(Boolean);
       segmentStyleGuide = parts.join("\n");
     }
