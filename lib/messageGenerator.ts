@@ -74,6 +74,7 @@ export type ContactMessageInput = {
   emailCount?: number;          // cuántos emails generar (default 1)
   linkedinMsgCount?: number;    // cuántos mensajes de LinkedIn (default 1)
   includeConnectMsg?: boolean;  // incluir nota de invitación a conectar (default false)
+  mode?: "sequence" | "preview"; // sequence = carga masiva (reglas estrictas); preview = agente SDR (relajado)
 };
 
 // Tipo para un email individual dentro de una secuencia
@@ -279,6 +280,7 @@ export async function generateContactMessages(
     emailCount = 1,
     linkedinMsgCount = 1,
     includeConnectMsg = false,
+    mode = "sequence",
   } = input;
 
   // Determinar si se necesita generar una secuencia completa
@@ -387,7 +389,9 @@ Datos del contacto:
 ${contactInfo || "No disponibles"}
 
 ${deepResearch
-  ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+  ? (mode === "sequence"
+    ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+    : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
     : ""}
@@ -481,7 +485,9 @@ Datos del contacto:
 ${contactInfo || "No disponibles"}
 
 ${deepResearch
-  ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+  ? (mode === "sequence"
+    ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+    : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
     : ""}
