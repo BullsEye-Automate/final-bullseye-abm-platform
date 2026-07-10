@@ -194,7 +194,9 @@ A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vig
     functionName: "discovery_recommendation",
     model:        CLAUDE_MODEL,
     inputTokens:  message.usage.input_tokens,
-    outputTokens: message.usage.output_tokens
+    outputTokens: message.usage.output_tokens,
+    cacheCreationInputTokens: message.usage.cache_creation_input_tokens,
+    cacheReadInputTokens:     message.usage.cache_read_input_tokens
   });
 
   const text = message.content
