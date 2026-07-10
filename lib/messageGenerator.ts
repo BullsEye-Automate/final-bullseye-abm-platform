@@ -224,7 +224,7 @@ export async function routeContactToSegment(
 
   try {
     const message = await anthropic().messages.create({
-      model: HAIKU_MODEL,
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 200,
       system:
         "Eres un clasificador de contactos B2B. Dado un perfil de contacto y una lista de segmentos con criterios de enrutamiento, elige el segmento más apropiado. Responde SOLO con JSON válido, sin texto adicional.",
@@ -242,8 +242,7 @@ export async function routeContactToSegment(
       .join("")
       .trim();
 
-    void logAiUsage({ functionName: "segment_routing", model: HAIKU_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
-    const match = raw.match(/\{[\s\S]*\}/);
+    void logAiUsage({ functionName: "segment_routing", model: "claude-haiku-4-5-20251001", inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });    const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return { segmentId: null, segmentName: null, reasoning: "No se pudo parsear la respuesta" };
 
     const parsed = JSON.parse(match[0]);

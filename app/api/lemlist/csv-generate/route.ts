@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
     // Buscar empresa en Supabase por nombre (tolerante: coincidencia parcial)
     const { data: company } = await db
       .from("companies")
-      .select("id, company_name, company_website, company_linkedin_url, company_country, deep_research")
+      .select("id, company_name, company_website, company_linkedin_url, company_country, deep_research, deep_research_updated_at")
       .eq("client_id", client_id)
       .ilike("company_name", `%${companyName.trim()}%`)
       .limit(1)
@@ -166,6 +166,22 @@ export async function POST(req: NextRequest) {
     if (!icpContext?.trim()) {
       deepResearchCache.set(key, null);
       return null;
+    }
+
+    // Reusar investigación guardada si tiene menos de 7 días
+    const TTL_DAYS = 7;
+    if (company?.deep_research) {
+      const updatedAt = company.deep_research_updated_at ? new Date(company.deep_research_updated_at) : null;
+      const ageMs = updatedAt ? Date.now() - updatedAt.getTime() : Infinity;
+      if (ageMs < TTL_DAYS * 24 * 60 * 60 * 1000) {
+        try {
+          const cached = typeof company.deep_research === "string"
+            ? JSON.parse(company.deep_research)
+            : company.deep_research;
+          deepResearchCache.set(key, cached);
+          return cached;
+        } catch { /* si falla el parse, reinvestigar */ }
+      }
     }
 
     // Hacer deep research con Perplexity + Claude
@@ -178,10 +194,10 @@ export async function POST(req: NextRequest) {
         icpContent:      icpContext,
       });
 
-      // Guardar en Supabase si la empresa existe
+      // Guardar en Supabase con timestamp actualizado
       if (company?.id) {
         await db.from("companies")
-          .update({ deep_research: JSON.stringify(result) })
+          .update({ deep_research: JSON.stringify(result), deep_research_updated_at: new Date().toISOString() })
           .eq("id", company.id);
       }
 
