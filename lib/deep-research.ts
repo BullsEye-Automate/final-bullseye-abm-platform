@@ -66,7 +66,7 @@ Prioriza fuentes verificables: LinkedIn, notas de prensa, entrevistas, podcasts,
 
   // Claude extrae el ángulo de personalización con el ICP como contexto cacheado
   const message = await anthropic().messages.create({
-    model:      CLAUDE_MODEL,
+    model:      "claude-haiku-4-5-20251001",
     max_tokens: 1024,
     system: [
       { type: "text", text: SYSTEM_DEEP_RESEARCH },
@@ -90,7 +90,7 @@ Extrae el ángulo de personalización para el outreach de BullsEye hacia esta em
     ]
   });
 
-  void logAiUsage({ functionName: "deep_research", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { companyName } });
+  void logAiUsage({ functionName: "deep_research", model: "claude-haiku-4-5-20251001", inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { companyName } });
 
   const text = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")

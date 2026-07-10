@@ -123,23 +123,8 @@ export async function POST(req: NextRequest) {
       }
 
       const filteredRules = filterSdrLines(seg.style_rules ?? "", true);
+      const filteredFocus = filterSdrLines(seg.message_focus ?? "");
       const filteredAvoid = filterSdrLines(seg.style_avoid ?? "");
-
-      // Filtrar message_focus: eliminar líneas que bloqueen la generación (igual que style_rules)
-      const filteredFocus = seg.message_focus
-        ? seg.message_focus
-            .split("\n")
-            .filter((line: string) => {
-              const l = line.trim().toLowerCase();
-              if (!l) return false;
-              if (l.includes("debe decirlo explícitamente") || l.includes("debe decirlo explicitamente")) return false;
-              if (l.includes("no puedo generar") || l.includes("no puede generar")) return false;
-              if (l.includes("señal concreta") && l.includes("últimos") && l.includes("meses")) return false;
-              if (l.includes("si no dispone")) return false;
-              return true;
-            })
-            .join("\n")
-        : "";
 
       const parts = [
         `Segmento: ${seg.name}`,
