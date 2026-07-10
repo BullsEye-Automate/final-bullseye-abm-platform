@@ -28,7 +28,6 @@ import {
   IconUserSearch,
   IconLogout,
 } from "@tabler/icons-react";
-import { useRouter } from "next/navigation";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -219,13 +218,13 @@ function ClientSelector() {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
   const { isGenerating, genProgress, contacts } = useGeneration();
 
   async function handleLogout() {
     await supabaseBrowser().auth.signOut();
-    router.push("/login");
-    router.refresh();
+    // Navegación completa: limpia cualquier estado en memoria (clientes,
+    // generación en curso, etc.) que haya quedado de la sesión anterior.
+    window.location.href = "/login";
   }
 
   return (

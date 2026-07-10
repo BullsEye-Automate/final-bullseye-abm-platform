@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -13,7 +13,6 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,8 +33,10 @@ function LoginForm() {
     }
 
     const redirect = searchParams.get("redirect") || "/empresas";
-    router.push(redirect);
-    router.refresh();
+    // Navegación completa (no router.push): fuerza a que todo el árbol se
+    // remonte con la sesión ya activa — si no, providers que ya hicieron su
+    // fetch inicial sin sesión (ej. ClientProvider) quedan con datos vacíos.
+    window.location.href = redirect;
   }
 
   return (
