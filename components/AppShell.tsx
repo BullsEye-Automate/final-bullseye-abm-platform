@@ -3,13 +3,11 @@
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
 
-// Oculta el sidebar en rutas sin navegación interna: los links mágicos
-// públicos para clientes (protegidos por token, ver middleware.ts) y /chat
-// y /login, que son de layout full-bleed. Esto es solo cosmético — el
-// middleware es quien decide qué requiere sesión, no esta lista.
+// Renderiza el sidebar solo para rutas de la app autenticada.
+// Las rutas /forms/* se renderizan sin sidebar (formularios públicos para clientes).
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPublic = pathname?.startsWith("/forms/") || pathname?.startsWith("/review/") || pathname?.startsWith("/chat") || pathname?.startsWith("/encuesta/") || pathname?.startsWith("/feedback-cliente/") || pathname?.startsWith("/revision/") || pathname?.startsWith("/login");
+  const isPublic = pathname?.startsWith("/forms/") || pathname?.startsWith("/review/") || pathname?.startsWith("/chat") || pathname?.startsWith("/encuesta/") || pathname?.startsWith("/feedback-cliente/") || pathname?.startsWith("/revision/");
 
   if (isPublic) {
     return <>{children}</>;
