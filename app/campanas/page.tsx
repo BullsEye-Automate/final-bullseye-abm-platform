@@ -18,10 +18,26 @@ import {
   IconFilter,
   IconFileSpreadsheet,
   IconCloudUpload,
+  IconFolderOpen,
+  IconTrash,
+  IconPencil,
 } from "@tabler/icons-react";
 import Link from "next/link";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
+
+type MessageGroup = {
+  id: string;
+  name: string;
+  segment_name: string | null;
+  use_deep_research: boolean;
+  status: "generating" | "ready" | "sent";
+  total_contacts: number;
+  generated_count: number;
+  error_count: number;
+  sent_count: number;
+  created_at: string;
+};
 
 type CampaignStats = {
   total: number;
@@ -268,7 +284,11 @@ export default function CampanasPage() {
   const [stats, setStats]           = useState<CampaignStats | null>(null);
   const [leads, setLeads]           = useState<Lead[]>([]);
   const [pending, setPending]       = useState<PendingContact[]>([]);
-  const [tab, setTab]               = useState<"campaign" | "pending">("campaign");
+  const [tab, setTab]               = useState<"campaign" | "pending" | "groups">("campaign");
+  const [groups, setGroups]         = useState<MessageGroup[]>([]);
+  const [groupsLoading, setGroupsLoading] = useState(false);
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [filter, setFilter]         = useState<FilterState>("all");
   const [search, setSearch]         = useState("");
   const [loading, setLoading]       = useState(false);
@@ -318,6 +338,39 @@ export default function CampanasPage() {
   }, [currentClient?.id]);
 
   useEffect(() => { loadCampaign(); }, [loadCampaign]);
+
+  async function loadGroups() {
+    if (!currentClient?.id) return;
+    setGroupsLoading(true);
+    try {
+      const res = await fetch(`/api/message-groups?client_id=${currentClient.id}`);
+      if (res.ok) setGroups(await res.json());
+    } finally {
+      setGroupsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (tab === "groups") loadGroups();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, currentClient?.id]);
+
+  async function deleteGroup(id: string) {
+    if (!confirm("¿Eliminar este grupo de mensajes?")) return;
+    await fetch(`/api/message-groups/${id}`, { method: "DELETE" });
+    setGroups((prev) => prev.filter((g) => g.id !== id));
+  }
+
+  async function renameGroup(id: string, name: string) {
+    if (!name.trim()) return;
+    await fetch(`/api/message-groups/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    setGroups((prev) => prev.map((g) => g.id === id ? { ...g, name: name.trim() } : g));
+    setRenamingGroupId(null);
+  }
 
   // ── Enviar a Lemlist ──
   async function pushAll() {
@@ -674,7 +727,7 @@ export default function CampanasPage() {
         <>
           {/* Tabs */}
           <div className="flex gap-1 border-b border-[#E5E2F0]">
-            {(["campaign", "pending"] as const).map((t) => (
+            {(["campaign", "pending", "groups"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -687,7 +740,9 @@ export default function CampanasPage() {
               >
                 {t === "campaign"
                   ? `En campaña ${leads.length > 0 ? `(${leads.length})` : ""}`
-                  : `Por enviar ${pending.length > 0 ? `(${pending.length})` : ""}`}
+                  : t === "pending"
+                  ? `Por enviar ${pending.length > 0 ? `(${pending.length})` : ""}`
+                  : "Mis Mensajes"}
               </button>
             ))}
           </div>
@@ -814,6 +869,97 @@ export default function CampanasPage() {
                     ))}
                   </div>
                 </>
+              )}
+            </div>
+          )}
+          {/* Tab: Mis Mensajes */}
+          {tab === "groups" && (
+            <div className="space-y-3 pt-2">
+              {groupsLoading ? (
+                <div className="flex justify-center py-10">
+                  <IconLoader2 size={22} className="animate-spin text-[#62E0D8]" />
+                </div>
+              ) : groups.length === 0 ? (
+                <div className="text-center py-12 text-ink-muted">
+                  <IconFolderOpen size={36} className="mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">No hay grupos de mensajes aún.</p>
+                  <p className="text-xs mt-1">Los grupos se crean automáticamente al generar mensajes.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {groups.map((g) => (
+                    <div key={g.id} className="bg-white rounded-xl border border-[#E5E2F0] px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          {renamingGroupId === g.id ? (
+                            <div className="flex gap-2 items-center">
+                              <input
+                                autoFocus
+                                className="text-sm font-medium border border-[#62E0D8] rounded-lg px-2 py-1 flex-1 outline-none"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") renameGroup(g.id, renameValue);
+                                  if (e.key === "Escape") setRenamingGroupId(null);
+                                }}
+                              />
+                              <button onClick={() => renameGroup(g.id, renameValue)} className="text-xs text-[#62E0D8] font-medium hover:underline">Guardar</button>
+                              <button onClick={() => setRenamingGroupId(null)} className="text-xs text-ink-muted hover:underline">Cancelar</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-semibold text-ink truncate">{g.name}</span>
+                              <button
+                                onClick={() => { setRenamingGroupId(g.id); setRenameValue(g.name); }}
+                                className="text-ink-muted hover:text-ink p-0.5 rounded"
+                              >
+                                <IconPencil size={12} />
+                              </button>
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1.5 text-xs text-ink-muted">
+                            <span>{new Date(g.created_at).toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" })}</span>
+                            {g.segment_name && <span>· {g.segment_name}</span>}
+                            {g.use_deep_research && <span>· Investigación profunda</span>}
+                          </div>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-[#F1EEF7] text-[#251762]">
+                              {g.total_contacts} contacto{g.total_contacts !== 1 ? "s" : ""}
+                            </span>
+                            {g.generated_count > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">
+                                {g.generated_count} generado{g.generated_count !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                            {g.error_count > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-600">
+                                {g.error_count} con error
+                              </span>
+                            )}
+                            {g.sent_count > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                                {g.sent_count} enviado{g.sent_count !== 1 ? "s" : ""}
+                              </span>
+                            )}
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              g.status === "ready" ? "bg-emerald-50 text-emerald-700"
+                              : g.status === "sent" ? "bg-blue-50 text-blue-700"
+                              : "bg-amber-50 text-amber-700"
+                            }`}>
+                              {g.status === "ready" ? "Listo" : g.status === "sent" ? "Enviado" : "Generando…"}
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => deleteGroup(g.id)}
+                          className="text-ink-muted hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition shrink-0 mt-0.5"
+                        >
+                          <IconTrash size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           )}

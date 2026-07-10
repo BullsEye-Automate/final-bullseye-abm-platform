@@ -482,11 +482,14 @@ export default function SubirCampanaPage() {
     // Pasar a vista preview local
     setStage("preview");
     // Iniciar loop en el contexto global
+    const selectedSeg = segments.find((s) => s.id === selectedSegmentId);
     generation.startGeneration({
       clientId: currentClient.id,
       parsed,
       segmentId: selectedSegmentId,
       deepResearchSet,
+      segmentName: selectedSeg?.name,
+      clientName: currentClient.name,
     });
   }
 
@@ -1044,6 +1047,7 @@ export default function SubirCampanaPage() {
           contacts={generation.contacts}
           clientId={currentClient?.id ?? ""}
           clientName={currentClient?.name ?? ""}
+          groupId={generation.groupId}
           onClose={() => setReviewModalOpen(false)}
         />
       )}
@@ -1054,11 +1058,12 @@ export default function SubirCampanaPage() {
 // ─── Modal de revisión compartible ────────────────────────────────────────────
 
 function ReviewModal({
-  contacts, clientId, clientName, onClose,
+  contacts, clientId, clientName, groupId, onClose,
 }: {
   contacts: GeneratedContact[];
   clientId: string;
   clientName: string;
+  groupId: string | null;
   onClose: () => void;
 }) {
   const eligible = contacts.filter((c) => !c.error && !c.cancelled && (c.emailSubject || c.connectMessage));
@@ -1085,7 +1090,12 @@ function ReviewModal({
     const res = await fetch("/api/review-sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: clientId || null, client_name: clientName || null, contacts: toShare }),
+      body: JSON.stringify({
+        client_id:   clientId || null,
+        client_name: clientName || null,
+        group_id:    groupId || null,
+        contacts:    toShare,
+      }),
     });
     const data = await res.json();
     setCreating(false);
