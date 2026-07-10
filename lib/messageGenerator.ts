@@ -226,7 +226,7 @@ export async function routeContactToSegment(
 
   try {
     const message = await anthropic().messages.create({
-      model: HAIKU_MODEL,
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 200,
       system:
         "Eres un clasificador de contactos B2B. Dado un perfil de contacto y una lista de segmentos con criterios de enrutamiento, elige el segmento más apropiado. Responde SOLO con JSON válido, sin texto adicional.",
