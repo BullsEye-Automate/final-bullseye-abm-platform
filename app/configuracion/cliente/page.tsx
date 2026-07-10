@@ -95,8 +95,6 @@ export default function ConfigClientePage() {
   const [hsSetupResult, setHsSetupResult] = useState<string | null>(null);
   const [hsLists, setHsLists]             = useState<"idle" | "running" | "done" | "error">("idle");
   const [hsListsResult, setHsListsResult] = useState<string | null>(null);
-  const [sdrScripts, setSdrScripts]       = useState<"idle" | "running" | "done" | "error">("idle");
-  const [sdrScriptsResult, setSdrScriptsResult] = useState<string | null>(null);
 
   const [excluded, setExcluded]             = useState<ExcludedCompany[]>([]);
   const [excludedLoading, setExcludedLoading] = useState(false);
@@ -150,30 +148,6 @@ export default function ConfigClientePage() {
       .catch(() => {})
       .finally(() => setExcludedLoading(false));
   }, [currentClient?.id]);
-
-  async function generateSdrScripts() {
-    if (!currentClient) return;
-    setSdrScripts("running");
-    setSdrScriptsResult(null);
-    try {
-      const res = await fetch("/api/contacts/generate-scripts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: currentClient.id }),
-      });
-      const d = await res.json();
-      if (!res.ok) { setSdrScripts("error"); setSdrScriptsResult(d.error ?? "Error"); return; }
-      const firstErr = d.errors?.[0]?.error ?? "";
-      setSdrScriptsResult(
-        `${d.generated} scripts generados` +
-        (d.errors?.length ? ` — ${d.errors.length} errores: ${firstErr.slice(0, 120)}` : "")
-      );
-      setSdrScripts(d.errors?.length > 0 ? "error" : "done");
-    } catch (e: any) {
-      setSdrScripts("error");
-      setSdrScriptsResult(e.message ?? "Error de red");
-    }
-  }
 
   async function setupHubSpotLists() {
     if (!currentClient) return;
@@ -562,37 +536,6 @@ export default function ConfigClientePage() {
                 {hsListsResult && (
                   <span className={`text-xs ${hsLists === "error" ? "text-danger-fg" : "text-success-fg"}`}>
                     {hsListsResult}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="border-t border-border" />
-
-            {/* Script SDR IA */}
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Script SDR IA</p>
-              <p className="text-xs text-ink-muted">
-                Genera scripts de llamada personalizados para contactos existentes que aún no tienen script.
-                Para contactos nuevos el script se genera automáticamente al hacer push a Lemlist.
-                Se guarda en HubSpot como <code className="bg-surface-2 px-1 rounded">bullseye_script_sdr_ia</code>.
-              </p>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={generateSdrScripts}
-                  disabled={sdrScripts === "running"}
-                  className="btn-secondary flex items-center gap-2 text-sm"
-                >
-                  {sdrScripts === "running"
-                    ? <IconLoader2 size={15} className="animate-spin" />
-                    : sdrScripts === "done"
-                    ? <IconCircleCheck size={15} className="text-success-fg" />
-                    : <IconTool size={15} />}
-                  {sdrScripts === "running" ? "Generando scripts…" : "Generar scripts SDR"}
-                </button>
-                {sdrScriptsResult && (
-                  <span className={`text-xs ${sdrScripts === "error" ? "text-danger-fg" : "text-success-fg"}`}>
-                    {sdrScriptsResult}
                   </span>
                 )}
               </div>

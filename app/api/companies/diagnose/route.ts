@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { perplexitySearch } from "@/lib/perplexity";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -103,6 +104,10 @@ export async function POST(req: NextRequest) {
     system: SYSTEM,
     messages: [{ role: "user", content: userMsg }],
   }).catch(() => null);
+
+  if (msg) {
+    void logAiUsage({ clientId: body.client_id, functionName: "company_diagnose", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+  }
 
   const rawText = (msg?.content?.find((b: any) => b.type === "text") as any)?.text ?? "{}";
   let extracted: Record<string, any> = {};

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { anthropic, CLAUDE_MODEL } from "./claude";
+import { anthropic, HAIKU_MODEL } from "./claude";
+import { logAiUsage } from "./aiUsageLogger";
 
 // Datos normalizados de un lead de campaña de Lemlist, ya completos.
 export type LemlistLeadDetail = {
@@ -76,11 +77,12 @@ function orNull(v: string): string | null {
 // real si Claude falla, en vez de que quede silenciado como "".
 export async function inferCompanyNameFromBioRaw(bio: string): Promise<string> {
   const msg = await anthropic().messages.create({
-    model: CLAUDE_MODEL,
+    model: HAIKU_MODEL,
     max_tokens: 30,
     system: `Te doy la bio de LinkedIn de una persona. Respondé SOLO con el nombre de la empresa donde trabaja actualmente, tal como aparece mencionado en el texto — nada más, sin explicación. Si el texto no menciona el nombre de una empresa actual, respondé exactamente: NINGUNA`,
     messages: [{ role: "user", content: bio.slice(0, 3000) }],
   });
+  void logAiUsage({ functionName: "infer_company_name_from_bio", model: HAIKU_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
   const text = msg.content.find((b: { type: string }) => b.type === "text") as { type: "text"; text: string } | undefined;
   const answer = text?.text.trim() ?? "";
   if (!answer || /^ninguna$/i.test(answer)) return "";

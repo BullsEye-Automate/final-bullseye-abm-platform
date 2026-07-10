@@ -87,11 +87,16 @@ export async function intakeContactsForCompany(
   const clientId = (company as any).client_id ?? null;
   const existingQuery = db
     .from("contacts")
-    .select("id, company_id, linkedin_url, linkedin_headline, seniority, status, fit_action, lemlist_pushed_at, clay_push_error");
+    .select("id, company_id, linkedin_url, email, first_name, last_name, linkedin_headline, seniority, status, fit_action, lemlist_pushed_at, clay_push_error");
   const { data: existing, error: exErr } = clientId
     ? await existingQuery.eq("client_id", clientId)
     : await existingQuery.eq("company_id", companyId);
   if (exErr) return { ok: false, status: 500, error: exErr.message };
+
+  const normalizeEmail = (e?: string | null) => (e ?? "").trim().toLowerCase() || null;
+  const nameKeyOf = (first?: string | null, last?: string | null) =>
+    `${(first ?? "").trim().toLowerCase()}|${(last ?? "").trim().toLowerCase()}`;
+  const EMPTY_NAME_KEY = nameKeyOf(null, null);
 
   // Mapa linkedin_url → registro existente para actualizar headline/seniority
   const existingByUrl = new Map(
@@ -99,8 +104,26 @@ export async function intakeContactsForCompany(
       .filter((r) => r.linkedin_url)
       .map((r) => [(normalizeLinkedInUrl(r.linkedin_url) ?? "").toLowerCase(), r])
   );
+  // Mapa email → registro existente (hay un índice único por client_id+email en la DB).
+  const existingByEmail = new Map(
+    (existing ?? [])
+      .filter((r) => r.email)
+      .map((r) => [normalizeEmail(r.email) as string, r])
+  );
+  // Sin linkedin_url ni email no hay identificador único real — el mismo lead
+  // puede llegar duplicado varias veces desde Lemlist (ej. agregado más de una
+  // vez a la campaña puente). Como último recurso, deduplicamos por nombre
+  // dentro de la MISMA empresa (nunca cross-empresa: dos personas distintas
+  // pueden compartir nombre en compañías distintas).
+  const existingByNameInCompany = new Map(
+    (existing ?? [])
+      .filter((r) => r.company_id === companyId && nameKeyOf(r.first_name, r.last_name) !== EMPTY_NAME_KEY)
+      .map((r) => [nameKeyOf(r.first_name, r.last_name), r])
+  );
 
-  const seen = new Set(existingByUrl.keys());
+  const seenUrl = new Set(existingByUrl.keys());
+  const seenEmail = new Set(existingByEmail.keys());
+  const seenNameInCompany = new Set(existingByNameInCompany.keys());
 
   const summary: IntakeSummary = { inserted: 0, yes: 0, no: 0, skipped: 0, duplicates: 0 };
   const rows: any[] = [];
@@ -110,11 +133,25 @@ export async function intakeContactsForCompany(
     const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "Sin nombre";
     const normalized = normalizeLinkedInUrl(c.linkedin_url);
     const linkedin = (normalized ?? "").toLowerCase();
-    if (linkedin && seen.has(linkedin)) {
-      const prev = existingByUrl.get(linkedin);
+    const email = normalizeEmail(c.email);
+    const nameKey = nameKeyOf(c.first_name, c.last_name);
+
+    let dupKey: string | null = null;
+    let dupMap: Map<string, any> | null = null;
+    let dupSeen: Set<string> | null = null;
+    if (linkedin && seenUrl.has(linkedin)) {
+      dupKey = linkedin; dupMap = existingByUrl; dupSeen = seenUrl;
+    } else if (email && seenEmail.has(email)) {
+      dupKey = email; dupMap = existingByEmail; dupSeen = seenEmail;
+    } else if (!linkedin && !email && nameKey !== EMPTY_NAME_KEY && seenNameInCompany.has(nameKey)) {
+      dupKey = nameKey; dupMap = existingByNameInCompany; dupSeen = seenNameInCompany;
+    }
+
+    if (dupKey && dupMap && dupSeen) {
+      const prev = dupMap.get(dupKey);
       if (prev && prev.company_id !== companyId) {
-        // Ya existe con este mismo linkedin_url pero bajo otra empresa del mismo
-        // cliente — insertarlo violaría el índice único, así que lo salteamos.
+        // Ya existe con este mismo linkedin_url/email pero bajo otra empresa del
+        // mismo cliente — insertarlo violaría el índice único, así que lo salteamos.
         summary.duplicates += 1;
         summary.skipped += 1;
         outcomes.push({ name, linkedin_url: normalized, outcome: "duplicate_other_company", detail: describeExistingStatus(prev) });
@@ -124,8 +161,8 @@ export async function intakeContactsForCompany(
       // para que el nuevo cargo (posiblemente fit) sea re-evaluado
       if (prev && prev.status === "discarded") {
         await db.from("contacts").delete().eq("id", prev.id);
-        existingByUrl.delete(linkedin);
-        seen.delete(linkedin);
+        dupMap.delete(dupKey);
+        dupSeen.delete(dupKey);
         // Continúa el flujo normal para insertar el contacto actualizado
       } else {
         // Contacto activo — actualizar headline/seniority si llegaron nuevos
@@ -149,7 +186,9 @@ export async function intakeContactsForCompany(
         continue;
       }
     }
-    if (linkedin) seen.add(linkedin);
+    if (linkedin) seenUrl.add(linkedin);
+    if (email) seenEmail.add(email);
+    if (!linkedin && !email && nameKey !== EMPTY_NAME_KEY) seenNameInCompany.add(nameKey);
 
     let prefilter: "yes" | "no" = "no";
     try {

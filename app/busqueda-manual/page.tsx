@@ -16,6 +16,7 @@ import {
   IconSend,
   IconTrash,
   IconBook,
+  IconSparkles,
 } from "@tabler/icons-react";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -45,6 +46,25 @@ type ImportCompany = {
   no: number;
   skipped: number;
   error?: string;
+};
+
+// Mensajes generados/editables de un contacto — mismos campos que acepta
+// PATCH /api/contacts/[id]/messages.
+type GeneratedMessages = {
+  email_subject: string | null;
+  email_body: string | null;
+  email_subject_2: string | null;
+  email_body_2: string | null;
+  email_subject_3: string | null;
+  email_body_3: string | null;
+  connect_message: string | null;
+  linkedin_icebreaker: string | null;
+  linkedin_msg_2: string | null;
+};
+
+type MessagePreview = {
+  segment: { id: string | null; name: string | null; reasoning: string };
+  messages: GeneratedMessages;
 };
 
 type ImportManualResponse = {
@@ -159,6 +179,12 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
   const [sendErrors, setSendErrors] = useState<Record<string, string>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  // Generar mensaje (paso 1) — separado de enviar a Lemlist (paso 2).
+  const [generating, setGenerating] = useState<Set<string>>(new Set());
+  const [genErrors, setGenErrors] = useState<Record<string, string>>({});
+  const [previews, setPreviews] = useState<Record<string, MessagePreview>>({});
+  const [edited, setEdited] = useState<Record<string, GeneratedMessages>>({});
+
   async function handleImport() {
     setLoading(true);
     setError(null);
@@ -166,6 +192,10 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
     setDiscarded(new Set());
     setSent(new Set());
     setSendErrors({});
+    setGenerating(new Set());
+    setGenErrors({});
+    setPreviews({});
+    setEdited({});
     try {
       const res = await fetch("/api/busqueda-manual/import-manual", {
         method: "POST",
@@ -222,10 +252,43 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
   );
   const allDone = allContacts.length > 0 && pending(allContacts).length === 0;
 
+  async function generateOne(id: string) {
+    setGenerating((s) => new Set(s).add(id));
+    setGenErrors((e) => { const n = { ...e }; delete n[id]; return n; });
+    try {
+      const res = await fetch(`/api/contacts/${id}/generate-message`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGenErrors((e) => ({ ...e, [id]: json.error ?? `Error ${res.status}` }));
+      } else {
+        setPreviews((p) => ({ ...p, [id]: json }));
+        setEdited((ed) => ({ ...ed, [id]: json.messages }));
+      }
+    } catch {
+      setGenErrors((e) => ({ ...e, [id]: "Error de red al generar el mensaje" }));
+    }
+    setGenerating((s) => { const n = new Set(s); n.delete(id); return n; });
+  }
+
+  function updateEditedField(id: string, field: keyof GeneratedMessages, value: string) {
+    setEdited((ed) => ({ ...ed, [id]: { ...ed[id], [field]: value } }));
+  }
+
   async function sendOne(id: string) {
     setSending((s) => new Set(s).add(id));
     setSendErrors((e) => { const n = { ...e }; delete n[id]; return n; });
     try {
+      // Si el mensaje se generó/editó a mano antes de enviar, guardamos la
+      // versión final ANTES de pushear — push-to-lemlist no regenera si ya
+      // encuentra mensajes guardados, así que respeta lo editado.
+      const draft = edited[id];
+      if (draft) {
+        await fetch(`/api/contacts/${id}/messages`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(draft),
+        });
+      }
       const res = await fetch(`/api/contacts/${id}/push-to-lemlist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -418,6 +481,12 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
                               error={sendErrors[ct.id]}
                               onSend={() => sendOne(ct.id)}
                               onDiscard={() => discardOne(ct.id)}
+                              generating={generating.has(ct.id)}
+                              genError={genErrors[ct.id]}
+                              preview={previews[ct.id]}
+                              edited={edited[ct.id]}
+                              onGenerate={() => generateOne(ct.id)}
+                              onEditField={(field, value) => updateEditedField(ct.id, field, value)}
                             />
                           ))}
                         </div>
@@ -448,6 +517,12 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
                               error={sendErrors[ct.id]}
                               onSend={() => sendOne(ct.id)}
                               onDiscard={() => discardOne(ct.id)}
+                              generating={generating.has(ct.id)}
+                              genError={genErrors[ct.id]}
+                              preview={previews[ct.id]}
+                              edited={edited[ct.id]}
+                              onGenerate={() => generateOne(ct.id)}
+                              onEditField={(field, value) => updateEditedField(ct.id, field, value)}
                             />
                           ))}
                         </div>
@@ -470,6 +545,30 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
   );
 }
 
+function EditableField({
+  label,
+  value,
+  onChange,
+  textarea,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  textarea?: boolean;
+}) {
+  const className = "w-full rounded-md border border-[#D8D5EA] px-2 py-1 text-xs bg-white focus:outline-none focus:border-brand";
+  return (
+    <div>
+      <div className="label mb-0.5">{label}</div>
+      {textarea ? (
+        <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className={className} />
+      ) : (
+        <input value={value} onChange={(e) => onChange(e.target.value)} className={className} />
+      )}
+    </div>
+  );
+}
+
 function ContactRow({
   contact,
   companyName,
@@ -481,6 +580,12 @@ function ContactRow({
   onSend,
   onDiscard,
   lowFit,
+  generating,
+  genError,
+  preview,
+  edited,
+  onGenerate,
+  onEditField,
 }: {
   contact: ImportContact;
   companyName?: string;
@@ -492,38 +597,90 @@ function ContactRow({
   onSend?: () => void;
   onDiscard: () => void;
   lowFit?: boolean;
+  generating?: boolean;
+  genError?: string;
+  preview?: MessagePreview;
+  edited?: GeneratedMessages;
+  onGenerate?: () => void;
+  onEditField?: (field: keyof GeneratedMessages, value: string) => void;
 }) {
   const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() || contact.email || "Sin nombre";
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-ink truncate">{name}</span>
-          {contact.job_title && <span className="text-xs text-ink-muted">· {contact.job_title}</span>}
-          {contact.fit_score != null && (
-            <span className={`badge ${lowFit ? "bg-danger-bg text-danger-fg" : "bg-brand-tint text-brand"}`}>fit {contact.fit_score}</span>
-          )}
-          {contact.name_email_mismatch && (
-            <span className="badge bg-warning-bg text-warning-fg" title={contact.mismatch_reason ?? undefined}>⚠ email no coincide</span>
-          )}
-          {sent && <span className="badge bg-success-bg text-success-fg">en Lemlist ✓</span>}
-          {discarded && <span className="badge bg-[#F1EEF7] text-ink-muted">descartado ✗</span>}
+    <div className="flex flex-col gap-2 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-ink truncate">{name}</span>
+            {contact.job_title && <span className="text-xs text-ink-muted">· {contact.job_title}</span>}
+            {contact.fit_score != null && (
+              <span className={`badge ${lowFit ? "bg-danger-bg text-danger-fg" : "bg-brand-tint text-brand"}`}>fit {contact.fit_score}</span>
+            )}
+            {contact.name_email_mismatch && (
+              <span className="badge bg-warning-bg text-warning-fg" title={contact.mismatch_reason ?? undefined}>⚠ email no coincide</span>
+            )}
+            {sent && <span className="badge bg-success-bg text-success-fg">en Lemlist ✓</span>}
+            {discarded && <span className="badge bg-[#F1EEF7] text-ink-muted">descartado ✗</span>}
+          </div>
+          {companyName && <div className="text-xs text-ink-muted mt-0.5">{companyName}</div>}
+          {error && <div className="text-xs text-danger-fg mt-0.5">{error}</div>}
+          {genError && <div className="text-xs text-danger-fg mt-0.5">{genError}</div>}
         </div>
-        {companyName && <div className="text-xs text-ink-muted mt-0.5">{companyName}</div>}
-        {error && <div className="text-xs text-danger-fg mt-0.5">{error}</div>}
-      </div>
-      {!sent && !discarded && (
-        <div className="flex items-center gap-1.5 shrink-0">
-          {onSend && (
-            <button onClick={onSend} disabled={sending || discarding} className="btn-primary text-xs">
-              {sending ? <IconLoader2 size={12} className="animate-spin" /> : <IconSend size={12} />}
-              Generar y enviar
+        {!sent && !discarded && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onGenerate && (
+              <button onClick={onGenerate} disabled={generating || sending || discarding} className="btn-secondary text-xs">
+                {generating ? <IconLoader2 size={12} className="animate-spin" /> : <IconSparkles size={12} />}
+                {preview ? "Regenerar mensaje" : "Generar mensaje"}
+              </button>
+            )}
+            {onSend && (
+              <button onClick={onSend} disabled={!preview || sending || discarding || generating} className="btn-primary text-xs" title={!preview ? "Primero generá el mensaje" : undefined}>
+                {sending ? <IconLoader2 size={12} className="animate-spin" /> : <IconSend size={12} />}
+                Enviar a Lemlist
+              </button>
+            )}
+            <button onClick={onDiscard} disabled={sending || discarding} className="btn-secondary text-xs">
+              {discarding ? <IconLoader2 size={12} className="animate-spin" /> : <IconX size={12} />}
+              Descartar
             </button>
+          </div>
+        )}
+      </div>
+
+      {!sent && !discarded && preview && edited && (
+        <div className="rounded-lg border border-[#E5E2F0] bg-[#F8F6FC] p-3 space-y-2.5">
+          <div className="text-xs text-ink-muted">
+            <span className="font-semibold text-ink">Segmento usado: </span>
+            {preview.segment.name ?? "Sin segmento (mensaje personalizado genérico)"}
+            {preview.segment.reasoning && <span> — {preview.segment.reasoning}</span>}
+          </div>
+
+          <EditableField label="Asunto — Email 1" value={edited.email_subject ?? ""} onChange={(v) => onEditField?.("email_subject", v)} />
+          <EditableField label="Cuerpo — Email 1" value={edited.email_body ?? ""} onChange={(v) => onEditField?.("email_body", v)} textarea />
+
+          {edited.email_subject_2 != null && (
+            <>
+              <EditableField label="Asunto — Email 2" value={edited.email_subject_2 ?? ""} onChange={(v) => onEditField?.("email_subject_2", v)} />
+              <EditableField label="Cuerpo — Email 2" value={edited.email_body_2 ?? ""} onChange={(v) => onEditField?.("email_body_2", v)} textarea />
+            </>
           )}
-          <button onClick={onDiscard} disabled={sending || discarding} className="btn-secondary text-xs">
-            {discarding ? <IconLoader2 size={12} className="animate-spin" /> : <IconX size={12} />}
-            Descartar
-          </button>
+
+          {edited.email_subject_3 != null && (
+            <>
+              <EditableField label="Asunto — Email 3" value={edited.email_subject_3 ?? ""} onChange={(v) => onEditField?.("email_subject_3", v)} />
+              <EditableField label="Cuerpo — Email 3" value={edited.email_body_3 ?? ""} onChange={(v) => onEditField?.("email_body_3", v)} textarea />
+            </>
+          )}
+
+          {edited.connect_message != null && (
+            <EditableField label="Nota de invitación LinkedIn" value={edited.connect_message ?? ""} onChange={(v) => onEditField?.("connect_message", v)} textarea />
+          )}
+
+          <EditableField label="Icebreaker LinkedIn 1" value={edited.linkedin_icebreaker ?? ""} onChange={(v) => onEditField?.("linkedin_icebreaker", v)} textarea />
+
+          {edited.linkedin_msg_2 != null && (
+            <EditableField label="Icebreaker LinkedIn 2" value={edited.linkedin_msg_2 ?? ""} onChange={(v) => onEditField?.("linkedin_msg_2", v)} textarea />
+          )}
         </div>
       )}
     </div>

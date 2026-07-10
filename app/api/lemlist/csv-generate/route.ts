@@ -31,6 +31,7 @@ type GeneratedContact = ParsedContact & {
   linkedinMsg2?: string;
   segmentName?: string;
   deepResearchUsed?: boolean;
+  icpWarning?: boolean; // true si el enrutamiento automático tuvo baja confianza
   error?: string;
 };
 
@@ -161,17 +162,6 @@ export async function POST(req: NextRequest) {
       .limit(1)
       .maybeSingle();
 
-    // Si ya tiene deep_research guardado, usarlo directamente
-    if (company?.deep_research) {
-      try {
-        const parsed = typeof company.deep_research === "string"
-          ? JSON.parse(company.deep_research)
-          : company.deep_research;
-        deepResearchCache.set(key, parsed);
-        return parsed;
-      } catch { /* ignorar */ }
-    }
-
     // Sin ICP no tiene sentido hacer research
     if (!icpContext?.trim()) {
       deepResearchCache.set(key, null);
@@ -204,6 +194,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Pre-cargar ICP de industria de todos los segmentos que lo tengan configurado
+  const uniqueIndustryIds = [...new Set((segments ?? []).map((s) => (s as Record<string, unknown>).icp_industry_id as string | null).filter(Boolean))] as string[];
+  await Promise.all(uniqueIndustryIds.map((id) => getIndustryIcpContext(id)));
+
+  // Segmentos enriquecidos con su ICP de industria para enrutamiento
+  const enrichedSegments = (segments ?? []).map((s) => {
+    const icpId = (s as Record<string, unknown>).icp_industry_id as string | null;
+    return {
+      ...s,
+      icpIndustryContent: icpId ? (industryIcpCache.get(icpId) ?? null) : null,
+    };
+  });
+
   // Pre-buscar deep research de todas las empresas únicas en paralelo (solo si se solicitó)
   if (use_deep_research) {
     const uniqueCompanies = [...new Set(contacts.map((c) => c.companyName?.trim()).filter(Boolean))] as string[];
@@ -222,14 +225,16 @@ export async function POST(req: NextRequest) {
           // Usar segmento elegido manualmente; si no hay, hacer routing automático
           let resolvedSegmentId: string | null = segment_id ?? null;
           let resolvedSegmentName: string | null = null;
+          let icpWarning = false;
 
           if (!resolvedSegmentId) {
             const routing = await routeContactToSegment(
               { firstName: c.firstName, lastName: c.lastName, jobTitle: c.jobTitle, companyName: c.companyName, industry: c.industry, companySize: c.companySize },
-              segments ?? []
+              enrichedSegments
             );
             resolvedSegmentId   = routing.segmentId;
             resolvedSegmentName = routing.segmentName;
+            icpWarning          = routing.lowConfidence === true;
           } else {
             resolvedSegmentName = (segments ?? []).find((s) => s.id === resolvedSegmentId)?.name ?? null;
           }
@@ -293,6 +298,7 @@ export async function POST(req: NextRequest) {
             linkedinMsg2:      msgs.linkedinMessages?.[1],
             segmentName:       resolvedSegmentName ?? undefined,
             deepResearchUsed:  use_deep_research ? (deepResearch !== null) : undefined,
+            icpWarning:        icpWarning || undefined,
           };
         } catch (err: any) {
           return { ...c, error: err?.message ?? "Error de generación" };

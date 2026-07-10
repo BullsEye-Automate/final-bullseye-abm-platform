@@ -17,6 +17,8 @@ export type DeepResearchContext = {
   trigger: string;
   angulo: string;
   resumen_ejecutivo: string;
+  senales?: string[];
+  decisores?: string[];
 };
 
 export type FewShotExample = {
@@ -38,6 +40,9 @@ export type Segment = {
   id: string;
   name: string;
   routing_hint: string;
+  icp_industry_id?: string | null;
+  // Contenido del ICP de industria pre-cargado (opcional, para enrutamiento)
+  icpIndustryContent?: string | null;
 };
 
 export type SegmentContext = {
@@ -69,6 +74,7 @@ export type ContactMessageInput = {
   emailCount?: number;          // cuántos emails generar (default 1)
   linkedinMsgCount?: number;    // cuántos mensajes de LinkedIn (default 1)
   includeConnectMsg?: boolean;  // incluir nota de invitación a conectar (default false)
+  mode?: "sequence" | "preview"; // sequence = carga masiva (reglas estrictas); preview = agente SDR (relajado)
 };
 
 // Tipo para un email individual dentro de una secuencia
@@ -90,6 +96,7 @@ export type RoutingResult = {
   segmentId: string | null;
   segmentName: string | null;
   reasoning: string;
+  lowConfidence?: boolean; // true si el contacto no calza claramente con ningún segmento
 };
 
 const BASE_SYSTEM_PROMPT = `Eres un experto en copywriting B2B y outbound sales.
@@ -144,8 +151,9 @@ function buildSystemPrompt(
     parts.push(label);
     if (effectiveStyle.tone)        parts.push(`Tono: ${effectiveStyle.tone}`);
     if (effectiveStyle.emailLength) parts.push(`Largo de email: ${effectiveStyle.emailLength} (corto=3 oraciones, medio=4-5, largo=6+)`);
-    if (effectiveStyle.rules)       parts.push(`Reglas de escritura:\n${effectiveStyle.rules}`);
-    if (effectiveStyle.avoid)       parts.push(`NUNCA escribas:\n${effectiveStyle.avoid}`);
+    if (effectiveStyle.rules)       parts.push(`Reglas de escritura (OBLIGATORIAS, sin excepciones):\n${effectiveStyle.rules}`);
+    if (effectiveStyle.avoid)       parts.push(`NUNCA escribas (regla absoluta, sin excepciones):\n${effectiveStyle.avoid}`);
+    parts.push(`PUNTUACIÓN OBLIGATORIA: toda pregunta DEBE llevar signo de apertura (¿) Y cierre (?). Ejemplo: "¿Te interesa agendar una llamada?". Nunca omitas el signo de apertura.`);
   }
 
   // Prioriza ejemplos del segmento; si no hay, usa los globales
@@ -168,6 +176,13 @@ function buildSystemPrompt(
     `Esto aplica siempre, incluso cuando el argumento sea persuasivo.`
   );
 
+  parts.push(
+    `\nREGLA ABSOLUTA — ROL DEL MODELO: Tu único rol es redactar el mensaje de outreach con el contexto que recibes. ` +
+    `NUNCA evalúes, menciones ni insinúes si el prospecto calza o no con el ICP, si la empresa es relevante, ` +
+    `o si el outreach tiene sentido para ese contacto. Esa decisión es exclusiva del equipo humano. ` +
+    `Siempre genera el mensaje como si el contacto fuera un prospecto válido.`
+  );
+
   return parts.join("\n");
 }
 
@@ -188,8 +203,14 @@ export async function routeContactToSegment(
   }
 
   const segmentList = segments
-    .map((s, i) => `${i + 1}. ID: "${s.id}" | Nombre: ${s.name} | Criterio: ${s.routing_hint}`)
-    .join("\n");
+    .map((s, i) => {
+      let entry = `${i + 1}. ID: "${s.id}" | Nombre: ${s.name} | Criterio: ${s.routing_hint}`;
+      if (s.icpIndustryContent) {
+        entry += `\n   ICP de industria:\n${s.icpIndustryContent.split("\n").map((l) => `   ${l}`).join("\n")}`;
+      }
+      return entry;
+    })
+    .join("\n\n");
 
   const contactProfile = [
     (contact.firstName || contact.lastName) && `Nombre: ${[contact.firstName, contact.lastName].filter(Boolean).join(" ")}`,
@@ -210,7 +231,7 @@ export async function routeContactToSegment(
       messages: [
         {
           role: "user",
-          content: `Perfil del contacto:\n${contactProfile || "Sin datos específicos"}\n\nSegmentos disponibles:\n${segmentList}\n\nElige el segmento más apropiado para este contacto. Si ninguno aplica claramente, elige el más cercano.\n\nResponde ÚNICAMENTE con este JSON:\n{"segment_id":"<id exacto del segmento>","reasoning":"<razón breve en 1 oración>"}`,
+          content: `Perfil del contacto:\n${contactProfile || "Sin datos específicos"}\n\nSegmentos disponibles:\n${segmentList}\n\nElige el segmento más apropiado para este contacto. Si ninguno aplica claramente, elige el más cercano pero marca confidence como "low".\n\nResponde ÚNICAMENTE con este JSON:\n{"segment_id":"<id exacto del segmento>","reasoning":"<razón breve en 1 oración>","confidence":"high|medium|low"}`,
         },
       ],
     });
@@ -229,9 +250,10 @@ export async function routeContactToSegment(
     const matched = segments.find((s) => s.id === parsed.segment_id);
 
     return {
-      segmentId:   matched?.id   ?? null,
-      segmentName: matched?.name ?? null,
-      reasoning:   parsed.reasoning ?? "",
+      segmentId:    matched?.id   ?? null,
+      segmentName:  matched?.name ?? null,
+      reasoning:    parsed.reasoning ?? "",
+      lowConfidence: parsed.confidence === "low",
     };
   } catch {
     return { segmentId: null, segmentName: null, reasoning: "Error en routing" };
@@ -258,6 +280,7 @@ export async function generateContactMessages(
     emailCount = 1,
     linkedinMsgCount = 1,
     includeConnectMsg = false,
+    mode = "sequence",
   } = input;
 
   // Determinar si se necesita generar una secuencia completa
@@ -266,7 +289,18 @@ export async function generateContactMessages(
   const systemPrompt = buildSystemPrompt(styleGuide, fewShotExamples, segmentContext);
 
   const deepResearchContext = deepResearch
-    ? `\nInvestigación profunda de la empresa:\n- Trigger actual: ${deepResearch.trigger}\n- Ángulo de mensaje: ${deepResearch.angulo}\n- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`
+    ? [
+        "\nInvestigación profunda de la empresa:",
+        `- Trigger actual: ${deepResearch.trigger}`,
+        `- Ángulo de mensaje: ${deepResearch.angulo}`,
+        deepResearch.senales?.length
+          ? `- Señales concretas verificadas:\n${deepResearch.senales.map((s) => `  • ${s}`).join("\n")}`
+          : null,
+        deepResearch.decisores?.length
+          ? `- Decisores identificados: ${deepResearch.decisores.join(", ")}`
+          : null,
+        `- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`,
+      ].filter(Boolean).join("\n")
     : "";
 
   const contactInfo = [
@@ -355,7 +389,9 @@ Datos del contacto:
 ${contactInfo || "No disponibles"}
 
 ${deepResearch
-  ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa."
+  ? (mode === "sequence"
+    ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+    : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
     : ""}
@@ -449,7 +485,9 @@ Datos del contacto:
 ${contactInfo || "No disponibles"}
 
 ${deepResearch
-  ? "IMPORTANTE: usa el trigger y ángulo de la investigación profunda para personalizar con eventos reales de la empresa."
+  ? (mode === "sequence"
+    ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+    : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
     : ""}

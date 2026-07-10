@@ -1,5 +1,6 @@
 import { anthropic, CLAUDE_MODEL } from "./claude";
 import { extractField, chipsFrom } from "./icp-form";
+import { logAiUsage } from "./aiUsageLogger";
 
 export type SalesNavRecommendations = {
   job_title_chips: string[];
@@ -87,6 +88,7 @@ export async function deriveSalesNavRecommendations(sections: {
       system: SYSTEM,
       messages: [{ role: "user", content: context.slice(0, 4000) }],
     });
+    void logAiUsage({ functionName: "sales_nav_recommendations", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
     const text = msg.content.find((b: { type: string }) => b.type === "text") as { type: "text"; text: string } | undefined;
     const jsonMatch = text?.text.match(/\{[\s\S]*\}/)?.[0];
     if (!jsonMatch) return fb;

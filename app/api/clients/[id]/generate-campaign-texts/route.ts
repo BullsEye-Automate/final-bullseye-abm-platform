@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 import type Anthropic from "@anthropic-ai/sdk";
 
 export const runtime = "nodejs";
@@ -89,6 +90,8 @@ export async function POST(
     max_tokens: 2000,
     messages: [{ role: "user", content: prompt }],
   });
+
+  void logAiUsage({ clientId: params.id, functionName: "client_generate_campaign_texts", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
 
   const raw = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")

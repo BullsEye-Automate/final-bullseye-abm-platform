@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { perplexitySearch } from "@/lib/perplexity";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { citationNamesCompany, evidenceQuality } from "@/lib/companyEvidence";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -90,6 +91,10 @@ export async function POST(req: NextRequest) {
       content: `Empresa: "${name}"\n\nInvestigación:\n${research.content.slice(0, 5000)}`
     }]
   }).catch(() => null);
+
+  if (msg) {
+    void logAiUsage({ functionName: "company_research_diagnostic", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+  }
 
   const claudeMs = Date.now() - t1;
 

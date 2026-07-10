@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,6 +49,13 @@ export async function POST(req: NextRequest) {
           ],
         },
       ],
+    });
+
+    void logAiUsage({
+      functionName: "training_parse_pdf",
+      model: "claude-haiku-4-5-20251001",
+      inputTokens: response.usage.input_tokens,
+      outputTokens: response.usage.output_tokens,
     });
 
     const text = response.content

@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { anthropic, CLAUDE_MODEL } from "./claude";
 import { perplexitySearch, PerplexityCitation } from "./perplexity";
 import { normalizeLinkedInUrl } from "./normalizeLinkedIn";
+import { logAiUsage } from "./aiUsageLogger";
 
 export type DiscoveredCompany = {
   company_name: string;
@@ -187,6 +188,13 @@ ${research.content}
 A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vigente. Devuelve JSON estricto como se definió en el sistema. Si no encuentras suficientes empresas válidas, devuelve menos — nunca inventes.`
       }
     ]
+  });
+
+  void logAiUsage({
+    functionName: "discovery_recommendation",
+    model:        CLAUDE_MODEL,
+    inputTokens:  message.usage.input_tokens,
+    outputTokens: message.usage.output_tokens
   });
 
   const text = message.content

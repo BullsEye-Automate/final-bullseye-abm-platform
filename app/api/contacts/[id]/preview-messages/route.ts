@@ -59,7 +59,7 @@ export async function POST(
   } catch { /* */ }
 
   const msgs = await generateContactMessages({
-    hasEmail:         true, // siempre genera email + icebreaker para preview completo
+    hasEmail:         true,
     firstName:        contact.first_name        ?? undefined,
     lastName:         contact.last_name         ?? undefined,
     jobTitle:         contact.job_title         ?? undefined,
@@ -68,6 +68,7 @@ export async function POST(
     icpContext,
     deepResearch,
     language: "es",
+    mode: "preview",
   });
 
   return NextResponse.json(msgs);

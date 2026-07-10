@@ -880,7 +880,8 @@ export default function FeedbackPage() {
   const [desde, setDesde]       = useState("");
   const [hasta, setHasta]       = useState("");
   const [preset, setPreset]     = useState("todo");
-  const [statusFilter, setStatusFilter] = useState("Todos");
+  const [statusFilter, setStatusFilter]     = useState("Todos");
+  const [feedbackFilter, setFeedbackFilter] = useState("Todos");
   const [showModal, setShowModal]       = useState(false);
   const [feedbackMeeting, setFeedbackMeeting] = useState<Meeting | null>(null);
   const [importing, setImporting] = useState(false);
@@ -1085,7 +1086,12 @@ export default function FeedbackPage() {
       )
     : meetings;
   const byStatus = statusFilter === "Todos" ? searched : searched.filter(m => m.realizado === statusFilter);
-  const filtered = sdrFilter === "Todos" ? byStatus : byStatus.filter(m => {
+  const byFeedback = feedbackFilter === "Sin feedback"
+    ? byStatus.filter(m => m.feedback_status === "pendiente")
+    : feedbackFilter === "Con feedback"
+      ? byStatus.filter(m => m.feedback_status === "con_feedback")
+      : byStatus;
+  const filtered = sdrFilter === "Todos" ? byFeedback : byFeedback.filter(m => {
     const raw = m.meeting_feedback;
     const fb: any = Array.isArray(raw) ? raw[0] : raw ?? null;
     return fb?.sdr_seleccionado === sdrFilter || m.sdr_nombre === sdrFilter;
@@ -1313,6 +1319,26 @@ export default function FeedbackPage() {
           {STATUS_OPTS.map(o => <option key={o}>{o}</option>)}
         </select>
 
+        {/* Filtro por feedback */}
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden bg-white text-sm">
+          {(["Todos", "Sin feedback", "Con feedback"] as const).map(opt => (
+            <button key={opt} type="button"
+              onClick={() => setFeedbackFilter(opt)}
+              className="px-3 py-2 transition"
+              style={{
+                background: feedbackFilter === opt
+                  ? opt === "Sin feedback" ? "#fef3c7" : opt === "Con feedback" ? "#f0fdf4" : "#251762"
+                  : "transparent",
+                color: feedbackFilter === opt
+                  ? opt === "Sin feedback" ? "#b45309" : opt === "Con feedback" ? "#15803d" : "#fff"
+                  : "#6b7280",
+                fontWeight: feedbackFilter === opt ? 600 : 400,
+              }}>
+              {opt === "Sin feedback" ? "⏳ Sin feedback" : opt === "Con feedback" ? "✅ Con feedback" : "Todos"}
+            </button>
+          ))}
+        </div>
+
         {/* Filtro por Sales Manager */}
         {salesManagers.length > 0 && (
           <select value={sdrFilter} onChange={e => setSdrFilter(e.target.value)}
@@ -1323,8 +1349,8 @@ export default function FeedbackPage() {
         )}
 
         {/* Reset */}
-        {(preset !== "todo" || statusFilter !== "Todos" || sdrFilter !== "Todos") && (
-          <button onClick={() => { applyPreset("todo"); setStatusFilter("Todos"); setSdrFilter("Todos"); }}
+        {(preset !== "todo" || statusFilter !== "Todos" || sdrFilter !== "Todos" || feedbackFilter !== "Todos") && (
+          <button onClick={() => { applyPreset("todo"); setStatusFilter("Todos"); setSdrFilter("Todos"); setFeedbackFilter("Todos"); }}
             className="text-xs text-gray-400 hover:text-gray-600 underline">
             Limpiar filtros
           </button>

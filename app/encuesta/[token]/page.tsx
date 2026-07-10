@@ -28,6 +28,17 @@ type FormState = {
   probabilidad_cierre: number | null;
 };
 
+type FeedbackConfig = {
+  pregunta_calificacion: string;
+  pregunta_empresa: string;
+  pregunta_contacto: string;
+  pregunta_propuesta: string;
+  pregunta_comentarios: string;
+  razones_no_califica: string[];
+  propuesta_opciones: string[];
+  sales_managers: string[];
+};
+
 const RAZONES_EMPRESA = [
   "No es de industria objetivo",
   "No es del tamaño objetivo",
@@ -35,15 +46,16 @@ const RAZONES_EMPRESA = [
   "Otra",
 ];
 
-const RAZONES = [
-  "No tomaba decisiones",
-  "No presentó interés",
-  "No tenía contexto de nosotros",
-  "Tomó la reunión desde el celular",
-  "Otro",
-];
-
-const PROPUESTAS = ["Si", "No", "No aún", "Falta otra reunión"];
+const DEFAULT_CONFIG: FeedbackConfig = {
+  pregunta_calificacion: "¿Cómo calificarías esta reunión?",
+  pregunta_empresa:      "¿La empresa prospecto era calificada para el servicio?",
+  pregunta_contacto:     "¿El contacto era el decisor o influenciador correcto?",
+  pregunta_propuesta:    "¿Le enviarás una propuesta comercial a este prospecto?",
+  pregunta_comentarios:  "¿Algo más que destacar?",
+  razones_no_califica:   ["No tomaba decisiones", "No presentó interés", "No tenía contexto de nosotros", "Tomó la reunión desde el celular", "Otro"],
+  propuesta_opciones:    ["Si", "No", "No aún", "Falta otra reunión"],
+  sales_managers:        [],
+};
 
 function StarRating({ value, onChange }: { value: number | null; onChange: (v: number) => void }) {
   const [hover, setHover] = useState<number | null>(null);
@@ -122,7 +134,8 @@ function BoolBtn({ value, onChange }: { value: boolean | null; onChange: (v: boo
 export default function EncuestaPage() {
   const { token } = useParams() as { token: string };
   const [meeting, setMeeting] = useState<MeetingData | null>(null);
-  const [salesManagers, setSalesManagers] = useState<string[]>([]);
+  const [config, setConfig] = useState<FeedbackConfig>(DEFAULT_CONFIG);
+  const salesManagers = config.sales_managers;
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -151,13 +164,13 @@ export default function EncuestaPage() {
         if (data.feedback_status === "con_feedback") setSubmitted(true);
         setMeeting(data);
         setLoading(false);
-        // Cargar sales managers del cliente
+        // Cargar configuración del cliente
         if (data.client_id) {
           fetch(`/api/feedback-config?client_id=${data.client_id}`)
             .then(r => r.ok ? r.json() : null)
             .then(cfg => {
-              if (cfg?.config?.sales_managers?.length) {
-                setSalesManagers(cfg.config.sales_managers);
+              if (cfg?.config) {
+                setConfig(prev => ({ ...prev, ...cfg.config }));
               }
             })
             .catch(() => {});
@@ -275,7 +288,7 @@ export default function EncuestaPage() {
           {/* P1: Calificación */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-gray-800 mb-1">
-              1. ¿Cómo calificarías esta reunión?
+              1. {config.pregunta_calificacion}
             </h2>
             <p className="text-xs text-gray-400 mb-4">1 = muy mala · 10 = excelente</p>
             <StarRating value={form.calificacion} onChange={v => setForm(p => ({ ...p, calificacion: v }))} />
@@ -284,7 +297,7 @@ export default function EncuestaPage() {
           {/* P2: Empresa calificada */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-gray-800 mb-4">
-              2. ¿La empresa prospecto era calificada para el servicio?
+              2. {config.pregunta_empresa}
             </h2>
             <BoolBtn value={form.empresa_calificada} onChange={v => setForm(p => ({ ...p, empresa_calificada: v, razon_no_empresa: v ? "" : p.razon_no_empresa }))} />
             {form.empresa_calificada === false && (
@@ -320,7 +333,7 @@ export default function EncuestaPage() {
           {/* P3: Contacto calificado */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-gray-800 mb-4">
-              3. ¿El contacto era el decisor o influenciador correcto?
+              3. {config.pregunta_contacto}
             </h2>
             <BoolBtn value={form.contacto_calificado} onChange={v => setForm(p => ({ ...p, contacto_calificado: v, razon_no_califica: v ? "" : p.razon_no_califica }))} />
 
@@ -329,7 +342,7 @@ export default function EncuestaPage() {
               <div className="mt-4 pt-4 border-t border-gray-100">
                 <p className="text-xs font-medium text-gray-600 mb-3">¿Por qué no calificaba?</p>
                 <div className="space-y-2">
-                  {RAZONES.map(r => (
+                  {config.razones_no_califica.map(r => (
                     <button key={r} type="button"
                       onClick={() => setForm(p => ({ ...p, razon_no_califica: r }))}
                       className="w-full text-left px-3 py-2 rounded-xl text-sm border-2 transition"
@@ -358,10 +371,10 @@ export default function EncuestaPage() {
           {/* P4: Siguiente paso */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-gray-800 mb-4">
-              4. ¿Le enviarás una propuesta comercial a este prospecto?
+              4. {config.pregunta_propuesta}
             </h2>
             <div className="grid grid-cols-2 gap-2">
-              {PROPUESTAS.map(p => (
+              {config.propuesta_opciones.map(p => (
                 <button key={p} type="button"
                   onClick={() => setForm(prev => ({ ...prev, propuesta_comercial: p }))}
                   className="px-3 py-2.5 rounded-xl text-sm border-2 transition text-center font-medium"
@@ -379,7 +392,7 @@ export default function EncuestaPage() {
           {/* P5: Comentarios opcionales */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-gray-800 mb-1">
-              5. ¿Algo más que destacar? <span className="font-normal text-gray-400">(opcional)</span>
+              5. {config.pregunta_comentarios} <span className="font-normal text-gray-400">(opcional)</span>
             </h2>
             <textarea
               value={form.comentarios_adicionales}
