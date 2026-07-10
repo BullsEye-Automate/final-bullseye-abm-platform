@@ -56,27 +56,35 @@ export async function middleware(req: NextRequest) {
   }
 
   let response = NextResponse.next({ request: req });
+  let user = null;
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return req.cookies.getAll();
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return req.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+            response = NextResponse.next({ request: req });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options)
+            );
+          },
         },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
-          response = NextResponse.next({ request: req });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          );
-        },
-      },
-    }
-  );
+      }
+    );
 
-  const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase.auth.getUser();
+    if (!error) user = data.user;
+  } catch (err) {
+    // getUser() puede rechazar (no solo devolver `error`) cuando no hay
+    // sesión, según el runtime — nunca debe tumbar el middleware entero.
+    console.error("middleware: fallo al verificar sesión de Supabase:", err);
+  }
 
   if (!user) {
     if (pathname.startsWith("/api/")) {
