@@ -18,6 +18,13 @@ function parseDate(str: string): string | null {
   return str;
 }
 
+// Clave estable de identidad de una reunión: no depende de la posición de
+// la fila en la planilla (que cambia si se reordena/inserta/borra filas),
+// sino del contenido. La planilla no tiene ningún ID único por fila.
+function buildMatchKey(empresa: string, contacto: string, fechaReunion: string | null): string {
+  return `${normalizeName(empresa)}|${normalizeName(contacto)}|${fechaReunion ?? ""}`;
+}
+
 function normalizeRealizado(val: string): string {
   const v = val.trim().toLowerCase();
   if (v === "si" || v === "sí" || v === "yes") return "Si";
@@ -104,7 +111,8 @@ export async function runMeetingsSync(preview = false): Promise<SyncResult> {
     if (!empresa) continue;
 
     const clientId = await resolveClientId(row, clientByName);
-    const sheetRowKey = `${spreadsheetId}::${row.__rowIndex}`;
+    const fechaReunion = parseDate(row["Fecha de la reunión"]);
+    const sheetRowKey = buildMatchKey(empresa, row["Contacto"]?.trim() ?? "", fechaReunion);
 
     // REGLA 1: Si no hay client_id resuelto → omitir completamente esta fila
     if (!clientId) {
@@ -141,7 +149,7 @@ export async function runMeetingsSync(preview = false): Promise<SyncResult> {
           empresa,
           contacto_nombre:       row["Contacto"]                  || null,
           contacto_cargo:        row["Cargo"]                     || null,
-          fecha_reunion:         parseDate(row["Fecha de la reunión"]),
+          fecha_reunion:         fechaReunion,
           fecha_agendamiento:    parseDate(row["Fecha de agendamiento"]),
           hora:                  row["Hora"]                      || null,
           pais:                  row["País"]                      || null,
@@ -163,7 +171,7 @@ export async function runMeetingsSync(preview = false): Promise<SyncResult> {
       empresa,
       contacto_nombre:       row["Contacto"]                 || null,
       contacto_cargo:        row["Cargo"]                    || null,
-      fecha_reunion:         parseDate(row["Fecha de la reunión"]),
+      fecha_reunion:         fechaReunion,
       fecha_agendamiento:    parseDate(row["Fecha de agendamiento"]),
       hora:                  row["Hora"]                     || null,
       pais:                  row["País"]                     || null,
