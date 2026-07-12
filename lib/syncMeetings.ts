@@ -1,14 +1,14 @@
 import { supabaseAdmin } from "./supabase";
 import { getSheetRows } from "./googleSheets";
 
-function normalizeName(s: string): string {
+export function normalizeName(s: string): string {
   return s.toLowerCase().trim()
     .replace(/á/g, "a").replace(/é/g, "e").replace(/í/g, "i")
     .replace(/ó/g, "o").replace(/ú/g, "u").replace(/ü/g, "u").replace(/ñ/g, "n")
     .replace(/\s+/g, " ");
 }
 
-function parseDate(str: string): string | null {
+export function parseDate(str: string): string | null {
   if (!str) return null;
   const parts = str.split(/[\/\-]/);
   if (parts.length !== 3) return null;
@@ -18,10 +18,11 @@ function parseDate(str: string): string | null {
   return str;
 }
 
-// Clave estable de identidad de una reunión: no depende de la posición de
-// la fila en la planilla (que cambia si se reordena/inserta/borra filas),
-// sino del contenido. La planilla no tiene ningún ID único por fila.
-function buildMatchKey(empresa: string, contacto: string, fechaReunion: string | null): string {
+// Clave estable de identidad de una reunión, usada como respaldo cuando la
+// fila de la planilla todavía no tiene "ID Reunión" (columna agregada al
+// Apps Script — ver supabase/meetings_stable_key_migration.sql). No depende
+// de la posición de la fila, sino del contenido.
+export function buildMatchKey(empresa: string, contacto: string, fechaReunion: string | null): string {
   return `${normalizeName(empresa)}|${normalizeName(contacto)}|${fechaReunion ?? ""}`;
 }
 
@@ -112,7 +113,10 @@ export async function runMeetingsSync(preview = false): Promise<SyncResult> {
 
     const clientId = await resolveClientId(row, clientByName);
     const fechaReunion = parseDate(row["Fecha de la reunión"]);
-    const sheetRowKey = buildMatchKey(empresa, row["Contacto"]?.trim() ?? "", fechaReunion);
+    // Preferir el ID Reunión real de la planilla (columna agregada vía Apps
+    // Script); si una fila todavía no lo tiene, usar la clave compuesta.
+    const reunionId = row["ID Reunión"]?.trim();
+    const sheetRowKey = reunionId || buildMatchKey(empresa, row["Contacto"]?.trim() ?? "", fechaReunion);
 
     // REGLA 1: Si no hay client_id resuelto → omitir completamente esta fila
     if (!clientId) {
