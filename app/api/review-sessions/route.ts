@@ -14,8 +14,9 @@ export async function POST(req: NextRequest) {
   const { data, error } = await db
     .from("review_sessions")
     .insert({
-      client_id:   body.client_id ?? null,
+      client_id:   body.client_id   ?? null,
       client_name: body.client_name ?? null,
+      group_id:    body.group_id    ?? null,
       contacts:    body.contacts,
     })
     .select("token")
