@@ -892,6 +892,7 @@ export default function FeedbackPage() {
   const [search, setSearch] = useState("");
   const [sdrFilter, setSdrFilter] = useState("Todos");
   const [salesManagers, setSalesManagers] = useState<string[]>([]);
+  const [modalSalesManagers, setModalSalesManagers] = useState<string[]>([]);
   const [verFeedbackMeeting, setVerFeedbackMeeting] = useState<Meeting | null>(null);
   const [clientFeedbackToken, setClientFeedbackToken] = useState<string | null>(null);
   const [copiedClientLink, setCopiedClientLink] = useState(false);
@@ -927,6 +928,18 @@ export default function FeedbackPage() {
       .then(data => setSalesManagers(data?.config?.sales_managers ?? []))
       .catch(() => {});
   }, [currentClient?.id]);
+
+  // Los sales managers del modal de feedback se resuelven por el cliente
+  // real de ESA reunión, no por el cliente seleccionado en el sidebar —
+  // si no, se puede elegir el SDR de otro cliente por error.
+  useEffect(() => {
+    const clientId = feedbackMeeting?.client_id ?? verFeedbackMeeting?.client_id;
+    if (!clientId) { setModalSalesManagers([]); return; }
+    fetch(`/api/feedback-config?client_id=${clientId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setModalSalesManagers(data?.config?.sales_managers ?? []))
+      .catch(() => {});
+  }, [feedbackMeeting?.client_id, verFeedbackMeeting?.client_id]);
 
   useEffect(() => {
     if (!currentClient?.id || currentClient.id === "__all__") { setClientFeedbackToken(null); return; }
@@ -1488,7 +1501,7 @@ export default function FeedbackPage() {
       {feedbackMeeting && (
         <FeedbackInlineModal
           meeting={feedbackMeeting}
-          salesManagers={salesManagers}
+          salesManagers={modalSalesManagers}
           onClose={() => setFeedbackMeeting(null)}
           onSaved={() => { setFeedbackMeeting(null); load(); }}
         />
@@ -1496,7 +1509,7 @@ export default function FeedbackPage() {
       {verFeedbackMeeting && (
         <VerFeedbackModal
           meeting={verFeedbackMeeting}
-          salesManagers={salesManagers}
+          salesManagers={modalSalesManagers}
           onClose={() => setVerFeedbackMeeting(null)}
           onDeleted={() => { setVerFeedbackMeeting(null); load(); }}
           onSaved={() => { setVerFeedbackMeeting(null); load(); }}
