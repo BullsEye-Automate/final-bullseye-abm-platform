@@ -40,6 +40,8 @@ export type SyncPreviewItem = {
   reason: "sin_cliente" | "feedback_protegido";
   clienteActual?: string;
   clienteNuevo?: string | null;
+  meetingId?: string;
+  newClientId?: string | null;
 };
 
 export type SyncResult = {
@@ -144,6 +146,8 @@ export async function runMeetingsSync(preview = false): Promise<SyncResult> {
           reason: "feedback_protegido",
           clienteActual: clientNameById.get(existing.client_id) ?? existing.client_id,
           clienteNuevo: clientNameById.get(clientId) ?? clientId,
+          meetingId: existing.id,
+          newClientId: clientId,
         });
       }
       if (!preview) {
