@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { runMeetingsSync } from "@/lib/syncMeetings";
 
@@ -11,24 +11,29 @@ export const dynamic = "force-dynamic";
 // client_id guardado está desactualizado, hay que poder corregirlo — sin
 // tocar feedback_status ni meeting_feedback para nada (viven aparte).
 //
-// GET  → lista las reuniones con feedback cuyo cliente en el sheet difiere
-//        del client_id actual (mismos datos que la alerta en /oportunidades/feedback).
-// POST → aplica el client_id nuevo a esas reuniones. Nunca borra ni toca feedback.
-export async function GET() {
-  const result = await runMeetingsSync(true);
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 500 });
+// GET               → lista las reuniones con feedback cuyo cliente en el
+//                      sheet difiere del client_id actual. No cambia nada.
+// GET ?commit=1     → aplica el client_id nuevo a esas reuniones. Nunca
+//                      borra ni toca feedback.
+export async function GET(req: NextRequest) {
+  const commit = req.nextUrl.searchParams.get("commit") === "1";
 
-  const mismatches = (result.preview ?? []).filter((p) => p.reason === "feedback_protegido");
-  return NextResponse.json({ ok: true, total: mismatches.length, mismatches });
-}
-
-export async function POST() {
   const result = await runMeetingsSync(true);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: 500 });
 
   const mismatches = (result.preview ?? []).filter(
     (p) => p.reason === "feedback_protegido" && p.meetingId && p.newClientId
   );
+
+  if (!commit) {
+    return NextResponse.json({
+      ok: true,
+      dryRun: true,
+      total: mismatches.length,
+      mismatches,
+      nota: "Nada se modificó. Repetir con ?commit=1 para aplicar de verdad.",
+    });
+  }
 
   const db = supabaseAdmin();
   let actualizadas = 0;
