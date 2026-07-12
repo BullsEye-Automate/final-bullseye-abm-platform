@@ -5,7 +5,7 @@ import { buildMatchKey, parseDate } from "@/lib/syncMeetings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // Endpoint de una sola vez: la planilla ahora tiene una columna "ID Reunión"
 // (UUID estable por fila, vía Apps Script) en vez de depender de la
@@ -36,11 +36,32 @@ export async function GET(req: NextRequest) {
   }
 
   const db = supabaseAdmin();
-  const { data: meetings, error } = await db
-    .from("meetings")
-    .select("id, empresa, contacto_nombre, fecha_reunion, feedback_status, updated_at, created_at, sheet_row_key");
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  // PostgREST corta en 1000 filas por default — paginar para traer la
+  // tabla completa (puede tener más de eso).
+  const PAGE_SIZE = 1000;
+  const meetings: {
+    id: string;
+    empresa: string;
+    contacto_nombre: string | null;
+    fecha_reunion: string | null;
+    feedback_status: string;
+    updated_at: string;
+    created_at: string;
+    sheet_row_key: string | null;
+  }[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data: page, error } = await db
+      .from("meetings")
+      .select("id, empresa, contacto_nombre, fecha_reunion, feedback_status, updated_at, created_at, sheet_row_key")
+      .order("id")
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (!page || page.length === 0) break;
+    meetings.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
 
   type Meeting = NonNullable<typeof meetings>[number];
 
@@ -117,13 +138,19 @@ export async function GET(req: NextRequest) {
 
   let actualizadas = 0;
   const errors: string[] = [];
-  for (const u of updates) {
-    const { error: upError } = await db
-      .from("meetings")
-      .update({ sheet_row_key: u.newKey })
-      .eq("id", u.id);
-    if (upError) errors.push(`${u.id}: ${upError.message}`);
-    else actualizadas++;
+  const CONCURRENCY = 20;
+  for (let i = 0; i < updates.length; i += CONCURRENCY) {
+    const chunk = updates.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      chunk.map((u) =>
+        db.from("meetings").update({ sheet_row_key: u.newKey }).eq("id", u.id)
+          .then(({ error: upError }) => ({ id: u.id, upError }))
+      )
+    );
+    for (const r of results) {
+      if (r.upError) errors.push(`${r.id}: ${r.upError.message}`);
+      else actualizadas++;
+    }
   }
 
   return NextResponse.json({
