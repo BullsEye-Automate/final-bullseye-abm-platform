@@ -4,6 +4,7 @@ import { runMeetingsSync } from "@/lib/syncMeetings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 // El sync protege las reuniones con feedback: si el cliente cambió en la
 // planilla, NO reasigna el client_id solo (para no pisar un feedback por un
