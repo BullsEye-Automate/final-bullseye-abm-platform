@@ -287,18 +287,25 @@ export async function generateContactMessages(
 
   const systemPrompt = buildSystemPrompt(styleGuide, fewShotExamples, segmentContext);
 
-  const deepResearchContext = deepResearch
+  // Si el trigger indica que no hay señales verificables, ignorar el deepResearch
+  // para que el modelo genere un correo normal basado en ICP en lugar de bloquearse
+  const NO_SIGNAL_PATTERNS = ["sin señales recientes", "sin señales", "no se encontr", "sin trigger"];
+  const hasValidDeepResearch = deepResearch &&
+    !NO_SIGNAL_PATTERNS.some((p) => deepResearch.trigger.toLowerCase().includes(p)) &&
+    deepResearch.trigger.toLowerCase() !== "sin trigger detectado";
+
+  const deepResearchContext = hasValidDeepResearch
     ? [
         "\nInvestigación profunda de la empresa:",
-        `- Trigger actual: ${deepResearch.trigger}`,
-        `- Ángulo de mensaje: ${deepResearch.angulo}`,
-        deepResearch.senales?.length
-          ? `- Señales concretas verificadas:\n${deepResearch.senales.map((s) => `  • ${s}`).join("\n")}`
+        `- Trigger actual: ${deepResearch!.trigger}`,
+        `- Ángulo de mensaje: ${deepResearch!.angulo}`,
+        deepResearch!.senales?.length
+          ? `- Señales concretas verificadas:\n${deepResearch!.senales.map((s) => `  • ${s}`).join("\n")}`
           : null,
-        deepResearch.decisores?.length
-          ? `- Decisores identificados: ${deepResearch.decisores.join(", ")}`
+        deepResearch!.decisores?.length
+          ? `- Decisores identificados: ${deepResearch!.decisores.join(", ")}`
           : null,
-        `- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`,
+        `- Resumen ejecutivo: ${deepResearch!.resumen_ejecutivo}`,
       ].filter(Boolean).join("\n")
     : "";
 
@@ -387,7 +394,7 @@ ${icpContext ?? "No disponible"}${deepResearchContext}
 Datos del contacto:
 ${contactInfo || "No disponibles"}
 
-${deepResearch
+${hasValidDeepResearch
   ? (mode === "sequence"
     ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
     : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
@@ -483,7 +490,7 @@ ${icpContext ?? "No disponible"}${deepResearchContext}
 Datos del contacto:
 ${contactInfo || "No disponibles"}
 
-${deepResearch
+${hasValidDeepResearch
   ? (mode === "sequence"
     ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
     : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
