@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { upsertHSContact, upsertHSCompany, searchHSContactByBullseyeId, searchHSContact, searchHSContactByLinkedinUrl, searchHSCompany, associateContactCompany, patchHSContact } from "@/lib/hubspot";
+import { upsertHSContact, upsertHSCompany, searchHSContactByBullseyeId, searchHSContact, searchHSContactByLinkedinUrl, searchHSCompany, searchHSCompanyByBullseyeId, associateContactCompany, patchHSContact } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -198,7 +198,9 @@ export async function POST(req: NextRequest) {
     // Asociar empresa en HubSpot
     if (hsId && company?.company_name) {
       try {
-        const existingCompanyId = await searchHSCompany(company.company_name);
+        const existingCompanyId =
+          (await searchHSCompanyByBullseyeId(company.id)) ??
+          (await searchHSCompany(company.company_name));
         const hsCompanyId = await upsertHSCompany(
           {
             name:                 company.company_name,

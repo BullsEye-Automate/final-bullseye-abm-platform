@@ -5,6 +5,7 @@ import {
   searchHSContactByBullseyeId,
   searchHSContact,
   searchHSCompany,
+  searchHSCompanyByBullseyeId,
   associateContactCompany,
 } from "./hubspot";
 
@@ -59,7 +60,9 @@ export async function syncContactToHubSpot(
     // Asociar empresa
     if (company?.company_name) {
       try {
-        const existingCompanyId = await searchHSCompany(company.company_name);
+        const existingCompanyId =
+          (await searchHSCompanyByBullseyeId(company.id)) ??
+          (await searchHSCompany(company.company_name));
         const hsCompanyId = await upsertHSCompany(
           {
             name:                 company.company_name,

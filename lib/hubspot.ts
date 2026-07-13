@@ -25,6 +25,20 @@ export async function searchHSCompany(name: string): Promise<string | null> {
   return d.results?.[0]?.id ?? null;
 }
 
+export async function searchHSCompanyByBullseyeId(companyId: string): Promise<string | null> {
+  const res = await fetch(`${HS}/crm/v3/objects/companies/search`, {
+    method: "POST",
+    headers: hsHeaders(),
+    body: JSON.stringify({
+      filterGroups: [{ filters: [{ propertyName: "bullseye_company_id", operator: "EQ", value: companyId }] }],
+      limit: 1,
+    }),
+  });
+  if (!res.ok) return null;
+  const d = await res.json();
+  return d.results?.[0]?.id ?? null;
+}
+
 export async function upsertHSCompany(
   props: Record<string, string | number | null | undefined>,
   existingId?: string | null

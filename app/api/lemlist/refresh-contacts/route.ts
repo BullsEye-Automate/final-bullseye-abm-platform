@@ -7,6 +7,7 @@ import {
   searchHSContact,
   upsertHSContact,
   searchHSCompany,
+  searchHSCompanyByBullseyeId,
   upsertHSCompany,
   associateContactCompany,
   patchHSContact,
@@ -221,7 +222,9 @@ export async function POST(req: NextRequest) {
 
       let hsCompanyId: string | null = null;
       if (companyName) {
-        const existingCompanyId = await searchHSCompany(companyName);
+        const existingCompanyId =
+          (contact.company_id ? await searchHSCompanyByBullseyeId(contact.company_id) : null) ??
+          (await searchHSCompany(companyName));
         hsCompanyId = await upsertHSCompany(
           { name: companyName, bullseye_fit_signals: fitSignals || undefined, bullseye_company_id: contact.company_id || undefined },
           existingCompanyId
