@@ -7,7 +7,7 @@ function hsHeaders() {
   };
 }
 
-function norm(s: string) {
+export function norm(s: string) {
   return s.toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9]/g, "");
 }
 
