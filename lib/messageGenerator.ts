@@ -411,13 +411,13 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
     const seqMessage = await anthropic().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 4096,
-      system: systemPrompt,
+      system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
       tools: [sequenceTool],
       tool_choice: { type: "tool", name: "generate_messages" },
       messages: [{ role: "user", content: sequencePrompt }],
     });
 
-    void logAiUsage({ clientId, functionName: "message_generation_sequence", model: CLAUDE_MODEL, inputTokens: seqMessage.usage.input_tokens, outputTokens: seqMessage.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
+    void logAiUsage({ clientId, functionName: "message_generation_sequence", model: CLAUDE_MODEL, inputTokens: seqMessage.usage.input_tokens, outputTokens: seqMessage.usage.output_tokens, cacheCreationInputTokens: seqMessage.usage.cache_creation_input_tokens, cacheReadInputTokens: seqMessage.usage.cache_read_input_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
     const seqToolUse = seqMessage.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (!seqToolUse) {
       const raw = seqMessage.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
@@ -503,13 +503,13 @@ Genera los mensajes de outreach personalizados para este contacto usando la herr
   const message = await anthropic().messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 2048,
-    system: systemPrompt,
+    system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
     tools: [tool],
     tool_choice: { type: "tool", name: "generate_messages" },
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  void logAiUsage({ clientId, functionName: "message_generation_simple", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
+  void logAiUsage({ clientId, functionName: "message_generation_simple", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, cacheCreationInputTokens: message.usage.cache_creation_input_tokens, cacheReadInputTokens: message.usage.cache_read_input_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
   // Extraer el resultado del tool_use
   const toolUse = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
 
@@ -555,11 +555,11 @@ async function reviewMessages(msgs: ContactMessages): Promise<ContactMessages> {
     const response = await anthropic().messages.create({
       model: HAIKU_MODEL,
       max_tokens: 3000,
-      system: REVIEW_SYSTEM_PROMPT,
+      system: [{ type: "text", text: REVIEW_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: userPrompt }],
     });
 
-    void logAiUsage({ functionName: "message_review_haiku", model: HAIKU_MODEL, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
+    void logAiUsage({ functionName: "message_review_haiku", model: HAIKU_MODEL, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens, cacheCreationInputTokens: response.usage.cache_creation_input_tokens, cacheReadInputTokens: response.usage.cache_read_input_tokens });
     const raw = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)
