@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { syncContactToHubSpot } from "@/lib/syncContactToHubSpot";
+import { pushContactsToLemlist } from "@/lib/lemlistPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,21 +32,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     await db.from("contacts").update({ fit_action: "enrich" }).eq("id", contact.id);
   }
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? (req.headers.get("host") ? `https://${req.headers.get("host")}` : "");
-  if (!baseUrl) return NextResponse.json({ error: "No se pudo resolver la URL base de la app" }, { status: 500 });
-
-  let lemlistResult: Record<string, unknown>;
-  try {
-    const res = await fetch(`${baseUrl}/api/lemlist/push`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: contact.client_id, contact_ids: [contact.id], force_regenerate: forceRegenerate }),
-    });
-    lemlistResult = await res.json().catch(() => ({}));
-    if (!res.ok) return NextResponse.json({ error: (lemlistResult as any)?.error ?? `Lemlist push ${res.status}` }, { status: res.status });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? "Error de red al enviar a Lemlist" }, { status: 502 });
-  }
+  const { status, result: lemlistResult } = await pushContactsToLemlist(db, {
+    client_id: contact.client_id,
+    contact_ids: [contact.id],
+    force_regenerate: forceRegenerate,
+  });
+  if (status !== 200) return NextResponse.json({ error: (lemlistResult as any)?.error ?? `Lemlist push ${status}` }, { status });
 
   const hubspotResult = await syncContactToHubSpot(db, contact.id);
 
