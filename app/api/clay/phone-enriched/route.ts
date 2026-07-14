@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { upsertHSContact, upsertHSCompany, searchHSContactByBullseyeId, searchHSContact, searchHSContactByLinkedinUrl, searchHSCompany, associateContactCompany, patchHSContact } from "@/lib/hubspot";
+import { pushContactsToLemlist } from "@/lib/lemlistPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -224,27 +225,19 @@ export async function POST(req: NextRequest) {
   let lemlist_response: any = null;
   try {
     const clientIdForLemlist = contact.client_id ?? contactFull?.client_id;
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-      ?? (req.headers.get("host") ? `https://${req.headers.get("host")}` : "");
 
-    console.log(`[phone-enriched] Lemlist push attempt: baseUrl=${baseUrl} client_id=${clientIdForLemlist}`);
+    console.log(`[phone-enriched] Lemlist push attempt: client_id=${clientIdForLemlist}`);
 
-    if (!baseUrl)              console.error("[phone-enriched] no baseUrl");
-    if (!clientIdForLemlist)   console.error("[phone-enriched] no client_id en contacto");
+    if (!clientIdForLemlist) console.error("[phone-enriched] no client_id en contacto");
 
-    if (baseUrl && clientIdForLemlist) {
-      const lemRes = await fetch(`${baseUrl}/api/lemlist/push`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_id:   clientIdForLemlist,
-          contact_ids: [contact.id],
-        }),
+    if (clientIdForLemlist) {
+      const { status, result } = await pushContactsToLemlist(db, {
+        client_id:   clientIdForLemlist,
+        contact_ids: [contact.id],
       });
-      const t = await lemRes.text().catch(() => "");
-      lemlist_pushed = lemRes.ok;
-      try { lemlist_response = JSON.parse(t); } catch { lemlist_response = t.slice(0, 300); }
-      console.log(`[phone-enriched] Lemlist push → status=${lemRes.status} pushed=${lemlist_response?.pushed} skipped=${lemlist_response?.skipped} reason=${lemlist_response?.reason} errors=${JSON.stringify(lemlist_response?.errors ?? []).slice(0, 200)}`);
+      lemlist_pushed = status === 200;
+      lemlist_response = result;
+      console.log(`[phone-enriched] Lemlist push → status=${status} pushed=${(result as any)?.pushed} skipped=${(result as any)?.skipped} reason=${(result as any)?.reason} errors=${JSON.stringify((result as any)?.errors ?? []).slice(0, 200)}`);
     }
   } catch (err: any) {
     console.error("[phone-enriched] Lemlist push exception:", err?.message);

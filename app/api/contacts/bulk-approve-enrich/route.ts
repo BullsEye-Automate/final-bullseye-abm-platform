@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { pushContactPhoneToClay } from "@/lib/clayPushContactPhone";
 import { syncContactToHubSpot } from "@/lib/syncContactToHubSpot";
+import { pushContactsToLemlist } from "@/lib/lemlistPush";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,10 +31,6 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!contacts?.length)
     return NextResponse.json({ pushed: 0, errors: 0, message: "No hay contactos por aprobar" });
-
-  // Resolver baseUrl para llamar a /api/lemlist/push internamente
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL
-    ?? (req.headers.get("host") ? `https://${req.headers.get("host")}` : "");
 
   let pushed       = 0;
   let errors       = 0;
@@ -67,21 +64,16 @@ export async function POST(req: NextRequest) {
     else { hsErrors++; console.error("[bulk-approve-enrich] HubSpot error:", hsResult.error); }
 
     // 4. BYPASS: Push a Lemlist sin esperar Clay
-    if (baseUrl && contact.client_id) {
+    if (contact.client_id) {
       try {
-        const lemRes = await fetch(`${baseUrl}/api/lemlist/push`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            client_id:   contact.client_id,
-            contact_ids: [contact.id],
-          }),
+        const { status, result } = await pushContactsToLemlist(db, {
+          client_id:   contact.client_id,
+          contact_ids: [contact.id],
         });
-        if (lemRes.ok) lemPushed++;
+        if (status === 200) lemPushed++;
         else {
           lemErrors++;
-          const t = await lemRes.text().catch(() => "");
-          console.error(`[bulk-approve-enrich] Lemlist push ${lemRes.status}:`, t.slice(0, 150));
+          console.error(`[bulk-approve-enrich] Lemlist push ${status}:`, JSON.stringify(result).slice(0, 150));
         }
       } catch (err: any) {
         lemErrors++;
