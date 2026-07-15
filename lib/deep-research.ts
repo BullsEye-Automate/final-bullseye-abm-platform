@@ -46,17 +46,21 @@ export async function runDeepResearch(opts: {
   const websiteRef  = companyWebsite  ? ` (${companyWebsite})`  : "";
   const countryRef  = companyCountry  ? ` en ${companyCountry}` : "";
 
-  const perplexityUser = `Investiga en detalle la empresa "${companyName}"${websiteRef}${countryRef}. El año actual es 2026. Necesito ÚNICAMENTE información de los últimos 6 meses (desde enero 2026 en adelante), con fechas exactas para cada dato.
+  // Extraer resumen del ICP para orientar la búsqueda (primeros 1200 chars son suficientes)
+  const icpSummary = icpContent?.trim()
+    ? `\nContexto del cliente que hace el outreach (úsalo para entender qué tipo de señales son relevantes):\n${icpContent.slice(0, 1200)}\n`
+    : "";
 
-1. **Noticias y eventos recientes (últimos 6 meses, con fecha)**: expansiones geográficas, nuevos mercados, lanzamientos de producto, inversiones, rondas de funding, hitos de crecimiento, premios o reconocimientos. INCLUIR la fecha de cada evento.
-2. **Equipo directivo actual**: CEO, Founder, VP de Ventas, VP de Marketing, Director Comercial, Head of Growth — nombres completos y cargos actuales según LinkedIn u fuentes verificables.
-3. **Señales comerciales recientes (con fecha)**: ¿están contratando SDRs, BDRs, Account Executives o roles de growth desde enero 2026? ¿participan en eventos B2B en 2026? ¿mencionan expansión en entrevistas o podcasts recientes?
-4. **Stack tecnológico actual**: CRM que usan (HubSpot, Salesforce, Pipedrive, Zoho...), herramientas de sales engagement, marketing automation.
-5. **Modelo comercial actual**: a quién venden, en qué mercados están activos, tamaño del equipo de ventas si se menciona.
-6. **Indicios de necesidad de ABM/prospección**: ¿dependen de inbound o referidos? ¿mencionan necesidad de pipeline más predecible?
+  const perplexityUser = `Investiga en detalle la empresa "${companyName}"${websiteRef}${countryRef}. El año actual es 2026. Necesito ÚNICAMENTE información de los últimos 6 meses (desde enero 2026 en adelante), con fechas exactas para cada dato.
+${icpSummary}
+1. **Noticias y eventos recientes (últimos 6 meses, con fecha)**: resultados financieros, adquisiciones, fusiones, expansiones geográficas, nuevos mercados, lanzamientos de producto o formato, inversiones, hitos de crecimiento, cambios organizacionales relevantes, premios o reconocimientos. INCLUIR la fecha de cada evento.
+2. **Cambios en el equipo directivo**: nuevos C-levels, VPs o directores nombrados desde enero 2026 — nombres completos y cargos.
+3. **Señales de transformación o presión del negocio (con fecha)**: ¿han anunciado reestructuraciones, nuevas iniciativas estratégicas, cambios de modelo de negocio, problemas operacionales o de rentabilidad? ¿Mencionan prioridades para 2026 en entrevistas, reportes o notas de prensa?
+4. **Señales relevantes para el contexto del cliente**: dado el contexto del cliente descrito arriba, ¿qué está haciendo esta empresa que conecte con esa propuesta de valor? Busca eventos, declaraciones o cambios que sean señales de compra o dolor.
+5. **Equipo comercial y stack tecnológico**: CRM que usan, herramientas de marketing/ventas, tamaño del equipo comercial si se menciona.
 
 IMPORTANTE: Para cada dato, indica la fecha o fuente con fecha. Si no encuentras información reciente (desde enero 2026), indícalo explícitamente en lugar de usar información más antigua.
-Prioriza fuentes verificables: LinkedIn, notas de prensa, entrevistas, podcasts, blogs de la empresa, AngelList, Crunchbase.`;
+Prioriza fuentes verificables: LinkedIn, notas de prensa, reportes financieros, entrevistas, podcasts, blogs oficiales, Crunchbase.`;
 
   const research = await perplexitySearch({
     system: "Eres un asistente de research B2B especializado en investigar empresas específicas. Busca información pública verificable y reciente. Cita todas las fuentes con URL.",
