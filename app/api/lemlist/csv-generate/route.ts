@@ -194,7 +194,41 @@ export async function POST(req: NextRequest) {
         icpContent:      icpContext,
       });
 
-      // Guardar en Supabase con timestamp actualizado
+      const NO_SIGNAL_TRIGGERS = [
+        "sin señales recientes verificadas en la evidencia disponible",
+        "sin trigger detectado",
+      ];
+      const newHasSignals = !NO_SIGNAL_TRIGGERS.some((p) =>
+        result.trigger.toLowerCase().trim().startsWith(p)
+      );
+
+      // Si la nueva investigación no tiene señales pero la anterior sí, conservar la anterior
+      let existingHasSignals = false;
+      if (!newHasSignals && company?.deep_research) {
+        try {
+          const existing = typeof company.deep_research === "string"
+            ? JSON.parse(company.deep_research)
+            : company.deep_research;
+          existingHasSignals = existing?.trigger &&
+            !NO_SIGNAL_TRIGGERS.some((p) => existing.trigger.toLowerCase().trim().startsWith(p));
+        } catch { /* si falla el parse, ignorar */ }
+      }
+
+      if (!newHasSignals && existingHasSignals) {
+        // Conservar la investigación anterior — solo renovar el TTL para no re-investigar pronto
+        if (company?.id) {
+          await db.from("companies")
+            .update({ deep_research_updated_at: new Date().toISOString() })
+            .eq("id", company.id);
+        }
+        const existing = typeof company!.deep_research === "string"
+          ? JSON.parse(company!.deep_research)
+          : company!.deep_research;
+        deepResearchCache.set(key, existing);
+        return existing;
+      }
+
+      // Guardar la nueva investigación (con o sin señales)
       if (company?.id) {
         await db.from("companies")
           .update({ deep_research: JSON.stringify(result), deep_research_updated_at: new Date().toISOString() })
