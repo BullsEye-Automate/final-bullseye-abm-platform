@@ -289,10 +289,13 @@ export async function generateContactMessages(
 
   // Si el trigger indica que no hay señales verificables, ignorar el deepResearch
   // para que el modelo genere un correo normal basado en ICP en lugar de bloquearse
-  const NO_SIGNAL_PATTERNS = ["sin señales recientes", "sin señales", "no se encontr", "sin trigger"];
+  // Descartar deep research solo cuando el trigger es explícitamente el placeholder de "sin señales"
+  const NO_SIGNAL_TRIGGERS = [
+    "sin señales recientes verificadas en la evidencia disponible",
+    "sin trigger detectado",
+  ];
   const hasValidDeepResearch = deepResearch &&
-    !NO_SIGNAL_PATTERNS.some((p) => deepResearch.trigger.toLowerCase().includes(p)) &&
-    deepResearch.trigger.toLowerCase() !== "sin trigger detectado";
+    !NO_SIGNAL_TRIGGERS.some((p) => deepResearch.trigger.toLowerCase().trim().startsWith(p));
 
   const deepResearchContext = hasValidDeepResearch
     ? [
