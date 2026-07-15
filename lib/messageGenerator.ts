@@ -399,7 +399,7 @@ ${contactInfo || "No disponibles"}
 
 ${hasValidDeepResearch
   ? (mode === "sequence"
-    ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+    ? "REGLA CRÍTICA PARA EL PRIMER MENSAJE: La primera oración del cuerpo DEBE partir de la señal concreta de la investigación (un hecho verificable con fecha: anuncio, resultado financiero, adquisición, expansión, cambio organizacional). PROHIBIDO abrir con una descripción genérica de la empresa ('opera en varios países', 'es uno de los retailers más grandes', 'cuenta con múltiples marcas' o similares) — eso NO es una señal. La señal va en la primera oración, no enterrada en el segundo párrafo."
     : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
@@ -495,7 +495,7 @@ ${contactInfo || "No disponibles"}
 
 ${hasValidDeepResearch
   ? (mode === "sequence"
-    ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+    ? "REGLA CRÍTICA PARA EL PRIMER MENSAJE: La primera oración del cuerpo DEBE partir de la señal concreta de la investigación (un hecho verificable con fecha: anuncio, resultado financiero, adquisición, expansión, cambio organizacional). PROHIBIDO abrir con una descripción genérica de la empresa ('opera en varios países', 'es uno de los retailers más grandes', 'cuenta con múltiples marcas' o similares) — eso NO es una señal. La señal va en la primera oración, no enterrada en el segundo párrafo."
     : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
