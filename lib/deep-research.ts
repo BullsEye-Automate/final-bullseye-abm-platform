@@ -23,7 +23,7 @@ Reglas ESTRICTAS e INNEGOCIABLES:
 3. SOLO incluye señales de los últimos 6 meses. Si la evidencia solo tiene información más antigua, indícalo claramente en el trigger en lugar de usarla como si fuera reciente.
 4. Si la evidencia NO contiene señales recientes verificables, el trigger debe decir explícitamente "Sin señales recientes verificadas en la evidencia disponible" — NO inventes un trigger plausible.
 5. Los decisores SOLO si están mencionados con nombre completo y cargo exacto en la evidencia. Sin suposiciones de cargo por título de LinkedIn.
-6. El año actual es 2026. Cualquier evento de 2025 o anterior que no sea de los últimos 6 meses NO es reciente.
+6. El año actual es 2026. Los últimos 6 meses son desde enero 2026. Cualquier evento anterior a enero 2026 NO es reciente.
 
 Devuelve SIEMPRE JSON válido con esta forma exacta:
 {
@@ -46,16 +46,16 @@ export async function runDeepResearch(opts: {
   const websiteRef  = companyWebsite  ? ` (${companyWebsite})`  : "";
   const countryRef  = companyCountry  ? ` en ${companyCountry}` : "";
 
-  const perplexityUser = `Investiga en detalle la empresa "${companyName}"${websiteRef}${countryRef}. El año actual es 2026. Necesito ÚNICAMENTE información de los últimos 6 meses (desde julio 2025 en adelante), con fechas exactas para cada dato.
+  const perplexityUser = `Investiga en detalle la empresa "${companyName}"${websiteRef}${countryRef}. El año actual es 2026. Necesito ÚNICAMENTE información de los últimos 6 meses (desde enero 2026 en adelante), con fechas exactas para cada dato.
 
 1. **Noticias y eventos recientes (últimos 6 meses, con fecha)**: expansiones geográficas, nuevos mercados, lanzamientos de producto, inversiones, rondas de funding, hitos de crecimiento, premios o reconocimientos. INCLUIR la fecha de cada evento.
 2. **Equipo directivo actual**: CEO, Founder, VP de Ventas, VP de Marketing, Director Comercial, Head of Growth — nombres completos y cargos actuales según LinkedIn u fuentes verificables.
-3. **Señales comerciales recientes (con fecha)**: ¿están contratando SDRs, BDRs, Account Executives o roles de growth desde julio 2025? ¿participan en eventos B2B en 2026? ¿mencionan expansión en entrevistas o podcasts recientes?
+3. **Señales comerciales recientes (con fecha)**: ¿están contratando SDRs, BDRs, Account Executives o roles de growth desde enero 2026? ¿participan en eventos B2B en 2026? ¿mencionan expansión en entrevistas o podcasts recientes?
 4. **Stack tecnológico actual**: CRM que usan (HubSpot, Salesforce, Pipedrive, Zoho...), herramientas de sales engagement, marketing automation.
 5. **Modelo comercial actual**: a quién venden, en qué mercados están activos, tamaño del equipo de ventas si se menciona.
 6. **Indicios de necesidad de ABM/prospección**: ¿dependen de inbound o referidos? ¿mencionan necesidad de pipeline más predecible?
 
-IMPORTANTE: Para cada dato, indica la fecha o fuente con fecha. Si no encuentras información reciente (últimos 6 meses), indícalo explícitamente en lugar de usar información más antigua.
+IMPORTANTE: Para cada dato, indica la fecha o fuente con fecha. Si no encuentras información reciente (desde enero 2026), indícalo explícitamente en lugar de usar información más antigua.
 Prioriza fuentes verificables: LinkedIn, notas de prensa, entrevistas, podcasts, blogs de la empresa, AngelList, Crunchbase.`;
 
   const research = await perplexitySearch({
