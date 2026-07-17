@@ -21,6 +21,8 @@ import {
   IconFolderOpen,
   IconTrash,
   IconPencil,
+  IconShare,
+  IconCheck as IconCheckSmall,
 } from "@tabler/icons-react";
 import Link from "next/link";
 
@@ -288,6 +290,8 @@ export default function CampanasPage() {
   const [groups, setGroups]         = useState<MessageGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
+  const [sharingGroupId, setSharingGroupId]   = useState<string | null>(null);
+  const [copiedGroupId, setCopiedGroupId]     = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [filter, setFilter]         = useState<FilterState>("all");
   const [search, setSearch]         = useState("");
@@ -359,6 +363,31 @@ export default function CampanasPage() {
     if (!confirm("¿Eliminar este grupo de mensajes?")) return;
     await fetch(`/api/message-groups/${id}`, { method: "DELETE" });
     setGroups((prev) => prev.filter((g) => g.id !== id));
+  }
+
+  async function shareGroup(g: MessageGroup) {
+    setSharingGroupId(g.id);
+    try {
+      const res = await fetch("/api/review-sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_name: g.name,
+          group_id:    g.id,
+          contacts:    [{}], // requerido por la API; el link leerá en tiempo real desde group_id
+        }),
+      });
+      if (!res.ok) throw new Error();
+      const { token } = await res.json();
+      const url = `${window.location.origin}/revision/${token}`;
+      await navigator.clipboard.writeText(url);
+      setCopiedGroupId(g.id);
+      setTimeout(() => setCopiedGroupId(null), 2500);
+    } catch {
+      alert("No se pudo generar el link de revisión");
+    } finally {
+      setSharingGroupId(null);
+    }
   }
 
   async function renameGroup(id: string, name: string) {
@@ -950,12 +979,26 @@ export default function CampanasPage() {
                             </span>
                           </div>
                         </div>
-                        <button
-                          onClick={() => deleteGroup(g.id)}
-                          className="text-ink-muted hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition shrink-0 mt-0.5"
-                        >
-                          <IconTrash size={15} />
-                        </button>
+                        <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                          <button
+                            onClick={() => shareGroup(g)}
+                            disabled={sharingGroupId === g.id}
+                            title="Copiar link de revisión"
+                            className="text-ink-muted hover:text-[#62E0D8] p-1.5 rounded-lg hover:bg-[#F0FDFB] transition disabled:opacity-50"
+                          >
+                            {sharingGroupId === g.id
+                              ? <IconLoader2 size={15} className="animate-spin" />
+                              : copiedGroupId === g.id
+                                ? <IconCheckSmall size={15} className="text-emerald-500" />
+                                : <IconShare size={15} />}
+                          </button>
+                          <button
+                            onClick={() => deleteGroup(g.id)}
+                            className="text-ink-muted hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 transition"
+                          >
+                            <IconTrash size={15} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
