@@ -34,7 +34,17 @@ type ShareContact = {
   last_name: string | null;
   company_name: string | null;
   job_title: string | null;
+  email: string | null;
   email_subject: string | null;
+  email_body: string | null;
+  email_subject_2: string | null;
+  email_body_2: string | null;
+  email_subject_3: string | null;
+  email_body_3: string | null;
+  connect_message: string | null;
+  icebreaker: string | null;
+  linkedin_msg_2: string | null;
+  segment_name: string | null;
   status: string;
 };
 
@@ -399,13 +409,30 @@ export default function CampanasPage() {
     setShareLoading(true);
     try {
       const selected = shareModal.contacts.filter((c) => shareSelected.has(c.contact_index));
+      // Mapear campos de DB al formato GeneratedContact que espera la review session
+      const contacts = selected.map((c) => ({
+        firstName:      c.first_name,
+        lastName:       c.last_name,
+        email:          c.email,
+        jobTitle:       c.job_title,
+        companyName:    c.company_name,
+        emailSubject:   c.email_subject,
+        emailBody:      c.email_body,
+        emailSubject2:  c.email_subject_2,
+        emailBody2:     c.email_body_2,
+        emailSubject3:  c.email_subject_3,
+        emailBody3:     c.email_body_3,
+        connectMessage: c.connect_message,
+        icebreaker:     c.icebreaker,
+        linkedinMsg2:   c.linkedin_msg_2,
+        segmentName:    c.segment_name,
+      }));
       const res = await fetch("/api/review-sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           client_name: shareModal.group.name,
-          group_id:    shareModal.group.id,
-          contacts:    selected,
+          contacts,   // snapshot con ediciones incluidas; sin group_id para evitar sobreescritura
         }),
       });
       if (!res.ok) throw new Error();
