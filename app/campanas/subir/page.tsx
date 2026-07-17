@@ -561,6 +561,14 @@ export default function SubirCampanaPage() {
     });
     const d = await res.json();
     setPushResult(d);
+    // Marcar el grupo como enviado en Supabase
+    if (generation.groupId) {
+      fetch(`/api/message-groups/${generation.groupId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "sent" }),
+      }).catch(() => {});
+    }
     // Limpiar contexto de generación para que el indicador del sidebar desaparezca
     generation.resetGeneration();
     setStage("done");

@@ -975,7 +975,7 @@ export default function CampanasPage() {
                               : g.status === "sent" ? "bg-blue-50 text-blue-700"
                               : "bg-amber-50 text-amber-700"
                             }`}>
-                              {g.status === "ready" ? "Listo" : g.status === "sent" ? "Enviado" : "Generando…"}
+                              {g.status === "ready" ? "Listo" : g.status === "sent" ? "✓ Enviado a Lemlist" : "Generando…"}
                             </span>
                           </div>
                         </div>
