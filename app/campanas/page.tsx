@@ -28,6 +28,16 @@ import Link from "next/link";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
+type ShareContact = {
+  contact_index: number;
+  first_name: string | null;
+  last_name: string | null;
+  company_name: string | null;
+  job_title: string | null;
+  email_subject: string | null;
+  status: string;
+};
+
 type MessageGroup = {
   id: string;
   name: string;
@@ -292,6 +302,9 @@ export default function CampanasPage() {
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
   const [sharingGroupId, setSharingGroupId]   = useState<string | null>(null);
   const [copiedGroupId, setCopiedGroupId]     = useState<string | null>(null);
+  const [shareModal, setShareModal] = useState<{ group: MessageGroup; contacts: ShareContact[] } | null>(null);
+  const [shareSelected, setShareSelected] = useState<Set<number>>(new Set());
+  const [shareLoading, setShareLoading] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [filter, setFilter]         = useState<FilterState>("all");
   const [search, setSearch]         = useState("");
@@ -368,25 +381,44 @@ export default function CampanasPage() {
   async function shareGroup(g: MessageGroup) {
     setSharingGroupId(g.id);
     try {
+      const res = await fetch(`/api/message-groups/${g.id}/contacts`);
+      if (!res.ok) throw new Error();
+      const contacts: ShareContact[] = await res.json();
+      const eligible = contacts.filter((c) => c.status === "generated");
+      setShareModal({ group: g, contacts: eligible });
+      setShareSelected(new Set(eligible.map((c) => c.contact_index)));
+    } catch {
+      alert("No se pudieron cargar los contactos");
+    } finally {
+      setSharingGroupId(null);
+    }
+  }
+
+  async function confirmShare() {
+    if (!shareModal) return;
+    setShareLoading(true);
+    try {
+      const selected = shareModal.contacts.filter((c) => shareSelected.has(c.contact_index));
       const res = await fetch("/api/review-sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          client_name: g.name,
-          group_id:    g.id,
-          contacts:    [{}], // requerido por la API; el link leerá en tiempo real desde group_id
+          client_name: shareModal.group.name,
+          group_id:    shareModal.group.id,
+          contacts:    selected,
         }),
       });
       if (!res.ok) throw new Error();
       const { token } = await res.json();
       const url = `${window.location.origin}/revision/${token}`;
       await navigator.clipboard.writeText(url);
-      setCopiedGroupId(g.id);
+      setCopiedGroupId(shareModal.group.id);
       setTimeout(() => setCopiedGroupId(null), 2500);
+      setShareModal(null);
     } catch {
       alert("No se pudo generar el link de revisión");
     } finally {
-      setSharingGroupId(null);
+      setShareLoading(false);
     }
   }
 
@@ -1007,6 +1039,71 @@ export default function CampanasPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Modal de selección para compartir link de revisión */}
+      {shareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
+            <div className="px-5 py-4 border-b border-[#E5E2F0]">
+              <h3 className="text-sm font-semibold text-ink">Selecciona los contactos a incluir</h3>
+              <p className="text-xs text-ink-muted mt-0.5">{shareModal.group.name}</p>
+            </div>
+            <div className="flex items-center justify-between px-5 py-2 border-b border-[#E5E2F0]">
+              <span className="text-xs text-ink-muted">{shareSelected.size} de {shareModal.contacts.length} seleccionados</span>
+              <button
+                className="text-xs text-[#62E0D8] font-medium hover:underline"
+                onClick={() => setShareSelected(
+                  shareSelected.size === shareModal.contacts.length
+                    ? new Set()
+                    : new Set(shareModal.contacts.map((c) => c.contact_index))
+                )}
+              >
+                {shareSelected.size === shareModal.contacts.length ? "Deseleccionar todos" : "Seleccionar todos"}
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1 divide-y divide-[#F1EEF7]">
+              {shareModal.contacts.map((c) => (
+                <label key={c.contact_index} className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-[#F9F8FC]">
+                  <input
+                    type="checkbox"
+                    checked={shareSelected.has(c.contact_index)}
+                    onChange={() => setShareSelected((prev) => {
+                      const next = new Set(prev);
+                      next.has(c.contact_index) ? next.delete(c.contact_index) : next.add(c.contact_index);
+                      return next;
+                    })}
+                    className="accent-[#62E0D8] w-4 h-4 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-ink truncate">
+                      {[c.first_name, c.last_name].filter(Boolean).join(" ") || "Sin nombre"}
+                    </div>
+                    <div className="text-xs text-ink-muted truncate">
+                      {[c.job_title, c.company_name].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <div className="px-5 py-4 border-t border-[#E5E2F0] flex gap-2 justify-end">
+              <button
+                onClick={() => setShareModal(null)}
+                className="text-sm px-4 py-2 rounded-lg border border-[#E5E2F0] text-ink-muted hover:bg-[#F9F8FC] transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmShare}
+                disabled={shareSelected.size === 0 || shareLoading}
+                className="text-sm px-4 py-2 rounded-lg bg-[#62E0D8] text-[#251762] font-semibold hover:bg-[#4ecdc4] transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {shareLoading && <IconLoader2 size={14} className="animate-spin" />}
+                Copiar link ({shareSelected.size})
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
