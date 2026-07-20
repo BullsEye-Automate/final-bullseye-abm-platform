@@ -143,8 +143,15 @@ export async function intakeContactsForCompany(
       dupKey = linkedin; dupMap = existingByUrl; dupSeen = seenUrl;
     } else if (email && seenEmail.has(email)) {
       dupKey = email; dupMap = existingByEmail; dupSeen = seenEmail;
-    } else if (!linkedin && !email && nameKey !== EMPTY_NAME_KEY && seenNameInCompany.has(nameKey)) {
-      dupKey = nameKey; dupMap = existingByNameInCompany; dupSeen = seenNameInCompany;
+    } else if (nameKey !== EMPTY_NAME_KEY && seenNameInCompany.has(nameKey)) {
+      // Solo dedup por nombre si el existente YA estaba sin linkedin_url/email
+      // (es uno de los contactos "rotos" que hay que backfillear). Si el existente
+      // ya tiene su propio identificador, dos personas distintas con el mismo
+      // nombre en la misma empresa no deben fusionarse.
+      const candidate = existingByNameInCompany.get(nameKey);
+      if (candidate && !candidate.linkedin_url && !candidate.email) {
+        dupKey = nameKey; dupMap = existingByNameInCompany; dupSeen = seenNameInCompany;
+      }
     }
 
     if (dupKey && dupMap && dupSeen) {
