@@ -122,7 +122,11 @@ function mapRawLead(raw: Record<string, unknown>): LemlistLeadDetail {
   }
 
   const email = pick(raw, "email") || pick(vars, "email");
-  const linkedinUrl = pick(raw, "linkedinUrl", "linkedin_url") || pick(vars, "linkedinUrl", "linkedin_url");
+  // Los leads agregados desde LinkedIn Sales Navigator traen el LinkedIn bajo
+  // linkedinUrlSalesNav, no linkedinUrl (ver enrich-existing/route.ts:87).
+  const linkedinUrl =
+    pick(raw, "linkedinUrl", "linkedin_url", "linkedinUrlSalesNav") ||
+    pick(vars, "linkedinUrl", "linkedin_url", "linkedinUrlSalesNav");
   const phone = pick(raw, "phone") || pick(vars, "phone");
   const jobTitle = pick(raw, "jobTitle", "job_title", "title") || pick(vars, "jobTitle", "job_title", "tagline");
   let companyName = pick(raw, "companyName", "company_name", "company") || pick(vars, "companyName", "company_name", "company");
@@ -215,7 +219,12 @@ export async function getCampaignLeadsWithDetails(
     const cVars = (c.vars ?? c.fields ?? {}) as Record<string, unknown>;
 
     if (!lead.email) lead.email = orNull(pick(c, "email") || pick(cVars, "email"));
-    if (!lead.linkedin_url) lead.linkedin_url = orNull(pick(c, "linkedinUrl", "linkedin_url") || pick(cVars, "linkedinUrl", "linkedin_url"));
+    if (!lead.linkedin_url) {
+      lead.linkedin_url = orNull(
+        pick(c, "linkedinUrl", "linkedin_url", "linkedinUrlSalesNav") ||
+        pick(cVars, "linkedinUrl", "linkedin_url", "linkedinUrlSalesNav")
+      );
+    }
     if (!lead.phone) lead.phone = orNull(pick(c, "phone") || pick(cVars, "phone"));
 
     if (!lead.first_name && !lead.last_name) {
