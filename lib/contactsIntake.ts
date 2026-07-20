@@ -177,6 +177,16 @@ export async function intakeContactsForCompany(
           if (c.seniority?.trim() && !prev.seniority) {
             update.seniority = c.seniority;
           }
+          // Backfill de linkedin_url/email: si el contacto ya existía (matcheado
+          // por nombre porque en su import original faltaban ambos campos) y esta
+          // vuelta sí trae alguno, hay que guardarlo — si no, un re-import nunca
+          // repara contactos que quedaron sin email/LinkedIn por un bug de parseo.
+          if (normalized && !prev.linkedin_url) {
+            update.linkedin_url = normalized;
+          }
+          if (email && !prev.email) {
+            update.email = c.email ?? null;
+          }
           if (Object.keys(update).length > 0) {
             await db.from("contacts").update(update).eq("id", prev.id);
           }
