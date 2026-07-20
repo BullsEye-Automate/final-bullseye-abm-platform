@@ -26,6 +26,7 @@ type Meeting = {
   industria: string | null;
   pais: string | null;
   fecha_reunion: string | null;
+  sdr_nombre: string | null;
   realizado: "Si" | "No" | "Pendiente" | "Reagendar";
   feedback_status: "pendiente" | "con_feedback";
   meeting_feedback: Feedback[];
@@ -59,13 +60,17 @@ const PRESETS = [
 ];
 
 // ── Componentes ───────────────────────────────────────────────────────────────
-function KpiCard({ label, value, sub, color }: { label: string; value: string | number; sub?: string; color?: string }) {
+function KpiCard({ label, value, sub, color, onClick }: { label: string; value: string | number; sub?: string; color?: string; onClick?: () => void }) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+    <Tag
+      onClick={onClick}
+      className={`bg-white rounded-xl border border-gray-100 shadow-sm p-4 text-left w-full ${onClick ? "cursor-pointer hover:shadow-md hover:border-gray-200 transition" : ""}`}
+    >
       <div className="text-2xl font-bold" style={{ color: color ?? "#111827" }}>{value}</div>
       <div className="text-xs text-gray-500 mt-0.5">{label}</div>
       {sub && <div className="text-[11px] text-gray-400 mt-0.5">{sub}</div>}
-    </div>
+    </Tag>
   );
 }
 
@@ -174,6 +179,37 @@ function PropuestaModal({
   );
 }
 
+// ── Modal: listado de reuniones con feedback ──────────────────────────────────
+function FeedbackListModal({ meetings, onClose }: { meetings: Meeting[]; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full" style={{ background: "#62E0D8" }} />
+            <h2 className="text-base font-semibold text-gray-900">Con feedback</h2>
+            <span className="text-xs text-gray-400 ml-1">({meetings.length})</span>
+          </div>
+          <button onClick={onClose}><IconX size={18} className="text-gray-400" /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4 space-y-2">
+          {meetings.map(m => (
+            <div key={m.id} className="border border-gray-100 rounded-xl p-3">
+              <p className="font-medium text-gray-900 text-sm">{m.empresa}</p>
+              <p className="text-xs text-gray-500">
+                {[m.contacto_nombre, m.contacto_cargo].filter(Boolean).join(" · ")}
+                {m.fecha_reunion && ` · ${new Date(m.fecha_reunion + "T12:00:00").toLocaleDateString("es-CL", { day: "2-digit", month: "short" })}`}
+                {m.sdr_nombre && ` · SDR: ${m.sdr_nombre}`}
+              </p>
+            </div>
+          ))}
+          {meetings.length === 0 && <p className="text-sm text-gray-400 text-center py-8">Sin reuniones con feedback</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Función de agrupación para insights ───────────────────────────────────────
 function groupByAvg(items: { key: string; score: number }[], minCount = 1) {
   const map = new Map<string, number[]>();
@@ -197,6 +233,7 @@ export default function ResultadosPage() {
   const [preset, setPreset]     = useState("todo");
   const [presetOpen, setPresetOpen] = useState(false);
   const [propuestaModal, setPropuestaModal] = useState<string | null>(null);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
   const load = useCallback(async () => {
     if (clientLoading) return;
@@ -399,7 +436,7 @@ export default function ResultadosPage() {
           <div className="grid grid-cols-4 gap-4">
             <KpiCard label="Con feedback" value={conFb.length}
               sub={realizadas.length > 0 ? `${Math.round((conFb.length / realizadas.length) * 100)}% de realizadas` : undefined}
-              color="#62E0D8" />
+              color="#62E0D8" onClick={() => setShowFeedbackModal(true)} />
             <KpiCard label="Sin feedback" value={realizadas.length - conFb.length} color="#f59e0b" />
             <KpiCard label="Calificación promedio" value={`${calPromedio}/10`} color="#251762" />
             <KpiCard label="Pendientes" value={pendientes.length} />
@@ -686,6 +723,11 @@ export default function ResultadosPage() {
           onClose={() => setPropuestaModal(null)}
           onUpdated={() => { setPropuestaModal(null); load(); }}
         />
+      )}
+
+      {/* Modal con feedback */}
+      {showFeedbackModal && (
+        <FeedbackListModal meetings={conFb} onClose={() => setShowFeedbackModal(false)} />
       )}
     </div>
   );
