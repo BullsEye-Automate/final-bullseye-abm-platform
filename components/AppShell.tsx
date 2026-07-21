@@ -9,7 +9,7 @@ import Sidebar from "./Sidebar";
 // middleware es quien decide qué requiere sesión, no esta lista.
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPublic = pathname?.startsWith("/forms/") || pathname?.startsWith("/review/") || pathname?.startsWith("/chat") || pathname?.startsWith("/encuesta/") || pathname?.startsWith("/feedback-cliente/") || pathname?.startsWith("/revision/") || pathname?.startsWith("/login");
+  const isPublic = pathname?.startsWith("/forms/") || pathname?.startsWith("/review/") || pathname?.startsWith("/chat") || pathname?.startsWith("/encuesta/") || pathname?.startsWith("/feedback-cliente/") || pathname?.startsWith("/revision/") || pathname?.startsWith("/oportunidades/resultados/compartido/") || pathname?.startsWith("/login");
 
   if (isPublic) {
     return <>{children}</>;

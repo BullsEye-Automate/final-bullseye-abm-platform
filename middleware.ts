@@ -12,6 +12,7 @@ const PUBLIC_PAGE_PREFIXES = [
   "/forms/icp",
   "/review/empresas",
   "/revision",
+  "/oportunidades/resultados/compartido",
 ];
 
 // Rutas de API públicas: cada una valida su propio token o secreto de webhook
@@ -38,6 +39,12 @@ function isPublicPath(pathname: string, method: string): boolean {
   // /api/review-sessions/[token] (consulta puntual del link de revisión) es
   // público, pero /api/review-sessions (crear sesión) es interno.
   if (/^\/api\/review-sessions\/[^/]+/.test(pathname)) {
+    return true;
+  }
+  // /api/resultados-compartidos/[token] (consulta puntual del dashboard
+  // compartido) es público; /api/resultados-compartidos (generar el link)
+  // requiere sesión.
+  if (/^\/api\/resultados-compartidos\/[^/]+/.test(pathname)) {
     return true;
   }
   // /api/feedback-config solo se expone en lectura (lo consume la página
