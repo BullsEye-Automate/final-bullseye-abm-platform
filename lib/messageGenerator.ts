@@ -287,18 +287,28 @@ export async function generateContactMessages(
 
   const systemPrompt = buildSystemPrompt(styleGuide, fewShotExamples, segmentContext);
 
-  const deepResearchContext = deepResearch
+  // Si el trigger indica que no hay señales verificables, ignorar el deepResearch
+  // para que el modelo genere un correo normal basado en ICP en lugar de bloquearse
+  // Descartar deep research solo cuando el trigger es explícitamente el placeholder de "sin señales"
+  const NO_SIGNAL_TRIGGERS = [
+    "sin señales recientes verificadas en la evidencia disponible",
+    "sin trigger detectado",
+  ];
+  const hasValidDeepResearch = deepResearch &&
+    !NO_SIGNAL_TRIGGERS.some((p) => deepResearch.trigger.toLowerCase().trim().startsWith(p));
+
+  const deepResearchContext = hasValidDeepResearch
     ? [
         "\nInvestigación profunda de la empresa:",
-        `- Trigger actual: ${deepResearch.trigger}`,
-        `- Ángulo de mensaje: ${deepResearch.angulo}`,
-        deepResearch.senales?.length
-          ? `- Señales concretas verificadas:\n${deepResearch.senales.map((s) => `  • ${s}`).join("\n")}`
+        `- Trigger actual: ${deepResearch!.trigger}`,
+        `- Ángulo de mensaje: ${deepResearch!.angulo}`,
+        deepResearch!.senales?.length
+          ? `- Señales concretas verificadas:\n${deepResearch!.senales.map((s) => `  • ${s}`).join("\n")}`
           : null,
-        deepResearch.decisores?.length
-          ? `- Decisores identificados: ${deepResearch.decisores.join(", ")}`
+        deepResearch!.decisores?.length
+          ? `- Decisores identificados: ${deepResearch!.decisores.join(", ")}`
           : null,
-        `- Resumen ejecutivo: ${deepResearch.resumen_ejecutivo}`,
+        `- Resumen ejecutivo: ${deepResearch!.resumen_ejecutivo}`,
       ].filter(Boolean).join("\n")
     : "";
 
@@ -387,9 +397,9 @@ ${icpContext ?? "No disponible"}${deepResearchContext}
 Datos del contacto:
 ${contactInfo || "No disponibles"}
 
-${deepResearch
+${hasValidDeepResearch
   ? (mode === "sequence"
-    ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+    ? "REGLA CRÍTICA PARA EL PRIMER MENSAJE: La primera oración del cuerpo DEBE partir de la señal concreta de la investigación (un hecho verificable con fecha: anuncio, resultado financiero, adquisición, expansión, cambio organizacional). PROHIBIDO abrir con una descripción genérica de la empresa ('opera en varios países', 'es uno de los retailers más grandes', 'cuenta con múltiples marcas' o similares) — eso NO es una señal. La señal va en la primera oración, no enterrada en el segundo párrafo."
     : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`
@@ -483,9 +493,9 @@ ${icpContext ?? "No disponible"}${deepResearchContext}
 Datos del contacto:
 ${contactInfo || "No disponibles"}
 
-${deepResearch
+${hasValidDeepResearch
   ? (mode === "sequence"
-    ? "IMPORTANTE: el primer mensaje DEBE mencionar explícitamente al menos una señal concreta de la investigación (un hecho verificable: expansión, contratación, noticia, funding, nuevo mercado). No uses el trigger en abstracto — cita el dato real. El receptor debe notar que investigaste su empresa específicamente."
+    ? "REGLA CRÍTICA PARA EL PRIMER MENSAJE: La primera oración del cuerpo DEBE partir de la señal concreta de la investigación (un hecho verificable con fecha: anuncio, resultado financiero, adquisición, expansión, cambio organizacional). PROHIBIDO abrir con una descripción genérica de la empresa ('opera en varios países', 'es uno de los retailers más grandes', 'cuenta con múltiples marcas' o similares) — eso NO es una señal. La señal va en la primera oración, no enterrada en el segundo párrafo."
     : "Si hay señales concretas en la investigación, úsalas para personalizar el mensaje. Si no hay señales recientes verificadas, genera igualmente el mensaje basándote en el ICP y lo que sabes de la empresa.")
   : companyName
     ? `IMPORTANTE: personaliza el mensaje usando lo que sabes de ${companyName} — su industria, modelo de negocio, desafíos típicos del sector y cómo se relacionan con lo que ofrece el cliente. No describas al cliente en abstracto; ancla el mensaje a la realidad específica de ${companyName}.`

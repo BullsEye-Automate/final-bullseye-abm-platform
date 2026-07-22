@@ -23,7 +23,7 @@ Reglas ESTRICTAS e INNEGOCIABLES:
 3. SOLO incluye señales de los últimos 6 meses. Si la evidencia solo tiene información más antigua, indícalo claramente en el trigger en lugar de usarla como si fuera reciente.
 4. Si la evidencia NO contiene señales recientes verificables, el trigger debe decir explícitamente "Sin señales recientes verificadas en la evidencia disponible" — NO inventes un trigger plausible.
 5. Los decisores SOLO si están mencionados con nombre completo y cargo exacto en la evidencia. Sin suposiciones de cargo por título de LinkedIn.
-6. El año actual es 2026. Cualquier evento de 2025 o anterior que no sea de los últimos 6 meses NO es reciente.
+6. El año actual es 2026. Los últimos 6 meses son desde enero 2026. Cualquier evento anterior a enero 2026 NO es reciente.
 
 Devuelve SIEMPRE JSON válido con esta forma exacta:
 {
@@ -46,17 +46,21 @@ export async function runDeepResearch(opts: {
   const websiteRef  = companyWebsite  ? ` (${companyWebsite})`  : "";
   const countryRef  = companyCountry  ? ` en ${companyCountry}` : "";
 
-  const perplexityUser = `Investiga en detalle la empresa "${companyName}"${websiteRef}${countryRef}. El año actual es 2026. Necesito ÚNICAMENTE información de los últimos 6 meses (desde julio 2025 en adelante), con fechas exactas para cada dato.
+  // Extraer resumen del ICP para orientar la búsqueda (primeros 1200 chars son suficientes)
+  const icpSummary = icpContent?.trim()
+    ? `\nContexto del cliente que hace el outreach (úsalo para entender qué tipo de señales son relevantes):\n${icpContent.slice(0, 1200)}\n`
+    : "";
 
-1. **Noticias y eventos recientes (últimos 6 meses, con fecha)**: expansiones geográficas, nuevos mercados, lanzamientos de producto, inversiones, rondas de funding, hitos de crecimiento, premios o reconocimientos. INCLUIR la fecha de cada evento.
-2. **Equipo directivo actual**: CEO, Founder, VP de Ventas, VP de Marketing, Director Comercial, Head of Growth — nombres completos y cargos actuales según LinkedIn u fuentes verificables.
-3. **Señales comerciales recientes (con fecha)**: ¿están contratando SDRs, BDRs, Account Executives o roles de growth desde julio 2025? ¿participan en eventos B2B en 2026? ¿mencionan expansión en entrevistas o podcasts recientes?
-4. **Stack tecnológico actual**: CRM que usan (HubSpot, Salesforce, Pipedrive, Zoho...), herramientas de sales engagement, marketing automation.
-5. **Modelo comercial actual**: a quién venden, en qué mercados están activos, tamaño del equipo de ventas si se menciona.
-6. **Indicios de necesidad de ABM/prospección**: ¿dependen de inbound o referidos? ¿mencionan necesidad de pipeline más predecible?
+  const perplexityUser = `Investiga en detalle la empresa "${companyName}"${websiteRef}${countryRef}. El año actual es 2026. Necesito ÚNICAMENTE información de los últimos 6 meses (desde enero 2026 en adelante), con fechas exactas para cada dato.
+${icpSummary}
+1. **Señales relevantes para el contexto del cliente**: dado el contexto del cliente descrito arriba, ¿qué está haciendo esta empresa que conecte con esa propuesta de valor? Busca eventos, declaraciones públicas, cambios organizacionales, resultados, iniciativas o problemas que sean señales claras de dolor o de compra. INCLUIR fecha para cada señal.
+2. **Noticias y eventos recientes (últimos 6 meses, con fecha)**: cualquier cambio significativo en la empresa — nuevos productos, mercados, inversiones, adquisiciones, reestructuraciones, hitos, premios. INCLUIR la fecha de cada evento.
+3. **Cambios en el equipo directivo**: nuevos líderes nombrados desde enero 2026 — nombres completos y cargos exactos.
+4. **Declaraciones estratégicas**: ¿mencionan prioridades, desafíos o apuestas para 2026 en entrevistas, reportes, notas de prensa o redes sociales?
+5. **Equipo comercial y stack tecnológico**: herramientas que usan, tamaño del equipo si se menciona.
 
-IMPORTANTE: Para cada dato, indica la fecha o fuente con fecha. Si no encuentras información reciente (últimos 6 meses), indícalo explícitamente en lugar de usar información más antigua.
-Prioriza fuentes verificables: LinkedIn, notas de prensa, entrevistas, podcasts, blogs de la empresa, AngelList, Crunchbase.`;
+IMPORTANTE: Para cada dato, indica la fecha o fuente con fecha. Si no encuentras información reciente (desde enero 2026), indícalo explícitamente en lugar de usar información más antigua.
+Prioriza fuentes verificables: LinkedIn, notas de prensa, reportes financieros, entrevistas, podcasts, blogs oficiales, Crunchbase.`;
 
   const research = await perplexitySearch({
     system: "Eres un asistente de research B2B especializado en investigar empresas específicas. Busca información pública verificable y reciente. Cita todas las fuentes con URL.",
