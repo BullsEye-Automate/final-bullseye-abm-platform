@@ -19,17 +19,17 @@ export async function syncContactToHubSpot(
 ): Promise<{ ok: boolean; hsId?: string; error?: string }> {
   const { data: contact } = await db
     .from("contacts")
-    .select("id, client_id, first_name, last_name, job_title, email, phone, phone_clay, phone_lusha, linkedin_url, company_id, fit_score")
+    .select("id, client_id, first_name, last_name, job_title, email, phone, phone_clay, phone_lusha, linkedin_url, company_id, fit_score, hubspot_contact_id")
     .eq("id", contactId)
     .maybeSingle();
 
   if (!contact) return { ok: false, error: "Contact not found" };
 
-  let company: { id: string; company_name: string | null; fit_signals: string | null } | null = null;
+  let company: { id: string; company_name: string | null; fit_signals: string | null; hubspot_company_id: string | null } | null = null;
   if (contact.company_id) {
     const { data } = await db
       .from("companies")
-      .select("id, company_name, fit_signals")
+      .select("id, company_name, fit_signals, hubspot_company_id")
       .eq("id", contact.company_id)
       .maybeSingle();
     company = data;
@@ -37,6 +37,7 @@ export async function syncContactToHubSpot(
 
   try {
     const existingId =
+      contact.hubspot_contact_id ??
       (await searchHSContactByBullseyeId(contact.id)) ??
       (contact.email ? await searchHSContact(contact.email) : null);
 
@@ -56,11 +57,15 @@ export async function syncContactToHubSpot(
 
     const hsId = await upsertHSContact(hsProps, existingId);
     if (!hsId) return { ok: false, error: "HubSpot upsert returned null" };
+    if (hsId !== contact.hubspot_contact_id) {
+      await db.from("contacts").update({ hubspot_contact_id: hsId }).eq("id", contact.id);
+    }
 
     // Asociar empresa
     if (company?.company_name) {
       try {
         const existingCompanyId =
+          company.hubspot_company_id ??
           (await searchHSCompanyByBullseyeId(company.id)) ??
           (await searchHSCompany(company.company_name));
         const hsCompanyId = await upsertHSCompany(
@@ -71,6 +76,9 @@ export async function syncContactToHubSpot(
           },
           existingCompanyId
         );
+        if (hsCompanyId && hsCompanyId !== company.hubspot_company_id) {
+          await db.from("companies").update({ hubspot_company_id: hsCompanyId }).eq("id", company.id);
+        }
         if (hsCompanyId) await associateContactCompany(hsId, hsCompanyId);
       } catch (err: any) {
         console.error(`[syncContactToHubSpot] company association error:`, err?.message);
