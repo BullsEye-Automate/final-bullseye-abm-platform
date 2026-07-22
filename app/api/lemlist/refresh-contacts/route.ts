@@ -7,6 +7,7 @@ import {
   searchHSContact,
   upsertHSContact,
   searchHSCompany,
+  searchHSCompanyByBullseyeId,
   upsertHSCompany,
   associateContactCompany,
   patchHSContact,
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
 
   const { data: contacts } = await db
     .from("contacts")
-    .select("id, first_name, last_name, job_title, linkedin_headline, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, seniority, fit_score, status")
+    .select("id, first_name, last_name, job_title, linkedin_headline, email, phone, phone_source, linkedin_url, company_id, email_subject, email_body, linkedin_icebreaker, seniority, fit_score, status, hubspot_contact_id")
     .eq("client_id", body.client_id)
     .not("lemlist_pushed_at", "is", null);
 
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
   const companyIds = [...new Set(contacts.map((c) => c.company_id).filter(Boolean))];
   const { data: companies } = await db
     .from("companies")
-    .select("id, company_name, fit_signals")
+    .select("id, company_name, fit_signals, hubspot_company_id")
     .in("id", companyIds);
   const companyById = new Map((companies ?? []).map((c) => [c.id, c]));
 
@@ -163,7 +164,8 @@ export async function POST(req: NextRequest) {
 
       // 2. Buscar contacto existente en HubSpot
       const existingContactId =
-        await searchHSContactByBullseyeId(contact.id) ??
+        contact.hubspot_contact_id ??
+        (await searchHSContactByBullseyeId(contact.id)) ??
         (contact.email ? await searchHSContact(contact.email) : null);
 
       // Solo crear nuevo si ya tiene email o teléfono; siempre actualizar si ya existe en HubSpot
@@ -221,11 +223,18 @@ export async function POST(req: NextRequest) {
 
       let hsCompanyId: string | null = null;
       if (companyName) {
-        const existingCompanyId = await searchHSCompany(companyName);
+        const existingCompanyId =
+          company?.hubspot_company_id ??
+          (contact.company_id ? await searchHSCompanyByBullseyeId(contact.company_id) : null) ??
+          (await searchHSCompany(companyName));
         hsCompanyId = await upsertHSCompany(
           { name: companyName, bullseye_fit_signals: fitSignals || undefined, bullseye_company_id: contact.company_id || undefined },
           existingCompanyId
         );
+        if (hsCompanyId && company && hsCompanyId !== company.hubspot_company_id) {
+          company.hubspot_company_id = hsCompanyId;
+          await db.from("companies").update({ hubspot_company_id: hsCompanyId }).eq("id", company.id);
+        }
       }
 
       const contactProps: Record<string, string | number | null | undefined> = {
@@ -253,6 +262,9 @@ export async function POST(req: NextRequest) {
 
       const hsContactId = await upsertHSContact(contactProps, existingContactId);
       if (!hsContactId) { synced++; continue; }
+      if (hsContactId !== contact.hubspot_contact_id) {
+        await db.from("contacts").update({ hubspot_contact_id: hsContactId }).eq("id", contact.id);
+      }
 
       if (hsCompanyId) await associateContactCompany(hsContactId, hsCompanyId);
 

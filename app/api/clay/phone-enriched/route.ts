@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { upsertHSContact, upsertHSCompany, searchHSContactByBullseyeId, searchHSContact, searchHSContactByLinkedinUrl, searchHSCompany, associateContactCompany, patchHSContact } from "@/lib/hubspot";
+import { upsertHSContact, upsertHSCompany, searchHSContactByBullseyeId, searchHSContact, searchHSContactByLinkedinUrl, searchHSCompany, searchHSCompanyByBullseyeId, associateContactCompany, patchHSContact } from "@/lib/hubspot";
 import { pushContactsToLemlist } from "@/lib/lemlistPush";
 
 export const runtime = "nodejs";
@@ -150,18 +150,18 @@ export async function POST(req: NextRequest) {
   // Cargar más datos del contacto para enriquecer la creación en HubSpot
   const { data: contactFull } = await db
     .from("contacts")
-    .select("id, client_id, first_name, last_name, job_title, email, phone, linkedin_url, company_id")
+    .select("id, client_id, first_name, last_name, job_title, email, phone, linkedin_url, company_id, hubspot_contact_id")
     .eq("id", contactId)
     .maybeSingle();
 
   console.log(`[phone-enriched] contactId=${contactId} email=${contactFull?.email ?? "null"} linkedin=${contactFull?.linkedin_url ?? "null"} phone_clay=${phoneRaw}`);
 
   // Buscar empresa asociada para crearla/asociarla en HubSpot
-  let company: { id: string; company_name: string | null; fit_signals: string | null } | null = null;
+  let company: { id: string; company_name: string | null; fit_signals: string | null; hubspot_company_id: string | null } | null = null;
   if (contactFull?.company_id) {
     const { data } = await db
       .from("companies")
-      .select("id, company_name, fit_signals")
+      .select("id, company_name, fit_signals, hubspot_company_id")
       .eq("id", contactFull.company_id)
       .maybeSingle();
     company = data;
@@ -170,6 +170,7 @@ export async function POST(req: NextRequest) {
   // Push a HubSpot (crear o actualizar — siempre, aunque no haya email)
   try {
     const existingId =
+      contactFull?.hubspot_contact_id ??
       (await searchHSContactByBullseyeId(contact.id)) ??
       (contactFull?.email ? await searchHSContact(contactFull.email) : null);
 
@@ -195,11 +196,17 @@ export async function POST(req: NextRequest) {
 
     const hsId = await upsertHSContact(hsProps, existingId);
     console.log(`[phone-enriched] HubSpot upsert contact → hsId=${hsId ?? "null"} (existing=${!!existingId})`);
+    if (hsId && hsId !== contactFull?.hubspot_contact_id) {
+      await db.from("contacts").update({ hubspot_contact_id: hsId }).eq("id", contactId);
+    }
 
     // Asociar empresa en HubSpot
     if (hsId && company?.company_name) {
       try {
-        const existingCompanyId = await searchHSCompany(company.company_name);
+        const existingCompanyId =
+          company.hubspot_company_id ??
+          (await searchHSCompanyByBullseyeId(company.id)) ??
+          (await searchHSCompany(company.company_name));
         const hsCompanyId = await upsertHSCompany(
           {
             name:                 company.company_name,
@@ -208,6 +215,9 @@ export async function POST(req: NextRequest) {
           },
           existingCompanyId
         );
+        if (hsCompanyId && hsCompanyId !== company.hubspot_company_id) {
+          await db.from("companies").update({ hubspot_company_id: hsCompanyId }).eq("id", company.id);
+        }
         if (hsCompanyId) {
           await associateContactCompany(hsId, hsCompanyId);
           console.log(`[phone-enriched] HubSpot company asociada → hsCompanyId=${hsCompanyId} name=${company.company_name}`);

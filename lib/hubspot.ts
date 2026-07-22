@@ -7,7 +7,7 @@ function hsHeaders() {
   };
 }
 
-function norm(s: string) {
+export function norm(s: string) {
   return s.toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9]/g, "");
 }
 
@@ -23,6 +23,71 @@ export async function searchHSCompany(name: string): Promise<string | null> {
   if (!res.ok) return null;
   const d = await res.json();
   return d.results?.[0]?.id ?? null;
+}
+
+export async function searchHSCompanyByBullseyeId(companyId: string): Promise<string | null> {
+  const res = await fetch(`${HS}/crm/v3/objects/companies/search`, {
+    method: "POST",
+    headers: hsHeaders(),
+    body: JSON.stringify({
+      filterGroups: [{ filters: [{ propertyName: "bullseye_company_id", operator: "EQ", value: companyId }] }],
+      limit: 1,
+    }),
+  });
+  if (!res.ok) return null;
+  const d = await res.json();
+  return d.results?.[0]?.id ?? null;
+}
+
+export type HSCompanyRecord = {
+  id: string;
+  properties: {
+    name?: string;
+    bullseye_company_id?: string;
+    createdate?: string;
+    hs_object_source_label?: string;
+  };
+};
+
+export async function listAllHSCompanies(
+  properties: string[] = ["name", "bullseye_company_id", "createdate", "hs_object_source_label"]
+): Promise<HSCompanyRecord[]> {
+  const all: HSCompanyRecord[] = [];
+  let after: string | undefined;
+  let pages = 0;
+  const MAX_PAGES = 300; // hasta 30k empresas, suficiente margen de seguridad
+
+  do {
+    const url = new URL(`${HS}/crm/v3/objects/companies`);
+    url.searchParams.set("limit", "100");
+    url.searchParams.set("properties", properties.join(","));
+    if (after) url.searchParams.set("after", after);
+
+    const res = await fetch(url.toString(), { headers: hsHeaders() });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`HubSpot ${res.status} listando empresas: ${text.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    all.push(...(data.results ?? []));
+    after = data.paging?.next?.after;
+    pages++;
+  } while (after && pages < MAX_PAGES);
+
+  return all;
+}
+
+// Fusiona objectIdToMerge dentro de primaryId (HubSpot mueve asociaciones/contactos
+// al primario y archiva el duplicado). No se puede deshacer.
+export async function mergeHSCompanies(primaryId: string, mergeId: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`${HS}/crm/v3/objects/companies/merge`, {
+    method: "POST",
+    headers: hsHeaders(),
+    body: JSON.stringify({ primaryObjectId: primaryId, objectIdToMerge: mergeId }),
+  });
+  if (res.ok) return { ok: true };
+  const text = await res.text().catch(() => "");
+  return { ok: false, error: text.slice(0, 300) };
 }
 
 export async function upsertHSCompany(
