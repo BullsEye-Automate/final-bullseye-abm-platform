@@ -1,20 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { norm } from "@/lib/hubspot";
+import { norm, listAllHSCompanies, type HSCompanyRecord } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const HS = "https://api.hubapi.com";
-
-type HSCompany = {
-  id: string;
-  properties: {
-    name?: string;
-    bullseye_company_id?: string;
-    createdate?: string;
-    hs_object_source_label?: string;
-  };
-};
 
 // Escanea TODAS las empresas del portal (solo lectura) y agrupa por nombre normalizado
 // para detectar duplicados generados por la integración BullsEye Prospecting App.
@@ -24,34 +12,18 @@ export async function GET(req: NextRequest) {
 
   const onlyIntegration = req.nextUrl.searchParams.get("all") !== "1";
 
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-  const all: HSCompany[] = [];
-  let after: string | undefined;
-  let pages = 0;
-  const MAX_PAGES = 300; // hasta 30k empresas, suficiente margen de seguridad
-
-  do {
-    const url = new URL(`${HS}/crm/v3/objects/companies`);
-    url.searchParams.set("limit", "100");
-    url.searchParams.set("properties", "name,bullseye_company_id,createdate,hs_object_source_label");
-    if (after) url.searchParams.set("after", after);
-
-    const res = await fetch(url.toString(), { headers });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      return NextResponse.json({ error: `HubSpot ${res.status}`, detail: text.slice(0, 300), scanned: all.length }, { status: 502 });
-    }
-    const data = await res.json();
-    all.push(...(data.results ?? []));
-    after = data.paging?.next?.after;
-    pages++;
-  } while (after && pages < MAX_PAGES);
+  let all;
+  try {
+    all = await listAllHSCompanies();
+  } catch (err: any) {
+    return NextResponse.json({ error: err?.message ?? "Error listando empresas" }, { status: 502 });
+  }
 
   const pool = onlyIntegration
     ? all.filter((c) => c.properties.hs_object_source_label === "INTEGRATION")
     : all;
 
-  const groups = new Map<string, HSCompany[]>();
+  const groups = new Map<string, HSCompanyRecord[]>();
   for (const c of pool) {
     const name = c.properties.name?.trim();
     if (!name) continue;
