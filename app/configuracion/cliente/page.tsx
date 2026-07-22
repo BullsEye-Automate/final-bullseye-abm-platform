@@ -14,6 +14,7 @@ import {
   IconUpload,
   IconTrash,
   IconCopy,
+  IconGitMerge,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -95,6 +96,10 @@ export default function ConfigClientePage() {
   const [hsSetupResult, setHsSetupResult] = useState<string | null>(null);
   const [hsLists, setHsLists]             = useState<"idle" | "running" | "done" | "error">("idle");
   const [hsListsResult, setHsListsResult] = useState<string | null>(null);
+  const [dupScan, setDupScan]             = useState<"idle" | "running" | "done" | "error">("idle");
+  const [dupPlan, setDupPlan]             = useState<{ eligible_groups: number; extra_records_to_merge: number; requires_manual_review: { name: string; ids: string[] }[] } | null>(null);
+  const [dupMerge, setDupMerge]           = useState<"idle" | "running" | "done" | "error">("idle");
+  const [dupMergeResult, setDupMergeResult] = useState<string | null>(null);
 
   const [excluded, setExcluded]             = useState<ExcludedCompany[]>([]);
   const [excludedLoading, setExcludedLoading] = useState(false);
@@ -187,6 +192,46 @@ export default function ConfigClientePage() {
     } catch (e: any) {
       setHsSetup("error");
       setHsSetupResult(e.message ?? "Error de red");
+    }
+  }
+
+  async function scanDuplicateCompanies() {
+    setDupScan("running");
+    setDupPlan(null);
+    setDupMerge("idle");
+    setDupMergeResult(null);
+    try {
+      const res = await fetch("/api/hubspot/duplicate-companies/merge");
+      const d   = await res.json();
+      if (!res.ok) { setDupScan("error"); setDupMergeResult(d.error ?? "Error"); return; }
+      setDupPlan(d);
+      setDupScan("done");
+    } catch (e: any) {
+      setDupScan("error");
+      setDupMergeResult(e.message ?? "Error de red");
+    }
+  }
+
+  async function mergeDuplicateCompanies() {
+    if (!dupPlan || dupPlan.extra_records_to_merge === 0) return;
+    const ok = window.confirm(
+      `Se van a fusionar ${dupPlan.extra_records_to_merge} empresas duplicadas en HubSpot (${dupPlan.eligible_groups} grupos). ` +
+      `Esta acción NO se puede deshacer. ¿Confirmás?`
+    );
+    if (!ok) return;
+
+    setDupMerge("running");
+    setDupMergeResult(null);
+    try {
+      const res = await fetch("/api/hubspot/duplicate-companies/merge?confirm=1", { method: "POST" });
+      const d   = await res.json();
+      if (!res.ok) { setDupMerge("error"); setDupMergeResult(d.error ?? "Error"); return; }
+      setDupMergeResult(`${d.merged_ok} fusionadas OK${d.merged_failed ? `, ${d.merged_failed} con error` : ""}`);
+      setDupMerge(d.merged_failed > 0 ? "error" : "done");
+      setDupPlan(null);
+    } catch (e: any) {
+      setDupMerge("error");
+      setDupMergeResult(e.message ?? "Error de red");
     }
   }
 
@@ -539,6 +584,58 @@ export default function ConfigClientePage() {
                   </span>
                 )}
               </div>
+            </div>
+
+            <div className="border-t border-border" />
+
+            {/* Empresas duplicadas en HubSpot */}
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Empresas duplicadas en HubSpot</p>
+              <p className="text-xs text-ink-muted">
+                Detecta empresas creadas más de una vez por la integración (mismo{" "}
+                <code className="bg-surface-2 px-1 rounded">bullseye_company_id</code>) y las fusiona en HubSpot,
+                que mueve automáticamente contactos y asociaciones a la más antigua. Esta acción es irreversible.
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={scanDuplicateCompanies}
+                  disabled={dupScan === "running"}
+                  className="btn-secondary flex items-center gap-2 text-sm"
+                >
+                  {dupScan === "running"
+                    ? <IconLoader2 size={15} className="animate-spin" />
+                    : <IconGitMerge size={15} />}
+                  {dupScan === "running" ? "Escaneando…" : "Detectar duplicados"}
+                </button>
+                {dupPlan && (
+                  <span className="text-xs text-ink-muted">
+                    {dupPlan.extra_records_to_merge > 0
+                      ? `${dupPlan.extra_records_to_merge} empresas de sobra en ${dupPlan.eligible_groups} grupos`
+                      : "Sin duplicados seguros de fusionar"}
+                    {dupPlan.requires_manual_review.length > 0 &&
+                      ` · ${dupPlan.requires_manual_review.length} nombre(s) repetido(s) requieren revisión manual`}
+                  </span>
+                )}
+              </div>
+              {dupPlan && dupPlan.extra_records_to_merge > 0 && (
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={mergeDuplicateCompanies}
+                    disabled={dupMerge === "running"}
+                    className="btn-secondary flex items-center gap-2 text-sm text-danger-fg"
+                  >
+                    {dupMerge === "running"
+                      ? <IconLoader2 size={15} className="animate-spin" />
+                      : <IconGitMerge size={15} />}
+                    {dupMerge === "running" ? "Fusionando…" : `Fusionar ${dupPlan.extra_records_to_merge} duplicados ahora`}
+                  </button>
+                  {dupMergeResult && (
+                    <span className={`text-xs ${dupMerge === "error" ? "text-danger-fg" : "text-success-fg"}`}>
+                      {dupMergeResult}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </section>
         </>
