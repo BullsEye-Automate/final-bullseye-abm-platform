@@ -4,9 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 const CRON_SECRET = process.env.CRON_SECRET;
 
-// POST: Crea un snapshot de backup de todos los feedbacks
-// Puede ser llamado manualmente o por un cron job
-export async function POST(req: NextRequest) {
+// Crear backup
+async function createBackup(req: NextRequest) {
   const supabase = supabaseAdmin();
 
   // Validar si es un cron job (opcional)
@@ -78,10 +77,17 @@ export async function POST(req: NextRequest) {
   });
 }
 
-// GET: Lista todos los snapshots de backup realizados
+// GET: Crea backup o lista snapshots existentes
 export async function GET(req: NextRequest) {
   const supabase = supabaseAdmin();
+  const { searchParams } = new URL(req.url);
 
+  // ?action=create para crear un backup nuevo
+  if (searchParams.get("action") === "create") {
+    return createBackup(req);
+  }
+
+  // Por defecto: listar snapshots
   const { data: snapshots, error } = await supabase
     .from("feedback_backup_snapshots")
     .select("id, snapshot_date, total_feedbacks, created_at")
@@ -96,4 +102,9 @@ export async function GET(req: NextRequest) {
     total_snapshots: snapshots?.length ?? 0,
     snapshots: snapshots ?? [],
   });
+}
+
+// POST: También permite crear backup
+export async function POST(req: NextRequest) {
+  return createBackup(req);
 }
