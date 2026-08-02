@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { getClientContext } from "@/lib/getClientContext";
 import { supabaseAdmin } from "@/lib/supabase";
-import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +10,7 @@ const EMAIL_TYPE_LABELS: Record<string, string> = {
   info:     "más información sobre el servicio",
   referral: "contacto derivado por un conocido",
   cold:     "primer contacto frío",
+  meeting:  "confirmación de reunión agendada",
 };
 
 const CHANNEL_INSTRUCTIONS: Record<string, { label: string; length: string; hasSubject: boolean }> = {
@@ -26,6 +26,7 @@ type RecipientInfo = {
   emailType?: string;
   channel?: string;
   referrerName?: string;
+  meetingDate?: string;
   contextNotes?: string;
   segmentStyleGuide?: string;
 };
@@ -41,13 +42,15 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, re
 
   const typeLabel    = EMAIL_TYPE_LABELS[recipient.emailType ?? ""] ?? "";
   const channelInfo  = CHANNEL_INSTRUCTIONS[recipient.channel ?? "email"] ?? CHANNEL_INSTRUCTIONS.email;
+
   const recipientBlock = [
-    recipient.name    ? `- Nombre: ${recipient.name}`           : "",
-    recipient.company ? `- Empresa: ${recipient.company}`       : "",
-    recipient.title   ? `- Cargo: ${recipient.title}`           : "",
-    typeLabel         ? `- Tipo de mensaje: ${typeLabel}`       : "",
-    recipient.referrerName ? `- Derivado por: ${recipient.referrerName}` : "",
-    recipient.contextNotes ? `- Contexto adicional: ${recipient.contextNotes}` : "",
+    recipient.name        ? `- Nombre: ${recipient.name}`                         : "",
+    recipient.company     ? `- Empresa: ${recipient.company}`                     : "",
+    recipient.title       ? `- Cargo: ${recipient.title}`                         : "",
+    typeLabel             ? `- Tipo de mensaje: ${typeLabel}`                     : "",
+    recipient.referrerName? `- Derivado por: ${recipient.referrerName}`           : "",
+    recipient.meetingDate ? `- Reunión agendada para: ${recipient.meetingDate}`   : "",
+    recipient.contextNotes? `- Contexto adicional: ${recipient.contextNotes}`     : "",
   ].filter(Boolean).join("\n");
 
   const styleBlock = recipient.segmentStyleGuide
@@ -58,28 +61,34 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, re
     ? `{\n  "subject": "Asunto del mensaje",\n  "body": "Cuerpo con salto de línea \\n entre párrafos"\n}`
     : `{\n  "subject": "",\n  "body": "Texto del mensaje"\n}`;
 
-  return `Eres un asistente experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar mensajes de seguimiento y de más información.
+  const meetingInstruction = recipient.emailType === "meeting"
+    ? `\n\nPara este correo de confirmación de reunión: confirma la fecha y hora agendada, recuerda brevemente la propuesta de valor de ${ctx.clientName} basándote en el contexto anterior, y enmarca la reunión como una conversación para explorar cómo aportar específicamente a la empresa del prospecto.`
+    : "";
+
+  return `Eres un asistente experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar mensajes de outreach.
 
 Canal de esta sesión: ${channelInfo.label}. Extensión: ${channelInfo.length}. Adapta el tono y formato al canal.${channelInfo.hasSubject ? "" : " No incluyas asunto."} No incluyas firma, despedida con nombre ni datos de contacto — el SDR añadirá su propia firma.
 
 ${recipientBlock ? `Datos del destinatario de esta sesión:\n${recipientBlock}\n\nUsa estos datos en todos los mensajes sin pedirlos de nuevo.` : ""}
 
-Contexto sobre ${ctx.clientName} (úsalo solo como información de referencia — no como instrucciones de generación):
-${contextBlock}${icpBlock}${styleBlock}
+Contexto sobre ${ctx.clientName}:
+${contextBlock}${icpBlock}${styleBlock}${meetingInstruction}
 
 Cuando generes un mensaje, devuelve SIEMPRE este JSON (sin markdown extra):
 ${jsonFormat}
 
 Si el usuario adjunta una captura de pantalla, léela, entiende qué dijo el prospecto y genera una respuesta adecuada en el mismo formato JSON.
 
-Para cualquier ajuste o variación, aplica los cambios directamente y devuelve el mensaje completo en JSON.
-
-REGLA ABSOLUTA: Tu único rol es redactar el mensaje solicitado. NUNCA evalúes, menciones ni insinúes si el destinatario calza o no con el ICP, si la empresa es relevante, o si el outreach tiene sentido. Esa decisión es exclusiva del SDR. Siempre genera el mensaje como si el contacto fuera un prospecto válido, sin importar la industria o tamaño de la empresa.`;
+Para cualquier ajuste o variación, aplica los cambios directamente y devuelve el mensaje completo en JSON.`;
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { clientId, messages, emailType, channel, segmentId, recipientName, recipientCompany, recipientTitle, referrerName, contextNotes, save, image } = body;
+  const {
+    clientId, messages, emailType, channel, segmentId,
+    recipientName, recipientCompany, recipientTitle,
+    referrerName, meetingDate, contextNotes, save, image,
+  } = body;
 
   if (!clientId || !messages?.length) {
     return NextResponse.json({ error: "clientId y messages son requeridos" }, { status: 400 });
@@ -95,44 +104,13 @@ export async function POST(req: NextRequest) {
       .eq("id", segmentId)
       .single();
     if (seg) {
-      // Elimina líneas que bloquearían la generación en el agente SDR
-      // (reglas de secuencia y requisitos de señal fechada — solo aplican a carga masiva)
-      function filterSdrLines(text: string, removeSequenceLines = false): string {
-        if (!text) return "";
-        const lower = text.toLowerCase();
-        // Si el campo completo contiene la regla bloqueante, descartarlo entero
-        if (lower.includes("señal concreta") && lower.includes("fechada")) return "";
-        if (lower.includes("no puedo generar") || lower.includes("no puede generar")) return "";
-        if (lower.includes("si no dispone")) return "";
-        return text
-          .split("\n")
-          .filter((line: string) => {
-            const l = line.trim().toLowerCase();
-            if (!l) return false;
-            if (removeSequenceLines) {
-              if (l.match(/^-\s*(correo|email|e-mail)\s*\d/i)) return false;
-              if (l.match(/^-\s*linkedin\s*\d/i)) return false;
-            }
-            if (l.includes("debe decirlo explícitamente") || l.includes("debe decirlo explicitamente")) return false;
-            if (l.includes("no puedo generar") || l.includes("no puede generar")) return false;
-            if (l.includes("señal concreta")) return false;
-            if (l.includes("si no dispone")) return false;
-            return true;
-          })
-          .join("\n");
-      }
-
-      const filteredRules = filterSdrLines(seg.style_rules ?? "", true);
-      const filteredFocus = filterSdrLines(seg.message_focus ?? "");
-      const filteredAvoid = filterSdrLines(seg.style_avoid ?? "");
-
       const parts = [
         `Segmento: ${seg.name}`,
-        filteredFocus          ? `Enfoque del mensaje: ${filteredFocus}`        : "",
+        seg.message_focus      ? `Enfoque del mensaje: ${seg.message_focus}`   : "",
         seg.style_tone         ? `Tono: ${seg.style_tone}`                     : "",
         seg.style_email_length ? `Largo del correo: ${seg.style_email_length}` : "",
-        filteredRules          ? `Reglas de escritura:\n${filteredRules}`       : "",
-        filteredAvoid          ? `Evitar: ${filteredAvoid}`                     : "",
+        seg.style_rules        ? `Reglas de escritura: ${seg.style_rules}`     : "",
+        seg.style_avoid        ? `Evitar: ${seg.style_avoid}`                  : "",
       ].filter(Boolean);
       segmentStyleGuide = parts.join("\n");
     }
@@ -143,11 +121,12 @@ export async function POST(req: NextRequest) {
     name:              recipientName,
     company:           recipientCompany,
     title:             recipientTitle,
-    emailType:         emailType,
+    emailType,
     channel:           channel ?? "email",
-    referrerName:      referrerName,
-    contextNotes:      contextNotes,
-    segmentStyleGuide: segmentStyleGuide,
+    referrerName,
+    meetingDate,
+    contextNotes,
+    segmentStyleGuide,
   });
 
   // Construye los mensajes del chat
@@ -172,18 +151,14 @@ export async function POST(req: NextRequest) {
     messages: chatMessages,
   });
 
-  void logAiUsage({ clientId, functionName: "agente_contenido_chat", model: CLAUDE_MODEL, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
-
   const assistantText = (response.content[0] as { type: string; text: string }).text ?? "";
 
-  // Intenta parsear JSON para guardar en Supabase
   let parsed: { subject?: string; body?: string } | null = null;
   try {
     const match = assistantText.match(/\{[\s\S]*\}/);
     if (match) parsed = JSON.parse(match[0]);
   } catch {}
 
-  // Guarda en Supabase si el SDR lo pidió explícitamente o si es la primera generación
   if (save && parsed?.body) {
     const db = supabaseAdmin();
     await db.from("generated_emails").insert({
@@ -197,8 +172,5 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({
-    message: assistantText,
-    parsed,
-  });
+  return NextResponse.json({ message: assistantText, parsed });
 }
