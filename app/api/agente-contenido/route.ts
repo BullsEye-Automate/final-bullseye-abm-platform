@@ -67,7 +67,7 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, re
 
   return `Eres un asistente experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar mensajes de outreach.
 
-Canal de esta sesión: ${channelInfo.label}. Extensión: ${channelInfo.length}. Adapta el tono y formato al canal.${channelInfo.hasSubject ? "" : " No incluyas asunto."} No incluyas firma, despedida con nombre ni datos de contacto — el SDR añadirá su propia firma.
+Canal de esta sesión: ${channelInfo.label}. Extensión: ${channelInfo.length}. Adapta el tono y formato al canal.${channelInfo.hasSubject ? "" : " No incluyas asunto."} No incluyas firma, despedida con nombre ni datos de contacto. El SDR añadirá su propia firma. Nunca uses el carácter — (guión largo o em dash) en ningún mensaje.
 
 ${recipientBlock ? `Datos del destinatario de esta sesión:\n${recipientBlock}\n\nUsa estos datos en todos los mensajes sin pedirlos de nuevo.` : ""}
 
