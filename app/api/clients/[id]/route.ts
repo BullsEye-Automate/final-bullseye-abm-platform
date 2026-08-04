@@ -109,6 +109,21 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   const db = supabaseAdmin();
+
+  // Protección: verificar si el cliente tiene reuniones con feedback
+  const { data: feedbackCount } = await db
+    .rpc("count_feedback_for_client", { client_id: params.id })
+    .single();
+
+  if (feedbackCount && feedbackCount.count > 0) {
+    return NextResponse.json(
+      {
+        error: `No se puede eliminar. El cliente tiene ${feedbackCount.count} reuniones con feedback. Primero debe archivar/mover estas reuniones o eliminar el feedback.`,
+      },
+      { status: 409 }
+    );
+  }
+
   const { error } = await db
     .from("clients")
     .delete()

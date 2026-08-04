@@ -904,6 +904,7 @@ export default function FeedbackPage() {
   const [syncPreview, setSyncPreview] = useState<any[] | null>(null);
   const [deletingMeeting, setDeletingMeeting] = useState<Meeting | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
+  const [propuestaFilter, setPropuestaFilter] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -1109,9 +1110,17 @@ export default function FeedbackPage() {
     const fb: any = Array.isArray(raw) ? raw[0] : raw ?? null;
     return fb?.sdr_seleccionado === sdrFilter || m.sdr_nombre === sdrFilter;
   });
-  const pendientes  = filtered.filter(m => m.realizado === "Si" && m.feedback_status === "pendiente");
-  const conFeedback = filtered.filter(m => m.feedback_status === "con_feedback");
-  const otras       = filtered.filter(m => m.realizado !== "Si" && m.feedback_status === "pendiente");
+
+  // Filtro por propuesta comercial (multi-select)
+  const byPropuesta = propuestaFilter.length === 0 ? filtered : filtered.filter(m => {
+    const raw = m.meeting_feedback;
+    const fb: any = Array.isArray(raw) ? raw[0] : raw ?? null;
+    return fb?.propuesta_comercial && propuestaFilter.includes(fb.propuesta_comercial);
+  });
+
+  const pendientes  = byPropuesta.filter(m => m.realizado === "Si" && m.feedback_status === "pendiente");
+  const conFeedback = byPropuesta.filter(m => m.feedback_status === "con_feedback");
+  const otras       = byPropuesta.filter(m => m.realizado !== "Si" && m.feedback_status === "pendiente");
   const ordenadas   = [...pendientes, ...otras, ...conFeedback];
 
   const presetLabel = PRESETS.find(p => p.key === preset)?.label ?? "Todo";
@@ -1361,9 +1370,43 @@ export default function FeedbackPage() {
           </select>
         )}
 
+        {/* Filtro por Propuesta Comercial (multi-select) */}
+        <div className="relative group">
+          <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 bg-white"
+            title="Filtrar por propuesta comercial">
+            💰 Propuesta
+            {propuestaFilter.length > 0 && <span className="ml-1 bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-medium">{propuestaFilter.length}</span>}
+          </button>
+          <div className="absolute top-full mt-1 left-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1 min-w-[200px] hidden group-hover:block">
+            {PROPUESTAS.map(prop => (
+              <label key={prop} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm">
+                <input type="checkbox" checked={propuestaFilter.includes(prop)}
+                  onChange={e => {
+                    if (e.target.checked) {
+                      setPropuestaFilter([...propuestaFilter, prop]);
+                    } else {
+                      setPropuestaFilter(propuestaFilter.filter(p => p !== prop));
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600" />
+                {prop}
+              </label>
+            ))}
+            {propuestaFilter.length > 0 && (
+              <>
+                <div className="border-t border-gray-100 my-1"></div>
+                <button onClick={() => setPropuestaFilter([])}
+                  className="w-full text-left px-3 py-2 text-xs text-gray-500 hover:bg-gray-50">
+                  Limpiar selección
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
         {/* Reset */}
-        {(preset !== "todo" || statusFilter !== "Todos" || sdrFilter !== "Todos" || feedbackFilter !== "Todos") && (
-          <button onClick={() => { applyPreset("todo"); setStatusFilter("Todos"); setSdrFilter("Todos"); setFeedbackFilter("Todos"); }}
+        {(preset !== "todo" || statusFilter !== "Todos" || sdrFilter !== "Todos" || feedbackFilter !== "Todos" || propuestaFilter.length > 0) && (
+          <button onClick={() => { applyPreset("todo"); setStatusFilter("Todos"); setSdrFilter("Todos"); setFeedbackFilter("Todos"); setPropuestaFilter([]); }}
             className="text-xs text-gray-400 hover:text-gray-600 underline">
             Limpiar filtros
           </button>

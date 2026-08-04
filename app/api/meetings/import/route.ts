@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { normalizeName, buildMatchKey, parseDate } from "@/lib/syncMeetings";
 
 export const dynamic = "force-dynamic";
 
@@ -44,16 +45,25 @@ export async function POST(req: NextRequest) {
     // Si el CSV tiene columna de ID: usar su valor (puede ser null si está vacío).
     // Si el CSV no tiene columna de ID: aplicar el cliente seleccionado en la UI.
     const client_id = hasClientIdCol ? rowClientId : (rowClientId || formClientId || null);
+
+    const empresa = r["empresa"] || r["company"] || "";
+    const contacto = r["contacto_nombre"] || r["contacto"] || r["nombre"] || "";
+    const fechaReunion = parseDate(r["fecha_reunion"] || r["fecha"] || "");
+
+    // Usar sheet_row_key para matching estable en sync
+    const sheet_row_key = buildMatchKey(empresa, contacto, fechaReunion);
+
     return {
-    client_id,
-    empresa:         r["empresa"] || r["company"] || "",
-    contacto_nombre: r["contacto_nombre"] || r["contacto"] || r["nombre"] || null,
-    contacto_cargo:  r["contacto_cargo"] || r["cargo"] || null,
-    fecha_reunion:   r["fecha_reunion"] || r["fecha"] || null,
-    realizado:       r["realizado"] || "Pendiente",
-    notas:           r["notas"] || r["notes"] || null,
-    sdr_nombre:      r["sdr"] || r["sdr_nombre"] || null,
-  };
+      client_id,
+      empresa,
+      contacto_nombre: contacto || null,
+      contacto_cargo:  r["contacto_cargo"] || r["cargo"] || null,
+      fecha_reunion:   fechaReunion,
+      realizado:       r["realizado"] || "Pendiente",
+      notas:           r["notas"] || r["notes"] || null,
+      sdr_nombre:      r["sdr"] || r["sdr_nombre"] || null,
+      sheet_row_key,
+    };
   }).filter(r => r.empresa);
 
   if (records.length === 0) {
@@ -63,7 +73,7 @@ export async function POST(req: NextRequest) {
   const supabase = supabaseAdmin();
   const { data, error } = await supabase
     .from("meetings")
-    .upsert(records, { ignoreDuplicates: false })
+    .upsert(records, { onConflict: "sheet_row_key" })
     .select();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
