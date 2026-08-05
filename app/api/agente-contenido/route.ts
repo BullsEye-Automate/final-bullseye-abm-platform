@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { getClientContext } from "@/lib/getClientContext";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
+import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,6 +84,7 @@ Para cualquier ajuste o variación, aplica los cambios directamente y devuelve e
 }
 
 export async function POST(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   const body = await req.json();
   const {
     clientId, messages, emailType, channel, segmentId,
@@ -149,6 +151,23 @@ export async function POST(req: NextRequest) {
     max_tokens: 1024,
     system: systemPrompt,
     messages: chatMessages,
+  });
+
+  // Registrar uso de IA
+  void logAiUsage({
+    userId,
+    clientId,
+    functionName: "agente_contenido_chat",
+    model: CLAUDE_MODEL,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    metadata: {
+      channel,
+      emailType,
+      recipientName,
+      recipientCompany,
+      recipientTitle,
+    },
   });
 
   const assistantText = (response.content[0] as { type: string; text: string }).text ?? "";
