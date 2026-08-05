@@ -53,10 +53,13 @@ function fmt(n: number, decimals = 1) {
 }
 
 function fmtTokens(n: number) {
-  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-const AUTO_REFRESH_MS = 30_000;
+// Auto-refresh desactivado — el usuario puede refrescar manualmente con el botón
+// const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 type FunctionDetail = {
   function_name: string;
@@ -77,8 +80,51 @@ type FunctionDetail = {
   };
 };
 
+function calculateDaysForFilter(filter: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  switch (filter) {
+    case "hoy":
+      return 1;
+    case "ayer": {
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      return Math.ceil((today.getTime() - yesterday.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    }
+    case "esta-semana": {
+      const startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - today.getDay());
+      return Math.ceil((today.getTime() - startOfWeek.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    }
+    case "semana-pasada": {
+      const startOfWeek = new Date(today);
+      startOfWeek.setDate(today.getDate() - today.getDay());
+      const startOfLastWeek = new Date(startOfWeek);
+      startOfLastWeek.setDate(startOfWeek.getDate() - 7);
+      return 7;
+    }
+    case "este-mes": {
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      return Math.ceil((today.getTime() - startOfMonth.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    }
+    case "mes-pasado": {
+      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const daysInLastMonth = (startOfMonth.getTime() - startOfLastMonth.getTime()) / (1000 * 60 * 60 * 24);
+      return Math.ceil(daysInLastMonth);
+    }
+    case "ultimos-30":
+      return 30;
+    default:
+      return 7;
+  }
+}
+
 export default function UsoIAPage() {
-  const [days, setDays]     = useState(7);
+  const [filterType, setFilterType] = useState<string>("ultimos-30");
+  const [customDates, setCustomDates] = useState<{ from: string; to: string } | null>(null);
+  const [showCustom, setShowCustom] = useState(false);
   const [data, setData]     = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState<string | null>(null);
@@ -86,12 +132,20 @@ export default function UsoIAPage() {
   const [detailData, setDetailData] = useState<FunctionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  async function load(d: number) {
+  const days = customDates ? null : calculateDaysForFilter(filterType);
+
+  async function load() {
     setLoading(true);
     setError(null);
     setData(null);
     try {
-      const r = await fetch(`/api/admin/ai-usage?days=${d}`, { cache: "no-store" });
+      let url = `/api/admin/ai-usage`;
+      if (customDates) {
+        url += `?from=${customDates.from}&to=${customDates.to}`;
+      } else if (days) {
+        url += `?days=${days}`;
+      }
+      const r = await fetch(url, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
       setData(json);
@@ -104,7 +158,13 @@ export default function UsoIAPage() {
   async function loadFunctionDetail(fn: string) {
     setDetailLoading(true);
     try {
-      const r = await fetch(`/api/admin/ai-usage/function-detail?days=${days}&function=${fn}`, { cache: "no-store" });
+      let url = `/api/admin/ai-usage/function-detail?function=${fn}`;
+      if (customDates) {
+        url += `&from=${customDates.from}&to=${customDates.to}`;
+      } else if (days) {
+        url += `&days=${days}`;
+      }
+      const r = await fetch(url, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
       setDetailData(json);
@@ -116,14 +176,8 @@ export default function UsoIAPage() {
   }
 
   useEffect(() => {
-    load(days);
-
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible") load(days);
-    }, AUTO_REFRESH_MS);
-
-    return () => clearInterval(interval);
-  }, [days]);
+    load();
+  }, [filterType, customDates]);
 
   const byFn     = data ? Object.entries(data.by_function).sort((a, b) => b[1].cost_usd - a[1].cost_usd) : [];
   const byClient = data ? Object.entries(data.by_client).sort((a, b) => b[1].cost_usd - a[1].cost_usd) : [];
@@ -149,20 +203,67 @@ export default function UsoIAPage() {
       </header>
 
       {/* Filtro de período */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {[1, 2, 7, 30].map((d) => (
+      <div className="space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          {[
+            { id: "hoy", label: "Hoy" },
+            { id: "ayer", label: "Ayer" },
+            { id: "esta-semana", label: "Esta semana" },
+            { id: "semana-pasada", label: "Semana pasada" },
+            { id: "este-mes", label: "Este mes" },
+            { id: "mes-pasado", label: "Mes pasado" },
+            { id: "ultimos-30", label: "Últimos 30 días" },
+          ].map((filter) => (
+            <button
+              key={filter.id}
+              onClick={() => { setFilterType(filter.id); setShowCustom(false); }}
+              className={`btn text-sm ${filterType === filter.id && !showCustom ? "bg-brand text-white" : "bg-white border border-[#E5E2F0] text-ink"}`}
+            >
+              {filter.label}
+            </button>
+          ))}
           <button
-            key={d}
-            onClick={() => setDays(d)}
-            className={`btn text-sm ${days === d ? "bg-brand text-white" : "bg-white border border-[#E5E2F0] text-ink"}`}
+            onClick={() => setShowCustom(!showCustom)}
+            className={`btn text-sm ${showCustom ? "bg-brand text-white" : "bg-white border border-[#E5E2F0] text-ink"}`}
           >
-            {d === 1 ? "Hoy" : d === 2 ? "2 días" : d === 7 ? "7 días" : "30 días"}
+            📅 Personalizado
           </button>
-        ))}
-        <button onClick={() => load(days)} className="btn bg-white border border-[#E5E2F0] text-ink ml-auto" disabled={loading}>
-          {loading ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
-          Refrescar
-        </button>
+          <button onClick={() => load()} className="btn bg-white border border-[#E5E2F0] text-ink ml-auto" disabled={loading}>
+            {loading ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
+            Refrescar
+          </button>
+        </div>
+
+        {/* Selector de fecha personalizada */}
+        {showCustom && (
+          <div className="card bg-blue-50 border border-blue-200 p-4 flex items-end gap-3">
+            <div className="flex-1">
+              <label className="text-sm font-medium text-ink mb-1 block">Desde</label>
+              <input
+                type="date"
+                value={customDates?.from ?? ""}
+                onChange={(e) => setCustomDates({ from: e.target.value, to: customDates?.to ?? "" })}
+                className="border border-[#E5E2F0] rounded px-3 py-2 text-sm w-full"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-sm font-medium text-ink mb-1 block">Hasta</label>
+              <input
+                type="date"
+                value={customDates?.to ?? ""}
+                onChange={(e) => setCustomDates({ from: customDates?.from ?? "", to: e.target.value })}
+                className="border border-[#E5E2F0] rounded px-3 py-2 text-sm w-full"
+              />
+            </div>
+            <button
+              onClick={() => { if (customDates?.from && customDates?.to) load(); }}
+              disabled={!customDates?.from || !customDates?.to || loading}
+              className="btn bg-brand text-white disabled:opacity-50"
+            >
+              {loading ? <IconLoader2 size={14} className="animate-spin" /> : "Aplicar"}
+            </button>
+          </div>
+        )}
       </div>
 
       {error && (
@@ -504,14 +605,14 @@ export default function UsoIAPage() {
                     <p className="text-sm font-semibold text-ink mb-3">📊 Métricas de impacto</p>
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        { label: "Contactos procesados", value: detailData.metadata_stats.total_contacts || "—" },
-                        { label: "Empresas procesadas", value: detailData.metadata_stats.total_companies || "—" },
-                        { label: "Costo por contacto", value: detailData.metadata_stats.total_contacts > 0 ? `$${fmt(detailData.metadata_stats.avg_cost_per_contact)}` : "—" },
-                        { label: "Tokens por contacto", value: detailData.metadata_stats.total_contacts > 0 ? fmtTokens(detailData.metadata_stats.avg_tokens_per_contact) : "—" },
+                        { label: "Contactos procesados", value: detailData.metadata_stats.total_contacts ?? null },
+                        { label: "Empresas procesadas", value: detailData.metadata_stats.total_companies ?? null },
+                        { label: "Costo por contacto", value: detailData.metadata_stats.avg_cost_per_contact !== null && detailData.metadata_stats.avg_cost_per_contact !== undefined ? `$${fmt(detailData.metadata_stats.avg_cost_per_contact)}` : null },
+                        { label: "Tokens por contacto", value: detailData.metadata_stats.avg_tokens_per_contact !== null && detailData.metadata_stats.avg_tokens_per_contact !== undefined ? fmtTokens(detailData.metadata_stats.avg_tokens_per_contact) : null },
                       ].map((s) => (
                         <div key={s.label}>
                           <p className="text-xs text-blue-700 mb-1">{s.label}</p>
-                          <p className="text-lg font-semibold text-blue-900">{s.value}</p>
+                          <p className="text-lg font-semibold text-blue-900">{s.value === null ? 'null' : s.value}</p>
                         </div>
                       ))}
                     </div>
@@ -591,9 +692,9 @@ export default function UsoIAPage() {
                         : "Costo por llamada dentro de lo esperado"}
                     </li>
                     <li>
-                      {detailData.metadata_stats.total_contacts > 0 && detailData.metadata_stats.avg_cost_per_contact > 0.01
+                      {detailData.metadata_stats && detailData.metadata_stats.total_contacts && detailData.metadata_stats.total_contacts > 0 && detailData.metadata_stats.avg_cost_per_contact && detailData.metadata_stats.avg_cost_per_contact > 0.01
                         ? "Implementar batch processing para procesar múltiples contactos por llamada"
-                        : "Batching ya está optimizado"}
+                        : "Batching ya está optimizado o sin datos de metadata"}
                     </li>
                   </ul>
                 </div>

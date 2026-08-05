@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
 import {
@@ -42,6 +42,7 @@ async function fetchAllLeads(campaignId: string, credentials: string): Promise<a
 }
 
 export async function POST(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   let body: { client_id: string };
   try {
     body = await req.json();
@@ -198,7 +199,7 @@ export async function POST(req: NextRequest) {
             companyName:      companyName               || undefined,
             icpContext:       enrichedContext,
             language:         "es",
-          });
+          }, userId);
 
           const msgUpdate: Record<string, string | undefined> = {};
           if (msgs.emailSubject)              msgUpdate.email_subject       = msgs.emailSubject;

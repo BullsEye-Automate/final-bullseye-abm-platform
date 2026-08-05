@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
 import { getClientLemlistConfig, getCampaignLeadsWithDetails, resolveManualSearchCampaignId, inferCompanyNameFromBioRaw } from "@/lib/lemlist";
 
@@ -27,6 +27,7 @@ async function listClientsHint(db: ReturnType<typeof supabaseAdmin>) {
 }
 
 export async function GET(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   const clientId = req.nextUrl.searchParams.get("client_id");
   const db = supabaseAdmin();
 
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
     if (bio) {
       bioInferenceTest.bio_used = bio.slice(0, 300) + (bio.length > 300 ? "…" : "");
       try {
-        bioInferenceTest.result = await inferCompanyNameFromBioRaw(bio);
+        bioInferenceTest.result = await inferCompanyNameFromBioRaw(bio, clientId, userId);
       } catch (err: any) {
         bioInferenceTest.error = err?.message ?? String(err);
       }

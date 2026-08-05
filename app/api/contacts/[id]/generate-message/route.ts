@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
 
 export const runtime = "nodejs";
@@ -10,7 +10,8 @@ export const maxDuration = 90;
 // enrutamiento a segmentos del cliente — misma lógica de /api/lemlist/push,
 // pero sin pushear a Lemlist. Guarda el resultado como borrador editable en
 // el contacto y devuelve qué segmento se usó para mostrarlo en el preview.
-export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const userId = getUserIdFromRequest(req);
   const db = supabaseAdmin();
 
   const { data: contact, error } = await db
@@ -74,7 +75,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       companyName: company?.company_name ?? undefined,
       companySize: company?.company_size ? String(company.company_size) : undefined,
     },
-    segments ?? []
+    segments ?? [],
+    userId
   );
 
   const matchedSegment = routing.segmentId ? (segments ?? []).find((s) => s.id === routing.segmentId) : null;
@@ -145,7 +147,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       emailCount,
       linkedinMsgCount,
       includeConnectMsg,
-    });
+    }, userId);
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Error generando mensajes" }, { status: 500 });
   }

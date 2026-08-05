@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
 import {
   searchHSContactByBullseyeId,
@@ -39,6 +39,7 @@ async function fetchAllLeads(campaignId: string, credentials: string): Promise<a
 }
 
 export async function GET(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret) {
     const auth = req.headers.get("authorization") ?? "";
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest) {
 
   for (const config of configs) {
     try {
-      const { updated, synced } = await refreshClientContacts(db, config, credentials, apiKey);
+      const { updated, synced } = await refreshClientContacts(db, config, credentials, apiKey, userId);
       summary.push({ client_id: config.client_id, updated, synced });
     } catch (err: any) {
       summary.push({ client_id: config.client_id, updated: 0, synced: 0, error: err?.message ?? "error" });
@@ -78,7 +79,8 @@ async function refreshClientContacts(
   db: ReturnType<typeof import("@/lib/supabase").supabaseAdmin>,
   config: { client_id: string; lemlist_campaign_id: string; hubspot_owner_id?: string | null },
   credentials: string,
-  apiKey: string
+  apiKey: string,
+  userId: string | null
 ): Promise<{ updated: number; synced: number; generated: number }> {
   const leads = await fetchAllLeads(config.lemlist_campaign_id, credentials);
   if (leads.length === 0) return { updated: 0, synced: 0, generated: 0 };
@@ -198,7 +200,7 @@ async function refreshClientContacts(
             companyName:      companyName               || undefined,
             icpContext:       enrichedContext,
             language:         "es",
-          });
+          }, userId);
 
           const msgUpdate: Record<string, string | undefined> = {};
           if (msgs.emailSubject)              msgUpdate.email_subject       = msgs.emailSubject;

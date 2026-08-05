@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
 import { runDeepResearch, type DeepResearchResult } from "@/lib/deep-research";
 
@@ -36,6 +36,7 @@ type GeneratedContact = ParsedContact & {
 };
 
 export async function POST(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string; use_deep_research?: boolean; model?: string };
   try {
     body = await req.json();
@@ -192,6 +193,8 @@ export async function POST(req: NextRequest) {
         companyLinkedin: company?.company_linkedin_url ?? null,
         companyCountry:  company?.company_country  ?? null,
         icpContent:      icpContext,
+        userId,
+        clientId: client_id,
       });
 
       const NO_SIGNAL_TRIGGERS = [
@@ -334,7 +337,7 @@ export async function POST(req: NextRequest) {
             linkedinMsgCount,
             includeConnectMsg,
             ...(model ? { model } : {}),
-          });
+          }, userId);
 
           return {
             ...c,
