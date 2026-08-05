@@ -130,9 +130,6 @@ export default function TelefonosPage() {
   async function runClay() {
     if (!linkedinUrl.trim() || !currentClient?.id) return;
     const url = normalizeLinkedInUrl(linkedinUrl.trim()) ?? linkedinUrl.trim();
-    setStarted(true);
-    setLemlist(IDLE);
-    setLusha(IDLE);
     setClay({ status: "running", phone: null, detail: "Enviando a Clay (waterfall LeadMagic → PDL → upcell → Clay → Wiza)…" });
 
     try {
