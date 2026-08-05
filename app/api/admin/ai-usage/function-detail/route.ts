@@ -5,11 +5,20 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
   const functionName = req.nextUrl.searchParams.get("function") ?? "message_generation_sequence";
   const db = supabaseAdmin();
 
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  let since: string;
+
+  const fromParam = req.nextUrl.searchParams.get("from");
+  const toParam = req.nextUrl.searchParams.get("to");
+
+  if (fromParam && toParam) {
+    since = new Date(fromParam).toISOString();
+  } else {
+    const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
+    since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  }
 
   const { data, error } = await db
     .from("ai_usage_log")

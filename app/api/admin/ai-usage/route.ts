@@ -5,12 +5,23 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
   const db = supabaseAdmin();
 
-  const cutoffMs = days * 24 * 60 * 60 * 1000;
-  const since = new Date(Date.now() - cutoffMs).toISOString();
-  const now = new Date().toISOString();
+  let since: string;
+  let now: string;
+
+  const fromParam = req.nextUrl.searchParams.get("from");
+  const toParam = req.nextUrl.searchParams.get("to");
+
+  if (fromParam && toParam) {
+    since = new Date(fromParam).toISOString();
+    now = new Date(toParam).toISOString();
+  } else {
+    const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
+    const cutoffMs = days * 24 * 60 * 60 * 1000;
+    since = new Date(Date.now() - cutoffMs).toISOString();
+    now = new Date().toISOString();
+  }
 
   // Obtener datos de usuarios para mapear IDs a emails
   const { data: users, error: usersError } = await db
