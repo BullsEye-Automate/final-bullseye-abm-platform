@@ -8,7 +8,9 @@ export async function GET(req: NextRequest) {
   const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
   const db = supabaseAdmin();
 
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const cutoffMs = days * 24 * 60 * 60 * 1000;
+  const since = new Date(Date.now() - cutoffMs).toISOString();
+  const now = new Date().toISOString();
 
   // Obtener datos de usuarios para mapear IDs a emails
   const { data: users, error: usersError } = await db
@@ -105,8 +107,15 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => b[1].calls - a[1].calls)
     .slice(0, 10);
 
+  const dateRange = data && data.length > 0
+    ? { oldest: data[data.length - 1].created_at, newest: data[0].created_at }
+    : null;
+
   return NextResponse.json({
     period_days: days,
+    query_since: since,
+    query_now: now,
+    data_date_range: dateRange,
     total_calls: totalCalls,
     total_cost_usd: totalCost,
     total_input_tokens: totalInputTokens,
@@ -119,6 +128,5 @@ export async function GET(req: NextRequest) {
     functions_by_day: functionsByDay,
     top_functions_by_cost: topFunctions,
     top_functions_by_calls: topFrequent,
-    rows: data,
   });
 }

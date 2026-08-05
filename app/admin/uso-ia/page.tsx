@@ -53,7 +53,9 @@ function fmt(n: number, decimals = 1) {
 }
 
 function fmtTokens(n: number) {
-  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
 const AUTO_REFRESH_MS = 30_000;
@@ -499,15 +501,15 @@ export default function UsoIAPage() {
                 </div>
 
                 {/* MÉTRICAS DE METADATA */}
-                {detailData.metadata_stats && (
+                {detailData.metadata_stats && detailData.metadata_stats.total_contacts > 0 && (
                   <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded p-4">
                     <p className="text-sm font-semibold text-ink mb-3">📊 Métricas de impacto</p>
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        { label: "Contactos procesados", value: detailData.metadata_stats.total_contacts || "—" },
-                        { label: "Empresas procesadas", value: detailData.metadata_stats.total_companies || "—" },
-                        { label: "Costo por contacto", value: detailData.metadata_stats.total_contacts > 0 ? `$${fmt(detailData.metadata_stats.avg_cost_per_contact)}` : "—" },
-                        { label: "Tokens por contacto", value: detailData.metadata_stats.total_contacts > 0 ? fmtTokens(detailData.metadata_stats.avg_tokens_per_contact) : "—" },
+                        { label: "Contactos procesados", value: detailData.metadata_stats.total_contacts },
+                        { label: "Empresas procesadas", value: detailData.metadata_stats.total_companies },
+                        { label: "Costo por contacto", value: `$${fmt(detailData.metadata_stats.avg_cost_per_contact)}` },
+                        { label: "Tokens por contacto", value: fmtTokens(detailData.metadata_stats.avg_tokens_per_contact) },
                       ].map((s) => (
                         <div key={s.label}>
                           <p className="text-xs text-blue-700 mb-1">{s.label}</p>
