@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { deriveSalesNavRecommendations } from "@/lib/salesNavRecommendations";
 
 export const runtime = "nodejs";
@@ -9,6 +9,7 @@ export const maxDuration = 60;
 // Cargos objetivo y filtros de Sales Navigator recomendados, derivados del
 // ICP del cliente activo (una industria puede tener su propio buyer persona).
 export async function GET(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   const clientId = req.nextUrl.searchParams.get("client_id");
   if (!clientId) return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
 
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
           target_company: sec.target_company ?? "",
           fit_signals: sec.fit_signals ?? "",
           buyer_persona: sec.buyer_persona ?? "",
-        });
+        }, clientId, userId);
         return { id: ind.id, name: ind.name, ...recs };
       })
     );
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
     target_company: icpDoc.content,
     fit_signals: icpDoc.content,
     buyer_persona: icpDoc.content,
-  });
+  }, clientId, userId);
 
   return NextResponse.json({ industries: [{ id: "general", name: "General", ...recs }] });
 }
