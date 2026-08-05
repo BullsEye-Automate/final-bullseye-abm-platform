@@ -423,7 +423,7 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
       messages: [{ role: "user", content: sequencePrompt }],
     });
 
-    void logAiUsage({ userId, clientId, functionName: "message_generation_sequence", model: CLAUDE_MODEL, inputTokens: seqMessage.usage.input_tokens, outputTokens: seqMessage.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
+    void logAiUsage({ userId, clientId, functionName: "message_generation_sequence", model: CLAUDE_MODEL, inputTokens: seqMessage.usage.input_tokens, outputTokens: seqMessage.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name, num_contacts: 1, num_companies: 1 } });
     const seqToolUse = seqMessage.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (!seqToolUse) {
       const raw = seqMessage.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
@@ -515,7 +515,7 @@ Genera los mensajes de outreach personalizados para este contacto usando la herr
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  void logAiUsage({ userId, clientId, functionName: "message_generation_simple", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
+  void logAiUsage({ userId, clientId, functionName: "message_generation_simple", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name, num_contacts: 1, num_companies: 1 } });
   // Extraer el resultado del tool_use
   const toolUse = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
 

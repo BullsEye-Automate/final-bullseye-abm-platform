@@ -466,7 +466,7 @@ export default function UsoIAPage() {
           <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-[#E5E2F0] px-6 py-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-orange-700 font-semibold uppercase">Análisis detallado</p>
+                <p className="text-xs text-orange-700 font-semibold uppercase">Análisis detallado — Últimos {days} {days === 1 ? 'día' : 'días'}</p>
                 <h2 className="text-xl font-semibold text-ink">{FUNCTION_LABELS[detailFn] ?? detailFn}</h2>
               </div>
               <button
