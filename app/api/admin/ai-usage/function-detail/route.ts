@@ -5,20 +5,22 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const functionName = req.nextUrl.searchParams.get("function") ?? "message_generation_sequence";
-  const db = supabaseAdmin();
+  try {
+    const functionName = req.nextUrl.searchParams.get("function") ?? "message_generation_sequence";
+    const db = supabaseAdmin();
 
-  let since: string;
+    let since: string;
 
-  const fromParam = req.nextUrl.searchParams.get("from");
-  const toParam = req.nextUrl.searchParams.get("to");
+    const fromParam = req.nextUrl.searchParams.get("from");
+    const toParam = req.nextUrl.searchParams.get("to");
 
-  if (fromParam && toParam) {
-    since = new Date(fromParam).toISOString();
-  } else {
-    const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
-    since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-  }
+    if (fromParam && toParam) {
+      const fromDate = new Date(fromParam + "T00:00:00Z");
+      since = fromDate.toISOString();
+    } else {
+      const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
+      since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    }
 
   const { data, error } = await db
     .from("ai_usage_log")
@@ -123,18 +125,20 @@ export async function GET(req: NextRequest) {
     metadataStats.avg_cost_per_contact = totalCost / metadataStats.total_contacts;
   }
 
-  return NextResponse.json({
-    function_name: functionName,
-    period_days: days,
-    total_calls: totalCalls,
-    total_cost_usd: totalCost,
-    total_input_tokens: totalInputTokens,
-    total_output_tokens: totalOutputTokens,
-    by_client: byClient,
-    by_day: byDay,
-    by_model: byModel,
-    metadata_stats: metadataStats,
-    all_metadata: allMetadata,
-    raw_rows: data,
-  });
+    return NextResponse.json({
+      function_name: functionName,
+      total_calls: totalCalls,
+      total_cost_usd: totalCost,
+      total_input_tokens: totalInputTokens,
+      total_output_tokens: totalOutputTokens,
+      by_client: byClient,
+      by_day: byDay,
+      by_model: byModel,
+      metadata_stats: metadataStats,
+      all_metadata: allMetadata,
+      raw_rows: data,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message ?? "Error al obtener detalles" }, { status: 500 });
+  }
 }
