@@ -36,14 +36,14 @@ type GeneratedContact = ParsedContact & {
 };
 
 export async function POST(req: NextRequest) {
-  let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string; use_deep_research?: boolean };
+  let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string; use_deep_research?: boolean; model?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { client_id, contacts, segment_id, use_deep_research = false } = body;
+  const { client_id, contacts, segment_id, use_deep_research = false, model } = body;
   if (!client_id || !contacts?.length) {
     return NextResponse.json({ error: "Se requiere client_id y contacts" }, { status: 400 });
   }
@@ -333,6 +333,7 @@ export async function POST(req: NextRequest) {
             emailCount,
             linkedinMsgCount,
             includeConnectMsg,
+            ...(model ? { model } : {}),
           });
 
           return {
