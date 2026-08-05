@@ -46,7 +46,7 @@ const FUNCTION_LABELS: Record<string, string> = {
   client_clay_scoring_prompt:     "Generación de prompt de scoring (Clay)",
 };
 
-function fmt(n: number, decimals = 4) {
+function fmt(n: number, decimals = 1) {
   return n.toFixed(decimals);
 }
 
@@ -143,9 +143,9 @@ export default function UsoIAPage() {
           {/* RESUMEN PRINCIPAL */}
           <div className="grid grid-cols-4 gap-4">
             {[
-              { label: "Costo total (USD)", value: `$${fmt(data.total_cost_usd, 2)}`, icon: "💰" },
+              { label: "Costo total (USD)", value: `$${fmt(data.total_cost_usd)}`, icon: "💰" },
               { label: "Llamadas totales", value: data.total_calls.toLocaleString(), icon: "📞" },
-              { label: "Costo / llamada", value: `$${fmt(avgCostPerCall, 5)}`, icon: "🎯" },
+              { label: "Costo / llamada", value: `$${fmt(avgCostPerCall)}`, icon: "🎯" },
               { label: "Tokens output promedio", value: fmtTokens(avgTokensOut), icon: "📊" },
             ].map((s) => (
               <div key={s.label} className="card px-5 py-4">
@@ -187,7 +187,7 @@ export default function UsoIAPage() {
               <p className="text-xs text-orange-700 font-semibold uppercase tracking-wide mb-2">⚠️ Mayor consumidor de recursos</p>
               <p className="text-lg font-semibold text-orange-900">{FUNCTION_LABELS[mostExpensive[0]] ?? mostExpensive[0]}</p>
               <p className="text-sm text-orange-700 mt-1">
-                ${fmt(mostExpensive[1].cost_usd, 2)} ({mostExpensive[1].calls} llamadas) ·
+                ${fmt(mostExpensive[1].cost_usd)} ({mostExpensive[1].calls} llamadas) ·
                 {((mostExpensive[1].cost_usd / data.total_cost_usd) * 100).toFixed(1)}% del costo total
               </p>
             </div>
@@ -246,7 +246,7 @@ export default function UsoIAPage() {
                       <td className="px-4 py-2.5 text-right text-ink-muted">{row.calls.toLocaleString()}</td>
                       <td className="px-4 py-2.5 text-right text-ink-muted">{fmtTokens(row.input_tokens)}</td>
                       <td className="px-4 py-2.5 text-right text-ink-muted">{fmtTokens(row.output_tokens)}</td>
-                      <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd, 2)}</td>
+                      <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
                       <td className="px-4 py-2.5 text-right text-ink-muted">{((row.cost_usd / data.total_cost_usd) * 100).toFixed(1)}%</td>
                     </tr>
                   ))}
@@ -275,7 +275,7 @@ export default function UsoIAPage() {
                     <tr key={fn} className="border-b border-[#F0EEF8] last:border-0">
                       <td className="px-5 py-2.5 text-ink font-medium">{FUNCTION_LABELS[fn] ?? fn}</td>
                       <td className="px-4 py-2.5 text-right text-ink-muted">{row.calls.toLocaleString()}</td>
-                      <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd, 2)}</td>
+                      <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
                       <td className="px-5 py-2.5 text-right text-ink-muted font-medium">{((row.cost_usd / data.total_cost_usd) * 100).toFixed(1)}%</td>
                     </tr>
                   ))}
@@ -304,8 +304,8 @@ export default function UsoIAPage() {
                     <tr key={fn} className="border-b border-[#F0EEF8] last:border-0">
                       <td className="px-5 py-2.5 text-ink font-medium">{FUNCTION_LABELS[fn] ?? fn}</td>
                       <td className="px-4 py-2.5 text-right text-ink-muted">{row.calls.toLocaleString()}</td>
-                      <td className="px-4 py-2.5 text-right text-ink-muted">${fmt(row.cost_usd / row.calls, 5)}</td>
-                      <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd, 2)}</td>
+                      <td className="px-4 py-2.5 text-right text-ink-muted">${fmt(row.cost_usd / row.calls)}</td>
+                      <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -334,8 +334,8 @@ export default function UsoIAPage() {
                     <tr key={id} className="border-b border-[#F0EEF8] last:border-0">
                       <td className="px-5 py-2.5 text-ink font-medium">{row.name}</td>
                       <td className="px-4 py-2.5 text-right text-ink-muted">{row.calls.toLocaleString()}</td>
-                      <td className="px-4 py-2.5 text-right text-ink-muted">${fmt(row.cost_usd / row.calls, 5)}</td>
-                      <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd, 2)}</td>
+                      <td className="px-4 py-2.5 text-right text-ink-muted">${fmt(row.cost_usd / row.calls)}</td>
+                      <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
                       <td className="px-4 py-2.5 text-right text-ink-muted">{((row.cost_usd / data.total_cost_usd) * 100).toFixed(1)}%</td>
                     </tr>
                   ))}
@@ -369,8 +369,8 @@ export default function UsoIAPage() {
                         <td className="px-4 py-2.5 text-right text-ink-muted">{row.calls.toLocaleString()}</td>
                         <td className="px-4 py-2.5 text-right text-ink-muted">{fmtTokens(row.input_tokens)}</td>
                         <td className="px-4 py-2.5 text-right text-ink-muted">{fmtTokens(row.output_tokens)}</td>
-                        <td className="px-4 py-2.5 text-right text-ink-muted text-xs">${fmt(row.cost_usd / row.calls, 5)}</td>
-                        <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd, 2)}</td>
+                        <td className="px-4 py-2.5 text-right text-ink-muted text-xs">${fmt(row.cost_usd / row.calls)}</td>
+                        <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
                       </tr>
                     ))}
                   </tbody>
