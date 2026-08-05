@@ -10,6 +10,18 @@ export async function GET(req: NextRequest) {
 
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
+  // Obtener datos de usuarios para mapear IDs a emails
+  const { data: users, error: usersError } = await db
+    .from("auth.users")
+    .select("id, email");
+
+  const userMap: Record<string, string> = {};
+  if (users) {
+    for (const user of users) {
+      userMap[user.id] = user.email || "Usuario desconocido";
+    }
+  }
+
   const { data, error } = await db
     .from("ai_usage_log")
     .select("*, clients(name)")
@@ -18,10 +30,11 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Agrupar por función, cliente, modelo y día
+  // Agrupar por función, cliente, modelo, usuario y día
   const byFunction: Record<string, { calls: number; input_tokens: number; output_tokens: number; cost_usd: number }> = {};
   const byClient: Record<string, { name: string; calls: number; cost_usd: number }> = {};
   const byModel: Record<string, { calls: number; input_tokens: number; output_tokens: number; cost_usd: number }> = {};
+  const byUser: Record<string, { email: string; calls: number; cost_usd: number }> = {};
   const byDay: Record<string, { calls: number; cost_usd: number }> = {};
   const functionsByDay: Record<string, Record<string, { calls: number; cost_usd: number }>> = {};
 
@@ -55,6 +68,15 @@ export async function GET(req: NextRequest) {
     if (!byClient[clientKey]) byClient[clientKey] = { name: clientName, calls: 0, cost_usd: 0 };
     byClient[clientKey].calls++;
     byClient[clientKey].cost_usd += Number(row.cost_usd);
+
+    // Por usuario
+    if (row.user_id) {
+      const userKey = row.user_id;
+      const userEmail = userMap[userKey] ?? "Usuario desconocido";
+      if (!byUser[userKey]) byUser[userKey] = { email: userEmail, calls: 0, cost_usd: 0 };
+      byUser[userKey].calls++;
+      byUser[userKey].cost_usd += Number(row.cost_usd);
+    }
 
     // Por día
     if (!byDay[date]) byDay[date] = { calls: 0, cost_usd: 0 };
@@ -92,6 +114,7 @@ export async function GET(req: NextRequest) {
     by_function: byFunction,
     by_client: byClient,
     by_model: byModel,
+    by_user: byUser,
     by_day: byDay,
     functions_by_day: functionsByDay,
     top_functions_by_cost: topFunctions,

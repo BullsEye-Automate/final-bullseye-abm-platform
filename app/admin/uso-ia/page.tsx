@@ -5,6 +5,7 @@ import { IconLoader2, IconRefresh, IconSparkles, IconAlertCircle, IconTrendingUp
 
 type FunctionRow = { calls: number; input_tokens: number; output_tokens: number; cost_usd: number };
 type ClientRow   = { name: string; calls: number; cost_usd: number };
+type UserRow     = { email: string; calls: number; cost_usd: number };
 type ModelRow    = { calls: number; input_tokens: number; output_tokens: number; cost_usd: number };
 type DayRow      = { calls: number; cost_usd: number };
 
@@ -16,6 +17,7 @@ type UsageData = {
   total_output_tokens: number;
   by_function: Record<string, FunctionRow>;
   by_client: Record<string, ClientRow>;
+  by_user: Record<string, UserRow>;
   by_model: Record<string, ModelRow>;
   by_day: Record<string, DayRow>;
   functions_by_day: Record<string, Record<string, { calls: number; cost_usd: number }>>;
@@ -125,6 +127,7 @@ export default function UsoIAPage() {
 
   const byFn     = data ? Object.entries(data.by_function).sort((a, b) => b[1].cost_usd - a[1].cost_usd) : [];
   const byClient = data ? Object.entries(data.by_client).sort((a, b) => b[1].cost_usd - a[1].cost_usd) : [];
+  const byUser   = data ? Object.entries(data.by_user ?? {}).sort((a, b) => b[1].cost_usd - a[1].cost_usd) : [];
   const byModel  = data ? Object.entries(data.by_model).sort((a, b) => b[1].cost_usd - a[1].cost_usd) : [];
   const byDay    = data ? Object.entries(data.by_day ?? {}).sort((a, b) => a[0].localeCompare(b[0])) : [];
 
@@ -288,6 +291,36 @@ export default function UsoIAPage() {
                       <td className="px-4 py-2.5 text-right text-ink-muted">{fmtTokens(row.output_tokens)}</td>
                       <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
                       <td className="px-4 py-2.5 text-right text-ink-muted">{((row.cost_usd / data.total_cost_usd) * 100).toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* DESGLOSE POR USUARIO */}
+          {byUser.length > 0 && (
+            <div className="card overflow-hidden">
+              <div className="px-5 py-3 border-b border-[#E5E2F0] flex items-center gap-2">
+                <span style={{ color: "#62E0D8" }}>👤</span>
+                <p className="font-semibold text-sm text-ink">Costo por usuario ($$)</p>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#E5E2F0]">
+                    <th className="text-left px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Usuario</th>
+                    <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Llamadas</th>
+                    <th className="text-right px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Costo USD</th>
+                    <th className="text-right px-5 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">% del total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byUser.map(([id, row]) => (
+                    <tr key={id} className="border-b border-[#F0EEF8] last:border-0">
+                      <td className="px-5 py-2.5 text-ink font-medium text-sm">{row.email}</td>
+                      <td className="px-4 py-2.5 text-right text-ink-muted">{row.calls.toLocaleString()}</td>
+                      <td className="px-5 py-2.5 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                      <td className="px-5 py-2.5 text-right text-ink-muted font-medium">{((row.cost_usd / data.total_cost_usd) * 100).toFixed(1)}%</td>
                     </tr>
                   ))}
                 </tbody>

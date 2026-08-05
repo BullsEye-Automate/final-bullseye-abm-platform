@@ -16,6 +16,7 @@ function computeCost(model: string, inputTokens: number, outputTokens: number): 
 
 export async function logAiUsage({
   clientId,
+  userId,
   functionName,
   model,
   inputTokens,
@@ -23,6 +24,7 @@ export async function logAiUsage({
   metadata,
 }: {
   clientId?: string | null;
+  userId?: string | null;
   functionName: string;
   model: string;
   inputTokens: number;
@@ -35,6 +37,7 @@ export async function logAiUsage({
       .from("ai_usage_log")
       .insert({
         client_id:    clientId ?? null,
+        user_id:      userId ?? null,
         function_name: functionName,
         model,
         input_tokens:  inputTokens,
