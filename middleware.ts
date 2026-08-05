@@ -27,6 +27,8 @@ const PUBLIC_API_PREFIXES = [
   "/api/clay/phone-enriched",
   "/api/clay/company-no-contacts",
   "/api/clay/scored-contacts",
+  "/api/test-debug", // endpoint de diagnóstico
+  "/api/admin/debug-ai-usage", // endpoint de debug para auditar ai_usage_log
 ];
 
 function isPublicPath(pathname: string, method: string): boolean {
