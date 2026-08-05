@@ -58,7 +58,7 @@ function fmtTokens(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-const AUTO_REFRESH_MS = 30_000;
+const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minutos — reducido de 30s para no molestar mientras navegas
 
 type FunctionDetail = {
   function_name: string;
