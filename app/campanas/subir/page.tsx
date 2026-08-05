@@ -146,18 +146,20 @@ function ContactRow({
   pending?: boolean;
   deepResearch?: boolean;
   onChange: (i: number, field: keyof GeneratedContact, val: string) => void;
-  onRegenerate?: (i: number) => Promise<void>;
+  onRegenerate?: (i: number, model?: string) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const hasError = Boolean(contact.error) && !contact.cancelled;
 
-  async function handleRegenerate(e: React.MouseEvent) {
+  async function handleRegenerate(e: React.MouseEvent, model?: string) {
     e.stopPropagation();
     if (!onRegenerate || regenerating) return;
     setRegenerating(true);
     setOpen(false);
-    await onRegenerate(index);
+    setModelMenuOpen(false);
+    await onRegenerate(index, model);
     setRegenerating(false);
     setOpen(true);
   }
@@ -265,13 +267,40 @@ function ContactRow({
           </span>
         ) : null}
         {onRegenerate && !regenerating && (
-          <button
-            onClick={handleRegenerate}
-            className="shrink-0 text-xs text-ink-muted hover:text-[#251762] transition flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-gray-100"
-            title="Regenerar mensajes"
-          >
-            <IconRefresh size={13} />
-          </button>
+          <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                onClick={(e) => handleRegenerate(e)}
+                className="text-xs text-ink-muted hover:text-[#251762] transition flex items-center gap-1 px-2 py-1 hover:bg-gray-100"
+                title="Regenerar con Sonnet"
+              >
+                <IconRefresh size={13} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setModelMenuOpen((v) => !v); }}
+                className="text-xs text-ink-muted hover:text-[#251762] transition px-1 py-1 hover:bg-gray-100 border-l border-gray-200"
+                title="Elegir modelo"
+              >
+                <IconChevronDown size={11} />
+              </button>
+            </div>
+            {modelMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]">
+                <button
+                  onClick={(e) => handleRegenerate(e, "claude-sonnet-4-6")}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between gap-2"
+                >
+                  <span>Sonnet <span className="text-ink-muted">(mejor calidad)</span></span>
+                </button>
+                <button
+                  onClick={(e) => handleRegenerate(e, "claude-haiku-4-5-20251001")}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between gap-2"
+                >
+                  <span>Haiku <span className="text-ink-muted">(más económico)</span></span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
         {open ? <IconChevronUp size={14} className="text-ink-muted shrink-0" /> : <IconChevronDown size={14} className="text-ink-muted shrink-0" />}
       </button>
@@ -494,7 +523,7 @@ export default function SubirCampanaPage() {
   }
 
   // ── Regenerar un contacto individual ──
-  async function handleRegenerate(index: number) {
+  async function handleRegenerate(index: number, model?: string) {
     if (!currentClient?.id) return;
     const contact = displayContacts[index];
     if (!contact) return;
@@ -517,6 +546,7 @@ export default function SubirCampanaPage() {
           contacts: [contact],
           segment_id: generation.segmentId || undefined,
           use_deep_research: generation.deepResearchSet?.has(index) ?? false,
+          ...(model ? { model } : {}),
         }),
       });
       if (res.ok) {
@@ -961,7 +991,7 @@ export default function SubirCampanaPage() {
                     {!isPending && !isCancelled && selectedIndexes.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
                   </button>
                   <div className="flex-1 min-w-0">
-                    <ContactRow contact={c} index={i} pending={isPending} deepResearch={generation.deepResearchSet.has(i)} onChange={handleChange} onRegenerate={!isPending ? handleRegenerate : undefined} />
+                    <ContactRow contact={c} index={i} pending={isPending} deepResearch={generation.deepResearchSet.has(i)} onChange={handleChange} onRegenerate={!isPending ? (idx, model) => handleRegenerate(idx, model) : undefined} />
                   </div>
                   {/* Botón cancelar contacto individual — solo para pendientes */}
                   {isPending && !isCancelled && (
