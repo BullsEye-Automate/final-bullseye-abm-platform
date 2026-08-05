@@ -58,7 +58,8 @@ function fmtTokens(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
-const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minutos — reducido de 30s para no molestar mientras navegas
+// Auto-refresh desactivado — el usuario puede refrescar manualmente con el botón
+// const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 type FunctionDetail = {
   function_name: string;
@@ -119,12 +120,6 @@ export default function UsoIAPage() {
 
   useEffect(() => {
     load(days);
-
-    const interval = setInterval(() => {
-      if (document.visibilityState === "visible") load(days);
-    }, AUTO_REFRESH_MS);
-
-    return () => clearInterval(interval);
   }, [days]);
 
   const byFn     = data ? Object.entries(data.by_function).sort((a, b) => b[1].cost_usd - a[1].cost_usd) : [];
