@@ -40,6 +40,8 @@ export async function runDeepResearch(opts: {
   companyLinkedin: string | null;
   companyCountry: string | null;
   icpContent: string;
+  clientId?: string;
+  userId?: string | null;
 }): Promise<DeepResearchResult> {
   const { companyName, companyWebsite, companyCountry, icpContent } = opts;
 
@@ -94,7 +96,7 @@ Extrae el ángulo de personalización para el outreach de BullsEye hacia esta em
     ]
   });
 
-  void logAiUsage({ functionName: "deep_research", model: "claude-haiku-4-5-20251001", inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { companyName } });
+  void logAiUsage({ userId: opts.userId, clientId: opts.clientId, functionName: "deep_research", model: "claude-haiku-4-5-20251001", inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { companyName } });
 
   const text = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")

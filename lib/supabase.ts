@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { NextRequest } from "next/server";
 
 let _admin: SupabaseClient | null = null;
 
@@ -19,6 +20,24 @@ export function supabaseAdmin(): SupabaseClient {
     }
   });
   return _admin;
+}
+
+// Extraer user_id del JWT en la request (para API routes)
+export function getUserIdFromRequest(req: NextRequest): string | null {
+  try {
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) return null;
+
+    const token = authHeader.substring(7);
+    // Decodificar sin verificar (ya fue verificado por Supabase middleware)
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+
+    const payload = JSON.parse(Buffer.from(parts[1], "base64").toString());
+    return payload.sub ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export type Client = {

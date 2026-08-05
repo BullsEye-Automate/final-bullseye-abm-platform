@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { logAiUsage } from "@/lib/aiUsageLogger";
+import { getUserIdFromRequest } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,6 +11,7 @@ export const maxDuration = 60;
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
@@ -52,6 +54,7 @@ export async function POST(req: NextRequest) {
     });
 
     void logAiUsage({
+      userId,
       functionName: "training_parse_pdf",
       model: "claude-haiku-4-5-20251001",
       inputTokens: response.usage.input_tokens,

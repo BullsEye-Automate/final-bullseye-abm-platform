@@ -12,7 +12,7 @@ export type PrefilterInput = {
 
 export type PrefilterResult = "yes" | "no";
 
-export async function runPrefilter(input: PrefilterInput & { clientId?: string }): Promise<PrefilterResult> {
+export async function runPrefilter(input: PrefilterInput & { clientId?: string; userId?: string | null }): Promise<PrefilterResult> {
   const message = await anthropic().messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 8,
@@ -21,7 +21,7 @@ export async function runPrefilter(input: PrefilterInput & { clientId?: string }
     messages: [{ role: "user", content: prefilterUserPrompt(input) }]
   });
 
-  void logAiUsage({ clientId: input.clientId, functionName: "prefilter", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
+  void logAiUsage({ userId: input.userId, clientId: input.clientId, functionName: "prefilter", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
 
   const text = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")

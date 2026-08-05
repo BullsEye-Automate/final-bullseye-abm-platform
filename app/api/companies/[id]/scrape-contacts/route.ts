@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { perplexitySearch } from "@/lib/perplexity";
 import { intakeContactsForCompany } from "@/lib/contactsIntake";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
+  const userId = getUserIdFromRequest(_req);
   const db = supabaseAdmin();
   const { data: company } = await db.from("companies").select("*").eq("id", params.id).single();
   if (!company) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
@@ -41,7 +42,7 @@ ${results.content.slice(0, 4000)}`
   }).catch(() => null);
 
   if (msg) {
-    void logAiUsage({ clientId: company.client_id, functionName: "company_scrape_contacts", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+    void logAiUsage({ userId, clientId: company.client_id, functionName: "company_scrape_contacts", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
   }
 
   const raw = msg?.content?.find((b: { type: string }) => b.type === "text")

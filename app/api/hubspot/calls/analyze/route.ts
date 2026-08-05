@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { logAiUsage } from "@/lib/aiUsageLogger";
 
@@ -16,6 +16,7 @@ type AnalysisResult = {
 };
 
 export async function POST(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   let body: { client_id?: string; limit?: number } = {};
   try {
     body = await req.json();
@@ -86,6 +87,7 @@ ${call.notes_clean}`;
       });
 
       void logAiUsage({
+        userId,
         clientId: body.client_id,
         functionName: "hubspot_calls_analyze",
         model: CLAUDE_MODEL,

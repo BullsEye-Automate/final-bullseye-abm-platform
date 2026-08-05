@@ -196,7 +196,8 @@ export async function routeContactToSegment(
     industry?: string;
     companySize?: string;
   },
-  segments: Segment[]
+  segments: Segment[],
+  userId?: string | null
 ): Promise<RoutingResult> {
   if (!segments.length) {
     return { segmentId: null, segmentName: null, reasoning: "Sin segmentos configurados" };
@@ -242,7 +243,8 @@ export async function routeContactToSegment(
       .join("")
       .trim();
 
-    void logAiUsage({ functionName: "segment_routing", model: "claude-haiku-4-5-20251001", inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });    const match = raw.match(/\{[\s\S]*\}/);
+    void logAiUsage({ userId, functionName: "segment_routing", model: "claude-haiku-4-5-20251001", inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
+    const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return { segmentId: null, segmentName: null, reasoning: "No se pudo parsear la respuesta" };
 
     const parsed = JSON.parse(match[0]);
@@ -260,7 +262,8 @@ export async function routeContactToSegment(
 }
 
 export async function generateContactMessages(
-  input: ContactMessageInput
+  input: ContactMessageInput,
+  userId?: string | null
 ): Promise<ContactMessages> {
   const {
     hasEmail,
@@ -420,7 +423,7 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
       messages: [{ role: "user", content: sequencePrompt }],
     });
 
-    void logAiUsage({ clientId, functionName: "message_generation_sequence", model: CLAUDE_MODEL, inputTokens: seqMessage.usage.input_tokens, outputTokens: seqMessage.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
+    void logAiUsage({ userId, clientId, functionName: "message_generation_sequence", model: CLAUDE_MODEL, inputTokens: seqMessage.usage.input_tokens, outputTokens: seqMessage.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
     const seqToolUse = seqMessage.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (!seqToolUse) {
       const raw = seqMessage.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
@@ -456,7 +459,7 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
     };
 
     console.log("[generateContactMessages:sequence] OK — emails:", emails.length, "linkedin:", linkedinMessages.length, "connect:", !!result.connectMessage);
-    return reviewMessages(result);
+    return reviewMessages(result, userId);
   }
 
   // ─── MODO SIMPLE: comportamiento original (1 email, 1 icebreaker) ─────────────
@@ -512,7 +515,7 @@ Genera los mensajes de outreach personalizados para este contacto usando la herr
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  void logAiUsage({ clientId, functionName: "message_generation_simple", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
+  void logAiUsage({ userId, clientId, functionName: "message_generation_simple", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name } });
   // Extraer el resultado del tool_use
   const toolUse = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
 
@@ -529,12 +532,12 @@ Genera los mensajes de outreach personalizados para este contacto usando la herr
 
   const result = toolUse.input as ContactMessages;
   console.log("[generateContactMessages] OK — subjectLen:", result.emailSubject?.length, "bodyLen:", result.emailBody?.length);
-  return reviewMessages(result);
+  return reviewMessages(result, userId);
 }
 
 // ─── Revisión y corrección automática con Haiku ───────────────────────────────
 
-async function reviewMessages(msgs: ContactMessages): Promise<ContactMessages> {
+async function reviewMessages(msgs: ContactMessages, userId?: string | null): Promise<ContactMessages> {
   // Construir lista de campos a revisar
   const fields: Record<string, string> = {};
   if (msgs.emailSubject)              fields.emailSubject              = msgs.emailSubject;
@@ -562,7 +565,7 @@ async function reviewMessages(msgs: ContactMessages): Promise<ContactMessages> {
       messages: [{ role: "user", content: userPrompt }],
     });
 
-    void logAiUsage({ functionName: "message_review_haiku", model: HAIKU_MODEL, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
+    void logAiUsage({ userId, functionName: "message_review_haiku", model: HAIKU_MODEL, inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens });
     const raw = response.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text)

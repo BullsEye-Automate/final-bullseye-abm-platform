@@ -28,6 +28,8 @@ type DiscoverOpts = {
   sizeHint?: string | null;   // si se provee, reemplaza size en el prompt
   limit: number;
   exclude: string[];
+  clientId?: string;
+  userId?: string | null;
 };
 
 // Extrae el valor de un campo [Etiqueta] del texto del ICP serializado
@@ -191,6 +193,8 @@ A partir de esa evidencia, extrae hasta ${limit} empresas que cumplan el ICP vig
   });
 
   void logAiUsage({
+    userId:       opts.userId,
+    clientId:     opts.clientId,
     functionName: "discovery_recommendation",
     model:        CLAUDE_MODEL,
     inputTokens:  message.usage.input_tokens,

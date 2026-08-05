@@ -75,23 +75,23 @@ function orNull(v: string): string | null {
 // Claude en vez de dejar el contacto "sin empresa".
 // Variante sin try/catch — para que el endpoint de debug pueda ver el error
 // real si Claude falla, en vez de que quede silenciado como "".
-export async function inferCompanyNameFromBioRaw(bio: string): Promise<string> {
+export async function inferCompanyNameFromBioRaw(bio: string, clientId?: string, userId?: string | null): Promise<string> {
   const msg = await anthropic().messages.create({
     model: HAIKU_MODEL,
     max_tokens: 30,
     system: `Te doy la bio de LinkedIn de una persona. Respondé SOLO con el nombre de la empresa donde trabaja actualmente, tal como aparece mencionado en el texto — nada más, sin explicación. Si el texto no menciona el nombre de una empresa actual, respondé exactamente: NINGUNA`,
     messages: [{ role: "user", content: bio.slice(0, 3000) }],
   });
-  void logAiUsage({ functionName: "infer_company_name_from_bio", model: HAIKU_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+  void logAiUsage({ userId, clientId, functionName: "infer_company_name_from_bio", model: HAIKU_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
   const text = msg.content.find((b: { type: string }) => b.type === "text") as { type: "text"; text: string } | undefined;
   const answer = text?.text.trim() ?? "";
   if (!answer || /^ninguna$/i.test(answer)) return "";
   return answer.replace(/^["'.]+|["'.]+$/g, "").slice(0, 120);
 }
 
-async function inferCompanyNameFromBio(bio: string): Promise<string> {
+async function inferCompanyNameFromBio(bio: string, clientId?: string, userId?: string | null): Promise<string> {
   try {
-    return await inferCompanyNameFromBioRaw(bio);
+    return await inferCompanyNameFromBioRaw(bio, clientId, userId);
   } catch {
     return "";
   }
@@ -170,7 +170,9 @@ function mapRawLead(raw: Record<string, unknown>): LemlistLeadDetail {
 // campaña. Usar SIEMPRE esta función, nunca el list crudo.
 export async function getCampaignLeadsWithDetails(
   campaignId: string,
-  apiKey: string
+  apiKey: string,
+  clientId?: string,
+  userId?: string | null
 ): Promise<CampaignLeadsResult> {
   const creds = `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`;
   const matched_url = `https://app.lemlist.com/campaigns/${campaignId}/leads`;
@@ -259,7 +261,7 @@ export async function getCampaignLeadsWithDetails(
     await Promise.all(
       slice.map(async ([leadId, bio]) => {
         const lead = leads.find((l) => l.id === leadId);
-        if (lead) lead.company_name = await inferCompanyNameFromBio(bio);
+        if (lead) lead.company_name = await inferCompanyNameFromBio(bio, clientId, userId);
       })
     );
   }

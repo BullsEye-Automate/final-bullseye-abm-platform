@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { logAiUsage } from "@/lib/aiUsageLogger";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -78,6 +78,7 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const userId = getUserIdFromRequest(_req);
   const db = supabaseAdmin();
 
   const { data: icpCtx } = await db
@@ -104,7 +105,7 @@ export async function POST(
     ]
   });
 
-  void logAiUsage({ clientId: params.id, functionName: "client_generate_clay_config", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
+  void logAiUsage({ userId, clientId: params.id, functionName: "client_generate_clay_config", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
 
   const raw = message.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")

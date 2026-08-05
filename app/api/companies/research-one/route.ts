@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { perplexitySearch, PerplexityCitation } from "@/lib/perplexity";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { normalizeLinkedInUrl } from "@/lib/normalizeLinkedIn";
@@ -44,6 +44,7 @@ type Body = {
 };
 
 export async function POST(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   const body = (await req.json().catch(() => ({}))) as Body;
   if (!body.name?.trim()) {
     return NextResponse.json({ error: "El campo 'name' es requerido" }, { status: 400 });
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
   }).catch(() => null);
 
   if (msg) {
-    void logAiUsage({ clientId: body.client_id, functionName: "company_research_one", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+    void logAiUsage({ userId, clientId: body.client_id, functionName: "company_research_one", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
   }
 
   const rawText = msg?.content?.find((b: { type: string }) => b.type === "text")

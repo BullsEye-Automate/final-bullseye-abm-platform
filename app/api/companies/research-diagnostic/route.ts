@@ -3,6 +3,7 @@ import { perplexitySearch } from "@/lib/perplexity";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { citationNamesCompany, evidenceQuality } from "@/lib/companyEvidence";
 import { logAiUsage } from "@/lib/aiUsageLogger";
+import { getUserIdFromRequest } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,7 @@ function countKeywordHits(text: string, keyword: string): { hits: number; snippe
 }
 
 export async function POST(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   const body = (await req.json().catch(() => ({}))) as Body;
   if (!body.name?.trim()) {
     return NextResponse.json({ error: "El campo 'name' es requerido" }, { status: 400 });
@@ -93,7 +95,7 @@ export async function POST(req: NextRequest) {
   }).catch(() => null);
 
   if (msg) {
-    void logAiUsage({ functionName: "company_research_diagnostic", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+    void logAiUsage({ userId, functionName: "company_research_diagnostic", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
   }
 
   const claudeMs = Date.now() - t1;

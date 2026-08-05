@@ -38,7 +38,7 @@ const FALLBACK: FastResearchResult = {
   research_summary: "Empresa cargada desde búsqueda manual (Sales Navigator) — sin research profundo.",
 };
 
-export async function researchOneCompanyFast(hints: FastResearchHints, icpContext?: string): Promise<FastResearchResult> {
+export async function researchOneCompanyFast(hints: FastResearchHints, icpContext?: string, clientId?: string, userId?: string | null): Promise<FastResearchResult> {
   const lines: string[] = [`Empresa: "${hints.name}"`];
   if (hints.sampleJobTitles?.length) lines.push(`Cargos encontrados en esta empresa por el SDR: ${hints.sampleJobTitles.join(", ")}`);
   if (hints.city || hints.country) lines.push(`Ubicación aproximada: ${[hints.city, hints.country].filter(Boolean).join(", ")}`);
@@ -52,7 +52,7 @@ export async function researchOneCompanyFast(hints: FastResearchHints, icpContex
       messages: [{ role: "user", content: lines.join("\n") }],
     });
 
-    void logAiUsage({ functionName: "company_research_fast", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+    void logAiUsage({ userId, clientId, functionName: "company_research_fast", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
 
     const text = msg.content.find((b: { type: string }) => b.type === "text") as
       | { type: "text"; text: string }

@@ -66,11 +66,15 @@ Devuelve SOLO JSON válido:
   "keywords": string[]
 }`;
 
-export async function deriveSalesNavRecommendations(sections: {
-  target_company: string;
-  fit_signals: string;
-  buyer_persona: string;
-}): Promise<SalesNavRecommendations> {
+export async function deriveSalesNavRecommendations(
+  sections: {
+    target_company: string;
+    fit_signals: string;
+    buyer_persona: string;
+  },
+  clientId?: string,
+  userId?: string | null
+): Promise<SalesNavRecommendations> {
   const fb = fallback(sections);
 
   const context = [
@@ -88,7 +92,7 @@ export async function deriveSalesNavRecommendations(sections: {
       system: SYSTEM,
       messages: [{ role: "user", content: context.slice(0, 4000) }],
     });
-    void logAiUsage({ functionName: "sales_nav_recommendations", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
+    void logAiUsage({ userId, clientId, functionName: "sales_nav_recommendations", model: CLAUDE_MODEL, inputTokens: msg.usage.input_tokens, outputTokens: msg.usage.output_tokens });
     const text = msg.content.find((b: { type: string }) => b.type === "text") as { type: "text"; text: string } | undefined;
     const jsonMatch = text?.text.match(/\{[\s\S]*\}/)?.[0];
     if (!jsonMatch) return fb;
