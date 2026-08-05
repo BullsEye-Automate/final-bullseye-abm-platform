@@ -75,6 +75,7 @@ export type ContactMessageInput = {
   linkedinMsgCount?: number;    // cuántos mensajes de LinkedIn (default 1)
   includeConnectMsg?: boolean;  // incluir nota de invitación a conectar (default false)
   mode?: "sequence" | "preview"; // sequence = carga masiva (reglas estrictas); preview = agente SDR (relajado)
+  model?: string;                // override del modelo (default: CLAUDE_MODEL)
 };
 
 // Tipo para un email individual dentro de una secuencia
@@ -243,7 +244,7 @@ export async function routeContactToSegment(
       .join("")
       .trim();
 
-    void logAiUsage({ userId, functionName: "segment_routing", model: "claude-haiku-4-5-20251001", inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
+    void logAiUsage({ userId, functionName: "segment_routing", model: HAIKU_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return { segmentId: null, segmentName: null, reasoning: "No se pudo parsear la respuesta" };
 
@@ -283,7 +284,10 @@ export async function generateContactMessages(
     linkedinMsgCount = 1,
     includeConnectMsg = false,
     mode = "sequence",
+    model: modelOverride,
   } = input;
+
+  const effectiveModel = modelOverride ?? CLAUDE_MODEL;
 
   // Determinar si se necesita generar una secuencia completa
   const needsSequence = emailCount > 1 || linkedinMsgCount > 1 || includeConnectMsg;
@@ -415,7 +419,7 @@ ${includeConnectMsg ? "- 1 mensaje de invitación a conectar en LinkedIn: nota m
 Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
 
     const seqMessage = await anthropic().messages.create({
-      model: CLAUDE_MODEL,
+      model: effectiveModel,
       max_tokens: 4096,
       system: systemPrompt,
       tools: [sequenceTool],
@@ -423,7 +427,7 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
       messages: [{ role: "user", content: sequencePrompt }],
     });
 
-    void logAiUsage({ userId, clientId, functionName: "message_generation_sequence", model: CLAUDE_MODEL, inputTokens: seqMessage.usage.input_tokens, outputTokens: seqMessage.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name, num_contacts: 1, num_companies: 1 } });
+    void logAiUsage({ userId, clientId, functionName: "message_generation_sequence", model: effectiveModel, inputTokens: seqMessage.usage.input_tokens, outputTokens: seqMessage.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name, num_contacts: 1, num_companies: 1 } });
     const seqToolUse = seqMessage.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
     if (!seqToolUse) {
       const raw = seqMessage.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("").trim();
@@ -507,7 +511,7 @@ ${hasValidDeepResearch
 Genera los mensajes de outreach personalizados para este contacto usando la herramienta generate_messages.`;
 
   const message = await anthropic().messages.create({
-    model: CLAUDE_MODEL,
+    model: effectiveModel,
     max_tokens: 2048,
     system: systemPrompt,
     tools: [tool],
@@ -515,7 +519,7 @@ Genera los mensajes de outreach personalizados para este contacto usando la herr
     messages: [{ role: "user", content: userPrompt }],
   });
 
-  void logAiUsage({ userId, clientId, functionName: "message_generation_simple", model: CLAUDE_MODEL, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name, num_contacts: 1, num_companies: 1 } });
+  void logAiUsage({ userId, clientId, functionName: "message_generation_simple", model: effectiveModel, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens, metadata: { firstName, lastName, companyName, segmentName: segmentContext?.name, num_contacts: 1, num_companies: 1 } });
   // Extraer el resultado del tool_use
   const toolUse = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
 

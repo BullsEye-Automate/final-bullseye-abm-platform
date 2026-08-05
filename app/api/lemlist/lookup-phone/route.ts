@@ -125,8 +125,8 @@ export async function POST(req: NextRequest) {
     debug.campaigns_searched.push(camDebug);
     let offset = 0;
     const limit = 100;
-    // Tope de leads a inspeccionar para evitar explosión de API calls.
-    const maxInspect = 60;
+    // Tope de leads a inspeccionar para evitar explosión de API calls (aumentado para mayor cobertura).
+    const maxInspect = 300;
     while (offset < 1000) {
       const url = `https://api.lemlist.com/api/campaigns/${cId}/leads?limit=${limit}&offset=${offset}`;
       const listRes = await fetch(url, { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }).catch(() => null);
@@ -246,18 +246,21 @@ export async function POST(req: NextRequest) {
   // Polling: cada 4s buscar el lead en la campaña y revisar si Lemlist ya levantó teléfono.
   // Máx 20s para no chocar con timeout de la función serverless.
   const deadline = Date.now() + 20_000;
+  let pollOffset = 0;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 4000));
 
     const listRes = await fetch(
-      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=200`,
+      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=200&offset=${pollOffset}`,
       { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }
     ).catch(() => null);
 
     if (!listRes?.ok) continue;
     const data = await listRes.json();
     const leads: any[] = Array.isArray(data) ? data : (data.leads ?? data.list ?? []);
-    const match = leads.find((l) => (l.linkedinUrl ?? "").trim().toLowerCase() === linkedinUrl.toLowerCase());
+
+    // Usar sameLinkedin() para comparación normalizada (maneja www, acentos, etc.)
+    const match = leads.find((l) => sameLinkedin(l));
 
     if (match?.phone?.trim()) {
       const phone = match.phone.trim();
@@ -274,6 +277,10 @@ export async function POST(req: NextRequest) {
       }
       return NextResponse.json({ found: true, phone, source: "lemlist", hubspot_updated });
     }
+
+    // Paginar si hay más leads
+    if (leads.length < 200) break;
+    pollOffset += 200;
   }
 
   return NextResponse.json({
