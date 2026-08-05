@@ -56,17 +56,40 @@ function fmtTokens(n: number) {
 
 const AUTO_REFRESH_MS = 30_000;
 
+type FunctionDetail = {
+  function_name: string;
+  period_days: number;
+  total_calls: number;
+  total_cost_usd: number;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  by_client: Record<string, { name: string; calls: number; cost_usd: number; input_tokens: number; output_tokens: number }>;
+  by_day: Record<string, { calls: number; cost_usd: number }>;
+  by_model: Record<string, { calls: number; cost_usd: number; input_tokens: number; output_tokens: number }>;
+  metadata_stats: {
+    total_contacts: number;
+    total_companies: number;
+    total_sequences: number;
+    avg_tokens_per_contact: number;
+    avg_cost_per_contact: number;
+  };
+};
+
 export default function UsoIAPage() {
   const [days, setDays]     = useState(7);
   const [data, setData]     = useState<UsageData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState<string | null>(null);
+  const [detailFn, setDetailFn] = useState<string | null>(null);
+  const [detailData, setDetailData] = useState<FunctionDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
-  async function load(days: number) {
+  async function load(d: number) {
     setLoading(true);
     setError(null);
+    setData(null);
     try {
-      const r = await fetch(`/api/admin/ai-usage?days=${days}`, { cache: "no-store" });
+      const r = await fetch(`/api/admin/ai-usage?days=${d}`, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
       setData(json);
@@ -74,6 +97,20 @@ export default function UsoIAPage() {
       setError(e.message);
     }
     setLoading(false);
+  }
+
+  async function loadFunctionDetail(fn: string) {
+    setDetailLoading(true);
+    try {
+      const r = await fetch(`/api/admin/ai-usage/function-detail?days=${days}&function=${fn}`, { cache: "no-store" });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error ?? "Error");
+      setDetailData(json);
+      setDetailFn(fn);
+    } catch (e: any) {
+      console.error(e);
+    }
+    setDetailLoading(false);
   }
 
   useEffect(() => {
@@ -183,14 +220,17 @@ export default function UsoIAPage() {
 
           {/* TOP INSIGHT */}
           {mostExpensive && (
-            <div className="card bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 px-5 py-4">
-              <p className="text-xs text-orange-700 font-semibold uppercase tracking-wide mb-2">⚠️ Mayor consumidor de recursos</p>
+            <button
+              onClick={() => loadFunctionDetail(mostExpensive[0])}
+              className="card bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 px-5 py-4 w-full text-left hover:shadow-md transition cursor-pointer"
+            >
+              <p className="text-xs text-orange-700 font-semibold uppercase tracking-wide mb-2">⚠️ Mayor consumidor de recursos (click para análisis detallado)</p>
               <p className="text-lg font-semibold text-orange-900">{FUNCTION_LABELS[mostExpensive[0]] ?? mostExpensive[0]}</p>
               <p className="text-sm text-orange-700 mt-1">
                 ${fmt(mostExpensive[1].cost_usd)} ({mostExpensive[1].calls} llamadas) ·
                 {((mostExpensive[1].cost_usd / data.total_cost_usd) * 100).toFixed(1)}% del costo total
               </p>
-            </div>
+            </button>
           )}
 
           {/* GRÁFICO DE TENDENCIA TEMPORAL */}
@@ -385,6 +425,149 @@ export default function UsoIAPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* MODAL DE ANÁLISIS DETALLADO */}
+      {detailFn && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-[#E5E2F0] px-6 py-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-orange-700 font-semibold uppercase">Análisis detallado</p>
+                <h2 className="text-xl font-semibold text-ink">{FUNCTION_LABELS[detailFn] ?? detailFn}</h2>
+              </div>
+              <button
+                onClick={() => { setDetailFn(null); setDetailData(null); }}
+                className="text-ink-muted hover:text-ink text-2xl leading-none"
+              >
+                ✕
+              </button>
+            </div>
+
+            {detailLoading ? (
+              <div className="p-6 text-center">
+                <IconLoader2 size={24} className="animate-spin mx-auto mb-2" style={{ color: "#62E0D8" }} />
+                Cargando detalles…
+              </div>
+            ) : detailData ? (
+              <div className="p-6 space-y-6">
+                {/* RESUMEN RÁPIDO */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "Costo total", value: `$${fmt(detailData.total_cost_usd)}` },
+                    { label: "Llamadas", value: detailData.total_calls },
+                    { label: "Costo / llamada", value: `$${fmt(detailData.total_cost_usd / detailData.total_calls)}` },
+                  ].map((s) => (
+                    <div key={s.label} className="bg-[#F8F7FC] p-3 rounded">
+                      <p className="text-xs text-ink-muted mb-1">{s.label}</p>
+                      <p className="text-lg font-semibold text-[#251762]">{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* MÉTRICAS DE METADATA */}
+                {detailData.metadata_stats && (
+                  <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded p-4">
+                    <p className="text-sm font-semibold text-ink mb-3">📊 Métricas de impacto</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        { label: "Contactos procesados", value: detailData.metadata_stats.total_contacts || "—" },
+                        { label: "Empresas procesadas", value: detailData.metadata_stats.total_companies || "—" },
+                        { label: "Costo por contacto", value: detailData.metadata_stats.total_contacts > 0 ? `$${fmt(detailData.metadata_stats.avg_cost_per_contact)}` : "—" },
+                        { label: "Tokens por contacto", value: detailData.metadata_stats.total_contacts > 0 ? fmtTokens(detailData.metadata_stats.avg_tokens_per_contact) : "—" },
+                      ].map((s) => (
+                        <div key={s.label}>
+                          <p className="text-xs text-blue-700 mb-1">{s.label}</p>
+                          <p className="text-lg font-semibold text-blue-900">{s.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* DESGLOSE POR CLIENTE */}
+                {Object.keys(detailData.by_client).length > 0 && (
+                  <div className="border border-[#E5E2F0] rounded overflow-hidden">
+                    <div className="bg-[#F8F7FC] px-4 py-2 border-b border-[#E5E2F0]">
+                      <p className="text-sm font-semibold text-ink">Consumo por cliente</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[#E5E2F0]">
+                          <th className="text-left px-4 py-2 text-[11px] font-semibold text-ink-muted">Cliente</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Llamadas</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Costo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(detailData.by_client)
+                          .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+                          .map(([id, row]) => (
+                            <tr key={id} className="border-b border-[#F0EEF8] last:border-0">
+                              <td className="px-4 py-2 text-ink font-medium">{row.name}</td>
+                              <td className="px-4 py-2 text-right text-ink-muted">{row.calls}</td>
+                              <td className="px-4 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* DESGLOSE POR MODELO */}
+                {Object.keys(detailData.by_model).length > 0 && (
+                  <div className="border border-[#E5E2F0] rounded overflow-hidden">
+                    <div className="bg-[#F8F7FC] px-4 py-2 border-b border-[#E5E2F0]">
+                      <p className="text-sm font-semibold text-ink">Modelos utilizados</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[#E5E2F0]">
+                          <th className="text-left px-4 py-2 text-[11px] font-semibold text-ink-muted">Modelo</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Llamadas</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Costo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(detailData.by_model)
+                          .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+                          .map(([model, row]) => (
+                            <tr key={model} className="border-b border-[#F0EEF8] last:border-0">
+                              <td className="px-4 py-2 text-ink font-medium text-xs">{model}</td>
+                              <td className="px-4 py-2 text-right text-ink-muted">{row.calls}</td>
+                              <td className="px-4 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* RECOMENDACIONES */}
+                <div className="bg-green-50 border border-green-200 rounded p-4">
+                  <p className="text-sm font-semibold text-green-900 mb-2">💡 Recomendaciones de optimización</p>
+                  <ul className="text-sm text-green-800 space-y-1 list-disc list-inside">
+                    <li>
+                      {detailData.by_model['claude-sonnet-4-6'] && detailData.by_model['claude-sonnet-4-6'].calls > detailData.total_calls * 0.5
+                        ? "Considerar usar Haiku para pre-filtros o validaciones básicas (reducir 80% del costo)"
+                        : "Modelo optimizado para complejidad requerida"}
+                    </li>
+                    <li>
+                      {detailData.total_cost_usd / detailData.total_calls > 0.05
+                        ? "El costo por llamada es alto. Revisar si el prompt puede ser más conciso o si se puede usar caching"
+                        : "Costo por llamada dentro de lo esperado"}
+                    </li>
+                    <li>
+                      {detailData.metadata_stats.total_contacts > 0 && detailData.metadata_stats.avg_cost_per_contact > 0.01
+                        ? "Implementar batch processing para procesar múltiples contactos por llamada"
+                        : "Batching ya está optimizado"}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
       )}
     </div>
   );
