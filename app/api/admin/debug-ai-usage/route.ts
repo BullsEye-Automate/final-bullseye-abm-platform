@@ -62,11 +62,13 @@ export async function GET(req: NextRequest) {
       models,
       functions,
       recent_records: (overview ?? []).slice(0, 20).map((r: any) => ({
-        created_at: r.created_at,
-        model: r.model,
-        function_name: r.function_name,
-        tokens: `${r.input_tokens}/${r.output_tokens}`,
-        cost: r.cost_usd,
+        created_at: r.created_at ?? null,
+        model: r.model ?? null,
+        function_name: r.function_name ?? null,
+        input_tokens: r.input_tokens ?? null,
+        output_tokens: r.output_tokens ?? null,
+        tokens: `${r.input_tokens ?? 0}/${r.output_tokens ?? 0}`,
+        cost: r.cost_usd ?? null,
       })),
     });
   } catch (err: any) {

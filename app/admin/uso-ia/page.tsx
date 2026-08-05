@@ -501,19 +501,19 @@ export default function UsoIAPage() {
                 </div>
 
                 {/* MÉTRICAS DE METADATA */}
-                {detailData.metadata_stats && detailData.metadata_stats.total_contacts > 0 && (
+                {detailData.metadata_stats && (
                   <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded p-4">
                     <p className="text-sm font-semibold text-ink mb-3">📊 Métricas de impacto</p>
                     <div className="grid grid-cols-2 gap-3">
                       {[
-                        { label: "Contactos procesados", value: detailData.metadata_stats.total_contacts },
-                        { label: "Empresas procesadas", value: detailData.metadata_stats.total_companies },
-                        { label: "Costo por contacto", value: `$${fmt(detailData.metadata_stats.avg_cost_per_contact)}` },
-                        { label: "Tokens por contacto", value: fmtTokens(detailData.metadata_stats.avg_tokens_per_contact) },
+                        { label: "Contactos procesados", value: detailData.metadata_stats.total_contacts ?? null },
+                        { label: "Empresas procesadas", value: detailData.metadata_stats.total_companies ?? null },
+                        { label: "Costo por contacto", value: detailData.metadata_stats.avg_cost_per_contact !== null && detailData.metadata_stats.avg_cost_per_contact !== undefined ? `$${fmt(detailData.metadata_stats.avg_cost_per_contact)}` : null },
+                        { label: "Tokens por contacto", value: detailData.metadata_stats.avg_tokens_per_contact !== null && detailData.metadata_stats.avg_tokens_per_contact !== undefined ? fmtTokens(detailData.metadata_stats.avg_tokens_per_contact) : null },
                       ].map((s) => (
                         <div key={s.label}>
                           <p className="text-xs text-blue-700 mb-1">{s.label}</p>
-                          <p className="text-lg font-semibold text-blue-900">{s.value}</p>
+                          <p className="text-lg font-semibold text-blue-900">{s.value === null ? 'null' : s.value}</p>
                         </div>
                       ))}
                     </div>
@@ -593,9 +593,9 @@ export default function UsoIAPage() {
                         : "Costo por llamada dentro de lo esperado"}
                     </li>
                     <li>
-                      {detailData.metadata_stats.total_contacts > 0 && detailData.metadata_stats.avg_cost_per_contact > 0.01
+                      {detailData.metadata_stats && detailData.metadata_stats.total_contacts && detailData.metadata_stats.total_contacts > 0 && detailData.metadata_stats.avg_cost_per_contact && detailData.metadata_stats.avg_cost_per_contact > 0.01
                         ? "Implementar batch processing para procesar múltiples contactos por llamada"
-                        : "Batching ya está optimizado"}
+                        : "Batching ya está optimizado o sin datos de metadata"}
                     </li>
                   </ul>
                 </div>
