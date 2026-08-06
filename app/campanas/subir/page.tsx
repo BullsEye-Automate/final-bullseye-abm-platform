@@ -58,6 +58,14 @@ type GeneratedContact = ParsedContact & {
 
 type Stage = "idle" | "parsed" | "segment" | "preview" | "pushing" | "done";
 
+type CompareState = {
+  index: number;
+  contactName: string;
+  current: GeneratedContact;
+  alternative: GeneratedContact | null; // null mientras se genera
+  loading: boolean;
+};
+
 type SegmentOption = { id: string; name: string };
 
 // ─── Mapeo de columnas del CSV/Excel ──────────────────────────────────────────
@@ -140,24 +148,28 @@ function ContactRow({
   deepResearch,
   onChange,
   onRegenerate,
+  onCompare,
 }: {
   contact: GeneratedContact;
   index: number;
   pending?: boolean;
   deepResearch?: boolean;
   onChange: (i: number, field: keyof GeneratedContact, val: string) => void;
-  onRegenerate?: (i: number) => Promise<void>;
+  onRegenerate?: (i: number, model?: string) => Promise<void>;
+  onCompare?: (i: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const hasError = Boolean(contact.error) && !contact.cancelled;
 
-  async function handleRegenerate(e: React.MouseEvent) {
+  async function handleRegenerate(e: React.MouseEvent, model?: string) {
     e.stopPropagation();
     if (!onRegenerate || regenerating) return;
     setRegenerating(true);
     setOpen(false);
-    await onRegenerate(index);
+    setModelMenuOpen(false);
+    await onRegenerate(index, model);
     setRegenerating(false);
     setOpen(true);
   }
@@ -265,13 +277,40 @@ function ContactRow({
           </span>
         ) : null}
         {onRegenerate && !regenerating && (
-          <button
-            onClick={handleRegenerate}
-            className="shrink-0 text-xs text-ink-muted hover:text-[#251762] transition flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-gray-100"
-            title="Regenerar mensajes"
-          >
-            <IconRefresh size={13} />
-          </button>
+          <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                onClick={(e) => handleRegenerate(e)}
+                className="text-xs text-ink-muted hover:text-[#251762] transition flex items-center gap-1 px-2 py-1 hover:bg-gray-100"
+                title="Regenerar con Sonnet"
+              >
+                <IconRefresh size={13} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setModelMenuOpen((v) => !v); }}
+                className="text-xs text-ink-muted hover:text-[#251762] transition px-1 py-1 hover:bg-gray-100 border-l border-gray-200"
+                title="Elegir modelo"
+              >
+                <IconChevronDown size={11} />
+              </button>
+            </div>
+            {modelMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[200px]">
+                <button
+                  onClick={(e) => handleRegenerate(e, "claude-sonnet-4-6")}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center justify-between gap-2"
+                >
+                  <span>Sonnet <span className="text-ink-muted">(reemplazar)</span></span>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setModelMenuOpen(false); onCompare?.(index); }}
+                  className="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 flex items-center gap-2"
+                >
+                  <span>Haiku <span className="text-ink-muted">(comparar lado a lado)</span></span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
         {open ? <IconChevronUp size={14} className="text-ink-muted shrink-0" /> : <IconChevronDown size={14} className="text-ink-muted shrink-0" />}
       </button>
@@ -402,6 +441,7 @@ export default function SubirCampanaPage() {
   const [deepResearchSet, setDeepResearchSet] = useState<Set<number>>(new Set());
   const [localEdits, setLocalEdits] = useState<Record<number, Partial<GeneratedContact>>>({});
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [compareState, setCompareState] = useState<CompareState | null>(null);
 
   // Si hay una generación activa para este cliente, mostrar directamente la preview
   const isActiveGeneration =
@@ -494,7 +534,7 @@ export default function SubirCampanaPage() {
   }
 
   // ── Regenerar un contacto individual ──
-  async function handleRegenerate(index: number) {
+  async function handleRegenerate(index: number, model?: string) {
     if (!currentClient?.id) return;
     const contact = displayContacts[index];
     if (!contact) return;
@@ -517,6 +557,7 @@ export default function SubirCampanaPage() {
           contacts: [contact],
           segment_id: generation.segmentId || undefined,
           use_deep_research: generation.deepResearchSet?.has(index) ?? false,
+          ...(model ? { model } : {}),
         }),
       });
       if (res.ok) {
@@ -532,6 +573,47 @@ export default function SubirCampanaPage() {
     } catch {
       generation.updateContact(index, { error: "Error de red" });
     }
+  }
+
+  // ── Abrir modal de comparación Sonnet vs Haiku ──
+  async function handleCompare(index: number) {
+    if (!currentClient?.id) return;
+    const contact = displayContacts[index];
+    if (!contact) return;
+    const contactName = [contact.firstName, contact.lastName].filter(Boolean).join(" ") || contact.companyName || `Contacto ${index + 1}`;
+    setCompareState({ index, contactName, current: contact, alternative: null, loading: true });
+
+    try {
+      const res = await fetch("/api/lemlist/csv-generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: currentClient.id,
+          contacts: [contact],
+          segment_id: generation.segmentId || undefined,
+          use_deep_research: generation.deepResearchSet?.has(index) ?? false,
+          model: "claude-haiku-4-5-20251001",
+        }),
+      });
+      if (res.ok) {
+        const { results } = await res.json();
+        if (results?.[0]) {
+          setCompareState((prev) => prev ? { ...prev, alternative: results[0], loading: false } : null);
+          return;
+        }
+      }
+    } catch { /* handled below */ }
+    setCompareState((prev) => prev ? { ...prev, loading: false } : null);
+  }
+
+  // ── Aplicar versión elegida en el modal de comparación ──
+  function applyCompareChoice(version: "current" | "alternative") {
+    if (!compareState) return;
+    if (version === "alternative" && compareState.alternative) {
+      generation.updateContact(compareState.index, compareState.alternative);
+      setLocalEdits((prev) => { const next = { ...prev }; delete next[compareState.index]; return next; });
+    }
+    setCompareState(null);
   }
 
   // ── Editar mensaje generado (los datos viven en el contexto) ──
@@ -961,7 +1043,7 @@ export default function SubirCampanaPage() {
                     {!isPending && !isCancelled && selectedIndexes.has(i) && <IconCheck size={10} className="text-white" strokeWidth={3} />}
                   </button>
                   <div className="flex-1 min-w-0">
-                    <ContactRow contact={c} index={i} pending={isPending} deepResearch={generation.deepResearchSet.has(i)} onChange={handleChange} onRegenerate={!isPending ? handleRegenerate : undefined} />
+                    <ContactRow contact={c} index={i} pending={isPending} deepResearch={generation.deepResearchSet.has(i)} onChange={handleChange} onRegenerate={!isPending ? (idx, model) => handleRegenerate(idx, model) : undefined} onCompare={!isPending ? handleCompare : undefined} />
                   </div>
                   {/* Botón cancelar contacto individual — solo para pendientes */}
                   {isPending && !isCancelled && (
@@ -1059,6 +1141,128 @@ export default function SubirCampanaPage() {
           onClose={() => setReviewModalOpen(false)}
         />
       )}
+
+      {compareState && (
+        <CompareModal
+          state={compareState}
+          onChoose={applyCompareChoice}
+          onClose={() => setCompareState(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Modal de comparación Sonnet vs Haiku ─────────────────────────────────────
+
+function CompareModal({
+  state,
+  onChoose,
+  onClose,
+}: {
+  state: CompareState;
+  onChoose: (version: "current" | "alternative") => void;
+  onClose: () => void;
+}) {
+  const fields: { key: keyof GeneratedContact; label: string }[] = [
+    { key: "emailSubject", label: "Asunto Email 1" },
+    { key: "emailBody", label: "Email 1" },
+    { key: "emailSubject2", label: "Asunto Email 2" },
+    { key: "emailBody2", label: "Email 2" },
+    { key: "emailSubject3", label: "Asunto Email 3" },
+    { key: "emailBody3", label: "Email 3" },
+    { key: "connectMessage", label: "Invitación LinkedIn" },
+    { key: "icebreaker", label: "LinkedIn msg 1" },
+    { key: "linkedinMsg2", label: "LinkedIn msg 2" },
+  ];
+
+  const visibleFields = fields.filter(
+    (f) => state.current[f.key] !== undefined || state.alternative?.[f.key] !== undefined
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl my-8">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E2F0]">
+          <div>
+            <h2 className="font-semibold text-ink">Comparar versiones — {state.contactName}</h2>
+            <p className="text-xs text-ink-muted mt-0.5">Elige qué versión conservar. La otra se descarta.</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition text-ink-muted">
+            <IconX size={16} />
+          </button>
+        </div>
+
+        {/* Columnas */}
+        <div className="grid grid-cols-2 divide-x divide-[#E5E2F0]">
+          {/* Sonnet (actual) */}
+          <div className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Sonnet · actual</span>
+              <button
+                onClick={() => onChoose("current")}
+                className="text-xs px-3 py-1.5 rounded-lg font-medium border border-[#251762] text-[#251762] hover:bg-[#251762] hover:text-white transition"
+              >
+                Usar esta versión
+              </button>
+            </div>
+            {visibleFields.map(({ key, label }) => (
+              state.current[key] !== undefined ? (
+                <div key={key} className="space-y-1">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
+                  <p className="text-sm text-ink whitespace-pre-wrap bg-gray-50 rounded-lg px-3 py-2 border border-[#E5E2F0]">
+                    {String(state.current[key] ?? "")}
+                  </p>
+                </div>
+              ) : null
+            ))}
+          </div>
+
+          {/* Haiku (alternativa) */}
+          <div className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Haiku · nueva</span>
+              <button
+                onClick={() => onChoose("alternative")}
+                disabled={!state.alternative || state.loading}
+                className="text-xs px-3 py-1.5 rounded-lg font-medium bg-[#251762] text-white hover:bg-[#1a1048] transition disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Usar esta versión
+              </button>
+            </div>
+
+            {state.loading ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 text-ink-muted">
+                <IconLoader2 size={24} className="animate-spin" style={{ color: "#62E0D8" }} />
+                <span className="text-sm">Generando con Haiku…</span>
+              </div>
+            ) : state.alternative ? (
+              visibleFields.map(({ key, label }) => (
+                state.alternative![key] !== undefined ? (
+                  <div key={key} className="space-y-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{label}</p>
+                    <p className="text-sm text-ink whitespace-pre-wrap bg-gray-50 rounded-lg px-3 py-2 border border-[#E5E2F0]">
+                      {String(state.alternative![key] ?? "")}
+                    </p>
+                  </div>
+                ) : null
+              ))
+            ) : (
+              <div className="flex items-center justify-center py-16 text-sm text-red-500">
+                Error al generar. Cierra e intenta de nuevo.
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end px-6 py-4 border-t border-[#E5E2F0]">
+          <button onClick={onClose} className="text-sm text-ink-muted hover:text-ink transition">
+            Cancelar (conservar versión actual)
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

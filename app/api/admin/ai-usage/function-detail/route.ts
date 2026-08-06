@@ -5,11 +5,22 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
-  const functionName = req.nextUrl.searchParams.get("function") ?? "message_generation_sequence";
-  const db = supabaseAdmin();
+  try {
+    const functionName = req.nextUrl.searchParams.get("function") ?? "message_generation_sequence";
+    const db = supabaseAdmin();
 
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    let since: string;
+
+    const fromParam = req.nextUrl.searchParams.get("from");
+    const toParam = req.nextUrl.searchParams.get("to");
+
+    if (fromParam && toParam) {
+      const fromDate = new Date(fromParam + "T00:00:00Z");
+      since = fromDate.toISOString();
+    } else {
+      const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
+      since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    }
 
   const { data, error } = await db
     .from("ai_usage_log")
@@ -30,13 +41,13 @@ export async function GET(req: NextRequest) {
   const byDay: Record<string, { calls: number; cost_usd: number }> = {};
   const byModel: Record<string, { calls: number; cost_usd: number; input_tokens: number; output_tokens: number }> = {};
 
-  // Métricas de metadata
+  // Métricas de metadata (null si no hay datos)
   const metadataStats = {
-    total_contacts: 0,
-    total_companies: 0,
-    total_sequences: 0,
-    avg_tokens_per_contact: 0,
-    avg_cost_per_contact: 0,
+    total_contacts: null,
+    total_companies: null,
+    total_sequences: null,
+    avg_tokens_per_contact: null,
+    avg_cost_per_contact: null,
   };
 
   const allMetadata: Array<{ contacts?: number; companies?: number; sequences?: number; cost: number; tokens: number }> = [];
@@ -78,43 +89,56 @@ export async function GET(req: NextRequest) {
     if (row.metadata) {
       const meta = row.metadata as any;
       allMetadata.push({
-        contacts: meta.num_contacts || meta.contacts_count || 0,
-        companies: meta.num_companies || meta.companies_count || 0,
-        sequences: meta.num_sequences || meta.sequences_count || 1,
+        contacts: meta.num_contacts || meta.contacts_count || null,
+        companies: meta.num_companies || meta.companies_count || null,
+        sequences: meta.num_sequences || meta.sequences_count || null,
         cost: Number(row.cost_usd),
         tokens: row.input_tokens + row.output_tokens,
       });
 
-      if (meta.num_contacts) metadataStats.total_contacts += meta.num_contacts;
-      if (meta.contacts_count) metadataStats.total_contacts += meta.contacts_count;
-      if (meta.num_companies) metadataStats.total_companies += meta.num_companies;
-      if (meta.companies_count) metadataStats.total_companies += meta.companies_count;
-      if (meta.num_sequences) metadataStats.total_sequences += meta.num_sequences;
+      if (meta.num_contacts) {
+        metadataStats.total_contacts ??= 0;
+        metadataStats.total_contacts += meta.num_contacts;
+      }
+      if (meta.contacts_count) {
+        metadataStats.total_contacts ??= 0;
+        metadataStats.total_contacts += meta.contacts_count;
+      }
+      if (meta.num_companies) {
+        metadataStats.total_companies ??= 0;
+        metadataStats.total_companies += meta.num_companies;
+      }
+      if (meta.companies_count) {
+        metadataStats.total_companies ??= 0;
+        metadataStats.total_companies += meta.companies_count;
+      }
+      if (meta.num_sequences) {
+        metadataStats.total_sequences ??= 0;
+        metadataStats.total_sequences += meta.num_sequences;
+      }
     }
   }
 
   // Calcular promedios
-  if (allMetadata.length > 0) {
-    metadataStats.avg_tokens_per_contact = metadataStats.total_contacts > 0
-      ? (totalInputTokens + totalOutputTokens) / metadataStats.total_contacts
-      : 0;
-    metadataStats.avg_cost_per_contact = metadataStats.total_contacts > 0
-      ? totalCost / metadataStats.total_contacts
-      : 0;
+  if (allMetadata.length > 0 && metadataStats.total_contacts && metadataStats.total_contacts > 0) {
+    metadataStats.avg_tokens_per_contact = (totalInputTokens + totalOutputTokens) / metadataStats.total_contacts;
+    metadataStats.avg_cost_per_contact = totalCost / metadataStats.total_contacts;
   }
 
-  return NextResponse.json({
-    function_name: functionName,
-    period_days: days,
-    total_calls: totalCalls,
-    total_cost_usd: totalCost,
-    total_input_tokens: totalInputTokens,
-    total_output_tokens: totalOutputTokens,
-    by_client: byClient,
-    by_day: byDay,
-    by_model: byModel,
-    metadata_stats: metadataStats,
-    all_metadata: allMetadata,
-    raw_rows: data,
-  });
+    return NextResponse.json({
+      function_name: functionName,
+      total_calls: totalCalls,
+      total_cost_usd: totalCost,
+      total_input_tokens: totalInputTokens,
+      total_output_tokens: totalOutputTokens,
+      by_client: byClient,
+      by_day: byDay,
+      by_model: byModel,
+      metadata_stats: metadataStats,
+      all_metadata: allMetadata,
+      raw_rows: data,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message ?? "Error al obtener detalles" }, { status: 500 });
+  }
 }

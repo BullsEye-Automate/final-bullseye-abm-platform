@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { runDeepResearch } from "@/lib/deep-research";
 
 export const runtime    = "nodejs";
@@ -7,9 +7,10 @@ export const dynamic    = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const userId = getUserIdFromRequest(req);
   const db = supabaseAdmin();
 
   const { data: company, error: compErr } = await db
@@ -47,7 +48,9 @@ export async function POST(
       companyWebsite:  company.company_website,
       companyLinkedin: company.company_linkedin_url,
       companyCountry:  company.company_country,
-      icpContent:      icpCtx.content
+      icpContent:      icpCtx.content,
+      userId,
+      clientId:        company.client_id
     });
 
     const { error: updateErr } = await db

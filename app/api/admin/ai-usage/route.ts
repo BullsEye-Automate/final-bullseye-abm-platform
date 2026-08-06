@@ -5,10 +5,27 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
-  const db = supabaseAdmin();
+  try {
+    const db = supabaseAdmin();
 
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+    let since: string;
+    let now: string;
+
+    const fromParam = req.nextUrl.searchParams.get("from");
+    const toParam = req.nextUrl.searchParams.get("to");
+
+    if (fromParam && toParam) {
+      // Parsear como YYYY-MM-DD y convertir a UTC start/end
+      const fromDate = new Date(fromParam + "T00:00:00Z");
+      const toDate = new Date(toParam + "T23:59:59Z");
+      since = fromDate.toISOString();
+      now = toDate.toISOString();
+    } else {
+      const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
+      const cutoffMs = days * 24 * 60 * 60 * 1000;
+      since = new Date(Date.now() - cutoffMs).toISOString();
+      now = new Date().toISOString();
+    }
 
   // Obtener datos de usuarios para mapear IDs a emails
   const { data: users, error: usersError } = await db
@@ -105,20 +122,28 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => b[1].calls - a[1].calls)
     .slice(0, 10);
 
-  return NextResponse.json({
-    period_days: days,
-    total_calls: totalCalls,
-    total_cost_usd: totalCost,
-    total_input_tokens: totalInputTokens,
-    total_output_tokens: totalOutputTokens,
-    by_function: byFunction,
-    by_client: byClient,
-    by_model: byModel,
-    by_user: byUser,
-    by_day: byDay,
-    functions_by_day: functionsByDay,
-    top_functions_by_cost: topFunctions,
-    top_functions_by_calls: topFrequent,
-    rows: data,
-  });
+  const dateRange = data && data.length > 0
+    ? { oldest: data[data.length - 1].created_at, newest: data[0].created_at }
+    : null;
+
+    return NextResponse.json({
+      query_since: since,
+      query_now: now,
+      data_date_range: dateRange,
+      total_calls: totalCalls,
+      total_cost_usd: totalCost,
+      total_input_tokens: totalInputTokens,
+      total_output_tokens: totalOutputTokens,
+      by_function: byFunction,
+      by_client: byClient,
+      by_model: byModel,
+      by_user: byUser,
+      by_day: byDay,
+      functions_by_day: functionsByDay,
+      top_functions_by_cost: topFunctions,
+      top_functions_by_calls: topFrequent,
+    });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message ?? "Error al obtener datos" }, { status: 500 });
+  }
 }

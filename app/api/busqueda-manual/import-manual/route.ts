@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { getLemlistApiKey } from "@/lib/lemlistKey";
 import { getClientLemlistConfig, getCampaignLeadsWithDetails, resolveManualSearchCampaignId, type LemlistLeadDetail } from "@/lib/lemlist";
 import { intakeContactsForCompany, type RawContact } from "@/lib/contactsIntake";
@@ -26,6 +26,7 @@ async function chunked<T>(items: T[], size: number, fn: (item: T) => Promise<voi
 }
 
 export async function POST(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   const body = (await req.json().catch(() => ({}))) as Body;
   const clientId = body.client_id;
   if (!clientId) return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
@@ -174,7 +175,9 @@ export async function POST(req: NextRequest) {
           } else {
             const fast = await researchOneCompanyFast(
               { name: displayName, sampleJobTitles: groupLeads.map((l) => l.job_title).filter(Boolean).slice(0, 5) },
-              icpCtx?.content ?? undefined
+              icpCtx?.content ?? undefined,
+              clientId,
+              userId
             );
             const { data: insertedCompany, error: insErr } = await db
               .from("companies")

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
 
 export const runtime = "nodejs";
@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  const userId = getUserIdFromRequest(req);
   const body = await req.json();
   const { client_id, contact_id, manual, has_email_override } = body;
 
@@ -77,7 +78,8 @@ export async function POST(req: NextRequest) {
   // Routing de segmento
   const routing = await routeContactToSegment(
     { firstName, lastName, jobTitle, companyName, industry, companySize },
-    segments ?? []
+    segments ?? [],
+    userId
   );
 
   // Obtener configuración de secuencia del segmento asignado
@@ -164,7 +166,7 @@ export async function POST(req: NextRequest) {
       emailCount:        segmentEmailCount        ?? 1,
       linkedinMsgCount:  segmentLinkedinMsgCount  ?? 1,
       includeConnectMsg: segmentIncludeConnectMsg ?? false,
-    });
+    }, userId);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[lab] generateContactMessages falló:", msg);

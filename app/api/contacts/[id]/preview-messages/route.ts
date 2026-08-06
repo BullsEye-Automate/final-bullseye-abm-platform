@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { generateContactMessages } from "@/lib/messageGenerator";
 
 export const runtime = "nodejs";
@@ -7,9 +7,10 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const userId = getUserIdFromRequest(req);
   const db = supabaseAdmin();
 
   const { data: contact } = await db
@@ -69,7 +70,7 @@ export async function POST(
     deepResearch,
     language: "es",
     mode: "preview",
-  });
+  }, userId);
 
   return NextResponse.json(msgs);
 }

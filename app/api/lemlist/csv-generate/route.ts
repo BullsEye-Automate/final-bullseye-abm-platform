@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
 import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
 import { runDeepResearch, type DeepResearchResult } from "@/lib/deep-research";
 
@@ -36,14 +36,15 @@ type GeneratedContact = ParsedContact & {
 };
 
 export async function POST(req: NextRequest) {
-  let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string; use_deep_research?: boolean };
+  const userId = getUserIdFromRequest(req);
+  let body: { client_id: string; contacts: ParsedContact[]; segment_id?: string; use_deep_research?: boolean; model?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { client_id, contacts, segment_id, use_deep_research = false } = body;
+  const { client_id, contacts, segment_id, use_deep_research = false, model } = body;
   if (!client_id || !contacts?.length) {
     return NextResponse.json({ error: "Se requiere client_id y contacts" }, { status: 400 });
   }
@@ -192,6 +193,8 @@ export async function POST(req: NextRequest) {
         companyLinkedin: company?.company_linkedin_url ?? null,
         companyCountry:  company?.company_country  ?? null,
         icpContent:      icpContext,
+        userId,
+        clientId: client_id,
       });
 
       const NO_SIGNAL_TRIGGERS = [
@@ -333,7 +336,8 @@ export async function POST(req: NextRequest) {
             emailCount,
             linkedinMsgCount,
             includeConnectMsg,
-          });
+            ...(model ? { model } : {}),
+          }, userId);
 
           return {
             ...c,
