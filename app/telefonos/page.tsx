@@ -176,20 +176,35 @@ export default function TelefonosPage() {
     setLemlist({ status: "running", phone: null, detail: "Buscando con Lemlist (findPhone + Lusha integrado)…" });
 
     async function callOnce() {
-      const r = await fetch("/api/lemlist/lookup-phone", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: currentClient!.id, linkedin_url: url }),
-      });
-      const d = await r.json().catch(() => ({}));
-      return { ok: r.ok, data: d };
+      try {
+        const r = await fetch("/api/lemlist/lookup-phone", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ client_id: currentClient!.id, linkedin_url: url }),
+        });
+        const text = await r.clone().text().catch(() => "");
+        let d: any;
+        try {
+          d = JSON.parse(text);
+        } catch {
+          d = { _raw_response: text.slice(0, 500), _status: r.status };
+        }
+        return { ok: r.ok, status: r.status, data: d };
+      } catch (err: any) {
+        return { ok: false, status: 0, data: { _error: err.message } };
+      }
     }
 
     try {
       // Primer intento
       const first = await callOnce();
       if (!first.ok) {
-        setLemlist({ status: "error", phone: null, detail: first.data.error ?? "Error en Lemlist", debug: first.data.debug || first.data });
+        setLemlist({
+          status: "error",
+          phone: null,
+          detail: first.data.error ?? `Error en Lemlist (HTTP ${first.status})`,
+          debug: first.data.debug || first.data,
+        });
         return;
       }
       if (first.data.found && first.data.phone) {
