@@ -116,6 +116,23 @@ export async function POST(req: NextRequest) {
     return null;
   }
 
+  // Traer detalles de múltiples contactos en paralelo (máx concurrencia para no sobrecargar).
+  async function fetchDetailsInParallel(leads: any[], maxConcurrent: number = 5): Promise<Array<{ lead: any; detail: any }>> {
+    const results: Array<{ lead: any; detail: any }> = [];
+    for (let i = 0; i < leads.length; i += maxConcurrent) {
+      const batch = leads.slice(i, i + maxConcurrent);
+      const promises = batch.map(async (lead) => {
+        const contactId = lead.contactId ?? lead.contact_id ?? lead._id ?? lead.id;
+        if (!contactId) return null;
+        const detail = await fetchContactDetail(contactId.toString());
+        return { lead, detail };
+      });
+      const batchResults = await Promise.all(promises);
+      results.push(...batchResults.filter(Boolean));
+    }
+    return results;
+  }
+
   // Busca el lead por linkedinUrl en una campaña.
   // El listado de Lemlist solo trae _id, state, contactId — NO trae linkedinUrl ni phone.
   // Entonces para cada lead listado hay que hacer GET /api/contacts/{contactId} para
@@ -125,8 +142,8 @@ export async function POST(req: NextRequest) {
     debug.campaigns_searched.push(camDebug);
     let offset = 0;
     const limit = 100;
-    // Tope de leads a inspeccionar para evitar explosión de API calls (aumentado para mayor cobertura).
-    const maxInspect = 300;
+    // Reducido a 100 con paralelismo para no timeout (era 300 pero tardaba >60s).
+    const maxInspect = 100;
     while (offset < 1000) {
       const url = `https://api.lemlist.com/api/campaigns/${cId}/leads?limit=${limit}&offset=${offset}`;
       const listRes = await fetch(url, { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }).catch(() => null);
@@ -137,19 +154,19 @@ export async function POST(req: NextRequest) {
       camDebug.leads_inspected += leads.length;
       if (!leads.length) return null;
 
-      // Para cada lead, traer detalle y comparar linkedinUrl
-      for (const lead of leads) {
+      // Traer detalles en paralelo (máx 5 concurrentes) para acelerar sin timeout
+      const leadsToCheck = leads.slice(0, Math.min(maxInspect - camDebug.contacts_checked));
+      const details = await fetchDetailsInParallel(leadsToCheck, 5);
+
+      for (const { lead, detail } of details) {
         if (camDebug.contacts_checked >= maxInspect) break;
-        const contactId = lead.contactId ?? lead.contact_id ?? lead._id ?? lead.id;
-        if (!contactId) continue;
-        const detail = await fetchContactDetail(contactId.toString());
         camDebug.contacts_checked++;
         if (!detail) continue;
         if (camDebug.contacts_checked === 1) {
           camDebug.sample_contact_keys = Object.keys(detail);
         }
         if (sameLinkedin(detail)) {
-          camDebug.matched_contact_id = contactId;
+          camDebug.matched_contact_id = lead.contactId ?? lead._id;
           camDebug.matched_contact_keys = Object.keys(detail);
           const phone = extractPhone(detail);
           if (phone) { camDebug.phone_source = "contact_detail"; return phone; }
