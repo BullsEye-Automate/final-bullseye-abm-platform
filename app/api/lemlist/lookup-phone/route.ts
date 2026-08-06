@@ -116,8 +116,8 @@ export async function POST(req: NextRequest) {
     return null;
   }
 
-  // Traer detalles de múltiples contactos en paralelo (máx concurrencia para no sobrecargar).
-  async function fetchDetailsInParallel(leads: any[], maxConcurrent: number = 5): Promise<Array<{ lead: any; detail: any }>> {
+  // Traer detalles de múltiples contactos en paralelo (máx 2 concurrentes para respetar rate limits de Lemlist).
+  async function fetchDetailsInParallel(leads: any[], maxConcurrent: number = 2): Promise<Array<{ lead: any; detail: any }>> {
     const results: Array<{ lead: any; detail: any }> = [];
     for (let i = 0; i < leads.length; i += maxConcurrent) {
       const batch = leads.slice(i, i + maxConcurrent);
@@ -129,6 +129,8 @@ export async function POST(req: NextRequest) {
       });
       const batchResults = await Promise.all(promises);
       results.push(...batchResults.filter(Boolean));
+      // Pequeño delay entre batches para no saturar a Lemlist
+      if (i + maxConcurrent < leads.length) await new Promise(r => setTimeout(r, 200));
     }
     return results;
   }
