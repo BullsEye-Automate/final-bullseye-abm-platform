@@ -189,7 +189,7 @@ export default function TelefonosPage() {
       // Primer intento
       const first = await callOnce();
       if (!first.ok) {
-        setLemlist({ status: "error", phone: null, detail: first.data.error ?? "Error en Lemlist" });
+        setLemlist({ status: "error", phone: null, detail: first.data.error ?? "Error en Lemlist", debug: first.data.debug || first.data });
         return;
       }
       if (first.data.found && first.data.phone) {
