@@ -116,21 +116,16 @@ export async function POST(req: NextRequest) {
     return null;
   }
 
-  // Traer detalles de múltiples contactos en paralelo (máx 2 concurrentes para respetar rate limits de Lemlist).
-  async function fetchDetailsInParallel(leads: any[], maxConcurrent: number = 2): Promise<Array<{ lead: any; detail: any }>> {
+  // Traer detalles de contactos secuencialmente para respetar strictamente los rate limits de Lemlist.
+  async function fetchDetailsSequentially(leads: any[]): Promise<Array<{ lead: any; detail: any }>> {
     const results: Array<{ lead: any; detail: any }> = [];
-    for (let i = 0; i < leads.length; i += maxConcurrent) {
-      const batch = leads.slice(i, i + maxConcurrent);
-      const promises = batch.map(async (lead) => {
-        const contactId = lead.contactId ?? lead.contact_id ?? lead._id ?? lead.id;
-        if (!contactId) return null;
-        const detail = await fetchContactDetail(contactId.toString());
-        return { lead, detail };
-      });
-      const batchResults = await Promise.all(promises);
-      results.push(...batchResults.filter(Boolean));
-      // Pequeño delay entre batches para no saturar a Lemlist
-      if (i + maxConcurrent < leads.length) await new Promise(r => setTimeout(r, 200));
+    for (const lead of leads) {
+      const contactId = lead.contactId ?? lead.contact_id ?? lead._id ?? lead.id;
+      if (!contactId) continue;
+      const detail = await fetchContactDetail(contactId.toString());
+      if (detail) results.push({ lead, detail });
+      // Delay entre cada llamada para no saturar a Lemlist
+      await new Promise(r => setTimeout(r, 100));
     }
     return results;
   }
@@ -144,8 +139,8 @@ export async function POST(req: NextRequest) {
     debug.campaigns_searched.push(camDebug);
     let offset = 0;
     const limit = 100;
-    // Reducido a 100 con paralelismo para no timeout (era 300 pero tardaba >60s).
-    const maxInspect = 100;
+    // Reducido a 50 y secuencial para respetar rate limits de Lemlist sin 429.
+    const maxInspect = 50;
     while (offset < 1000) {
       const url = `https://api.lemlist.com/api/campaigns/${cId}/leads?limit=${limit}&offset=${offset}`;
       const listRes = await fetch(url, { headers: { Authorization: `Basic ${credentials}` }, cache: "no-store" }).catch(() => null);
@@ -156,9 +151,9 @@ export async function POST(req: NextRequest) {
       camDebug.leads_inspected += leads.length;
       if (!leads.length) return null;
 
-      // Traer detalles en paralelo (máx 5 concurrentes) para acelerar sin timeout
+      // Traer detalles secuencialmente para respetar rate limits de Lemlist
       const leadsToCheck = leads.slice(0, Math.min(maxInspect - camDebug.contacts_checked));
-      const details = await fetchDetailsInParallel(leadsToCheck, 5);
+      const details = await fetchDetailsSequentially(leadsToCheck);
 
       for (const { lead, detail } of details) {
         if (camDebug.contacts_checked >= maxInspect) break;
