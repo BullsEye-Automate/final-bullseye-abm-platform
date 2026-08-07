@@ -91,9 +91,10 @@ export async function POST(req: NextRequest) {
     Object.keys(payload).forEach((k) => payload[k] === undefined && delete payload[k]);
 
     // URL: con email usa el endpoint por email; sin email usa el endpoint genérico
+    // deduplicate=true es necesario para que Lemlist acepte contactos sin email
     const lemlistUrl = hasEmail
       ? `https://api.lemlist.com/api/campaigns/${campaignId}/leads/${encodeURIComponent(contact.email)}`
-      : `https://api.lemlist.com/api/campaigns/${campaignId}/leads`;
+      : `https://api.lemlist.com/api/campaigns/${campaignId}/leads?deduplicate=true`;
 
     // Retry con backoff exponencial si Lemlist devuelve 429
     let res: Response | null = null;
@@ -142,33 +143,35 @@ export async function POST(req: NextRequest) {
     // Delay entre leads para no saturar la API de Lemlist
     await sleep(1200);
 
-    // Guardar en Supabase con upsert — campos de clasificación incluidos para que
-    // el contacto sea visible en la plataforma (Contactos, Laboratorio, etc.)
-    const row: Record<string, string> = {
-      client_id,
-      email:              contact.email.trim(),
-      lemlist_status:     "active",
-      fit_action:         "enrich",
-      prefilter_result:   "yes",
-      status:             "enriched",
-      lemlist_pushed_at:  new Date().toISOString(),
-    };
-    if (contact.firstName)      row.first_name        = contact.firstName;
-    if (contact.lastName)       row.last_name         = contact.lastName;
-    if (contact.jobTitle)       row.job_title         = contact.jobTitle;
-    if (contact.companyName)    row.company_name      = contact.companyName;
-    if (contact.linkedinUrl)    row.linkedin_url      = contact.linkedinUrl;
-    if (contact.phone)          row.phone             = contact.phone;
-    if (contact.emailSubject)   row.email_subject     = contact.emailSubject;
-    if (contact.emailBody)      row.email_body        = contact.emailBody;
-    if (contact.emailSubject2)  row.email_subject_2   = contact.emailSubject2;
-    if (contact.emailBody2)     row.email_body_2      = contact.emailBody2;
-    if (contact.emailSubject3)  row.email_subject_3   = contact.emailSubject3;
-    if (contact.emailBody3)     row.email_body_3      = contact.emailBody3;
-    if (contact.connectMessage) row.connect_message   = contact.connectMessage;
-    if (contact.icebreaker)     row.linkedin_icebreaker = contact.icebreaker;
-    if (contact.linkedinMsg2)   row.linkedin_msg_2    = contact.linkedinMsg2;
-    await db.from("contacts").upsert(row, { onConflict: "email,client_id" });
+    // Guardar en Supabase — solo si tiene email (el upsert requiere email como clave)
+    // Contactos sin email se enviaron a Lemlist correctamente pero no se guardan aquí
+    if (hasEmail) {
+      const row: Record<string, string> = {
+        client_id,
+        email:              contact.email.trim(),
+        lemlist_status:     "active",
+        fit_action:         "enrich",
+        prefilter_result:   "yes",
+        status:             "enriched",
+        lemlist_pushed_at:  new Date().toISOString(),
+      };
+      if (contact.firstName)      row.first_name        = contact.firstName;
+      if (contact.lastName)       row.last_name         = contact.lastName;
+      if (contact.jobTitle)       row.job_title         = contact.jobTitle;
+      if (contact.companyName)    row.company_name      = contact.companyName;
+      if (contact.linkedinUrl)    row.linkedin_url      = contact.linkedinUrl;
+      if (contact.phone)          row.phone             = contact.phone;
+      if (contact.emailSubject)   row.email_subject     = contact.emailSubject;
+      if (contact.emailBody)      row.email_body        = contact.emailBody;
+      if (contact.emailSubject2)  row.email_subject_2   = contact.emailSubject2;
+      if (contact.emailBody2)     row.email_body_2      = contact.emailBody2;
+      if (contact.emailSubject3)  row.email_subject_3   = contact.emailSubject3;
+      if (contact.emailBody3)     row.email_body_3      = contact.emailBody3;
+      if (contact.connectMessage) row.connect_message   = contact.connectMessage;
+      if (contact.icebreaker)     row.linkedin_icebreaker = contact.icebreaker;
+      if (contact.linkedinMsg2)   row.linkedin_msg_2    = contact.linkedinMsg2;
+      await db.from("contacts").upsert(row, { onConflict: "email,client_id" });
+    }
   }
 
   return NextResponse.json({ pushed, skipped, errors });
