@@ -27,6 +27,7 @@ import {
   IconFlame,
   IconUserSearch,
   IconLogout,
+  IconCalendarEvent,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -64,9 +65,10 @@ const SECTIONS: Section[] = [
   {
     label: "Oportunidades",
     items: [
-      { href: "/oportunidades/feedback",               label: "Feedback",         icon: IconMessageStar },
-      { href: "/oportunidades/resultados",             label: "Resultados",       icon: IconChartBar },
-      { href: "/oportunidades/configuracion-feedback", label: "Config. feedback", icon: IconSettings },
+      { href: "/oportunidades/feedback",               label: "Feedback",          icon: IconMessageStar },
+      { href: "/oportunidades/resumen-feedback",       label: "Resumen Feedback",  icon: IconChartBar },
+      { href: "/oportunidades/reuniones",              label: "Reuniones",         icon: IconCalendarEvent },
+      { href: "/oportunidades/configuracion-feedback", label: "Config. feedback",  icon: IconSettings },
     ]
   },
   {
