@@ -153,6 +153,30 @@ export default function GraficoEvolucion({
         </div>
       ) : (
         <>
+          {/* Leyenda personalizada fuera del gráfico */}
+          <div className="flex flex-wrap gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
+            {Object.entries(STATUS_INFO).map(([key, info]) => (
+              <button
+                key={key}
+                onClick={() => toggleStatus(key)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                  visibleStatus.has(key)
+                    ? "bg-white border border-gray-200"
+                    : "bg-gray-200 opacity-50"
+                }`}
+                title={visibleStatus.has(key) ? "Click para ocultar" : "Click para mostrar"}
+              >
+                <div
+                  className="w-4 h-4 rounded"
+                  style={{ backgroundColor: info.color }}
+                />
+                <span className={`text-xs font-medium ${visibleStatus.has(key) ? "text-gray-900" : "text-gray-500"}`}>
+                  {info.label}
+                </span>
+              </button>
+            ))}
+          </div>
+
           <ResponsiveContainer width="100%" height={height}>
             <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -164,11 +188,6 @@ export default function GraficoEvolucion({
               />
               <YAxis stroke="#6b7280" style={{ fontSize: "12px" }} tick={{ fill: "#6b7280" }} />
               <Tooltip content={<CustomTooltip />} />
-              <Legend
-                wrapperStyle={{ fontSize: "12px", paddingTop: "20px", cursor: "pointer" }}
-                onClick={(e: any) => toggleStatus(e.value)}
-                iconType="square"
-              />
 
               {visibleStatus.has("Si") && (
                 <Bar
