@@ -127,6 +127,10 @@ export default function GraficoEvolucion({
     );
   };
 
+  const handleBarClick = (periodo: string, status: string) => {
+    setSelectedBar({ periodo, status });
+  };
+
   const toggleStatus = (status: string) => {
     const newVisible = new Set(visibleStatus);
     if (newVisible.has(status)) {
@@ -197,8 +201,7 @@ export default function GraficoEvolucion({
                   name="Realizado"
                   radius={[8, 8, 0, 0]}
                   label={<CustomLabel />}
-                  onClick={(data: any) => setSelectedBar({ periodo: data.periodo, status: "Si" })}
-                  style={{ cursor: "pointer" }}
+                  onClick={(data: any) => handleBarClick(data.periodo, "Si")}
                 />
               )}
               {visibleStatus.has("No") && (
@@ -209,8 +212,7 @@ export default function GraficoEvolucion({
                   name="No Realizado"
                   radius={[8, 8, 0, 0]}
                   label={<CustomLabel />}
-                  onClick={(data: any) => setSelectedBar({ periodo: data.periodo, status: "No" })}
-                  style={{ cursor: "pointer" }}
+                  onClick={(data: any) => handleBarClick(data.periodo, "No")}
                 />
               )}
               {visibleStatus.has("Pendiente") && (
@@ -221,8 +223,7 @@ export default function GraficoEvolucion({
                   name="Pendiente"
                   radius={[8, 8, 0, 0]}
                   label={<CustomLabel />}
-                  onClick={(data: any) => setSelectedBar({ periodo: data.periodo, status: "Pendiente" })}
-                  style={{ cursor: "pointer" }}
+                  onClick={(data: any) => handleBarClick(data.periodo, "Pendiente")}
                 />
               )}
               {visibleStatus.has("Reagendar") && (
@@ -233,8 +234,7 @@ export default function GraficoEvolucion({
                   name="Reagendar"
                   radius={[8, 8, 0, 0]}
                   label={<CustomLabel />}
-                  onClick={(data: any) => setSelectedBar({ periodo: data.periodo, status: "Reagendar" })}
-                  style={{ cursor: "pointer" }}
+                  onClick={(data: any) => handleBarClick(data.periodo, "Reagendar")}
                 />
               )}
             </BarChart>
