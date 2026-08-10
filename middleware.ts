@@ -12,7 +12,7 @@ const PUBLIC_PAGE_PREFIXES = [
   "/forms/icp",
   "/review/empresas",
   "/revision",
-  "/oportunidades/resultados/compartido",
+  "/oportunidades/resumen-feedback/compartido",
 ];
 
 // Rutas de API públicas: cada una valida su propio token o secreto de webhook

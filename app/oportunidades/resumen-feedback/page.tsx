@@ -64,7 +64,7 @@ function CompartirModal({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error al generar el link");
-      setLink(`${window.location.origin}/oportunidades/resultados/compartido/${data.token}`);
+      setLink(`${window.location.origin}/oportunidades/resumen-feedback/compartido/${data.token}`);
     } catch (err: any) {
       setError(err.message ?? "Error al generar el link");
     } finally {
@@ -156,7 +156,7 @@ export default function ResultadosPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Resultados</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Resumen Feedback</h1>
           <p className="text-sm text-gray-500 mt-1">Resumen de reuniones y feedback del cliente</p>
         </div>
         {/* Filtro fecha + compartir */}
