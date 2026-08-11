@@ -34,12 +34,17 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
       }
     }
 
-    meetings.forEach((meeting) => {
+    meetings.forEach((meeting, idx) => {
       if (!meeting.fecha_reunion) return;
 
       const date = new Date(meeting.fecha_reunion);
       const dia = date.getDay();
       const hora = date.getHours();
+
+      // Log solo de las primeras 3 reuniones para debuggear
+      if (idx < 3) {
+        console.log(`Reunión ${idx}: fecha_reunion="${meeting.fecha_reunion}" → día=${dia}, hora=${hora}`);
+      }
 
       if (dia === 0 || dia > 6) return; // Skip Sunday and invalid days
 
