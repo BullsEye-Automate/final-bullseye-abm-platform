@@ -45,14 +45,17 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
         return;
       }
 
-      const date = new Date(meeting.fecha_reunion);
-      const dia = date.getDay();
+      // Parsear fecha SIN crear Date (evita problemas de timezone)
+      // Formato esperado: "YYYY-MM-DD"
+      const [año, mes, día] = meeting.fecha_reunion.split("-").map(Number);
+      const dateObj = new Date(año, mes - 1, día); // JavaScript Date: mes es 0-indexed
+      const dia = dateObj.getDay();
 
       // Parsear hora del formato "HH:MM" (ejemplo: "10:00" → 10)
       const horaStr = meeting.hora.split(":")[0];
       const hora = parseInt(horaStr, 10);
 
-      console.log(`[DEBUG] Reunión ${idx}: fecha="${meeting.fecha_reunion}", hora="${meeting.hora}" → día=${dia} (${DIAS_SEMANA_LABORAL[dia] || "DOMINGO"}), hora=${hora}`);
+      console.log(`[DEBUG] Reunión ${idx}: fecha="${meeting.fecha_reunion}", hora="${meeting.hora}" → año=${año}, mes=${mes}, día=${día}, dayOfWeek=${dia} (${DIAS_SEMANA_LABORAL[dia] || "DOMINGO"}), hora=${hora}`);
 
       processedCount++;
 

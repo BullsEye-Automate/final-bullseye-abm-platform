@@ -41,14 +41,14 @@ function getDateRange(preset: string): { desde: string; hasta: string } {
     case "semana": {
       const s = startOfWeek(now);
       const e = new Date(s);
-      e.setDate(s.getDate() + 6);
+      e.setDate(s.getDate() + 4); // Lunes a viernes (4 días después del lunes)
       return { desde: fmt(s), hasta: fmt(e) };
     }
     case "semana_pasada": {
       const s = startOfWeek(now);
       s.setDate(s.getDate() - 7);
       const e = new Date(s);
-      e.setDate(s.getDate() + 6);
+      e.setDate(s.getDate() + 4); // Lunes a viernes (4 días después del lunes)
       return { desde: fmt(s), hasta: fmt(e) };
     }
     case "mes":
