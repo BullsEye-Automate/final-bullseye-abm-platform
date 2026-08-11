@@ -37,9 +37,12 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
     meetings.forEach((meeting) => {
       if (!meeting.fecha_reunion) return;
 
-      const date = new Date(meeting.fecha_reunion);
+      const dateString = meeting.fecha_reunion.split("T")[0];
+      const timeString = meeting.fecha_reunion.split("T")[1]?.split("+")[0] || "00:00:00";
+      const hora = parseInt(timeString.split(":")[0], 10);
+
+      const date = new Date(dateString);
       const dia = date.getDay();
-      const hora = date.getHours();
 
       if (dia === 0 || dia > 6) return; // Skip Sunday and invalid days
 
