@@ -11,6 +11,7 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Cell,
 } from "recharts";
 
 interface ChartData {
@@ -90,7 +91,11 @@ export default function GraficoEvolucion({
 
   const filteredMeetings = useMemo(() => {
     if (!selectedBar) return [];
+<<<<<<< HEAD
     const [month, year] = selectedBar.periodo.split("/");
+=======
+    const [year, month] = selectedBar.periodo.split("/");
+>>>>>>> claude/oportunidades-reuniones-module-4tm4o5
     return meetings.filter((m) => {
       if (!m.fecha_reunion) return false;
       const date = new Date(m.fecha_reunion);
@@ -122,22 +127,33 @@ export default function GraficoEvolucion({
     return (
       <text
         x={x + width / 2}
+<<<<<<< HEAD
         y={y - 4}
         fill="#251762"
         textAnchor="middle"
         fontSize="12"
         fontWeight="700"
         fontFamily="Outfit, sans-serif"
+=======
+        y={y - 2}
+        fill="#1f2937"
+        textAnchor="middle"
+        fontSize="11"
+        fontWeight="600"
+>>>>>>> claude/oportunidades-reuniones-module-4tm4o5
       >
         {value}
       </text>
     );
   };
 
+<<<<<<< HEAD
   const handleBarClick = (periodo: string, status: string) => {
     setSelectedBar({ periodo, status });
   };
 
+=======
+>>>>>>> claude/oportunidades-reuniones-module-4tm4o5
   const toggleStatus = (status: string) => {
     const newVisible = new Set(visibleStatus);
     if (newVisible.has(status)) {
@@ -148,6 +164,7 @@ export default function GraficoEvolucion({
     setVisibleStatus(newVisible);
   };
 
+<<<<<<< HEAD
   const height = Math.max(350, chartData.length * 35 + 120);
 
   return (
@@ -161,6 +178,16 @@ export default function GraficoEvolucion({
           <p className="text-3xl font-bold text-[#62E0D8]">{chartData.reduce((a, b) => a + b.total, 0)}</p>
           <p className="text-xs text-gray-500 mt-1">Total reuniones</p>
         </div>
+=======
+  // Calcular altura dinámica según cantidad de períodos
+  const height = Math.max(300, chartData.length * 30 + 100);
+
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      <div className="flex items-start justify-between mb-6">
+        <h2 className="text-lg font-semibold text-gray-900">Evolución de Reuniones Agendadas</h2>
+        <p className="text-xs text-gray-500">Haz clic en las etiquetas para mostrar/ocultar • Haz clic en las barras para ver detalles</p>
+>>>>>>> claude/oportunidades-reuniones-module-4tm4o5
       </div>
 
       {chartData.length === 0 ? (
@@ -169,6 +196,7 @@ export default function GraficoEvolucion({
         </div>
       ) : (
         <>
+<<<<<<< HEAD
           {/* Leyenda profesional */}
           <div className="flex flex-wrap gap-3 mb-6 p-4 bg-[#251762]/5 rounded-xl border border-[#62E0D8]/10">
             {Object.entries(STATUS_INFO).map(([key, info]) => (
@@ -342,6 +370,125 @@ export default function GraficoEvolucion({
                       </table>
                     </div>
                   )}
+=======
+          <ResponsiveContainer width="100%" height={height}>
+            <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis
+                dataKey="periodo"
+                stroke="#6b7280"
+                style={{ fontSize: "12px" }}
+                tick={{ fill: "#6b7280" }}
+              />
+              <YAxis stroke="#6b7280" style={{ fontSize: "12px" }} tick={{ fill: "#6b7280" }} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend
+                wrapperStyle={{ fontSize: "12px", paddingTop: "20px", cursor: "pointer" }}
+                onClick={(e: any) => toggleStatus(e.value)}
+                iconType="square"
+              />
+
+              {visibleStatus.has("Si") && (
+                <Bar
+                  dataKey="Si"
+                  stackId="a"
+                  fill={STATUS_INFO.Si.color}
+                  name="Realizado"
+                  radius={[8, 8, 0, 0]}
+                  label={<CustomLabel />}
+                  onClick={(data: any) => setSelectedBar({ periodo: data.periodo, status: "Si" })}
+                  style={{ cursor: "pointer" }}
+                />
+              )}
+              {visibleStatus.has("No") && (
+                <Bar
+                  dataKey="No"
+                  stackId="a"
+                  fill={STATUS_INFO.No.color}
+                  name="No Realizado"
+                  radius={[8, 8, 0, 0]}
+                  label={<CustomLabel />}
+                  onClick={(data: any) => setSelectedBar({ periodo: data.periodo, status: "No" })}
+                  style={{ cursor: "pointer" }}
+                />
+              )}
+              {visibleStatus.has("Pendiente") && (
+                <Bar
+                  dataKey="Pendiente"
+                  stackId="a"
+                  fill={STATUS_INFO.Pendiente.color}
+                  name="Pendiente"
+                  radius={[8, 8, 0, 0]}
+                  label={<CustomLabel />}
+                  onClick={(data: any) => setSelectedBar({ periodo: data.periodo, status: "Pendiente" })}
+                  style={{ cursor: "pointer" }}
+                />
+              )}
+              {visibleStatus.has("Reagendar") && (
+                <Bar
+                  dataKey="Reagendar"
+                  stackId="a"
+                  fill={STATUS_INFO.Reagendar.color}
+                  name="Reagendar"
+                  radius={[8, 8, 0, 0]}
+                  label={<CustomLabel />}
+                  onClick={(data: any) => setSelectedBar({ periodo: data.periodo, status: "Reagendar" })}
+                  style={{ cursor: "pointer" }}
+                />
+              )}
+            </BarChart>
+          </ResponsiveContainer>
+
+          {/* Modal con tabla de reuniones filtradas */}
+          {selectedBar && filteredMeetings.length > 0 && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[80vh] overflow-auto">
+                {/* Header */}
+                <div className="sticky top-0 px-6 py-4 border-b border-gray-100 bg-white flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      {STATUS_INFO[selectedBar.status as keyof typeof STATUS_INFO].label} - {selectedBar.periodo}
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">{filteredMeetings.length} reuniones</p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedBar(null)}
+                    className="text-gray-400 hover:text-gray-600 text-xl"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* Tabla */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50 border-b border-gray-100 sticky top-[60px]">
+                      <tr>
+                        <th className="px-6 py-3 text-left font-semibold text-gray-700">Empresa</th>
+                        <th className="px-6 py-3 text-left font-semibold text-gray-700">Contacto</th>
+                        <th className="px-6 py-3 text-left font-semibold text-gray-700">Fecha</th>
+                        <th className="px-6 py-3 text-left font-semibold text-gray-700">SDR</th>
+                        <th className="px-6 py-3 text-left font-semibold text-gray-700">País</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filteredMeetings.map((m) => (
+                        <tr key={m.id} className="hover:bg-gray-50 transition">
+                          <td className="px-6 py-3 text-gray-900 font-medium">{m.empresa}</td>
+                          <td className="px-6 py-3 text-gray-600">
+                            {m.contacto_nombre}
+                            {m.contacto_cargo && <span className="text-xs text-gray-500 ml-1">({m.contacto_cargo})</span>}
+                          </td>
+                          <td className="px-6 py-3 text-gray-600">
+                            {m.fecha_reunion ? new Date(m.fecha_reunion).toLocaleDateString("es-MX") : "—"}
+                          </td>
+                          <td className="px-6 py-3 text-gray-600">{m.sdr_nombre || "—"}</td>
+                          <td className="px-6 py-3 text-gray-600">{m.pais || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+>>>>>>> claude/oportunidades-reuniones-module-4tm4o5
                 </div>
               </div>
             </div>
