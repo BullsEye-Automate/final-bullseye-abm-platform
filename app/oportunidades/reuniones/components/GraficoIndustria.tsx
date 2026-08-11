@@ -109,6 +109,10 @@ export default function GraficoIndustria({ meetings }: { meetings: Meeting[] }) 
     return null;
   };
 
+  const totalMeetings = useMemo(() => {
+    return pieData.reduce((sum, item) => sum + item.value, 0);
+  }, [pieData]);
+
   return (
     <>
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
@@ -127,7 +131,7 @@ export default function GraficoIndustria({ meetings }: { meetings: Meeting[] }) 
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}`}
+                  label={({ name }) => name}
                   outerRadius={120}
                   fill="#8884d8"
                   dataKey="value"
@@ -143,6 +147,43 @@ export default function GraficoIndustria({ meetings }: { meetings: Meeting[] }) 
               </PieChart>
             </ResponsiveContainer>
             <p className="text-xs text-gray-500 mt-4 text-center">Haz clic en cualquier segmento para ver el listado de empresas</p>
+
+            <div className="mt-8 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#F3F4F6] border-b-2 border-[#62E0D8]/20">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-[#251762] uppercase tracking-wider">Industria</th>
+                    <th className="px-4 py-3 text-center font-semibold text-[#251762] uppercase tracking-wider">Reuniones</th>
+                    <th className="px-4 py-3 text-center font-semibold text-[#251762] uppercase tracking-wider">% del total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pieData.map((item, idx) => (
+                    <tr
+                      key={item.name}
+                      className={`border-b border-gray-100 transition-colors cursor-pointer hover:bg-[#62E0D8]/5 ${
+                        idx % 2 === 0 ? "bg-white" : "bg-[#F9FAFB]"
+                      }`}
+                      onClick={() => setSelectedData({ industria: item.name })}
+                    >
+                      <td className="px-4 py-3 font-medium text-[#251762]">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded"
+                            style={{ backgroundColor: COLORS[pieData.indexOf(item) % COLORS.length] }}
+                          />
+                          {item.name}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center text-gray-700">{item.value}</td>
+                      <td className="px-4 py-3 text-center font-semibold text-[#62E0D8]">
+                        {((item.value / totalMeetings) * 100).toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </div>

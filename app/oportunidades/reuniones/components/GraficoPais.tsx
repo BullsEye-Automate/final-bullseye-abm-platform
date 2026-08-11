@@ -79,6 +79,10 @@ export default function GraficoPais({ meetings }: { meetings: Meeting[] }) {
     return data;
   }, [meetings]);
 
+  const totalMeetings = useMemo(() => {
+    return chartData.reduce((sum, d) => sum + d.total, 0);
+  }, [chartData]);
+
   const pieData: PieData[] = useMemo(() => {
     return chartData.map((d) => ({
       name: d.pais,
@@ -95,6 +99,7 @@ export default function GraficoPais({ meetings }: { meetings: Meeting[] }) {
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload[0]) {
       const data = payload[0].payload as PieData;
+      const percentage = ((data.value / totalMeetings) * 100).toFixed(1);
       return (
         <div className="bg-[#251762] border border-[#62E0D8] p-3 rounded-lg shadow-xl text-xs">
           <p className="font-semibold text-white">{data.name}</p>
@@ -102,7 +107,7 @@ export default function GraficoPais({ meetings }: { meetings: Meeting[] }) {
           <p className="text-[#EF5350]">✗ No: {data.original.No}</p>
           <p className="text-[#FFA726]">⏳ Pendiente: {data.original.Pendiente}</p>
           <p className="text-[#AB47BC]">🔄 Reagendar: {data.original.Reagendar}</p>
-          <p className="font-semibold text-[#62E0D8] mt-2">Total: {data.value}</p>
+          <p className="font-semibold text-[#62E0D8] mt-2">Total: {data.value} ({percentage}%)</p>
         </div>
       );
     }
@@ -127,7 +132,10 @@ export default function GraficoPais({ meetings }: { meetings: Meeting[] }) {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}`}
+                  label={({ name, value }) => {
+                    const percentage = ((value / totalMeetings) * 100).toFixed(1);
+                    return `${name}: ${value} (${percentage}%)`;
+                  }}
                   outerRadius={120}
                   fill="#8884d8"
                   dataKey="value"
