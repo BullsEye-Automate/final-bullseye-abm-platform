@@ -1,0 +1,70 @@
+# Peitho — Contexto y progreso (backend)
+
+> Este archivo lo lee Claude Code automáticamente al trabajar dentro de `peitho-backend/`.
+> Actualízalo cada vez que se completa o se decide algo relevante, para no repetir contexto en sesiones futuras.
+
+---
+
+## Qué es Peitho
+
+Producto de *conversation intelligence* para reuniones de venta B2B, construido por Bullseye-ABM. Dos casos de uso:
+
+1. **Uso interno de Bullseye:** captura y analiza automáticamente las llamadas comerciales de sus propios SDRs (reemplaza DIIO).
+2. **Producto para clientes de Bullseye** (ej. CCHC): genera un brief de preparación antes de una reunión que Bullseye le agendó a un prospecto del cliente.
+
+Restricción de diseño clave: **no debe aparecer un bot visible en la llamada** — la captura de audio es vía extensión de Chrome (`chrome.tabCapture`) en el navegador del ejecutivo, no un participante que se une a la reunión.
+
+Documentos de referencia completos en `docs/`:
+- `docs/PEITHO_BRIEF_claude_code.md` — brief general, stack, las 8 tareas en orden
+- `docs/peitho_arquitectura_tecnica_v1.md` — diseño de los 2 flujos (post-reunión y pre-reunión) y tabla `meetings`
+- `docs/peitho_prompt_analisis_v1.md` — prompt de análisis post-reunión (ya calibrado con minutas reales)
+- `docs/peitho_prompt_pre_reunion_v1.md` — prompt de brief pre-reunión
+
+---
+
+## Stack
+
+- Node.js v20 + TypeScript, Express
+- Postgres vía Supabase (proyecto "peitho" del usuario), acceso con `pg` (pool de conexión)
+- Pendiente de integrar más adelante: Deepgram (STT + diarización), Anthropic API (Claude, para correr los prompts), Google Calendar API, Slack webhook, Railway/Render (deploy)
+
+---
+
+## Progreso de tareas (ver orden completo en `docs/PEITHO_BRIEF_claude_code.md`)
+
+- [x] **Tarea 1** — Esqueleto backend + tabla `meetings` + `GET /health`. Completado y probado localmente contra Supabase (confirmado por el usuario: `{"status":"ok","db":"connected"}`).
+- [ ] **Tarea 2** — OAuth de Google Calendar + webhook `events.watch` → guarda eventos nuevos en `meetings`.
+- [ ] **Tarea 3** — `GET /meetings/lookup?meet_code=xxx`.
+- [ ] **Tarea 4** — Extensión de Chrome (Manifest V3, `chrome.tabCapture`).
+- [ ] **Tarea 5** — Pipeline de análisis post-reunión (Deepgram + prompt de `peitho_prompt_analisis_v1.md` vía Anthropic API → `meetings.analysis`).
+- [ ] **Tarea 6** — Notificación de feedback listo (Slack o correo).
+- [ ] **Tarea 7** — Cron del brief pre-reunión (historial + búsqueda web + prompt de `peitho_prompt_pre_reunion_v1.md`).
+- [ ] **Tarea 8** — Página `GET /brief/:meetingId` + inserción del link vía `events.patch`.
+- [ ] **(Al final, no es una de las 8)** Deploy a Railway o Render — el usuario decidió explícitamente dejarlo para el final; hasta entonces se prueba todo local con `npm run dev`.
+
+**Regla de trabajo del usuario:** una tarea a la vez, probarla él mismo antes de avanzar a la siguiente. No adelantarse a tareas futuras sin que lo pida.
+
+---
+
+## Decisiones y aprendizajes (no repetir)
+
+- El backend vive en `peitho-backend/` dentro de este mismo repo (`final-bullseye-abm-platform`), no en un repo separado — así no se gestiona infraestructura de git adicional.
+- **Conexión a Supabase:** la connection string de "Direct connection" (`db.<ref>.supabase.co:5432`) falla con `ENOTFOUND` en la red del usuario porque ese hostname solo resuelve por IPv6. Usar siempre el **Session pooler** (`aws-0-<region>.pooler.supabase.com:5432`, usuario `postgres.<project-ref>`) en `DATABASE_URL`.
+- Migraciones SQL simples en `migrations/*.sql`, corridas con `npm run migrate` (runner propio en `src/migrate.ts`, sin dependencias externas como Prisma/Knex — no se justifican para el tamaño actual del proyecto).
+- La tabla `meetings` incluye únicamente los campos descritos en la sección 0 de `peitho_arquitectura_tecnica_v1.md` más metadata estándar (`id`, `created_at`, `updated_at`). Columnas de tareas futuras (ej. `analysis` de la Tarea 5) se agregan cuando corresponda, no antes.
+- El proyecto Supabase del usuario se llama **"peitho"** (ya existía antes de empezar Tarea 1).
+
+---
+
+## Cómo correr y probar localmente
+
+```bash
+cd peitho-backend
+cp .env.example .env   # completar DATABASE_URL con el Session pooler de Supabase
+npm install
+npm run migrate        # crea la tabla meetings
+npm run dev             # levanta el servidor en :3001
+curl http://localhost:3001/health
+```
+
+Respuesta esperada: `{"status":"ok","db":"connected","timestamp":"..."}`.

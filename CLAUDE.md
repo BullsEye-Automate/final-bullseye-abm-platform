@@ -9,6 +9,8 @@
 
 **BullsEye** es una agencia de prospección B2B. La plataforma orquesta todo el pipeline de prospección: discovery de empresas, curación humana, búsqueda de contactos, pre-filtro IA, lead scoring, generación de copy personalizado, outreach multicanal y análisis de resultados.
 
+> **Nota:** este repo también contiene `peitho-backend/`, un servicio Node/TypeScript **independiente** de esta app Next.js (producto de conversation intelligence para reuniones de venta). Tiene su propio `peitho-backend/CLAUDE.md` con su contexto y progreso — léelo si vas a trabajar ahí.
+
 **Arquitectura multi-tenant:** la app sirve a múltiples clientes (cada uno con su propio ICP, campañas de Lemlist, tablas de Clay y pipeline de HubSpot).
 
 ---
