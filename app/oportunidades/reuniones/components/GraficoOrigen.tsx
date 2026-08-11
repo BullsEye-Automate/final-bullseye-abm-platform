@@ -4,14 +4,12 @@ import { useMemo, useState } from "react";
 import { Meeting } from "../page";
 import { IconX } from "@tabler/icons-react";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
+  PieChart,
+  Pie,
+  Cell,
   ResponsiveContainer,
+  Legend,
+  Tooltip,
 } from "recharts";
 
 interface ChartData {
@@ -23,6 +21,12 @@ interface ChartData {
   total: number;
 }
 
+interface PieData {
+  name: string;
+  value: number;
+  original: ChartData;
+}
+
 const STATUS_INFO = {
   Si: { color: "#62E0D8", label: "Realizado" },
   No: { color: "#EF5350", label: "No Realizado" },
@@ -30,15 +34,14 @@ const STATUS_INFO = {
   Reagendar: { color: "#AB47BC", label: "Reagendar" },
 };
 
-const COLORS = {
-  Si: "#62E0D8",
-  No: "#EF5350",
-  Pendiente: "#FFA726",
-  Reagendar: "#AB47BC",
-};
+const COLORS = [
+  "#62E0D8", "#3B7FD8", "#2B5FD8", "#5B3FB8", "#8B3FA8",
+  "#AB47BC", "#BB5FCC", "#CB7FDC", "#DB9FEC", "#EF5350",
+  "#FF7F7F", "#FFAF7F", "#FFA726", "#FFBF5F", "#FFCF8F"
+];
 
 export default function GraficoOrigen({ meetings }: { meetings: Meeting[] }) {
-  const [selectedBar, setSelectedBar] = useState<{ origen: string; status: string } | null>(null);
+  const [selectedData, setSelectedData] = useState<{ origen: string } | null>(null);
 
   const chartData = useMemo(() => {
     const origenData: Record<string, Record<string, number>> = {};
@@ -75,32 +78,39 @@ export default function GraficoOrigen({ meetings }: { meetings: Meeting[] }) {
     return data;
   }, [meetings]);
 
+  const totalMeetings = useMemo(() => {
+    return chartData.reduce((sum, d) => sum + d.total, 0);
+  }, [chartData]);
+
+  const pieData: PieData[] = useMemo(() => {
+    return chartData.map((d) => ({
+      name: d.origen,
+      value: d.total,
+      original: d,
+    }));
+  }, [chartData]);
+
   const filteredMeetings = useMemo(() => {
-    if (!selectedBar) return [];
-    return meetings.filter(
-      (m) => m.origen === selectedBar.origen && m.realizado === selectedBar.status
-    );
-  }, [selectedBar, meetings]);
+    if (!selectedData) return [];
+    return meetings.filter((m) => m.origen === selectedData.origen);
+  }, [selectedData, meetings]);
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload[0]) {
-      const data = payload[0].payload as ChartData;
+      const data = payload[0].payload as PieData;
+      const percentage = ((data.value / totalMeetings) * 100).toFixed(1);
       return (
         <div className="bg-[#251762] border border-[#62E0D8] p-3 rounded-lg shadow-xl text-xs">
-          <p className="font-semibold text-white">{data.origen}</p>
-          <p className="text-[#62E0D8] mt-1">✓ Realizado: {data.Si}</p>
-          <p className="text-[#EF5350]">✗ No: {data.No}</p>
-          <p className="text-[#FFA726]">⏳ Pendiente: {data.Pendiente}</p>
-          <p className="text-[#AB47BC]">🔄 Reagendar: {data.Reagendar}</p>
-          <p className="font-semibold text-[#62E0D8] mt-2">Total: {data.total}</p>
+          <p className="font-semibold text-white">{data.name}</p>
+          <p className="text-[#62E0D8] mt-1">✓ Realizado: {data.original.Si}</p>
+          <p className="text-[#EF5350]">✗ No: {data.original.No}</p>
+          <p className="text-[#FFA726]">⏳ Pendiente: {data.original.Pendiente}</p>
+          <p className="text-[#AB47BC]">🔄 Reagendar: {data.original.Reagendar}</p>
+          <p className="font-semibold text-[#62E0D8] mt-2">Total: {data.value} ({percentage}%)</p>
         </div>
       );
     }
     return null;
-  };
-
-  const handleBarClick = (origen: string, status: string) => {
-    setSelectedBar({ origen, status });
   };
 
   return (
@@ -108,84 +118,90 @@ export default function GraficoOrigen({ meetings }: { meetings: Meeting[] }) {
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h2 className="text-lg font-semibold text-gray-900 mb-6">Reuniones por Origen</h2>
 
-        {chartData.length === 0 ? (
+        {pieData.length === 0 ? (
           <div className="flex items-center justify-center py-12 text-gray-500">
             No hay datos disponibles
           </div>
         ) : (
           <>
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart
-                data={chartData}
-                layout="vertical"
-                margin={{ top: 5, right: 30, left: 180, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis type="number" stroke="#6b7280" style={{ fontSize: "12px" }} />
-                <YAxis
-                  dataKey="origen"
-                  type="category"
-                  stroke="#6b7280"
-                  style={{ fontSize: "12px" }}
-                  width={170}
-                />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(98,224,216,0.1)" }} />
-                <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "20px" }} iconType="square" />
-                <Bar
-                  dataKey="Si"
-                  stackId="a"
-                  fill={COLORS.Si}
-                  name="Realizado"
-                  onClick={(data: any) => handleBarClick(data.origen, "Si")}
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name }) => name}
+                  outerRadius={120}
+                  fill="#8884d8"
+                  dataKey="value"
+                  onClick={(data: any) => setSelectedData({ origen: data.name })}
                   style={{ cursor: "pointer" }}
-                />
-                <Bar
-                  dataKey="No"
-                  stackId="a"
-                  fill={COLORS.No}
-                  name="No Realizado"
-                  onClick={(data: any) => handleBarClick(data.origen, "No")}
-                  style={{ cursor: "pointer" }}
-                />
-                <Bar
-                  dataKey="Pendiente"
-                  stackId="a"
-                  fill={COLORS.Pendiente}
-                  name="Pendiente"
-                  onClick={(data: any) => handleBarClick(data.origen, "Pendiente")}
-                  style={{ cursor: "pointer" }}
-                />
-                <Bar
-                  dataKey="Reagendar"
-                  stackId="a"
-                  fill={COLORS.Reagendar}
-                  name="Reagendar"
-                  onClick={(data: any) => handleBarClick(data.origen, "Reagendar")}
-                  style={{ cursor: "pointer" }}
-                />
-              </BarChart>
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "20px" }} />
+              </PieChart>
             </ResponsiveContainer>
-            <p className="text-xs text-gray-500 mt-4 text-center">Haz clic en cualquier barra para ver el listado de empresas</p>
+            <p className="text-xs text-gray-500 mt-4 text-center">Haz clic en cualquier segmento para ver el listado de empresas</p>
+
+            <div className="mt-8 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-[#F3F4F6] border-b-2 border-[#62E0D8]/20">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-[#251762] uppercase tracking-wider">Origen</th>
+                    <th className="px-4 py-3 text-center font-semibold text-[#251762] uppercase tracking-wider">Reuniones</th>
+                    <th className="px-4 py-3 text-center font-semibold text-[#251762] uppercase tracking-wider">% del total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pieData.map((item, idx) => (
+                    <tr
+                      key={item.name}
+                      className={`border-b border-gray-100 transition-colors cursor-pointer hover:bg-[#62E0D8]/5 ${
+                        idx % 2 === 0 ? "bg-white" : "bg-[#F9FAFB]"
+                      }`}
+                      onClick={() => setSelectedData({ origen: item.name })}
+                    >
+                      <td className="px-4 py-3 font-medium text-[#251762]">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded"
+                            style={{ backgroundColor: COLORS[pieData.indexOf(item) % COLORS.length] }}
+                          />
+                          {item.name}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center text-gray-700">{item.value}</td>
+                      <td className="px-4 py-3 text-center font-semibold text-[#62E0D8]">
+                        {((item.value / totalMeetings) * 100).toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
       </div>
 
-      {selectedBar && (
+      {selectedData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
             <div className="bg-gradient-to-r from-[#251762] to-[#3a2a7d] px-8 py-6 flex items-center justify-between">
               <div>
-                <h3 className="text-2xl font-bold text-[#62E0D8]">
-                  {STATUS_INFO[selectedBar.status as keyof typeof STATUS_INFO].label}
-                </h3>
-                <p className="text-[#62E0D8]/70 text-sm mt-1">Origen: {selectedBar.origen}</p>
+                <h3 className="text-2xl font-bold text-[#62E0D8]">Reuniones</h3>
+                <p className="text-[#62E0D8]/70 text-sm mt-1">Origen: {selectedData.origen}</p>
               </div>
               <div className="text-right">
                 <p className="text-4xl font-bold text-[#62E0D8]">{filteredMeetings.length}</p>
                 <p className="text-[#62E0D8]/70 text-xs">reuniones</p>
               </div>
               <button
-                onClick={() => setSelectedBar(null)}
+                onClick={() => setSelectedData(null)}
                 className="ml-4 p-2 hover:bg-[#62E0D8]/20 rounded-lg transition-colors"
               >
                 <IconX size={24} className="text-[#62E0D8]" />
@@ -207,7 +223,7 @@ export default function GraficoOrigen({ meetings }: { meetings: Meeting[] }) {
                         <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">Cargo</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">Fecha</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">SDR</th>
-                        <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">País</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">Estado</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -225,7 +241,16 @@ export default function GraficoOrigen({ meetings }: { meetings: Meeting[] }) {
                             {m.fecha_reunion ? new Date(m.fecha_reunion).toLocaleDateString("es-MX") : "—"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600">{m.sdr_nombre || "—"}</td>
-                          <td className="px-6 py-4 text-sm text-gray-600">{m.pais || "—"}</td>
+                          <td className="px-6 py-4 text-sm">
+                            <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+                              m.realizado === "Si" ? "bg-[#62E0D8]/20 text-[#62E0D8]" :
+                              m.realizado === "No" ? "bg-[#EF5350]/20 text-[#EF5350]" :
+                              m.realizado === "Pendiente" ? "bg-[#FFA726]/20 text-[#FFA726]" :
+                              "bg-[#AB47BC]/20 text-[#AB47BC]"
+                            }`}>
+                              {m.realizado}
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
