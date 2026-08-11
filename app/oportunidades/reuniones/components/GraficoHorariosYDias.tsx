@@ -25,6 +25,8 @@ const DIA_INDEX_MAP: Record<string, number> = {
 
 export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[] }) {
   const heatmapData = useMemo(() => {
+    console.log(`[DEBUG] Total meetings recibidos: ${meetings.length}`);
+
     const matrix: Record<number, Record<number, { total: number; exitosas: number }>> = {};
 
     for (let dia = 1; dia <= 6; dia++) {
@@ -34,31 +36,48 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
       }
     }
 
+    let processedCount = 0;
+    let filteredCount = 0;
+
     meetings.forEach((meeting, idx) => {
-      if (!meeting.fecha_reunion) return;
+      if (!meeting.fecha_reunion) {
+        console.log(`[DEBUG] Reunión ${idx}: SIN fecha_reunion`);
+        return;
+      }
 
       const date = new Date(meeting.fecha_reunion);
       const dia = date.getDay();
       const hora = date.getHours();
 
-      // Log solo de las primeras 3 reuniones para debuggear
-      if (idx < 3) {
-        console.log(`Reunión ${idx}: fecha_reunion="${meeting.fecha_reunion}" → día=${dia}, hora=${hora}`);
+      console.log(`[DEBUG] Reunión ${idx}: fecha="${meeting.fecha_reunion}" → Date objeto: ${date.toString()} → día=${dia} (${DIAS_SEMANA_LABORAL[dia] || "DOMINGO"}), hora=${hora}`);
+
+      processedCount++;
+
+      if (dia === 0 || dia > 6) {
+        console.log(`  ⚠️ Filtrado: día ${dia} está fuera de rango (domingo o inválido)`);
+        filteredCount++;
+        return;
       }
 
-      if (dia === 0 || dia > 6) return; // Skip Sunday and invalid days
-
-      if (hora >= 6 && hora < 21) {
-        if (!matrix[dia][hora]) {
-          matrix[dia][hora] = { total: 0, exitosas: 0 };
-        }
-        matrix[dia][hora].total++;
-
-        if (meeting.realizado === "Si") {
-          matrix[dia][hora].exitosas++;
-        }
+      if (hora < 6 || hora >= 21) {
+        console.log(`  ⚠️ Filtrado: hora ${hora} está fuera de rango 6-20`);
+        filteredCount++;
+        return;
       }
+
+      if (!matrix[dia][hora]) {
+        matrix[dia][hora] = { total: 0, exitosas: 0 };
+      }
+      matrix[dia][hora].total++;
+
+      if (meeting.realizado === "Si") {
+        matrix[dia][hora].exitosas++;
+      }
+      console.log(`  ✓ Agregada a matrix[${dia}][${hora}]`);
     });
+
+    console.log(`[DEBUG] Procesadas: ${processedCount}, Filtradas: ${filteredCount}`);
+    console.log(`[DEBUG] Matriz completa:`, matrix);
 
     const data: HeatmapData[] = [];
     for (let dia = 1; dia <= 6; dia++) {
@@ -77,6 +96,9 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
         });
       }
     }
+
+    console.log(`[DEBUG] Datos finales (con datos > 0):`, data.filter(d => d.total > 0));
+    console.log(`[DEBUG] Total de celdas con data: ${data.filter(d => d.total > 0).length}`);
 
     return data;
   }, [meetings]);
@@ -119,6 +141,11 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
     const mejorHora = heatmapData.reduce((best, item) => {
       return item.exitosas > best.exitosas ? item : best;
     }, heatmapData[0]);
+
+    console.log(`[DEBUG STATS] Total reuniones: ${totalReuniones}, Total exitosas: ${totalExitosas}`);
+    console.log(`[DEBUG STATS] Mejor día: ${mejorDia.label} (${mejorDia.groupTotal} reuniones)`);
+    console.log(`[DEBUG STATS] Mejor hora: ${mejorHora?.horaLabel} (${mejorHora?.exitosas} exitosas en ${mejorHora?.total} total)`);
+    console.log(`[DEBUG STATS] Todos los items del heatmap:`, heatmapData);
 
     return {
       totalReuniones,
