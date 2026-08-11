@@ -194,24 +194,6 @@ export default function GraficoEvolucion({
           <div className="bg-white rounded-xl p-4 border border-gray-100">
             <ResponsiveContainer width="100%" height={height}>
               <BarChart data={chartData} margin={{ top: 30, right: 30, left: 0, bottom: 20 }}>
-                <defs>
-                  <linearGradient id="siGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#62E0D8" stopOpacity={1} />
-                    <stop offset="100%" stopColor="#62E0D8" stopOpacity={0.7} />
-                  </linearGradient>
-                  <linearGradient id="noGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#EF5350" stopOpacity={1} />
-                    <stop offset="100%" stopColor="#EF5350" stopOpacity={0.7} />
-                  </linearGradient>
-                  <linearGradient id="pendienteGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#FFA726" stopOpacity={1} />
-                    <stop offset="100%" stopColor="#FFA726" stopOpacity={0.7} />
-                  </linearGradient>
-                  <linearGradient id="reagendarGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#AB47BC" stopOpacity={1} />
-                    <stop offset="100%" stopColor="#AB47BC" stopOpacity={0.7} />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid strokeDasharray="4 4" stroke="#E5E7EB" vertical={false} />
                 <XAxis
                   dataKey="periodo"
@@ -232,7 +214,7 @@ export default function GraficoEvolucion({
                   <Bar
                     dataKey="Si"
                     stackId="a"
-                    fill="url(#siGradient)"
+                    fill="#62E0D8"
                     radius={[8, 8, 0, 0]}
                     label={<CustomLabel />}
                     onClick={(data: any) => handleBarClick(data.periodo, "Si")}
@@ -243,8 +225,8 @@ export default function GraficoEvolucion({
                   <Bar
                     dataKey="No"
                     stackId="a"
-                    fill="url(#noGradient)"
-                    radius={[8, 8, 0, 0]}
+                    fill="#EF5350"
+                    radius={0}
                     label={<CustomLabel />}
                     onClick={(data: any) => handleBarClick(data.periodo, "No")}
                     style={{ cursor: "pointer" }}
@@ -254,8 +236,8 @@ export default function GraficoEvolucion({
                   <Bar
                     dataKey="Pendiente"
                     stackId="a"
-                    fill="url(#pendienteGradient)"
-                    radius={[8, 8, 0, 0]}
+                    fill="#FFA726"
+                    radius={0}
                     label={<CustomLabel />}
                     onClick={(data: any) => handleBarClick(data.periodo, "Pendiente")}
                     style={{ cursor: "pointer" }}
@@ -265,7 +247,7 @@ export default function GraficoEvolucion({
                   <Bar
                     dataKey="Reagendar"
                     stackId="a"
-                    fill="url(#reagendarGradient)"
+                    fill="#AB47BC"
                     radius={[8, 8, 0, 0]}
                     label={<CustomLabel />}
                     onClick={(data: any) => handleBarClick(data.periodo, "Reagendar")}
