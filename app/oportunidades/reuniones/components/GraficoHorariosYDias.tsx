@@ -90,7 +90,15 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
     data: heatmapData.filter((d) => d.dia === idx + 1),
   }));
 
-  const horas = Array.from({ length: 15 }, (_, i) => i + 6);
+  const horasConDatos = useMemo(() => {
+    const horas = new Set<number>();
+    heatmapData.forEach((d) => {
+      if (d.total > 0) {
+        horas.add(d.hora);
+      }
+    });
+    return Array.from(horas).sort((a, b) => a - b);
+  }, [heatmapData]);
 
   const stats = useMemo(() => {
     const totalReuniones = heatmapData.reduce((sum, d) => sum + d.total, 0);
@@ -150,7 +158,7 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
           <div className="flex gap-4 min-w-fit">
             {/* Eje Y (Horas) */}
             <div className="flex flex-col pt-10">
-              {horas.map((hora) => (
+              {horasConDatos.map((hora) => (
                 <div
                   key={`hora-${hora}`}
                   className="h-12 flex items-center justify-end pr-2 text-xs font-medium text-gray-600"
@@ -171,21 +179,23 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
 
                   {/* Celdas de horarios */}
                   <div className="space-y-1">
-                    {group.data.map((item) => (
-                      <div
-                        key={`${item.dia}-${item.hora}`}
-                        className="w-16 h-12 rounded-lg flex items-center justify-center cursor-pointer transition-all hover:ring-2 hover:ring-[#62E0D8] hover:shadow-md"
-                        style={{ backgroundColor: getColorByRate(item.tasaExito) }}
-                        title={`${group.label} ${item.horaLabel}: ${item.exitosas}/${item.total} (${item.tasaExito.toFixed(1)}%)`}
-                      >
-                        {item.total > 0 && (
-                          <div className="text-center">
-                            <p className="text-sm font-bold text-gray-900">{item.total}</p>
-                            <p className="text-xs text-gray-600">{item.tasaExito.toFixed(0)}%</p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    {group.data
+                      .filter((item) => horasConDatos.includes(item.hora))
+                      .map((item) => (
+                        <div
+                          key={`${item.dia}-${item.hora}`}
+                          className="w-16 h-12 rounded-lg flex items-center justify-center cursor-pointer transition-all hover:ring-2 hover:ring-[#62E0D8] hover:shadow-md"
+                          style={{ backgroundColor: getColorByRate(item.tasaExito) }}
+                          title={`${group.label} ${item.horaLabel}: ${item.exitosas}/${item.total} (${item.tasaExito.toFixed(1)}%)`}
+                        >
+                          {item.total > 0 && (
+                            <div className="text-center">
+                              <p className="text-sm font-bold text-gray-900">{item.total}</p>
+                              <p className="text-xs text-gray-600">{item.tasaExito.toFixed(0)}%</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
                   </div>
                 </div>
               ))}
