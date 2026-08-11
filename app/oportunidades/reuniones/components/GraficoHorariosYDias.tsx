@@ -112,7 +112,7 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
     }, { label: "—", groupTotal: 0, groupExitosas: 0 });
 
     const mejorHora = heatmapData.reduce((best, item) => {
-      return item.tasaExito > best.tasaExito && item.total > 0 ? item : best;
+      return item.exitosas > best.exitosas ? item : best;
     }, heatmapData[0]);
 
     return {
