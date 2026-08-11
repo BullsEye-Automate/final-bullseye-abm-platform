@@ -50,7 +50,9 @@ export default function GraficoEvolucion({
       if (!meeting.fecha_reunion) return;
 
       const date = new Date(meeting.fecha_reunion);
-      const monthKey = date.toLocaleDateString("es-MX", { year: "numeric", month: "2-digit" });
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const year = date.getFullYear();
+      const monthKey = `${month}/${year}`;
 
       if (!monthsData[monthKey]) {
         monthsData[monthKey] = {
@@ -76,14 +78,19 @@ export default function GraficoEvolucion({
         Reagendar: counts.Reagendar || 0,
         total: Object.values(counts).reduce((a, b) => a + b, 0),
       }))
-      .sort((a, b) => a.periodo.localeCompare(b.periodo));
+      .sort((a, b) => {
+        const [m1, y1] = a.periodo.split("/");
+        const [m2, y2] = b.periodo.split("/");
+        const cmp = parseInt(y1) - parseInt(y2);
+        return cmp !== 0 ? cmp : parseInt(m1) - parseInt(m2);
+      });
 
     return data;
   }, [meetings]);
 
   const filteredMeetings = useMemo(() => {
     if (!selectedBar) return [];
-    const [year, month] = selectedBar.periodo.split("/");
+    const [month, year] = selectedBar.periodo.split("/");
     return meetings.filter((m) => {
       if (!m.fecha_reunion) return false;
       const date = new Date(m.fecha_reunion);
