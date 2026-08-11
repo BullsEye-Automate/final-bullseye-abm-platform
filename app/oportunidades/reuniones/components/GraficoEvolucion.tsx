@@ -215,7 +215,7 @@ export default function GraficoEvolucion({
                     dataKey="Si"
                     stackId="a"
                     fill="#62E0D8"
-                    radius={[8, 8, 0, 0]}
+                    radius={0}
                     label={<CustomLabel />}
                     onClick={(data: any) => handleBarClick(data.periodo, "Si")}
                     style={{ cursor: "pointer" }}
