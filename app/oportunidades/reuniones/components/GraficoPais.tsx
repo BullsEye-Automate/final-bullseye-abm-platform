@@ -4,14 +4,12 @@ import { useMemo, useState } from "react";
 import { Meeting } from "../page";
 import { IconX } from "@tabler/icons-react";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
+  PieChart,
+  Pie,
+  Cell,
   ResponsiveContainer,
+  Legend,
+  Tooltip,
 } from "recharts";
 
 interface ChartData {
@@ -23,6 +21,12 @@ interface ChartData {
   total: number;
 }
 
+interface PieData {
+  name: string;
+  value: number;
+  original: ChartData;
+}
+
 const STATUS_INFO = {
   Si: { color: "#62E0D8", label: "Realizado" },
   No: { color: "#EF5350", label: "No Realizado" },
@@ -30,15 +34,14 @@ const STATUS_INFO = {
   Reagendar: { color: "#AB47BC", label: "Reagendar" },
 };
 
-const COLORS = {
-  Si: "#62E0D8",
-  No: "#EF5350",
-  Pendiente: "#FFA726",
-  Reagendar: "#AB47BC",
-};
+const COLORS = [
+  "#62E0D8", "#3B7FD8", "#2B5FD8", "#5B3FB8", "#8B3FA8",
+  "#AB47BC", "#BB5FCC", "#CB7FDC", "#DB9FEC", "#EF5350",
+  "#FF7F7F", "#FFAF7F", "#FFA726", "#FFBF5F", "#FFCF8F"
+];
 
 export default function GraficoPais({ meetings }: { meetings: Meeting[] }) {
-  const [selectedBar, setSelectedBar] = useState<{ pais: string; status: string } | null>(null);
+  const [selectedData, setSelectedData] = useState<{ pais: string } | null>(null);
 
   const chartData = useMemo(() => {
     const paisData: Record<string, Record<string, number>> = {};
@@ -76,32 +79,34 @@ export default function GraficoPais({ meetings }: { meetings: Meeting[] }) {
     return data;
   }, [meetings]);
 
+  const pieData: PieData[] = useMemo(() => {
+    return chartData.map((d) => ({
+      name: d.pais,
+      value: d.total,
+      original: d,
+    }));
+  }, [chartData]);
+
   const filteredMeetings = useMemo(() => {
-    if (!selectedBar) return [];
-    return meetings.filter(
-      (m) => m.pais === selectedBar.pais && m.realizado === selectedBar.status
-    );
-  }, [selectedBar, meetings]);
+    if (!selectedData) return [];
+    return meetings.filter((m) => m.pais === selectedData.pais);
+  }, [selectedData, meetings]);
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload[0]) {
-      const data = payload[0].payload as ChartData;
+      const data = payload[0].payload as PieData;
       return (
         <div className="bg-[#251762] border border-[#62E0D8] p-3 rounded-lg shadow-xl text-xs">
-          <p className="font-semibold text-white">{data.pais}</p>
-          <p className="text-[#62E0D8] mt-1">✓ Realizado: {data.Si}</p>
-          <p className="text-[#EF5350]">✗ No: {data.No}</p>
-          <p className="text-[#FFA726]">⏳ Pendiente: {data.Pendiente}</p>
-          <p className="text-[#AB47BC]">🔄 Reagendar: {data.Reagendar}</p>
-          <p className="font-semibold text-[#62E0D8] mt-2">Total: {data.total}</p>
+          <p className="font-semibold text-white">{data.name}</p>
+          <p className="text-[#62E0D8] mt-1">✓ Realizado: {data.original.Si}</p>
+          <p className="text-[#EF5350]">✗ No: {data.original.No}</p>
+          <p className="text-[#FFA726]">⏳ Pendiente: {data.original.Pendiente}</p>
+          <p className="text-[#AB47BC]">🔄 Reagendar: {data.original.Reagendar}</p>
+          <p className="font-semibold text-[#62E0D8] mt-2">Total: {data.value}</p>
         </div>
       );
     }
     return null;
-  };
-
-  const handleBarClick = (pais: string, status: string) => {
-    setSelectedBar({ pais, status });
   };
 
   return (
@@ -109,84 +114,53 @@ export default function GraficoPais({ meetings }: { meetings: Meeting[] }) {
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h2 className="text-lg font-semibold text-gray-900 mb-6">Reuniones por País</h2>
 
-        {chartData.length === 0 ? (
+        {pieData.length === 0 ? (
           <div className="flex items-center justify-center py-12 text-gray-500">
             No hay datos disponibles
           </div>
         ) : (
           <>
             <ResponsiveContainer width="100%" height={400}>
-              <BarChart
-                data={chartData}
-                layout="vertical"
-                margin={{ top: 5, right: 30, left: 150, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                <XAxis type="number" stroke="#6b7280" style={{ fontSize: "12px" }} />
-                <YAxis
-                  dataKey="pais"
-                  type="category"
-                  stroke="#6b7280"
-                  style={{ fontSize: "12px" }}
-                  width={140}
-                />
-                <Tooltip content={<CustomTooltip />} cursor={{ fill: "rgba(98,224,216,0.1)" }} />
-                <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "20px" }} iconType="square" />
-                <Bar
-                  dataKey="Si"
-                  stackId="a"
-                  fill={COLORS.Si}
-                  name="Realizado"
-                  onClick={(data: any) => handleBarClick(data.pais, "Si")}
+              <PieChart>
+                <Pie
+                  data={pieData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, value }) => `${name}: ${value}`}
+                  outerRadius={120}
+                  fill="#8884d8"
+                  dataKey="value"
+                  onClick={(data: any) => setSelectedData({ pais: data.name })}
                   style={{ cursor: "pointer" }}
-                />
-                <Bar
-                  dataKey="No"
-                  stackId="a"
-                  fill={COLORS.No}
-                  name="No Realizado"
-                  onClick={(data: any) => handleBarClick(data.pais, "No")}
-                  style={{ cursor: "pointer" }}
-                />
-                <Bar
-                  dataKey="Pendiente"
-                  stackId="a"
-                  fill={COLORS.Pendiente}
-                  name="Pendiente"
-                  onClick={(data: any) => handleBarClick(data.pais, "Pendiente")}
-                  style={{ cursor: "pointer" }}
-                />
-                <Bar
-                  dataKey="Reagendar"
-                  stackId="a"
-                  fill={COLORS.Reagendar}
-                  name="Reagendar"
-                  onClick={(data: any) => handleBarClick(data.pais, "Reagendar")}
-                  style={{ cursor: "pointer" }}
-                />
-              </BarChart>
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+                <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "20px" }} />
+              </PieChart>
             </ResponsiveContainer>
-            <p className="text-xs text-gray-500 mt-4 text-center">Haz clic en cualquier barra para ver el listado de empresas</p>
+            <p className="text-xs text-gray-500 mt-4 text-center">Haz clic en cualquier segmento para ver el listado de empresas</p>
           </>
         )}
       </div>
 
-      {selectedBar && (
+      {selectedData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
             <div className="bg-gradient-to-r from-[#251762] to-[#3a2a7d] px-8 py-6 flex items-center justify-between">
               <div>
-                <h3 className="text-2xl font-bold text-[#62E0D8]">
-                  {STATUS_INFO[selectedBar.status as keyof typeof STATUS_INFO].label}
-                </h3>
-                <p className="text-[#62E0D8]/70 text-sm mt-1">País: {selectedBar.pais}</p>
+                <h3 className="text-2xl font-bold text-[#62E0D8]">Reuniones</h3>
+                <p className="text-[#62E0D8]/70 text-sm mt-1">País: {selectedData.pais}</p>
               </div>
               <div className="text-right">
                 <p className="text-4xl font-bold text-[#62E0D8]">{filteredMeetings.length}</p>
                 <p className="text-[#62E0D8]/70 text-xs">reuniones</p>
               </div>
               <button
-                onClick={() => setSelectedBar(null)}
+                onClick={() => setSelectedData(null)}
                 className="ml-4 p-2 hover:bg-[#62E0D8]/20 rounded-lg transition-colors"
               >
                 <IconX size={24} className="text-[#62E0D8]" />
@@ -208,7 +182,7 @@ export default function GraficoPais({ meetings }: { meetings: Meeting[] }) {
                         <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">Cargo</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">Fecha</th>
                         <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">SDR</th>
-                        <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">País</th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-[#251762] uppercase tracking-wider">Estado</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -226,7 +200,16 @@ export default function GraficoPais({ meetings }: { meetings: Meeting[] }) {
                             {m.fecha_reunion ? new Date(m.fecha_reunion).toLocaleDateString("es-MX") : "—"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600">{m.sdr_nombre || "—"}</td>
-                          <td className="px-6 py-4 text-sm text-gray-600">{m.pais || "—"}</td>
+                          <td className="px-6 py-4 text-sm">
+                            <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+                              m.realizado === "Si" ? "bg-[#62E0D8]/20 text-[#62E0D8]" :
+                              m.realizado === "No" ? "bg-[#EF5350]/20 text-[#EF5350]" :
+                              m.realizado === "Pendiente" ? "bg-[#FFA726]/20 text-[#FFA726]" :
+                              "bg-[#AB47BC]/20 text-[#AB47BC]"
+                            }`}>
+                              {m.realizado}
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
