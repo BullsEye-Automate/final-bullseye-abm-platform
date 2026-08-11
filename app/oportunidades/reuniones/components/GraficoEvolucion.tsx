@@ -118,13 +118,14 @@ export default function GraficoEvolucion({
   };
 
   const CustomLabel = ({ x, y, width, height, value }: any) => {
-    if (!value) return null;
+    if (!value || value < 15) return null;
     return (
       <text
         x={x + width / 2}
-        y={y - 4}
-        fill="#251762"
+        y={y + height / 2}
+        fill="white"
         textAnchor="middle"
+        dominantBaseline="middle"
         fontSize="12"
         fontWeight="700"
         fontFamily="Outfit, sans-serif"
