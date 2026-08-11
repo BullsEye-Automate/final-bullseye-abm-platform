@@ -45,6 +45,9 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
       const dia = date.getDay();
       const hora = date.getHours();
 
+      // Skip Sunday (día 0) - solo lunes a sábado
+      if (dia === 0) return;
+
       // Solo contar horas válidas (6am a 8pm)
       if (hora >= 6 && hora < 21) {
         if (!matrix[dia][hora]) {
@@ -89,12 +92,12 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
 
   const maxTotal = Math.max(...heatmapData.map((d) => d.total), 1);
 
-  // Agrupar por día para mostrar mejor
+  // Agrupar por día para mostrar mejor (lunes a sábado, sin domingo)
   const dayGroups = DIAS_SEMANA.map((dia, idx) => ({
     dia: idx,
     label: dia,
     data: heatmapData.filter((d) => d.dia === idx),
-  }));
+  })).filter((group) => group.dia !== 0);
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload[0]) {
@@ -123,7 +126,7 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
         </div>
       ) : (
         <div>
-          <div className="grid grid-cols-7 gap-1 mb-6">
+          <div className="grid grid-cols-6 gap-1 mb-6">
             {dayGroups.map((group) => (
               <div key={group.dia} className="min-w-0">
                 <div className="text-center mb-2">
