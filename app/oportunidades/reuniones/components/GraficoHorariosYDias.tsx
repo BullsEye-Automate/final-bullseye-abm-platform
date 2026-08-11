@@ -40,16 +40,19 @@ export default function GraficoHorariosYDias({ meetings }: { meetings: Meeting[]
     let filteredCount = 0;
 
     meetings.forEach((meeting, idx) => {
-      if (!meeting.fecha_reunion) {
-        console.log(`[DEBUG] Reunión ${idx}: SIN fecha_reunion`);
+      if (!meeting.fecha_reunion || !meeting.hora) {
+        console.log(`[DEBUG] Reunión ${idx}: SIN fecha_reunion o hora. fecha="${meeting.fecha_reunion}", hora="${meeting.hora}"`);
         return;
       }
 
       const date = new Date(meeting.fecha_reunion);
       const dia = date.getDay();
-      const hora = date.getHours();
 
-      console.log(`[DEBUG] Reunión ${idx}: fecha="${meeting.fecha_reunion}" → Date objeto: ${date.toString()} → día=${dia} (${DIAS_SEMANA_LABORAL[dia] || "DOMINGO"}), hora=${hora}`);
+      // Parsear hora del formato "HH:MM" (ejemplo: "10:00" → 10)
+      const horaStr = meeting.hora.split(":")[0];
+      const hora = parseInt(horaStr, 10);
+
+      console.log(`[DEBUG] Reunión ${idx}: fecha="${meeting.fecha_reunion}", hora="${meeting.hora}" → día=${dia} (${DIAS_SEMANA_LABORAL[dia] || "DOMINGO"}), hora=${hora}`);
 
       processedCount++;
 

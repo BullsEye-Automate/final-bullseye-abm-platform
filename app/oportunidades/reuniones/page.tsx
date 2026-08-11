@@ -17,6 +17,7 @@ export interface Meeting {
   contacto_nombre: string | null;
   contacto_cargo: string | null;
   fecha_reunion: string | null;
+  hora?: string | null;
   realizado: "Si" | "No" | "Pendiente" | "Reagendar";
   pais?: string | null;
   industria?: string | null;
