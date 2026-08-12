@@ -2,13 +2,16 @@
   "manifest_version": 3,
   "name": "Peitho — Captura de reuniones",
   "version": "0.1.0",
-  "description": "Detecta reuniones de Google Meet registradas en Peitho y captura el audio automáticamente, sin unirse como participante.",
-  "permissions": ["tabCapture", "offscreen", "tabs"],
+  "description": "Detecta reuniones de Google Meet registradas en Peitho y captura el audio de la pestaña, sin unirse como participante.",
+  "permissions": ["tabCapture", "offscreen", "tabs", "activeTab"],
   "host_permissions": [
     "https://meet.google.com/*",
     "http://localhost:3001/*"
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Peitho — clic para grabar esta reunión"
   }
 }
