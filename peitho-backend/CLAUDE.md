@@ -46,6 +46,10 @@ Documentos de referencia completos en `docs/`:
 
 ---
 
+## Ideas para v2 (evaluar después, no ahora)
+
+- **Bot que se une a la reunión como participante visible** (como DIIO/Gong), en vez de la extensión de Chrome. El usuario confirmó explícitamente que **no le importa** que se vea un bot en la llamada — la restricción "sin bot visible" del brief original ya no aplica como decisión de producto. Reemplazaría la Tarea 4 por completo: un servicio backend con Playwright que entra al link de Meet según el `start_time` de `meetings` (no según que el ejecutivo abra una pestaña), capturando audio vía WebRTC/dispositivo de audio virtual en vez de `chrome.tabCapture`. Es un desarrollo grande (varias sesiones), no una extensión de la Tarea 4 — evaluar viabilidad técnica antes de comprometerse. Decisión explícita: terminar primero la extensión de Chrome (Tarea 4) y avanzar con las Tareas 5-8; esto se evalúa después.
+
 ## Decisiones y aprendizajes (no repetir)
 
 - El backend vive en `peitho-backend/` dentro de este mismo repo (`final-bullseye-abm-platform`), no en un repo separado — así no se gestiona infraestructura de git adicional.
