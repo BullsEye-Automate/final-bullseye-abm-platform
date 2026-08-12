@@ -34,7 +34,7 @@ Documentos de referencia completos en `docs/`:
 
 - [x] **Tarea 1** — Esqueleto backend + tabla `meetings` + `GET /health`. Completado y probado localmente contra Supabase (confirmado por el usuario: `{"status":"ok","db":"connected"}`).
 - [x] **Tarea 2** — OAuth de Google Calendar + webhook `events.watch` → guarda eventos nuevos en `meetings`. Completada y confirmada por el usuario end-to-end: creó un evento de prueba con Meet + invitado en Google Calendar, y apareció en `meetings` con `meet_code`, `ejecutivo` y `contraparte` correctos.
-- [~] **Tarea 3** — `GET /meetings/lookup?meet_code=xxx`. Código implementado (`src/routes/meetings.ts`); **pendiente que el usuario la pruebe** (ver `README.md`, sección Tarea 3).
+- [x] **Tarea 3** — `GET /meetings/lookup?meet_code=xxx`. Completada y confirmada: responde `{"registered":true,...}` para un meet_code existente y `{"registered":false}` para uno inexistente.
 - [ ] **Tarea 4** — Extensión de Chrome (Manifest V3, `chrome.tabCapture`).
 - [ ] **Tarea 5** — Pipeline de análisis post-reunión (Deepgram + prompt de `peitho_prompt_analisis_v1.md` vía Anthropic API → `meetings.analysis`).
 - [ ] **Tarea 6** — Notificación de feedback listo (Slack o correo).
