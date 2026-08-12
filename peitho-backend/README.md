@@ -139,6 +139,46 @@ Respuesta esperada: `{"status":"ok","channel_id":"...","expiration":"..."}`.
 
 Si no aparece nada, revisa los logs de `npm run dev` (ahí se loguea cualquier error del webhook o del sync) y la consola de ngrok (`http://127.0.0.1:4040`) para ver si Google efectivamente está llamando al webhook.
 
+### Limpiar canales de watch duplicados
+
+Cada `POST /calendar/watch` crea un canal nuevo sin borrar los anteriores. Si registraste el watch varias veces (por pruebas), limpia los viejos así:
+
+```bash
+npx tsx src/scripts/stopStaleChannels.ts ejecutivo@gmail.com
+```
+
+Esto avisa a Google (`channels.stop`) y borra de la base todos los canales de esa cuenta excepto el más reciente.
+
+---
+
+## Tarea 3 — Endpoint de lookup para la extensión
+
+`GET /meetings/lookup?meet_code=xxx` — dado el código de una URL de Meet, responde si esa reunión está registrada en `meetings` y si se debe capturar. Este es el endpoint que la extensión de Chrome (Tarea 4) va a llamar cada vez que detecte que el usuario entró a una llamada.
+
+### Probarlo
+
+Con el servidor corriendo y al menos una reunión ya en la tabla `meetings` (la del evento de prueba de la Tarea 2, por ejemplo):
+
+```bash
+# Con el meet_code de una reunión que sí existe en la tabla
+curl "http://localhost:3001/meetings/lookup?meet_code=qxu-axoo-ybe"
+```
+
+Respuesta esperada:
+```json
+{"registered":true,"meeting_id":"...","auto_capture":true}
+```
+
+```bash
+# Con un código que no existe
+curl "http://localhost:3001/meetings/lookup?meet_code=xxx-yyyy-zzz"
+```
+
+Respuesta esperada:
+```json
+{"registered":false}
+```
+
 ## Estructura
 
 ```
@@ -152,10 +192,13 @@ peitho-backend/
 │   ├── google.ts                 ← OAuth client + credenciales por cuenta de Google
 │   ├── calendarSync.ts           ← trae los cambios del calendario y los guarda en meetings
 │   ├── migrate.ts                ← corredor simple de migraciones SQL
+│   ├── scripts/
+│   │   └── stopStaleChannels.ts  ← limpieza manual de canales de watch viejos
 │   ├── routes/
 │   │   ├── health.ts             ← GET /health
 │   │   ├── auth.ts               ← GET /auth/google, GET /auth/google/callback
-│   │   └── calendar.ts           ← POST /calendar/watch, POST /webhooks/google-calendar
+│   │   ├── calendar.ts           ← POST /calendar/watch, POST /webhooks/google-calendar
+│   │   └── meetings.ts           ← GET /meetings/lookup
 │   └── server.ts                 ← punto de entrada
 ├── .env.example
 └── package.json
