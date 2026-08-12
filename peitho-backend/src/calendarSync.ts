@@ -83,6 +83,7 @@ export async function syncChannelChanges(channelId: string) {
   let pageToken: string | undefined;
   let syncToken = channel.sync_token ?? undefined;
   let nextSyncToken: string | undefined;
+  const isFirstSync = !syncToken;
 
   do {
     let response;
@@ -92,6 +93,10 @@ export async function syncChannelChanges(channelId: string) {
         syncToken,
         pageToken,
         singleEvents: true,
+        // Sin syncToken, Google devuelve TODO el historial del calendario sin
+        // acotar — para una cuenta real puede ser miles de eventos viejos.
+        // En la primera página de la sincronización inicial, se acota a partir de ahora.
+        ...(isFirstSync && !pageToken ? { timeMin: new Date().toISOString() } : {}),
       });
     } catch (error: any) {
       if (error?.code === 410) {
