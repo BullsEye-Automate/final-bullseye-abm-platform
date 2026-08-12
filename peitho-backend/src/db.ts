@@ -10,4 +10,7 @@ if (!connectionString) {
 export const pool = new Pool({
   connectionString,
   ssl: connectionString.includes('supabase.co') ? { rejectUnauthorized: false } : undefined,
+  // Sin esto, una conexión de red trabada cuelga la request indefinidamente
+  // en vez de fallar con un error legible.
+  connectionTimeoutMillis: 10_000,
 });

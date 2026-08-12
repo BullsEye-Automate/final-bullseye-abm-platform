@@ -20,19 +20,26 @@ calendarRouter.post('/calendar/watch', async (req, res) => {
   }
 
   try {
+    console.log(`[watch] buscando credenciales para ${email}...`);
     const { calendar, credentialId } = await getCalendarClientByEmail(email);
+    console.log('[watch] credenciales OK, llamando a calendar.events.watch...');
+
     const channelId = randomUUID();
     const webhookToken = randomUUID();
 
-    const { data } = await calendar.events.watch({
-      calendarId: 'primary',
-      requestBody: {
-        id: channelId,
-        type: 'web_hook',
-        address: `${PUBLIC_BASE_URL}/webhooks/google-calendar`,
-        token: webhookToken,
+    const { data } = await calendar.events.watch(
+      {
+        calendarId: 'primary',
+        requestBody: {
+          id: channelId,
+          type: 'web_hook',
+          address: `${PUBLIC_BASE_URL}/webhooks/google-calendar`,
+          token: webhookToken,
+        },
       },
-    });
+      { timeout: 15_000 }
+    );
+    console.log('[watch] events.watch respondió, guardando canal en la base...');
 
     if (!data.resourceId) {
       throw new Error('Google no devolvió resourceId para el canal');
@@ -49,9 +56,11 @@ calendarRouter.post('/calendar/watch', async (req, res) => {
         data.expiration ? new Date(Number(data.expiration)) : null,
       ]
     );
+    console.log('[watch] canal guardado, arrancando sincronización inicial...');
 
     // Sincronización inicial: deja un sync_token de partida para futuras notificaciones
     await syncChannelChanges(channelId);
+    console.log('[watch] sincronización inicial completa');
 
     res.json({ status: 'ok', channel_id: channelId, expiration: data.expiration });
   } catch (error) {
