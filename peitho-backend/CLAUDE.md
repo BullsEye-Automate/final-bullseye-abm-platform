@@ -33,7 +33,7 @@ Documentos de referencia completos en `docs/`:
 ## Progreso de tareas (ver orden completo en `docs/PEITHO_BRIEF_claude_code.md`)
 
 - [x] **Tarea 1** — Esqueleto backend + tabla `meetings` + `GET /health`. Completado y probado localmente contra Supabase (confirmado por el usuario: `{"status":"ok","db":"connected"}`).
-- [~] **Tarea 2** — OAuth de Google Calendar + webhook `events.watch` → guarda eventos nuevos en `meetings`. Código implementado (`src/google.ts`, `src/calendarSync.ts`, `src/routes/auth.ts`, `src/routes/calendar.ts`, migración `002_create_google_calendar_tables.sql`); **pendiente que el usuario la pruebe** con Google Cloud Console + ngrok (ver `README.md`, sección Tarea 2) y confirme que un evento de prueba llega a `meetings`.
+- [x] **Tarea 2** — OAuth de Google Calendar + webhook `events.watch` → guarda eventos nuevos en `meetings`. Completada y confirmada por el usuario end-to-end: creó un evento de prueba con Meet + invitado en Google Calendar, y apareció en `meetings` con `meet_code`, `ejecutivo` y `contraparte` correctos.
 - [ ] **Tarea 3** — `GET /meetings/lookup?meet_code=xxx`.
 - [ ] **Tarea 4** — Extensión de Chrome (Manifest V3, `chrome.tabCapture`).
 - [ ] **Tarea 5** — Pipeline de análisis post-reunión (Deepgram + prompt de `peitho_prompt_analisis_v1.md` vía Anthropic API → `meetings.analysis`).
@@ -56,6 +56,9 @@ Documentos de referencia completos en `docs/`:
 - **Google Calendar push notifications (`events.watch`) exigen una URL de webhook HTTPS pública** — no funciona con `localhost`. Para probar en local se usa ngrok (`ngrok http 3001`), seteando `GOOGLE_REDIRECT_URI` y `PUBLIC_BASE_URL` con esa URL. Riesgo conocido: Google puede exigir verificar el dominio del webhook en Search Console antes de aceptar el watch — si eso bloquea al usuario, evaluar probar directo en el deploy final (Railway/Render) en vez de forzarlo en local.
 - `google.ts` valida las env vars de Google **dentro de las funciones**, no a nivel de módulo — si se valida al importar, el server entero no arranca (rompe `/health`) cuando el usuario todavía no configuró Google. Mantener este patrón para cualquier integración nueva que sea opcional/incremental.
 - El scope de OAuth pedido es solo `calendar.readonly` (+ `userinfo.email`). La Tarea 8 (`events.patch` para insertar el link del brief) va a necesitar re-autorizar con un scope de escritura (`calendar.events`) — no está cubierto todavía.
+- **La sincronización inicial de `events.list` necesita `timeMin` Y `timeMax`.** Sin `timeMax`, un evento recurrente sin fecha de fin hace que `singleEvents:true` devuelva cada ocurrencia futura sin parar (se manifestó como un "colgue" de varios minutos sin ningún error — en realidad estaba paginando cientos de eventos). Se acotó a una ventana de 90 días. Las sincronizaciones incrementales posteriores (con `syncToken`) no llevan estos filtros de tiempo.
+- Todas las llamadas a la API de Google (`events.watch`, `events.list`) y al pool de Postgres (`connectionTimeoutMillis`) tienen timeouts explícitos + logs de progreso (`console.log('[watch] ...')` / `'[sync] ...'`) — sin esto, un problema de red se manifiesta como un colgue silencioso e indiagnosticable. Mantener este patrón (timeout + log de progreso) en las integraciones futuras que hagan llamadas de red externas (Deepgram, Anthropic API).
+- Quedaron ~6 canales de `calendar_watch_channels` activos de las pruebas repetidas de esta tarea (cada llamada a `/calendar/watch` crea uno nuevo, no reemplaza el anterior) — todos apuntan al mismo webhook, así que un mismo evento se procesa varias veces en paralelo (no rompe nada por el `on conflict` en `meetings`, pero es redundante). Limpiar si molesta, no bloquea las tareas siguientes.
 
 ---
 
