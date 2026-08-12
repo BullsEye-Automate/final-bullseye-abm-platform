@@ -179,13 +179,37 @@ Respuesta esperada:
 {"registered":false}
 ```
 
+---
+
+## Tarea 4 — Endpoint de subida de audio (para la extensión de Chrome)
+
+`POST /meetings/:id/audio` — recibe el archivo de audio grabado por la extensión (carpeta `peitho-chrome-extension/`, ver su propio README), lo guarda en `uploads/` y marca la reunión como `status='captured'`. La transcripción/análisis de ese audio es la Tarea 5 — todavía no está implementada, por ahora solo se guarda el archivo.
+
+### Probarlo directo con curl (sin la extensión)
+
+Usa el `meeting_id` de una reunión real (el que te devuelve `/meetings/lookup`):
+
+```bash
+echo "audio de prueba" > /tmp/prueba.webm
+curl -X POST http://localhost:3001/meetings/<meeting_id>/audio \
+  -F "audio=@/tmp/prueba.webm"
+```
+
+Respuesta esperada: `{"status":"ok"}`. Verifica que apareció el archivo en `peitho-backend/uploads/` y que la fila en Supabase cambió `status` a `captured` con `audio_path` lleno.
+
+### Probarlo con la extensión real
+
+Ver `peitho-chrome-extension/README.md` — tiene el paso a paso completo (cargar la extensión en Chrome, entrar a una reunión de Meet registrada, y confirmar que el audio real llega al backend).
+```
+
 ## Estructura
 
 ```
 peitho-backend/
 ├── migrations/
 │   ├── 001_create_meetings.sql               ← tabla meetings
-│   └── 002_create_google_calendar_tables.sql ← credenciales OAuth + canales de watch
+│   ├── 002_create_google_calendar_tables.sql ← credenciales OAuth + canales de watch
+│   └── 003_add_audio_path_to_meetings.sql    ← columna audio_path
 ├── src/
 │   ├── app.ts                    ← configuración de Express y rutas
 │   ├── db.ts                     ← pool de conexión a Postgres
@@ -198,8 +222,11 @@ peitho-backend/
 │   │   ├── health.ts             ← GET /health
 │   │   ├── auth.ts               ← GET /auth/google, GET /auth/google/callback
 │   │   ├── calendar.ts           ← POST /calendar/watch, POST /webhooks/google-calendar
-│   │   └── meetings.ts           ← GET /meetings/lookup
+│   │   └── meetings.ts           ← GET /meetings/lookup, POST /meetings/:id/audio
 │   └── server.ts                 ← punto de entrada
+├── uploads/                       ← audio grabado por la extensión (no se sube a git)
 ├── .env.example
 └── package.json
 ```
+
+La extensión de Chrome (Tarea 4) vive en `../peitho-chrome-extension/` — es un proyecto separado, no un paquete npm de este backend.
