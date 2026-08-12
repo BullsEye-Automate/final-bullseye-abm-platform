@@ -112,8 +112,16 @@ async function runAnalysisPrompt(input: {
     throw new Error('Claude no devolvió un bloque de texto');
   }
 
+  // El prompt pide "sin markdown, sin backticks", pero el modelo a veces igual
+  // envuelve la respuesta en ```json ... ``` — se limpia como red de seguridad.
+  const cleaned = textBlock.text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/, '')
+    .trim();
+
   try {
-    return JSON.parse(textBlock.text);
+    return JSON.parse(cleaned);
   } catch {
     throw new Error(`No se pudo parsear el JSON de Claude: ${textBlock.text.slice(0, 500)}`);
   }
