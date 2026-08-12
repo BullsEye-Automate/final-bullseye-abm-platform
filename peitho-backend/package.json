@@ -11,6 +11,7 @@
     "migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "googleapis": "^174.0.1",

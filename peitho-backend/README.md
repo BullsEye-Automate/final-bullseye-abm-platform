@@ -200,7 +200,42 @@ Respuesta esperada: `{"status":"ok"}`. Verifica que apareció el archivo en `pei
 ### Probarlo con la extensión real
 
 Ver `peitho-chrome-extension/README.md` — tiene el paso a paso completo (cargar la extensión en Chrome, entrar a una reunión de Meet registrada, y confirmar que el audio real llega al backend).
+
+---
+
+## Tarea 5 — Transcripción y análisis post-reunión
+
+Al terminar la Tarea 4 (subir el audio), el backend dispara automáticamente en segundo plano:
+1. **Transcripción con Deepgram** (`nova-2`, español, con diarización de hablantes)
+2. **Análisis con Claude** (Anthropic API, `claude-sonnet-5`) usando el prompt calibrado de `docs/peitho_prompt_analisis_v1.md`
+3. Guarda el JSON resultante en `meetings.analysis` y marca `status='analyzed'`
+
+No hay un endpoint nuevo que llamar — se dispara solo desde `POST /meetings/:id/audio` (`src/postMeetingAnalysis.ts`).
+
+### Configurar las API keys
+
+En tu `.env`:
 ```
+DEEPGRAM_API_KEY=tu-key-de-deepgram
+ANTHROPIC_API_KEY=tu-key-de-anthropic
+```
+
+### Probarlo
+
+Necesitas un audio con **voz real** (a diferencia de la Tarea 4, donde un archivo vacío/silencioso bastaba) — Deepgram no puede transcribir silencio. La forma más simple es repetir la prueba de la extensión (Tarea 4) hablando unos segundos de verdad frente al micrófono en la pestaña de Meet.
+
+1. Con el backend corriendo y las API keys configuradas, entra a la reunión de prueba, haz clic en el ícono de la extensión, **habla un par de frases** ("Hola, esto es una prueba de Peitho, quiero agendar una demo la próxima semana"), y cierra la pestaña
+2. En la terminal de `npm run dev` deberías ver la secuencia:
+   ```
+   [audio] guardado .../uploads/<id>-....webm para la reunión <id>
+   [analysis] reunión <id>: buscando datos...
+   [analysis] reunión <id>: transcribiendo con Deepgram...
+   [analysis] reunión <id>: corriendo el prompt de análisis con Claude...
+   [analysis] reunión <id>: análisis guardado, status=analyzed
+   ```
+3. Verifica en Supabase → Table Editor → `meetings`: la fila debería tener `status=analyzed` y la columna `analysis` con el JSON completo (predicción de éxito, métricas de desempeño, compromisos, etc.)
+
+Si algo falla, el error queda logueado como `[analysis] falló el análisis de la reunión <id> ...` — no rompe la respuesta HTTP a la extensión (el audio ya se guardó bien de todas formas).
 
 ## Estructura
 
@@ -209,13 +244,17 @@ peitho-backend/
 ├── migrations/
 │   ├── 001_create_meetings.sql               ← tabla meetings
 │   ├── 002_create_google_calendar_tables.sql ← credenciales OAuth + canales de watch
-│   └── 003_add_audio_path_to_meetings.sql    ← columna audio_path
+│   ├── 003_add_audio_path_to_meetings.sql    ← columna audio_path
+│   └── 004_add_analysis_to_meetings.sql      ← columna analysis (jsonb)
 ├── src/
 │   ├── app.ts                    ← configuración de Express y rutas
 │   ├── db.ts                     ← pool de conexión a Postgres
 │   ├── google.ts                 ← OAuth client + credenciales por cuenta de Google
 │   ├── calendarSync.ts           ← trae los cambios del calendario y los guarda en meetings
+│   ├── postMeetingAnalysis.ts    ← transcribe con Deepgram + analiza con Claude
 │   ├── migrate.ts                ← corredor simple de migraciones SQL
+│   ├── prompts/
+│   │   └── analisisPostReunion.ts ← prompt calibrado (instrucciones + esquema)
 │   ├── scripts/
 │   │   └── stopStaleChannels.ts  ← limpieza manual de canales de watch viejos
 │   ├── routes/

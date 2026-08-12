@@ -3,6 +3,7 @@ import path from 'path';
 import { Router } from 'express';
 import multer from 'multer';
 import { pool } from '../db';
+import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 
 export const meetingsRouter = Router();
 
@@ -57,8 +58,8 @@ meetingsRouter.get('/meetings/lookup', async (req, res) => {
   }
 });
 
-// La extensión sube el audio grabado al terminar la llamada. La transcripción
-// y el análisis (Deepgram + Anthropic) son la Tarea 5, todavía no están acá.
+// La extensión sube el audio grabado al terminar la llamada. Dispara la
+// transcripción + análisis (Tarea 5) en segundo plano, sin bloquear la respuesta.
 meetingsRouter.post('/meetings/:id/audio', upload.single('audio'), async (req, res) => {
   const { id } = req.params;
 
@@ -82,6 +83,10 @@ meetingsRouter.post('/meetings/:id/audio', upload.single('audio'), async (req, r
 
     console.log(`[audio] guardado ${req.file.path} para la reunión ${id}`);
     res.json({ status: 'ok' });
+
+    analyzeMeetingAudio(id).catch((error) => {
+      console.error(`[analysis] falló el análisis de la reunión ${id}`, error);
+    });
   } catch (error) {
     console.error('Error guardando el audio de la reunión', error);
     res.status(500).json({ error: 'Error guardando el audio' });
