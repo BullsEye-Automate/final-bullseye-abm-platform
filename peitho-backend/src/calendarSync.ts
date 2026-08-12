@@ -87,6 +87,13 @@ export async function syncChannelChanges(channelId: string) {
   const isFirstSync = !syncToken;
   let page = 0;
 
+  // Ventana de la sincronización inicial: sin timeMax, un evento recurrente sin
+  // fecha de fin (ej. "todos los días para siempre") hace que singleEvents:true
+  // devuelva CADA ocurrencia futura, página tras página, sin parar nunca.
+  const now = new Date();
+  const ninetyDaysOut = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+  const initialSyncWindow = { timeMin: now.toISOString(), timeMax: ninetyDaysOut.toISOString() };
+
   do {
     page += 1;
     console.log(`[sync] canal ${channelId}: pidiendo página ${page} a Google (syncToken=${syncToken ? 'sí' : 'no'})...`);
@@ -100,8 +107,9 @@ export async function syncChannelChanges(channelId: string) {
           singleEvents: true,
           // Sin syncToken, Google devuelve TODO el historial del calendario sin
           // acotar — para una cuenta real puede ser miles de eventos viejos.
-          // En la primera página de la sincronización inicial, se acota a partir de ahora.
-          ...(isFirstSync && !pageToken ? { timeMin: new Date().toISOString() } : {}),
+          // En la primera página de la sincronización inicial, se acota a los
+          // próximos 90 días.
+          ...(isFirstSync && !pageToken ? initialSyncWindow : {}),
         },
         { timeout: 15_000 }
       );
@@ -114,8 +122,8 @@ export async function syncChannelChanges(channelId: string) {
         response = await calendar.events.list(
           {
             calendarId: channel.calendar_id,
-            timeMin: new Date().toISOString(),
             singleEvents: true,
+            ...initialSyncWindow,
           },
           { timeout: 15_000 }
         );
