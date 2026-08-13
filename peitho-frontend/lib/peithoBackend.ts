@@ -37,8 +37,37 @@ export interface MeetingAnalysis {
   [key: string]: unknown;
 }
 
+// Forma del JSON del brief pre-reunión (ver
+// peitho-backend/docs/peitho_prompt_pre_reunion_v1.md). Igual de defensivo
+// que MeetingAnalysis — viene de una columna jsonb sin esquema forzado.
+export interface PreBrief {
+  resumen_contexto?: string;
+  perfil_empresa?: {
+    rubro?: string;
+    tamaño_estimado?: string | null;
+    senales_relevantes?: string[];
+    info_insuficiente?: boolean;
+  };
+  perfil_contacto?: {
+    cargo_estimado?: string;
+    rol_probable_en_decision?: string;
+  };
+  es_primera_reunion?: boolean;
+  hilos_abiertos?: Array<{ tema?: string; prioridad?: string; sugerencia?: string }>;
+  objeciones_ya_planteadas?: Array<{ objecion?: string; como_evitar_repetirla?: string }>;
+  objetivo_sugerido_reunion?: string;
+  preguntas_clave_a_indagar?: string[];
+  riesgos_a_considerar?: string[];
+  recomendacion_personalizacion?: string;
+  [key: string]: unknown;
+}
+
+export type PreBriefStatus = "none" | "running" | "done" | "failed";
+
 export interface MeetingDetail extends MeetingListItem {
   analysis: MeetingAnalysis | null;
+  pre_brief: PreBrief | null;
+  pre_brief_status: PreBriefStatus;
 }
 
 function backendUrl(): string {

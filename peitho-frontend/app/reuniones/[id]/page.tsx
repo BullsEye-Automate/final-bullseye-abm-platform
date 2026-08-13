@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchMeeting } from "@/lib/peithoBackend";
+import ResearchButton from "@/components/ResearchButton";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Agendada",
@@ -35,21 +36,135 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
   if (!meeting) notFound();
 
   const analysis = meeting.analysis;
+  const preBrief = meeting.pre_brief;
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href="/reuniones/futuras" className="text-xs text-gray-500 hover:text-gray-700">
-          ← Reuniones
-        </Link>
-        <h1 className="text-xl font-semibold text-gray-900 mt-2">
-          {meeting.contraparte ?? "Reunión"} {meeting.empresa_contraparte ? `— ${meeting.empresa_contraparte}` : ""}
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          {formatDate(meeting.start_time)} · {meeting.ejecutivo ?? "—"} ·{" "}
-          {STATUS_LABEL[meeting.status] ?? meeting.status}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <Link href="/reuniones/futuras" className="text-xs text-gray-500 hover:text-gray-700">
+            ← Reuniones
+          </Link>
+          <h1 className="text-xl font-semibold text-gray-900 mt-2">
+            {meeting.contraparte ?? "Reunión"} {meeting.empresa_contraparte ? `— ${meeting.empresa_contraparte}` : ""}
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {formatDate(meeting.start_time)} · {meeting.ejecutivo ?? "—"} ·{" "}
+            {STATUS_LABEL[meeting.status] ?? meeting.status}
+          </p>
+        </div>
+        <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />
       </div>
+
+      {preBrief && (
+        <Section title="Investigación de empresa y prospecto">
+          {preBrief.resumen_contexto && <p className="text-sm text-gray-700">{preBrief.resumen_contexto}</p>}
+
+          {preBrief.perfil_empresa && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Empresa</p>
+              <p className="text-sm text-gray-700">
+                {preBrief.perfil_empresa.rubro ?? "Rubro desconocido"}
+                {preBrief.perfil_empresa.tamaño_estimado ? ` · ${preBrief.perfil_empresa.tamaño_estimado}` : ""}
+              </p>
+              {preBrief.perfil_empresa.info_insuficiente && (
+                <p className="text-xs text-gray-400 mt-0.5">Información encontrada limitada.</p>
+              )}
+              {!!preBrief.perfil_empresa.senales_relevantes?.length && (
+                <ul className="list-disc list-inside text-sm text-gray-700 mt-1 space-y-0.5">
+                  {preBrief.perfil_empresa.senales_relevantes.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {preBrief.perfil_contacto && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Contacto</p>
+              <p className="text-sm text-gray-700">
+                {preBrief.perfil_contacto.cargo_estimado ?? "Cargo desconocido"}
+                {preBrief.perfil_contacto.rol_probable_en_decision
+                  ? ` · rol probable: ${preBrief.perfil_contacto.rol_probable_en_decision}`
+                  : ""}
+              </p>
+            </div>
+          )}
+
+          {!!preBrief.hilos_abiertos?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-2">Hilos abiertos de la reunión anterior</p>
+              <ul className="space-y-2">
+                {preBrief.hilos_abiertos.map((h, i) => (
+                  <li key={i} className="text-sm">
+                    <span className="font-medium text-gray-900">
+                      {h.tema} {h.prioridad ? `(${h.prioridad})` : ""}
+                    </span>
+                    {h.sugerencia && <p className="text-gray-600 mt-0.5">{h.sugerencia}</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!!preBrief.objeciones_ya_planteadas?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-2">Objeciones ya planteadas</p>
+              <ul className="space-y-2">
+                {preBrief.objeciones_ya_planteadas.map((o, i) => (
+                  <li key={i} className="text-sm">
+                    <span className="font-medium text-gray-900">{o.objecion}</span>
+                    {o.como_evitar_repetirla && <p className="text-gray-600 mt-0.5">{o.como_evitar_repetirla}</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {preBrief.objetivo_sugerido_reunion && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Objetivo sugerido</p>
+              <p className="text-sm text-gray-700">{preBrief.objetivo_sugerido_reunion}</p>
+            </div>
+          )}
+
+          {!!preBrief.preguntas_clave_a_indagar?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Preguntas clave a indagar</p>
+              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+                {preBrief.preguntas_clave_a_indagar.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!!preBrief.riesgos_a_considerar?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Riesgos a considerar</p>
+              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+                {preBrief.riesgos_a_considerar.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {preBrief.recomendacion_personalizacion && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Recomendación de personalización</p>
+              <p className="text-sm text-gray-700">{preBrief.recomendacion_personalizacion}</p>
+            </div>
+          )}
+        </Section>
+      )}
+
+      {meeting.pre_brief_status === "failed" && (
+        <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-4">
+          <p className="text-sm text-red-600">El research falló — intenta de nuevo con el botón de arriba.</p>
+        </div>
+      )}
 
       {!analysis ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">

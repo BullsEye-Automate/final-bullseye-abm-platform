@@ -4,6 +4,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { pool } from '../db';
 import { analyzeMeetingAudio } from '../postMeetingAnalysis';
+import { generatePreMeetingBrief } from '../preMeetingBrief';
 
 export const meetingsRouter = Router();
 
@@ -114,7 +115,8 @@ meetingsRouter.get('/meetings/:id', async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, analysis
+      `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status,
+              analysis, pre_brief, pre_brief_status
        from meetings
        where id = $1`,
       [id]
@@ -165,5 +167,36 @@ meetingsRouter.post('/meetings/:id/audio', upload.single('audio'), async (req, r
   } catch (error) {
     console.error('Error guardando el audio de la reunión', error);
     res.status(500).json({ error: 'Error guardando el audio' });
+  }
+});
+
+// Dispara el research pre-reunión (Paso 2 del roadmap frontend) — a diferencia
+// del análisis post-reunión, esto NO es automático: el ejecutivo lo pide con
+// un botón ("Iniciar research") desde el frontend, porque no todas las
+// reuniones agendadas son con un prospecto real y correrlo en todas gastaría
+// créditos de la API sin necesidad (requisito explícito del usuario).
+meetingsRouter.post('/meetings/:id/research', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { rowCount } = await pool.query(
+      `update meetings set pre_brief_status = 'running', updated_at = now() where id = $1`,
+      [id]
+    );
+
+    if (rowCount === 0) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    console.log(`[pre-brief] research iniciado para la reunión ${id}`);
+    res.json({ status: 'ok' });
+
+    generatePreMeetingBrief(id).catch((error) => {
+      console.error(`[pre-brief] falló el research de la reunión ${id}`, error);
+    });
+  } catch (error) {
+    console.error('Error iniciando el research de la reunión', error);
+    res.status(500).json({ error: 'Error iniciando el research' });
   }
 });
