@@ -22,6 +22,36 @@ const upload = multer({
   }),
 });
 
+// Lo consume el frontend (peitho-frontend): listado de reuniones futuras
+// (Módulo 1) o pasadas (Módulo 2). No incluye audio_path/analysis completos
+// a propósito — son pesados y no hacen falta para una vista de lista.
+meetingsRouter.get('/meetings', async (req, res) => {
+  const scope = req.query.scope;
+  if (scope !== 'upcoming' && scope !== 'past') {
+    res.status(400).json({ error: 'El parámetro scope debe ser "upcoming" o "past"' });
+    return;
+  }
+
+  try {
+    const { rows } = await pool.query(
+      scope === 'upcoming'
+        ? `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status
+           from meetings
+           where start_time >= now()
+           order by start_time asc`
+        : `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status
+           from meetings
+           where start_time < now()
+           order by start_time desc`
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error('Error en /meetings', error);
+    res.status(500).json({ error: 'Error consultando las reuniones' });
+  }
+});
+
 // La extensión de Chrome llama esto cada vez que navega a meet.google.com/{codigo}
 // para saber si debe arrancar chrome.tabCapture.
 meetingsRouter.get('/meetings/lookup', async (req, res) => {
