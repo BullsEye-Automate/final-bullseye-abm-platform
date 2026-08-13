@@ -14,3 +14,12 @@ export const pool = new Pool({
   // en vez de fallar con un error legible.
   connectionTimeoutMillis: 10_000,
 });
+
+// Sin este listener, un error en una conexión inactiva del pool (ej. Supabase
+// cortándola tras un rato sin uso, o el Mac suspendiéndose a mitad de un
+// script largo) tumba TODO el proceso — 'pg' relanza el error si nadie lo
+// escucha. Se detectó corriendo backfillRecurringEventId.ts toda una noche:
+// se cortó una conexión inactiva y el proceso murió sin ningún otro log.
+pool.on('error', (error) => {
+  console.error('Error inesperado en una conexión inactiva del pool de Postgres (no se cae el proceso):', error);
+});
