@@ -23,8 +23,9 @@ async function main() {
     id: string;
     google_event_id: string;
     ejecutivo: string;
+    start_time: string | null;
   }>(
-    `select id, google_event_id, ejecutivo
+    `select id, google_event_id, ejecutivo, start_time
      from meetings
      where recurring_event_id is null and google_event_id is not null and ejecutivo is not null`
   );
@@ -59,13 +60,33 @@ async function main() {
       continue;
     }
 
-    // Rango amplio (1 año atrás, 3 años adelante) para cubrir tanto el
-    // historial ya limitado a 90 días en el frontend como series recurrentes
-    // que Google ya generó muy hacia el futuro (se vieron filas hasta 2051).
-    const timeMin = new Date();
-    timeMin.setFullYear(timeMin.getFullYear() - 1);
-    const timeMax = new Date();
-    timeMax.setFullYear(timeMax.getFullYear() + 3);
+    // El watch de Calendar (Tarea 2) puede estar apuntando a un calendario
+    // que no es "primary" — usar ese mismo calendar_id real, no asumirlo, o
+    // events.list termina consultando un calendario distinto al sincronizado
+    // (así se explica el primer intento: encontró 901 eventos recurrentes
+    // pero 0 coincidencias con lo ya guardado).
+    const { rows: canales } = await pool.query<{ calendar_id: string }>(
+      `select w.calendar_id
+       from calendar_watch_channels w
+       join google_credentials c on c.id = w.google_credential_id
+       where c.google_account_email = $1
+       order by w.created_at desc
+       limit 1`,
+      [ejecutivo]
+    );
+    const calendarId = canales[0]?.calendar_id ?? 'primary';
+    console.log(`[${ejecutivo}] usando calendarId="${calendarId}"`);
+
+    // Rango de fechas: desde la reunión más vieja hasta la más nueva de las
+    // que hay que revisar (con margen), en vez de un rango fijo — así cubre
+    // sin adivinar series que Google generó muy hacia el futuro (se vieron
+    // filas hasta 2051).
+    const fechas = rowsDeEsteEjecutivo
+      .map((r) => r.start_time)
+      .filter((v): v is string => !!v)
+      .map((v) => new Date(v).getTime());
+    const timeMin = new Date((fechas.length ? Math.min(...fechas) : Date.now()) - 30 * 24 * 60 * 60 * 1000);
+    const timeMax = new Date((fechas.length ? Math.max(...fechas) : Date.now()) + 30 * 24 * 60 * 60 * 1000);
 
     const recurringByEventId = new Map<string, string>();
     let pageToken: string | undefined;
@@ -75,7 +96,7 @@ async function main() {
       paginas += 1;
       const { data } = await calendar.events.list(
         {
-          calendarId: 'primary',
+          calendarId,
           timeMin: timeMin.toISOString(),
           timeMax: timeMax.toISOString(),
           singleEvents: true,
