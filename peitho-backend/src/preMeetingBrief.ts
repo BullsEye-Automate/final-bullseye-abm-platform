@@ -53,9 +53,12 @@ async function runPreReunionPrompt(input: {
       max_tokens: 4096,
       thinking: { type: 'disabled' },
       system: [{ type: 'text', text: PRE_REUNION_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      // Deja que el propio modelo busque en internet — máx. 3 búsquedas para
-      // acotar el costo (esto es "búsqueda web básica", no research exhaustivo).
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
+      // Deja que el propio modelo busque en internet. Subido de 3 a 5 tras
+      // ver un caso real donde 3 no alcanzaron para encontrar ni siquiera el
+      // LinkedIn del contacto (algo que buscando a mano en Google se
+      // encuentra al toque) — el margen extra le da espacio para reintentar
+      // con una consulta distinta si la primera no encuentra nada.
+      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
       messages: [{ role: 'user', content: userMessage }],
     },
     // Con la herramienta web_search, cada búsqueda es una llamada de red +
@@ -63,6 +66,20 @@ async function runPreReunionPrompt(input: {
     // timeout siempre (confirmado probando). 3 min da margen para 3 búsquedas.
     { timeout: 180_000 }
   );
+
+  // Log de qué buscó realmente el modelo — sin esto, cuando el research
+  // sale pobre (ver caso real: no encontró ni el LinkedIn de un contacto que
+  // buscando a mano en Google aparece de inmediato) no hay forma de saber
+  // si el modelo no buscó bien, o si buscó bien pero la web no tenía nada.
+  for (const block of response.content) {
+    if (block.type === 'server_tool_use' && block.name === 'web_search') {
+      console.log(`[pre-brief] búsqueda: ${JSON.stringify((block.input as any)?.query ?? block.input)}`);
+    } else if (block.type === 'web_search_tool_result') {
+      const content = block.content as any;
+      const count = Array.isArray(content) ? content.length : 0;
+      console.log(`[pre-brief] resultado de búsqueda: ${count} resultado(s)${count === 0 ? ` — ${JSON.stringify(content)}` : ''}`);
+    }
+  }
 
   // Con la herramienta de búsqueda, la respuesta trae varios bloques
   // intercalados (texto, resultados de búsqueda) — el JSON final es el
