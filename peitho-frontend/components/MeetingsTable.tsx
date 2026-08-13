@@ -1,3 +1,6 @@
+"use client";
+
+import { useRouter } from "next/navigation";
 import type { MeetingListItem } from "@/lib/peithoBackend";
 
 const STATUS_LABEL: Record<MeetingListItem["status"], string> = {
@@ -14,7 +17,18 @@ function formatDate(value: string | null): string {
   });
 }
 
-export default function MeetingsTable({ meetings }: { meetings: MeetingListItem[] }) {
+// `detailBasePath` habilita el click-through a la página de detalle (ej.
+// "/reuniones/pasadas") — se omite en páginas que todavía no tienen detalle
+// (Módulo 1, pendiente).
+export default function MeetingsTable({
+  meetings,
+  detailBasePath,
+}: {
+  meetings: MeetingListItem[];
+  detailBasePath?: string;
+}) {
+  const router = useRouter();
+
   if (meetings.length === 0) {
     return <p className="text-sm text-gray-500">No hay reuniones para mostrar todavía.</p>;
   }
@@ -33,7 +47,13 @@ export default function MeetingsTable({ meetings }: { meetings: MeetingListItem[
         </thead>
         <tbody>
           {meetings.map((meeting) => (
-            <tr key={meeting.id} className="border-b border-gray-50 last:border-0">
+            <tr
+              key={meeting.id}
+              onClick={detailBasePath ? () => router.push(`${detailBasePath}/${meeting.id}`) : undefined}
+              className={`border-b border-gray-50 last:border-0 hover:bg-gray-50 ${
+                detailBasePath ? "cursor-pointer" : ""
+              }`}
+            >
               <td className="px-4 py-3">{formatDate(meeting.start_time)}</td>
               <td className="px-4 py-3">{meeting.ejecutivo ?? "—"}</td>
               <td className="px-4 py-3">{meeting.contraparte ?? "—"}</td>

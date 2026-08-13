@@ -33,6 +33,10 @@ meetingsRouter.get('/meetings', async (req, res) => {
   }
 
   try {
+    // "past" se acota a los últimos 90 días — algunas cuentas tienen reuniones
+    // recurrentes sincronizadas desde antes del fix de timeMin/timeMax de la
+    // Tarea 2 (ver CLAUDE.md), y sin este límite la lista se llena de
+    // ocurrencias históricas de hace años que no son relevantes para revisar.
     const { rows } = await pool.query(
       scope === 'upcoming'
         ? `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status
@@ -41,7 +45,7 @@ meetingsRouter.get('/meetings', async (req, res) => {
            order by start_time asc`
         : `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status
            from meetings
-           where start_time < now()
+           where start_time < now() and start_time >= now() - interval '90 days'
            order by start_time desc`
     );
 
@@ -84,6 +88,34 @@ meetingsRouter.get('/meetings/lookup', async (req, res) => {
     });
   } catch (error) {
     console.error('Error en /meetings/lookup', error);
+    res.status(500).json({ error: 'Error consultando la reunión' });
+  }
+});
+
+// Detalle de una reunión para el frontend (página de detalle del Módulo 1/2).
+// A diferencia de GET /meetings (lista), sí incluye `analysis` completo.
+// Registrado después de /meetings/lookup para no interceptarlo (si no, ":id"
+// capturaría también la palabra literal "lookup").
+meetingsRouter.get('/meetings/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { rows } = await pool.query(
+      `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, analysis
+       from meetings
+       where id = $1`,
+      [id]
+    );
+
+    const meeting = rows[0];
+    if (!meeting) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    res.json(meeting);
+  } catch (error) {
+    console.error('Error en GET /meetings/:id', error);
     res.status(500).json({ error: 'Error consultando la reunión' });
   }
 });

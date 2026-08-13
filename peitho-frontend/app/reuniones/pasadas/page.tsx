@@ -12,7 +12,7 @@ export default async function ReunionesPasadasPage() {
         <h1 className="text-xl font-semibold text-gray-900">Reuniones pasadas</h1>
         <p className="text-sm text-gray-500 mt-1">Análisis de reuniones ya capturadas.</p>
       </div>
-      <MeetingsTable meetings={meetings} />
+      <MeetingsTable meetings={meetings} detailBasePath="/reuniones/pasadas" />
     </div>
   );
 }
