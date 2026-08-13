@@ -58,7 +58,10 @@ async function runPreReunionPrompt(input: {
       tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }],
       messages: [{ role: 'user', content: userMessage }],
     },
-    { timeout: 90_000 }
+    // Con la herramienta web_search, cada búsqueda es una llamada de red +
+    // razonamiento adicional del modelo — 90s resultó muy corto y tiraba
+    // timeout siempre (confirmado probando). 3 min da margen para 3 búsquedas.
+    { timeout: 180_000 }
   );
 
   // Con la herramienta de búsqueda, la respuesta trae varios bloques
