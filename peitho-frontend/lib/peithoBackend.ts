@@ -24,6 +24,11 @@ export interface MeetingAnalysis {
     justificacion?: string;
   };
   metricas_desempeno_ejecutivo?: Record<string, { puntaje?: number; comentario?: string }>;
+  desempeno_vendedor?: {
+    puntaje?: number;
+    resumen?: string;
+    oportunidades_mejora?: Array<{ area?: string; sugerencia?: string }>;
+  };
   objeciones?: Array<{ tipo?: string; contexto?: string }>;
   compromisos?: Array<{ descripcion?: string; completado?: boolean }>;
   dolores_cliente?: Array<{ dolor?: string; contexto?: string }>;

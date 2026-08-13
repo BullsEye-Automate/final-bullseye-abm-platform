@@ -14,6 +14,7 @@ INSTRUCCIONES DE ANÁLISIS:
 5. La predicción de éxito y las métricas de desempeño deben ser una evaluación calibrada, no automáticamente positiva. Sé crítico cuando corresponda.
 6. Si se provee el ratio de habla (talk_ratio) de cada participante, interprétalo en el contexto del propósito de la reunión: un ejecutivo que habla 60-70% del tiempo NO es necesariamente mala escucha activa si la reunión es una presentación, demo o explicación de metodología. Penaliza el desbalance solo si la reunión era de descubrimiento y el ejecutivo no dejó espacio para que el cliente compartiera su contexto.
 7. Presta especial atención a cifras, plazos y compromisos concretos aunque aparezcan de forma casual dentro de pasajes largos o con ruido conversacional (muletillas, interrupciones, cortes). No ignores un dato relevante solo porque está rodeado de conversación informal.
+8. \`desempeno_vendedor\` es distinto de \`prediccion_exito\`: prediccion_exito evalúa qué tan probable es que este deal avance; desempeno_vendedor evalúa qué tan bien ejecutó el vendedor la llamada como habilidad comercial, independiente de si el prospecto termina comprando o no. Un vendedor puede ejecutar impecable una llamada que igual no avanza (mal fit, mal timing), y viceversa. Básate en las 5 métricas de desempeño de arriba pero da un juicio holístico, no un promedio mecánico. Las oportunidades de mejora deben ser específicas y accionables (qué decir o hacer distinto la próxima vez), no genéricas ("mejorar la escucha").
 
 ESQUEMA DE SALIDA (JSON):
 
@@ -33,6 +34,13 @@ ESQUEMA DE SALIDA (JSON):
     "escucha_activa": {"puntaje": <1-5>, "comentario": "<balance de la conversación, si dejó hablar y profundizó>"},
     "claridad_propuesta_valor": {"puntaje": <1-5>, "comentario": "<qué tan clara y adaptada fue la propuesta>"},
     "avance_hacia_cierre": {"puntaje": <1-5>, "comentario": "<si hubo compromisos concretos y siguiente paso definido>"}
+  },
+  "desempeno_vendedor": {
+    "puntaje": <entero 1-10>,
+    "resumen": "<2-3 frases evaluando el desempeño comercial general del vendedor en esta llamada específica>",
+    "oportunidades_mejora": [
+      {"area": "<habilidad concreta, ej: manejo de objeciones, descubrimiento, cierre>", "sugerencia": "<acción específica y concreta que debería hacer distinto la próxima vez>"}
+    ]
   },
   "apuntes_clave": {
     "resumen_general": "<2-3 frases de tono y objetivo general de la conversación>",

@@ -129,6 +129,25 @@ Y en el esquema de salida, agregar al inicio:
 
 **Conclusión:** con 5 minutas reales (4 positivas variadas + 1 negativa) el prompt post-reunión está calibrado y listo para pasar a producción / pipeline técnico.
 
+## 3.2 Actualización v3 — puntaje global de desempeño del vendedor (1-10)
+
+Agregado a pedido explícito para el frontend (Módulo 2, tipo DIIO): un puntaje único y directo de qué tan bien vendió el ejecutivo esta llamada específica, con oportunidades de mejora accionables — distinto de `metricas_desempeno_ejecutivo` (5 sub-métricas 1-5, ya existían) y de `prediccion_exito` (que mide probabilidad de que el deal avance, no la habilidad del vendedor).
+
+Nuevo campo en el esquema, después de `metricas_desempeno_ejecutivo`:
+```json
+"desempeno_vendedor": {
+  "puntaje": <entero 1-10>,
+  "resumen": "<2-3 frases evaluando el desempeño comercial general del vendedor en esta llamada específica>",
+  "oportunidades_mejora": [
+    {"area": "<habilidad concreta, ej: manejo de objeciones, descubrimiento, cierre>", "sugerencia": "<acción específica y concreta que debería hacer distinto la próxima vez>"}
+  ]
+}
+```
+
+Instrucción agregada (INSTRUCCIONES DE ANÁLISIS, punto 8): el modelo debe dar un juicio holístico basado en las 5 sub-métricas, no un promedio mecánico (ej. no simplemente sub-métricas-promedio × 2) — un vendedor puede ejecutar impecable una llamada que igual no avanza por mal fit o timing, y viceversa. Las oportunidades de mejora deben ser específicas y accionables, no genéricas.
+
+**Pendiente:** este campo solo aparece en análisis generados después de este cambio — las reuniones ya analizadas antes no lo tienen, y no hay (todavía) un mecanismo para re-analizarlas retroactivamente.
+
 ## 4. Pendiente para siguiente iteración (no ahora)
 
 - Enriquecimiento **pre-reunión** (info de la empresa, del contacto, news relevantes) — la propuesta de valor diferenciadora de Peitho a futuro, pero fuera de scope del MVP.

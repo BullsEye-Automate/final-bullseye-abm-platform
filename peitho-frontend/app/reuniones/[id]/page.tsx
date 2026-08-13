@@ -78,6 +78,33 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             </Section>
           )}
 
+          {analysis.desempeno_vendedor && (
+            <Section title="Desempeño del vendedor">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl font-bold" style={{ color: "#251762" }}>
+                  {analysis.desempeno_vendedor.puntaje ?? "—"}
+                </span>
+                <span className="text-sm text-gray-500">/ 10</span>
+              </div>
+              {analysis.desempeno_vendedor.resumen && (
+                <p className="text-sm text-gray-700">{analysis.desempeno_vendedor.resumen}</p>
+              )}
+              {!!analysis.desempeno_vendedor.oportunidades_mejora?.length && (
+                <div className="pt-2">
+                  <p className="text-xs font-medium text-gray-500 mb-2">Oportunidades de mejora</p>
+                  <ul className="space-y-2">
+                    {analysis.desempeno_vendedor.oportunidades_mejora.map((o, i) => (
+                      <li key={i} className="text-sm">
+                        <span className="font-medium text-gray-900">{o.area}</span>
+                        {o.sugerencia && <p className="text-gray-600 mt-0.5">{o.sugerencia}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Section>
+          )}
+
           {analysis.apuntes_clave?.resumen_general && (
             <Section title="Resumen general">
               <p className="text-sm text-gray-700">{analysis.apuntes_clave.resumen_general}</p>
