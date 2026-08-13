@@ -7,6 +7,12 @@ import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 
 export const meetingsRouter = Router();
 
+// Dominio propio de BullsEye — se usa para excluir reuniones internas
+// (ej. dos personas del equipo) de las listas del frontend. Mismo patrón de
+// hardcoding que EMPRESA_CLIENTE en postMeetingAnalysis.ts: Peitho todavía no
+// modela múltiples clientes, así que esto es fijo por ahora.
+const INTERNAL_DOMAIN = 'bullseye-abm.com';
+
 const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -37,16 +43,23 @@ meetingsRouter.get('/meetings', async (req, res) => {
     // recurrentes sincronizadas desde antes del fix de timeMin/timeMax de la
     // Tarea 2 (ver CLAUDE.md), y sin este límite la lista se llena de
     // ocurrencias históricas de hace años que no son relevantes para revisar.
+    // También se excluyen reuniones internas (contraparte con el mismo dominio
+    // de BullsEye) — a Peitho solo le interesan reuniones con prospectos.
+    // "is distinct from" en vez de "<>" para no descartar filas con
+    // empresa_contraparte en null (dominio desconocido, se muestran igual).
     const { rows } = await pool.query(
       scope === 'upcoming'
         ? `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status
            from meetings
            where start_time >= now()
+             and lower(empresa_contraparte) is distinct from $1
            order by start_time asc`
         : `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status
            from meetings
            where start_time < now() and start_time >= now() - interval '90 days'
-           order by start_time desc`
+             and lower(empresa_contraparte) is distinct from $1
+           order by start_time desc`,
+      [INTERNAL_DOMAIN]
     );
 
     res.json(rows);
