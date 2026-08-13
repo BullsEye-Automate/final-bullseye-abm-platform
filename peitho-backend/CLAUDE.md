@@ -37,12 +37,28 @@ Documentos de referencia completos en `docs/`:
 - [x] **Tarea 3** — `GET /meetings/lookup?meet_code=xxx`. Completada y confirmada: responde `{"registered":true,...}` para un meet_code existente y `{"registered":false}` para uno inexistente.
 - [x] **Tarea 4** — Extensión de Chrome (Manifest V3, `chrome.tabCapture`) + `POST /meetings/:id/audio`. Completada y confirmada end-to-end: detección automática (ícono celeste), clic del usuario para autorizar la captura (ícono rojo), subida del audio al cerrar la pestaña, y la fila en `meetings` pasó a `status=captured` con `audio_path` lleno.
 - [x] **Tarea 5** — Pipeline de análisis post-reunión (Deepgram + prompt de `peitho_prompt_analisis_v1.md` vía Anthropic API → `meetings.analysis`). Completada y confirmada end-to-end: audio real (grabado desde un segundo dispositivo hablando en la llamada) → transcripción con Deepgram → análisis con Claude → `meetings.analysis` con el JSON completo y `status=analyzed`. **Fix de audio (mic + reconexión a parlantes) confirmado end-to-end** con una llamada real de dos personas (Jaime): el ejecutivo escuchó con normalidad durante toda la grabación (el bug original quedó resuelto). Tarea 5 dada por cerrada por el usuario.
-- [ ] **Tarea 6** — Notificación de feedback listo (Slack o correo).
-- [ ] **Tarea 7** — Cron del brief pre-reunión (historial + búsqueda web + prompt de `peitho_prompt_pre_reunion_v1.md`).
-- [ ] **Tarea 8** — Página `GET /brief/:meetingId` + inserción del link vía `events.patch`.
-- [ ] **(Al final, no es una de las 8)** Deploy a Railway o Render — el usuario decidió explícitamente dejarlo para el final; hasta entonces se prueba todo local con `npm run dev`.
+- [x] ~~**Tarea 6** — Notificación de feedback listo (Slack o correo).~~ **Reemplazada** por decisión explícita del usuario: en vez de una notificación simple, Peitho va a tener un frontend propio con 2 módulos (ver "Roadmap frontend" abajo). No se construye la notificación Slack/correo — el análisis se ve directo en la app.
+- [ ] **Tarea 7 (brief original)** — absorbida dentro del roadmap del frontend (Módulo 1), ampliada con research de LinkedIn/señales comerciales (más allá de la búsqueda web básica que describía el MVP original).
+- [ ] **Tarea 8 (brief original)** — absorbida dentro del roadmap del frontend (Módulo 1: página de detalle de reunión futura, no una página de brief aislada).
+- [ ] **(Al final)** Deploy a Railway o Render (backend) y Vercel (frontend) — el usuario decidió explícitamente dejarlo para el final; hasta entonces se prueba todo local con `npm run dev`.
 
 **Regla de trabajo del usuario:** una tarea a la vez, probarla él mismo antes de avanzar a la siguiente. No adelantarse a tareas futuras sin que lo pida.
+
+---
+
+## Roadmap frontend (decidido — reemplaza Tareas 6-8 del brief original)
+
+Después de confirmar la Tarea 5, el usuario pidió un cambio de rumbo: en vez de una notificación simple, Peitho va a tener su propio frontend con 2 módulos, similar a DIIO:
+
+1. **Módulo 1 — Preparación de reuniones futuras:** listado de reuniones agendadas; al entrar a una, mostrar toda la info de la empresa/prospecto (research en internet + LinkedIn: señales, rompehielos, experiencias — todo lo que sirva para la propuesta de valor de BullsEye). Amplía el Flujo 2 (`peitho_prompt_pre_reunion_v1.md`), que en su versión MVP original solo contemplaba "búsqueda web básica" y explícitamente dejaba fuera de scope el research de LinkedIn — eso ahora sí entra en scope.
+2. **Módulo 2 — Análisis de reuniones pasadas:** tipo DIIO, con el análisis ya generado en la Tarea 5 (`meetings.analysis`), agregando un **puntaje de desempeño del vendedor de 1 a 10** con oportunidades de mejora claras (hoy el prompt de análisis solo tiene sub-métricas 1-5 por categoría en `metricas_desempeno_ejecutivo`, no un puntaje global 1-10 — hay que agregarlo al esquema/prompt).
+
+**Decisiones de arquitectura tomadas:**
+- El frontend va en una **app nueva y separada** (ej. `peitho-frontend/`), no dentro de `bullseye-abm-platform` (la app Next.js principal) — consume la API de `peitho-backend`. Consistente con que Peitho ya está diseñado como producto independiente (proyecto Supabase propio, `peitho`, distinto al de BullsEye ABM).
+- Se descartó explícitamente hacer la notificación Slack/correo de la Tarea 6 original como paso intermedio — se va directo al frontend.
+- El usuario quiere pasar el diseño visual por "Claude Design" antes de construir las UIs — pedirá ayuda para redactar ese prompt cuando llegue el momento (no bloquea empezar el esqueleto del frontend).
+
+**Desglose de tareas pendiente de confirmar con el usuario** (propuesta, no decidido en detalle todavía): esqueleto del frontend (Next.js + auth) → ampliar la recolección de research pre-reunión en el backend → UI del Módulo 1 → agregar el puntaje 1-10 al prompt de análisis → UI del Módulo 2.
 
 ---
 
