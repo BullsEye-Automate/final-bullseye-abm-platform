@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Peitho — Permiso de micrófono</title>
+    <style>
+      body {
+        font-family: -apple-system, sans-serif;
+        max-width: 480px;
+        margin: 60px auto;
+        text-align: center;
+        color: #1a1a1a;
+      }
+      button {
+        font-size: 16px;
+        padding: 12px 24px;
+        cursor: pointer;
+        background: #251762;
+        color: white;
+        border: none;
+        border-radius: 8px;
+      }
+      button:hover {
+        opacity: 0.9;
+      }
+      #status {
+        margin-top: 20px;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Peitho necesita acceso a tu micrófono</h1>
+    <p>
+      Esto es un paso único (no hay que repetirlo en cada reunión). Sin este permiso, Peitho
+      solo graba el audio que escuchas de la llamada, no tu propia voz.
+    </p>
+    <button id="grant">Permitir acceso al micrófono</button>
+    <p id="status"></p>
+    <script src="mic-permission.js"></script>
+  </body>
+</html>

@@ -32,8 +32,18 @@ async function ensureOffscreenDocument() {
   await chrome.offscreen.createDocument({
     url: 'offscreen.html',
     reasons: ['USER_MEDIA'],
-    justification: 'Grabar el audio de la pestaña de Google Meet',
+    justification: 'Grabar el audio de la pestaña de Google Meet y del micrófono',
   });
+}
+
+// Un offscreen document no puede mostrar el diálogo de permiso de micrófono
+// (no tiene UI visible). Si el usuario lo concede una vez en esta pestaña
+// normal de la extensión, el permiso queda guardado para el origen de la
+// extensión, y el offscreen document puede usarlo después sin volver a pedirlo.
+async function ensureMicPermissionPrompt() {
+  const { micPermissionGranted } = await chrome.storage.local.get('micPermissionGranted');
+  if (micPermissionGranted) return;
+  chrome.tabs.create({ url: chrome.runtime.getURL('mic-permission.html') });
 }
 
 // Marca visualmente el ícono de la extensión sobre esta pestaña.
@@ -93,6 +103,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 
   try {
     await startCapture(tab.id, meetingId);
+    await ensureMicPermissionPrompt();
   } catch (error) {
     console.error('[Peitho] Error iniciando la captura', error);
   }

@@ -2,7 +2,8 @@
 const BACKEND_URL = 'http://localhost:3001';
 
 let mediaRecorder = null;
-let currentStream = null;
+let audioContext = null;
+let rawStreams = []; // streams "crudos" (tab + mic) que hay que cerrar al terminar
 let chunks = [];
 let currentMeetingId = null;
 
@@ -17,8 +18,9 @@ chrome.runtime.onMessage.addListener((message) => {
 async function startRecording(streamId, meetingId) {
   currentMeetingId = meetingId;
   chunks = [];
+  rawStreams = [];
 
-  currentStream = await navigator.mediaDevices.getUserMedia({
+  const tabStream = await navigator.mediaDevices.getUserMedia({
     audio: {
       mandatory: {
         chromeMediaSource: 'tab',
@@ -27,8 +29,39 @@ async function startRecording(streamId, meetingId) {
     },
     video: false,
   });
+  rawStreams.push(tabStream);
 
-  mediaRecorder = new MediaRecorder(currentStream, { mimeType: 'audio/webm' });
+  // El micrófono requiere permiso que un offscreen document no puede pedir
+  // solo (no tiene UI). Si el usuario ya lo concedió una vez en
+  // mic-permission.html, esto funciona sin volver a preguntar. Si no,
+  // seguimos igual grabando solo el audio de la pestaña (mejor eso que nada).
+  let micStream = null;
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    rawStreams.push(micStream);
+  } catch (error) {
+    console.warn(
+      `[Peitho] No se pudo acceder al micrófono — solo se va a grabar el audio entrante de la llamada. ` +
+        `Corre la configuración de una vez en chrome-extension://${chrome.runtime.id}/mic-permission.html`,
+      error
+    );
+  }
+
+  audioContext = new AudioContext();
+  const destination = audioContext.createMediaStreamDestination();
+
+  // Capturar el audio de la pestaña lo desvía de los parlantes normales —
+  // sin reconectarlo, el ejecutivo deja de escuchar a la otra persona mientras graba.
+  const tabSource = audioContext.createMediaStreamSource(tabStream);
+  tabSource.connect(destination);
+  tabSource.connect(audioContext.destination);
+
+  if (micStream) {
+    const micSource = audioContext.createMediaStreamSource(micStream);
+    micSource.connect(destination);
+  }
+
+  mediaRecorder = new MediaRecorder(destination.stream, { mimeType: 'audio/webm' });
   mediaRecorder.ondataavailable = (event) => {
     if (event.data.size > 0) chunks.push(event.data);
   };
@@ -43,9 +76,12 @@ function stopRecording() {
 }
 
 async function uploadRecording() {
-  if (currentStream) {
-    currentStream.getTracks().forEach((track) => track.stop());
-    currentStream = null;
+  rawStreams.forEach((stream) => stream.getTracks().forEach((track) => track.stop()));
+  rawStreams = [];
+
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
   }
 
   const meetingId = currentMeetingId;
