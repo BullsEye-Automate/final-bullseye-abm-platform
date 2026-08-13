@@ -62,18 +62,17 @@ async function runPreReunionPrompt(input: {
       max_tokens: 4096,
       thinking: { type: 'disabled' },
       system: [{ type: 'text', text: PRE_REUNION_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-      // Deja que el propio modelo busque en internet. Subido de 3 a 5 tras
-      // ver un caso real donde 3 no alcanzaron para encontrar ni siquiera el
-      // LinkedIn del contacto (algo que buscando a mano en Google se
-      // encuentra al toque) — el margen extra le da espacio para reintentar
-      // con una consulta distinta si la primera no encuentra nada.
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 5 }],
+      // Deja que el propio modelo busque en internet. Subido de 5 a 8 al
+      // agregar experiencia laboral / icebreakers / competidores (Fase B) —
+      // con 5 alcanzaba justo para empresa+contacto, y ahora hay 3 objetivos
+      // de búsqueda más que compiten por el mismo presupuesto.
+      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 8 }],
       messages: [{ role: 'user', content: userMessage }],
     },
-    // Con la herramienta web_search, cada búsqueda es una llamada de red +
-    // razonamiento adicional del modelo — 90s resultó muy corto y tiraba
-    // timeout siempre (confirmado probando). 3 min da margen para 3 búsquedas.
-    { timeout: 180_000 }
+    // Subido de 3 a 4 min junto con el max_uses de arriba — más búsquedas
+    // permitidas significa más llamadas de red + razonamiento secuencial
+    // potencial dentro del mismo timeout.
+    { timeout: 240_000 }
   );
 
   // Log de qué buscó realmente el modelo — sin esto, cuando el research

@@ -118,6 +118,45 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             </div>
           )}
 
+          {!!preBrief.experiencia_contacto?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Experiencia laboral previa</p>
+              <ul className="text-sm text-gray-700 space-y-0.5">
+                {preBrief.experiencia_contacto.map((e, i) => (
+                  <li key={i}>
+                    {e.cargo} — {e.empresa}
+                    {e.periodo ? ` (${e.periodo})` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!!preBrief.icebreakers_sugeridos?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Icebreakers sugeridos</p>
+              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+                {preBrief.icebreakers_sugeridos.map((ib, i) => (
+                  <li key={i}>{ib}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!!preBrief.competidores_directos?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Competidores directos</p>
+              <ul className="text-sm text-gray-700 space-y-0.5">
+                {preBrief.competidores_directos.map((c, i) => (
+                  <li key={i}>
+                    <span className="font-medium text-gray-900">{c.nombre}</span>
+                    {c.comentario ? ` — ${c.comentario}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {!!preBrief.hilos_abiertos?.length && (
             <div className="pt-2">
               <p className="text-xs font-medium text-gray-500 mb-2">Hilos abiertos de la reunión anterior</p>

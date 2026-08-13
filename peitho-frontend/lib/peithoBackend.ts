@@ -52,6 +52,9 @@ export interface PreBrief {
     cargo_estimado?: string;
     rol_probable_en_decision?: string;
   };
+  experiencia_contacto?: Array<{ empresa?: string; cargo?: string; periodo?: string | null }>;
+  icebreakers_sugeridos?: string[];
+  competidores_directos?: Array<{ nombre?: string; comentario?: string }>;
   es_primera_reunion?: boolean;
   hilos_abiertos?: Array<{ tema?: string; prioridad?: string; sugerencia?: string }>;
   objeciones_ya_planteadas?: Array<{ objecion?: string; como_evitar_repetirla?: string }>;
