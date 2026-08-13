@@ -128,7 +128,8 @@ meetingsRouter.get('/meetings/:id', async (req, res) => {
     const { rows } = await pool.query(
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time, m.status,
               m.analysis, m.pre_brief, m.pre_brief_status,
-              m.contacto_nombre, m.contacto_cargo, m.contacto_industria, c.name as cliente_bullseye
+              m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
+              c.name as cliente_bullseye
        from meetings m
        left join clients c on c.id = m.client_id
        where m.id = $1`,
@@ -180,6 +181,43 @@ meetingsRouter.post('/meetings/:id/audio', upload.single('audio'), async (req, r
   } catch (error) {
     console.error('Error guardando el audio de la reunión', error);
     res.status(500).json({ error: 'Error guardando el audio' });
+  }
+});
+
+// Permite pegar a mano la URL de LinkedIn del contacto — usado cuando el
+// research no encuentra el perfil por búsqueda (ej. nombres homónimos, como
+// pasó con "Felipe Almazan"). Se guarda para que el próximo research la use
+// directo con la tool web_fetch en vez de adivinar por búsqueda.
+meetingsRouter.put('/meetings/:id/contacto-linkedin', async (req, res) => {
+  const { id } = req.params;
+  const { linkedin_url } = req.body ?? {};
+
+  if (typeof linkedin_url !== 'string') {
+    res.status(400).json({ error: 'Falta el campo linkedin_url' });
+    return;
+  }
+
+  const trimmed = linkedin_url.trim();
+  if (trimmed && !/^https?:\/\/([\w-]+\.)*linkedin\.com\//i.test(trimmed)) {
+    res.status(400).json({ error: 'La URL debe ser un link de linkedin.com' });
+    return;
+  }
+
+  try {
+    const { rowCount } = await pool.query(
+      `update meetings set contacto_linkedin_url = $1, updated_at = now() where id = $2`,
+      [trimmed || null, id]
+    );
+
+    if (rowCount === 0) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error guardando la URL de LinkedIn del contacto', error);
+    res.status(500).json({ error: 'Error guardando la URL' });
   }
 });
 

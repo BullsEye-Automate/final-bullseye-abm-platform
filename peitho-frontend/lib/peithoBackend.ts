@@ -76,6 +76,7 @@ export interface MeetingDetail extends MeetingListItem {
   contacto_nombre: string | null;
   contacto_cargo: string | null;
   contacto_industria: string | null;
+  contacto_linkedin_url: string | null;
   cliente_bullseye: string | null;
 }
 

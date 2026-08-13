@@ -19,8 +19,8 @@ INSTRUCCIONES:
 7. Solo si NINGUNA de tus búsquedas trajo resultados útiles, dilo explícitamente en el campo correspondiente en vez de inventar datos — mejor un campo vacío que un dato falso.
 8. Sé breve y accionable. Este brief lo lee el ejecutivo 5 minutos antes de entrar a la llamada, no es un informe extenso.
 9. Todo el output en español.
-10. Busca el perfil de LinkedIn del contacto (con el nombre confirmado + empresa) y de ahí extrae su experiencia laboral (2-3 cargos anteriores relevantes, no la lista completa). Si el buscador no te muestra el contenido del perfil (es normal, LinkedIn no siempre se indexa bien), deja "experiencia_contacto" como una lista vacía — no inventes cargos.
-11. Para "icebreakers_sugeridos": busca actividad reciente y pública del contacto o de la empresa (posts de LinkedIn, notas de prensa, publicaciones propias, logros recientes) que sirvan de excusa natural para romper el hielo. Esto casi siempre va a salir vacío o pobre — LinkedIn no indexa bien sus posts en buscadores públicos — y está bien: nunca inventes un "post reciente" que no confirmaste con una búsqueda real. Si no encuentras nada concreto y reciente, deja la lista vacía en vez de rellenarla con genéricos tipo "felicítalo por su cargo".
+10. Si te dieron una URL de LinkedIn confirmada (pegada a mano), úsala directamente con la herramienta web_fetch para traer el contenido de ese perfil exacto — es más confiable que buscar, porque no hay riesgo de confundirte con un homónimo. Si NO te dieron URL, busca el perfil con web_search (nombre confirmado + empresa). De cualquiera de las dos formas, extrae la experiencia laboral (2-3 cargos anteriores relevantes, no la lista completa). Si no logras ver el contenido del perfil (es normal, LinkedIn no siempre se indexa bien y a veces bloquea el fetch), deja "experiencia_contacto" como una lista vacía — no inventes cargos.
+11. Para "icebreakers_sugeridos": busca actividad reciente y pública del contacto o de la empresa (posts de LinkedIn, notas de prensa, publicaciones propias, logros recientes) que sirvan de excusa natural para romper el hielo. Si ya usaste web_fetch en la URL de LinkedIn confirmada (punto 10), revisa si esa misma página trae actividad reciente antes de buscar en otro lado. Esto casi siempre va a salir vacío o pobre — LinkedIn no indexa bien sus posts en buscadores públicos — y está bien: nunca inventes un "post reciente" que no confirmaste con una búsqueda real. Si no encuentras nada concreto y reciente, deja la lista vacía en vez de rellenarla con genéricos tipo "felicítalo por su cargo".
 12. Para "competidores_directos": busca específicamente (ej. "<empresa> competidores", "<empresa> alternativas", "empresas similares a <empresa> <industria>"). Solo incluye competidores que aparecieron en una búsqueda real — no completes con nombres que te parezcan lógicos por el rubro pero que no confirmaste buscando. IMPORTANTE: si en CUALQUIER momento de tu investigación (aunque sea buscando el perfil general de la empresa, no una búsqueda dedicada a competidores) apareció el nombre de una empresa competidora, ponla en este campo — no la dejes solo mencionada dentro de "senales_relevantes" o "riesgos_a_considerar" y el campo vacío. Si de verdad no encontraste ningún nombre de competidor en ninguna búsqueda, ahí sí deja la lista vacía.
 
 ESQUEMA DE SALIDA (JSON):
@@ -74,6 +74,7 @@ interface BuildPreReunionUserMessageInput {
   contactoCargo: string | null;
   contactoIndustria: string | null;
   clienteBullsEye: string | null;
+  contactoLinkedinUrl: string | null;
 }
 
 export function buildPreReunionUserMessage(input: BuildPreReunionUserMessageInput): string {
@@ -88,6 +89,7 @@ DATOS CONFIRMADOS DEL CONTACTO (tomados del registro interno de reuniones agenda
 - Nombre: ${input.contactoNombre ?? 'Desconocido'}
 - Cargo: ${input.contactoCargo ?? 'Desconocido'}
 - Industria de la empresa: ${input.contactoIndustria ?? 'Desconocido'}
+- URL de LinkedIn del contacto (pegada a mano por el ejecutivo — úsala con la herramienta web_fetch, NO la busques con web_search): ${input.contactoLinkedinUrl ?? '(no se pegó ninguna — busca el perfil con web_search como de costumbre)'}
 
 HISTORIAL DE PEITHO CON ESTE CONTACTO (si existe una reunión anterior ya analizada; si es la primera reunión, este bloque viene vacío):
 ${input.historial ? JSON.stringify(input.historial, null, 2) : '(primera reunión — sin historial previo)'}`;

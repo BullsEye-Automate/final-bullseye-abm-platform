@@ -41,6 +41,7 @@ async function runPreReunionPrompt(input: {
   contactoCargo: string | null;
   contactoIndustria: string | null;
   clienteBullsEye: string | null;
+  contactoLinkedinUrl: string | null;
 }): Promise<unknown> {
   const anthropic = new Anthropic();
 
@@ -54,6 +55,7 @@ async function runPreReunionPrompt(input: {
     contactoCargo: input.contactoCargo,
     contactoIndustria: input.contactoIndustria,
     clienteBullsEye: input.clienteBullsEye,
+    contactoLinkedinUrl: input.contactoLinkedinUrl,
   });
 
   const response = await anthropic.messages.create(
@@ -66,7 +68,14 @@ async function runPreReunionPrompt(input: {
       // agregar experiencia laboral / icebreakers / competidores (Fase B) —
       // con 5 alcanzaba justo para empresa+contacto, y ahora hay 3 objetivos
       // de búsqueda más que compiten por el mismo presupuesto.
-      tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 8 }],
+      // web_fetch (no web_search) es la que se usa cuando el ejecutivo pegó
+      // a mano la URL de LinkedIn — solo trae URLs que ya están en la
+      // conversación, así que la incluimos en el mensaje (ver
+      // buildPreReunionUserMessage) para que pueda usarla.
+      tools: [
+        { type: 'web_search_20260209', name: 'web_search', max_uses: 8 },
+        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3 },
+      ],
       messages: [{ role: 'user', content: userMessage }],
     },
     // Subido de 3 a 4 min junto con el max_uses de arriba — más búsquedas
@@ -86,6 +95,12 @@ async function runPreReunionPrompt(input: {
       const content = block.content as any;
       const count = Array.isArray(content) ? content.length : 0;
       console.log(`[pre-brief] resultado de búsqueda: ${count} resultado(s)${count === 0 ? ` — ${JSON.stringify(content)}` : ''}`);
+    } else if (block.type === 'server_tool_use' && block.name === 'web_fetch') {
+      console.log(`[pre-brief] web_fetch: ${JSON.stringify((block.input as any)?.url ?? block.input)}`);
+    } else if (block.type === 'web_fetch_tool_result') {
+      const content = block.content as any;
+      const ok = content && content.type !== 'web_fetch_tool_result_error';
+      console.log(`[pre-brief] resultado de web_fetch: ${ok ? 'ok' : `error — ${JSON.stringify(content)}`}`);
     }
   }
 
@@ -123,7 +138,8 @@ export async function generatePreMeetingBrief(meetingId: string): Promise<void> 
 
   const { rows } = await pool.query(
     `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time,
-            m.contacto_nombre, m.contacto_cargo, m.contacto_industria, c.name as cliente_bullseye
+            m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
+            c.name as cliente_bullseye
      from meetings m
      left join clients c on c.id = m.client_id
      where m.id = $1`,
@@ -146,6 +162,7 @@ export async function generatePreMeetingBrief(meetingId: string): Promise<void> 
       contactoCargo: meeting.contacto_cargo,
       contactoIndustria: meeting.contacto_industria,
       clienteBullsEye: meeting.cliente_bullseye,
+      contactoLinkedinUrl: meeting.contacto_linkedin_url,
     });
 
     await pool.query(

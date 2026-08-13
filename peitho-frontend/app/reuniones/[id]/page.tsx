@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchMeeting } from "@/lib/peithoBackend";
 import ResearchButton from "@/components/ResearchButton";
+import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Agendada",
@@ -56,8 +57,10 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
         <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />
       </div>
 
-      {(meeting.contacto_nombre || meeting.contacto_cargo || meeting.contacto_industria || meeting.cliente_bullseye) && (
-        <Section title="Ficha del contacto">
+      {/* Siempre visible (no solo cuando hay match del excel) — el formulario de
+          LinkedIn de abajo debe estar disponible aunque esta reunión no haya
+          hecho match todavía. */}
+      <Section title="Ficha del contacto">
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <p className="text-xs font-medium text-gray-500">Nombre</p>
@@ -79,8 +82,8 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
           <p className="text-xs text-gray-400 pt-1">
             Datos tomados del excel de metas — si algo falta, es porque esta reunión no hizo match ahí todavía.
           </p>
-        </Section>
-      )}
+        <LinkedinUrlForm meetingId={meeting.id} initialUrl={meeting.contacto_linkedin_url} />
+      </Section>
 
       {preBrief && (
         <Section title="Investigación de empresa y prospecto">
