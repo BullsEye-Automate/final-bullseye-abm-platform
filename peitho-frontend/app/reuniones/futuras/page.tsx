@@ -12,7 +12,7 @@ export default async function ReunionesFuturasPage() {
         <h1 className="text-xl font-semibold text-gray-900">Reuniones futuras</h1>
         <p className="text-sm text-gray-500 mt-1">Preparación de reuniones agendadas.</p>
       </div>
-      <MeetingsTable meetings={meetings} />
+      <MeetingsTable meetings={meetings} detailBasePath="/reuniones" />
     </div>
   );
 }

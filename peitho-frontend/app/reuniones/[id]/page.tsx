@@ -39,8 +39,8 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/reuniones/pasadas" className="text-xs text-gray-500 hover:text-gray-700">
-          ← Reuniones pasadas
+        <Link href="/reuniones/futuras" className="text-xs text-gray-500 hover:text-gray-700">
+          ← Reuniones
         </Link>
         <h1 className="text-xl font-semibold text-gray-900 mt-2">
           {meeting.contraparte ?? "Reunión"} {meeting.empresa_contraparte ? `— ${meeting.empresa_contraparte}` : ""}
