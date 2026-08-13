@@ -68,6 +68,12 @@ export interface MeetingDetail extends MeetingListItem {
   analysis: MeetingAnalysis | null;
   pre_brief: PreBrief | null;
   pre_brief_status: PreBriefStatus;
+  // Datos confirmados desde el excel de metas (no adivinados por IA) — pueden
+  // venir null si todavía no hubo match contra esa planilla.
+  contacto_nombre: string | null;
+  contacto_cargo: string | null;
+  contacto_industria: string | null;
+  cliente_bullseye: string | null;
 }
 
 function backendUrl(): string {

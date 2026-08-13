@@ -5,6 +5,7 @@ import multer from 'multer';
 import { pool } from '../db';
 import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 import { generatePreMeetingBrief } from '../preMeetingBrief';
+import { resolveMeetingClientAndContact } from '../metasSheet';
 
 export const meetingsRouter = Router();
 
@@ -119,11 +120,18 @@ meetingsRouter.get('/meetings/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
+    // Gratis (no llama a Claude) — se intenta en cada carga del detalle para
+    // que nombre/cargo/industria/cliente aparezcan aunque nunca se haya usado
+    // el botón "Iniciar research".
+    await resolveMeetingClientAndContact(id);
+
     const { rows } = await pool.query(
-      `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status,
-              analysis, pre_brief, pre_brief_status
-       from meetings
-       where id = $1`,
+      `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time, m.status,
+              m.analysis, m.pre_brief, m.pre_brief_status,
+              m.contacto_nombre, m.contacto_cargo, m.contacto_industria, c.name as cliente_bullseye
+       from meetings m
+       left join clients c on c.id = m.client_id
+       where m.id = $1`,
       [id]
     );
 

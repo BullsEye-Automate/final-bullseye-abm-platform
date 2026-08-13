@@ -3,8 +3,12 @@ import { pool } from './db';
 
 // calendar.readonly alcanza para events.watch/events.list. events.patch (Tarea 8)
 // va a requerir re-autorizar con el scope de escritura ('calendar.events').
-export const CALENDAR_SCOPES = [
+// spreadsheets.readonly se agregó para leer el excel de metas (nombre/cargo/
+// industria/cliente de cada reunión) — cualquier cuenta ya conectada necesita
+// pasar de nuevo por /auth/google para que el nuevo scope quede autorizado.
+export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/spreadsheets.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
 ];
 
@@ -26,7 +30,7 @@ export function getAuthUrl() {
   return createOAuthClient().generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
-    scope: CALENDAR_SCOPES,
+    scope: GOOGLE_SCOPES,
   });
 }
 
@@ -74,7 +78,7 @@ interface StoredCredentialRow {
   token_expiry: string | null;
 }
 
-export async function getCalendarClientByEmail(email: string) {
+async function getOAuthClientForEmail(email: string) {
   const { rows } = await pool.query<StoredCredentialRow>(
     'select id, access_token, refresh_token, token_expiry from google_credentials where google_account_email = $1',
     [email]
@@ -104,5 +108,18 @@ export async function getCalendarClientByEmail(email: string) {
       .catch((error) => console.error('No se pudo persistir el access_token renovado', error));
   });
 
-  return { calendar: google.calendar({ version: 'v3', auth: client }), credentialId: credential.id as string };
+  return { client, credentialId: credential.id as string };
+}
+
+export async function getCalendarClientByEmail(email: string) {
+  const { client, credentialId } = await getOAuthClientForEmail(email);
+  return { calendar: google.calendar({ version: 'v3', auth: client }), credentialId };
+}
+
+// Usado por metasSheet.ts para leer el excel de metas — requiere que la
+// cuenta pasada haya autorizado el scope spreadsheets.readonly (ver
+// GOOGLE_SCOPES arriba) y que ese excel esté compartido con esa cuenta.
+export async function getSheetsClientByEmail(email: string) {
+  const { client, credentialId } = await getOAuthClientForEmail(email);
+  return { sheets: google.sheets({ version: 'v4', auth: client }), credentialId };
 }

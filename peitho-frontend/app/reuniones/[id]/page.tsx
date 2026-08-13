@@ -56,6 +56,32 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
         <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />
       </div>
 
+      {(meeting.contacto_nombre || meeting.contacto_cargo || meeting.contacto_industria || meeting.cliente_bullseye) && (
+        <Section title="Ficha del contacto">
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs font-medium text-gray-500">Nombre</p>
+              <p className="text-gray-700">{meeting.contacto_nombre ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Cargo</p>
+              <p className="text-gray-700">{meeting.contacto_cargo ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Industria</p>
+              <p className="text-gray-700">{meeting.contacto_industria ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Cliente BullsEye</p>
+              <p className="text-gray-700">{meeting.cliente_bullseye ?? "—"}</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 pt-1">
+            Datos tomados del excel de metas — si algo falta, es porque esta reunión no hizo match ahí todavía.
+          </p>
+        </Section>
+      )}
+
       {preBrief && (
         <Section title="Investigación de empresa y prospecto">
           {preBrief.resumen_contexto && <p className="text-sm text-gray-700">{preBrief.resumen_contexto}</p>}

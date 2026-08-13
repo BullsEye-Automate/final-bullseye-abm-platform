@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { pool } from './db';
 import { PRE_REUNION_SYSTEM_PROMPT, buildPreReunionUserMessage, HistorialPeitho } from './prompts/preReunion';
+import { resolveMeetingClientAndContact } from './metasSheet';
 
 async function findHistorial(
   contraparte: string | null,
@@ -36,6 +37,10 @@ async function runPreReunionPrompt(input: {
   contactos: string;
   fecha: string | null;
   historial: HistorialPeitho | null;
+  contactoNombre: string | null;
+  contactoCargo: string | null;
+  contactoIndustria: string | null;
+  clienteBullsEye: string | null;
 }): Promise<unknown> {
   const anthropic = new Anthropic();
 
@@ -45,6 +50,10 @@ async function runPreReunionPrompt(input: {
     contactos: input.contactos,
     fecha: input.fecha ? new Date(input.fecha).toLocaleString('es-CL') : 'Desconocida',
     historial: input.historial,
+    contactoNombre: input.contactoNombre,
+    contactoCargo: input.contactoCargo,
+    contactoIndustria: input.contactoIndustria,
+    clienteBullsEye: input.clienteBullsEye,
   });
 
   const response = await anthropic.messages.create(
@@ -108,8 +117,17 @@ async function runPreReunionPrompt(input: {
 // resultado final (o el estado 'failed').
 export async function generatePreMeetingBrief(meetingId: string): Promise<void> {
   console.log(`[pre-brief] reunión ${meetingId}: buscando datos...`);
+
+  // Gratis y sin tocar la API de Claude — se resuelve antes de gastar
+  // búsquedas web adivinando datos que ya están registrados a mano.
+  await resolveMeetingClientAndContact(meetingId);
+
   const { rows } = await pool.query(
-    `select id, ejecutivo, contraparte, empresa_contraparte, start_time from meetings where id = $1`,
+    `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time,
+            m.contacto_nombre, m.contacto_cargo, m.contacto_industria, c.name as cliente_bullseye
+     from meetings m
+     left join clients c on c.id = m.client_id
+     where m.id = $1`,
     [meetingId]
   );
   const meeting = rows[0];
@@ -125,6 +143,10 @@ export async function generatePreMeetingBrief(meetingId: string): Promise<void> 
       contactos: meeting.contraparte ?? 'Desconocido',
       fecha: meeting.start_time,
       historial,
+      contactoNombre: meeting.contacto_nombre,
+      contactoCargo: meeting.contacto_cargo,
+      contactoIndustria: meeting.contacto_industria,
+      clienteBullsEye: meeting.cliente_bullseye,
     });
 
     await pool.query(

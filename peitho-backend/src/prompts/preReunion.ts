@@ -11,7 +11,7 @@ Tienes disponible una herramienta de búsqueda web — úsala para investigar la
 INSTRUCCIONES:
 
 1. Usa la herramienta de búsqueda web para investigar la empresa contraparte antes de responder — no inventes información que no hayas encontrado.
-2. El campo "Contacto" puede venir como un correo crudo (ej. "bruno@samu.ai") en vez de un nombre — el calendario no siempre trae el nombre de pantalla del invitado. En ese caso, usa la parte antes del "@" como pista de nombre de pila y búscalo junto con el nombre de la empresa. Haz búsquedas ESPECÍFICAS y combinadas, no genéricas — por ejemplo "<empresa> LinkedIn", "<nombre o parte del correo> <empresa> LinkedIn", "<empresa> noticias 2026". Una búsqueda genérica del rubro de la empresa sola casi nunca encuentra al contacto específico.
+2. Si el bloque "DATOS CONFIRMADOS" trae nombre, cargo o industria del contacto, son datos reales tomados de un registro interno (no los adivinaste tú) — úsalos tal cual, no los cuestiones ni los vuelvas a inferir desde cero. Con el nombre confirmado, haz búsquedas ESPECÍFICAS y combinadas, no genéricas — por ejemplo "<nombre completo> <empresa> LinkedIn", "<empresa> LinkedIn", "<empresa> noticias 2026". Si "DATOS CONFIRMADOS" viene vacío, el campo "Contacto" puede venir como un correo crudo (ej. "bruno@samu.ai") en vez de un nombre — en ese caso usa la parte antes del "@" como pista de nombre de pila y búscalo junto con el nombre de la empresa. Una búsqueda genérica del rubro de la empresa sola casi nunca encuentra al contacto específico.
 3. Si una búsqueda no encuentra nada útil, prueba una variante distinta de la consulta (menos restrictiva, o solo el nombre de la empresa) antes de rendirte — no asumas que "no hay información" tras un solo intento fallido.
 4. IMPORTANTE — tienes un número limitado de búsquedas disponibles. En cuanto una búsqueda te devuelva un error de límite alcanzado, DETENTE de inmediato: no sigas intentando más búsquedas, van a seguir fallando. En ese momento, redacta el brief usando TODO lo que ya encontraste en las búsquedas anteriores que sí funcionaron — no digas "no fue posible encontrar información" si alguna de tus búsquedas anteriores en esta misma sesión sí trajo resultados. Revisa los resultados de cada búsqueda que ya hiciste antes de concluir que la información es insuficiente.
 5. Si es la primera reunión con este contacto (historial vacío), enfócate en un perfil inicial de la empresa y preguntas de descubrimiento genéricas pero relevantes al rubro.
@@ -25,13 +25,13 @@ ESQUEMA DE SALIDA (JSON):
 {
   "resumen_contexto": "<2-3 frases: quién es la empresa, en qué instancia de la relación comercial están>",
   "perfil_empresa": {
-    "rubro": "<industria o giro>",
+    "rubro": "<usa la industria confirmada si viene en DATOS CONFIRMADOS; si no, la que hayas inferido>",
     "tamaño_estimado": "<si se pudo inferir, si no, null>",
     "senales_relevantes": ["<ej: contratando activamente, expansión reciente, sin presencia digital, etc.>"],
     "info_insuficiente": <true/false>
   },
   "perfil_contacto": {
-    "cargo_estimado": "<si se conoce o infiere>",
+    "cargo_estimado": "<usa el cargo confirmado si viene en DATOS CONFIRMADOS; si no, el que hayas inferido>",
     "rol_probable_en_decision": "<decisor, influenciador, usuario final, desconocido>"
   },
   "es_primera_reunion": <true/false>,
@@ -60,6 +60,10 @@ interface BuildPreReunionUserMessageInput {
   contactos: string;
   fecha: string;
   historial: HistorialPeitho | null;
+  contactoNombre: string | null;
+  contactoCargo: string | null;
+  contactoIndustria: string | null;
+  clienteBullsEye: string | null;
 }
 
 export function buildPreReunionUserMessage(input: BuildPreReunionUserMessageInput): string {
@@ -68,6 +72,12 @@ export function buildPreReunionUserMessage(input: BuildPreReunionUserMessageInpu
 - Empresa contraparte: ${input.empresaContraparte}
 - Contacto(s): ${input.contactos}
 - Fecha y hora: ${input.fecha}
+- Cliente de BullsEye para el que se agendó esta reunión: ${input.clienteBullsEye ?? 'Desconocido'}
+
+DATOS CONFIRMADOS DEL CONTACTO (tomados del registro interno de reuniones agendadas, no son una suposición — si algún campo viene "Desconocido" es porque no se encontró en ese registro, no porque sea falso):
+- Nombre: ${input.contactoNombre ?? 'Desconocido'}
+- Cargo: ${input.contactoCargo ?? 'Desconocido'}
+- Industria de la empresa: ${input.contactoIndustria ?? 'Desconocido'}
 
 HISTORIAL DE PEITHO CON ESTE CONTACTO (si existe una reunión anterior ya analizada; si es la primera reunión, este bloque viene vacío):
 ${input.historial ? JSON.stringify(input.historial, null, 2) : '(primera reunión — sin historial previo)'}`;
