@@ -45,7 +45,10 @@ meetingsRouter.get('/meetings', async (req, res) => {
     // Tarea 2 (ver CLAUDE.md), y sin este límite la lista se llena de
     // ocurrencias históricas de hace años que no son relevantes para revisar.
     // También se excluyen reuniones internas (contraparte con el mismo dominio
-    // de BullsEye) — a Peitho solo le interesan reuniones con prospectos.
+    // de BullsEye) y reuniones recurrentes (recurring_event_id no nulo) — una
+    // reunión que se repite cada semana/mes casi nunca es con un prospecto
+    // nuevo, y sin este filtro Google sigue generando ocurrencias futuras
+    // hacia adelante indefinidamente (se vieron filas hasta el año 2051).
     // "is distinct from" en vez de "<>" para no descartar filas con
     // empresa_contraparte en null (dominio desconocido, se muestran igual).
     const { rows } = await pool.query(
@@ -54,11 +57,13 @@ meetingsRouter.get('/meetings', async (req, res) => {
            from meetings
            where start_time >= now()
              and lower(empresa_contraparte) is distinct from $1
+             and recurring_event_id is null
            order by start_time asc`
         : `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status
            from meetings
            where start_time < now() and start_time >= now() - interval '90 days'
              and lower(empresa_contraparte) is distinct from $1
+             and recurring_event_id is null
            order by start_time desc`,
       [INTERNAL_DOMAIN]
     );

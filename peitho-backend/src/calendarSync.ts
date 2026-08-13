@@ -38,18 +38,22 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
 
   const { contraparte, empresaContraparte } = extractContraparte(event, ejecutivoEmail);
   const startTime = event.start?.dateTime ?? event.start?.date ?? null;
+  // Google marca cada ocurrencia expandida de una serie recurrente con el id
+  // del evento "maestro" que la originó — null si el evento no es recurrente.
+  const recurringEventId = event.recurringEventId ?? null;
 
   await pool.query(
-    `insert into meetings (google_event_id, meet_code, ejecutivo, contraparte, empresa_contraparte, start_time)
-     values ($1, $2, $3, $4, $5, $6)
+    `insert into meetings (google_event_id, meet_code, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id)
+     values ($1, $2, $3, $4, $5, $6, $7)
      on conflict (google_event_id) do update set
        meet_code = excluded.meet_code,
        ejecutivo = excluded.ejecutivo,
        contraparte = excluded.contraparte,
        empresa_contraparte = excluded.empresa_contraparte,
        start_time = excluded.start_time,
+       recurring_event_id = excluded.recurring_event_id,
        updated_at = now()`,
-    [event.id, meetCode, ejecutivoEmail, contraparte, empresaContraparte, startTime]
+    [event.id, meetCode, ejecutivoEmail, contraparte, empresaContraparte, startTime, recurringEventId]
   );
 }
 
