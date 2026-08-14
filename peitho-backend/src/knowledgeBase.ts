@@ -37,6 +37,18 @@ function getExtension(fileName: string): string {
   return fileName.split('.').pop()?.toLowerCase() ?? '';
 }
 
+// Supabase Storage rechaza rutas con espacios u otros caracteres fuera de
+// [a-zA-Z0-9.-_] con "Invalid path specified in request URL" (confirmado
+// real con "OnePager Bullseye 2025.pdf") — se sanea solo la ruta de
+// almacenamiento; el nombre original se sigue guardando tal cual en
+// `file_name` para mostrarlo en la lista.
+function sanitizeForStoragePath(fileName: string): string {
+  return fileName
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // tildes/acentos (ya normalizadas a marca + base)
+    .replace(/[^a-zA-Z0-9.\-_]/g, '_');
+}
+
 // Best-effort: si el formato no se puede procesar, devuelve null en vez de
 // tirar abajo toda la subida — el archivo original igual queda guardado.
 async function extractText(buffer: Buffer, fileName: string): Promise<string | null> {
@@ -64,7 +76,7 @@ export async function uploadKnowledgeBaseDocument(
 ): Promise<{ id: string; fileName: string; fileType: string; contentExtracted: boolean }> {
   const supabase = getSupabaseAdminClient();
   const ext = getExtension(fileName);
-  const storagePath = `${clientId}/${randomUUID()}-${fileName}`;
+  const storagePath = `${clientId}/${randomUUID()}-${sanitizeForStoragePath(fileName)}`;
 
   const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, buffer, {
     contentType: 'application/octet-stream',
