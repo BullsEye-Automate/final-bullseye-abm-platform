@@ -80,6 +80,20 @@ export interface MeetingDetail extends MeetingListItem {
   cliente_bullseye: string | null;
 }
 
+export interface ClientListItem {
+  id: string;
+  name: string;
+  documentos: number;
+}
+
+export interface KnowledgeBaseDocument {
+  id: string;
+  file_name: string;
+  file_type: string | null;
+  uploaded_at: string;
+  content_extracted: boolean;
+}
+
 function backendUrl(): string {
   return process.env.PEITHO_BACKEND_URL ?? "http://localhost:3001";
 }
@@ -99,6 +113,22 @@ export async function fetchMeeting(id: string): Promise<MeetingDetail | null> {
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(`peitho-backend respondió ${res.status} en /meetings/${id}`);
+  }
+  return res.json();
+}
+
+export async function fetchClients(): Promise<ClientListItem[]> {
+  const res = await fetch(`${backendUrl()}/clients`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`peitho-backend respondió ${res.status} en /clients`);
+  }
+  return res.json();
+}
+
+export async function fetchClientDocuments(clientId: string): Promise<KnowledgeBaseDocument[]> {
+  const res = await fetch(`${backendUrl()}/clients/${clientId}/documents`, { cache: "no-store" });
+  if (!res.ok) {
+    throw new Error(`peitho-backend respondió ${res.status} en /clients/${clientId}/documents`);
   }
   return res.json();
 }

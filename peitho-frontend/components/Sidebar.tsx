@@ -7,6 +7,7 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 const NAV_ITEMS = [
   { href: "/reuniones/futuras", label: "Reuniones futuras" },
   { href: "/reuniones/pasadas", label: "Reuniones pasadas" },
+  { href: "/base-de-conocimiento", label: "Base de conocimiento" },
 ];
 
 export default function Sidebar() {
