@@ -97,6 +97,39 @@ export async function uploadKnowledgeBaseDocument(
   return { id: rows[0].id, fileName, fileType: ext, contentExtracted: content !== null };
 }
 
+// Presupuesto de caracteres para no disparar el costo/latencia de los prompts
+// de research y análisis con documentos muy largos (ej. un PDF de 90MB ya
+// probado en Fase C) — mejor un extracto que forzar todo el contenido.
+const MAX_CONTEXT_CHARS = 30_000;
+
+// Fase D — concatena el texto ya extraído de los documentos de un cliente
+// para usarlo como contexto en los prompts de research pre-reunión y
+// análisis post-reunión. Devuelve null (no string vacío) cuando no hay
+// cliente o no hay contenido extraído todavía, para que los prompts puedan
+// distinguir "sin base de conocimiento" de "base de conocimiento vacía" —
+// mismo patrón de "mejor vacío que dato falso" usado en el resto del código.
+export async function getClientKnowledgeBaseContext(clientId: string | null): Promise<string | null> {
+  if (!clientId) return null;
+
+  const { rows } = await pool.query(
+    `select file_name, content
+     from knowledge_base_documents
+     where client_id = $1 and content is not null
+     order by uploaded_at desc`,
+    [clientId]
+  );
+  if (rows.length === 0) return null;
+
+  let context = '';
+  for (const row of rows) {
+    const block = `--- Documento: ${row.file_name} ---\n${row.content}\n\n`;
+    if (context.length + block.length > MAX_CONTEXT_CHARS) break;
+    context += block;
+  }
+
+  return context.trim() || null;
+}
+
 export async function deleteKnowledgeBaseDocument(clientId: string, documentId: string): Promise<boolean> {
   const { rows } = await pool.query(
     `select storage_path from knowledge_base_documents where id = $1 and client_id = $2`,

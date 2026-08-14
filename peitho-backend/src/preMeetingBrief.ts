@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { pool } from './db';
 import { PRE_REUNION_SYSTEM_PROMPT, buildPreReunionUserMessage, HistorialPeitho } from './prompts/preReunion';
 import { resolveMeetingClientAndContact } from './metasSheet';
+import { getClientKnowledgeBaseContext } from './knowledgeBase';
 
 async function findHistorial(
   contraparte: string | null,
@@ -42,6 +43,7 @@ async function runPreReunionPrompt(input: {
   contactoIndustria: string | null;
   clienteBullsEye: string | null;
   contactoLinkedinUrl: string | null;
+  baseConocimiento: string | null;
 }): Promise<unknown> {
   const anthropic = new Anthropic();
 
@@ -56,6 +58,7 @@ async function runPreReunionPrompt(input: {
     contactoIndustria: input.contactoIndustria,
     clienteBullsEye: input.clienteBullsEye,
     contactoLinkedinUrl: input.contactoLinkedinUrl,
+    baseConocimiento: input.baseConocimiento,
   });
 
   const response = await anthropic.messages.create(
@@ -130,7 +133,7 @@ export async function generatePreMeetingBrief(meetingId: string): Promise<void> 
   await resolveMeetingClientAndContact(meetingId);
 
   const { rows } = await pool.query(
-    `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time,
+    `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time, m.client_id,
             m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
             c.name as cliente_bullseye
      from meetings m
@@ -143,6 +146,7 @@ export async function generatePreMeetingBrief(meetingId: string): Promise<void> 
 
   try {
     const historial = await findHistorial(meeting.contraparte, meeting.empresa_contraparte);
+    const baseConocimiento = await getClientKnowledgeBaseContext(meeting.client_id);
 
     console.log(`[pre-brief] reunión ${meetingId}: investigando con Claude (web search)...`);
     const brief = await runPreReunionPrompt({
@@ -156,6 +160,7 @@ export async function generatePreMeetingBrief(meetingId: string): Promise<void> 
       contactoIndustria: meeting.contacto_industria,
       clienteBullsEye: meeting.cliente_bullseye,
       contactoLinkedinUrl: meeting.contacto_linkedin_url,
+      baseConocimiento,
     });
 
     await pool.query(

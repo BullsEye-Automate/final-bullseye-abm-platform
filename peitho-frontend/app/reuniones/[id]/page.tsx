@@ -160,6 +160,42 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             </div>
           )}
 
+          {!!preBrief.temas_recomendados?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Temas recomendados (según base de conocimiento)</p>
+              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+                {preBrief.temas_recomendados.map((t, i) => (
+                  <li key={i}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!!preBrief.temas_evitar?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-1">Temas a evitar</p>
+              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+                {preBrief.temas_evitar.map((t, i) => (
+                  <li key={i}>{t}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {!!preBrief.casos_exito_sugeridos?.length && (
+            <div className="pt-2">
+              <p className="text-xs font-medium text-gray-500 mb-2">Casos de éxito sugeridos</p>
+              <ul className="space-y-2">
+                {preBrief.casos_exito_sugeridos.map((c, i) => (
+                  <li key={i} className="text-sm">
+                    <span className="font-medium text-gray-900">{c.caso}</span>
+                    {c.por_que_aplica && <p className="text-gray-600 mt-0.5">{c.por_que_aplica}</p>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {!!preBrief.hilos_abiertos?.length && (
             <div className="pt-2">
               <p className="text-xs font-medium text-gray-500 mb-2">Hilos abiertos de la reunión anterior</p>

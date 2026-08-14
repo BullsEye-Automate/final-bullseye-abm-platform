@@ -62,6 +62,11 @@ export interface PreBrief {
   preguntas_clave_a_indagar?: string[];
   riesgos_a_considerar?: string[];
   recomendacion_personalizacion?: string;
+  // Fase D — solo vienen con contenido si el cliente de BullsEye tiene
+  // documentos subidos en la base de conocimiento (ver /base-de-conocimiento).
+  temas_recomendados?: string[];
+  temas_evitar?: string[];
+  casos_exito_sugeridos?: Array<{ caso?: string; por_que_aplica?: string }>;
   [key: string]: unknown;
 }
 

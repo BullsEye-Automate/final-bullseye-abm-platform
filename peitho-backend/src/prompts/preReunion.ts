@@ -22,6 +22,7 @@ INSTRUCCIONES:
 10. Si te dieron una URL de LinkedIn confirmada (pegada a mano), no puedes abrirla directamente — LinkedIn bloquea el acceso a herramientas como la tuya. Úsala como pista para buscar mejor: la parte de la URL después de "/in/" a veces trae el nombre completo con apellidos que no estaban en los datos confirmados (ej. "felipe-almazan-anjari" → "Felipe Almazan Anjari") — inclúyelo en tus búsquedas si ayuda a ser más específico. Busca el perfil con web_search (nombre confirmado + empresa) y de ahí extrae la experiencia laboral (2-3 cargos anteriores relevantes, no la lista completa). Si la búsqueda no te muestra el contenido del perfil (es normal, LinkedIn no se indexa bien en buscadores públicos), deja "experiencia_contacto" como una lista vacía — no inventes cargos.
 11. Para "icebreakers_sugeridos": busca actividad reciente y pública del contacto o de la empresa (posts de LinkedIn, notas de prensa, publicaciones propias, logros recientes) que sirvan de excusa natural para romper el hielo. Esto casi siempre va a salir vacío o pobre — LinkedIn no indexa bien sus posts en buscadores públicos — y está bien: nunca inventes un "post reciente" que no confirmaste con una búsqueda real. Si no encuentras nada concreto y reciente, deja la lista vacía en vez de rellenarla con genéricos tipo "felicítalo por su cargo".
 12. Para "competidores_directos": busca específicamente (ej. "<empresa> competidores", "<empresa> alternativas", "empresas similares a <empresa> <industria>"). Solo incluye competidores que aparecieron en una búsqueda real — no completes con nombres que te parezcan lógicos por el rubro pero que no confirmaste buscando. IMPORTANTE: si en CUALQUIER momento de tu investigación (aunque sea buscando el perfil general de la empresa, no una búsqueda dedicada a competidores) apareció el nombre de una empresa competidora, ponla en este campo — no la dejes solo mencionada dentro de "senales_relevantes" o "riesgos_a_considerar" y el campo vacío. Si de verdad no encontraste ningún nombre de competidor en ninguna búsqueda, ahí sí deja la lista vacía.
+13. Si el bloque "BASE DE CONOCIMIENTO DEL CLIENTE" trae contenido, son documentos reales subidos por BullsEye sobre el cliente para el que se agendó esta reunión (ICP, propuesta de valor, casos de éxito, presentaciones) — úsalo para "temas_recomendados" (qué mensajes/ángulos de la propuesta de valor tienen más sentido para esta empresa contraparte específica según lo que investigaste), "temas_evitar" (mensajes genéricos del material que NO aplican bien a esta contraparte, o afirmaciones que contradicen lo que encontraste investigándola) y "casos_exito_sugeridos" (casos de éxito del material que se parezcan al rubro/tamaño/situación de la empresa contraparte). Si el bloque viene vacío, deja las tres listas vacías — no inventes contenido de una base de conocimiento que no existe.
 
 ESQUEMA DE SALIDA (JSON):
 
@@ -43,6 +44,11 @@ ESQUEMA DE SALIDA (JSON):
   "icebreakers_sugeridos": ["<solo si encontraste algo concreto y reciente — si no, lista vacía>"],
   "competidores_directos": [
     {"nombre": "<empresa competidora>", "comentario": "<qué encontraste que los relaciona, opcional>"}
+  ],
+  "temas_recomendados": ["<mensaje o ángulo de la propuesta de valor de la base de conocimiento que conviene enfatizar con esta contraparte específica — lista vacía si no hay base de conocimiento>"],
+  "temas_evitar": ["<mensaje del material que no aplica bien o contradice lo investigado sobre esta contraparte — lista vacía si no aplica>"],
+  "casos_exito_sugeridos": [
+    {"caso": "<nombre o descripción breve del caso de éxito de la base de conocimiento>", "por_que_aplica": "<por qué se parece a esta contraparte>"}
   ],
   "es_primera_reunion": <true/false>,
   "hilos_abiertos": [
@@ -75,6 +81,7 @@ interface BuildPreReunionUserMessageInput {
   contactoIndustria: string | null;
   clienteBullsEye: string | null;
   contactoLinkedinUrl: string | null;
+  baseConocimiento: string | null;
 }
 
 export function buildPreReunionUserMessage(input: BuildPreReunionUserMessageInput): string {
@@ -92,5 +99,8 @@ DATOS CONFIRMADOS DEL CONTACTO (tomados del registro interno de reuniones agenda
 - URL de LinkedIn del contacto (pegada a mano por el ejecutivo — no se puede abrir directo, pero úsala como pista para tus búsquedas, ver instrucción 10): ${input.contactoLinkedinUrl ?? '(no se pegó ninguna — busca el perfil con web_search como de costumbre)'}
 
 HISTORIAL DE PEITHO CON ESTE CONTACTO (si existe una reunión anterior ya analizada; si es la primera reunión, este bloque viene vacío):
-${input.historial ? JSON.stringify(input.historial, null, 2) : '(primera reunión — sin historial previo)'}`;
+${input.historial ? JSON.stringify(input.historial, null, 2) : '(primera reunión — sin historial previo)'}
+
+BASE DE CONOCIMIENTO DEL CLIENTE (documentos subidos por BullsEye sobre "${input.clienteBullsEye ?? 'este cliente'}" — ICP, propuesta de valor, casos de éxito; ver instrucción 13. Vacío si todavía no se subió nada):
+${input.baseConocimiento ?? '(sin base de conocimiento cargada para este cliente)'}`;
 }

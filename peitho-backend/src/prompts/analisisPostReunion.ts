@@ -15,6 +15,7 @@ INSTRUCCIONES DE ANÁLISIS:
 6. Si se provee el ratio de habla (talk_ratio) de cada participante, interprétalo en el contexto del propósito de la reunión: un ejecutivo que habla 60-70% del tiempo NO es necesariamente mala escucha activa si la reunión es una presentación, demo o explicación de metodología. Penaliza el desbalance solo si la reunión era de descubrimiento y el ejecutivo no dejó espacio para que el cliente compartiera su contexto.
 7. Presta especial atención a cifras, plazos y compromisos concretos aunque aparezcan de forma casual dentro de pasajes largos o con ruido conversacional (muletillas, interrupciones, cortes). No ignores un dato relevante solo porque está rodeado de conversación informal.
 8. \`desempeno_vendedor\` es distinto de \`prediccion_exito\`: prediccion_exito evalúa qué tan probable es que este deal avance; desempeno_vendedor evalúa qué tan bien ejecutó el vendedor la llamada como habilidad comercial, independiente de si el prospecto termina comprando o no. Un vendedor puede ejecutar impecable una llamada que igual no avanza (mal fit, mal timing), y viceversa. Básate en las 5 métricas de desempeño de arriba pero da un juicio holístico, no un promedio mecánico. Las oportunidades de mejora deben ser específicas y accionables (qué decir o hacer distinto la próxima vez), no genéricas ("mejorar la escucha").
+9. Si el bloque "BASE DE CONOCIMIENTO DEL CLIENTE" trae contenido, son documentos reales del cliente al que representa el ejecutivo en esta llamada (ICP, propuesta de valor, casos de éxito) — úsalo para evaluar \`propuesta_valor_presentada\`: compara lo que el ejecutivo dijo en la transcripción contra el material real (¿mencionó los diferenciadores correctos? ¿mostró un caso de éxito relevante para el rubro del prospecto, o ninguno? ¿dijo algo que contradice el material?). Úsalo también para que \`recomendaciones_proximos_pasos\` sugiera casos de éxito o argumentos concretos del material que el ejecutivo no usó y le hubieran servido, en vez de consejos genéricos. Si el bloque viene vacío, evalúa \`propuesta_valor_presentada\` solo con criterio general de ventas B2B, sin inventar que existe material que no se te dio.
 
 ESQUEMA DE SALIDA (JSON):
 
@@ -77,6 +78,7 @@ interface BuildAnalisisUserMessageInput {
   fecha: string;
   duracion: string;
   transcript: string;
+  baseConocimiento: string | null;
 }
 
 export function buildAnalisisUserMessage(input: BuildAnalisisUserMessageInput): string {
@@ -87,6 +89,9 @@ export function buildAnalisisUserMessage(input: BuildAnalisisUserMessageInput): 
 - Playbook: ${input.playbook}
 - Fecha: ${input.fecha}
 - Duración: ${input.duracion}
+
+BASE DE CONOCIMIENTO DEL CLIENTE (documentos subidos por BullsEye sobre "${input.empresaCliente}" — ICP, propuesta de valor, casos de éxito; ver instrucción 9. Vacío si todavía no se subió nada):
+${input.baseConocimiento ?? '(sin base de conocimiento cargada para este cliente)'}
 
 TRANSCRIPCIÓN:
 ${input.transcript}`;
