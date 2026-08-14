@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import WebSocket from 'ws';
 import { OfficeParser } from 'officeparser';
 import { pool } from './db';
 
@@ -22,7 +23,12 @@ function getSupabaseAdminClient() {
       'Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en las variables de entorno (ver .env.example)'
     );
   }
-  return createClient(url, serviceRoleKey);
+  // El cliente de Supabase inicializa su módulo de Realtime al crearse (aunque
+  // acá solo usemos Storage), y desde una versión reciente exige WebSocket
+  // nativo — solo disponible desde Node 22+. Se le pasa la implementación de
+  // la librería `ws` explícitamente para que funcione igual en Node 20 (error
+  // real visto: "Node.js detected but native WebSocket not found").
+  return createClient(url, serviceRoleKey, { realtime: { transport: WebSocket as any } });
 }
 
 const TEXT_EXTENSIONS = new Set(['txt', 'md']);
