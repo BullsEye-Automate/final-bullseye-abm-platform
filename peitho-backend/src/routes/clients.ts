@@ -105,7 +105,13 @@ clientsRouter.post('/clients/:id/documents', uploadSingleFile, async (req, res) 
       return;
     }
 
-    const result = await uploadKnowledgeBaseDocument(id, req.file.originalname, req.file.buffer);
+    // Multer/busboy entregan el nombre del archivo decodificado como
+    // latin1 (así llegan las cabeceras HTTP), así que cualquier caracter
+    // fuera de ASCII (acentos, guiones especiales) sale con caracteres
+    // corruptos si no se re-decodifica como UTF-8 — bug real visto con
+    // "bullseye_icp_formatted — BullsEye.pdf".
+    const fileName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
+    const result = await uploadKnowledgeBaseDocument(id, fileName, req.file.buffer);
     res.status(201).json(result);
   } catch (error) {
     console.error('Error subiendo documento a la base de conocimiento', error);
