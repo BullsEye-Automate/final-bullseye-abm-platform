@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { pool } from '../db';
 import { uploadKnowledgeBaseDocument, deleteKnowledgeBaseDocument } from '../knowledgeBase';
@@ -6,9 +6,29 @@ import { uploadKnowledgeBaseDocument, deleteKnowledgeBaseDocument } from '../kno
 export const clientsRouter = Router();
 
 // En memoria (no a disco) — el archivo se sube directo a Supabase Storage,
-// nunca se guarda en el filesystem del backend. Límite razonable para
-// documentos comerciales (PDFs, presentaciones, docx).
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+// nunca se guarda en el filesystem del backend. 100MB alcanza para
+// presentaciones/PDFs pesados con imágenes (se vio un caso real de 92MB)
+// sin dejar la puerta abierta a subidas ilimitadas.
+const MAX_FILE_SIZE_MB = 100;
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 } });
+
+// multer llama a next(err) en vez de tirar la excepción — sin este wrapper,
+// un archivo muy grande terminaba en el error genérico 500 de Express en vez
+// de un mensaje claro (bug real: PDF de 92MB con el límite viejo de 25MB).
+function uploadSingleFile(req: Request, res: Response, next: NextFunction) {
+  upload.single('file')(req, res, (error) => {
+    if (!error) {
+      next();
+      return;
+    }
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      res.status(413).json({ error: `El archivo supera el límite de ${MAX_FILE_SIZE_MB}MB` });
+      return;
+    }
+    console.error('Error procesando la subida del archivo', error);
+    res.status(400).json({ error: 'No se pudo procesar el archivo' });
+  });
+}
 
 clientsRouter.get('/clients', async (_req, res) => {
   try {
@@ -69,7 +89,7 @@ clientsRouter.get('/clients/:id/documents', async (req, res) => {
   }
 });
 
-clientsRouter.post('/clients/:id/documents', upload.single('file'), async (req, res) => {
+clientsRouter.post('/clients/:id/documents', uploadSingleFile, async (req, res) => {
   const { id } = req.params;
 
   if (!req.file) {
