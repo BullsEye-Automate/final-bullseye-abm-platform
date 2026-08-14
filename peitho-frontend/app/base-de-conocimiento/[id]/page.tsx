@@ -21,7 +21,8 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
         <h2 className="text-sm font-semibold text-gray-900">Subir documento</h2>
         <p className="text-xs text-gray-500">
-          Formatos soportados: PDF, Word, PowerPoint, Excel, texto plano, OpenDocument, RTF.
+          Formatos soportados: PDF, Word, PowerPoint, Excel, texto plano, OpenDocument, RTF. Máximo 50MB por archivo
+          (límite del plan actual de Supabase Storage).
         </p>
         <DocumentUploadForm clientId={client.id} />
       </div>

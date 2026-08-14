@@ -6,10 +6,11 @@ import { uploadKnowledgeBaseDocument, deleteKnowledgeBaseDocument } from '../kno
 export const clientsRouter = Router();
 
 // En memoria (no a disco) — el archivo se sube directo a Supabase Storage,
-// nunca se guarda en el filesystem del backend. 100MB alcanza para
-// presentaciones/PDFs pesados con imágenes (se vio un caso real de 92MB)
-// sin dejar la puerta abierta a subidas ilimitadas.
-const MAX_FILE_SIZE_MB = 100;
+// nunca se guarda en el filesystem del backend. 50MB porque es el límite
+// FIJO del plan free de Supabase Storage (confirmado real: un intento con
+// 100MB acá pasaba este límite y fallaba recién en Supabase con un error
+// distinto) — si el proyecto pasa a plan Pro esto se puede subir.
+const MAX_FILE_SIZE_MB = 50;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 } });
 
 // multer llama a next(err) en vez de tirar la excepción — sin este wrapper,
