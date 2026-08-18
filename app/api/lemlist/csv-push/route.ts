@@ -112,8 +112,8 @@ export async function POST(req: NextRequest) {
             body: JSON.stringify(payload),
           }
         );
-        if (res.status !== 429) break;
-        lastError = `Lemlist 429: Too Many Requests`;
+        if (res.status !== 429 && res.status !== 500) break;
+        lastError = res.status === 429 ? `Lemlist 429: Too Many Requests` : `Lemlist 500: Failed to add lead`;
       } catch (err: any) {
         lastError = err?.message ?? "Error de red";
         res = null;
@@ -141,7 +141,7 @@ export async function POST(req: NextRequest) {
     pushed++;
 
     // Delay entre leads para no saturar la API de Lemlist
-    await sleep(1200);
+    await sleep(3000);
 
     // Guardar en Supabase — solo si tiene email (el upsert requiere email como clave)
     // Contactos sin email se enviaron a Lemlist correctamente pero no se guardan aquí
