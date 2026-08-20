@@ -230,6 +230,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const [srcFileProgress, setSrcFileProgress] = useState(0);
   const [srcError, setSrcError]       = useState<string | null>(null);
   const [cloningId, setCloningId]     = useState<string | null>(null);
+  const [previewSrc, setPreviewSrc]   = useState<{ title: string; url?: string; content?: string } | null>(null);
   const fileInputRef                  = useRef<HTMLInputElement>(null);
 
   // Estado de edición de guía de estilo (independiente del editSeg de nombre/routing)
@@ -531,6 +532,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   const seg = selected ? segments.find((s) => s.id === selected) : null;
 
   return (
+    <>
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
       {/* Lista de segmentos */}
       <div className="space-y-3">
@@ -1169,7 +1171,11 @@ function SegmentsTab({ clientId }: { clientId: string }) {
 
               <div className="space-y-2">
                 {(seg.segment_sources ?? []).map((src) => (
-                  <div key={src.id} className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-[#E5E2F0]">
+                  <div
+                    key={src.id}
+                    className="flex items-start gap-3 px-3 py-2.5 rounded-xl border border-[#E5E2F0] cursor-pointer hover:border-[#62E0D8] hover:bg-[#62E0D8]/5 transition"
+                    onClick={() => setPreviewSrc({ title: src.title || src.url || "Texto sin título", url: src.url ?? undefined, content: src.content ?? undefined })}
+                  >
                     <div className="mt-0.5 shrink-0">
                       {src.source_type === "url" ? (
                         <IconLink size={14} className="text-ink-muted" />
@@ -1185,7 +1191,7 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                       )}
                     </div>
                     <button
-                      onClick={() => deleteSource(seg.id, src.id)}
+                      onClick={(e) => { e.stopPropagation(); deleteSource(seg.id, src.id); }}
                       className="shrink-0 text-red-300 hover:text-red-500 transition mt-0.5"
                     >
                       <IconX size={14} />
@@ -1198,6 +1204,34 @@ function SegmentsTab({ clientId }: { clientId: string }) {
         )}
       </div>
     </div>
+    {/* Modal de vista previa de fuente */}
+    {previewSrc && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPreviewSrc(null)}>
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-start justify-between px-6 py-4 border-b border-[#E5E2F0]">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-ink text-base">{previewSrc.title}</h3>
+              {previewSrc.url && (
+                <a href={previewSrc.url} target="_blank" rel="noopener noreferrer" className="text-xs text-[#62E0D8] hover:underline truncate block mt-0.5">
+                  {previewSrc.url}
+                </a>
+              )}
+            </div>
+            <button onClick={() => setPreviewSrc(null)} className="shrink-0 ml-4 text-ink-muted hover:text-ink transition">
+              <IconX size={18} />
+            </button>
+          </div>
+          <div className="overflow-y-auto px-6 py-4">
+            {previewSrc.content ? (
+              <p className="text-sm text-ink whitespace-pre-wrap leading-relaxed">{previewSrc.content}</p>
+            ) : (
+              <p className="text-sm text-ink-muted italic">Sin contenido extraído.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
