@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
-import { generateContactMessages, routeContactToSegment, type SegmentContext } from "@/lib/messageGenerator";
+import { generateContactMessages, routeContactToSegment, type RoutingResult, type SegmentContext } from "@/lib/messageGenerator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,8 @@ export const maxDuration = 90;
 // el contacto y devuelve qué segmento se usó para mostrarlo en el preview.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const userId = getUserIdFromRequest(req);
+  const body = await req.json().catch(() => ({} as { segment_id?: string }));
+  const manualSegmentId: string | null = body?.segment_id ?? null;
   const db = supabaseAdmin();
 
   const { data: contact, error } = await db
@@ -64,20 +66,28 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     if (raw) deepResearch = typeof raw === "string" ? JSON.parse(raw) : raw;
   } catch { /* ignorar si no parsea */ }
 
-  // Enrutamiento a segmento según la instrucción de cada cliente. Si el
-  // cliente no tiene segmentos configurados, cae solo en mensaje
-  // personalizado (mismo comportamiento de siempre).
-  const routing = await routeContactToSegment(
-    {
-      firstName: contact.first_name ?? undefined,
-      lastName: contact.last_name ?? undefined,
-      jobTitle: contact.job_title ?? undefined,
-      companyName: company?.company_name ?? undefined,
-      companySize: company?.company_size ? String(company.company_size) : undefined,
-    },
-    segments ?? [],
-    userId
-  );
+  // Si el humano elige el segmento a mano (búsqueda manual con segmentos
+  // configurados), se respeta esa elección en vez de dejar que la IA
+  // enrute. Si no se manda segment_id (o el cliente no tiene segmentos
+  // configurados), cae en el enrutamiento automático de siempre.
+  const manualSegment = manualSegmentId ? (segments ?? []).find((s) => s.id === manualSegmentId) : null;
+  if (manualSegmentId && !manualSegment) {
+    return NextResponse.json({ error: "El segmento elegido no es válido para este cliente" }, { status: 400 });
+  }
+
+  const routing: RoutingResult = manualSegment
+    ? { segmentId: manualSegment.id, segmentName: manualSegment.name, reasoning: "Elegido manualmente" }
+    : await routeContactToSegment(
+        {
+          firstName: contact.first_name ?? undefined,
+          lastName: contact.last_name ?? undefined,
+          jobTitle: contact.job_title ?? undefined,
+          companyName: company?.company_name ?? undefined,
+          companySize: company?.company_size ? String(company.company_size) : undefined,
+        },
+        segments ?? [],
+        userId
+      );
 
   const matchedSegment = routing.segmentId ? (segments ?? []).find((s) => s.id === routing.segmentId) : null;
 
