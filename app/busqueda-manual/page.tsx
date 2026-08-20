@@ -67,6 +67,8 @@ type MessagePreview = {
   messages: GeneratedMessages;
 };
 
+type SegmentOption = { id: string; name: string };
+
 type ImportManualResponse = {
   staged_total: number;
   filtered_total: number;
@@ -185,6 +187,31 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
   const [previews, setPreviews] = useState<Record<string, MessagePreview>>({});
   const [edited, setEdited] = useState<Record<string, GeneratedMessages>>({});
 
+  // Segmentos de entrenamiento del cliente — si tiene, se pregunta a qué
+  // segmento incluir cada prospecto antes de generar sus mensajes. Si el
+  // cliente no tiene segmentos, este array queda vacío y el flujo sigue
+  // exactamente igual que antes (sin selector, sin bloqueos).
+  const [segments, setSegments] = useState<SegmentOption[]>([]);
+  const [selectedSegment, setSelectedSegment] = useState<Record<string, string>>({});
+  const [segmentGateNotice, setSegmentGateNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/training/segments?client_id=${clientId}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!active) return;
+        const list: SegmentOption[] = (json.segments ?? []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name }));
+        setSegments(list);
+      })
+      .catch(() => { /* sin segmentos disponibles, se sigue con el flujo default */ });
+    return () => { active = false; };
+  }, [clientId]);
+
+  function selectSegmentFor(id: string, segmentId: string) {
+    setSelectedSegment((s) => ({ ...s, [id]: segmentId }));
+  }
+
   async function handleImport() {
     setLoading(true);
     setError(null);
@@ -196,6 +223,8 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
     setGenErrors({});
     setPreviews({});
     setEdited({});
+    setSelectedSegment({});
+    setSegmentGateNotice(null);
     try {
       const res = await fetch("/api/busqueda-manual/import-manual", {
         method: "POST",
@@ -256,7 +285,12 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
     setGenerating((s) => new Set(s).add(id));
     setGenErrors((e) => { const n = { ...e }; delete n[id]; return n; });
     try {
-      const res = await fetch(`/api/contacts/${id}/generate-message`, { method: "POST" });
+      const segmentId = selectedSegment[id];
+      const res = await fetch(`/api/contacts/${id}/generate-message`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(segmentId ? { segment_id: segmentId } : {}),
+      });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         setGenErrors((e) => ({ ...e, [id]: json.error ?? `Error ${res.status}` }));
@@ -308,6 +342,35 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
     const CHUNK = 3;
     for (let i = 0; i < ids.length; i += CHUNK) {
       await Promise.all(ids.slice(i, i + CHUNK).map((id) => sendOne(id)));
+    }
+    setBulkBusy(false);
+  }
+
+  // Envío masivo ("generar y enviar todos") pero respetando la elección de
+  // segmento por prospecto cuando el cliente tiene segmentos configurados:
+  // genera primero (con el segmento elegido) los que aún no tengan mensaje,
+  // y deja afuera — avisando — a los que todavía no tienen segmento elegido.
+  // Si el cliente no tiene segmentos, se comporta exactamente como antes.
+  async function sendManyGated(ids: string[]) {
+    if (segments.length === 0) {
+      setSegmentGateNotice(null);
+      return sendMany(ids);
+    }
+    const blocked = ids.filter((id) => !previews[id] && !selectedSegment[id]);
+    const ready = ids.filter((id) => !blocked.includes(id));
+    setSegmentGateNotice(
+      blocked.length > 0
+        ? `Elegí un segmento para ${blocked.length} contacto${blocked.length === 1 ? "" : "s"} antes de generar y enviar — quedaron sin procesar.`
+        : null
+    );
+    if (ready.length === 0) return;
+    setBulkBusy(true);
+    const CHUNK = 3;
+    for (let i = 0; i < ready.length; i += CHUNK) {
+      await Promise.all(ready.slice(i, i + CHUNK).map(async (id) => {
+        if (!previews[id]) await generateOne(id);
+        await sendOne(id);
+      }));
     }
     setBulkBusy(false);
   }
@@ -413,12 +476,18 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold">Por empresa</h3>
                 {pendingHighAll.length > 0 && (
-                  <button onClick={() => sendMany(pendingHighAll.map((c) => c.id))} disabled={bulkBusy} className="btn-primary text-xs">
+                  <button onClick={() => sendManyGated(pendingHighAll.map((c) => c.id))} disabled={bulkBusy} className="btn-primary text-xs">
                     {bulkBusy ? <IconLoader2 size={13} className="animate-spin" /> : <IconSend size={13} />}
                     Generar mensajes y enviar a Lemlist todos los fit {HIGH_FIT_MIN}-10 ({pendingHighAll.length})
                   </button>
                 )}
               </div>
+
+              {segmentGateNotice && (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs bg-warning-bg text-warning-fg">
+                  <IconAlertCircle size={13} className="shrink-0" /> {segmentGateNotice}
+                </div>
+              )}
 
               {companiesWithTiers.map((c) => {
                 const pendingHigh = pending(c.high);
@@ -487,6 +556,9 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
                               edited={edited[ct.id]}
                               onGenerate={() => generateOne(ct.id)}
                               onEditField={(field, value) => updateEditedField(ct.id, field, value)}
+                              segments={segments}
+                              selectedSegmentId={selectedSegment[ct.id]}
+                              onSelectSegment={(segId) => selectSegmentFor(ct.id, segId)}
                             />
                           ))}
                         </div>
@@ -500,7 +572,7 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
                             Fit alto ({HIGH_FIT_MIN}–10)
                           </span>
                           {pendingHigh.length > 0 && (
-                            <button onClick={() => sendMany(pendingHigh.map((ct) => ct.id))} disabled={bulkBusy} className="btn-secondary text-xs">
+                            <button onClick={() => sendManyGated(pendingHigh.map((ct) => ct.id))} disabled={bulkBusy} className="btn-secondary text-xs">
                               <IconSend size={12} /> Generar y enviar {pendingHigh.length} a Lemlist
                             </button>
                           )}
@@ -523,6 +595,9 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
                               edited={edited[ct.id]}
                               onGenerate={() => generateOne(ct.id)}
                               onEditField={(field, value) => updateEditedField(ct.id, field, value)}
+                              segments={segments}
+                              selectedSegmentId={selectedSegment[ct.id]}
+                              onSelectSegment={(segId) => selectSegmentFor(ct.id, segId)}
                             />
                           ))}
                         </div>
@@ -586,6 +661,9 @@ function ContactRow({
   edited,
   onGenerate,
   onEditField,
+  segments,
+  selectedSegmentId,
+  onSelectSegment,
 }: {
   contact: ImportContact;
   companyName?: string;
@@ -603,8 +681,15 @@ function ContactRow({
   edited?: GeneratedMessages;
   onGenerate?: () => void;
   onEditField?: (field: keyof GeneratedMessages, value: string) => void;
+  segments?: SegmentOption[];
+  selectedSegmentId?: string;
+  onSelectSegment?: (segmentId: string) => void;
 }) {
   const name = `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim() || contact.email || "Sin nombre";
+  // Si el cliente tiene segmentos configurados, hay que elegir uno antes de
+  // generar el mensaje. Si no tiene ninguno, no se pide nada (default de siempre).
+  const needsSegmentChoice = Boolean(onGenerate) && (segments?.length ?? 0) > 0;
+  const segmentMissing = needsSegmentChoice && !selectedSegmentId;
   return (
     <div className="flex flex-col gap-2 px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
@@ -627,8 +712,27 @@ function ContactRow({
         </div>
         {!sent && !discarded && (
           <div className="flex items-center gap-1.5 shrink-0">
+            {needsSegmentChoice && (
+              <select
+                value={selectedSegmentId ?? ""}
+                onChange={(e) => onSelectSegment?.(e.target.value)}
+                disabled={sending || discarding}
+                className="rounded-md border border-[#D8D5EA] px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-brand"
+                title="Segmento al que pertenece este prospecto"
+              >
+                <option value="" disabled>Elegí un segmento…</option>
+                {segments!.map((seg) => (
+                  <option key={seg.id} value={seg.id}>{seg.name}</option>
+                ))}
+              </select>
+            )}
             {onGenerate && (
-              <button onClick={onGenerate} disabled={generating || sending || discarding} className="btn-secondary text-xs">
+              <button
+                onClick={onGenerate}
+                disabled={generating || sending || discarding || segmentMissing}
+                className="btn-secondary text-xs"
+                title={segmentMissing ? "Elegí un segmento primero" : undefined}
+              >
                 {generating ? <IconLoader2 size={12} className="animate-spin" /> : <IconSparkles size={12} />}
                 {preview ? "Regenerar mensaje" : "Generar mensaje"}
               </button>
