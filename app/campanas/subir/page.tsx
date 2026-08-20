@@ -96,6 +96,7 @@ const COL_MAP: Record<string, keyof ParsedContact> = {
   "linkedin":        "linkedinUrl",
   "linkedinurl":     "linkedinUrl",
   "url del linkedin":"linkedinUrl",
+  "url linkedin bullseye": "linkedinUrl",
   "industria bullseye": "industry",
   "indsutria bullseye": "industry",
   "industria":       "industry",
