@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { ClientListItem } from "@/lib/peithoBackend";
 
 export default function AssignRoleForm({ clients }: { clients: ClientListItem[] }) {
@@ -78,6 +79,15 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
         {saving ? "Asignando…" : "Asignar acceso"}
       </button>
       {error && <p className="text-xs text-red-600 w-full">{error}</p>}
+      {role === "client" && (
+        <p className="text-xs text-gray-400 w-full">
+          ¿El cliente no aparece en la lista?{" "}
+          <Link href="/base-de-conocimiento" className="underline hover:text-gray-600">
+            Créalo en Base de conocimiento
+          </Link>{" "}
+          y vuelve a esta pantalla.
+        </p>
+      )}
     </form>
   );
 }
