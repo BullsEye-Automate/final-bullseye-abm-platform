@@ -5,13 +5,10 @@ function backendUrl(): string {
   return process.env.PEITHO_BACKEND_URL ?? "http://localhost:3001";
 }
 
-// Proxy server-side hacia DELETE /clients/:id/documents/:documentId.
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string; documentId: string } }
-) {
+// Proxy server-side hacia DELETE /admin/user-roles/:userId.
+export async function DELETE(_req: Request, { params }: { params: { userId: string } }) {
   const token = await getAccessToken();
-  const res = await fetch(`${backendUrl()}/clients/${params.id}/documents/${params.documentId}`, {
+  const res = await fetch(`${backendUrl()}/admin/user-roles/${params.userId}`, {
     method: "DELETE",
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });

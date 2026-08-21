@@ -2,8 +2,14 @@ import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { pool } from '../db';
 import { uploadKnowledgeBaseDocument, deleteKnowledgeBaseDocument } from '../knowledgeBase';
+import { requireAuth, requireAdmin } from '../authMiddleware';
 
 export const clientsRouter = Router();
+
+// Todas las rutas de este archivo las llama únicamente el frontend web
+// (nunca la extensión de Chrome ni los webhooks de Google) — se exige sesión
+// de Supabase Auth en todas, con permisos más finos por ruta abajo.
+clientsRouter.use(requireAuth);
 
 // En memoria (no a disco) — el archivo se sube directo a Supabase Storage,
 // nunca se guarda en el filesystem del backend. 50MB porque es el límite
@@ -31,7 +37,9 @@ function uploadSingleFile(req: Request, res: Response, next: NextFunction) {
   });
 }
 
-clientsRouter.get('/clients', async (_req, res) => {
+// Listado completo de clientes — solo el admin necesita esto (para el
+// selector de cliente y la gestión de la base de conocimiento de cualquiera).
+clientsRouter.get('/clients', requireAdmin, async (_req, res) => {
   try {
     const { rows } = await pool.query(
       `select c.id, c.name,
@@ -52,7 +60,7 @@ clientsRouter.get('/clients', async (_req, res) => {
 // metas (ver metasSheet.ts) — este endpoint es para el caso donde alguien
 // quiere subir documentación de un cliente antes de que exista cualquier
 // reunión suya en Peitho.
-clientsRouter.post('/clients', async (req, res) => {
+clientsRouter.post('/clients', requireAdmin, async (req, res) => {
   const { name } = req.body ?? {};
   if (typeof name !== 'string' || !name.trim()) {
     res.status(400).json({ error: 'Falta el nombre del cliente' });
@@ -73,8 +81,16 @@ clientsRouter.post('/clients', async (req, res) => {
   }
 });
 
+// Un usuario "client" puede VER (no subir/borrar) la base de conocimiento de
+// su propio cliente — aclaración explícita del usuario en la Fase E.
 clientsRouter.get('/clients/:id/documents', async (req, res) => {
   const { id } = req.params;
+
+  if (req.peithoUser!.role === 'client' && req.peithoUser!.clientId !== id) {
+    res.status(404).json({ error: 'Cliente no encontrado' });
+    return;
+  }
+
   try {
     const { rows } = await pool.query(
       `select id, file_name, file_type, uploaded_at, (content is not null) as content_extracted
@@ -90,7 +106,7 @@ clientsRouter.get('/clients/:id/documents', async (req, res) => {
   }
 });
 
-clientsRouter.post('/clients/:id/documents', uploadSingleFile, async (req, res) => {
+clientsRouter.post('/clients/:id/documents', requireAdmin, uploadSingleFile, async (req, res) => {
   const { id } = req.params;
 
   if (!req.file) {
@@ -119,7 +135,7 @@ clientsRouter.post('/clients/:id/documents', uploadSingleFile, async (req, res) 
   }
 });
 
-clientsRouter.delete('/clients/:id/documents/:documentId', async (req, res) => {
+clientsRouter.delete('/clients/:id/documents/:documentId', requireAdmin, async (req, res) => {
   const { id, documentId } = req.params;
   try {
     const deleted = await deleteKnowledgeBaseDocument(id, documentId);

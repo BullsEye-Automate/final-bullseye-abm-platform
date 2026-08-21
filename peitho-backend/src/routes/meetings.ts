@@ -6,6 +6,7 @@ import { pool } from '../db';
 import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 import { generatePreMeetingBrief } from '../preMeetingBrief';
 import { resolveMeetingClientAndContact } from '../metasSheet';
+import { requireAuth, requireAdmin } from '../authMiddleware';
 
 export const meetingsRouter = Router();
 
@@ -33,7 +34,7 @@ const upload = multer({
 // Lo consume el frontend (peitho-frontend): listado de reuniones futuras
 // (Módulo 1) o pasadas (Módulo 2). No incluye audio_path/analysis completos
 // a propósito — son pesados y no hacen falta para una vista de lista.
-meetingsRouter.get('/meetings', async (req, res) => {
+meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
   const scope = req.query.scope;
   if (scope !== 'upcoming' && scope !== 'past') {
     res.status(400).json({ error: 'El parámetro scope debe ser "upcoming" o "past"' });
@@ -54,13 +55,13 @@ meetingsRouter.get('/meetings', async (req, res) => {
     // empresa_contraparte en null (dominio desconocido, se muestran igual).
     const { rows } = await pool.query(
       scope === 'upcoming'
-        ? `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status
+        ? `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, client_id
            from meetings
            where start_time >= now()
              and lower(empresa_contraparte) is distinct from $1
              and recurring_event_id is null
            order by start_time asc`
-        : `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status
+        : `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, client_id
            from meetings
            where start_time < now() and start_time >= now() - interval '90 days'
              and lower(empresa_contraparte) is distinct from $1
@@ -69,7 +70,42 @@ meetingsRouter.get('/meetings', async (req, res) => {
       [INTERNAL_DOMAIN]
     );
 
-    res.json(rows);
+    // Igual que en el detalle: se resuelve el cliente al vuelo si todavía no
+    // se hizo (gratis, no llama a Claude) — necesario para poder filtrar por
+    // cliente acá abajo, tanto para el rol "client" como para el filtro del admin.
+    for (const row of rows) {
+      if (!row.client_id) {
+        await resolveMeetingClientAndContact(row.id);
+      }
+    }
+
+    // Se vuelve a consultar client_id/nombre del cliente después de resolver
+    // arriba (la resolución puede haber cambiado filas que antes venían null).
+    const ids = rows.map((row) => row.id);
+    let result = rows;
+    if (ids.length > 0) {
+      const { rows: withClient } = await pool.query(
+        `select m.id, m.client_id, c.name as cliente_bullseye from meetings m
+         left join clients c on c.id = m.client_id
+         where m.id = any($1)`,
+        [ids]
+      );
+      const byId = new Map(withClient.map((r) => [r.id, r]));
+      result = rows.map((row) => ({
+        ...row,
+        client_id: byId.get(row.id)?.client_id ?? null,
+        cliente_bullseye: byId.get(row.id)?.cliente_bullseye ?? null,
+      }));
+    }
+
+    const peithoUser = req.peithoUser!;
+    if (peithoUser.role === 'client') {
+      result = result.filter((row) => row.client_id === peithoUser.clientId);
+    } else if (typeof req.query.client_id === 'string' && req.query.client_id) {
+      result = result.filter((row) => row.client_id === req.query.client_id);
+    }
+
+    res.json(result);
   } catch (error) {
     console.error('Error en /meetings', error);
     res.status(500).json({ error: 'Error consultando las reuniones' });
@@ -116,7 +152,7 @@ meetingsRouter.get('/meetings/lookup', async (req, res) => {
 // A diferencia de GET /meetings (lista), sí incluye `analysis` completo.
 // Registrado después de /meetings/lookup para no interceptarlo (si no, ":id"
 // capturaría también la palabra literal "lookup").
-meetingsRouter.get('/meetings/:id', async (req, res) => {
+meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
 
   try {
@@ -127,7 +163,7 @@ meetingsRouter.get('/meetings/:id', async (req, res) => {
 
     const { rows } = await pool.query(
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time, m.status,
-              m.analysis, m.pre_brief, m.pre_brief_status,
+              m.analysis, m.pre_brief, m.pre_brief_status, m.client_id,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
               c.name as cliente_bullseye
        from meetings m
@@ -138,6 +174,14 @@ meetingsRouter.get('/meetings/:id', async (req, res) => {
 
     const meeting = rows[0];
     if (!meeting) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    // Un usuario "client" solo puede ver el detalle de reuniones de su propio
+    // client_id — se responde 404 (no 403) para no revelar que la reunión
+    // existe pero es de otro cliente.
+    if (req.peithoUser!.role === 'client' && meeting.client_id !== req.peithoUser!.clientId) {
       res.status(404).json({ error: 'Reunión no encontrada' });
       return;
     }
@@ -188,7 +232,7 @@ meetingsRouter.post('/meetings/:id/audio', upload.single('audio'), async (req, r
 // research no encuentra el perfil por búsqueda (ej. nombres homónimos, como
 // pasó con "Felipe Almazan"). Se guarda para que el próximo research la use
 // directo con la tool web_fetch en vez de adivinar por búsqueda.
-meetingsRouter.put('/meetings/:id/contacto-linkedin', async (req, res) => {
+meetingsRouter.put('/meetings/:id/contacto-linkedin', requireAuth, requireAdmin, async (req, res) => {
   const { id } = req.params;
   const { linkedin_url } = req.body ?? {};
 
@@ -226,7 +270,7 @@ meetingsRouter.put('/meetings/:id/contacto-linkedin', async (req, res) => {
 // un botón ("Iniciar research") desde el frontend, porque no todas las
 // reuniones agendadas son con un prospecto real y correrlo en todas gastaría
 // créditos de la API sin necesidad (requisito explícito del usuario).
-meetingsRouter.post('/meetings/:id/research', async (req, res) => {
+meetingsRouter.post('/meetings/:id/research', requireAuth, requireAdmin, async (req, res) => {
   const { id } = req.params;
 
   try {

@@ -1,3 +1,5 @@
+import { getAccessToken } from "./peithoAuth";
+
 export interface MeetingListItem {
   id: string;
   ejecutivo: string | null;
@@ -5,6 +7,9 @@ export interface MeetingListItem {
   empresa_contraparte: string | null;
   start_time: string | null;
   status: "scheduled" | "captured" | "analyzed";
+  // Fase E — para el filtro de cliente en la vista admin.
+  client_id: string | null;
+  cliente_bullseye: string | null;
 }
 
 // Forma del JSON que genera el prompt de análisis post-reunión (ver
@@ -82,7 +87,6 @@ export interface MeetingDetail extends MeetingListItem {
   contacto_cargo: string | null;
   contacto_industria: string | null;
   contacto_linkedin_url: string | null;
-  cliente_bullseye: string | null;
 }
 
 export interface ClientListItem {
@@ -99,22 +103,60 @@ export interface KnowledgeBaseDocument {
   content_extracted: boolean;
 }
 
+// Fase E — sesión de Peitho del usuario logueado (distinto del rol de
+// Supabase Auth en sí, que solo dice "hay sesión o no"). clientId/clientName
+// vienen null para un admin.
+export interface PeithoSession {
+  email: string;
+  role: "admin" | "client";
+  clientId: string | null;
+  clientName: string | null;
+}
+
+export interface UserRoleItem {
+  user_id: string;
+  email: string;
+  role: "admin" | "client";
+  client_id: string | null;
+  client_name: string | null;
+}
+
 function backendUrl(): string {
   return process.env.PEITHO_BACKEND_URL ?? "http://localhost:3001";
 }
 
 // Server-side fetch (Server Components) — nunca corre en el navegador, así que
-// no hace falta configurar CORS en peitho-backend para esto.
-export async function fetchMeetings(scope: "upcoming" | "past"): Promise<MeetingListItem[]> {
-  const res = await fetch(`${backendUrl()}/meetings?scope=${scope}`, { cache: "no-store" });
+// no hace falta configurar CORS en peitho-backend para esto. Todas llevan el
+// token de la sesión de Supabase para que el backend aplique el rol/scoping
+// por cliente (Fase E) — no basta con el gating del frontend.
+async function backendFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const token = await getAccessToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(`${backendUrl()}${path}`, { ...init, headers, cache: "no-store" });
+}
+
+export async function fetchMe(): Promise<PeithoSession | null> {
+  const res = await backendFetch("/me");
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function fetchMeetings(
+  scope: "upcoming" | "past",
+  clientId?: string
+): Promise<MeetingListItem[]> {
+  const params = new URLSearchParams({ scope });
+  if (clientId) params.set("client_id", clientId);
+  const res = await backendFetch(`/meetings?${params.toString()}`);
   if (!res.ok) {
-    throw new Error(`peitho-backend respondió ${res.status} en /meetings?scope=${scope}`);
+    throw new Error(`peitho-backend respondió ${res.status} en /meetings?${params.toString()}`);
   }
   return res.json();
 }
 
 export async function fetchMeeting(id: string): Promise<MeetingDetail | null> {
-  const res = await fetch(`${backendUrl()}/meetings/${id}`, { cache: "no-store" });
+  const res = await backendFetch(`/meetings/${id}`);
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(`peitho-backend respondió ${res.status} en /meetings/${id}`);
@@ -123,7 +165,7 @@ export async function fetchMeeting(id: string): Promise<MeetingDetail | null> {
 }
 
 export async function fetchClients(): Promise<ClientListItem[]> {
-  const res = await fetch(`${backendUrl()}/clients`, { cache: "no-store" });
+  const res = await backendFetch("/clients");
   if (!res.ok) {
     throw new Error(`peitho-backend respondió ${res.status} en /clients`);
   }
@@ -131,9 +173,17 @@ export async function fetchClients(): Promise<ClientListItem[]> {
 }
 
 export async function fetchClientDocuments(clientId: string): Promise<KnowledgeBaseDocument[]> {
-  const res = await fetch(`${backendUrl()}/clients/${clientId}/documents`, { cache: "no-store" });
+  const res = await backendFetch(`/clients/${clientId}/documents`);
   if (!res.ok) {
     throw new Error(`peitho-backend respondió ${res.status} en /clients/${clientId}/documents`);
+  }
+  return res.json();
+}
+
+export async function fetchUserRoles(): Promise<UserRoleItem[]> {
+  const res = await backendFetch("/admin/user-roles");
+  if (!res.ok) {
+    throw new Error(`peitho-backend respondió ${res.status} en /admin/user-roles`);
   }
   return res.json();
 }

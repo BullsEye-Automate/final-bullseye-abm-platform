@@ -23,9 +23,13 @@ function formatDate(value: string | null): string {
 export default function MeetingsTable({
   meetings,
   detailBasePath,
+  showClientColumn = false,
 }: {
   meetings: MeetingListItem[];
   detailBasePath?: string;
+  // Fase E — solo tiene sentido para admin (viendo varios clientes a la vez);
+  // un usuario "client" ya sabe que todo lo que ve es suyo.
+  showClientColumn?: boolean;
 }) {
   const router = useRouter();
 
@@ -42,6 +46,7 @@ export default function MeetingsTable({
             <th className="px-4 py-3 font-medium">Ejecutivo</th>
             <th className="px-4 py-3 font-medium">Contraparte</th>
             <th className="px-4 py-3 font-medium">Empresa</th>
+            {showClientColumn && <th className="px-4 py-3 font-medium">Cliente</th>}
             <th className="px-4 py-3 font-medium">Estado</th>
           </tr>
         </thead>
@@ -58,6 +63,7 @@ export default function MeetingsTable({
               <td className="px-4 py-3">{meeting.ejecutivo ?? "—"}</td>
               <td className="px-4 py-3">{meeting.contraparte ?? "—"}</td>
               <td className="px-4 py-3">{meeting.empresa_contraparte ?? "—"}</td>
+              {showClientColumn && <td className="px-4 py-3">{meeting.cliente_bullseye ?? "—"}</td>}
               <td className="px-4 py-3">{STATUS_LABEL[meeting.status]}</td>
             </tr>
           ))}

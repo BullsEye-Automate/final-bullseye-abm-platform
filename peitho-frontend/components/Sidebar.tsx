@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
@@ -10,8 +11,26 @@ const NAV_ITEMS = [
   { href: "/base-de-conocimiento", label: "Base de conocimiento" },
 ];
 
+// Solo visible para admin — se agrega aparte de NAV_ITEMS (no todos ven este
+// ítem, a diferencia de los de arriba que ven ambos roles).
+const ADMIN_NAV_ITEM = { href: "/admin/usuarios", label: "Administración" };
+
 export default function Sidebar() {
   const pathname = usePathname();
+  const [role, setRole] = useState<"admin" | "client" | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data) setRole(data.role);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   async function handleLogout() {
     await supabaseBrowser().auth.signOut();
@@ -31,7 +50,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 flex flex-col gap-1">
-        {NAV_ITEMS.map((item) => {
+        {[...NAV_ITEMS, ...(role === "admin" ? [ADMIN_NAV_ITEM] : [])].map((item) => {
           const active = pathname?.startsWith(item.href);
           return (
             <Link

@@ -5,31 +5,11 @@
 // (Fase D, no implementada todavía acá).
 
 import { randomUUID } from 'crypto';
-import { createClient } from '@supabase/supabase-js';
-import WebSocket from 'ws';
 import { OfficeParser } from 'officeparser';
 import { pool } from './db';
+import { getSupabaseAdminClient } from './supabaseAdmin';
 
 const STORAGE_BUCKET = 'knowledge-base';
-
-// Validado dentro de la función (no a nivel de módulo) para no romper el
-// resto del backend si todavía no se configuró — mismo patrón que
-// createOAuthClient() en google.ts.
-function getSupabaseAdminClient() {
-  const url = process.env.SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) {
-    throw new Error(
-      'Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en las variables de entorno (ver .env.example)'
-    );
-  }
-  // El cliente de Supabase inicializa su módulo de Realtime al crearse (aunque
-  // acá solo usemos Storage), y desde una versión reciente exige WebSocket
-  // nativo — solo disponible desde Node 22+. Se le pasa la implementación de
-  // la librería `ws` explícitamente para que funcione igual en Node 20 (error
-  // real visto: "Node.js detected but native WebSocket not found").
-  return createClient(url, serviceRoleKey, { realtime: { transport: WebSocket as any } });
-}
 
 const TEXT_EXTENSIONS = new Set(['txt', 'md']);
 

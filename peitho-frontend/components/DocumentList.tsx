@@ -11,9 +11,11 @@ function formatDate(value: string): string {
 export default function DocumentList({
   clientId,
   documents,
+  readOnly = false,
 }: {
   clientId: string;
   documents: KnowledgeBaseDocument[];
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -45,13 +47,15 @@ export default function DocumentList({
               )}
             </p>
           </div>
-          <button
-            onClick={() => handleDelete(doc.id)}
-            disabled={deletingId === doc.id}
-            className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50 shrink-0"
-          >
-            {deletingId === doc.id ? "Borrando…" : "Borrar"}
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => handleDelete(doc.id)}
+              disabled={deletingId === doc.id}
+              className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50 shrink-0"
+            >
+              {deletingId === doc.id ? "Borrando…" : "Borrar"}
+            </button>
+          )}
         </li>
       ))}
     </ul>

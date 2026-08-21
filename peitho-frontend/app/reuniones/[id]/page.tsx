@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { fetchMeeting } from "@/lib/peithoBackend";
+import { fetchMeeting, fetchMe } from "@/lib/peithoBackend";
 import ResearchButton from "@/components/ResearchButton";
 import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 
@@ -33,8 +33,13 @@ const METRIC_LABEL: Record<string, string> = {
 };
 
 export default async function MeetingDetailPage({ params }: { params: { id: string } }) {
-  const meeting = await fetchMeeting(params.id);
-  if (!meeting) notFound();
+  const [meeting, me] = await Promise.all([fetchMeeting(params.id), fetchMe()]);
+  if (!meeting || !me) notFound();
+  // Iniciar research / pegar la URL de LinkedIn son acciones internas de
+  // BullsEye (gastan créditos de API, corrigen datos) — el backend ya las
+  // restringe a admin (Fase E); acá solo se ocultan para no mostrar botones
+  // que a un usuario "client" le van a fallar con 403.
+  const isAdmin = me?.role === "admin";
 
   const analysis = meeting.analysis;
   const preBrief = meeting.pre_brief;
@@ -54,7 +59,7 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             {STATUS_LABEL[meeting.status] ?? meeting.status}
           </p>
         </div>
-        <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />
+        {isAdmin && <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />}
       </div>
 
       {/* Siempre visible (no solo cuando hay match del excel) — el formulario de
@@ -82,7 +87,7 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
           <p className="text-xs text-gray-400 pt-1">
             Datos tomados del excel de metas — si algo falta, es porque esta reunión no hizo match ahí todavía.
           </p>
-        <LinkedinUrlForm meetingId={meeting.id} initialUrl={meeting.contacto_linkedin_url} />
+        {isAdmin && <LinkedinUrlForm meetingId={meeting.id} initialUrl={meeting.contacto_linkedin_url} />}
       </Section>
 
       {preBrief && (

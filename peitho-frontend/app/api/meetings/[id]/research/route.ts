@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAccessToken } from "@/lib/peithoAuth";
 
 // Proxy server-side hacia POST /meetings/:id/research de peitho-backend —
 // necesario porque el botón "Iniciar research" corre en el navegador
@@ -9,7 +10,11 @@ function backendUrl(): string {
 }
 
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
-  const res = await fetch(`${backendUrl()}/meetings/${params.id}/research`, { method: "POST" });
+  const token = await getAccessToken();
+  const res = await fetch(`${backendUrl()}/meetings/${params.id}/research`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
   const body = await res.json();
   return NextResponse.json(body, { status: res.status });
 }

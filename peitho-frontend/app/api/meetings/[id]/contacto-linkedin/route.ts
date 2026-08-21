@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAccessToken } from "@/lib/peithoAuth";
 
 // Proxy server-side hacia PUT /meetings/:id/contacto-linkedin de peitho-backend
 // — mismo motivo que el proxy de /research: el formulario corre en el
@@ -9,10 +10,14 @@ function backendUrl(): string {
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  const token = await getAccessToken();
   const body = await req.text();
   const res = await fetch(`${backendUrl()}/meetings/${params.id}/contacto-linkedin`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body,
   });
   const data = await res.json();

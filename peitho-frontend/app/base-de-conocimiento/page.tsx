@@ -1,8 +1,25 @@
 import Link from "next/link";
-import { fetchClients } from "@/lib/peithoBackend";
+import { redirect } from "next/navigation";
+import { fetchClients, fetchMe } from "@/lib/peithoBackend";
 import NewClientForm from "@/components/NewClientForm";
 
+// Un usuario "client" solo tiene un cliente propio — se lo manda directo a
+// su base de conocimiento en vez de mostrarle este listado (que además es
+// admin-only en el backend). Fase E.
 export default async function BaseDeConocimientoPage() {
+  const me = await fetchMe();
+  if (!me) {
+    return <p className="text-sm text-gray-500">Tu cuenta todavía no tiene acceso a Peitho — contacta al administrador.</p>;
+  }
+  if (me.role === "client") {
+    if (me.clientId) redirect(`/base-de-conocimiento/${me.clientId}`);
+    return (
+      <p className="text-sm text-gray-500">
+        Tu cuenta todavía no tiene un cliente asociado — contacta al administrador.
+      </p>
+    );
+  }
+
   const clients = await fetchClients();
 
   return (
