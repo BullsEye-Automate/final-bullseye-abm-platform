@@ -26,7 +26,11 @@ async function throttleAllo() {
   if (nextSlot > now) await new Promise((r) => setTimeout(r, nextSlot - now));
 }
 
-async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 3): Promise<Response> {
+// Exportado únicamente para el endpoint de diagnóstico temporal
+// /api/allo/debug-analytics — permite inspeccionar la respuesta cruda de
+// Allo (status + body) para un path/body arbitrario, sin pasar por el
+// parseo/try-catch de las funciones de arriba.
+export async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 3): Promise<Response> {
   await throttleAllo();
   const res = await fetch(`${ALLO_API}${path}`, {
     ...init,
