@@ -360,3 +360,77 @@ export async function provisionClientHubSpot(clientName: string): Promise<void> 
   const listDefs = buildClientLists(clientName, folderId);
   await Promise.all(listDefs.map(createHSList)).catch(() => {/* no bloquea */});
 }
+
+export type HSContactPhoneMatch = {
+  contact_id: string;
+  name: string | null;
+  job_title: string | null;
+  company_name: string | null;
+};
+
+// Los teléfonos en HubSpot no siempre están guardados en el mismo formato
+// que Allo (E.164). Genera variantes razonables para el match: con "+",
+// sin "+", y sin código de país (para el caso común de que se haya guardado
+// solo el número local).
+function phoneCandidates(e164: string): string[] {
+  const noPlus = e164.startsWith("+") ? e164.slice(1) : e164;
+  const candidates = new Set<string>([e164, noPlus]);
+  for (const cc of ["56", "52", "57", "1", "54", "51", "593"]) {
+    if (noPlus.startsWith(cc) && noPlus.length - cc.length >= 7) {
+      candidates.add(noPlus.slice(cc.length));
+    }
+  }
+  return Array.from(candidates);
+}
+
+// Busca en HubSpot los contactos correspondientes a una lista de teléfonos
+// (formato E.164, como los entrega Allo) para poder mostrar nombre, cargo y
+// empresa en la reportería de llamadas. Best-effort: si el teléfono está
+// guardado en HubSpot con un formato distinto a los probados acá, no matchea.
+export async function searchHSContactsByPhones(
+  phones: string[]
+): Promise<Map<string, HSContactPhoneMatch>> {
+  const result = new Map<string, HSContactPhoneMatch>();
+  const uniquePhones = Array.from(new Set(phones.filter(Boolean)));
+  if (uniquePhones.length === 0) return result;
+
+  const candidateToOriginal = new Map<string, string>();
+  for (const phone of uniquePhones) {
+    for (const c of phoneCandidates(phone)) candidateToOriginal.set(c, phone);
+  }
+  const allCandidates = Array.from(candidateToOriginal.keys());
+
+  const BATCH = 100; // límite del operador IN de HubSpot
+  for (let i = 0; i < allCandidates.length; i += BATCH) {
+    const chunk = allCandidates.slice(i, i + BATCH);
+    for (const propertyName of ["phone", "mobilephone"]) {
+      const res = await fetch(`${HS}/crm/v3/objects/contacts/search`, {
+        method: "POST",
+        headers: hsHeaders(),
+        body: JSON.stringify({
+          filterGroups: [{ filters: [{ propertyName, operator: "IN", values: chunk }] }],
+          properties: ["firstname", "lastname", "jobtitle", "company", "phone", "mobilephone"],
+          limit: 100,
+        }),
+      });
+      if (!res.ok) continue;
+      const d = await res.json().catch(() => null);
+      for (const rec of d?.results ?? []) {
+        const props = rec.properties ?? {};
+        const matchedCandidate = [props.phone, props.mobilephone].find(
+          (v) => v && candidateToOriginal.has(v)
+        );
+        const original = matchedCandidate ? candidateToOriginal.get(matchedCandidate) : undefined;
+        if (!original || result.has(original)) continue;
+        const name = [props.firstname, props.lastname].filter(Boolean).join(" ").trim() || null;
+        result.set(original, {
+          contact_id: rec.id,
+          name,
+          job_title: props.jobtitle || null,
+          company_name: props.company || null,
+        });
+      }
+    }
+  }
+  return result;
+}
