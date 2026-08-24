@@ -556,7 +556,7 @@ export default function ConfigClientePage() {
                 />
               </div>
               {alloSearchOpen && alloSearch.trim() && (
-                <div className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
+                <div className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-[#E5E2F0] bg-white shadow-lg">
                   {alloSearchResults.length === 0 ? (
                     <p className="text-xs text-ink-muted px-3 py-2">Sin resultados.</p>
                   ) : (
@@ -566,7 +566,7 @@ export default function ConfigClientePage() {
                         type="button"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => assignAlloNumber(n)}
-                        className="w-full text-left px-3 py-2 hover:bg-surface-2 flex items-center justify-between gap-2"
+                        className="w-full text-left px-3 py-2 hover:bg-brand-tint flex items-center justify-between gap-2"
                       >
                         <span className="text-sm">{n.name || "(sin nombre)"}</span>
                         <span className="text-xs text-ink-subtle font-mono">{n.number}</span>
@@ -592,7 +592,7 @@ export default function ConfigClientePage() {
                 {clientAllo.map((n) => (
                   <span
                     key={n.id}
-                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs bg-surface-2 border border-border"
+                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs bg-brand-tint border border-[#E5E2F0]"
                   >
                     <span className="font-medium">{n.allo_number_name || "(sin nombre)"}</span>
                     <span className="text-ink-subtle font-mono">{n.allo_number}</span>
