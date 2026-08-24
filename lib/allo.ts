@@ -12,16 +12,58 @@ function alloHeaders() {
   };
 }
 
-async function alloFetch(path: string, init?: RequestInit) {
+// Allo permite 5 requests/segundo. El dashboard puede disparar muchas
+// llamadas seguidas (una por número asignado, más paginación) — sobre todo
+// al agregar "todos los clientes" — así que se serializan con un pequeño
+// espaciado y se reintenta automáticamente ante un 429.
+const MIN_INTERVAL_MS = 220; // ~4.5 req/s, con margen bajo el límite de 5/s
+let lastRequestAt = 0;
+
+async function throttleAllo() {
+  const now = Date.now();
+  const nextSlot = Math.max(now, lastRequestAt + MIN_INTERVAL_MS);
+  lastRequestAt = nextSlot;
+  if (nextSlot > now) await new Promise((r) => setTimeout(r, nextSlot - now));
+}
+
+async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 3): Promise<Response> {
+  await throttleAllo();
   const res = await fetch(`${ALLO_API}${path}`, {
     ...init,
     headers: { ...alloHeaders(), ...(init?.headers ?? {}) },
     cache: "no-store",
   });
+  if (res.status === 429 && retriesLeft > 0) {
+    const text = await res.text().catch(() => "");
+    let retryAfterSeconds = 1;
+    try {
+      retryAfterSeconds = JSON.parse(text)?.error?.retry_after_seconds ?? 1;
+    } catch {
+      // usa el default si el body no es el JSON esperado
+    }
+    await new Promise((r) => setTimeout(r, (retryAfterSeconds + 0.3) * 1000));
+    return alloFetchRaw(path, init, retriesLeft - 1);
+  }
+  return res;
+}
+
+async function alloFetch(path: string, init?: RequestInit) {
+  const res = await alloFetchRaw(path, init);
   if (!res.ok) {
     throw new Error(`Allo API error (${res.status}): ${await res.text().catch(() => "")}`);
   }
   return res.json();
+}
+
+// Descarga el audio de una grabación de Allo. El navegador no puede mandar
+// la API key, así que esto se usa desde una ruta propia que hace de proxy
+// (ver /api/allo/calls/[id]/recording) en vez de apuntar <audio> directo a
+// la URL de Allo.
+export async function fetchAlloRecording(url: string, rangeHeader?: string | null): Promise<Response> {
+  await throttleAllo();
+  const headers: Record<string, string> = { Authorization: process.env.ALLO_API_KEY ?? "" };
+  if (rangeHeader) headers.Range = rangeHeader;
+  return fetch(url, { headers, cache: "no-store" });
 }
 
 export type AlloUserRef = { id: string; name: string; email: string };

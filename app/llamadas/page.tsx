@@ -457,7 +457,7 @@ function CallDetailModal({
           </div>
 
           {detail.recording_url && (
-            <audio controls className="w-full" src={detail.recording_url}>
+            <audio controls preload="none" className="w-full" src={`/api/allo/calls/${detail.id}/recording`}>
               Tu navegador no soporta audio.
             </audio>
           )}
