@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls, listAlloTags, type AlloUserRef } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, listAlloTags, getAlloOutboundAnalytics, type AlloUserRef } from "@/lib/allo";
 import { searchHSContactsByPhones } from "@/lib/hubspot";
 
 export const dynamic = "force-dynamic";
@@ -36,27 +36,42 @@ export async function GET(req: NextRequest, { params }: Params) {
       sdrs: [],
       tags: [],
       numbers: [],
+      connected_by_number: null,
       stats: { llamadas_realizadas: 0, conectados: 0, reuniones_agendadas: 0, contactos: 0, empresas: 0 },
     });
   }
 
   try {
-    const [callsByNumber, allNumbers, tags] = await Promise.all([
+    const dateFrom = toDateParam(range.start);
+    const dateTo = toDateParam(range.end);
+
+    const [callsByNumber, allNumbers, tags, analyticsByNumber] = await Promise.all([
       Promise.all(
         assignedNumbers.map((n) =>
-          searchAlloCalls({
-            allo_number: n,
-            date_from: toDateParam(range.start),
-            date_to: toDateParam(range.end),
-            direction: "OUTBOUND",
-          })
+          searchAlloCalls({ allo_number: n, date_from: dateFrom, date_to: dateTo, direction: "OUTBOUND" })
         )
       ),
       listAlloNumbers(),
       listAlloTags(),
+      Promise.all(assignedNumbers.map((n) => getAlloOutboundAnalytics({ allo_number: n, date_from: dateFrom, date_to: dateTo }))),
     ]);
 
     const calls = callsByNumber.flat();
+
+    // "Conectados" no se puede sacar del campo `result` de la llamada: Allo
+    // marca como ANSWERED incluso llamadas que cayeron a buzón de voz. Este
+    // número viene del clasificador propio de Allo (el mismo que alimenta su
+    // dashboard), agregado por número y por SDR para poder respetar los
+    // filtros de número/SDR sin volver a pedirlo. Si Allo no pudo responder
+    // para algún número, se marca todo como no disponible en vez de mostrar
+    // un total parcial que se vea como definitivo.
+    const connectedByNumber = analyticsByNumber.every((a) => a !== null)
+      ? assignedNumbers.map((allo_number, i) => ({
+          allo_number,
+          connected: analyticsByNumber[i]!.connected,
+          by_user: analyticsByNumber[i]!.by_user,
+        }))
+      : null;
 
     // SDRs que gestionan la cuenta = usuarios asignados a los números de este cliente en Allo.
     const sdrMap = new Map<string, AlloUserRef>();
@@ -81,7 +96,13 @@ export async function GET(req: NextRequest, { params }: Params) {
       };
     });
 
-    const connected = enrichedCalls.filter((c) => c.result === "ANSWERED" || c.result === "TRANSFERRED");
+    // Fallback si el endpoint de analíticas de Allo no respondió: estimación
+    // a partir de `result`, sabiendo que sobreestima (cuenta buzones de voz
+    // marcados como ANSWERED). El frontend avisa cuando está en este modo.
+    const connectedFallback = enrichedCalls.filter((c) => c.result === "ANSWERED" || c.result === "TRANSFERRED").length;
+    const connectedTotal = connectedByNumber
+      ? connectedByNumber.reduce((sum, n) => sum + n.connected, 0)
+      : connectedFallback;
     const meetings = enrichedCalls.filter((c) => c.tags.includes("meeting_booked"));
     const uniqueContacts = new Set(enrichedCalls.map((c) => c.contact_number));
     const uniqueCompanies = new Set(
@@ -98,9 +119,10 @@ export async function GET(req: NextRequest, { params }: Params) {
       sdrs,
       tags,
       numbers: assigned ?? [],
+      connected_by_number: connectedByNumber,
       stats: {
         llamadas_realizadas: enrichedCalls.length,
-        conectados: connected.length,
+        conectados: connectedTotal,
         reuniones_agendadas: meetings.length,
         contactos: uniqueContacts.size,
         empresas: uniqueCompanies.size,

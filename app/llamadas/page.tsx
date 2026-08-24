@@ -56,12 +56,15 @@ type Stats = {
 
 type AlloNumberRef = { allo_number: string; allo_number_name: string | null };
 
+type ConnectedByNumber = { allo_number: string; connected: number; by_user: { user_id: string; connected: number }[] };
+
 type ApiResponse = {
   no_numbers: boolean;
   calls: CallItem[];
   sdrs: SdrRef[];
   tags: AlloTag[];
   numbers: AlloNumberRef[];
+  connected_by_number: ConnectedByNumber[] | null;
   stats: Stats;
   error?: string;
 };
@@ -545,17 +548,34 @@ export default function LlamadasPage() {
     return calls;
   }, [data, numberFilter, sdrFilter]);
 
+  // "Conectados" no sale de `result` (Allo marca ANSWERED incluso llamadas
+  // que cayeron a buzón de voz) sino del clasificador propio de Allo, ya
+  // agregado por número y por SDR en connected_by_number. Si ese dato no
+  // está disponible (falló el endpoint de analíticas de Allo), se cae a una
+  // estimación desde `result` que sobreestima, y se avisa en la UI.
+  const connected = useMemo(() => {
+    const byNumber = data?.connected_by_number ?? null;
+    if (!byNumber) {
+      return { value: filteredCalls.filter(isConnected).length, approximate: true };
+    }
+    const rows = numberFilter ? byNumber.filter((n) => n.allo_number === numberFilter) : byNumber;
+    const value = sdrFilter
+      ? rows.reduce((sum, n) => sum + (n.by_user.find((u) => u.user_id === sdrFilter)?.connected ?? 0), 0)
+      : rows.reduce((sum, n) => sum + n.connected, 0);
+    return { value, approximate: false };
+  }, [data, numberFilter, sdrFilter, filteredCalls]);
+
   const stats: Stats = useMemo(
     () => ({
       llamadas_realizadas: filteredCalls.length,
-      conectados: filteredCalls.filter(isConnected).length,
+      conectados: connected.value,
       reuniones_agendadas: filteredCalls.filter((c) => c.tags.includes("meeting_booked")).length,
       contactos: new Set(filteredCalls.map((c) => c.contact_number)).size,
       empresas: new Set(
         filteredCalls.map((c) => c.contact_company).filter((c): c is string => !!c).map((c) => c.trim().toLowerCase())
       ).size,
     }),
-    [filteredCalls]
+    [filteredCalls, connected]
   );
 
   const availableTagIds = useMemo(() => {
@@ -696,7 +716,11 @@ export default function LlamadasPage() {
               icon={<IconPhoneCheck size={13} />}
               label="Conectados"
               value={stats.conectados}
-              sub={stats.llamadas_realizadas > 0 ? `${Math.round((stats.conectados / stats.llamadas_realizadas) * 100)}% de conexión` : undefined}
+              sub={
+                stats.llamadas_realizadas > 0
+                  ? `${Math.round((stats.conectados / stats.llamadas_realizadas) * 100)}% de conexión${connected.approximate ? " (aproximado)" : ""}`
+                  : undefined
+              }
               onClick={() => setStatModal("conectados")}
             />
             <StatCard
@@ -736,6 +760,13 @@ export default function LlamadasPage() {
       {/* Popup de estadística */}
       {statModal && (
         <ModalShell title={STAT_TITLES[statModal]} onClose={() => setStatModal(null)} maxWidth="max-w-4xl">
+          {statModal === "conectados" && (
+            <p className="text-xs text-ink-muted mb-3">
+              {connected.approximate
+                ? "El número de la tarjeta es una estimación (Allo no pudo confirmar cuáles fueron buzón de voz en este momento) — este listado usa esa misma estimación."
+                : "El número de la tarjeta viene del clasificador de Allo (distingue buzón de voz de una persona real). Este listado usa solo el estado \"contestada/transferida\" de cada llamada y puede incluir algún buzón de voz que Allo sí excluye del número de arriba."}
+            </p>
+          )}
           {statModal === "contactos" ? (
             <ContactsTable calls={statModalCalls} />
           ) : statModal === "empresas" ? (
