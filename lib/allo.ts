@@ -195,62 +195,22 @@ export async function searchAlloCalls(params: {
   return items;
 }
 
-export type AlloOutboundAnalytics = {
-  dials: number;
-  connected: number;
-  by_user: { user_id: string; connected: number }[];
-};
-
-// El campo `result` de una llamada dice "ANSWERED" aunque en realidad haya
-// caído a buzón de voz (la señal telefónica marca "contestada" igual). Allo
-// tiene su propio clasificador (con IA) que sí distingue una conexión real
-// de un buzón de voz, y es el que alimenta su propio dashboard — este
-// endpoint de analíticas expone ese número ya calculado, en vez de tener
-// que adivinarlo a partir de `result`. Devuelve null si Allo no puede
-// responder (ej. servicio de analíticas caído).
-export async function getAlloOutboundAnalytics(params: {
-  allo_number: string;
-  date_from: string;
-  date_to: string;
-}): Promise<AlloOutboundAnalytics | null> {
-  try {
-    const d = await alloFetch("/v2/api/analytics/outbound", {
-      method: "POST",
-      body: JSON.stringify({
-        allo_numbers: [params.allo_number],
-        date_from: params.date_from,
-        date_to: params.date_to,
-      }),
-    });
-    const funnel = d?.data?.funnel;
-    const leaderboard: any[] = d?.data?.leaderboard ?? [];
-    return {
-      dials: funnel?.dials?.count?.value ?? 0,
-      connected: funnel?.connected?.count?.value ?? 0,
-      by_user: leaderboard
-        .filter((row) => row?.user?.id)
-        .map((row) => ({ user_id: row.user.id as string, connected: row.connected ?? 0 })),
-    };
-  } catch {
-    return null;
-  }
-}
-
 export type AlloCallDetail = AlloCallItem & {
-  transcript: { speaker: string; text: string; timestamp?: number }[] | null;
+  transcript: { speaker: string; text: string; time: string }[] | null;
 };
 
 // Detalle completo de una llamada, incluyendo transcript (no viene en el
-// listado de búsqueda, hay que pedirlo explícitamente por id).
+// listado de búsqueda, hay que pedirlo explícitamente por id). Cada entrada
+// del transcript trae `source` ("EXTERNAL" | "USER"), no "speaker"/"role".
 export async function getAlloCallDetail(id: string): Promise<AlloCallDetail> {
   const d = await alloFetch(`/v2/api/conversations/items/${id}?extend=transcript`);
   const raw = d?.data ?? d;
   const base = toAlloCallItem(raw);
   const transcript = Array.isArray(raw?.transcript)
     ? raw.transcript.map((t: any) => ({
-        speaker: t.speaker ?? t.role ?? "",
-        text: t.text ?? t.content ?? "",
-        timestamp: typeof t.timestamp === "number" ? t.timestamp : undefined,
+        speaker: t.source === "USER" ? "SDR" : t.source === "EXTERNAL" ? "Contacto" : (t.source ?? ""),
+        text: t.text ?? "",
+        time: t.time ?? "",
       }))
     : null;
   return { ...base, transcript };

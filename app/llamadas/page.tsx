@@ -56,15 +56,12 @@ type Stats = {
 
 type AlloNumberRef = { allo_number: string; allo_number_name: string | null };
 
-type ConnectedByNumber = { allo_number: string; connected: number; by_user: { user_id: string; connected: number }[] };
-
 type ApiResponse = {
   no_numbers: boolean;
   calls: CallItem[];
   sdrs: SdrRef[];
   tags: AlloTag[];
   numbers: AlloNumberRef[];
-  connected_by_number: ConnectedByNumber[] | null;
   stats: Stats;
   error?: string;
 };
@@ -73,8 +70,16 @@ type StatKey = "llamadas" | "conectados" | "reuniones" | "contactos" | "empresas
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+// El campo `result` de Allo dice "ANSWERED" aunque haya caído a buzón de
+// voz. Allo detecta eso internamente con IA, pero ese dato no está
+// expuesto en ningún endpoint de su API (solo se ve en su propio dashboard,
+// y ni ahí es 100% consistente) — como aproximación, se descartan las
+// contestadas muy cortas (mismo criterio que en la API, ver
+// MIN_REAL_CONVERSATION_SECONDS en app/api/clients/[id]/allo-calls/route.ts).
+const MIN_REAL_CONVERSATION_SECONDS = 30;
+
 function isConnected(c: CallItem): boolean {
-  return c.result === "ANSWERED" || c.result === "TRANSFERRED";
+  return (c.result === "ANSWERED" || c.result === "TRANSFERRED") && c.duration >= MIN_REAL_CONVERSATION_SECONDS;
 }
 
 function formatDuration(seconds: number): string {
@@ -548,34 +553,17 @@ export default function LlamadasPage() {
     return calls;
   }, [data, numberFilter, sdrFilter]);
 
-  // "Conectados" no sale de `result` (Allo marca ANSWERED incluso llamadas
-  // que cayeron a buzón de voz) sino del clasificador propio de Allo, ya
-  // agregado por número y por SDR en connected_by_number. Si ese dato no
-  // está disponible (falló el endpoint de analíticas de Allo), se cae a una
-  // estimación desde `result` que sobreestima, y se avisa en la UI.
-  const connected = useMemo(() => {
-    const byNumber = data?.connected_by_number ?? null;
-    if (!byNumber) {
-      return { value: filteredCalls.filter(isConnected).length, approximate: true };
-    }
-    const rows = numberFilter ? byNumber.filter((n) => n.allo_number === numberFilter) : byNumber;
-    const value = sdrFilter
-      ? rows.reduce((sum, n) => sum + (n.by_user.find((u) => u.user_id === sdrFilter)?.connected ?? 0), 0)
-      : rows.reduce((sum, n) => sum + n.connected, 0);
-    return { value, approximate: false };
-  }, [data, numberFilter, sdrFilter, filteredCalls]);
-
   const stats: Stats = useMemo(
     () => ({
       llamadas_realizadas: filteredCalls.length,
-      conectados: connected.value,
+      conectados: filteredCalls.filter(isConnected).length,
       reuniones_agendadas: filteredCalls.filter((c) => c.tags.includes("meeting_booked")).length,
       contactos: new Set(filteredCalls.map((c) => c.contact_number)).size,
       empresas: new Set(
         filteredCalls.map((c) => c.contact_company).filter((c): c is string => !!c).map((c) => c.trim().toLowerCase())
       ).size,
     }),
-    [filteredCalls, connected]
+    [filteredCalls]
   );
 
   const availableTagIds = useMemo(() => {
@@ -718,7 +706,7 @@ export default function LlamadasPage() {
               value={stats.conectados}
               sub={
                 stats.llamadas_realizadas > 0
-                  ? `${Math.round((stats.conectados / stats.llamadas_realizadas) * 100)}% de conexión${connected.approximate ? " (aproximado)" : ""}`
+                  ? `${Math.round((stats.conectados / stats.llamadas_realizadas) * 100)}% de conexión`
                   : undefined
               }
               onClick={() => setStatModal("conectados")}
@@ -762,9 +750,8 @@ export default function LlamadasPage() {
         <ModalShell title={STAT_TITLES[statModal]} onClose={() => setStatModal(null)} maxWidth="max-w-4xl">
           {statModal === "conectados" && (
             <p className="text-xs text-ink-muted mb-3">
-              {connected.approximate
-                ? "El número de la tarjeta es una estimación (Allo no pudo confirmar cuáles fueron buzón de voz en este momento) — este listado usa esa misma estimación."
-                : "El número de la tarjeta viene del clasificador de Allo (distingue buzón de voz de una persona real). Este listado usa solo el estado \"contestada/transferida\" de cada llamada y puede incluir algún buzón de voz que Allo sí excluye del número de arriba."}
+              Aproximado: contestadas o transferidas de {MIN_REAL_CONVERSATION_SECONDS}s o más. Allo detecta buzón de
+              voz con más precisión, pero ese dato no está disponible en su API todavía.
             </p>
           )}
           {statModal === "contactos" ? (
