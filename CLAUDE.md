@@ -173,7 +173,7 @@ _(Sección para registrar aprendizajes negativos — no recrear estas rutas)_
 ### Allo (gestión telefónica)
 
 - Plataforma de telefonía/AI receptionist. BullsEye compra **un número por cliente por país**; cada SDR usa el número de la cuenta que tiene asignada para que la reportería quede unificada por cliente.
-- API base: `https://api.withallo.com` (`Authorization: Bearer $ALLO_API_KEY`). Cliente server-side en `lib/allo.ts`.
+- API base: `https://api.withallo.com`. Auth: header `Authorization: $ALLO_API_KEY` **sin** prefijo `Bearer` (Allo devuelve 401 si se manda con `Bearer `). Cliente server-side en `lib/allo.ts`.
 - Tabla `client_allo_numbers`: mapea `client_id` → uno o más `allo_number` (E.164) con su `allo_number_name`. Un mismo número solo puede estar asignado a un cliente a la vez (índice único en `allo_number`) para que la reportería no se mezcle.
 - En **Configuración → Cliente** hay una sección "Allo" con un desplegable buscable (fetch en vivo a `/api/allo/numbers`) para asignar/quitar números al cliente seleccionado (`/api/clients/[id]/allo-numbers`).
 - Pendiente (próximo paso): usar estos números asignados para filtrar la reportería de Allo (actividades, tasa de conexión sin voicemail, reuniones agendadas, agrupación por tags) en el dashboard de SDR.

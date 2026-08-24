@@ -5,8 +5,9 @@ function alloHeaders() {
   if (!key) {
     throw new Error("ALLO_API_KEY no está configurada (Vercel / .env.local)");
   }
+  // La API de Allo espera la key cruda en Authorization, sin prefijo "Bearer".
   return {
-    Authorization: `Bearer ${key}`,
+    Authorization: key,
     "Content-Type": "application/json",
   };
 }
