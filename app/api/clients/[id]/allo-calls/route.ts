@@ -32,6 +32,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       calls: [],
       sdrs: [],
       tags: [],
+      numbers: [],
       stats: { llamadas_realizadas: 0, conectados: 0, reuniones_agendadas: 0, contactos: 0, empresas: 0 },
     });
   }
@@ -93,6 +94,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       calls: enrichedCalls,
       sdrs,
       tags,
+      numbers: assigned ?? [],
       stats: {
         llamadas_realizadas: enrichedCalls.length,
         conectados: connected.length,
