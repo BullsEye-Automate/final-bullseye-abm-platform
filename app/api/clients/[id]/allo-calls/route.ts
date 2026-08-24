@@ -17,9 +17,11 @@ function toDateParam(d: Date): string {
 // tiene un campo de "voicemail detectado" con IA, pero no está expuesto en
 // ningún endpoint de la API — solo se ve en su propio dashboard, y ni
 // siquiera ahí es 100% consistente. Como aproximación, se descartan las
-// contestadas muy cortas: en los casos reales revisados, una conversación
-// real dura minutos y un buzón de voz o corte inmediato dura segundos.
-const MIN_REAL_CONVERSATION_SECONDS = 30;
+// contestadas cortas: en los casos reales revisados (cliente CCCH, agosto),
+// los buzones de voz y cortes inmediatos nunca pasaron de 51s, mientras que
+// las conversaciones reales duraron 1m49s y 2m58s — 60s separa ambos grupos
+// con margen. Es una heurística ajustable, no una regla exacta.
+const MIN_REAL_CONVERSATION_SECONDS = 60;
 
 function isRealConnection(c: { result: string | null; duration: number }): boolean {
   return (c.result === "ANSWERED" || c.result === "TRANSFERRED") && c.duration >= MIN_REAL_CONVERSATION_SECONDS;
