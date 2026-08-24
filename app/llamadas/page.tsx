@@ -53,11 +53,14 @@ type Stats = {
   empresas: number;
 };
 
+type AlloNumberRef = { allo_number: string; allo_number_name: string | null };
+
 type ApiResponse = {
   no_numbers: boolean;
   calls: CallItem[];
   sdrs: SdrRef[];
   tags: AlloTag[];
+  numbers: AlloNumberRef[];
   stats: Stats;
   error?: string;
 };
@@ -496,6 +499,7 @@ export default function LlamadasPage() {
   const { currentClient } = useClient();
 
   const [rangeKey, setRangeKey] = useState<RangeKey>("this_month");
+  const [numberFilter, setNumberFilter] = useState<string>("");
   const [sdrFilter, setSdrFilter] = useState<string>("");
   const [tagFilter, setTagFilter] = useState<string>("");
 
@@ -515,6 +519,7 @@ export default function LlamadasPage() {
         if (d.error) { setError(d.error); setData(null); return; }
         setData(d);
         setSdrFilter("");
+        setNumberFilter("");
       })
       .catch((e) => setError(e.message ?? "Error de red"))
       .finally(() => setLoading(false));
@@ -526,43 +531,45 @@ export default function LlamadasPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, rangeKey]);
 
-  const sdrFilteredCalls = useMemo(() => {
-    const calls = data?.calls ?? [];
-    return sdrFilter ? calls.filter((c) => c.user?.id === sdrFilter) : calls;
-  }, [data, sdrFilter]);
+  const filteredCalls = useMemo(() => {
+    let calls = data?.calls ?? [];
+    if (numberFilter) calls = calls.filter((c) => c.allo_number === numberFilter);
+    if (sdrFilter) calls = calls.filter((c) => c.user?.id === sdrFilter);
+    return calls;
+  }, [data, numberFilter, sdrFilter]);
 
   const stats: Stats = useMemo(
     () => ({
-      llamadas_realizadas: sdrFilteredCalls.length,
-      conectados: sdrFilteredCalls.filter(isConnected).length,
-      reuniones_agendadas: sdrFilteredCalls.filter((c) => c.tags.includes("meeting_booked")).length,
-      contactos: new Set(sdrFilteredCalls.map((c) => c.contact_number)).size,
+      llamadas_realizadas: filteredCalls.length,
+      conectados: filteredCalls.filter(isConnected).length,
+      reuniones_agendadas: filteredCalls.filter((c) => c.tags.includes("meeting_booked")).length,
+      contactos: new Set(filteredCalls.map((c) => c.contact_number)).size,
       empresas: new Set(
-        sdrFilteredCalls.map((c) => c.contact_company).filter((c): c is string => !!c).map((c) => c.trim().toLowerCase())
+        filteredCalls.map((c) => c.contact_company).filter((c): c is string => !!c).map((c) => c.trim().toLowerCase())
       ).size,
     }),
-    [sdrFilteredCalls]
+    [filteredCalls]
   );
 
   const availableTagIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const c of sdrFilteredCalls) for (const t of c.tags) ids.add(t);
+    for (const c of filteredCalls) for (const t of c.tags) ids.add(t);
     return ids;
-  }, [sdrFilteredCalls]);
+  }, [filteredCalls]);
 
   const listCalls = useMemo(() => {
-    const filtered = tagFilter ? sdrFilteredCalls.filter((c) => c.tags.includes(tagFilter)) : sdrFilteredCalls;
+    const filtered = tagFilter ? filteredCalls.filter((c) => c.tags.includes(tagFilter)) : filteredCalls;
     return [...filtered].sort((a, b) => b.date.localeCompare(a.date));
-  }, [sdrFilteredCalls, tagFilter]);
+  }, [filteredCalls, tagFilter]);
 
   const statModalCalls = useMemo(() => {
     switch (statModal) {
-      case "llamadas": return sdrFilteredCalls;
-      case "conectados": return sdrFilteredCalls.filter(isConnected);
-      case "reuniones": return sdrFilteredCalls.filter((c) => c.tags.includes("meeting_booked"));
-      default: return sdrFilteredCalls;
+      case "llamadas": return filteredCalls;
+      case "conectados": return filteredCalls.filter(isConnected);
+      case "reuniones": return filteredCalls.filter((c) => c.tags.includes("meeting_booked"));
+      default: return filteredCalls;
     }
-  }, [statModal, sdrFilteredCalls]);
+  }, [statModal, filteredCalls]);
 
   const tags = data?.tags ?? [];
 
@@ -591,6 +598,21 @@ export default function LlamadasPage() {
               <option key={k} value={k}>{l}</option>
             ))}
           </select>
+
+          {(data?.numbers.length ?? 0) > 1 && (
+            <select
+              className="input py-1.5 text-sm"
+              value={numberFilter}
+              onChange={(e) => setNumberFilter(e.target.value)}
+            >
+              <option value="">Todos los números</option>
+              {(data?.numbers ?? []).map((n) => (
+                <option key={n.allo_number} value={n.allo_number}>
+                  {n.allo_number_name || n.allo_number}
+                </option>
+              ))}
+            </select>
+          )}
 
           <select
             className="input py-1.5 text-sm"
