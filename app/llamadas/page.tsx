@@ -21,8 +21,6 @@ import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
 
 type SdrRef = { id: string; name: string; email: string };
 type AlloTag = { id: string; name: string; color: string | null };
-type CallResult = "ANSWERED" | "VOICEMAIL" | "TRANSFERRED";
-
 type CallItem = {
   id: string;
   direction: "INBOUND" | "OUTBOUND";
@@ -31,7 +29,10 @@ type CallItem = {
   user: SdrRef | null;
   date: string;
   duration: number;
-  result: CallResult | null;
+  // El resultado que devuelve Allo no está 100% documentado — se maneja como
+  // string abierto y con fallback en ResultBadge para no romper si aparece
+  // un valor que no está en RESULT_META (ej. no contestada, ocupado, etc).
+  result: string | null;
   recording_url: string | null;
   summary: string | null;
   tags: string[];
@@ -90,11 +91,17 @@ function formatDateTime(iso: string): string {
   });
 }
 
-const RESULT_META: Record<CallResult, { label: string; bg: string; fg: string }> = {
+const RESULT_META: Record<string, { label: string; bg: string; fg: string }> = {
   ANSWERED: { label: "Contestada", bg: "#E1F5EE", fg: "#0F6E56" },
   TRANSFERRED: { label: "Transferida", bg: "#E6F1FB", fg: "#185FA5" },
   VOICEMAIL: { label: "Buzón de voz", bg: "#F4F2FB", fg: "#6B6884" },
+  NO_ANSWER: { label: "No contesta", bg: "#F4F2FB", fg: "#6B6884" },
+  MISSED: { label: "No contesta", bg: "#F4F2FB", fg: "#6B6884" },
+  BUSY: { label: "Ocupado", bg: "#FAEEDA", fg: "#854F0B" },
+  FAILED: { label: "Falló", bg: "#FAECE7", fg: "#993C1D" },
+  CANCELLED: { label: "Cancelada", bg: "#F4F2FB", fg: "#6B6884" },
 };
+const FALLBACK_RESULT_META = { bg: "#F4F2FB", fg: "#6B6884" };
 
 function dedupeContacts(calls: CallItem[]) {
   const map = new Map<
@@ -174,9 +181,9 @@ function StatCard({
   );
 }
 
-function ResultBadge({ result }: { result: CallResult | null }) {
+function ResultBadge({ result }: { result: string | null }) {
   if (!result) return <span className="text-xs text-ink-subtle">—</span>;
-  const meta = RESULT_META[result];
+  const meta = RESULT_META[result] ?? { ...FALLBACK_RESULT_META, label: result };
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"

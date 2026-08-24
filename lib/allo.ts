@@ -66,8 +66,6 @@ function cleanExtracted(v: unknown): string | null {
   return t;
 }
 
-export type AlloCallResult = "ANSWERED" | "VOICEMAIL" | "TRANSFERRED";
-
 export type AlloCallItem = {
   id: string;
   direction: "INBOUND" | "OUTBOUND";
@@ -76,7 +74,9 @@ export type AlloCallItem = {
   user: AlloUserRef | null;
   date: string;
   duration: number;
-  result: AlloCallResult | null;
+  // El enum real de Allo no está confirmado más allá de ANSWERED/VOICEMAIL/
+  // TRANSFERRED — se deja abierto para no asumir exhaustividad.
+  result: string | null;
   recording_url: string | null;
   summary: string | null;
   tags: string[];

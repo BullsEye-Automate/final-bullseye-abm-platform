@@ -18,10 +18,13 @@ export async function GET(req: NextRequest, { params }: Params) {
   const range = resolveRange(key);
 
   const db = supabaseAdmin();
-  const { data: assigned, error: assignedErr } = await db
-    .from("client_allo_numbers")
-    .select("allo_number, allo_number_name")
-    .eq("client_id", params.id);
+  // "__all__" es el sentinel que usa el resto de la app para "todos los
+  // clientes" (ver app/api/dashboard/route.ts) — en ese caso se agregan los
+  // números asignados de todos los clientes en vez de filtrar por uno.
+  const isAllClients = params.id === "__all__";
+  let assignedQuery = db.from("client_allo_numbers").select("allo_number, allo_number_name");
+  if (!isAllClients) assignedQuery = assignedQuery.eq("client_id", params.id);
+  const { data: assigned, error: assignedErr } = await assignedQuery;
 
   if (assignedErr) return NextResponse.json({ error: assignedErr.message }, { status: 500 });
 
