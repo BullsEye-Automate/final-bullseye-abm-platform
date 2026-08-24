@@ -74,9 +74,9 @@ type StatKey = "llamadas" | "conectados" | "reuniones" | "contactos" | "empresas
 // voz. Allo detecta eso internamente con IA, pero ese dato no está
 // expuesto en ningún endpoint de su API (solo se ve en su propio dashboard,
 // y ni ahí es 100% consistente) — como aproximación, se descartan las
-// contestadas muy cortas (mismo criterio que en la API, ver
+// contestadas cortas (mismo criterio y mismo umbral que en la API, ver
 // MIN_REAL_CONVERSATION_SECONDS en app/api/clients/[id]/allo-calls/route.ts).
-const MIN_REAL_CONVERSATION_SECONDS = 30;
+const MIN_REAL_CONVERSATION_SECONDS = 60;
 
 function isConnected(c: CallItem): boolean {
   return (c.result === "ANSWERED" || c.result === "TRANSFERRED") && c.duration >= MIN_REAL_CONVERSATION_SECONDS;
