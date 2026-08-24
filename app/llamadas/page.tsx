@@ -1,452 +1,575 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   IconPhone,
-  IconChevronRight,
-  IconUser,
-  IconClock,
+  IconUsers,
+  IconBuilding,
+  IconPhoneCheck,
+  IconCalendarEvent,
   IconLoader2,
+  IconAlertCircle,
   IconRefresh,
-  IconCloud,
-  IconSparkles,
-  IconArrowUp,
-  IconArrowDown,
+  IconX,
+  IconExternalLink,
+  IconTag,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
+import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+// ─── Tipos ──────────────────────────────────────────────────────────────────
 
-type Call = {
+type SdrRef = { id: string; name: string; email: string };
+type AlloTag = { id: string; name: string; color: string | null };
+type CallResult = "ANSWERED" | "VOICEMAIL" | "TRANSFERRED";
+
+type CallItem = {
   id: string;
-  client_id: string | null;
-  hubspot_call_id: string;
+  direction: "INBOUND" | "OUTBOUND";
+  allo_number: string;
+  contact_number: string;
+  user: SdrRef | null;
+  date: string;
+  duration: number;
+  result: CallResult | null;
+  recording_url: string | null;
+  summary: string | null;
+  tags: string[];
   contact_name: string | null;
-  company_name: string | null;
-  direction: "OUTBOUND" | "INBOUND" | null;
-  duration_ms: number | null;
-  disposition: string | null;
-  disposition_label: string | null;
-  notes_raw: string | null;
-  notes_clean: string | null;
-  called_at: string | null;
-  hubspot_owner_id: string | null;
-  sdr_name: string | null;
-  ai_score: number | null;
-  ai_outcome: string | null;
-  ai_outcome_detail: string | null;
-  ai_is_real_conversation: boolean | null;
-  ai_summary: string | null;
-  ai_next_steps: string | null;
-  analyzed_at: string | null;
-  created_at: string;
+  contact_job_title: string | null;
+  contact_company: string | null;
+  hubspot_contact_id: string | null;
+};
+
+type CallDetail = CallItem & {
+  transcript: { speaker: string; text: string; timestamp?: number }[] | null;
 };
 
 type Stats = {
-  total: number;
-  avg_duration_ms: number;
-  avg_score: number;
-  real_conversations: number;
-  interested: number;
-  unique_contacts: number;
-  unique_companies: number;
-  analyzed_count: number;
+  llamadas_realizadas: number;
+  conectados: number;
+  reuniones_agendadas: number;
+  contactos: number;
+  empresas: number;
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+type ApiResponse = {
+  no_numbers: boolean;
+  calls: CallItem[];
+  sdrs: SdrRef[];
+  tags: AlloTag[];
+  stats: Stats;
+  error?: string;
+};
 
-// Formatea milisegundos a string legible (ej: "2m 46s", "47s")
-function formatDuration(ms: number): string {
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
+type StatKey = "llamadas" | "conectados" | "reuniones" | "contactos" | "empresas";
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function isConnected(c: CallItem): boolean {
+  return c.result === "ANSWERED" || c.result === "TRANSFERRED";
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return "—";
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const rem = seconds % 60;
   return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
 }
 
-// Formatea ISO a hora en formato 12h (ej: "03:27 p.m.")
-function formatTime(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleTimeString("es-CL", {
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString("es-CL", {
+    day: "2-digit",
+    month: "short",
     hour: "2-digit",
     minute: "2-digit",
   });
 }
 
-// Agrupa llamadas por fecha en español (ej: "LUNES, 25 DE MAYO DE 2026")
-function groupCallsByDate(
-  calls: Call[]
-): { dateLabel: string; calls: Call[] }[] {
-  const map = new Map<string, Call[]>();
-  for (const c of calls) {
-    const d = c.called_at ? new Date(c.called_at) : new Date(c.created_at);
-    const key = d
-      .toLocaleDateString("es-CL", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      })
-      .toUpperCase();
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(c);
-  }
-  return Array.from(map.entries()).map(([dateLabel, calls]) => ({
-    dateLabel,
-    calls,
-  }));
-}
-
-// Retorna color según score del SDR
-function scoreColor(score: number): string {
-  if (score >= 7) return "#16a34a";
-  if (score >= 5) return "#d97706";
-  return "#dc2626";
-}
-
-// ─── Colores de outcome ───────────────────────────────────────────────────────
-
-const OUTCOME_COLORS: Record<string, string> = {
-  Interesado: "bg-green-100 text-green-800",
-  Objeción: "bg-orange-100 text-orange-800",
-  "Buzón de voz": "bg-slate-100 text-slate-700",
-  "No contesta": "bg-gray-100 text-gray-600",
-  "No decide": "bg-yellow-100 text-yellow-800",
-  "No aplica": "bg-red-100 text-red-700",
-  Ganado: "bg-emerald-100 text-emerald-800",
+const RESULT_META: Record<CallResult, { label: string; bg: string; fg: string }> = {
+  ANSWERED: { label: "Contestada", bg: "#E1F5EE", fg: "#0F6E56" },
+  TRANSFERRED: { label: "Transferida", bg: "#E6F1FB", fg: "#185FA5" },
+  VOICEMAIL: { label: "Buzón de voz", bg: "#F4F2FB", fg: "#6B6884" },
 };
 
-// ─── Sub-componentes ──────────────────────────────────────────────────────────
+function dedupeContacts(calls: CallItem[]) {
+  const map = new Map<
+    string,
+    { contact_number: string; contact_name: string | null; contact_job_title: string | null; contact_company: string | null; call_count: number; last_date: string }
+  >();
+  for (const c of calls) {
+    const existing = map.get(c.contact_number);
+    if (!existing) {
+      map.set(c.contact_number, {
+        contact_number: c.contact_number,
+        contact_name: c.contact_name,
+        contact_job_title: c.contact_job_title,
+        contact_company: c.contact_company,
+        call_count: 1,
+        last_date: c.date,
+      });
+    } else {
+      existing.call_count += 1;
+      existing.contact_name = existing.contact_name || c.contact_name;
+      existing.contact_job_title = existing.contact_job_title || c.contact_job_title;
+      existing.contact_company = existing.contact_company || c.contact_company;
+      if (c.date > existing.last_date) existing.last_date = c.date;
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => b.last_date.localeCompare(a.last_date));
+}
+
+function dedupeCompanies(calls: CallItem[]) {
+  const map = new Map<string, { company: string; call_count: number; contacts: Set<string> }>();
+  for (const c of calls) {
+    if (!c.contact_company) continue;
+    const key = c.contact_company.trim().toLowerCase();
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, { company: c.contact_company.trim(), call_count: 1, contacts: new Set([c.contact_number]) });
+    } else {
+      existing.call_count += 1;
+      existing.contacts.add(c.contact_number);
+    }
+  }
+  return Array.from(map.values())
+    .map((v) => ({ company: v.company, call_count: v.call_count, contact_count: v.contacts.size }))
+    .sort((a, b) => b.call_count - a.call_count);
+}
+
+// ─── Sub-componentes ────────────────────────────────────────────────────────
 
 function StatCard({
+  icon,
   label,
   value,
   sub,
-  valueColor,
+  onClick,
 }: {
+  icon: React.ReactNode;
   label: string;
-  value: string | number;
+  value: number;
   sub?: string;
-  valueColor?: string;
+  onClick: () => void;
 }) {
   return (
-    <div className="card py-3 px-4 flex flex-col gap-1">
-      <div className="text-[10px] font-semibold tracking-widest text-ink-muted uppercase">
+    <button
+      onClick={onClick}
+      disabled={value === 0}
+      className="card py-3 px-4 flex flex-col gap-1 text-left border border-transparent hover:border-brand-soft transition-colors disabled:cursor-default"
+    >
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-widest text-ink-muted uppercase">
+        {icon}
         {label}
       </div>
-      <div
-        className="text-2xl font-bold"
-        style={{ color: valueColor ?? "#251762" }}
-      >
+      <div className="text-2xl font-bold" style={{ color: "#251762" }}>
         {value}
       </div>
       {sub && <div className="text-xs text-ink-muted">{sub}</div>}
+    </button>
+  );
+}
+
+function ResultBadge({ result }: { result: CallResult | null }) {
+  if (!result) return <span className="text-xs text-ink-subtle">—</span>;
+  const meta = RESULT_META[result];
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+      style={{ background: meta.bg, color: meta.fg }}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
+function TagBadges({ tagIds, tags }: { tagIds: string[]; tags: AlloTag[] }) {
+  if (tagIds.length === 0) return <span className="text-xs text-ink-subtle">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {tagIds.map((id) => {
+        const tag = tags.find((t) => t.id === id);
+        const color = tag?.color ?? "#9794AC";
+        return (
+          <span
+            key={id}
+            className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium"
+            style={{ background: `${color}1F`, color }}
+          >
+            {tag?.name ?? id}
+          </span>
+        );
+      })}
     </div>
   );
 }
 
-function OutcomeBadge({
-  outcome,
-  detail,
+function ModalShell({
+  title,
+  onClose,
+  children,
+  maxWidth = "max-w-2xl",
 }: {
-  outcome: string;
-  detail?: string | null;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  maxWidth?: string;
 }) {
-  const cls = OUTCOME_COLORS[outcome] ?? "bg-gray-100 text-gray-600";
-  const label = detail ? `${outcome} · ${detail}` : outcome;
   return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
     >
-      {label}
-    </span>
-  );
-}
-
-function DirectionBadge({ direction }: { direction: string | null }) {
-  const isOutbound = direction === "OUTBOUND";
-  return (
-    <span
-      className="inline-flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded"
-      style={
-        isOutbound
-          ? { background: "rgba(98,224,216,0.15)", color: "#0F6E56" }
-          : { background: "rgba(74,222,128,0.15)", color: "#15803d" }
-      }
-    >
-      {isOutbound ? (
-        <IconArrowUp size={11} />
-      ) : (
-        <IconArrowDown size={11} />
-      )}
-      {isOutbound ? "SALIENTE" : "ENTRANTE"}
-    </span>
-  );
-}
-
-function CallCard({ call }: { call: Call }) {
-  return (
-    <div className="card py-3 px-4 hover:bg-gray-50 cursor-pointer transition-colors">
-      <div className="flex items-start justify-between">
-        <div className="flex items-start gap-3 flex-1 min-w-0">
-          {/* Hora */}
-          <span className="text-xs text-ink-muted w-20 shrink-0 pt-0.5">
-            {formatTime(call.called_at)}
-          </span>
-
-          {/* Contenido principal */}
-          <div className="flex-1 min-w-0">
-            {/* Fila 1: nombre, empresa, dirección, duración, SDR */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-ink">
-                {call.contact_name ?? "Desconocido"}
-              </span>
-              {call.company_name && (
-                <span className="text-ink-muted">· {call.company_name}</span>
-              )}
-              <DirectionBadge direction={call.direction} />
-              {call.duration_ms != null && call.duration_ms > 0 && (
-                <span className="flex items-center gap-1 text-xs text-ink-muted">
-                  <IconClock size={12} />
-                  {formatDuration(call.duration_ms)}
-                </span>
-              )}
-              {call.sdr_name && (
-                <span className="flex items-center gap-1 text-xs text-ink-muted">
-                  <IconUser size={12} />
-                  {call.sdr_name}
-                </span>
-              )}
-            </div>
-
-            {/* Fila 2: outcome badge + score */}
-            {call.ai_outcome && (
-              <div className="flex items-center gap-3 mt-1.5">
-                <OutcomeBadge
-                  outcome={call.ai_outcome}
-                  detail={call.ai_outcome_detail}
-                />
-                {call.ai_score != null && (
-                  <span className="text-xs text-ink-muted">
-                    ★ SDR {call.ai_score}/10
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Resumen IA */}
-            {call.ai_summary && (
-              <p className="text-sm text-ink mt-2 leading-relaxed">
-                {call.ai_summary}
-              </p>
-            )}
-
-            {/* Próximo paso */}
-            {call.ai_next_steps && (
-              <p className="text-sm mt-1">
-                <span className="font-medium" style={{ color: "#62E0D8" }}>
-                  Próximo paso:
-                </span>{" "}
-                <span className="text-ink">{call.ai_next_steps}</span>
-              </p>
-            )}
-
-            {/* Notas raw si no hay análisis */}
-            {!call.ai_summary && call.notes_clean && (
-              <p className="text-sm text-ink-muted mt-1 line-clamp-2">
-                {call.notes_clean}
-              </p>
-            )}
-          </div>
+      <div
+        className={`card w-full ${maxWidth} max-h-[85vh] overflow-y-auto`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4 sticky top-0 bg-white">
+          <h2 className="font-semibold text-lg">{title}</h2>
+          <button onClick={onClose} className="text-ink-muted hover:text-ink transition-colors">
+            <IconX size={18} />
+          </button>
         </div>
-
-        <IconChevronRight
-          size={16}
-          className="text-ink-muted shrink-0 mt-0.5 ml-2"
-        />
+        {children}
       </div>
     </div>
   );
 }
 
-// ─── Página principal ─────────────────────────────────────────────────────────
+const STAT_TITLES: Record<StatKey, string> = {
+  llamadas: "Llamadas realizadas",
+  conectados: "Llamadas conectadas",
+  reuniones: "Reuniones agendadas",
+  contactos: "Contactos",
+  empresas: "Empresas",
+};
+
+function CallsTable({
+  calls,
+  tags,
+  onSelectCall,
+}: {
+  calls: CallItem[];
+  tags: AlloTag[];
+  onSelectCall: (id: string) => void;
+}) {
+  if (calls.length === 0) {
+    return <p className="text-sm text-ink-muted py-6 text-center">Sin llamadas para este filtro.</p>;
+  }
+  return (
+    <div className="overflow-x-auto -mx-1">
+      <table className="w-full text-sm">
+        <thead className="bg-[#F4F2FB]">
+          <tr>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Fecha</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">SDR</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted">Contacto</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted">Cargo</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted">Empresa</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Duración</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Resultado</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted">Etiquetas</th>
+          </tr>
+        </thead>
+        <tbody>
+          {calls.map((c) => (
+            <tr
+              key={c.id}
+              onClick={() => onSelectCall(c.id)}
+              className="border-t border-[#E5E2F0] hover:bg-brand-tint cursor-pointer"
+            >
+              <td className="px-3 py-2 whitespace-nowrap text-ink-muted">{formatDateTime(c.date)}</td>
+              <td className="px-3 py-2 whitespace-nowrap">{c.user?.name ?? "—"}</td>
+              <td className="px-3 py-2">
+                <div className="font-medium">{c.contact_name ?? "Sin identificar"}</div>
+                <div className="text-xs text-ink-subtle font-mono">{c.contact_number}</div>
+              </td>
+              <td className="px-3 py-2 text-ink-muted">{c.contact_job_title ?? "—"}</td>
+              <td className="px-3 py-2 text-ink-muted">{c.contact_company ?? "—"}</td>
+              <td className="px-3 py-2 whitespace-nowrap text-ink-muted">{formatDuration(c.duration)}</td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                <ResultBadge result={c.result} />
+              </td>
+              <td className="px-3 py-2">
+                <TagBadges tagIds={c.tags} tags={tags} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ContactsTable({ calls }: { calls: CallItem[] }) {
+  const rows = useMemo(() => dedupeContacts(calls), [calls]);
+  if (rows.length === 0) {
+    return <p className="text-sm text-ink-muted py-6 text-center">Sin contactos para este filtro.</p>;
+  }
+  return (
+    <div className="overflow-x-auto -mx-1">
+      <table className="w-full text-sm">
+        <thead className="bg-[#F4F2FB]">
+          <tr>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted">Contacto</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted">Cargo</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted">Empresa</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Llamadas</th>
+            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Última llamada</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.contact_number} className="border-t border-[#E5E2F0]">
+              <td className="px-3 py-2">
+                <div className="font-medium">{r.contact_name ?? "Sin identificar"}</div>
+                <div className="text-xs text-ink-subtle font-mono">{r.contact_number}</div>
+              </td>
+              <td className="px-3 py-2 text-ink-muted">{r.contact_job_title ?? "—"}</td>
+              <td className="px-3 py-2 text-ink-muted">{r.contact_company ?? "—"}</td>
+              <td className="px-3 py-2">{r.call_count}</td>
+              <td className="px-3 py-2 whitespace-nowrap text-ink-muted">{formatDateTime(r.last_date)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CompaniesTable({ calls }: { calls: CallItem[] }) {
+  const rows = useMemo(() => dedupeCompanies(calls), [calls]);
+  const unidentified = calls.length - rows.reduce((acc, r) => acc + r.call_count, 0);
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-ink-muted py-6 text-center">
+        Ninguna llamada tiene empresa identificada en HubSpot todavía.
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <div className="overflow-x-auto -mx-1">
+        <table className="w-full text-sm">
+          <thead className="bg-[#F4F2FB]">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium text-ink-muted">Empresa</th>
+              <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Contactos</th>
+              <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Llamadas</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.company} className="border-t border-[#E5E2F0]">
+                <td className="px-3 py-2 font-medium">{r.company}</td>
+                <td className="px-3 py-2">{r.contact_count}</td>
+                <td className="px-3 py-2">{r.call_count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {unidentified > 0 && (
+        <p className="text-xs text-ink-subtle">
+          {unidentified} llamada{unidentified !== 1 ? "s" : ""} sin empresa identificada en HubSpot (no aparecen arriba).
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CallDetailModal({
+  callId,
+  tags,
+  onClose,
+}: {
+  callId: string;
+  tags: AlloTag[];
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<CallDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    setDetail(null);
+    fetch(`/api/allo/calls/${callId}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) { setError(d.error); return; }
+        setDetail(d.call);
+      })
+      .catch((e) => setError(e.message ?? "Error de red"))
+      .finally(() => setLoading(false));
+  }, [callId]);
+
+  return (
+    <ModalShell title="Detalle de la llamada" onClose={onClose} maxWidth="max-w-3xl">
+      {loading && (
+        <div className="flex items-center gap-2 text-ink-muted py-10 justify-center">
+          <IconLoader2 size={20} className="animate-spin" /> Cargando desde Allo…
+        </div>
+      )}
+      {error && (
+        <div className="flex items-center gap-2 text-danger-fg text-sm py-4">
+          <IconAlertCircle size={16} /> {error}
+        </div>
+      )}
+      {detail && !loading && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="label mb-0.5">Contacto</div>
+              <div className="font-medium">{detail.contact_name ?? "Sin identificar"}</div>
+              <div className="text-xs text-ink-subtle font-mono">{detail.contact_number}</div>
+            </div>
+            <div>
+              <div className="label mb-0.5">Empresa / cargo</div>
+              <div>{detail.contact_company ?? "—"}</div>
+              <div className="text-xs text-ink-muted">{detail.contact_job_title ?? ""}</div>
+            </div>
+            <div>
+              <div className="label mb-0.5">SDR</div>
+              <div>{detail.user?.name ?? "—"}</div>
+            </div>
+            <div>
+              <div className="label mb-0.5">Fecha</div>
+              <div>{formatDateTime(detail.date)} · {formatDuration(detail.duration)}</div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <ResultBadge result={detail.result} />
+            <TagBadges tagIds={detail.tags} tags={tags} />
+          </div>
+
+          {detail.recording_url && (
+            <audio controls className="w-full" src={detail.recording_url}>
+              Tu navegador no soporta audio.
+            </audio>
+          )}
+
+          {detail.summary && (
+            <div>
+              <div className="label mb-1">Resumen</div>
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">{detail.summary}</p>
+            </div>
+          )}
+
+          <div>
+            <div className="label mb-1">Transcripción</div>
+            {detail.transcript && detail.transcript.length > 0 ? (
+              <div className="space-y-2 max-h-64 overflow-y-auto bg-[#F4F2FB] rounded-lg p-3">
+                {detail.transcript.map((t, i) => (
+                  <p key={i} className="text-sm">
+                    <span className="font-medium">{t.speaker || "—"}:</span> {t.text}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-ink-muted">No hay transcripción disponible para esta llamada.</p>
+            )}
+          </div>
+
+          {detail.hubspot_contact_id && (
+            <a
+              href={`https://app.hubspot.com/contacts/${detail.hubspot_contact_id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-brand hover:underline"
+            >
+              Ver contacto en HubSpot <IconExternalLink size={12} />
+            </a>
+          )}
+        </div>
+      )}
+    </ModalShell>
+  );
+}
+
+// ─── Página principal ───────────────────────────────────────────────────────
 
 export default function LlamadasPage() {
   const { currentClient } = useClient();
 
-  const [calls, setCalls] = useState<Call[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [outcomes, setOutcomes] = useState<string[]>([]);
-  const [sdrNames, setSdrNames] = useState<string[]>([]);
+  const [rangeKey, setRangeKey] = useState<RangeKey>("this_month");
+  const [sdrFilter, setSdrFilter] = useState<string>("");
+  const [tagFilter, setTagFilter] = useState<string>("");
 
+  const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{
-    synced: number;
-    total: number;
-  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Filtros locales del cliente
-  const [filterOutcome, setFilterOutcome] = useState<string>("");
-  const [filterSdr, setFilterSdr] = useState<string>("");
+  const [statModal, setStatModal] = useState<StatKey | null>(null);
+  const [callModalId, setCallModalId] = useState<string | null>(null);
 
-  // Carga de datos desde Supabase
-  const loadCalls = useCallback(async (clientId: string) => {
+  function load(clientId: string) {
     setLoading(true);
     setError(null);
-    try {
-      const params = new URLSearchParams({ client_id: clientId });
-      const res = await fetch(`/api/hubspot/calls?${params}`, {
-        cache: "no-store",
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Error cargando llamadas");
-      } else {
-        setCalls(data.calls ?? []);
-        setStats(data.stats ?? null);
-        setOutcomes(data.outcomes ?? []);
-        setSdrNames(data.sdr_names ?? []);
-      }
-    } catch {
-      setError("Error de red al cargar llamadas");
-    }
-    setLoading(false);
-  }, []);
-
-  // Auto-sync al montar si no hay datos en Supabase
-  const autoSync = useCallback(
-    async (clientId: string) => {
-      // Primero intenta cargar desde Supabase
-      setLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams({ client_id: clientId });
-        const res = await fetch(`/api/hubspot/calls?${params}`, {
-          cache: "no-store",
-        });
-        const data = await res.json();
-        if (res.ok && (data.calls ?? []).length > 0) {
-          setCalls(data.calls ?? []);
-          setStats(data.stats ?? null);
-          setOutcomes(data.outcomes ?? []);
-          setSdrNames(data.sdr_names ?? []);
-          setLoading(false);
-          return;
-        }
-      } catch {
-        // Si falla, continúa con el sync automático
-      }
-      setLoading(false);
-
-      // Si no hay datos, sincroniza automáticamente desde HubSpot
-      setSyncing(true);
-      try {
-        const syncRes = await fetch("/api/hubspot/calls/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ client_id: clientId }),
-        });
-        const syncData = await syncRes.json();
-        if (syncRes.ok) {
-          setSyncResult({ synced: syncData.synced, total: syncData.total });
-          await loadCalls(clientId);
-        }
-      } catch {
-        setError("Error al sincronizar con HubSpot");
-      }
-      setSyncing(false);
-    },
-    [loadCalls]
-  );
+    fetch(`/api/clients/${clientId}/allo-calls?range=${rangeKey}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: ApiResponse) => {
+        if (d.error) { setError(d.error); setData(null); return; }
+        setData(d);
+        setSdrFilter("");
+      })
+      .catch((e) => setError(e.message ?? "Error de red"))
+      .finally(() => setLoading(false));
+  }
 
   useEffect(() => {
-    if (currentClient?.id) {
-      autoSync(currentClient.id);
-    }
-  }, [currentClient?.id, autoSync]);
+    if (currentClient?.id) load(currentClient.id);
+    else setData(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentClient?.id, rangeKey]);
 
-  // Sincronización manual desde HubSpot
-  async function handleSync() {
-    if (!currentClient?.id) return;
-    setSyncing(true);
-    setSyncResult(null);
-    setError(null);
-    try {
-      const res = await fetch("/api/hubspot/calls/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: currentClient.id }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setSyncResult({ synced: data.synced, total: data.total });
-        await loadCalls(currentClient.id);
-      } else {
-        setError(data.error ?? "Error al sincronizar");
-      }
-    } catch {
-      setError("Error de red al sincronizar");
-    }
-    setSyncing(false);
-  }
+  const sdrFilteredCalls = useMemo(() => {
+    const calls = data?.calls ?? [];
+    return sdrFilter ? calls.filter((c) => c.user?.id === sdrFilter) : calls;
+  }, [data, sdrFilter]);
 
-  // Análisis de llamadas pendientes con IA
-  async function handleAnalyze() {
-    if (!currentClient?.id) return;
-    setAnalyzing(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/hubspot/calls/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: currentClient.id, limit: 10 }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        await loadCalls(currentClient.id);
-      } else {
-        setError(data.error ?? "Error al analizar llamadas");
-      }
-    } catch {
-      setError("Error de red al analizar");
-    }
-    setAnalyzing(false);
-  }
-
-  // Filtrado local del array de llamadas
-  const filteredCalls = useMemo((): Call[] => {
-    return calls.filter((c: Call) => {
-      if (filterOutcome && c.ai_outcome !== filterOutcome) return false;
-      if (filterSdr && c.sdr_name !== filterSdr) return false;
-      return true;
-    });
-  }, [calls, filterOutcome, filterSdr]);
-
-  const groupedByDate = useMemo(
-    () => groupCallsByDate(filteredCalls),
-    [filteredCalls]
+  const stats: Stats = useMemo(
+    () => ({
+      llamadas_realizadas: sdrFilteredCalls.length,
+      conectados: sdrFilteredCalls.filter(isConnected).length,
+      reuniones_agendadas: sdrFilteredCalls.filter((c) => c.tags.includes("meeting_booked")).length,
+      contactos: new Set(sdrFilteredCalls.map((c) => c.contact_number)).size,
+      empresas: new Set(
+        sdrFilteredCalls.map((c) => c.contact_company).filter((c): c is string => !!c).map((c) => c.trim().toLowerCase())
+      ).size,
+    }),
+    [sdrFilteredCalls]
   );
 
-  // Métricas derivadas para la stats bar
-  const convRate =
-    stats && stats.total > 0
-      ? Math.round((stats.real_conversations / stats.total) * 100)
-      : 0;
+  const availableTagIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of sdrFilteredCalls) for (const t of c.tags) ids.add(t);
+    return ids;
+  }, [sdrFilteredCalls]);
 
-  const interestedPct =
-    stats && stats.unique_contacts > 0
-      ? Math.round((stats.interested / stats.unique_contacts) * 100)
-      : 0;
+  const listCalls = useMemo(() => {
+    const filtered = tagFilter ? sdrFilteredCalls.filter((c) => c.tags.includes(tagFilter)) : sdrFilteredCalls;
+    return [...filtered].sort((a, b) => b.date.localeCompare(a.date));
+  }, [sdrFilteredCalls, tagFilter]);
 
-  // ─── Render ────────────────────────────────────────────────────────────────
+  const statModalCalls = useMemo(() => {
+    switch (statModal) {
+      case "llamadas": return sdrFilteredCalls;
+      case "conectados": return sdrFilteredCalls.filter(isConnected);
+      case "reuniones": return sdrFilteredCalls.filter((c) => c.tags.includes("meeting_booked"));
+      default: return sdrFilteredCalls;
+    }
+  }, [statModal, sdrFilteredCalls]);
+
+  const tags = data?.tags ?? [];
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <header className="flex items-start justify-between gap-4">
+      <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="label">SDR</div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -454,195 +577,153 @@ export default function LlamadasPage() {
             Llamadas
           </h1>
           <p className="text-sm text-ink-muted mt-1">
-            Se sincronizan solas con HubSpot al abrir. Análisis con IA:
-            respuesta del cliente + evaluación del SDR.
+            Reportería en vivo desde Allo, filtrada por los números asignados a este cliente.
           </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {/* Refrescar desde Supabase */}
-          <button
-            onClick={() => currentClient?.id && loadCalls(currentClient.id)}
-            disabled={loading}
-            className="btn-secondary"
-            title="Refrescar desde Supabase"
+          <select
+            className="input py-1.5 text-sm"
+            value={rangeKey}
+            onChange={(e) => setRangeKey(e.target.value as RangeKey)}
           >
-            {loading ? (
-              <IconLoader2 size={15} className="animate-spin" />
-            ) : (
-              <IconRefresh size={15} />
-            )}
-            Refrescar
-          </button>
+            {Object.entries(RANGE_LABELS).map(([k, l]) => (
+              <option key={k} value={k}>{l}</option>
+            ))}
+          </select>
 
-          {/* Sincronizar desde HubSpot */}
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="btn-secondary"
-            title="Sincronizar llamadas desde HubSpot"
+          <select
+            className="input py-1.5 text-sm"
+            value={sdrFilter}
+            onChange={(e) => setSdrFilter(e.target.value)}
+            disabled={!data || data.sdrs.length === 0}
           >
-            {syncing ? (
-              <IconLoader2 size={15} className="animate-spin" />
-            ) : (
-              <IconCloud size={15} />
-            )}
-            Sincronizar HubSpot
-          </button>
+            <option value="">Todos los SDR</option>
+            {(data?.sdrs ?? []).map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
 
-          {/* Analizar pendientes con IA */}
           <button
-            onClick={handleAnalyze}
-            disabled={analyzing}
-            className="btn-primary"
-            title="Analizar llamadas pendientes con IA"
+            onClick={() => currentClient?.id && load(currentClient.id)}
+            disabled={loading || !currentClient}
+            className="btn-secondary"
+            title="Refrescar"
           >
-            {analyzing ? (
-              <IconLoader2 size={15} className="animate-spin" />
-            ) : (
-              <IconSparkles size={15} />
-            )}
-            Analizar pendientes
+            {loading ? <IconLoader2 size={15} className="animate-spin" /> : <IconRefresh size={15} />}
           </button>
         </div>
       </header>
 
-      {/* Banner resultado del sync */}
-      {syncResult && (
-        <div
-          className="text-sm text-ink-muted border-l-4 pl-3 py-1"
-          style={{ borderColor: "#62E0D8" }}
-        >
-          Sync OK · {syncResult.total} escaneadas · {syncResult.synced}{" "}
-          guardadas
-        </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="card border border-red-200 text-red-700 text-sm px-4 py-2">
-          {error}
-        </div>
-      )}
-
-      {/* Sin cliente seleccionado */}
       {!currentClient && (
         <div className="card text-ink-muted text-sm">
-          Selecciona un cliente en el selector de arriba para ver sus llamadas.
+          Selecciona un cliente en el sidebar para ver su reportería de llamadas.
         </div>
       )}
 
-      {/* Stats bar — 5 tarjetas horizontales */}
-      {stats && (
-        <div className="grid grid-cols-5 gap-3">
-          <StatCard
-            label="LLAMADAS"
-            value={stats.total}
-            sub={`${stats.unique_contacts} contactos · ${stats.unique_companies} empresas`}
-          />
-          <StatCard
-            label="DURACIÓN PROMEDIO"
-            value={
-              stats.avg_duration_ms > 0
-                ? formatDuration(stats.avg_duration_ms)
-                : "—"
-            }
-            sub={`${stats.analyzed_count} analizadas`}
-          />
-          <StatCard
-            label="SCORE SDR PROMEDIO"
-            value={
-              stats.avg_score > 0 ? `${stats.avg_score.toFixed(1)}/10` : "—"
-            }
-            sub="según IA"
-            valueColor={
-              stats.avg_score > 0 ? scoreColor(stats.avg_score) : undefined
-            }
-          />
-          <StatCard
-            label="TASA DE CONVERSACIÓN"
-            value={`${convRate}%`}
-            sub={`${stats.real_conversations}/${stats.total} conversaron`}
-          />
-          <StatCard
-            label="INTERESADOS"
-            value={stats.interested}
-            sub={`${interestedPct}% de los contactos`}
-          />
+      {error && (
+        <div className="card border border-danger-bg text-danger-fg flex items-center gap-2 text-sm">
+          <IconAlertCircle size={16} /> {error}
         </div>
       )}
 
-      {/* Filtros */}
-      {(outcomes.length > 0 || sdrNames.length > 0) && (
-        <div className="flex gap-3">
-          <select
-            className="input text-sm py-1.5"
-            value={filterOutcome}
-            onChange={(e) => setFilterOutcome(e.target.value)}
-          >
-            <option value="">Todas las respuestas</option>
-            {outcomes.map((o: string) => (
-              <option key={o} value={o}>
-                {o}
-              </option>
-            ))}
-          </select>
-
-          <select
-            className="input text-sm py-1.5"
-            value={filterSdr}
-            onChange={(e) => setFilterSdr(e.target.value)}
-          >
-            <option value="">Todos los SDR</option>
-            {sdrNames.map((s: string) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+      {currentClient && data?.no_numbers && (
+        <div className="card flex items-center gap-3 text-warning-fg border border-warning-bg bg-warning-bg/40 text-sm">
+          <IconAlertCircle size={18} className="shrink-0" />
+          Este cliente no tiene números de Allo asignados. Ve a Configuración → Cliente para asignarlos.
         </div>
       )}
 
-      {/* Estado de carga / sync */}
-      {(loading || syncing) && (
+      {loading && (
         <div className="flex items-center gap-3 text-ink-muted py-10 justify-center">
           <IconLoader2 size={22} className="animate-spin" />
-          <span>
-            {syncing ? "Sincronizando con HubSpot…" : "Cargando llamadas…"}
-          </span>
+          <span>Cargando desde Allo…</span>
         </div>
       )}
 
-      {/* Lista de llamadas agrupadas por fecha */}
-      {!loading && !syncing && currentClient && (
+      {!loading && data && !data.no_numbers && (
         <>
-          {filteredCalls.length === 0 ? (
-            <div className="card text-ink-muted text-sm flex items-center gap-2">
-              <IconPhone size={18} className="shrink-0 opacity-40" />
-              No hay llamadas registradas. Presiona &ldquo;Sincronizar
-              HubSpot&rdquo; para importar las llamadas.
+          {/* Stat cards */}
+          <div className="grid grid-cols-5 gap-3">
+            <StatCard
+              icon={<IconPhone size={13} />}
+              label="Llamadas realizadas"
+              value={stats.llamadas_realizadas}
+              onClick={() => setStatModal("llamadas")}
+            />
+            <StatCard
+              icon={<IconUsers size={13} />}
+              label="Contactos"
+              value={stats.contactos}
+              onClick={() => setStatModal("contactos")}
+            />
+            <StatCard
+              icon={<IconBuilding size={13} />}
+              label="Empresas"
+              value={stats.empresas}
+              onClick={() => setStatModal("empresas")}
+            />
+            <StatCard
+              icon={<IconPhoneCheck size={13} />}
+              label="Conectados"
+              value={stats.conectados}
+              sub={stats.llamadas_realizadas > 0 ? `${Math.round((stats.conectados / stats.llamadas_realizadas) * 100)}% de conexión` : undefined}
+              onClick={() => setStatModal("conectados")}
+            />
+            <StatCard
+              icon={<IconCalendarEvent size={13} />}
+              label="Reuniones agendadas"
+              value={stats.reuniones_agendadas}
+              onClick={() => setStatModal("reuniones")}
+            />
+          </div>
+
+          {/* Filtro de etiquetas + listado */}
+          <section className="card space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <h2 className="font-semibold flex items-center gap-2">
+                <IconPhone size={16} className="text-brand" /> Listado de llamadas
+                <span className="text-xs font-normal text-ink-muted">({listCalls.length})</span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <IconTag size={15} className="text-ink-subtle" />
+                <select
+                  className="input py-1.5 text-sm"
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value)}
+                >
+                  <option value="">Todas las etiquetas</option>
+                  {tags.filter((t) => availableTagIds.has(t.id)).map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {groupedByDate.map(
-                ({ dateLabel, calls: dayCalls }: { dateLabel: string; calls: Call[] }) => (
-                  <div key={dateLabel}>
-                    {/* Cabecera de fecha */}
-                    <div className="text-xs font-semibold text-ink-muted uppercase tracking-wide py-2 border-b border-[#E5E2F0] mb-1">
-                      {dateLabel}
-                    </div>
-                    {/* Llamadas del día */}
-                    <div className="space-y-1">
-                      {dayCalls.map((call: Call) => (
-                        <CallCard key={call.id} call={call} />
-                      ))}
-                    </div>
-                  </div>
-                )
-              )}
-            </div>
-          )}
+            <CallsTable calls={listCalls} tags={tags} onSelectCall={setCallModalId} />
+          </section>
         </>
+      )}
+
+      {/* Popup de estadística */}
+      {statModal && (
+        <ModalShell title={STAT_TITLES[statModal]} onClose={() => setStatModal(null)} maxWidth="max-w-4xl">
+          {statModal === "contactos" ? (
+            <ContactsTable calls={statModalCalls} />
+          ) : statModal === "empresas" ? (
+            <CompaniesTable calls={statModalCalls} />
+          ) : (
+            <CallsTable
+              calls={statModalCalls}
+              tags={tags}
+              onSelectCall={(id) => { setCallModalId(id); }}
+            />
+          )}
+        </ModalShell>
+      )}
+
+      {/* Detalle de llamada */}
+      {callModalId && (
+        <CallDetailModal callId={callModalId} tags={tags} onClose={() => setCallModalId(null)} />
       )}
     </div>
   );
