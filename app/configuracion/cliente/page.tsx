@@ -51,7 +51,13 @@ const EMPTY_WEBHOOKS: ClientWebhooks = {
 
 type ExcludedCompany = { id: string; company_name: string; company_website?: string };
 
-type AlloNumber = { number: string; name: string | null; country: string | null };
+type AlloNumber = {
+  number: string;
+  name: string | null;
+  country: string | null;
+  assigned_client_id: string | null;
+  assigned_client_name: string | null;
+};
 type ClientAlloNumber = { id: string; allo_number: string; allo_number_name: string | null };
 
 function Field({
@@ -201,29 +207,45 @@ export default function ConfigClientePage() {
     const d = await res.json();
     if (!res.ok) { setAlloAssignError(d.error ?? "Error al asignar el número"); return; }
     setClientAllo((prev) => [...prev, d.number]);
-    setAlloSearch("");
-    setAlloSearchOpen(false);
+    setAlloNumbers((prev) =>
+      prev.map((x) =>
+        x.number === n.number
+          ? { ...x, assigned_client_id: currentClient.id, assigned_client_name: currentClient.name }
+          : x
+      )
+    );
   }
 
-  async function unassignAlloNumber(id: string) {
+  async function unassignAlloNumber(row: ClientAlloNumber) {
     if (!currentClient) return;
+    setAlloAssignError(null);
     const res = await fetch(`/api/clients/${currentClient.id}/allo-numbers`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id: row.id }),
     });
-    if (res.ok) setClientAllo((prev) => prev.filter((n) => n.id !== id));
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setAlloAssignError(d.error ?? "Error al quitar el número"); return; }
+    setClientAllo((prev) => prev.filter((x) => x.id !== row.id));
+    setAlloNumbers((prev) =>
+      prev.map((x) => (x.number === row.allo_number ? { ...x, assigned_client_id: null, assigned_client_name: null } : x))
+    );
   }
 
-  const assignedNumbers = new Set(clientAllo.map((n) => n.allo_number));
-  const alloSearchResults = alloSearch.trim()
-    ? alloNumbers
-        .filter((n) => !assignedNumbers.has(n.number))
-        .filter((n) =>
-          `${n.name ?? ""} ${n.number} ${n.country ?? ""}`.toLowerCase().includes(alloSearch.trim().toLowerCase())
-        )
-        .slice(0, 8)
-    : [];
+  function toggleAlloNumber(n: AlloNumber, checked: boolean) {
+    if (checked) {
+      assignAlloNumber(n);
+      return;
+    }
+    const row = clientAllo.find((c) => c.allo_number === n.number);
+    if (row) unassignAlloNumber(row);
+  }
+
+  const filteredAlloNumbers = alloNumbers
+    .filter((n) =>
+      !alloSearch.trim() ||
+      `${n.name ?? ""} ${n.number} ${n.country ?? ""}`.toLowerCase().includes(alloSearch.trim().toLowerCase())
+    )
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 
   async function setupHubSpotLists() {
     if (!currentClient) return;
@@ -537,7 +559,7 @@ export default function ConfigClientePage() {
               </div>
             )}
 
-            {/* Buscador */}
+            {/* Buscador + desplegable con selección múltiple */}
             <div className="relative">
               <div className="relative">
                 <IconSearch size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-subtle" />
@@ -546,32 +568,50 @@ export default function ConfigClientePage() {
                   placeholder={
                     alloNumbersState === "loading"
                       ? "Cargando números de Allo…"
-                      : "Buscar número por nombre (ej. Vigatec Chile)…"
+                      : "Hacé clic para ver todos, o buscá por nombre…"
                   }
                   disabled={alloNumbersState !== "done"}
                   value={alloSearch}
-                  onChange={(e) => { setAlloSearch(e.target.value); setAlloSearchOpen(true); }}
+                  onChange={(e) => setAlloSearch(e.target.value)}
                   onFocus={() => setAlloSearchOpen(true)}
                   onBlur={() => setTimeout(() => setAlloSearchOpen(false), 150)}
                 />
               </div>
-              {alloSearchOpen && alloSearch.trim() && (
-                <div className="absolute z-10 mt-1 w-full max-h-64 overflow-y-auto rounded-lg border border-[#E5E2F0] bg-white shadow-lg">
-                  {alloSearchResults.length === 0 ? (
+              {alloSearchOpen && (
+                <div
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="absolute z-10 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-[#E5E2F0] bg-white shadow-lg"
+                >
+                  {filteredAlloNumbers.length === 0 ? (
                     <p className="text-xs text-ink-muted px-3 py-2">Sin resultados.</p>
                   ) : (
-                    alloSearchResults.map((n) => (
-                      <button
-                        key={n.number}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => assignAlloNumber(n)}
-                        className="w-full text-left px-3 py-2 hover:bg-brand-tint flex items-center justify-between gap-2"
-                      >
-                        <span className="text-sm">{n.name || "(sin nombre)"}</span>
-                        <span className="text-xs text-ink-subtle font-mono">{n.number}</span>
-                      </button>
-                    ))
+                    filteredAlloNumbers.map((n) => {
+                      const checked = n.assigned_client_id === currentClient.id;
+                      const takenByOther = !!n.assigned_client_id && !checked;
+                      return (
+                        <label
+                          key={n.number}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 ${
+                            takenByOther ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-brand-tint"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="shrink-0"
+                            checked={checked}
+                            disabled={takenByOther}
+                            onChange={(e) => toggleAlloNumber(n, e.target.checked)}
+                          />
+                          <span className="text-sm flex-1">{n.name || "(sin nombre)"}</span>
+                          <span className="text-xs text-ink-subtle font-mono">{n.number}</span>
+                          {takenByOther && (
+                            <span className="text-[11px] text-ink-subtle whitespace-nowrap">
+                              · {n.assigned_client_name ?? "otro cliente"}
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -597,7 +637,7 @@ export default function ConfigClientePage() {
                     <span className="font-medium">{n.allo_number_name || "(sin nombre)"}</span>
                     <span className="text-ink-subtle font-mono">{n.allo_number}</span>
                     <button
-                      onClick={() => unassignAlloNumber(n.id)}
+                      onClick={() => unassignAlloNumber(n)}
                       className="text-ink-muted hover:text-danger-fg transition-colors"
                       title="Quitar número"
                     >
