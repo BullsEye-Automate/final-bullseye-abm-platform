@@ -231,31 +231,36 @@ export async function POST(req: NextRequest) {
             phone: l.phone,
           }));
 
-          const intakeResult = await intakeContactsForCompany(db, companyId, raws, "sales_navigator", { auto_push_clay: false });
+          // keep_no_fit_active: estos contactos los curó un humano a mano en Sales
+          // Navigator antes de agregarlos a la Campaña puente — un cargo amplio
+          // ("Revenue Lead LATAM") puede no matchear el ICP pero sí ser fit. En vez
+          // de que el pre-filtro de cargo los descarte solos, quedan activos y se
+          // muestran igual en la revisión, marcados, para que el humano decida.
+          const intakeResult = await intakeContactsForCompany(db, companyId, raws, "sales_navigator", { auto_push_clay: false, keep_no_fit_active: true });
           if (!intakeResult.ok) throw new Error(intakeResult.error);
 
           importedContactsYes += intakeResult.summary.yes;
           importedContactsNo += intakeResult.summary.no;
           importedContactsSkipped += intakeResult.summary.skipped;
 
-          // Contactos YES sin enviar: marcar fit_action='enrich', calcular fit
-          // score si falta, y detectar mismatch nombre/email.
-          const { data: yesContacts } = await db
+          // Contactos sin enviar (pasaron o no el pre-filtro de cargo): marcar
+          // fit_action='enrich', calcular fit score si falta, y detectar mismatch
+          // nombre/email. Se muestran todos para revisión 1 a 1 en la app.
+          const { data: reviewContacts } = await db
             .from("contacts")
-            .select("id, job_title, first_name, last_name, email, linkedin_url, fit_score, fit_action")
+            .select("id, job_title, first_name, last_name, email, linkedin_url, fit_score, fit_action, prefilter_result")
             .eq("company_id", companyId)
-            .eq("prefilter_result", "yes")
             .is("lemlist_pushed_at", null)
             .neq("status", "discarded");
 
           const contactsOut: Record<string, unknown>[] = [];
-          if (yesContacts?.length) {
-            const toEnrich = yesContacts.filter((c) => c.fit_action !== "enrich").map((c) => c.id);
+          if (reviewContacts?.length) {
+            const toEnrich = reviewContacts.filter((c) => c.fit_action !== "enrich").map((c) => c.id);
             if (toEnrich.length) {
               await db.from("contacts").update({ fit_action: "enrich" }).in("id", toEnrich);
             }
 
-            await chunked(yesContacts, 5, async (c) => {
+            await chunked(reviewContacts, 5, async (c) => {
               // Recalcula siempre (no solo si falta): el score depende del fit
               // de la empresa asociada, que puede haberse recalculado o
               // reusado desde otra corrida, y la fórmula de scoring puede
@@ -275,6 +280,7 @@ export async function POST(req: NextRequest) {
                 fit_score: fitScore,
                 name_email_mismatch: mismatch.mismatch,
                 mismatch_reason: mismatch.reason ?? null,
+                passed_icp_filter: c.prefilter_result === "yes",
               });
             });
           }

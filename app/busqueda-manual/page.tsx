@@ -33,6 +33,7 @@ type ImportContact = {
   fit_score: number | null;
   name_email_mismatch: boolean;
   mismatch_reason: string | null;
+  passed_icp_filter: boolean;
 };
 
 type ImportCompany = {
@@ -702,6 +703,11 @@ function ContactRow({
             )}
             {contact.name_email_mismatch && (
               <span className="badge bg-warning-bg text-warning-fg" title={contact.mismatch_reason ?? undefined}>⚠ email no coincide</span>
+            )}
+            {!contact.passed_icp_filter && (
+              <span className="badge bg-warning-bg text-warning-fg" title="El cargo no matcheó el ICP configurado — revisalo a mano antes de generar el mensaje.">
+                ⚠ cargo fuera del ICP
+              </span>
             )}
             {sent && <span className="badge bg-success-bg text-success-fg">en Lemlist ✓</span>}
             {discarded && <span className="badge bg-[#F1EEF7] text-ink-muted">descartado ✗</span>}
