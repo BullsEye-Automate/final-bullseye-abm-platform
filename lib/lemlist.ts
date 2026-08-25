@@ -365,7 +365,40 @@ async function enrichLeadsBasic(
   }
 }
 
-export type LemlistLeadWithCampaign = LemlistLeadDetail & { campaign_id: string; campaign_name: string };
+export type LemlistLeadWithCampaign = LemlistLeadDetail & {
+  campaign_id: string;
+  campaign_name: string;
+  company_source: "lemlist" | "email" | null;
+};
+
+// Dominios de correo personal — nunca se usan para inferir el nombre de una
+// empresa (un @gmail.com no dice nada del empleador de la persona).
+const FREE_EMAIL_DOMAINS = new Set([
+  "gmail.com", "hotmail.com", "hotmail.es", "outlook.com", "outlook.es",
+  "yahoo.com", "yahoo.es", "yahoo.com.mx", "icloud.com", "live.com",
+  "aol.com", "protonmail.com", "proton.me", "gmx.com", "yandex.com",
+  "mail.com", "zoho.com", "me.com", "msn.com",
+]);
+
+// Último recurso cuando Lemlist no trae companyName ni para el lead ni para
+// el contacto: se infiere desde el dominio del correo (ej. "@electrolux.com"
+// → "Electrolux"). No es tan preciso como el nombre real (no distingue
+// mayúsculas de siglas como "PwC"), pero es mejor que dejar el contacto sin
+// empresa. Se excluyen dominios de correo personal a propósito.
+export function deriveCompanyFromEmail(email: string | null): string {
+  if (!email) return "";
+  const at = email.lastIndexOf("@");
+  if (at === -1) return "";
+  const domain = email.slice(at + 1).trim().toLowerCase();
+  if (!domain || FREE_EMAIL_DOMAINS.has(domain)) return "";
+  const name = domain.split(".")[0];
+  if (!name || name.length < 2) return "";
+  return name
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
 
 // Trae los leads de TODAS las campañas del workspace (una fila por
 // membresía campaña-contacto, un mismo contacto puede aparecer varias
@@ -385,9 +418,146 @@ export async function getAllCampaignsLeads(
     const leads = raw.map(mapRawLead);
     await enrichLeadsBasic(leads, apiKey, contactCache);
     for (const lead of leads) {
-      allLeads.push({ ...lead, campaign_id: campaign.id, campaign_name: campaign.name });
+      let companySource: "lemlist" | "email" | null = lead.company_name ? "lemlist" : null;
+      if (!lead.company_name) {
+        const derived = deriveCompanyFromEmail(lead.email);
+        if (derived) {
+          lead.company_name = derived;
+          companySource = "email";
+        }
+      }
+      allLeads.push({ ...lead, campaign_id: campaign.id, campaign_name: campaign.name, company_source: companySource });
     }
   }
 
   return { campaigns, leads: allLeads };
+}
+
+// ─── Stats de engagement por campaña (para el reporte cross-campaña) ───────────
+
+export type LemlistCampaignStats = {
+  id: string;
+  name: string;
+  total: number;
+  contacted: number;
+  opened: number;
+  clicked: number;
+  replied: number;
+  bounced: number;
+  unsubscribed: number;
+};
+
+// Misma normalización de campos ya probada en app/api/lemlist/campaigns/route.ts
+// (stats acumulados históricos de la campaña — Lemlist no permite filtrarlos
+// por fecha en este endpoint).
+export async function getCampaignStats(campaign: LemlistCampaignRef, apiKey: string): Promise<LemlistCampaignStats | null> {
+  const creds = `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`;
+  const res = await fetch(`https://api.lemlist.com/api/campaigns/${campaign.id}`, {
+    headers: { Authorization: creds },
+  }).catch(() => null);
+  if (!res?.ok) return null;
+  const data = await res.json().catch(() => null);
+  if (!data) return null;
+  const raw = data.stats ?? {};
+  return {
+    id: campaign.id,
+    name: campaign.name,
+    total: raw.total ?? 0,
+    contacted: raw.contacted ?? raw.emailsCount ?? 0,
+    opened: raw.opened ?? raw.openedCount ?? 0,
+    clicked: raw.clicked ?? raw.clickedCount ?? 0,
+    replied: raw.replied ?? raw.repliedCount ?? 0,
+    bounced: raw.bounced ?? raw.bouncedCount ?? 0,
+    unsubscribed: raw.unsubscribed ?? raw.unsubscribedCount ?? 0,
+  };
+}
+
+export async function getAllCampaignsStats(
+  campaigns: LemlistCampaignRef[],
+  apiKey: string
+): Promise<LemlistCampaignStats[]> {
+  const CHUNK = 5;
+  const out: LemlistCampaignStats[] = [];
+  for (let i = 0; i < campaigns.length; i += CHUNK) {
+    const slice = campaigns.slice(i, i + CHUNK);
+    const results = await Promise.all(slice.map((c) => getCampaignStats(c, apiKey)));
+    for (const r of results) if (r) out.push(r);
+  }
+  return out;
+}
+
+// ─── Actividades por contacto (para "lead scoring" e interacciones) ───────────
+// Mismo modelo de puntaje que app/api/lemlist/actividad/route.ts (usado en
+// /sdr/calientes) — se reutiliza para que el "lead scoring" signifique lo
+// mismo en toda la app.
+
+export const LEMLIST_ACTIVITY_TYPES = [
+  { type: "emailsReplied", score: 10, label: "Respondió email" },
+  { type: "linkedinReplied", score: 10, label: "Respondió en LinkedIn" },
+  { type: "linkedinInviteAccepted", score: 7, label: "Aceptó conexión LinkedIn" },
+  { type: "emailsClicked", score: 5, label: "Hizo clic en email" },
+  { type: "linkedinVisited", score: 3, label: "Visitó perfil LinkedIn" },
+  { type: "emailsOpened", score: 2, label: "Abrió email" },
+] as const;
+
+export type LemlistActivity = {
+  type: string;
+  score: number;
+  label: string;
+  email: string;
+  createdAt: string | null;
+  campaignId: string;
+  campaignName: string;
+};
+
+async function fetchActivitiesForCampaign(
+  campaignId: string,
+  campaignName: string,
+  apiKey: string
+): Promise<LemlistActivity[]> {
+  const creds = `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`;
+  const out: LemlistActivity[] = [];
+  await Promise.all(
+    LEMLIST_ACTIVITY_TYPES.map(async ({ type, score, label }) => {
+      const res = await fetch(
+        `https://api.lemlist.com/api/activities?type=${type}&campaignId=${campaignId}&limit=200`,
+        { headers: { Authorization: creds } }
+      ).catch(() => null);
+      if (!res?.ok) return;
+      const data = await res.json().catch(() => null);
+      const items: Record<string, unknown>[] = Array.isArray(data) ? data : (data?.data ?? data?.activities ?? []);
+      for (const a of items) {
+        const email = (pick(a, "email", "leadEmail") || "").toLowerCase();
+        if (!email) continue;
+        out.push({
+          type,
+          score,
+          label,
+          email,
+          createdAt: (a.createdAt as string) ?? (a.date as string) ?? null,
+          campaignId,
+          campaignName,
+        });
+      }
+    })
+  );
+  return out;
+}
+
+// Trae actividades (aperturas, clics, respuestas, conexiones LinkedIn, etc.)
+// de un conjunto de campañas. Se limita deliberadamente a las campañas con
+// actividad en el rango de fechas elegido (no todo el workspace) para no
+// disparar cientos de llamadas a la API de Lemlist en cada carga.
+export async function getAllCampaignsActivities(
+  campaigns: LemlistCampaignRef[],
+  apiKey: string
+): Promise<LemlistActivity[]> {
+  const CHUNK = 4;
+  const out: LemlistActivity[] = [];
+  for (let i = 0; i < campaigns.length; i += CHUNK) {
+    const slice = campaigns.slice(i, i + CHUNK);
+    const results = await Promise.all(slice.map((c) => fetchActivitiesForCampaign(c.id, c.name, apiKey)));
+    for (const r of results) out.push(...r);
+  }
+  return out;
 }

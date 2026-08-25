@@ -13,6 +13,12 @@ import {
   IconArrowLeft,
   IconChevronUp,
   IconChevronDown,
+  IconSend,
+  IconBrandLinkedin,
+  IconMailOpened,
+  IconMessageReply,
+  IconMoodSad,
+  IconFlame,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
@@ -41,10 +47,35 @@ type Stats = {
   campanas_total: number;
 };
 
+type Engagement = {
+  mensajes_enviados: number;
+  tasa_apertura: number;
+  tasa_respuesta: number;
+  tasa_rebote: number;
+  linkedin_aceptadas: number;
+  tasa_aceptacion_linkedin: number;
+};
+
+type ContactActivity = { type: string; label: string; count: number; lastAt: string | null };
+
+type TopContact = {
+  email: string;
+  first_name: string;
+  last_name: string;
+  company_name: string;
+  job_title: string;
+  campaign_names: string[];
+  score: number;
+  total_interactions: number;
+  activities: ContactActivity[];
+};
+
 type ApiResponse = {
   campaigns: CampaignRef[];
   leads: LeadRow[];
   stats: Stats;
+  engagement: Engagement;
+  top_contacts: TopContact[];
   error?: string;
 };
 
@@ -110,6 +141,26 @@ function KpiCard({ icon, label, value, sub }: { icon: React.ReactNode; label: st
       {sub && <div className="text-xs text-ink-muted">{sub}</div>}
     </div>
   );
+}
+
+function RateCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub?: string }) {
+  return (
+    <div className="card py-3 px-4 flex flex-col gap-1">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-widest text-ink-muted uppercase">
+        {icon}
+        {label}
+      </div>
+      <div className="text-2xl font-bold" style={{ color: "#251762" }}>{value}</div>
+      {sub && <div className="text-xs text-ink-muted">{sub}</div>}
+    </div>
+  );
+}
+
+function scoreBadgeColor(score: number) {
+  if (score >= 20) return { bg: "#dcfce7", border: "#86efac", text: "#16a34a" };
+  if (score >= 12) return { bg: "#fff7ed", border: "#fdba74", text: "#c2410c" };
+  if (score >= 6) return { bg: "#fefce8", border: "#fde047", text: "#a16207" };
+  return { bg: "#f9fafb", border: "#e5e7eb", text: "#6b7280" };
 }
 
 // ─── Página ─────────────────────────────────────────────────────────────────
@@ -228,6 +279,88 @@ export default function ReporteCampanasPage() {
               sub={`de ${data.stats.campanas_total} campañas en total`}
             />
           </div>
+
+          <div>
+            <div className="grid grid-cols-5 gap-3">
+              <RateCard icon={<IconSend size={13} />} label="Mensajes enviados" value={String(data.engagement.mensajes_enviados)} />
+              <RateCard icon={<IconMailOpened size={13} />} label="Tasa de apertura" value={`${data.engagement.tasa_apertura}%`} />
+              <RateCard icon={<IconMessageReply size={13} />} label="Tasa de respuesta" value={`${data.engagement.tasa_respuesta}%`} />
+              <RateCard icon={<IconMoodSad size={13} />} label="Tasa de rebote" value={`${data.engagement.tasa_rebote}%`} />
+              <RateCard
+                icon={<IconBrandLinkedin size={13} />}
+                label="Aceptación LinkedIn"
+                value={`${data.engagement.tasa_aceptacion_linkedin}%`}
+                sub={`${data.engagement.linkedin_aceptadas} conexiones aceptadas`}
+              />
+            </div>
+            <p className="text-[11px] text-ink-subtle mt-1.5">
+              Acumulado histórico de Lemlist por campaña (no filtrable por fecha en su API) — limitado a las campañas con actividad en el rango elegido.
+            </p>
+          </div>
+
+          <section className="card space-y-3">
+            <h2 className="font-semibold flex items-center gap-2">
+              <IconFlame size={16} className="text-brand" /> Contactos con mayor interacción
+              <span className="text-xs font-normal text-ink-muted">({data.top_contacts.length})</span>
+            </h2>
+            {data.top_contacts.length === 0 ? (
+              <p className="text-sm text-ink-muted py-6 text-center">Sin interacciones registradas para este rango.</p>
+            ) : (
+              <div className="overflow-x-auto -mx-1">
+                <table className="w-full text-sm">
+                  <thead className="bg-[#F4F2FB]">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Contacto</th>
+                      <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Empresa</th>
+                      <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Cargo</th>
+                      <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Campaña</th>
+                      <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Lead scoring</th>
+                      <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Interacciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.top_contacts.map((c) => {
+                      const color = scoreBadgeColor(c.score);
+                      return (
+                        <tr key={c.email} className="border-t border-[#E5E2F0] align-top">
+                          <td className="px-3 py-2">
+                            <div className="font-medium">
+                              {[c.first_name, c.last_name].filter(Boolean).join(" ") || "Sin identificar"}
+                            </div>
+                            <div className="text-xs text-ink-subtle">{c.email}</div>
+                          </td>
+                          <td className="px-3 py-2 text-ink-muted whitespace-nowrap">{c.company_name || "—"}</td>
+                          <td className="px-3 py-2 text-ink-muted whitespace-nowrap">{c.job_title || "—"}</td>
+                          <td className="px-3 py-2 text-ink-muted">{c.campaign_names.join(", ") || "—"}</td>
+                          <td className="px-3 py-2">
+                            <span
+                              className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold border"
+                              style={{ background: color.bg, borderColor: color.border, color: color.text }}
+                            >
+                              {c.score} pts
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="text-xs text-ink-muted mb-0.5">{c.total_interactions} en total</div>
+                            <div className="flex flex-wrap gap-1">
+                              {c.activities.map((a) => (
+                                <span
+                                  key={a.type}
+                                  className="text-[10px] px-1.5 py-0.5 rounded bg-[#F4F2FB] text-ink-muted whitespace-nowrap"
+                                >
+                                  {a.label} ×{a.count}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
 
           <section className="card space-y-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
