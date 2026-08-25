@@ -472,6 +472,25 @@ function ImportManualPanel({ clientId }: { clientId: string }) {
             </div>
           )}
 
+          {result.skipped_no_company.length > 0 && (
+            <div className="rounded-lg border border-warning-bg overflow-hidden">
+              <div className="px-3 py-1.5 bg-warning-bg/40 text-xs font-semibold text-warning-fg uppercase tracking-wide">
+                Sin empresa en Lemlist — no se importaron ({result.skipped_no_company.length})
+              </div>
+              <div className="text-xs divide-y divide-warning-bg">
+                {result.skipped_no_company.map((c, i) => (
+                  <div key={i} className="px-3 py-1.5 flex items-center gap-2 text-ink-muted">
+                    <span className="text-ink font-medium">{c.name}</span>
+                    {c.job_title && <span>· {c.job_title}</span>}
+                  </div>
+                ))}
+              </div>
+              <div className="px-3 py-1.5 bg-warning-bg/20 text-[11px] text-ink-muted">
+                Al lead le falta el campo "Company" en Lemlist — agrégaselo ahí y volvé a importar.
+              </div>
+            </div>
+          )}
+
           {companiesWithTiers.length > 0 && (
             <div className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
