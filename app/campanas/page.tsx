@@ -620,6 +620,14 @@ export default function CampanasPage() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Link
+            href="/campanas/reporte"
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
+            title="Ver contactos de todas las campañas de este cliente, no solo la principal"
+          >
+            <IconMail size={14} style={{ color: "#7C3AED" }} />
+            Reporte: todas las campañas
+          </Link>
+          <Link
             href="/campanas/subir"
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition"
           >
