@@ -5,6 +5,7 @@ import {
   getAllCampaignsLeads,
   getAllCampaignsStats,
   getAllCampaignsActivities,
+  getAllCampaignsFunnelEvents,
   LEMLIST_ACTIVITY_TYPES,
   type LemlistLeadWithCampaign,
 } from "@/lib/lemlist";
@@ -51,44 +52,69 @@ export async function GET(req: NextRequest) {
     const uniqueCompanies = new Set(
       inRange.map((l) => l.company_name).filter(Boolean).map((c) => c.trim().toLowerCase())
     );
-    const campaignIdsWithActivity = Array.from(new Set(inRange.map((l) => l.campaign_id)));
-    const campaignsWithActivity = campaigns.filter((c) => campaignIdsWithActivity.includes(c.id));
 
-    // Stats de engagement: acumulado histórico por campaña (Lemlist no permite
-    // filtrarlos por fecha vía esta API) — limitado a las campañas con
-    // contactos en el rango elegido, no todo el workspace.
-    const campaignStats = await getAllCampaignsStats(campaignsWithActivity, apiKey);
-    const totals = campaignStats.reduce(
-      (acc, s) => ({
-        total: acc.total + s.total,
-        contacted: acc.contacted + s.contacted,
-        opened: acc.opened + s.opened,
-        clicked: acc.clicked + s.clicked,
-        replied: acc.replied + s.replied,
-        bounced: acc.bounced + s.bounced,
-        unsubscribed: acc.unsubscribed + s.unsubscribed,
-      }),
-      { total: 0, contacted: 0, opened: 0, clicked: 0, replied: 0, bounced: 0, unsubscribed: 0 }
-    );
+    // Las métricas de engagement (mensajes enviados, tasas de apertura/
+    // respuesta/rebote/aceptación LinkedIn) NO se filtran por cuándo entró
+    // el contacto a la campaña — se filtran por cuándo ocurrió cada evento
+    // (envío, apertura, respuesta, etc.), igual que el propio dashboard de
+    // Lemlist. Por eso una campaña sin contactos NUEVOS este mes puede
+    // seguir mostrando actividad: son secuencias en curso sobre contactos
+    // que entraron antes.
+    //
+    // Stats por campaña (histórico, solo para descartar campañas que nunca
+    // tuvieron contactos y no vale la pena escanear).
+    const campaignStats = await getAllCampaignsStats(campaigns, apiKey);
+    const statsById = new Map(campaignStats.map((s) => [s.id, s]));
+    const campaignsToScan = campaigns.filter((c) => {
+      const s = statsById.get(c.id);
+      return !s || s.total > 0;
+    });
 
-    const activities = await getAllCampaignsActivities(campaignsWithActivity, apiKey);
-    const linkedinAcceptedContacts = new Set(
-      activities.filter((a) => a.type === "linkedinInviteAccepted").map((a) => a.email)
-    );
+    const [activities, funnelEvents] = await Promise.all([
+      getAllCampaignsActivities(campaignsToScan, apiKey, startMs),
+      getAllCampaignsFunnelEvents(campaignsToScan, apiKey, startMs),
+    ]);
+
+    const inDateRange = (iso: string | null) => {
+      if (!iso) return false;
+      const t = new Date(iso).getTime();
+      return !Number.isNaN(t) && t >= startMs && t <= endMs;
+    };
+    const activitiesInRange = activities.filter((a) => inDateRange(a.createdAt));
+    const funnelInRange = funnelEvents.filter((e) => inDateRange(e.createdAt));
+
+    const uniqueEmails = (items: { email: string }[]) => new Set(items.map((i) => i.email)).size;
+
+    const contacted = uniqueEmails(funnelInRange.filter((e) => e.type === "emailsSent"));
+    const bounced = uniqueEmails(funnelInRange.filter((e) => e.type === "emailsBounced"));
+    const linkedinInvited = uniqueEmails(funnelInRange.filter((e) => e.type === "linkedinInviteSent"));
+    const opened = uniqueEmails(activitiesInRange.filter((a) => a.type === "emailsOpened"));
+    const replied = uniqueEmails(activitiesInRange.filter((a) => a.type === "emailsReplied" || a.type === "linkedinReplied"));
+    const linkedinAccepted = uniqueEmails(activitiesInRange.filter((a) => a.type === "linkedinInviteAccepted"));
 
     const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 1000) / 10 : 0);
 
     const engagement = {
-      mensajes_enviados: totals.contacted,
-      tasa_apertura: pct(totals.opened, totals.contacted),
-      tasa_respuesta: pct(totals.replied, totals.contacted),
-      tasa_rebote: pct(totals.bounced, totals.contacted),
-      linkedin_aceptadas: linkedinAcceptedContacts.size,
-      tasa_aceptacion_linkedin: pct(linkedinAcceptedContacts.size, totals.contacted),
+      mensajes_enviados: contacted,
+      tasa_apertura: pct(opened, contacted),
+      tasa_respuesta: pct(replied, contacted),
+      tasa_rebote: pct(bounced, contacted),
+      linkedin_aceptadas: linkedinAccepted,
+      tasa_aceptacion_linkedin: pct(linkedinAccepted, linkedinInvited || contacted),
     };
 
+    // "Campañas con actividad" = entraron contactos nuevos O hubo algún
+    // evento de engagement en el rango — no solo lo primero.
+    const campaignIdsWithActivity = new Set([
+      ...inRange.map((l) => l.campaign_id),
+      ...activitiesInRange.map((a) => a.campaignId),
+      ...funnelInRange.map((e) => e.campaignId),
+    ]);
+    const campaignsWithActivity = campaigns.filter((c) => campaignIdsWithActivity.has(c.id));
+
     // Agregación por contacto: puntaje de interacción + descripción de sus
-    // actividades, para "Contactos con mayor interacción".
+    // actividades (solo dentro del rango elegido), para "Contactos con
+    // mayor interacción".
     const leadByEmail = new Map<string, LemlistLeadWithCampaign[]>();
     for (const l of leads) {
       if (!l.email) continue;
@@ -106,7 +132,7 @@ export async function GET(req: NextRequest) {
       campaignIds: Set<string>;
     };
     const byContact = new Map<string, ContactAgg>();
-    for (const a of activities) {
+    for (const a of activitiesInRange) {
       const entry = byContact.get(a.email) ?? { email: a.email, score: 0, activityMap: new Map(), campaignIds: new Set() };
       entry.score += a.score;
       entry.campaignIds.add(a.campaignId);

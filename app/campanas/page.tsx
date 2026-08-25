@@ -550,7 +550,7 @@ function TodasCampanasTab({ clientId, isAllClients }: { clientId: string | undef
               />
             </div>
             <p className="text-[11px] text-ink-subtle mt-1.5">
-              Acumulado histórico de Lemlist por campaña (no filtrable por fecha en su API) — limitado a las campañas con actividad en el rango elegido.
+              Contactos/empresas de arriba: solo los que ingresaron a una campaña en este rango. Estas 5 métricas: cualquier envío/apertura/respuesta ocurrido en este rango, sin importar cuándo entró el contacto (igual que el dashboard de Lemlist).
             </p>
           </div>
 

@@ -500,6 +500,12 @@ export const LEMLIST_ACTIVITY_TYPES = [
   { type: "emailsOpened", score: 2, label: "Abrió email" },
 ] as const;
 
+// Eventos "del sistema hacia el contacto" (envíos, rebotes, invitaciones
+// enviadas). No suman al lead scoring porque no son una interacción del
+// contacto — son la base (el denominador) de las tasas de apertura,
+// respuesta, rebote y aceptación LinkedIn.
+const LEMLIST_FUNNEL_EVENT_TYPES = ["emailsSent", "emailsBounced", "linkedinInviteSent"] as const;
+
 export type LemlistActivity = {
   type: string;
   score: number;
@@ -510,53 +516,118 @@ export type LemlistActivity = {
   campaignName: string;
 };
 
+export type LemlistFunnelEvent = {
+  type: string;
+  email: string;
+  createdAt: string | null;
+  campaignId: string;
+};
+
+type RawActivityItem = { email: string; createdAt: string | null };
+
+// Pagina /api/activities hasta agotar resultados o hasta un tope de
+// seguridad. Se asume orden más-reciente-primero (igual que el resto de la
+// app, ver app/api/lemlist/replies/route.ts): si el evento más antiguo de
+// una página ya es anterior a rangeStartMs, no hace falta seguir pidiendo
+// páginas más viejas — así cubrimos el rango de fechas sin tener que traer
+// el historial completo de campañas con mucho volumen.
+async function fetchActivityTypePaginated(
+  campaignId: string,
+  type: string,
+  apiKey: string,
+  rangeStartMs: number
+): Promise<RawActivityItem[]> {
+  const creds = `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`;
+  const pageSize = 200;
+  const maxPages = 5;
+  const out: RawActivityItem[] = [];
+  let offset = 0;
+  for (let page = 0; page < maxPages; page++) {
+    const res = await fetch(
+      `https://api.lemlist.com/api/activities?type=${type}&campaignId=${campaignId}&limit=${pageSize}&offset=${offset}`,
+      { headers: { Authorization: creds } }
+    ).catch(() => null);
+    if (!res?.ok) break;
+    const data = await res.json().catch(() => null);
+    const items: Record<string, unknown>[] = Array.isArray(data) ? data : (data?.data ?? data?.activities ?? []);
+    if (items.length === 0) break;
+    for (const a of items) {
+      const email = (pick(a, "email", "leadEmail") || "").toLowerCase();
+      if (!email) continue;
+      out.push({ email, createdAt: (a.createdAt as string) ?? (a.date as string) ?? null });
+    }
+    const oldest = items[items.length - 1];
+    const oldestTs = new Date((oldest.createdAt as string) ?? (oldest.date as string) ?? 0).getTime();
+    if (!Number.isNaN(oldestTs) && oldestTs < rangeStartMs) break;
+    if (items.length < pageSize) break;
+    offset += pageSize;
+  }
+  return out;
+}
+
 async function fetchActivitiesForCampaign(
   campaignId: string,
   campaignName: string,
-  apiKey: string
+  apiKey: string,
+  rangeStartMs: number
 ): Promise<LemlistActivity[]> {
-  const creds = `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`;
   const out: LemlistActivity[] = [];
   await Promise.all(
     LEMLIST_ACTIVITY_TYPES.map(async ({ type, score, label }) => {
-      const res = await fetch(
-        `https://api.lemlist.com/api/activities?type=${type}&campaignId=${campaignId}&limit=200`,
-        { headers: { Authorization: creds } }
-      ).catch(() => null);
-      if (!res?.ok) return;
-      const data = await res.json().catch(() => null);
-      const items: Record<string, unknown>[] = Array.isArray(data) ? data : (data?.data ?? data?.activities ?? []);
-      for (const a of items) {
-        const email = (pick(a, "email", "leadEmail") || "").toLowerCase();
-        if (!email) continue;
-        out.push({
-          type,
-          score,
-          label,
-          email,
-          createdAt: (a.createdAt as string) ?? (a.date as string) ?? null,
-          campaignId,
-          campaignName,
-        });
+      const items = await fetchActivityTypePaginated(campaignId, type, apiKey, rangeStartMs);
+      for (const { email, createdAt } of items) {
+        out.push({ type, score, label, email, createdAt, campaignId, campaignName });
       }
     })
   );
   return out;
 }
 
+async function fetchFunnelEventsForCampaign(
+  campaignId: string,
+  apiKey: string,
+  rangeStartMs: number
+): Promise<LemlistFunnelEvent[]> {
+  const out: LemlistFunnelEvent[] = [];
+  await Promise.all(
+    LEMLIST_FUNNEL_EVENT_TYPES.map(async (type) => {
+      const items = await fetchActivityTypePaginated(campaignId, type, apiKey, rangeStartMs);
+      for (const { email, createdAt } of items) out.push({ type, email, createdAt, campaignId });
+    })
+  );
+  return out;
+}
+
 // Trae actividades (aperturas, clics, respuestas, conexiones LinkedIn, etc.)
-// de un conjunto de campañas. Se limita deliberadamente a las campañas con
-// actividad en el rango de fechas elegido (no todo el workspace) para no
-// disparar cientos de llamadas a la API de Lemlist en cada carga.
+// de un conjunto de campañas, con fecha propia de cada evento — el llamador
+// filtra por rango. rangeStartMs solo se usa para el early-exit de paginado.
 export async function getAllCampaignsActivities(
   campaigns: LemlistCampaignRef[],
-  apiKey: string
+  apiKey: string,
+  rangeStartMs: number
 ): Promise<LemlistActivity[]> {
   const CHUNK = 4;
   const out: LemlistActivity[] = [];
   for (let i = 0; i < campaigns.length; i += CHUNK) {
     const slice = campaigns.slice(i, i + CHUNK);
-    const results = await Promise.all(slice.map((c) => fetchActivitiesForCampaign(c.id, c.name, apiKey)));
+    const results = await Promise.all(slice.map((c) => fetchActivitiesForCampaign(c.id, c.name, apiKey, rangeStartMs)));
+    for (const r of results) out.push(...r);
+  }
+  return out;
+}
+
+// Trae envíos/rebotes/invitaciones LinkedIn enviadas — el denominador de
+// las tasas de engagement (ver getAllCampaignsActivities para el numerador).
+export async function getAllCampaignsFunnelEvents(
+  campaigns: LemlistCampaignRef[],
+  apiKey: string,
+  rangeStartMs: number
+): Promise<LemlistFunnelEvent[]> {
+  const CHUNK = 4;
+  const out: LemlistFunnelEvent[] = [];
+  for (let i = 0; i < campaigns.length; i += CHUNK) {
+    const slice = campaigns.slice(i, i + CHUNK);
+    const results = await Promise.all(slice.map((c) => fetchFunnelEventsForCampaign(c.id, apiKey, rangeStartMs)));
     for (const r of results) out.push(...r);
   }
   return out;
