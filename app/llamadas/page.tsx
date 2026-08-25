@@ -12,7 +12,7 @@ import {
   IconRefresh,
   IconX,
   IconExternalLink,
-  IconTag,
+  IconFilter,
   IconChevronUp,
   IconChevronDown,
 } from "@tabler/icons-react";
@@ -843,9 +843,10 @@ export default function LlamadasPage() {
                 <IconPhone size={16} className="text-brand" /> Listado de llamadas
                 <span className="text-xs font-normal text-ink-muted">({listCalls.length})</span>
               </h2>
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap px-2.5 py-1.5 rounded-lg bg-[#F4F2FB]">
+                <IconFilter size={14} className="text-ink-subtle shrink-0" />
                 <select
-                  className="input py-1.5 text-sm"
+                  className="input w-auto min-w-0 py-1 px-2 text-xs"
                   value={resultFilter}
                   onChange={(e) => setResultFilter(e.target.value)}
                 >
@@ -855,7 +856,7 @@ export default function LlamadasPage() {
                   ))}
                 </select>
                 <select
-                  className="input py-1.5 text-sm"
+                  className="input w-auto min-w-0 py-1 px-2 text-xs"
                   value={voicemailFilter}
                   onChange={(e) => setVoicemailFilter(e.target.value as "" | "yes" | "no")}
                 >
@@ -863,9 +864,8 @@ export default function LlamadasPage() {
                   <option value="yes">Voicemail: Sí</option>
                   <option value="no">Voicemail: No</option>
                 </select>
-                <IconTag size={15} className="text-ink-subtle" />
                 <select
-                  className="input py-1.5 text-sm"
+                  className="input w-auto min-w-0 py-1 px-2 text-xs"
                   value={tagFilter}
                   onChange={(e) => setTagFilter(e.target.value)}
                 >
