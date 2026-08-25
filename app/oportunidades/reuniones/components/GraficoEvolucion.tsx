@@ -50,8 +50,8 @@ export default function GraficoEvolucion({
     meetings.forEach((meeting) => {
       if (!meeting.fecha_reunion) return;
 
-      const date = new Date(meeting.fecha_reunion);
-      const monthKey = date.toLocaleDateString("es-MX", { year: "numeric", month: "2-digit" });
+      const [año, mes] = meeting.fecha_reunion.split("-");
+      const monthKey = `${mes}/${año}`;
 
       if (!monthsData[monthKey]) {
         monthsData[monthKey] = {
@@ -84,13 +84,11 @@ export default function GraficoEvolucion({
 
   const filteredMeetings = useMemo(() => {
     if (!selectedBar) return [];
-    const [year, month] = selectedBar.periodo.split("/");
+    const [month, year] = selectedBar.periodo.split("/");
     return meetings.filter((m) => {
       if (!m.fecha_reunion) return false;
-      const date = new Date(m.fecha_reunion);
-      const dateMonth = String(date.getMonth() + 1).padStart(2, "0");
-      const dateYear = String(date.getFullYear());
-      return dateMonth === month && dateYear === year && m.realizado === selectedBar.status;
+      const [año, mes] = m.fecha_reunion.split("-");
+      return mes === month && año === year && m.realizado === selectedBar.status;
     });
   }, [selectedBar, meetings]);
 

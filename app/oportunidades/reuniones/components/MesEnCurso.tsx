@@ -49,16 +49,16 @@ export default function MesEnCurso({ meetings }: { meetings: Meeting[] }) {
 
   const reunionesDelMes = meetings.filter((m) => {
     if (!m.fecha_reunion) return false;
-    const date = new Date(m.fecha_reunion);
-    return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+    const [año, mes] = m.fecha_reunion.split("-");
+    return parseInt(mes) === currentMonth + 1 && parseInt(año) === currentYear;
   });
 
   const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
   const lastYear = currentMonth === 0 ? currentYear - 1 : currentYear;
   const reunionesDelMesPasado = meetings.filter((m) => {
     if (!m.fecha_reunion) return false;
-    const date = new Date(m.fecha_reunion);
-    return date.getMonth() === lastMonth && date.getFullYear() === lastYear;
+    const [año, mes] = m.fecha_reunion.split("-");
+    return parseInt(mes) === lastMonth + 1 && parseInt(año) === lastYear;
   });
 
   const countByStatus = (dataset: Meeting[]) => ({
