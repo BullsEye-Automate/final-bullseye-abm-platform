@@ -15,6 +15,9 @@ import {
   IconTrash,
   IconCopy,
   IconGitMerge,
+  IconPhone,
+  IconSearch,
+  IconX,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
@@ -47,6 +50,15 @@ const EMPTY_WEBHOOKS: ClientWebhooks = {
 };
 
 type ExcludedCompany = { id: string; company_name: string; company_website?: string };
+
+type AlloNumber = {
+  number: string;
+  name: string | null;
+  country: string | null;
+  assigned_client_id: string | null;
+  assigned_client_name: string | null;
+};
+type ClientAlloNumber = { id: string; allo_number: string; allo_number_name: string | null };
 
 function Field({
   label,
@@ -106,6 +118,15 @@ export default function ConfigClientePage() {
   const [uploadState, setUploadState]         = useState<"idle" | "uploading" | "done" | "error">("idle");
   const [uploadResult, setUploadResult]       = useState<string | null>(null);
 
+  const [alloNumbers, setAlloNumbers]           = useState<AlloNumber[]>([]);
+  const [alloNumbersState, setAlloNumbersState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [alloNumbersError, setAlloNumbersError] = useState<string | null>(null);
+  const [clientAllo, setClientAllo]             = useState<ClientAlloNumber[]>([]);
+  const [clientAlloLoading, setClientAlloLoading] = useState(false);
+  const [alloSearch, setAlloSearch]             = useState("");
+  const [alloSearchOpen, setAlloSearchOpen]     = useState(false);
+  const [alloAssignError, setAlloAssignError]   = useState<string | null>(null);
+
   function set(field: keyof Config) {
     return (v: string) => setForm((f) => ({ ...f, [field]: v }));
   }
@@ -152,7 +173,79 @@ export default function ConfigClientePage() {
       .then((d) => setExcluded(d.excluded ?? []))
       .catch(() => {})
       .finally(() => setExcludedLoading(false));
+
+    // Cargar números de Allo asignados a este cliente
+    setClientAlloLoading(true);
+    fetch(`/api/clients/${currentClient.id}/allo-numbers`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setClientAllo(d.numbers ?? []))
+      .catch(() => {})
+      .finally(() => setClientAlloLoading(false));
   }, [currentClient?.id]);
+
+  // Cargar el catálogo de números de Allo del workspace (una sola vez)
+  useEffect(() => {
+    setAlloNumbersState("loading");
+    fetch("/api/allo/numbers", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) { setAlloNumbersState("error"); setAlloNumbersError(d.error); return; }
+        setAlloNumbers(d.numbers ?? []);
+        setAlloNumbersState("done");
+      })
+      .catch((e) => { setAlloNumbersState("error"); setAlloNumbersError(e.message ?? "Error de red"); });
+  }, []);
+
+  async function assignAlloNumber(n: AlloNumber) {
+    if (!currentClient) return;
+    setAlloAssignError(null);
+    const res = await fetch(`/api/clients/${currentClient.id}/allo-numbers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ allo_number: n.number, allo_number_name: n.name }),
+    });
+    const d = await res.json();
+    if (!res.ok) { setAlloAssignError(d.error ?? "Error al asignar el número"); return; }
+    setClientAllo((prev) => [...prev, d.number]);
+    setAlloNumbers((prev) =>
+      prev.map((x) =>
+        x.number === n.number
+          ? { ...x, assigned_client_id: currentClient.id, assigned_client_name: currentClient.name }
+          : x
+      )
+    );
+  }
+
+  async function unassignAlloNumber(row: ClientAlloNumber) {
+    if (!currentClient) return;
+    setAlloAssignError(null);
+    const res = await fetch(`/api/clients/${currentClient.id}/allo-numbers`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: row.id }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); setAlloAssignError(d.error ?? "Error al quitar el número"); return; }
+    setClientAllo((prev) => prev.filter((x) => x.id !== row.id));
+    setAlloNumbers((prev) =>
+      prev.map((x) => (x.number === row.allo_number ? { ...x, assigned_client_id: null, assigned_client_name: null } : x))
+    );
+  }
+
+  function toggleAlloNumber(n: AlloNumber, checked: boolean) {
+    if (checked) {
+      assignAlloNumber(n);
+      return;
+    }
+    const row = clientAllo.find((c) => c.allo_number === n.number);
+    if (row) unassignAlloNumber(row);
+  }
+
+  const filteredAlloNumbers = alloNumbers
+    .filter((n) =>
+      !alloSearch.trim() ||
+      `${n.name ?? ""} ${n.number} ${n.country ?? ""}`.toLowerCase().includes(alloSearch.trim().toLowerCase())
+    )
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 
   async function setupHubSpotLists() {
     if (!currentClient) return;
@@ -445,6 +538,115 @@ export default function ConfigClientePage() {
               value={form.clay_contacts_table_id}
               onChange={set("clay_contacts_table_id")}
             />
+          </section>
+
+          {/* Allo */}
+          <section className="card space-y-4">
+            <div>
+              <h2 className="font-semibold flex items-center gap-2">
+                <IconPhone size={18} className="text-brand" /> Allo — gestión telefónica
+              </h2>
+              <p className="text-sm text-ink-muted mt-1">
+                Asigna al cliente los números de Allo que gestiona su equipo de SDRs.
+                La reportería de llamadas (actividades, tasa de conexión, reuniones agendadas, tags)
+                se filtrará solo por estos números.
+              </p>
+            </div>
+
+            {alloNumbersState === "error" && (
+              <div className="flex items-center gap-2 text-xs text-danger-fg">
+                <IconAlertCircle size={14} /> No se pudo cargar el catálogo de Allo: {alloNumbersError}
+              </div>
+            )}
+
+            {/* Buscador + desplegable con selección múltiple */}
+            <div className="relative">
+              <div className="relative">
+                <IconSearch size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-subtle" />
+                <input
+                  className="input pl-8"
+                  placeholder={
+                    alloNumbersState === "loading"
+                      ? "Cargando números de Allo…"
+                      : "Hacé clic para ver todos, o buscá por nombre…"
+                  }
+                  disabled={alloNumbersState !== "done"}
+                  value={alloSearch}
+                  onChange={(e) => setAlloSearch(e.target.value)}
+                  onFocus={() => setAlloSearchOpen(true)}
+                  onBlur={() => setTimeout(() => setAlloSearchOpen(false), 150)}
+                />
+              </div>
+              {alloSearchOpen && (
+                <div
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="absolute z-10 mt-1 w-full max-h-72 overflow-y-auto rounded-lg border border-[#E5E2F0] bg-white shadow-lg"
+                >
+                  {filteredAlloNumbers.length === 0 ? (
+                    <p className="text-xs text-ink-muted px-3 py-2">Sin resultados.</p>
+                  ) : (
+                    filteredAlloNumbers.map((n) => {
+                      const checked = n.assigned_client_id === currentClient.id;
+                      const takenByOther = !!n.assigned_client_id && !checked;
+                      return (
+                        <label
+                          key={n.number}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 ${
+                            takenByOther ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-brand-tint"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="shrink-0"
+                            checked={checked}
+                            disabled={takenByOther}
+                            onChange={(e) => toggleAlloNumber(n, e.target.checked)}
+                          />
+                          <span className="text-sm flex-1">{n.name || "(sin nombre)"}</span>
+                          <span className="text-xs text-ink-subtle font-mono">{n.number}</span>
+                          {takenByOther && (
+                            <span className="text-[11px] text-ink-subtle whitespace-nowrap">
+                              · {n.assigned_client_name ?? "otro cliente"}
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+            {alloAssignError && (
+              <p className="text-xs text-danger-fg">{alloAssignError}</p>
+            )}
+
+            {/* Números asignados */}
+            {clientAlloLoading ? (
+              <div className="flex items-center gap-2 text-ink-muted text-sm">
+                <IconLoader2 size={14} className="animate-spin" /> Cargando…
+              </div>
+            ) : clientAllo.length === 0 ? (
+              <p className="text-xs text-ink-muted">Este cliente no tiene números de Allo asignados.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {clientAllo.map((n) => (
+                  <span
+                    key={n.id}
+                    className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full text-xs bg-brand-tint border border-[#E5E2F0]"
+                  >
+                    <span className="font-medium">{n.allo_number_name || "(sin nombre)"}</span>
+                    <span className="text-ink-subtle font-mono">{n.allo_number}</span>
+                    <button
+                      onClick={() => unassignAlloNumber(n)}
+                      className="text-ink-muted hover:text-danger-fg transition-colors"
+                      title="Quitar número"
+                    >
+                      <IconX size={13} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
           </section>
 
           {/* Empresas excluidas */}

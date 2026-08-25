@@ -6,6 +6,8 @@ export type RangeKey =
   | "last_week"
   | "this_month"
   | "last_month"
+  | "this_quarter"
+  | "last_quarter"
   | "this_semester"
   | "last_semester"
   | "this_year"
@@ -23,6 +25,8 @@ export const RANGE_LABELS: Record<RangeKey, string> = {
   last_week:      "Semana pasada",
   this_month:     "Este mes",
   last_month:     "Mes pasado",
+  this_quarter:   "Este trimestre",
+  last_quarter:   "Trimestre pasado",
   this_semester:  "Este semestre",
   last_semester:  "Semestre pasado",
   this_year:      "Este año",
@@ -100,6 +104,24 @@ export function resolveRange(key: RangeKey, now?: Date): DateRange {
       const prevStart = new Date(Date.UTC(y, m - 2, 1));
       const prevEnd   = new Date(Date.UTC(y, m - 1, 0, 23, 59, 59, 999));
       return { start, end, label: RANGE_LABELS.last_month, previous: { start: prevStart, end: prevEnd } };
+    }
+
+    case "this_quarter": {
+      const qStartMonth = Math.floor(m / 3) * 3;
+      const start = new Date(Date.UTC(y, qStartMonth, 1));
+      const end   = endOfDay(today);
+      const prevStart = new Date(Date.UTC(y, qStartMonth - 3, 1));
+      const prevEnd   = new Date(Date.UTC(y, qStartMonth, 0, 23, 59, 59, 999));
+      return { start, end, label: RANGE_LABELS.this_quarter, previous: { start: prevStart, end: prevEnd } };
+    }
+
+    case "last_quarter": {
+      const currentQStartMonth = Math.floor(m / 3) * 3;
+      const start     = new Date(Date.UTC(y, currentQStartMonth - 3, 1));
+      const end       = new Date(Date.UTC(y, currentQStartMonth, 0, 23, 59, 59, 999));
+      const prevStart = new Date(Date.UTC(y, currentQStartMonth - 6, 1));
+      const prevEnd   = new Date(Date.UTC(y, currentQStartMonth - 3, 0, 23, 59, 59, 999));
+      return { start, end, label: RANGE_LABELS.last_quarter, previous: { start: prevStart, end: prevEnd } };
     }
 
     case "this_semester": {
