@@ -13,6 +13,8 @@ import {
   IconX,
   IconExternalLink,
   IconTag,
+  IconChevronUp,
+  IconChevronDown,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
@@ -80,6 +82,13 @@ const MIN_REAL_CONVERSATION_SECONDS = 60;
 
 function isConnected(c: CallItem): boolean {
   return (c.result === "ANSWERED" || c.result === "TRANSFERRED") && c.duration >= MIN_REAL_CONVERSATION_SECONDS;
+}
+
+// Aproximación de "buzón de voz": contestada/transferida pero por debajo del
+// umbral de conversación real (ver isConnected). Una llamada que nunca fue
+// contestada (ej. CLOSED) tampoco es buzón de voz, así que no cuenta acá.
+function isVoicemailCall(c: CallItem): boolean {
+  return (c.result === "ANSWERED" || c.result === "TRANSFERRED") && c.duration < MIN_REAL_CONVERSATION_SECONDS;
 }
 
 function formatDuration(seconds: number): string {
@@ -168,7 +177,7 @@ function StatCard({
   icon: React.ReactNode;
   label: string;
   value: number;
-  sub?: string;
+  sub?: React.ReactNode;
   onClick: () => void;
 }) {
   return (
@@ -263,6 +272,66 @@ const STAT_TITLES: Record<StatKey, string> = {
   empresas: "Empresas",
 };
 
+type CallSortKey = "date" | "user" | "contact" | "job_title" | "company" | "duration" | "result" | "tags";
+type SortDir = "asc" | "desc";
+
+const CALL_SORT_DEFAULT_DIR: Record<CallSortKey, SortDir> = {
+  date: "desc",
+  user: "asc",
+  contact: "asc",
+  job_title: "asc",
+  company: "asc",
+  duration: "desc",
+  result: "asc",
+  tags: "desc",
+};
+
+function callSortValue(c: CallItem, key: CallSortKey): string | number {
+  switch (key) {
+    case "date": return c.date;
+    case "user": return c.user?.name ?? "";
+    case "contact": return c.contact_name ?? c.contact_number;
+    case "job_title": return c.contact_job_title ?? "";
+    case "company": return c.contact_company ?? "";
+    case "duration": return c.duration;
+    case "result": return c.result ?? "";
+    case "tags": return c.tags.length;
+  }
+}
+
+function SortableTh({
+  label,
+  sortKey,
+  activeKey,
+  dir,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: CallSortKey;
+  activeKey: CallSortKey;
+  dir: SortDir;
+  onSort: (key: CallSortKey) => void;
+  className?: string;
+}) {
+  const active = activeKey === sortKey;
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      className={`px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap cursor-pointer select-none hover:text-ink ${className ?? ""}`}
+    >
+      <span className="inline-flex items-center gap-0.5">
+        {label}
+        {active ? (
+          dir === "asc" ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />
+        ) : (
+          <IconChevronDown size={12} className="opacity-20" />
+        )}
+      </span>
+    </th>
+  );
+}
+
 function CallsTable({
   calls,
   tags,
@@ -272,26 +341,50 @@ function CallsTable({
   tags: AlloTag[];
   onSelectCall: (id: string) => void;
 }) {
+  const [sortKey, setSortKey] = useState<CallSortKey>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  function handleSort(key: CallSortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(CALL_SORT_DEFAULT_DIR[key]);
+    }
+  }
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...calls].sort((a, b) => {
+      const va = callSortValue(a, sortKey);
+      const vb = callSortValue(b, sortKey);
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+      return String(va).localeCompare(String(vb)) * dir;
+    });
+  }, [calls, sortKey, sortDir]);
+
   if (calls.length === 0) {
     return <p className="text-sm text-ink-muted py-6 text-center">Sin llamadas para este filtro.</p>;
   }
+
+  const thProps = { activeKey: sortKey, dir: sortDir, onSort: handleSort };
   return (
     <div className="overflow-x-auto -mx-1">
       <table className="w-full text-sm">
         <thead className="bg-[#F4F2FB]">
           <tr>
-            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Fecha</th>
-            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">SDR</th>
-            <th className="px-3 py-2 text-left font-medium text-ink-muted">Contacto</th>
-            <th className="px-3 py-2 text-left font-medium text-ink-muted">Cargo</th>
-            <th className="px-3 py-2 text-left font-medium text-ink-muted">Empresa</th>
-            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Duración</th>
-            <th className="px-3 py-2 text-left font-medium text-ink-muted whitespace-nowrap">Resultado</th>
-            <th className="px-3 py-2 text-left font-medium text-ink-muted">Etiquetas</th>
+            <SortableTh label="Fecha" sortKey="date" {...thProps} />
+            <SortableTh label="SDR" sortKey="user" {...thProps} />
+            <SortableTh label="Contacto" sortKey="contact" {...thProps} className="whitespace-normal" />
+            <SortableTh label="Cargo" sortKey="job_title" {...thProps} className="whitespace-normal" />
+            <SortableTh label="Empresa" sortKey="company" {...thProps} className="whitespace-normal" />
+            <SortableTh label="Duración" sortKey="duration" {...thProps} />
+            <SortableTh label="Resultado" sortKey="result" {...thProps} />
+            <SortableTh label="Etiquetas" sortKey="tags" {...thProps} className="whitespace-normal" />
           </tr>
         </thead>
         <tbody>
-          {calls.map((c) => (
+          {sorted.map((c) => (
             <tr
               key={c.id}
               onClick={() => onSelectCall(c.id)}
@@ -517,6 +610,8 @@ export default function LlamadasPage() {
   const [numberFilter, setNumberFilter] = useState<string>("");
   const [sdrFilter, setSdrFilter] = useState<string>("");
   const [tagFilter, setTagFilter] = useState<string>("");
+  const [resultFilter, setResultFilter] = useState<string>("");
+  const [voicemailFilter, setVoicemailFilter] = useState<"" | "yes" | "no">("");
 
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -572,10 +667,18 @@ export default function LlamadasPage() {
     return ids;
   }, [filteredCalls]);
 
+  const availableResults = useMemo(() => {
+    const results = new Set<string>();
+    for (const c of filteredCalls) if (c.result) results.add(c.result);
+    return Array.from(results).sort();
+  }, [filteredCalls]);
+
   const listCalls = useMemo(() => {
-    const filtered = tagFilter ? filteredCalls.filter((c) => c.tags.includes(tagFilter)) : filteredCalls;
-    return [...filtered].sort((a, b) => b.date.localeCompare(a.date));
-  }, [filteredCalls, tagFilter]);
+    let filtered = tagFilter ? filteredCalls.filter((c) => c.tags.includes(tagFilter)) : filteredCalls;
+    if (resultFilter) filtered = filtered.filter((c) => c.result === resultFilter);
+    if (voicemailFilter) filtered = filtered.filter((c) => isVoicemailCall(c) === (voicemailFilter === "yes"));
+    return filtered;
+  }, [filteredCalls, tagFilter, resultFilter, voicemailFilter]);
 
   const statModalCalls = useMemo(() => {
     switch (statModal) {
@@ -715,18 +818,51 @@ export default function LlamadasPage() {
               icon={<IconCalendarEvent size={13} />}
               label="Reuniones agendadas"
               value={stats.reuniones_agendadas}
+              sub={
+                stats.contactos > 0 || stats.conectados > 0 ? (
+                  <div className="space-y-0.5">
+                    <div>
+                      {stats.contactos > 0 ? Math.round((stats.reuniones_agendadas / stats.contactos) * 100) : 0}%
+                      sobre contactos
+                    </div>
+                    <div>
+                      {stats.conectados > 0 ? Math.round((stats.reuniones_agendadas / stats.conectados) * 100) : 0}%
+                      sobre conectados
+                    </div>
+                  </div>
+                ) : undefined
+              }
               onClick={() => setStatModal("reuniones")}
             />
           </div>
 
-          {/* Filtro de etiquetas + listado */}
+          {/* Filtros + listado */}
           <section className="card space-y-3">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <h2 className="font-semibold flex items-center gap-2">
                 <IconPhone size={16} className="text-brand" /> Listado de llamadas
                 <span className="text-xs font-normal text-ink-muted">({listCalls.length})</span>
               </h2>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  className="input py-1.5 text-sm"
+                  value={resultFilter}
+                  onChange={(e) => setResultFilter(e.target.value)}
+                >
+                  <option value="">Todos los resultados</option>
+                  {availableResults.map((r) => (
+                    <option key={r} value={r}>{RESULT_META[r]?.label ?? r}</option>
+                  ))}
+                </select>
+                <select
+                  className="input py-1.5 text-sm"
+                  value={voicemailFilter}
+                  onChange={(e) => setVoicemailFilter(e.target.value as "" | "yes" | "no")}
+                >
+                  <option value="">Voicemail: todas</option>
+                  <option value="yes">Voicemail: Sí</option>
+                  <option value="no">Voicemail: No</option>
+                </select>
                 <IconTag size={15} className="text-ink-subtle" />
                 <select
                   className="input py-1.5 text-sm"
