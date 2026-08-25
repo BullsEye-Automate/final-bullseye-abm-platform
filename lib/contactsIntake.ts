@@ -61,6 +61,12 @@ export type IntakeResult =
 
 export type IntakeOptions = {
   auto_push_clay?: boolean; // default true — false salta el push a Clay (ej. búsqueda manual, que va directo a Lemlist)
+  // default false — true evita el auto-descarte por prefilter_result='no'. Para
+  // búsqueda manual: el humano ya curó estos contactos a mano en Sales Navigator
+  // (cargos amplios como "Revenue Lead LATAM" no matchean el ICP pero sí son fit),
+  // así que quedan activos ("pending") para que el humano decida, en vez de
+  // descartarse solos por el pre-filtro de cargo de la IA.
+  keep_no_fit_active?: boolean;
 };
 
 export async function intakeContactsForCompany(
@@ -236,7 +242,7 @@ export async function intakeContactsForCompany(
       seniority:        c.seniority        ?? null,
       tenure:           c.tenure           ?? null,
       prefilter_result: prefilter,
-      status:           prefilter === "yes" ? "pending" : "discarded",
+      status:           prefilter === "yes" || opts.keep_no_fit_active ? "pending" : "discarded",
       source
     });
   }

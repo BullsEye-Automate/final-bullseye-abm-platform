@@ -103,8 +103,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     phone: l.phone,
   }));
 
+  // keep_no_fit_active: estos leads los eligió el humano a mano con los checkboxes
+  // de arriba — un cargo amplio que no matchea el ICP no debería descartarlos solos.
   const intakeResult = contacts.length > 0
-    ? await intakeContactsForCompany(db, params.id, contacts, "sales_navigator", { auto_push_clay: false }).catch((err) => ({
+    ? await intakeContactsForCompany(db, params.id, contacts, "sales_navigator", { auto_push_clay: false, keep_no_fit_active: true }).catch((err) => ({
         ok: false as const,
         status: 500,
         error: String(err?.message ?? err),
@@ -124,7 +126,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       }
     : { yes: 0, no: 0, skipped: 0, duplicates: 0 };
 
-  if (summary.yes > 0) {
+  // Cuenta contactos activos post-intake, no solo los que pasaron el pre-filtro
+  // de cargo — con keep_no_fit_active los "no" quedan activos igual (el humano
+  // ya los eligió a mano con los checkboxes de arriba).
+  const activeContacts = summary.yes + summary.no;
+
+  if (activeContacts > 0) {
     await db.from("companies")
       .update({ clay_no_contacts_at: null, sales_nav_status: null })
       .eq("id", params.id);
@@ -133,12 +140,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const outcomes = intakeResult?.ok ? intakeResult.outcomes : [];
 
   let autoPushResults: Record<string, unknown>[] = [];
-  if (summary.yes > 0) {
-    const { data: yesContacts } = await db
+  if (activeContacts > 0) {
+    const { data: reviewContacts } = await db
       .from("contacts")
       .select("id, job_title, fit_score")
       .eq("company_id", params.id)
-      .eq("prefilter_result", "yes")
       .is("lemlist_pushed_at", null)
       .neq("status", "discarded");
 
@@ -146,10 +152,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // contra el buyer persona del ICP del cliente (decisores/influenciadores/a
     // evitar). Se recalcula siempre (no solo si falta) porque depende del fit
     // de la empresa, que puede haberse reusado de otra corrida.
-    if (yesContacts?.length && company.client_id) {
+    if (reviewContacts?.length && company.client_id) {
       const roles = await getClientBuyerPersonaRoles(db, company.client_id);
       await Promise.all(
-        yesContacts.map((c) => {
+        reviewContacts.map((c) => {
           const fitScore = computeContactFitScore({ jobTitle: c.job_title, roles, companyFit: company.fit_score });
           return fitScore === c.fit_score ? null : db.from("contacts").update({ fit_score: fitScore }).eq("id", c.id);
         })
@@ -157,10 +163,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? (req.headers.get("host") ? `https://${req.headers.get("host")}` : "");
-    if (autoPushLemlist && baseUrl && yesContacts?.length) {
+    if (autoPushLemlist && baseUrl && reviewContacts?.length) {
       const CHUNK = 3;
-      for (let i = 0; i < yesContacts.length; i += CHUNK) {
-        const slice = yesContacts.slice(i, i + CHUNK);
+      for (let i = 0; i < reviewContacts.length; i += CHUNK) {
+        const slice = reviewContacts.slice(i, i + CHUNK);
         const results = await Promise.all(
           slice.map(async (c) => {
             await db.from("contacts").update({ fit_action: "enrich" }).eq("id", c.id);
