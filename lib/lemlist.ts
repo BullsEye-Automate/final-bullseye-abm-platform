@@ -54,7 +54,7 @@ export function resolveManualSearchCampaignId(config: {
   return config?.lemlist_manual_search_campaign_id ?? config?.lemlist_staging_campaign_id ?? null;
 }
 
-function pick(obj: Record<string, unknown> | undefined, ...keys: string[]): string {
+export function pick(obj: Record<string, unknown> | undefined, ...keys: string[]): string {
   for (const k of keys) {
     const v = obj?.[k];
     if (typeof v === "string" && v.trim()) return v.trim();
@@ -62,7 +62,7 @@ function pick(obj: Record<string, unknown> | undefined, ...keys: string[]): stri
   return "";
 }
 
-function orNull(v: string): string | null {
+export function orNull(v: string): string | null {
   return v || null;
 }
 
@@ -107,7 +107,7 @@ async function inferCompanyNameFromBio(bio: string, clientId?: string, userId?: 
 // solo recibe leads nuevos) es una aproximación razonable de "cuándo se
 // agregó"; si el mismo contacto ya existía de otra campaña, puede ser más
 // vieja que el alta real a esta campaña — limitación conocida de la API.
-function mapRawLead(raw: Record<string, unknown>): LemlistLeadDetail {
+export function mapRawLead(raw: Record<string, unknown>): LemlistLeadDetail {
   const vars = (raw.vars ?? raw.fields ?? {}) as Record<string, unknown>;
 
   let firstName = pick(raw, "firstName", "first_name") || pick(vars, "firstName", "first_name");
@@ -267,4 +267,127 @@ export async function getCampaignLeadsWithDetails(
   }
 
   return { ok: true, leads, matched_url };
+}
+
+// ─── Reporte cross-campaña (todas las campañas del workspace) ─────────────────
+
+export type LemlistCampaignRef = { id: string; name: string };
+
+export async function listAllLemlistCampaigns(apiKey: string): Promise<LemlistCampaignRef[]> {
+  const creds = `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`;
+  const res = await fetch("https://api.lemlist.com/api/campaigns", { headers: { Authorization: creds } });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Lemlist ${res.status} listando campañas: ${text.slice(0, 200)}`);
+  }
+  const data = await res.json().catch(() => null);
+  const items: Record<string, unknown>[] = Array.isArray(data)
+    ? data
+    : ((data as any)?.campaigns ?? (data as any)?.items ?? []);
+  return items.map((c) => ({
+    id: (c._id ?? c.id) as string,
+    name: (c.name as string) ?? "(sin nombre)",
+  }));
+}
+
+async function fetchCampaignLeadsRaw(campaignId: string, apiKey: string): Promise<Record<string, unknown>[]> {
+  const creds = `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`;
+  const all: Record<string, unknown>[] = [];
+  let offset = 0;
+  const limit = 100;
+  while (true) {
+    const res = await fetch(
+      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=${limit}&offset=${offset}`,
+      { headers: { Authorization: creds } }
+    );
+    if (!res.ok) break;
+    const data = await res.json().catch(() => null);
+    const items = (data?.items ?? (Array.isArray(data) ? data : [])) as Record<string, unknown>[];
+    if (items.length === 0) break;
+    all.push(...items);
+    if (items.length < limit) break;
+    offset += limit;
+  }
+  return all;
+}
+
+// Completa email/nombre/empresa/fecha vía GET /contacts/{id} — sin la
+// inferencia por IA de getCampaignLeadsWithDetails (sería costoso repetirla
+// para potencialmente miles de leads en un reporte agregado). contactCache
+// se comparte entre campañas para no pedir dos veces el mismo contacto si
+// aparece en más de una.
+async function enrichLeadsBasic(
+  leads: LemlistLeadDetail[],
+  apiKey: string,
+  contactCache: Map<string, Record<string, unknown>>
+): Promise<void> {
+  const creds = `Basic ${Buffer.from(`:${apiKey}`).toString("base64")}`;
+  const incomplete = leads.filter((l) => !l.email || (!l.first_name && !l.last_name) || !l.company_name);
+  const contactIds = Array.from(
+    new Set(incomplete.map((l) => l.contact_id).filter((v): v is string => v != null && !contactCache.has(v)))
+  );
+
+  const CHUNK = 5;
+  for (let i = 0; i < contactIds.length; i += CHUNK) {
+    const slice = contactIds.slice(i, i + CHUNK);
+    const results = await Promise.all(
+      slice.map(async (cid) => {
+        const res = await fetch(`https://api.lemlist.com/api/contacts/${cid}`, { headers: { Authorization: creds } }).catch(() => null);
+        if (!res?.ok) return null;
+        const contact = await res.json().catch(() => null);
+        return contact ? ([cid, contact] as const) : null;
+      })
+    );
+    for (const r of results) if (r) contactCache.set(r[0], r[1]);
+  }
+
+  for (const lead of incomplete) {
+    if (!lead.contact_id) continue;
+    const c = contactCache.get(lead.contact_id);
+    if (!c) continue;
+    const cVars = (c.vars ?? c.fields ?? {}) as Record<string, unknown>;
+
+    if (!lead.email) lead.email = orNull(pick(c, "email") || pick(cVars, "email"));
+    if (!lead.first_name && !lead.last_name) {
+      const fullName = pick(c, "fullName", "full_name");
+      if (fullName) {
+        const parts = fullName.split(/\s+/);
+        lead.first_name = parts[0] ?? "";
+        lead.last_name = parts.slice(1).join(" ");
+      } else {
+        lead.first_name = pick(c, "firstName", "first_name") || pick(cVars, "firstName", "first_name");
+        lead.last_name = pick(c, "lastName", "last_name") || pick(cVars, "lastName", "last_name");
+      }
+    }
+    if (!lead.company_name) lead.company_name = pick(c, "companyName", "company_name", "company") || pick(cVars, "companyName", "company_name", "company");
+    if (!lead.job_title) lead.job_title = pick(c, "jobTitle", "job_title", "title") || pick(cVars, "jobTitle", "job_title");
+    if (!lead.added_at) lead.added_at = pick(c, "createdAt", "created_at") || null;
+  }
+}
+
+export type LemlistLeadWithCampaign = LemlistLeadDetail & { campaign_id: string; campaign_name: string };
+
+// Trae los leads de TODAS las campañas del workspace (una fila por
+// membresía campaña-contacto, un mismo contacto puede aparecer varias
+// veces si está en más de una campaña). Sin inferencia por IA — ver
+// enrichLeadsBasic. Procesa las campañas secuencialmente para no saturar
+// la API de Lemlist con muchas campañas en paralelo.
+export async function getAllCampaignsLeads(
+  apiKey: string
+): Promise<{ campaigns: LemlistCampaignRef[]; leads: LemlistLeadWithCampaign[] }> {
+  const campaigns = await listAllLemlistCampaigns(apiKey);
+  const contactCache = new Map<string, Record<string, unknown>>();
+  const allLeads: LemlistLeadWithCampaign[] = [];
+
+  for (const campaign of campaigns) {
+    const raw = await fetchCampaignLeadsRaw(campaign.id, apiKey);
+    if (raw.length === 0) continue;
+    const leads = raw.map(mapRawLead);
+    await enrichLeadsBasic(leads, apiKey, contactCache);
+    for (const lead of leads) {
+      allLeads.push({ ...lead, campaign_id: campaign.id, campaign_name: campaign.name });
+    }
+  }
+
+  return { campaigns, leads: allLeads };
 }
