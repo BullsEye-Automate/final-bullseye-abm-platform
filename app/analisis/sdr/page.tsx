@@ -42,10 +42,20 @@ type ApiResponse = {
   all_sdrs?: SdrRoster[];
 };
 
+// Rangos propios de la sección "Resultados SDR" (no viven en
+// lib/dashboardRanges.ts para no agregar estas opciones en los demás
+// filtros de la app que comparten ese archivo). Van primero en el dropdown.
+type GraficoRangeKey = RangeKey | "last_3_months" | "last_6_months";
+const GRAFICO_RANGE_LABELS: Record<string, string> = {
+  last_3_months: "Últimos 3 meses",
+  last_6_months: "Últimos 6 meses",
+  ...RANGE_LABELS,
+};
+
 export default function AnalisisSdr() {
   const { currentClient } = useClient();
 
-  const [graficoRangeKey, setGraficoRangeKey] = useState<RangeKey>("this_month");
+  const [graficoRangeKey, setGraficoRangeKey] = useState<GraficoRangeKey>("this_month");
   const [graficoCustomFrom, setGraficoCustomFrom] = useState<string>("");
   const [graficoCustomTo, setGraficoCustomTo] = useState<string>("");
   const [graficoSdrFilter, setGraficoSdrFilter] = useState<string[]>([]);
@@ -221,10 +231,10 @@ export default function AnalisisSdr() {
             <label className="text-xs text-ink-muted font-medium">Período</label>
             <select
               value={graficoRangeKey}
-              onChange={(e) => setGraficoRangeKey(e.target.value as RangeKey)}
+              onChange={(e) => setGraficoRangeKey(e.target.value as GraficoRangeKey)}
               className="input py-1.5 text-sm"
             >
-              {Object.entries(RANGE_LABELS).map(([k, l]) => (
+              {Object.entries(GRAFICO_RANGE_LABELS).map(([k, l]) => (
                 <option key={k} value={k}>
                   {l}
                 </option>

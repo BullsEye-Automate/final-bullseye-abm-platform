@@ -128,10 +128,18 @@ export default function GraficoResultadosSdr({
   };
 
   const metrics = useMemo(() => {
-    const llamadasValues = chartData
+    // El mes en curso siempre está incompleto (parcial), así que se excluye
+    // del cálculo del promedio en vistas mensuales para no distorsionarlo a
+    // la baja — la barra del mes en curso igual se muestra en el gráfico,
+    // solo se omite de este cálculo.
+    const currentMonthKey = new Date().toISOString().slice(0, 7);
+    const dataForAvg =
+      granularidad === "mes" ? chartData.filter((d) => d.fechaKey !== currentMonthKey) : chartData;
+
+    const llamadasValues = dataForAvg
       .filter((d) => d.Llamadas > 0)
       .map((d) => d.Llamadas);
-    const reunionesValues = chartData
+    const reunionesValues = dataForAvg
       .filter((d) => d["Reuniones Agendadas"] > 0)
       .map((d) => d["Reuniones Agendadas"]);
 
@@ -139,7 +147,7 @@ export default function GraficoResultadosSdr({
       promedio_llamadas: llamadasValues.length > 0 ? (llamadasValues.reduce((a, b) => a + b, 0) / llamadasValues.length).toFixed(1) : "0",
       promedio_reuniones: reunionesValues.length > 0 ? (reunionesValues.reduce((a, b) => a + b, 0) / reunionesValues.length).toFixed(1) : "0",
     };
-  }, [chartData]);
+  }, [chartData, granularidad]);
 
   const toggleSeries = (key: string) => {
     const newVisible = new Set(visibleSeries);

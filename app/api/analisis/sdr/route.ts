@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
     // también sdr_id (singular) por compatibilidad.
     const sdrIdsParam = request.nextUrl.searchParams.get("sdr_ids") || request.nextUrl.searchParams.get("sdr_id");
     const selectedSdrIds = sdrIdsParam ? sdrIdsParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
-    const rangeKey = (request.nextUrl.searchParams.get("rangeKey") || "mes") as RangeKey;
+    const rangeKeyRaw = request.nextUrl.searchParams.get("rangeKey") || "mes";
     const customFromParam = request.nextUrl.searchParams.get("custom_from");
     const customToParam = request.nextUrl.searchParams.get("custom_to");
 
@@ -149,22 +149,52 @@ export async function GET(request: NextRequest) {
 
     const db = supabaseAdmin();
     const isAllClients = clientId === "__all__";
-    const effectiveRangeKey: RangeKey = isValidRangeKey(rangeKey) ? rangeKey : "this_month";
     const isValidDateParam = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
-    let range = resolveRange(effectiveRangeKey);
-    if (effectiveRangeKey === "custom" && isValidDateParam(customFromParam) && isValidDateParam(customToParam)) {
+    // "last_3_months"/"last_6_months" son rangos propios de este módulo (no
+    // viven en lib/dashboardRanges.ts para no agregar opciones en los demás
+    // filtros de la app que comparten ese archivo). Incluyen el mes en curso
+    // (en progreso) + los meses cerrados anteriores hasta completar N meses.
+    const LAST_N_MONTHS: Record<string, number> = { last_3_months: 3, last_6_months: 6 };
+    const isLastNMonths = rangeKeyRaw in LAST_N_MONTHS;
+
+    let effectiveRangeKey: RangeKey = "this_month";
+    let range: { start: Date; end: Date; label: string; previous: { start: Date; end: Date } };
+
+    if (isLastNMonths) {
+      const n = LAST_N_MONTHS[rangeKeyRaw];
+      const now = new Date();
+      const y = now.getUTCFullYear();
+      const m = now.getUTCMonth();
+      const start = new Date(Date.UTC(y, m - (n - 1), 1));
+      const end = endOfDayUTC(now);
       range = {
-        start: new Date(`${customFromParam}T00:00:00.000Z`),
-        end: new Date(`${customToParam}T23:59:59.999Z`),
-        label: "Fecha personalizada",
-        previous: range.previous,
+        start,
+        end,
+        label: rangeKeyRaw === "last_3_months" ? "Últimos 3 meses" : "Últimos 6 meses",
+        previous: { start, end },
       };
+    } else {
+      effectiveRangeKey = isValidRangeKey(rangeKeyRaw) ? rangeKeyRaw : "this_month";
+      range = resolveRange(effectiveRangeKey);
+      if (effectiveRangeKey === "custom" && isValidDateParam(customFromParam) && isValidDateParam(customToParam)) {
+        range = {
+          start: new Date(`${customFromParam}T00:00:00.000Z`),
+          end: new Date(`${customToParam}T23:59:59.999Z`),
+          label: "Fecha personalizada",
+          previous: range.previous,
+        };
+      }
     }
 
     const dateFrom = toDateParam(range.start);
     const dateTo = toDateParam(range.end);
-    const meetingsRangeEnd = resolveMeetingsRangeEnd(effectiveRangeKey, range.end, new Date());
+    // Para "últimos N meses" el rango termina en el mes en curso, así que
+    // igual que "this_month" hay que extender hasta fin de ese mes para
+    // capturar reuniones Pendientes agendadas a futuro dentro de él.
+    const meetingsRangeEnd = isLastNMonths
+      ? endOfDayUTC(new Date(Date.UTC(range.end.getUTCFullYear(), range.end.getUTCMonth() + 1, 0)))
+      : resolveMeetingsRangeEnd(effectiveRangeKey, range.end, new Date());
     const meetingsDateTo = toDateParam(meetingsRangeEnd);
 
     // Obtener números de Allo asignados al cliente
