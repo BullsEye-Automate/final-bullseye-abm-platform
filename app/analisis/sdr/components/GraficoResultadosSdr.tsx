@@ -38,7 +38,9 @@ export default function GraficoResultadosSdr({
   data,
   granularidad = "dia",
 }: GraficoResultadosSdrProps) {
-  const [visibleSeries, setVisibleSeries] = useState<Set<string>>(new Set(["Llamadas", "Reuniones Agendadas"]));
+  const [visibleSeries, setVisibleSeries] = useState<Set<string>>(
+    new Set(["Llamadas", "Reuniones Agendadas", "Reuniones Realizadas"])
+  );
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedFecha, setSelectedFecha] = useState<string>("");
   const [selectedReuniones, setSelectedReuniones] = useState<Reunion[]>([]);
@@ -49,6 +51,7 @@ export default function GraficoResultadosSdr({
       fechaKey: string;
       Llamadas: number;
       "Reuniones Agendadas": number;
+      "Reuniones Realizadas": number;
       reuniones: Reunion[];
     }> = [];
 
@@ -67,6 +70,7 @@ export default function GraficoResultadosSdr({
         fechaKey: d.fecha,
         Llamadas: d.llamadas_realizadas,
         "Reuniones Agendadas": d.reuniones_agendadas,
+        "Reuniones Realizadas": d.reuniones_realizadas,
         reuniones: d.reuniones || [],
       }));
     } else if (granularidad === "semana") {
@@ -88,6 +92,7 @@ export default function GraficoResultadosSdr({
           fechaKey: week,
           Llamadas: items.reduce((sum, i) => sum + i.llamadas_realizadas, 0),
           "Reuniones Agendadas": items.reduce((sum, i) => sum + i.reuniones_agendadas, 0),
+          "Reuniones Realizadas": items.reduce((sum, i) => sum + i.reuniones_realizadas, 0),
           reuniones: items.flatMap((i) => i.reuniones || []),
         }));
     } else {
@@ -114,11 +119,14 @@ export default function GraficoResultadosSdr({
           fechaKey: month,
           Llamadas: items.reduce((sum, i) => sum + i.llamadas_realizadas, 0),
           "Reuniones Agendadas": items.reduce((sum, i) => sum + i.reuniones_agendadas, 0),
+          "Reuniones Realizadas": items.reduce((sum, i) => sum + i.reuniones_realizadas, 0),
           reuniones: items.flatMap((i) => i.reuniones || []),
         }));
     }
 
-    return processed.filter((d) => d.Llamadas > 0 || d["Reuniones Agendadas"] > 0);
+    return processed.filter(
+      (d) => d.Llamadas > 0 || d["Reuniones Agendadas"] > 0 || d["Reuniones Realizadas"] > 0
+    );
   }, [data, granularidad]);
 
   const handleReunionesClick = (dataPoint: any) => {
@@ -139,13 +147,20 @@ export default function GraficoResultadosSdr({
     const llamadasValues = dataForAvg
       .filter((d) => d.Llamadas > 0)
       .map((d) => d.Llamadas);
-    const reunionesValues = dataForAvg
+    const agendadasValues = dataForAvg
       .filter((d) => d["Reuniones Agendadas"] > 0)
       .map((d) => d["Reuniones Agendadas"]);
+    const realizadasValues = dataForAvg
+      .filter((d) => d["Reuniones Realizadas"] > 0)
+      .map((d) => d["Reuniones Realizadas"]);
+
+    const avg = (values: number[]) =>
+      values.length > 0 ? (values.reduce((a, b) => a + b, 0) / values.length).toFixed(1) : "0";
 
     return {
-      promedio_llamadas: llamadasValues.length > 0 ? (llamadasValues.reduce((a, b) => a + b, 0) / llamadasValues.length).toFixed(1) : "0",
-      promedio_reuniones: reunionesValues.length > 0 ? (reunionesValues.reduce((a, b) => a + b, 0) / reunionesValues.length).toFixed(1) : "0",
+      promedio_llamadas: avg(llamadasValues),
+      promedio_reuniones: avg(agendadasValues),
+      promedio_reuniones_realizadas: avg(realizadasValues),
     };
   }, [chartData, granularidad]);
 
@@ -162,6 +177,7 @@ export default function GraficoResultadosSdr({
   const LEGEND_ITEMS = [
     { key: "Llamadas", color: "#251762" },
     { key: "Reuniones Agendadas", color: "#3B82F6" },
+    { key: "Reuniones Realizadas", color: "#10B981" },
   ];
 
   const CustomLegend = () => (
@@ -198,6 +214,9 @@ export default function GraficoResultadosSdr({
           {visibleSeries.has("Reuniones Agendadas") && payload.some((p: any) => p.dataKey === "Reuniones Agendadas") && (
             <p className="text-blue-600">📅 Agendadas: {payload.find((p: any) => p.dataKey === "Reuniones Agendadas")?.value}</p>
           )}
+          {visibleSeries.has("Reuniones Realizadas") && payload.some((p: any) => p.dataKey === "Reuniones Realizadas") && (
+            <p className="text-green-600">✓ Realizadas: {payload.find((p: any) => p.dataKey === "Reuniones Realizadas")?.value}</p>
+          )}
         </div>
       );
     }
@@ -225,8 +244,14 @@ export default function GraficoResultadosSdr({
           )}
           {visibleSeries.has("Reuniones Agendadas") && (
             <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <div className="text-xs text-gray-600 font-medium">PROMEDIO REUNIONES</div>
+              <div className="text-xs text-gray-600 font-medium">PROMEDIO AGENDADAS</div>
               <div className="text-3xl font-bold text-blue-600 mt-1">{metrics.promedio_reuniones}</div>
+            </div>
+          )}
+          {visibleSeries.has("Reuniones Realizadas") && (
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <div className="text-xs text-gray-600 font-medium">PROMEDIO REALIZADAS</div>
+              <div className="text-3xl font-bold text-green-600 mt-1">{metrics.promedio_reuniones_realizadas}</div>
             </div>
           )}
         </div>
@@ -272,6 +297,14 @@ export default function GraficoResultadosSdr({
                       handleReunionesClick(data);
                     }
                   }}
+                />
+              )}
+              {visibleSeries.has("Reuniones Realizadas") && (
+                <Bar
+                  dataKey="Reuniones Realizadas"
+                  fill="#10B981"
+                  radius={[8, 8, 0, 0]}
+                  label={{ position: "top", fill: "#10B981", fontSize: 12, fontWeight: "600" }}
                 />
               )}
             </BarChart>
