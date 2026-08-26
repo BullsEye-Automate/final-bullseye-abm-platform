@@ -1,11 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  IconCalendar,
-  IconUsers,
   IconPhone,
-  IconCalendarEvent,
   IconLoader2,
   IconAlertCircle,
   IconTrendingUp,
@@ -14,8 +11,6 @@ import { useClient } from "@/lib/clientContext";
 import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
 import GraficoResultadosSdr from "./components/GraficoResultadosSdr";
 import TablaRankingSdr from "./components/TablaRankingSdr";
-
-// ─── Tipos ──────────────────────────────────────────────────────────────────
 
 type SdrMetrics = {
   sdr_id: string;
@@ -38,160 +33,252 @@ type ResultadosDia = {
 type ApiResponse = {
   sdrs_data: SdrMetrics[];
   resultados_por_dia: ResultadosDia[];
-  error?: string;
 };
-
-// ─── Página ─────────────────────────────────────────────────────────────────
 
 export default function AnalisisSdr() {
   const { currentClient } = useClient();
-  const [rangeKey, setRangeKey] = useState<RangeKey>("mes");
-  const [clientFilter, setClientFilter] = useState<string>("");
-  const [sdrFilter, setSdrFilter] = useState<string>("");
-  const [granularidad, setGranularidad] = useState<"dia" | "semana" | "mes">("dia");
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<ApiResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  // Cargar datos
-  const load = async (clientId?: string) => {
-    setLoading(true);
-    setError(null);
+  const [graficoRangeKey, setGraficoRangeKey] = useState<RangeKey>("this_month");
+  const [graficoSdrFilter, setGraficoSdrFilter] = useState<string>("");
+  const [graficoGranularidad, setGraficoGranularidad] = useState<"dia" | "semana" | "mes">("dia");
+  const [graficoLoading, setGraficoLoading] = useState(false);
+  const [graficoData, setGraficoData] = useState<ApiResponse | null>(null);
+  const [graficoError, setGraficoError] = useState<string | null>(null);
+
+  const [tablaRangeKey, setTablaRangeKey] = useState<RangeKey>("this_month");
+  const [tablaSdrFilter, setTablaSdrFilter] = useState<string>("");
+  const [tablaLoading, setTablaLoading] = useState(false);
+  const [tablaData, setTablaData] = useState<ApiResponse | null>(null);
+  const [tablaError, setTablaError] = useState<string | null>(null);
+
+  const loadGrafico = async () => {
+    setGraficoLoading(true);
+    setGraficoError(null);
     try {
       const searchParams = new URLSearchParams({
-        rangeKey,
-        ...(clientId && { client_id: clientId }),
-        ...(sdrFilter && { sdr_id: sdrFilter }),
+        rangeKey: graficoRangeKey,
+        client_id: currentClient?.id || "__all__",
+        ...(graficoSdrFilter && { sdr_id: graficoSdrFilter }),
       });
 
-      const response = await fetch(`/api/analisis/sdr?${searchParams}`, {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
-
+      const response = await fetch(`/api/analisis/sdr?${searchParams}`);
       if (!response.ok) {
-        const text = await response.text();
-        setError(text || "Error al cargar datos");
-        setData(null);
+        setGraficoError("Error al cargar datos");
       } else {
-        const json = (await response.json()) as ApiResponse;
-        setData(json);
+        setGraficoData(await response.json());
       }
     } catch (err) {
-      setError((err as Error).message);
-      setData(null);
+      setGraficoError((err as Error).message);
     } finally {
-      setLoading(false);
+      setGraficoLoading(false);
+    }
+  };
+
+  const loadTabla = async () => {
+    setTablaLoading(true);
+    setTablaError(null);
+    try {
+      const searchParams = new URLSearchParams({
+        rangeKey: tablaRangeKey,
+        client_id: currentClient?.id || "__all__",
+        ...(tablaSdrFilter && { sdr_id: tablaSdrFilter }),
+      });
+
+      const response = await fetch(`/api/analisis/sdr?${searchParams}`);
+      if (!response.ok) {
+        setTablaError("Error al cargar datos");
+      } else {
+        setTablaData(await response.json());
+      }
+    } catch (err) {
+      setTablaError((err as Error).message);
+    } finally {
+      setTablaLoading(false);
     }
   };
 
   useEffect(() => {
     if (currentClient?.id) {
-      load(currentClient.id);
+      loadGrafico();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentClient?.id, rangeKey, sdrFilter]);
+  }, [currentClient?.id, graficoRangeKey, graficoSdrFilter]);
+
+  useEffect(() => {
+    if (currentClient?.id) {
+      loadTabla();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentClient?.id, tablaRangeKey, tablaSdrFilter]);
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <header className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="label">Reportería</div>
-          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            <IconTrendingUp size={24} />
-            Análisis SDR
-          </h1>
-          <p className="text-sm text-ink-muted mt-1">
-            Rendimiento y métricas de los SDRs por período.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          <select
-            className="input py-1.5 text-sm"
-            value={rangeKey}
-            onChange={(e) => setRangeKey(e.target.value as RangeKey)}
-          >
-            {Object.entries(RANGE_LABELS).map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
-          </select>
-
-          <select
-            className="input py-1.5 text-sm"
-            value={sdrFilter}
-            onChange={(e) => setSdrFilter(e.target.value)}
-          >
-            <option value="">Todos los SDRs</option>
-            {data?.sdrs_data?.map((sdr) => (
-              <option key={sdr.sdr_id} value={sdr.sdr_id}>
-                {sdr.sdr_nombre}
-              </option>
-            ))}
-          </select>
-        </div>
+      <header>
+        <div className="label">Reportería</div>
+        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+          <IconTrendingUp size={24} />
+          Análisis SDR
+        </h1>
+        <p className="text-sm text-ink-muted mt-1">
+          Rendimiento y métricas de los SDRs por período.
+        </p>
       </header>
 
-      {error && (
-        <div className="card flex items-center gap-3 text-error-fg border border-error-bg bg-error-bg/40 text-sm">
-          <IconAlertCircle size={18} className="shrink-0" />
-          {error}
+      {/* Sección Gráfico */}
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b">
+          <h2 className="font-semibold flex items-center gap-2">
+            <IconPhone size={16} className="text-brand" /> Resultados SDR
+          </h2>
         </div>
-      )}
 
-      {loading && (
-        <div className="flex items-center gap-3 text-ink-muted py-10 justify-center">
-          <IconLoader2 size={22} className="animate-spin" />
-          <span>Cargando datos…</span>
+        {/* Filtros específicos del gráfico */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Período</label>
+            <select
+              value={graficoRangeKey}
+              onChange={(e) => setGraficoRangeKey(e.target.value as RangeKey)}
+              className="input py-1.5 text-sm"
+            >
+              {Object.entries(RANGE_LABELS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">SDR</label>
+            <select
+              value={graficoSdrFilter}
+              onChange={(e) => setGraficoSdrFilter(e.target.value)}
+              className="input py-1.5 text-sm"
+            >
+              <option value="">Todos los SDRs</option>
+              {graficoData?.sdrs_data?.map((sdr) => (
+                <option key={sdr.sdr_id} value={sdr.sdr_id}>
+                  {sdr.sdr_nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Granularidad</label>
+            <select
+              value={graficoGranularidad}
+              onChange={(e) => setGraficoGranularidad(e.target.value as "dia" | "semana" | "mes")}
+              className="input py-1.5 text-sm"
+            >
+              <option value="dia">Día</option>
+              <option value="semana">Semana</option>
+              <option value="mes">Mes</option>
+            </select>
+          </div>
         </div>
-      )}
 
-      {!loading && data && (
-        <>
-          {/* Resultados SDR */}
-          <section className="card space-y-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <h2 className="font-semibold flex items-center gap-2">
-                <IconPhone size={16} className="text-brand" /> Resultados SDR
-              </h2>
-              <select
-                className="input py-1.5 text-sm w-auto"
-                value={granularidad}
-                onChange={(e) => setGranularidad(e.target.value as "dia" | "semana" | "mes")}
-              >
-                <option value="dia">Por día</option>
-                <option value="semana">Por semana</option>
-                <option value="mes">Por mes</option>
-              </select>
+        <p className="text-xs text-ink-muted">
+          Evolución de llamadas realizadas y reuniones agendadas.
+        </p>
+
+        {graficoError && (
+          <div className="flex items-center gap-2 text-error-fg text-sm p-3 rounded bg-error-bg/20 border border-error-bg">
+            <IconAlertCircle size={16} className="shrink-0" />
+            {graficoError}
+          </div>
+        )}
+
+        {graficoLoading && (
+          <div className="flex items-center justify-center py-12 text-ink-muted gap-2">
+            <IconLoader2 size={18} className="animate-spin" />
+            Cargando datos…
+          </div>
+        )}
+
+        {!graficoLoading && graficoData && (
+          graficoData.resultados_por_dia.length === 0 ? (
+            <div className="flex items-center justify-center py-12 text-ink-muted">
+              No hay datos disponibles
             </div>
-            <p className="text-xs text-ink-muted">
-              Evolución de llamadas realizadas, reuniones agendadas y realizadas.
-            </p>
-            {data.resultados_por_dia.length === 0 ? (
-              <div className="flex items-center justify-center py-12 text-ink-muted">
-                No hay datos disponibles
-              </div>
-            ) : (
-              <GraficoResultadosSdr data={data.resultados_por_dia} granularidad={granularidad} />
-            )}
-          </section>
+          ) : (
+            <GraficoResultadosSdr data={graficoData.resultados_por_dia} granularidad={graficoGranularidad} />
+          )
+        )}
+      </section>
 
-          {/* Ranking SDR */}
-          <section className="card space-y-3">
-            <h2 className="font-semibold flex items-center gap-2">
-              <IconTrendingUp size={16} className="text-brand" /> Ranking SDR
-            </h2>
-            <p className="text-xs text-ink-muted">
-              Métricas consolidadas por SDR — haz clic en cualquier encabezado para ordenar.
-            </p>
+      {/* Sección Tabla */}
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b">
+          <h2 className="font-semibold flex items-center gap-2">
+            <IconTrendingUp size={16} className="text-brand" /> Ranking SDR
+          </h2>
+        </div>
 
-            <TablaRankingSdr data={data.sdrs_data} />
-          </section>
-        </>
-      )}
+        {/* Filtros específicos de la tabla */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Período</label>
+            <select
+              value={tablaRangeKey}
+              onChange={(e) => setTablaRangeKey(e.target.value as RangeKey)}
+              className="input py-1.5 text-sm"
+            >
+              {Object.entries(RANGE_LABELS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">SDR</label>
+            <select
+              value={tablaSdrFilter}
+              onChange={(e) => setTablaSdrFilter(e.target.value)}
+              className="input py-1.5 text-sm"
+            >
+              <option value="">Todos los SDRs</option>
+              {tablaData?.sdrs_data?.map((sdr) => (
+                <option key={sdr.sdr_id} value={sdr.sdr_id}>
+                  {sdr.sdr_nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <p className="text-xs text-ink-muted">
+          Métricas consolidadas por SDR — haz clic en cualquier encabezado para ordenar.
+        </p>
+
+        {tablaError && (
+          <div className="flex items-center gap-2 text-error-fg text-sm p-3 rounded bg-error-bg/20 border border-error-bg">
+            <IconAlertCircle size={16} className="shrink-0" />
+            {tablaError}
+          </div>
+        )}
+
+        {tablaLoading && (
+          <div className="flex items-center justify-center py-12 text-ink-muted gap-2">
+            <IconLoader2 size={18} className="animate-spin" />
+            Cargando datos…
+          </div>
+        )}
+
+        {!tablaLoading && tablaData && (
+          tablaData.sdrs_data.length === 0 ? (
+            <div className="flex items-center justify-center py-12 text-ink-muted">
+              No hay datos disponibles
+            </div>
+          ) : (
+            <TablaRankingSdr data={tablaData.sdrs_data} />
+          )
+        )}
+      </section>
     </div>
   );
 }

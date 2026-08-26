@@ -2,8 +2,6 @@
 
 import { useMemo } from "react";
 import {
-  LineChart,
-  Line,
   BarChart,
   Bar,
   XAxis,
@@ -31,20 +29,18 @@ export default function GraficoResultadosSdr({
   granularidad = "dia",
 }: GraficoResultadosSdrProps) {
   const chartData = useMemo(() => {
+    let processed: Array<{ fecha: string; Llamadas: number; "Reuniones Agendadas": number }> = [];
+
     if (granularidad === "dia") {
-      return data.map((d) => ({
+      processed = data.map((d) => ({
         fecha: new Date(d.fecha).toLocaleDateString("es-MX", {
           month: "short",
           day: "numeric",
         }),
         Llamadas: d.llamadas_realizadas,
         "Reuniones Agendadas": d.reuniones_agendadas,
-        "Reuniones Realizadas": d.reuniones_realizadas,
       }));
-    }
-
-    // Agrupar por semana
-    if (granularidad === "semana") {
+    } else if (granularidad === "semana") {
       const byWeek: Record<string, ResultadosDia[]> = {};
       for (const item of data) {
         const date = new Date(item.fecha);
@@ -56,33 +52,32 @@ export default function GraficoResultadosSdr({
         byWeek[weekKey].push(item);
       }
 
-      return Object.entries(byWeek).map(([week, items]) => ({
+      processed = Object.entries(byWeek).map(([week, items]) => ({
         fecha: `Sem ${new Date(week).toLocaleDateString("es-MX", { month: "short", day: "numeric" })}`,
         Llamadas: items.reduce((sum, i) => sum + i.llamadas_realizadas, 0),
         "Reuniones Agendadas": items.reduce((sum, i) => sum + i.reuniones_agendadas, 0),
-        "Reuniones Realizadas": items.reduce((sum, i) => sum + i.reuniones_realizadas, 0),
+      }));
+    } else {
+      const byMonth: Record<string, ResultadosDia[]> = {};
+      for (const item of data) {
+        const date = new Date(item.fecha);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+
+        if (!byMonth[monthKey]) byMonth[monthKey] = [];
+        byMonth[monthKey].push(item);
+      }
+
+      processed = Object.entries(byMonth).map(([month, items]) => ({
+        fecha: new Date(`${month}-01`).toLocaleDateString("es-MX", {
+          month: "long",
+          year: "numeric",
+        }),
+        Llamadas: items.reduce((sum, i) => sum + i.llamadas_realizadas, 0),
+        "Reuniones Agendadas": items.reduce((sum, i) => sum + i.reuniones_agendadas, 0),
       }));
     }
 
-    // Agrupar por mes
-    const byMonth: Record<string, ResultadosDia[]> = {};
-    for (const item of data) {
-      const date = new Date(item.fecha);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-
-      if (!byMonth[monthKey]) byMonth[monthKey] = [];
-      byMonth[monthKey].push(item);
-    }
-
-    return Object.entries(byMonth).map(([month, items]) => ({
-      fecha: new Date(`${month}-01`).toLocaleDateString("es-MX", {
-        month: "long",
-        year: "numeric",
-      }),
-      Llamadas: items.reduce((sum, i) => sum + i.llamadas_realizadas, 0),
-      "Reuniones Agendadas": items.reduce((sum, i) => sum + i.reuniones_agendadas, 0),
-      "Reuniones Realizadas": items.reduce((sum, i) => sum + i.reuniones_realizadas, 0),
-    }));
+    return processed.filter((d) => d.Llamadas > 0 || d["Reuniones Agendadas"] > 0);
   }, [data, granularidad]);
 
   const CustomTooltip = ({ active, payload }: any) => {
@@ -92,14 +87,13 @@ export default function GraficoResultadosSdr({
           <p className="font-semibold text-gray-900">{payload[0].payload.fecha}</p>
           <p className="text-brand">📞 Llamadas: {payload[0].payload.Llamadas}</p>
           <p className="text-blue-600">📅 Agendadas: {payload[0].payload["Reuniones Agendadas"]}</p>
-          <p className="text-green-600">✓ Realizadas: {payload[0].payload["Reuniones Realizadas"]}</p>
         </div>
       );
     }
     return null;
   };
 
-  if (data.length === 0) {
+  if (chartData.length === 0) {
     return (
       <div className="flex items-center justify-center py-12 text-gray-500">
         No hay datos disponibles
@@ -115,9 +109,8 @@ export default function GraficoResultadosSdr({
         <YAxis stroke="#6b7280" style={{ fontSize: "12px" }} />
         <Tooltip content={<CustomTooltip />} />
         <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "20px" }} />
-        <Bar dataKey="Llamadas" fill="#62E0D8" radius={[8, 8, 0, 0]} />
+        <Bar dataKey="Llamadas" fill="#10B981" radius={[8, 8, 0, 0]} />
         <Bar dataKey="Reuniones Agendadas" fill="#3B82F6" radius={[8, 8, 0, 0]} />
-        <Bar dataKey="Reuniones Realizadas" fill="#10B981" radius={[8, 8, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );
