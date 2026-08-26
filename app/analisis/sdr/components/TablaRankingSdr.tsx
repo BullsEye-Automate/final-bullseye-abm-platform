@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { IconArrowUp, IconArrowDown } from "@tabler/icons-react";
+import { IconArrowUp, IconArrowDown, IconMaximize, IconX } from "@tabler/icons-react";
 
 interface SdrMetrics {
   sdr_id: string;
@@ -26,6 +26,7 @@ interface TablaRankingSdrProps {
 export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
   const [sortKey, setSortKey] = useState<SortKey>("reuniones_realizadas");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const sortedData = useMemo(() => {
     const sorted = [...data].sort((a, b) => {
@@ -85,60 +86,60 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
     );
   }
 
-  return (
-    <div className="overflow-x-auto">
+  const table = (
+    <div className={isFullscreen ? "overflow-auto h-full" : "overflow-auto max-h-[600px]"}>
       <table className="w-full text-sm">
-        <thead className="bg-gray-50 border-b border-gray-200">
+        <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
           <tr>
-            <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+            <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
               <button onClick={() => toggleSort("sdr_nombre")} className="flex items-center">
                 SDR
                 <SortIcon column="sdr_nombre" />
               </button>
             </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
               <button onClick={() => toggleSort("llamadas_realizadas")} className="flex items-center justify-end w-full">
                 Llamadas
                 <SortIcon column="llamadas_realizadas" />
               </button>
             </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
               <button onClick={() => toggleSort("llamadas_conectadas")} className="flex items-center justify-end w-full">
                 Llamadas Conectadas
                 <SortIcon column="llamadas_conectadas" />
               </button>
             </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
               <button onClick={() => toggleSort("reuniones_agendadas")} className="flex items-center justify-end w-full">
                 Reuniones Agendadas
                 <SortIcon column="reuniones_agendadas" />
               </button>
             </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
               <button onClick={() => toggleSort("reuniones_realizadas")} className="flex items-center justify-end w-full">
                 Reuniones Realizadas
                 <SortIcon column="reuniones_realizadas" />
               </button>
             </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
               <button onClick={() => toggleSort("reuniones_pendientes")} className="flex items-center justify-end w-full">
                 Reuniones Pendientes
                 <SortIcon column="reuniones_pendientes" />
               </button>
             </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
               <button onClick={() => toggleSort("tasa_conectadas_por_contacto")} className="flex items-center justify-end w-full">
                 Tasa Conectadas/Contacto
                 <SortIcon column="tasa_conectadas_por_contacto" />
               </button>
             </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
               <button onClick={() => toggleSort("tasa_agendada_por_conectada")} className="flex items-center justify-end w-full">
                 Tasa Agendada/Conectada
                 <SortIcon column="tasa_agendada_por_conectada" />
               </button>
             </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
               <button onClick={() => toggleSort("tasa_realizacion_reuniones")} className="flex items-center justify-end w-full">
                 Tasa Realización
                 <SortIcon column="tasa_realizacion_reuniones" />
@@ -168,7 +169,7 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
           ))}
         </tbody>
         <tfoot>
-          <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
+          <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold sticky bottom-0">
             <td className="px-4 py-3 text-gray-900">Total</td>
             <td className="px-4 py-3 text-right text-gray-900">{totals.llamadas_realizadas}</td>
             <td className="px-4 py-3 text-right text-gray-900">{totals.llamadas_conectadas}</td>
@@ -187,6 +188,39 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
           </tr>
         </tfoot>
       </table>
+    </div>
+  );
+
+  if (isFullscreen) {
+    return (
+      <div className="fixed inset-0 z-50 bg-white flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
+          <h2 className="font-semibold text-gray-900">Ranking SDR</h2>
+          <button
+            onClick={() => setIsFullscreen(false)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition"
+          >
+            <IconX size={16} />
+            Cerrar
+          </button>
+        </div>
+        <div className="flex-1 min-h-0">{table}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex justify-end mb-2">
+        <button
+          onClick={() => setIsFullscreen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-gray-600 hover:bg-gray-100 border border-gray-200 transition"
+        >
+          <IconMaximize size={14} />
+          Ver en pantalla completa
+        </button>
+      </div>
+      {table}
     </div>
   );
 }

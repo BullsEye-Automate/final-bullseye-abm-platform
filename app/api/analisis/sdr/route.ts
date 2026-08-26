@@ -297,13 +297,21 @@ export async function GET(request: NextRequest) {
 
     // Procesar reuniones (se indexan por nombre normalizado para poder
     // emparejar con el nombre del usuario de Allo aunque difieran en
-    // mayúsculas, tildes o espacios)
-    const meetingsBySDR: Record<string, { agendadas: number; realizadas: number; pendientes: number; contactos: Set<string> }> = {};
+    // mayúsculas, tildes o espacios). Se guarda también el nombre "display"
+    // original, porque un responsable de reuniones puede no tener llamadas
+    // registradas en el período (o nunca marcar), y en ese caso no hay
+    // ningún sdrData ya creado del que tomar el nombre para mostrar.
+    const meetingsBySDR: Record<
+      string,
+      { displayName: string; agendadas: number; realizadas: number; pendientes: number; contactos: Set<string> }
+    > = {};
 
     for (const meeting of meetings || []) {
-      const sdrKey = resolveSdrKey(meeting.responsable || meeting.sdr_nombre || "Sin SDR");
+      const rawName = meeting.responsable || meeting.sdr_nombre || "Sin SDR";
+      const sdrKey = resolveSdrKey(rawName);
       if (!meetingsBySDR[sdrKey]) {
         meetingsBySDR[sdrKey] = {
+          displayName: rawName,
           agendadas: 0,
           realizadas: 0,
           pendientes: 0,
@@ -321,13 +329,16 @@ export async function GET(request: NextRequest) {
     // Calcular métricas consolidadas
     const sdrsData: SdrMetrics[] = [];
     const processedSdrIds = new Set<string>();
+    const claimedMeetingKeys = new Set<string>();
 
     for (const sdrId in sdrDataMap) {
       const sdrData = sdrDataMap[sdrId];
       processedSdrIds.add(sdrId);
 
-      const meetingData = meetingsBySDR[resolveSdrKey(sdrData.sdr_nombre)];
+      const meetingKey = resolveSdrKey(sdrData.sdr_nombre);
+      const meetingData = meetingsBySDR[meetingKey];
       if (meetingData) {
+        claimedMeetingKeys.add(meetingKey);
         sdrData.reuniones_agendadas = meetingData.agendadas;
         sdrData.reuniones_pendientes = meetingData.pendientes;
         sdrData.reuniones_realizadas = meetingData.realizadas;
@@ -352,6 +363,35 @@ export async function GET(request: NextRequest) {
       if (!sdrIdParam || sdrId === sdrIdParam) {
         sdrsData.push(sdrData);
       }
+    }
+
+    // Responsables de reuniones que no calzaron con ningún SDR de Allo (no
+    // hicieron llamadas en el período, o su nombre no está en Allo — ej. un
+    // Sales Manager que agenda pero no marca). Sin esto, sus reuniones se
+    // perdían por completo del total: sdrDataMap solo se construye a partir
+    // de llamadas, así que un responsable sin llamadas nunca generaba fila.
+    for (const meetingKey in meetingsBySDR) {
+      if (claimedMeetingKeys.has(meetingKey)) continue;
+      const meetingData = meetingsBySDR[meetingKey];
+      const sdrId = `meeting-only:${meetingKey}`;
+
+      if (sdrIdParam && sdrId !== sdrIdParam) continue;
+
+      const tasaRealizacion =
+        meetingData.agendadas > 0 ? (meetingData.realizadas / meetingData.agendadas) * 100 : 0;
+
+      sdrsData.push({
+        sdr_id: sdrId,
+        sdr_nombre: meetingData.displayName,
+        llamadas_realizadas: 0,
+        llamadas_conectadas: 0,
+        reuniones_agendadas: meetingData.agendadas,
+        reuniones_realizadas: meetingData.realizadas,
+        reuniones_pendientes: meetingData.pendientes,
+        tasa_conectadas_por_contacto: 0,
+        tasa_agendada_por_conectada: 0,
+        tasa_realizacion_reuniones: tasaRealizacion,
+      });
     }
 
     // Construir resultados por día. Se extiende hasta meetingsRangeEnd (no
