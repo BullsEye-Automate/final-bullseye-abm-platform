@@ -16,9 +16,11 @@ interface Reunion {
   id: string;
   sdr_nombre: string;
   fecha_reunion: string;
+  fecha_agendamiento?: string;
   prospecto_nombre?: string;
   empresa?: string;
   client_id?: string;
+  client_name?: string;
 }
 
 interface ResultadosDia {

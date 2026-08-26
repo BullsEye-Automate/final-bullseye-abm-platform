@@ -61,6 +61,7 @@ type Reunion = {
   id: string;
   sdr_nombre: string;
   fecha_reunion: string;
+  fecha_agendamiento?: string;
   prospecto_nombre?: string;
   empresa?: string;
   client_id?: string;
@@ -502,6 +503,7 @@ export async function GET(request: NextRequest) {
           id: m.id,
           sdr_nombre: m.responsable || m.sdr_nombre,
           fecha_reunion: m.fecha_reunion,
+          fecha_agendamiento: m.fecha_agendamiento,
           prospecto_nombre: m.contacto_nombre,
           empresa: m.empresa,
           client_id: m.client_id,
