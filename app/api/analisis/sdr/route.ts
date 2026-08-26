@@ -50,15 +50,17 @@ export async function GET(request: NextRequest) {
     }
 
     const db = supabaseAdmin();
+    const isAllClients = clientId === "__all__";
     const range = isValidRangeKey(rangeKey) ? resolveRange(rangeKey) : resolveRange("this_month");
     const dateFrom = toDateParam(range.start);
     const dateTo = toDateParam(range.end);
 
     // Obtener números de Allo asignados al cliente
-    const { data: assigned, error: assignedErr } = await db
-      .from("client_allo_numbers")
-      .select("allo_number")
-      .eq("client_id", clientId);
+    let assignedQuery = db.from("client_allo_numbers").select("allo_number");
+    if (!isAllClients) {
+      assignedQuery = assignedQuery.eq("client_id", clientId);
+    }
+    const { data: assigned, error: assignedErr } = await assignedQuery;
 
     if (assignedErr) {
       return NextResponse.json({ error: assignedErr.message }, { status: 500 });
@@ -95,12 +97,17 @@ export async function GET(request: NextRequest) {
     }
 
     // Obtener reuniones desde Supabase
-    const { data: meetings, error: meetingsError } = await db
+    let meetingsQuery = db
       .from("meetings")
       .select("id, sdr_nombre, fecha_reunion, realizado")
-      .eq("client_id", clientId)
       .gte("fecha_reunion", dateFrom)
       .lt("fecha_reunion", dateTo);
+
+    if (!isAllClients) {
+      meetingsQuery = meetingsQuery.eq("client_id", clientId);
+    }
+
+    const { data: meetings, error: meetingsError } = await meetingsQuery;
 
     if (meetingsError) {
       return NextResponse.json({ error: meetingsError.message }, { status: 500 });
