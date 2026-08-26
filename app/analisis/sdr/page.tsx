@@ -41,6 +41,8 @@ export default function AnalisisSdr() {
   const { currentClient } = useClient();
 
   const [graficoRangeKey, setGraficoRangeKey] = useState<RangeKey>("this_month");
+  const [graficoCustomFrom, setGraficoCustomFrom] = useState<string>("");
+  const [graficoCustomTo, setGraficoCustomTo] = useState<string>("");
   const [graficoSdrFilter, setGraficoSdrFilter] = useState<string>("");
   const [graficoGranularidad, setGraficoGranularidad] = useState<"dia" | "semana" | "mes">("dia");
   const [graficoLoading, setGraficoLoading] = useState(false);
@@ -48,6 +50,8 @@ export default function AnalisisSdr() {
   const [graficoError, setGraficoError] = useState<string | null>(null);
 
   const [tablaRangeKey, setTablaRangeKey] = useState<RangeKey>("this_month");
+  const [tablaCustomFrom, setTablaCustomFrom] = useState<string>("");
+  const [tablaCustomTo, setTablaCustomTo] = useState<string>("");
   const [tablaSdrFilter, setTablaSdrFilter] = useState<string>("");
   const [tablaLoading, setTablaLoading] = useState(false);
   const [tablaData, setTablaData] = useState<ApiResponse | null>(null);
@@ -59,6 +63,9 @@ export default function AnalisisSdr() {
   const tablaRequestId = useRef(0);
 
   const loadGrafico = async () => {
+    // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
+    if (graficoRangeKey === "custom" && (!graficoCustomFrom || !graficoCustomTo)) return;
+
     const requestId = ++graficoRequestId.current;
     setGraficoLoading(true);
     setGraficoError(null);
@@ -67,6 +74,10 @@ export default function AnalisisSdr() {
         rangeKey: graficoRangeKey,
         client_id: currentClient?.id || "__all__",
         ...(graficoSdrFilter && { sdr_id: graficoSdrFilter }),
+        ...(graficoRangeKey === "custom" && {
+          custom_from: graficoCustomFrom,
+          custom_to: graficoCustomTo,
+        }),
       });
 
       const response = await fetch(`/api/analisis/sdr?${searchParams}`);
@@ -86,6 +97,9 @@ export default function AnalisisSdr() {
   };
 
   const loadTabla = async () => {
+    // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
+    if (tablaRangeKey === "custom" && (!tablaCustomFrom || !tablaCustomTo)) return;
+
     const requestId = ++tablaRequestId.current;
     setTablaLoading(true);
     setTablaError(null);
@@ -94,6 +108,10 @@ export default function AnalisisSdr() {
         rangeKey: tablaRangeKey,
         client_id: currentClient?.id || "__all__",
         ...(tablaSdrFilter && { sdr_id: tablaSdrFilter }),
+        ...(tablaRangeKey === "custom" && {
+          custom_from: tablaCustomFrom,
+          custom_to: tablaCustomTo,
+        }),
       });
 
       const response = await fetch(`/api/analisis/sdr?${searchParams}`);
@@ -117,14 +135,14 @@ export default function AnalisisSdr() {
       loadGrafico();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentClient?.id, graficoRangeKey, graficoSdrFilter]);
+  }, [currentClient?.id, graficoRangeKey, graficoSdrFilter, graficoCustomFrom, graficoCustomTo]);
 
   useEffect(() => {
     if (currentClient?.id) {
       loadTabla();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentClient?.id, tablaRangeKey, tablaSdrFilter]);
+  }, [currentClient?.id, tablaRangeKey, tablaSdrFilter, tablaCustomFrom, tablaCustomTo]);
 
   return (
     <div className="space-y-6">
@@ -164,6 +182,24 @@ export default function AnalisisSdr() {
               ))}
             </select>
           </div>
+
+          {graficoRangeKey === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={graficoCustomFrom}
+                onChange={(e) => setGraficoCustomFrom(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+              <span className="text-xs text-ink-muted">a</span>
+              <input
+                type="date"
+                value={graficoCustomTo}
+                onChange={(e) => setGraficoCustomTo(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <label className="text-xs text-ink-muted font-medium">SDR</label>
@@ -248,6 +284,24 @@ export default function AnalisisSdr() {
               ))}
             </select>
           </div>
+
+          {tablaRangeKey === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={tablaCustomFrom}
+                onChange={(e) => setTablaCustomFrom(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+              <span className="text-xs text-ink-muted">a</span>
+              <input
+                type="date"
+                value={tablaCustomTo}
+                onChange={(e) => setTablaCustomTo(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <label className="text-xs text-ink-muted font-medium">SDR</label>

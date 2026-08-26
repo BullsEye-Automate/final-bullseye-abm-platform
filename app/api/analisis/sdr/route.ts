@@ -137,6 +137,8 @@ export async function GET(request: NextRequest) {
     const clientId = request.nextUrl.searchParams.get("client_id");
     const sdrIdParam = request.nextUrl.searchParams.get("sdr_id");
     const rangeKey = (request.nextUrl.searchParams.get("rangeKey") || "mes") as RangeKey;
+    const customFromParam = request.nextUrl.searchParams.get("custom_from");
+    const customToParam = request.nextUrl.searchParams.get("custom_to");
 
     if (!clientId) {
       return NextResponse.json({ error: "client_id es requerido" }, { status: 400 });
@@ -145,7 +147,18 @@ export async function GET(request: NextRequest) {
     const db = supabaseAdmin();
     const isAllClients = clientId === "__all__";
     const effectiveRangeKey: RangeKey = isValidRangeKey(rangeKey) ? rangeKey : "this_month";
-    const range = resolveRange(effectiveRangeKey);
+    const isValidDateParam = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+    let range = resolveRange(effectiveRangeKey);
+    if (effectiveRangeKey === "custom" && isValidDateParam(customFromParam) && isValidDateParam(customToParam)) {
+      range = {
+        start: new Date(`${customFromParam}T00:00:00.000Z`),
+        end: new Date(`${customToParam}T23:59:59.999Z`),
+        label: "Fecha personalizada",
+        previous: range.previous,
+      };
+    }
+
     const dateFrom = toDateParam(range.start);
     const dateTo = toDateParam(range.end);
     const meetingsRangeEnd = resolveMeetingsRangeEnd(effectiveRangeKey, range.end, new Date());
