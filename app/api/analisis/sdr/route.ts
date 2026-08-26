@@ -266,11 +266,21 @@ export async function GET(request: NextRequest) {
     // reuniones sincronizadas desde el Excel.
     // Límite superior inclusivo (.lte) hasta meetingsDateTo: usar .lt con la
     // fecha de hoy excluía las reuniones agendadas para el día de hoy mismo.
+    //
+    // El gráfico "Resultados SDR" distingue Agendadas (por fecha_agendamiento,
+    // cuándo se agendó la reunión) de Realizadas (por fecha_reunion, cuándo
+    // efectivamente ocurrió/ocurrirá) — dos fechas distintas de la misma fila.
+    // Por eso el query trae filas que calcen por CUALQUIERA de las dos fechas
+    // dentro del período (no solo fecha_reunion como antes), y cada métrica
+    // se bucketiza más abajo con su propio campo de fecha. El Ranking SDR
+    // sigue usando solo fecha_reunion (ver meetingsForRanking), sin cambios.
     let meetingsQuery = db
       .from("meetings")
-      .select("id, sdr_nombre, responsable, fecha_reunion, realizado, contacto_nombre, empresa, client_id")
-      .gte("fecha_reunion", dateFrom)
-      .lte("fecha_reunion", meetingsDateTo);
+      .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, contacto_nombre, empresa, client_id")
+      .or(
+        `and(fecha_reunion.gte.${dateFrom},fecha_reunion.lte.${meetingsDateTo}),` +
+          `and(fecha_agendamiento.gte.${dateFrom},fecha_agendamiento.lte.${meetingsDateTo})`
+      );
 
     if (!isAllClients) {
       meetingsQuery = meetingsQuery.eq("client_id", clientId);
@@ -281,6 +291,14 @@ export async function GET(request: NextRequest) {
     if (meetingsError) {
       return NextResponse.json({ error: meetingsError.message }, { status: 500 });
     }
+
+    // Subconjunto usado por el Ranking SDR (meetingsBySDR más abajo): solo
+    // reuniones cuya fecha_reunion cae en el período, igual que antes de
+    // ampliar el query — para no cambiar los totales ya validados contra el
+    // reporte interno.
+    const meetingsForRanking = (meetings || []).filter(
+      (m: any) => m.fecha_reunion >= dateFrom && m.fecha_reunion <= meetingsDateTo
+    );
 
     // Obtener nombres de clientes para mapeo
     let clientsData: any[] = [];
@@ -339,7 +357,7 @@ export async function GET(request: NextRequest) {
       { displayName: string; agendadas: number; realizadas: number; pendientes: number; contactos: Set<string> }
     > = {};
 
-    for (const meeting of meetings || []) {
+    for (const meeting of meetingsForRanking) {
       const rawName = meeting.responsable || meeting.sdr_nombre || "Sin SDR";
       const sdrKey = resolveSdrKey(rawName);
       if (!meetingsBySDR[sdrKey]) {
@@ -459,21 +477,28 @@ export async function GET(request: NextRequest) {
     while (currentDate < loopEnd) {
       const dateStr = toDateParam(currentDate);
       let dayCalls = calls.filter((c) => callDateKey(c.date) === dateStr);
-      let dayMeetings = (meetings || []).filter((m) => m.fecha_reunion === dateStr);
+      // Agendadas: por fecha_agendamiento (cuándo se agendó). Realizadas:
+      // por fecha_reunion (cuándo ocurrió efectivamente) + realizado="Si".
+      // Son dos fechas distintas de la misma tabla, a propósito.
+      let dayMeetingsAgendadas = (meetings || []).filter((m: any) => m.fecha_agendamiento === dateStr);
+      let dayMeetingsRealizadas = (meetings || []).filter(
+        (m: any) => m.fecha_reunion === dateStr && m.realizado === "Si"
+      );
 
       if (selectedSdrIds.length > 0) {
         dayCalls = dayCalls.filter((c) => selectedSdrIds.includes(c.user?.id || "unknown"));
-        dayMeetings = dayMeetings.filter((m: any) =>
-          selectedMeetingKeys.has(resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR"))
-        );
+        const bySelectedSdr = (m: any) =>
+          selectedMeetingKeys.has(resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR"));
+        dayMeetingsAgendadas = dayMeetingsAgendadas.filter(bySelectedSdr);
+        dayMeetingsRealizadas = dayMeetingsRealizadas.filter(bySelectedSdr);
       }
 
       resultadosPorDia.push({
         fecha: dateStr,
         llamadas_realizadas: dayCalls.length,
-        reuniones_agendadas: dayMeetings.length,
-        reuniones_realizadas: dayMeetings.filter((m) => m.realizado === "Si").length,
-        reuniones: dayMeetings.map((m: any) => ({
+        reuniones_agendadas: dayMeetingsAgendadas.length,
+        reuniones_realizadas: dayMeetingsRealizadas.length,
+        reuniones: dayMeetingsAgendadas.map((m: any) => ({
           id: m.id,
           sdr_nombre: m.responsable || m.sdr_nombre,
           fecha_reunion: m.fecha_reunion,
