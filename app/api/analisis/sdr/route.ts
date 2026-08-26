@@ -47,6 +47,11 @@ function toDateParam(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+// call.date de Allo es un timestamp ISO completo (con hora), no "YYYY-MM-DD"
+function callDateKey(isoDate: string): string {
+  return isoDate.slice(0, 10);
+}
+
 // ─── GET ────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -225,7 +230,7 @@ export async function GET(request: NextRequest) {
     const currentDate = new Date(range.start);
     while (currentDate < range.end) {
       const dateStr = toDateParam(currentDate);
-      const dayCalls = calls.filter((c) => c.date === dateStr);
+      const dayCalls = calls.filter((c) => callDateKey(c.date) === dateStr);
       const dayMeetings = (meetings || []).filter((m) => m.fecha_reunion === dateStr);
 
       resultadosPorDia.push({

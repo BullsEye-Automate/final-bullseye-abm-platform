@@ -8,7 +8,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
 import ModalReuniones from "./ModalReuniones";
@@ -128,15 +127,43 @@ export default function GraficoResultadosSdr({
     };
   }, [chartData]);
 
-  const handleLegendClick = (e: any) => {
+  const toggleSeries = (key: string) => {
     const newVisible = new Set(visibleSeries);
-    if (newVisible.has(e.value)) {
-      newVisible.delete(e.value);
+    if (newVisible.has(key)) {
+      newVisible.delete(key);
     } else {
-      newVisible.add(e.value);
+      newVisible.add(key);
     }
     setVisibleSeries(newVisible);
   };
+
+  const LEGEND_ITEMS = [
+    { key: "Llamadas", color: "#251762" },
+    { key: "Reuniones Agendadas", color: "#3B82F6" },
+  ];
+
+  const CustomLegend = () => (
+    <div className="flex items-center justify-center gap-6 pt-5 text-xs">
+      {LEGEND_ITEMS.map((item) => {
+        const active = visibleSeries.has(item.key);
+        return (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => toggleSeries(item.key)}
+            className="flex items-center gap-1.5 cursor-pointer select-none"
+            style={{ opacity: active ? 1 : 0.4 }}
+          >
+            <span
+              className="inline-block w-2.5 h-2.5 rounded-sm"
+              style={{ background: item.color }}
+            />
+            <span className="text-gray-700">{item.key}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload[0]) {
@@ -204,10 +231,6 @@ export default function GraficoResultadosSdr({
               <XAxis dataKey="fecha" stroke="#6b7280" style={{ fontSize: "12px" }} />
               <YAxis stroke="#6b7280" style={{ fontSize: "12px" }} />
               <Tooltip content={<CustomTooltip />} />
-              <Legend
-                wrapperStyle={{ fontSize: "12px", paddingTop: "20px", cursor: "pointer" }}
-                onClick={handleLegendClick}
-              />
               {visibleSeries.has("Llamadas") && (
                 <Bar
                   dataKey="Llamadas"
@@ -231,6 +254,7 @@ export default function GraficoResultadosSdr({
               )}
             </BarChart>
           </ResponsiveContainer>
+          <CustomLegend />
         </div>
       </div>
 
