@@ -18,11 +18,21 @@ type SdrMetrics = {
   tasa_realizacion_reuniones: number;
 };
 
+type Reunion = {
+  id: string;
+  sdr_nombre: string;
+  fecha_reunion: string;
+  prospecto_nombre?: string;
+  empresa?: string;
+  client_id?: string;
+};
+
 type ResultadosDia = {
   fecha: string;
   llamadas_realizadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
+  reuniones?: Reunion[];
 };
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -96,10 +106,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Obtener reuniones desde Supabase
+    // Obtener reuniones desde Supabase con nombre de cliente
     let meetingsQuery = db
       .from("meetings")
-      .select("id, sdr_nombre, fecha_reunion, realizado")
+      .select("id, sdr_nombre, fecha_reunion, realizado, prospecto_nombre, empresa, client_id, clients(name)")
       .gte("fecha_reunion", dateFrom)
       .lt("fecha_reunion", dateTo);
 
@@ -205,6 +215,15 @@ export async function GET(request: NextRequest) {
         llamadas_realizadas: dayCalls.length,
         reuniones_agendadas: dayMeetings.length,
         reuniones_realizadas: dayMeetings.filter((m) => m.realizado === "Si").length,
+        reuniones: dayMeetings.map((m: any) => ({
+          id: m.id,
+          sdr_nombre: m.sdr_nombre,
+          fecha_reunion: m.fecha_reunion,
+          prospecto_nombre: m.prospecto_nombre,
+          empresa: m.empresa,
+          client_id: m.client_id,
+          client_name: m.clients?.name || m.clients,
+        })),
       });
 
       currentDate.setDate(currentDate.getDate() + 1);
