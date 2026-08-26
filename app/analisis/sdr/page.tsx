@@ -6,11 +6,15 @@ import {
   IconLoader2,
   IconAlertCircle,
   IconTrendingUp,
+  IconRefresh,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
 import GraficoResultadosSdr from "./components/GraficoResultadosSdr";
 import TablaRankingSdr from "./components/TablaRankingSdr";
+import SdrMultiSelect from "./components/SdrMultiSelect";
+
+type SdrRoster = { sdr_id: string; sdr_nombre: string };
 
 type SdrMetrics = {
   sdr_id: string;
@@ -35,6 +39,7 @@ type ResultadosDia = {
 type ApiResponse = {
   sdrs_data: SdrMetrics[];
   resultados_por_dia: ResultadosDia[];
+  all_sdrs?: SdrRoster[];
 };
 
 export default function AnalisisSdr() {
@@ -43,7 +48,7 @@ export default function AnalisisSdr() {
   const [graficoRangeKey, setGraficoRangeKey] = useState<RangeKey>("this_month");
   const [graficoCustomFrom, setGraficoCustomFrom] = useState<string>("");
   const [graficoCustomTo, setGraficoCustomTo] = useState<string>("");
-  const [graficoSdrFilter, setGraficoSdrFilter] = useState<string>("");
+  const [graficoSdrFilter, setGraficoSdrFilter] = useState<string[]>([]);
   const [graficoGranularidad, setGraficoGranularidad] = useState<"dia" | "semana" | "mes">("dia");
   const [graficoLoading, setGraficoLoading] = useState(false);
   const [graficoData, setGraficoData] = useState<ApiResponse | null>(null);
@@ -52,10 +57,13 @@ export default function AnalisisSdr() {
   const [tablaRangeKey, setTablaRangeKey] = useState<RangeKey>("this_month");
   const [tablaCustomFrom, setTablaCustomFrom] = useState<string>("");
   const [tablaCustomTo, setTablaCustomTo] = useState<string>("");
-  const [tablaSdrFilter, setTablaSdrFilter] = useState<string>("");
+  const [tablaSdrFilter, setTablaSdrFilter] = useState<string[]>([]);
   const [tablaLoading, setTablaLoading] = useState(false);
   const [tablaData, setTablaData] = useState<ApiResponse | null>(null);
   const [tablaError, setTablaError] = useState<string | null>(null);
+
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   // Evita que una respuesta más lenta de un filtro anterior sobrescriba
   // los datos del filtro seleccionado actualmente (race condition).
@@ -73,7 +81,7 @@ export default function AnalisisSdr() {
       const searchParams = new URLSearchParams({
         rangeKey: graficoRangeKey,
         client_id: currentClient?.id || "__all__",
-        ...(graficoSdrFilter && { sdr_id: graficoSdrFilter }),
+        ...(graficoSdrFilter.length > 0 && { sdr_ids: graficoSdrFilter.join(",") }),
         ...(graficoRangeKey === "custom" && {
           custom_from: graficoCustomFrom,
           custom_to: graficoCustomTo,
@@ -107,7 +115,7 @@ export default function AnalisisSdr() {
       const searchParams = new URLSearchParams({
         rangeKey: tablaRangeKey,
         client_id: currentClient?.id || "__all__",
-        ...(tablaSdrFilter && { sdr_id: tablaSdrFilter }),
+        ...(tablaSdrFilter.length > 0 && { sdr_ids: tablaSdrFilter.join(",") }),
         ...(tablaRangeKey === "custom" && {
           custom_from: tablaCustomFrom,
           custom_to: tablaCustomTo,
@@ -130,6 +138,29 @@ export default function AnalisisSdr() {
     }
   };
 
+  // Trae la última versión del Excel de reuniones (Google Sheets) a la
+  // tabla `meetings` antes de recargar el reporte, para que Reuniones
+  // Agendadas/Realizadas calce con el reporte interno que lee el mismo
+  // Excel — la sincronización automática puede no haber corrido recién.
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const res = await fetch("/api/meetings/sync");
+      const data = await res.json();
+      if (data.error) {
+        setSyncMessage(`Error al actualizar: ${data.error}`);
+      } else {
+        setSyncMessage(`✓ Datos actualizados — ${data.synced ?? 0} reuniones sincronizadas`);
+        await Promise.all([loadGrafico(), loadTabla()]);
+      }
+    } catch (err) {
+      setSyncMessage(`Error al actualizar: ${(err as Error).message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   useEffect(() => {
     if (currentClient?.id) {
       loadGrafico();
@@ -147,15 +178,33 @@ export default function AnalisisSdr() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <header>
-        <div className="label">Reportería</div>
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-          <IconTrendingUp size={24} />
-          Análisis SDR
-        </h1>
-        <p className="text-sm text-ink-muted mt-1">
-          Rendimiento y métricas de los SDRs por período.
-        </p>
+      <header className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="label">Reportería</div>
+          <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
+            <IconTrendingUp size={24} />
+            Análisis SDR
+          </h1>
+          <p className="text-sm text-ink-muted mt-1">
+            Rendimiento y métricas de los SDRs por período.
+          </p>
+        </div>
+
+        <div className="flex flex-col items-end gap-1.5">
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-white bg-brand hover:opacity-90 transition disabled:opacity-50"
+          >
+            {syncing ? (
+              <IconLoader2 size={15} className="animate-spin" />
+            ) : (
+              <IconRefresh size={15} />
+            )}
+            Actualizar datos de reuniones
+          </button>
+          {syncMessage && <p className="text-xs text-ink-muted text-right">{syncMessage}</p>}
+        </div>
       </header>
 
       {/* Sección Gráfico */}
@@ -203,18 +252,11 @@ export default function AnalisisSdr() {
 
           <div className="flex items-center gap-2">
             <label className="text-xs text-ink-muted font-medium">SDR</label>
-            <select
-              value={graficoSdrFilter}
-              onChange={(e) => setGraficoSdrFilter(e.target.value)}
-              className="input py-1.5 text-sm"
-            >
-              <option value="">Todos los SDRs</option>
-              {graficoData?.sdrs_data?.map((sdr) => (
-                <option key={sdr.sdr_id} value={sdr.sdr_id}>
-                  {sdr.sdr_nombre}
-                </option>
-              ))}
-            </select>
+            <SdrMultiSelect
+              sdrs={graficoData?.all_sdrs || []}
+              selected={graficoSdrFilter}
+              onChange={setGraficoSdrFilter}
+            />
           </div>
 
           <div className="flex items-center gap-2">
@@ -305,18 +347,11 @@ export default function AnalisisSdr() {
 
           <div className="flex items-center gap-2">
             <label className="text-xs text-ink-muted font-medium">SDR</label>
-            <select
-              value={tablaSdrFilter}
-              onChange={(e) => setTablaSdrFilter(e.target.value)}
-              className="input py-1.5 text-sm"
-            >
-              <option value="">Todos los SDRs</option>
-              {tablaData?.sdrs_data?.map((sdr) => (
-                <option key={sdr.sdr_id} value={sdr.sdr_id}>
-                  {sdr.sdr_nombre}
-                </option>
-              ))}
-            </select>
+            <SdrMultiSelect
+              sdrs={tablaData?.all_sdrs || []}
+              selected={tablaSdrFilter}
+              onChange={setTablaSdrFilter}
+            />
           </div>
         </div>
 

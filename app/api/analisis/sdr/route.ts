@@ -135,7 +135,10 @@ function resolveSdrKey(name: string): string {
 export async function GET(request: NextRequest) {
   try {
     const clientId = request.nextUrl.searchParams.get("client_id");
-    const sdrIdParam = request.nextUrl.searchParams.get("sdr_id");
+    // sdr_ids: lista separada por comas (selector multi-select). Se acepta
+    // también sdr_id (singular) por compatibilidad.
+    const sdrIdsParam = request.nextUrl.searchParams.get("sdr_ids") || request.nextUrl.searchParams.get("sdr_id");
+    const selectedSdrIds = sdrIdsParam ? sdrIdsParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const rangeKey = (request.nextUrl.searchParams.get("rangeKey") || "mes") as RangeKey;
     const customFromParam = request.nextUrl.searchParams.get("custom_from");
     const customToParam = request.nextUrl.searchParams.get("custom_to");
@@ -330,6 +333,10 @@ export async function GET(request: NextRequest) {
     const sdrsData: SdrMetrics[] = [];
     const processedSdrIds = new Set<string>();
     const claimedMeetingKeys = new Set<string>();
+    // Roster completo de SDRs (sin filtrar por selectedSdrIds), para que el
+    // selector de SDR del frontend siempre pueda mostrar y elegir entre
+    // todos, incluso cuando ya hay uno o más seleccionados.
+    const allSdrsRoster: { sdr_id: string; sdr_nombre: string }[] = [];
 
     for (const sdrId in sdrDataMap) {
       const sdrData = sdrDataMap[sdrId];
@@ -359,8 +366,10 @@ export async function GET(request: NextRequest) {
         sdrData.tasa_realizacion_reuniones = (sdrData.reuniones_realizadas / sdrData.reuniones_agendadas) * 100;
       }
 
+      allSdrsRoster.push({ sdr_id: sdrId, sdr_nombre: sdrData.sdr_nombre });
+
       // Filtrar si se solicita un SDR específico
-      if (!sdrIdParam || sdrId === sdrIdParam) {
+      if (selectedSdrIds.length === 0 || selectedSdrIds.includes(sdrId)) {
         sdrsData.push(sdrData);
       }
     }
@@ -374,8 +383,9 @@ export async function GET(request: NextRequest) {
       if (claimedMeetingKeys.has(meetingKey)) continue;
       const meetingData = meetingsBySDR[meetingKey];
       const sdrId = `meeting-only:${meetingKey}`;
+      allSdrsRoster.push({ sdr_id: sdrId, sdr_nombre: meetingData.displayName });
 
-      if (sdrIdParam && sdrId !== sdrIdParam) continue;
+      if (selectedSdrIds.length > 0 && !selectedSdrIds.includes(sdrId)) continue;
 
       const tasaRealizacion =
         meetingData.agendadas > 0 ? (meetingData.realizadas / meetingData.agendadas) * 100 : 0;
@@ -394,6 +404,22 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // El filtro de SDR (selectedSdrIds) también debe aplicarse al gráfico
+    // por día, no solo al Ranking — antes solo filtraba sdrsData, así que
+    // el gráfico seguía mostrando el total de todo el equipo sin importar
+    // qué SDR estuviera seleccionado. Para las llamadas se filtra por el id
+    // de usuario de Allo; para las reuniones no hay un id de Allo (pueden
+    // ser de un responsable "meeting-only"), así que se resuelve cada SDR
+    // seleccionado a su meetingKey correspondiente.
+    const selectedMeetingKeys = new Set<string>();
+    for (const id of selectedSdrIds) {
+      if (id.startsWith("meeting-only:")) {
+        selectedMeetingKeys.add(id.slice("meeting-only:".length));
+      } else if (sdrDataMap[id]) {
+        selectedMeetingKeys.add(resolveSdrKey(sdrDataMap[id].sdr_nombre));
+      }
+    }
+
     // Construir resultados por día. Se extiende hasta meetingsRangeEnd (no
     // solo range.end) para que las reuniones Pendientes agendadas para
     // fechas futuras dentro del período también aparezcan en el gráfico.
@@ -402,8 +428,15 @@ export async function GET(request: NextRequest) {
     const currentDate = new Date(range.start);
     while (currentDate < loopEnd) {
       const dateStr = toDateParam(currentDate);
-      const dayCalls = calls.filter((c) => callDateKey(c.date) === dateStr);
-      const dayMeetings = (meetings || []).filter((m) => m.fecha_reunion === dateStr);
+      let dayCalls = calls.filter((c) => callDateKey(c.date) === dateStr);
+      let dayMeetings = (meetings || []).filter((m) => m.fecha_reunion === dateStr);
+
+      if (selectedSdrIds.length > 0) {
+        dayCalls = dayCalls.filter((c) => selectedSdrIds.includes(c.user?.id || "unknown"));
+        dayMeetings = dayMeetings.filter((m: any) =>
+          selectedMeetingKeys.has(resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR"))
+        );
+      }
 
       resultadosPorDia.push({
         fecha: dateStr,
@@ -427,6 +460,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       sdrs_data: sdrsData.sort((a, b) => b.llamadas_realizadas - a.llamadas_realizadas),
       resultados_por_dia: resultadosPorDia,
+      all_sdrs: allSdrsRoster.sort((a, b) => a.sdr_nombre.localeCompare(b.sdr_nombre)),
     });
   } catch (err) {
     console.error("Error en /api/analisis/sdr:", err);
