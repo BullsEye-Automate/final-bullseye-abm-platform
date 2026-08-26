@@ -52,6 +52,18 @@ function callDateKey(isoDate: string): string {
   return isoDate.slice(0, 10);
 }
 
+// Normaliza nombres de SDR para poder emparejar el usuario de Allo (llamadas)
+// con el nombre cargado manualmente en el Excel de reuniones (meetings.sdr_nombre),
+// que puede diferir en mayúsculas, tildes o espacios.
+function normalizeSdrName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
 // ─── GET ────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -169,21 +181,23 @@ export async function GET(request: NextRequest) {
       sdrDataMap[sdrId].llamadas_realizadas++;
     }
 
-    // Procesar reuniones
+    // Procesar reuniones (se indexan por nombre normalizado para poder
+    // emparejar con el nombre del usuario de Allo aunque difieran en
+    // mayúsculas, tildes o espacios)
     const meetingsBySDR: Record<string, { agendadas: number; realizadas: number; contactos: Set<string> }> = {};
 
     for (const meeting of meetings || []) {
-      const sdrName = meeting.sdr_nombre || "Sin SDR";
-      if (!meetingsBySDR[sdrName]) {
-        meetingsBySDR[sdrName] = {
+      const sdrKey = normalizeSdrName(meeting.sdr_nombre || "Sin SDR");
+      if (!meetingsBySDR[sdrKey]) {
+        meetingsBySDR[sdrKey] = {
           agendadas: 0,
           realizadas: 0,
           contactos: new Set(),
         };
       }
-      meetingsBySDR[sdrName].agendadas++;
+      meetingsBySDR[sdrKey].agendadas++;
       if (meeting.realizado === "Si") {
-        meetingsBySDR[sdrName].realizadas++;
+        meetingsBySDR[sdrKey].realizadas++;
       }
     }
 
@@ -195,7 +209,7 @@ export async function GET(request: NextRequest) {
       const sdrData = sdrDataMap[sdrId];
       processedSdrIds.add(sdrId);
 
-      const meetingData = meetingsBySDR[sdrData.sdr_nombre];
+      const meetingData = meetingsBySDR[normalizeSdrName(sdrData.sdr_nombre)];
       if (meetingData) {
         sdrData.reuniones_agendadas = meetingData.agendadas;
         sdrData.reuniones_realizadas = meetingData.realizadas;
