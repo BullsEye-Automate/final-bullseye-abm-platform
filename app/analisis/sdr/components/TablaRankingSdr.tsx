@@ -43,6 +43,20 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
     return sorted;
   }, [data, sortKey, sortDir]);
 
+  const totals = useMemo(() => {
+    const count = data.length || 1;
+    const sum = (key: keyof SdrMetrics) => data.reduce((acc, sdr) => acc + (sdr[key] as number), 0);
+    return {
+      llamadas_realizadas: sum("llamadas_realizadas"),
+      reuniones_agendadas: sum("reuniones_agendadas"),
+      reuniones_realizadas: sum("reuniones_realizadas"),
+      reuniones_pendientes: sum("reuniones_pendientes"),
+      tasa_conectadas_por_contacto: sum("tasa_conectadas_por_contacto") / count,
+      tasa_agendada_por_conectada: sum("tasa_agendada_por_conectada") / count,
+      tasa_realizacion_reuniones: sum("tasa_realizacion_reuniones") / count,
+    };
+  }, [data]);
+
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir(sortDir === "asc" ? "desc" : "asc");
@@ -144,6 +158,24 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
+            <td className="px-4 py-3 text-gray-900">Total</td>
+            <td className="px-4 py-3 text-right text-gray-900">{totals.llamadas_realizadas}</td>
+            <td className="px-4 py-3 text-right text-gray-900">{totals.reuniones_agendadas}</td>
+            <td className="px-4 py-3 text-right text-gray-900">{totals.reuniones_realizadas}</td>
+            <td className="px-4 py-3 text-right text-gray-900">{totals.reuniones_pendientes}</td>
+            <td className="px-4 py-3 text-right text-gray-900">
+              {totals.tasa_conectadas_por_contacto.toFixed(1)}%
+            </td>
+            <td className="px-4 py-3 text-right text-gray-900">
+              {totals.tasa_agendada_por_conectada.toFixed(1)}%
+            </td>
+            <td className="px-4 py-3 text-right text-gray-900">
+              {totals.tasa_realizacion_reuniones.toFixed(1)}%
+            </td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
