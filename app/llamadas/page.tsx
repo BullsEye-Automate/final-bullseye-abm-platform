@@ -54,6 +54,8 @@ type Stats = {
   reuniones_agendadas: number;
   contactos: number;
   empresas: number;
+  duracion_promedio_conectadas: number;
+  tags_resumen: Record<string, number>;
 };
 
 type AlloNumberRef = { allo_number: string; allo_number_name: string | null };
@@ -68,7 +70,7 @@ type ApiResponse = {
   error?: string;
 };
 
-type StatKey = "llamadas" | "conectados" | "reuniones" | "contactos" | "empresas";
+type StatKey = "llamadas" | "conectados" | "reuniones" | "contactos" | "empresas" | "tags";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -270,6 +272,7 @@ const STAT_TITLES: Record<StatKey, string> = {
   reuniones: "Reuniones agendadas",
   contactos: "Contactos",
   empresas: "Empresas",
+  tags: "Resumen de etiquetas",
 };
 
 type CallSortKey = "date" | "user" | "contact" | "job_title" | "company" | "duration" | "result" | "tags";
@@ -649,15 +652,30 @@ export default function LlamadasPage() {
   }, [data, numberFilter, sdrFilter]);
 
   const stats: Stats = useMemo(
-    () => ({
-      llamadas_realizadas: filteredCalls.length,
-      conectados: filteredCalls.filter(isConnected).length,
-      reuniones_agendadas: filteredCalls.filter((c) => c.tags.includes("meeting_booked")).length,
-      contactos: new Set(filteredCalls.map((c) => c.contact_number)).size,
-      empresas: new Set(
-        filteredCalls.map((c) => c.contact_company).filter((c): c is string => !!c).map((c) => c.trim().toLowerCase())
-      ).size,
-    }),
+    () => {
+      const conectadas = filteredCalls.filter(isConnected);
+      const duracionTotal = conectadas.reduce((sum, c) => sum + c.duration, 0);
+      const duracionPromedio = conectadas.length > 0 ? duracionTotal / conectadas.length : 0;
+
+      const tagsMap: Record<string, number> = {};
+      for (const call of filteredCalls) {
+        for (const tag of call.tags) {
+          tagsMap[tag] = (tagsMap[tag] ?? 0) + 1;
+        }
+      }
+
+      return {
+        llamadas_realizadas: filteredCalls.length,
+        conectados: conectadas.length,
+        reuniones_agendadas: filteredCalls.filter((c) => c.tags.includes("meeting_booked")).length,
+        contactos: new Set(filteredCalls.map((c) => c.contact_number)).size,
+        empresas: new Set(
+          filteredCalls.map((c) => c.contact_company).filter((c): c is string => !!c).map((c) => c.trim().toLowerCase())
+        ).size,
+        duracion_promedio_conectadas: duracionPromedio,
+        tags_resumen: tagsMap,
+      };
+    },
     [filteredCalls]
   );
 
@@ -685,6 +703,7 @@ export default function LlamadasPage() {
       case "llamadas": return filteredCalls;
       case "conectados": return filteredCalls.filter(isConnected);
       case "reuniones": return filteredCalls.filter((c) => c.tags.includes("meeting_booked"));
+      case "tags": return filteredCalls;
       default: return filteredCalls;
     }
   }, [statModal, filteredCalls]);
@@ -784,7 +803,7 @@ export default function LlamadasPage() {
       {!loading && data && !data.no_numbers && (
         <>
           {/* Stat cards */}
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             <StatCard
               icon={<IconPhone size={13} />}
               label="Llamadas realizadas"
@@ -833,6 +852,19 @@ export default function LlamadasPage() {
                 ) : undefined
               }
               onClick={() => setStatModal("reuniones")}
+            />
+            <StatCard
+              icon={<IconPhone size={13} />}
+              label="Duración promedio (conectadas)"
+              value={formatDuration(Math.round(stats.duracion_promedio_conectadas))}
+              sub={stats.conectados > 0 ? `en ${stats.conectados} conectadas` : undefined}
+            />
+            <StatCard
+              icon={<IconFilter size={13} />}
+              label="Etiquetas"
+              value={Object.keys(stats.tags_resumen).length}
+              sub={`${Object.values(stats.tags_resumen).reduce((a, b) => a + b, 0)} registros`}
+              onClick={() => setStatModal("tags")}
             />
           </div>
 
@@ -894,6 +926,33 @@ export default function LlamadasPage() {
             <ContactsTable calls={statModalCalls} />
           ) : statModal === "empresas" ? (
             <CompaniesTable calls={statModalCalls} />
+          ) : statModal === "tags" ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-gray-700">Etiqueta</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">Cantidad</th>
+                    <th className="px-4 py-3 text-right font-semibold text-gray-700">Porcentaje</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {Object.entries(stats.tags_resumen)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([tag, count]) => {
+                      const total = Object.values(stats.tags_resumen).reduce((a, b) => a + b, 0);
+                      const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : "0";
+                      return (
+                        <tr key={tag} className="hover:bg-gray-50">
+                          <td className="px-4 py-3 text-gray-900 font-medium">{tag}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{count}</td>
+                          <td className="px-4 py-3 text-right text-gray-600">{percentage}%</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <CallsTable
               calls={statModalCalls}
