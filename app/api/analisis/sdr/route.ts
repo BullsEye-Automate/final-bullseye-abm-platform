@@ -123,10 +123,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Obtener reuniones desde Supabase
+    // Obtener reuniones desde Supabase.
+    // El SDR se identifica con "responsable" (columna "Responsable de la
+    // reunión" del Google Sheet, llenada por el sync automático en
+    // lib/syncMeetings.ts). "sdr_nombre" solo se llena en la importación
+    // manual de CSV (app/api/meetings/import) y suele venir vacío para las
+    // reuniones sincronizadas desde el Excel.
     let meetingsQuery = db
       .from("meetings")
-      .select("id, sdr_nombre, fecha_reunion, realizado, contacto_nombre, empresa, client_id")
+      .select("id, sdr_nombre, responsable, fecha_reunion, realizado, contacto_nombre, empresa, client_id")
       .gte("fecha_reunion", dateFrom)
       .lt("fecha_reunion", dateTo);
 
@@ -187,7 +192,7 @@ export async function GET(request: NextRequest) {
     const meetingsBySDR: Record<string, { agendadas: number; realizadas: number; contactos: Set<string> }> = {};
 
     for (const meeting of meetings || []) {
-      const sdrKey = normalizeSdrName(meeting.sdr_nombre || "Sin SDR");
+      const sdrKey = normalizeSdrName(meeting.responsable || meeting.sdr_nombre || "Sin SDR");
       if (!meetingsBySDR[sdrKey]) {
         meetingsBySDR[sdrKey] = {
           agendadas: 0,
@@ -254,7 +259,7 @@ export async function GET(request: NextRequest) {
         reuniones_realizadas: dayMeetings.filter((m) => m.realizado === "Si").length,
         reuniones: dayMeetings.map((m: any) => ({
           id: m.id,
-          sdr_nombre: m.sdr_nombre,
+          sdr_nombre: m.responsable || m.sdr_nombre,
           fecha_reunion: m.fecha_reunion,
           prospecto_nombre: m.contacto_nombre,
           empresa: m.empresa,
