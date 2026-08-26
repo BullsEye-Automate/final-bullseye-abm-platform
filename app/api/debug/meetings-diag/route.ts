@@ -21,14 +21,15 @@ export async function GET(req: NextRequest) {
     const target = normalizeSdrName(sdrQuery);
 
     const db = supabaseAdmin();
-    // Se filtra por created_at (siempre poblado) en vez de fecha_agendamiento
-    // para no excluir filas donde ese campo venga vacío — así se puede medir
-    // cuántas filas realmente le faltan esa fecha.
+    // Sin filtro de fecha: created_at no sirve como proxy porque el upsert
+    // (onConflict: sheet_row_key) no lo actualiza en ediciones posteriores,
+    // así que una fila con fecha_agendamiento reciente puede tener
+    // created_at antiguo si la fila ya existía desde antes con otro dato.
     const { data: meetings, error } = await db
       .from("meetings")
       .select("id, responsable, sdr_nombre, fecha_agendamiento, fecha_reunion, realizado, client_id, empresa, created_at")
-      .gte("created_at", "2026-01-01")
-      .order("fecha_agendamiento", { ascending: true, nullsFirst: false });
+      .order("fecha_agendamiento", { ascending: true, nullsFirst: false })
+      .limit(5000);
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -68,16 +69,26 @@ export async function GET(req: NextRequest) {
       nombres_similares_no_matcheados: [
         ...new Set(similar.map((m: any) => m.responsable || m.sdr_nombre)),
       ],
-      filas: rows.map((m: any) => ({
-        id: m.id,
-        responsable: m.responsable,
-        sdr_nombre: m.sdr_nombre,
-        fecha_agendamiento: m.fecha_agendamiento,
-        fecha_reunion: m.fecha_reunion,
-        realizado: m.realizado,
-        client_id: m.client_id,
-        empresa: m.empresa,
-      })),
+      // Solo filas relevantes a jun-ago 2026 (por cualquiera de las dos
+      // fechas), para no devolver el historial completo
+      filas_jun_a_ago_2026: rows
+        .filter((m: any) => {
+          const a = (m.fecha_agendamiento || "").slice(0, 7);
+          const r = (m.fecha_reunion || "").slice(0, 7);
+          const enRango = (k: string) => ["2026-06", "2026-07", "2026-08"].includes(k);
+          return enRango(a) || enRango(r);
+        })
+        .map((m: any) => ({
+          id: m.id,
+          responsable: m.responsable,
+          sdr_nombre: m.sdr_nombre,
+          fecha_agendamiento: m.fecha_agendamiento,
+          fecha_reunion: m.fecha_reunion,
+          realizado: m.realizado,
+          client_id: m.client_id,
+          empresa: m.empresa,
+          created_at: m.created_at,
+        })),
     });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
