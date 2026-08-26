@@ -7,6 +7,7 @@ interface SdrMetrics {
   sdr_id: string;
   sdr_nombre: string;
   llamadas_realizadas: number;
+  llamadas_conectadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
   reuniones_pendientes: number;
@@ -48,6 +49,7 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
     const sum = (key: keyof SdrMetrics) => data.reduce((acc, sdr) => acc + (sdr[key] as number), 0);
     return {
       llamadas_realizadas: sum("llamadas_realizadas"),
+      llamadas_conectadas: sum("llamadas_conectadas"),
       reuniones_agendadas: sum("reuniones_agendadas"),
       reuniones_realizadas: sum("reuniones_realizadas"),
       reuniones_pendientes: sum("reuniones_pendientes"),
@@ -101,6 +103,12 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
               </button>
             </th>
             <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+              <button onClick={() => toggleSort("llamadas_conectadas")} className="flex items-center justify-end w-full">
+                Llamadas Conectadas
+                <SortIcon column="llamadas_conectadas" />
+              </button>
+            </th>
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
               <button onClick={() => toggleSort("reuniones_agendadas")} className="flex items-center justify-end w-full">
                 Reuniones Agendadas
                 <SortIcon column="reuniones_agendadas" />
@@ -143,6 +151,7 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
             <tr key={sdr.sdr_id} className={idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"}>
               <td className="px-4 py-3 font-medium text-gray-900">{sdr.sdr_nombre}</td>
               <td className="px-4 py-3 text-right text-gray-700">{sdr.llamadas_realizadas}</td>
+              <td className="px-4 py-3 text-right text-gray-700">{sdr.llamadas_conectadas}</td>
               <td className="px-4 py-3 text-right text-gray-700">{sdr.reuniones_agendadas}</td>
               <td className="px-4 py-3 text-right text-gray-700">{sdr.reuniones_realizadas}</td>
               <td className="px-4 py-3 text-right text-gray-700">{sdr.reuniones_pendientes}</td>
@@ -162,6 +171,7 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
           <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
             <td className="px-4 py-3 text-gray-900">Total</td>
             <td className="px-4 py-3 text-right text-gray-900">{totals.llamadas_realizadas}</td>
+            <td className="px-4 py-3 text-right text-gray-900">{totals.llamadas_conectadas}</td>
             <td className="px-4 py-3 text-right text-gray-900">{totals.reuniones_agendadas}</td>
             <td className="px-4 py-3 text-right text-gray-900">{totals.reuniones_realizadas}</td>
             <td className="px-4 py-3 text-right text-gray-900">{totals.reuniones_pendientes}</td>

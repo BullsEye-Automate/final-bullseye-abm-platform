@@ -48,6 +48,7 @@ type SdrMetrics = {
   sdr_id: string;
   sdr_nombre: string;
   llamadas_realizadas: number;
+  llamadas_conectadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
   reuniones_pendientes: number;
@@ -242,6 +243,7 @@ export async function GET(request: NextRequest) {
           sdr_id: sdrId,
           sdr_nombre: sdrName,
           llamadas_realizadas: 0,
+          llamadas_conectadas: 0,
           reuniones_agendadas: 0,
           reuniones_realizadas: 0,
           reuniones_pendientes: 0,
@@ -252,6 +254,9 @@ export async function GET(request: NextRequest) {
       }
 
       sdrDataMap[sdrId].llamadas_realizadas++;
+      if (isConnected(call.duration, call.result)) {
+        sdrDataMap[sdrId].llamadas_conectadas++;
+      }
     }
 
     // Procesar reuniones (se indexan por nombre normalizado para poder
@@ -294,14 +299,11 @@ export async function GET(request: NextRequest) {
 
       // Calcular tasas
       if (sdrData.llamadas_realizadas > 0) {
-        const conectadas = calls.filter(
-          (c) => (c.user?.id || "unknown") === sdrId && isConnected(c.duration, c.result)
-        ).length;
         const contactosUnicos = new Set(
           calls.filter((c) => (c.user?.id || "unknown") === sdrId).map((c) => c.contact_number)
         ).size;
         sdrData.tasa_conectadas_por_contacto =
-          contactosUnicos > 0 ? (conectadas / contactosUnicos) * 100 : 0;
+          contactosUnicos > 0 ? (sdrData.llamadas_conectadas / contactosUnicos) * 100 : 0;
       }
 
       if (sdrData.reuniones_agendadas > 0) {
