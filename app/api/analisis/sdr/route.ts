@@ -106,10 +106,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Obtener reuniones desde Supabase con nombre de cliente
+    // Obtener reuniones desde Supabase
     let meetingsQuery = db
       .from("meetings")
-      .select("id, sdr_nombre, fecha_reunion, realizado, prospecto_nombre, empresa, client_id, clients(name)")
+      .select("id, sdr_nombre, fecha_reunion, realizado, prospecto_nombre, empresa, client_id")
       .gte("fecha_reunion", dateFrom)
       .lt("fecha_reunion", dateTo);
 
@@ -118,6 +118,19 @@ export async function GET(request: NextRequest) {
     }
 
     const { data: meetings, error: meetingsError } = await meetingsQuery;
+
+    // Obtener nombres de clientes para mapeo
+    let clientsData: any[] = [];
+    if (meetings && meetings.length > 0) {
+      const clientIds = [...new Set(meetings.map((m: any) => m.client_id))];
+      const { data: clients } = await db
+        .from("clients")
+        .select("id, name")
+        .in("id", clientIds);
+      clientsData = clients || [];
+    }
+
+    const clientMap = new Map(clientsData.map((c: any) => [c.id, c.name]));
 
     if (meetingsError) {
       return NextResponse.json({ error: meetingsError.message }, { status: 500 });
@@ -222,7 +235,7 @@ export async function GET(request: NextRequest) {
           prospecto_nombre: m.prospecto_nombre,
           empresa: m.empresa,
           client_id: m.client_id,
-          client_name: m.clients?.name || m.clients,
+          client_name: clientMap.get(m.client_id) || "Sin cliente",
         })),
       });
 
