@@ -52,11 +52,17 @@ export default function GraficoResultadosSdr({
       reuniones: Reunion[];
     }> = [];
 
+    // Todas las fechas ("YYYY-MM-DD") se anclan a UTC explícitamente al
+    // formatear. new Date("YYYY-MM-DD") parsea la fecha como medianoche UTC,
+    // pero toLocaleDateString/getFullYear/getDay sin timeZone leen hora
+    // local del navegador — para un usuario en Chile (UTC-4) eso corría
+    // cada fecha un día hacia atrás (ej. "hoy" se mostraba como "ayer").
     if (granularidad === "dia") {
       processed = data.map((d) => ({
-        fecha: new Date(d.fecha).toLocaleDateString("es-MX", {
+        fecha: new Date(`${d.fecha}T12:00:00Z`).toLocaleDateString("es-MX", {
           month: "short",
           day: "numeric",
+          timeZone: "UTC",
         }),
         fechaKey: d.fecha,
         Llamadas: d.llamadas_realizadas,
@@ -66,42 +72,50 @@ export default function GraficoResultadosSdr({
     } else if (granularidad === "semana") {
       const byWeek: Record<string, ResultadosDia[]> = {};
       for (const item of data) {
-        const date = new Date(item.fecha);
+        const date = new Date(`${item.fecha}T00:00:00Z`);
         const weekStart = new Date(date);
-        weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+        weekStart.setUTCDate(weekStart.getUTCDate() - weekStart.getUTCDay());
         const weekKey = weekStart.toISOString().split("T")[0];
 
         if (!byWeek[weekKey]) byWeek[weekKey] = [];
         byWeek[weekKey].push(item);
       }
 
-      processed = Object.entries(byWeek).map(([week, items]) => ({
-        fecha: `Sem ${new Date(week).toLocaleDateString("es-MX", { month: "short", day: "numeric" })}`,
-        fechaKey: week,
-        Llamadas: items.reduce((sum, i) => sum + i.llamadas_realizadas, 0),
-        "Reuniones Agendadas": items.reduce((sum, i) => sum + i.reuniones_agendadas, 0),
-        reuniones: items.flatMap((i) => i.reuniones || []),
-      }));
+      processed = Object.entries(byWeek)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([week, items]) => ({
+          fecha: `Sem ${new Date(`${week}T12:00:00Z`).toLocaleDateString("es-MX", { month: "short", day: "numeric", timeZone: "UTC" })}`,
+          fechaKey: week,
+          Llamadas: items.reduce((sum, i) => sum + i.llamadas_realizadas, 0),
+          "Reuniones Agendadas": items.reduce((sum, i) => sum + i.reuniones_agendadas, 0),
+          reuniones: items.flatMap((i) => i.reuniones || []),
+        }));
     } else {
+      // item.fecha viene como "YYYY-MM-DD"; se extrae el mes directo del
+      // string para no depender de la zona horaria del navegador (new Date()
+      // interpreta la fecha en UTC pero getFullYear/getMonth leen hora local,
+      // lo que podía correr el día 1 de cada mes al mes anterior).
       const byMonth: Record<string, ResultadosDia[]> = {};
       for (const item of data) {
-        const date = new Date(item.fecha);
-        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        const monthKey = item.fecha.slice(0, 7); // "YYYY-MM"
 
         if (!byMonth[monthKey]) byMonth[monthKey] = [];
         byMonth[monthKey].push(item);
       }
 
-      processed = Object.entries(byMonth).map(([month, items]) => ({
-        fecha: new Date(`${month}-01`).toLocaleDateString("es-MX", {
-          month: "long",
-          year: "numeric",
-        }),
-        fechaKey: month,
-        Llamadas: items.reduce((sum, i) => sum + i.llamadas_realizadas, 0),
-        "Reuniones Agendadas": items.reduce((sum, i) => sum + i.reuniones_agendadas, 0),
-        reuniones: items.flatMap((i) => i.reuniones || []),
-      }));
+      processed = Object.entries(byMonth)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, items]) => ({
+          fecha: new Date(`${month}-01T12:00:00Z`).toLocaleDateString("es-MX", {
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC",
+          }),
+          fechaKey: month,
+          Llamadas: items.reduce((sum, i) => sum + i.llamadas_realizadas, 0),
+          "Reuniones Agendadas": items.reduce((sum, i) => sum + i.reuniones_agendadas, 0),
+          reuniones: items.flatMap((i) => i.reuniones || []),
+        }));
     }
 
     return processed.filter((d) => d.Llamadas > 0 || d["Reuniones Agendadas"] > 0);

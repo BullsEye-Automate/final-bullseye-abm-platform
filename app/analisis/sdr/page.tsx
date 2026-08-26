@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   IconPhone,
   IconLoader2,
@@ -51,7 +51,13 @@ export default function AnalisisSdr() {
   const [tablaData, setTablaData] = useState<ApiResponse | null>(null);
   const [tablaError, setTablaError] = useState<string | null>(null);
 
+  // Evita que una respuesta más lenta de un filtro anterior sobrescriba
+  // los datos del filtro seleccionado actualmente (race condition).
+  const graficoRequestId = useRef(0);
+  const tablaRequestId = useRef(0);
+
   const loadGrafico = async () => {
+    const requestId = ++graficoRequestId.current;
     setGraficoLoading(true);
     setGraficoError(null);
     try {
@@ -62,19 +68,23 @@ export default function AnalisisSdr() {
       });
 
       const response = await fetch(`/api/analisis/sdr?${searchParams}`);
+      if (requestId !== graficoRequestId.current) return; // respuesta obsoleta
+
       if (!response.ok) {
         setGraficoError("Error al cargar datos");
       } else {
         setGraficoData(await response.json());
       }
     } catch (err) {
+      if (requestId !== graficoRequestId.current) return;
       setGraficoError((err as Error).message);
     } finally {
-      setGraficoLoading(false);
+      if (requestId === graficoRequestId.current) setGraficoLoading(false);
     }
   };
 
   const loadTabla = async () => {
+    const requestId = ++tablaRequestId.current;
     setTablaLoading(true);
     setTablaError(null);
     try {
@@ -85,15 +95,18 @@ export default function AnalisisSdr() {
       });
 
       const response = await fetch(`/api/analisis/sdr?${searchParams}`);
+      if (requestId !== tablaRequestId.current) return; // respuesta obsoleta
+
       if (!response.ok) {
         setTablaError("Error al cargar datos");
       } else {
         setTablaData(await response.json());
       }
     } catch (err) {
+      if (requestId !== tablaRequestId.current) return;
       setTablaError((err as Error).message);
     } finally {
-      setTablaLoading(false);
+      if (requestId === tablaRequestId.current) setTablaLoading(false);
     }
   };
 
