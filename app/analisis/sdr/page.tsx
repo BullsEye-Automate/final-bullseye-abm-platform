@@ -41,18 +41,10 @@ type ApiResponse = {
   error?: string;
 };
 
-// ─── Emails autorizados ─────────────────────────────────────────────────────
-
-const AUTHORIZED_EMAILS = [
-  "ihincapie@bullseye-abm.com",
-  "jguajardo@bullseye-abm.com",
-  "jkarmy@bullseye-abm.com",
-];
-
 // ─── Página ─────────────────────────────────────────────────────────────────
 
 export default function AnalisisSdr() {
-  const { currentUser, currentClient } = useClient();
+  const { currentClient } = useClient();
   const [rangeKey, setRangeKey] = useState<RangeKey>("mes");
   const [clientFilter, setClientFilter] = useState<string>("");
   const [sdrFilter, setSdrFilter] = useState<string>("");
@@ -60,12 +52,6 @@ export default function AnalisisSdr() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // Verificar autorización
-  const isAuthorized = useMemo(() => {
-    if (!currentUser?.email) return false;
-    return AUTHORIZED_EMAILS.includes(currentUser.email);
-  }, [currentUser?.email]);
 
   // Cargar datos
   const load = async (clientId?: string) => {
@@ -100,46 +86,11 @@ export default function AnalisisSdr() {
   };
 
   useEffect(() => {
-    if (isAuthorized && currentClient?.id) {
+    if (currentClient?.id) {
       load(currentClient.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthorized, currentClient?.id, rangeKey, sdrFilter]);
-
-  if (!currentUser) {
-    return (
-      <div className="flex items-center justify-center py-10 text-ink-muted">
-        <IconLoader2 size={22} className="animate-spin mr-2" />
-        <span>Cargando usuario…</span>
-      </div>
-    );
-  }
-
-  if (!isAuthorized) {
-    return (
-      <div className="space-y-6">
-        <header className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <div className="label">Reportería</div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-              <IconTrendingUp size={24} />
-              Análisis SDR
-            </h1>
-          </div>
-        </header>
-
-        <div className="card flex items-center gap-3 text-warning-fg border border-warning-bg bg-warning-bg/40 text-sm">
-          <IconAlertCircle size={18} className="shrink-0" />
-          <div>
-            <p className="font-semibold">Acceso restringido</p>
-            <p className="text-xs mt-1">
-              Este módulo solo está disponible para los administradores autorizados.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  }, [currentClient?.id, rangeKey, sdrFilter]);
 
   return (
     <div className="space-y-6">
