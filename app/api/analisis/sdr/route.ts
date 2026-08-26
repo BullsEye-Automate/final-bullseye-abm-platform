@@ -102,6 +102,22 @@ function normalizeSdrName(name: string): string {
     .replace(/\s+/g, " ");
 }
 
+// Alias manuales para nombres que no calzan ni normalizando (apodos, solo
+// nombre de pila, faltas de ortografía en el Excel, etc.). Clave = nombre tal
+// como aparece en meetings.responsable / sdr_nombre (normalizado), valor =
+// nombre tal como está registrado en Allo (normalizado). Cuando un SDR nuevo
+// no calce, se agrega acá una línea más — confirmado con BullsEye caso a caso.
+const SDR_NAME_ALIASES: Record<string, string> = {
+  [normalizeSdrName("Jacqueline Fuentes")]: normalizeSdrName("Jaqueline Fuentes"),
+  [normalizeSdrName("María José")]:         normalizeSdrName("María José Espinoza"),
+  [normalizeSdrName("Pedro")]:              normalizeSdrName("Pedro Gallardo"),
+};
+
+function resolveSdrKey(name: string): string {
+  const normalized = normalizeSdrName(name);
+  return SDR_NAME_ALIASES[normalized] || normalized;
+}
+
 // ─── GET ────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -236,7 +252,7 @@ export async function GET(request: NextRequest) {
     const meetingsBySDR: Record<string, { agendadas: number; realizadas: number; pendientes: number; contactos: Set<string> }> = {};
 
     for (const meeting of meetings || []) {
-      const sdrKey = normalizeSdrName(meeting.responsable || meeting.sdr_nombre || "Sin SDR");
+      const sdrKey = resolveSdrKey(meeting.responsable || meeting.sdr_nombre || "Sin SDR");
       if (!meetingsBySDR[sdrKey]) {
         meetingsBySDR[sdrKey] = {
           agendadas: 0,
@@ -261,7 +277,7 @@ export async function GET(request: NextRequest) {
       const sdrData = sdrDataMap[sdrId];
       processedSdrIds.add(sdrId);
 
-      const meetingData = meetingsBySDR[normalizeSdrName(sdrData.sdr_nombre)];
+      const meetingData = meetingsBySDR[resolveSdrKey(sdrData.sdr_nombre)];
       if (meetingData) {
         sdrData.reuniones_agendadas = meetingData.agendadas;
         sdrData.reuniones_pendientes = meetingData.pendientes;
