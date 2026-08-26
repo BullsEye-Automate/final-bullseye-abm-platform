@@ -119,22 +119,26 @@ export async function GET(request: NextRequest) {
 
     const { data: meetings, error: meetingsError } = await meetingsQuery;
 
+    if (meetingsError) {
+      return NextResponse.json({ error: meetingsError.message }, { status: 500 });
+    }
+
     // Obtener nombres de clientes para mapeo
     let clientsData: any[] = [];
     if (meetings && meetings.length > 0) {
       const clientIds = [...new Set(meetings.map((m: any) => m.client_id))];
-      const { data: clients } = await db
+      const { data: clients, error: clientsError } = await db
         .from("clients")
         .select("id, name")
         .in("id", clientIds);
+
+      if (clientsError) {
+        console.error("Error obteniendo clientes:", clientsError);
+      }
       clientsData = clients || [];
     }
 
     const clientMap = new Map(clientsData.map((c: any) => [c.id, c.name]));
-
-    if (meetingsError) {
-      return NextResponse.json({ error: meetingsError.message }, { status: 500 });
-    }
 
     // Agrupar datos por SDR
     const sdrDataMap: Record<string, SdrMetrics> = {};
@@ -205,7 +209,8 @@ export async function GET(request: NextRequest) {
       }
 
       if (sdrData.reuniones_agendadas > 0) {
-        sdrData.tasa_agendada_por_conectada = (sdrData.reuniones_agendadas / sdrData.llamadas_realizadas) * 100;
+        sdrData.tasa_agendada_por_conectada =
+          sdrData.llamadas_realizadas > 0 ? (sdrData.reuniones_agendadas / sdrData.llamadas_realizadas) * 100 : 0;
         sdrData.tasa_realizacion_reuniones = (sdrData.reuniones_realizadas / sdrData.reuniones_agendadas) * 100;
       }
 
