@@ -170,14 +170,26 @@ export async function GET(request: NextRequest) {
       listAlloNumbers(),
     ]);
 
-    // Filtro local de respaldo: cuando dateFrom === dateTo (rango "Hoy"), la
-    // API de Allo parece no aplicar el filtro de fecha y devuelve resultados
-    // fuera de rango (se observó: "Hoy" mostraba los mismos totales que
-    // "Este mes"). Se filtra explícitamente por date_from/date_to acá,
-    // sin depender del filtrado del lado de Allo.
+    // Filtros locales de respaldo, sin depender de que la API de Allo filtre
+    // bien de su lado:
+    // 1. Fecha: cuando dateFrom === dateTo (rango "Hoy"), Allo parece no
+    //    aplicar el filtro de fecha y devuelve resultados fuera de rango
+    //    (se observó: "Hoy" mostraba los mismos totales que "Este mes").
+    // 2. Número: se observaron totales muy por encima de los que muestra el
+    //    propio dashboard de Allo al sumar por varios números — es posible
+    //    que el filtro allo_number tampoco se aplique siempre de forma
+    //    estricta. Se descarta cualquier llamada cuyo allo_number no sea
+    //    exactamente uno de los asignados.
+    // 3. Duplicados: se deduplica por id — si Allo devuelve la misma llamada
+    //    en más de una consulta por número, no debe contarse dos veces.
+    const seenCallIds = new Set<string>();
     const calls = callsByNumber.flat().filter((c) => {
+      if (!assignedNumbers.includes(c.allo_number)) return false;
       const key = callDateKey(c.date);
-      return key >= dateFrom && key <= dateTo;
+      if (key < dateFrom || key > dateTo) return false;
+      if (seenCallIds.has(c.id)) return false;
+      seenCallIds.add(c.id);
+      return true;
     });
 
     // Mapear IDs de usuarios de Allo

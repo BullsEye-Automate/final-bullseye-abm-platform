@@ -74,13 +74,19 @@ export async function GET(req: NextRequest, { params }: Params) {
       listAlloTags(),
     ]);
 
-    // Filtro local de respaldo: cuando dateFrom === dateTo (rango "Hoy"), la
-    // API de Allo parece no aplicar el filtro de fecha y devuelve resultados
-    // fuera de rango. Se filtra explícitamente por date_from/date_to acá,
-    // sin depender del filtrado del lado de Allo.
+    // Filtros locales de respaldo, sin depender de que la API de Allo filtre
+    // bien de su lado: fecha (cuando dateFrom === dateTo, ej. "Hoy", Allo
+    // parece no aplicar el filtro), número asignado (se observaron totales
+    // muy por encima de los del propio dashboard de Allo al sumar varios
+    // números) y duplicados (deduplicar por id).
+    const seenCallIds = new Set<string>();
     const calls = callsByNumber.flat().filter((c) => {
+      if (!assignedNumbers.includes(c.allo_number)) return false;
       const key = callDateKey(c.date);
-      return key >= dateFrom && key <= dateTo;
+      if (key < dateFrom || key > dateTo) return false;
+      if (seenCallIds.has(c.id)) return false;
+      seenCallIds.add(c.id);
+      return true;
     });
 
     // SDRs que gestionan la cuenta = usuarios asignados a los números de este cliente en Allo.
