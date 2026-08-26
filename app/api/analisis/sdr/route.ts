@@ -1,10 +1,9 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
+import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
+import { listAlloNumbers, searchAlloCalls } from "@/lib/allo";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+export const dynamic = "force-dynamic";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -34,41 +33,8 @@ function isConnected(duration: number, result: string | null): boolean {
   return (result === "ANSWERED" || result === "TRANSFERRED") && duration >= MIN_REAL_CONVERSATION_SECONDS;
 }
 
-function getDateRange(rangeKey: string) {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  let startDate = new Date(today);
-  let endDate = new Date(today);
-  endDate.setDate(endDate.getDate() + 1);
-
-  switch (rangeKey) {
-    case "hoy":
-      break;
-    case "semana":
-      startDate.setDate(startDate.getDate() - startDate.getDay());
-      endDate.setDate(endDate.getDate() + (7 - endDate.getDay()));
-      break;
-    case "mes":
-      startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-      break;
-    case "trimestre":
-      const quarter = Math.floor(today.getMonth() / 3);
-      startDate = new Date(today.getFullYear(), quarter * 3, 1);
-      endDate = new Date(today.getFullYear(), (quarter + 1) * 3, 1);
-      break;
-    case "año":
-      startDate = new Date(today.getFullYear(), 0, 1);
-      endDate = new Date(today.getFullYear() + 1, 0, 1);
-      break;
-    default:
-      break;
-  }
-
-  return {
-    startDate: startDate.toISOString().split("T")[0],
-    endDate: endDate.toISOString().split("T")[0],
-  };
+function toDateParam(d: Date): string {
+  return d.toISOString().slice(0, 10);
 }
 
 // ─── GET ────────────────────────────────────────────────────────────────────
@@ -76,102 +42,160 @@ function getDateRange(rangeKey: string) {
 export async function GET(request: NextRequest) {
   try {
     const clientId = request.nextUrl.searchParams.get("client_id");
-    const sdrId = request.nextUrl.searchParams.get("sdr_id");
-    const rangeKey = request.nextUrl.searchParams.get("rangeKey") || "mes";
+    const sdrIdParam = request.nextUrl.searchParams.get("sdr_id");
+    const rangeKey = (request.nextUrl.searchParams.get("rangeKey") || "mes") as RangeKey;
 
     if (!clientId) {
       return NextResponse.json({ error: "client_id es requerido" }, { status: 400 });
     }
 
-    const { startDate, endDate } = getDateRange(rangeKey);
+    const db = supabaseAdmin();
+    const range = isValidRangeKey(rangeKey) ? resolveRange(rangeKey) : resolveRange("this_month");
+    const dateFrom = toDateParam(range.start);
+    const dateTo = toDateParam(range.end);
+
+    // Obtener números de Allo asignados al cliente
+    const { data: assigned, error: assignedErr } = await db
+      .from("client_allo_numbers")
+      .select("allo_number")
+      .eq("client_id", clientId);
+
+    if (assignedErr) {
+      return NextResponse.json({ error: assignedErr.message }, { status: 500 });
+    }
+
+    const assignedNumbers = (assigned ?? []).map((r) => r.allo_number);
+
+    if (assignedNumbers.length === 0) {
+      return NextResponse.json({
+        sdrs_data: [],
+        resultados_por_dia: [],
+      });
+    }
+
+    // Obtener llamadas desde Allo
+    const [callsByNumber, allNumbers] = await Promise.all([
+      Promise.all(
+        assignedNumbers.map((n) =>
+          searchAlloCalls({ allo_number: n, date_from: dateFrom, date_to: dateTo, direction: "OUTBOUND" })
+        )
+      ),
+      listAlloNumbers(),
+    ]);
+
+    const calls = callsByNumber.flat();
+
+    // Mapear IDs de usuarios de Allo
+    const userMap = new Map<string, string>();
+    for (const n of allNumbers) {
+      if (!assignedNumbers.includes(n.number)) continue;
+      for (const u of n.users) {
+        userMap.set(u.id, u.name);
+      }
+    }
 
     // Obtener reuniones desde Supabase
-    let meetingsQuery = supabase
+    const { data: meetings, error: meetingsError } = await db
       .from("meetings")
       .select("id, sdr_nombre, fecha_reunion, realizado")
       .eq("client_id", clientId)
-      .gte("fecha_reunion", startDate)
-      .lt("fecha_reunion", endDate);
-
-    if (sdrId) {
-      meetingsQuery = meetingsQuery.eq("sdr_id", sdrId);
-    }
-
-    const { data: meetings, error: meetingsError } = await meetingsQuery;
+      .gte("fecha_reunion", dateFrom)
+      .lt("fecha_reunion", dateTo);
 
     if (meetingsError) {
       return NextResponse.json({ error: meetingsError.message }, { status: 500 });
     }
 
-    // Agrupar reuniones por SDR
-    const meetingsBySDR: Record<
-      string,
-      { reuniones_agendadas: number; reuniones_realizadas: number }
-    > = {};
+    // Agrupar datos por SDR
+    const sdrDataMap: Record<string, SdrMetrics> = {};
+
+    // Procesar llamadas
+    for (const call of calls) {
+      const sdrId = call.user_id || "unknown";
+      const sdrName = userMap.get(sdrId) || call.user?.name || sdrId;
+
+      if (!sdrDataMap[sdrId]) {
+        sdrDataMap[sdrId] = {
+          sdr_id: sdrId,
+          sdr_nombre: sdrName,
+          llamadas_realizadas: 0,
+          reuniones_agendadas: 0,
+          reuniones_realizadas: 0,
+          tasa_conectadas_por_contacto: 0,
+          tasa_agendada_por_conectada: 0,
+          tasa_realizacion_reuniones: 0,
+        };
+      }
+
+      sdrDataMap[sdrId].llamadas_realizadas++;
+    }
+
+    // Procesar reuniones
+    const meetingsBySDR: Record<string, { agendadas: number; realizadas: number; contactos: Set<string> }> = {};
 
     for (const meeting of meetings || []) {
       const sdrName = meeting.sdr_nombre || "Sin SDR";
       if (!meetingsBySDR[sdrName]) {
         meetingsBySDR[sdrName] = {
-          reuniones_agendadas: 0,
-          reuniones_realizadas: 0,
+          agendadas: 0,
+          realizadas: 0,
+          contactos: new Set(),
         };
       }
-      meetingsBySDR[sdrName].reuniones_agendadas++;
+      meetingsBySDR[sdrName].agendadas++;
       if (meeting.realizado === "Si") {
-        meetingsBySDR[sdrName].reuniones_realizadas++;
+        meetingsBySDR[sdrName].realizadas++;
       }
     }
 
-    // Obtener SDRs de la tabla users
-    let sdrsQuery = supabase.from("users").select("id, name").eq("role", "sdr");
+    // Calcular métricas consolidadas
+    const sdrsData: SdrMetrics[] = [];
+    const processedSdrIds = new Set<string>();
 
-    if (sdrId) {
-      sdrsQuery = sdrsQuery.eq("id", sdrId);
+    for (const sdrId in sdrDataMap) {
+      const sdrData = sdrDataMap[sdrId];
+      processedSdrIds.add(sdrId);
+
+      const meetingData = meetingsBySDR[sdrData.sdr_nombre];
+      if (meetingData) {
+        sdrData.reuniones_agendadas = meetingData.agendadas;
+        sdrData.reuniones_realizadas = meetingData.realizadas;
+      }
+
+      // Calcular tasas
+      if (sdrData.llamadas_realizadas > 0) {
+        const conectadas = calls.filter(
+          (c) => (c.user_id || "unknown") === sdrId && isConnected(c.duration, c.result)
+        ).length;
+        const contactosUnicos = new Set(
+          calls.filter((c) => (c.user_id || "unknown") === sdrId).map((c) => c.contact_number)
+        ).size;
+        sdrData.tasa_conectadas_por_contacto =
+          contactosUnicos > 0 ? (conectadas / contactosUnicos) * 100 : 0;
+      }
+
+      if (sdrData.reuniones_agendadas > 0) {
+        sdrData.tasa_agendada_por_conectada = (sdrData.reuniones_agendadas / sdrData.llamadas_realizadas) * 100;
+        sdrData.tasa_realizacion_reuniones = (sdrData.reuniones_realizadas / sdrData.reuniones_agendadas) * 100;
+      }
+
+      // Filtrar si se solicita un SDR específico
+      if (!sdrIdParam || sdrId === sdrIdParam) {
+        sdrsData.push(sdrData);
+      }
     }
 
-    const { data: sdrs, error: sdrsError } = await sdrsQuery;
-
-    if (sdrsError) {
-      return NextResponse.json({ error: sdrsError.message }, { status: 500 });
-    }
-
-    // Construir datos de SDRs con métricas
-    const sdrsData: SdrMetrics[] = (sdrs || []).map((sdr) => {
-      const sdrName = sdr.name || sdr.id;
-      const meetingData = meetingsBySDR[sdrName] || {
-        reuniones_agendadas: 0,
-        reuniones_realizadas: 0,
-      };
-
-      return {
-        sdr_id: sdr.id,
-        sdr_nombre: sdrName,
-        llamadas_realizadas: 0, // Placeholder - se completará con datos de Allo
-        reuniones_agendadas: meetingData.reuniones_agendadas,
-        reuniones_realizadas: meetingData.reuniones_realizadas,
-        tasa_conectadas_por_contacto: 0,
-        tasa_agendada_por_conectada:
-          meetingData.reuniones_agendadas > 0
-            ? (meetingData.reuniones_realizadas / meetingData.reuniones_agendadas) * 100
-            : 0,
-        tasa_realizacion_reuniones:
-          meetingData.reuniones_agendadas > 0
-            ? (meetingData.reuniones_realizadas / meetingData.reuniones_agendadas) * 100
-            : 0,
-      };
-    });
-
-    // Construir datos de resultados por día
+    // Construir resultados por día
     const resultadosPorDia: ResultadosDia[] = [];
-    const currentDate = new Date(startDate);
-    while (currentDate < new Date(endDate)) {
-      const dateStr = currentDate.toISOString().split("T")[0];
+    const currentDate = new Date(range.start);
+    while (currentDate < range.end) {
+      const dateStr = toDateParam(currentDate);
+      const dayCalls = calls.filter((c) => c.date === dateStr);
       const dayMeetings = (meetings || []).filter((m) => m.fecha_reunion === dateStr);
 
       resultadosPorDia.push({
         fecha: dateStr,
-        llamadas_realizadas: 0, // Placeholder
+        llamadas_realizadas: dayCalls.length,
         reuniones_agendadas: dayMeetings.length,
         reuniones_realizadas: dayMeetings.filter((m) => m.realizado === "Si").length,
       });
@@ -180,7 +204,7 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({
-      sdrs_data: sdrsData,
+      sdrs_data: sdrsData.sort((a, b) => b.llamadas_realizadas - a.llamadas_realizadas),
       resultados_por_dia: resultadosPorDia,
     });
   } catch (err) {
