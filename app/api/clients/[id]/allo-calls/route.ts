@@ -12,9 +12,16 @@ function toDateParam(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-// call.date de Allo es un timestamp ISO completo (con hora), no "YYYY-MM-DD"
+// call.date de Allo es un timestamp ISO completo en UTC, no "YYYY-MM-DD".
+// Los rangos de fecha representan días calendario del negocio, que opera
+// en horario de Chile (UTC-4, sin horario de verano desde 2019) — no UTC.
+// Sin este ajuste, llamadas hechas entre las 20:00 y medianoche hora Chile
+// caen, en UTC, dentro del día calendario siguiente, quedando en el día
+// equivocado (ver /api/analisis/sdr/route.ts para el detalle).
+const CHILE_UTC_OFFSET_HOURS = -4;
 function callDateKey(isoDate: string): string {
-  return isoDate.slice(0, 10);
+  const shifted = new Date(new Date(isoDate).getTime() + CHILE_UTC_OFFSET_HOURS * 3600000);
+  return shifted.toISOString().slice(0, 10);
 }
 
 // El campo `result` de una llamada dice "ANSWERED" aunque haya caído a
