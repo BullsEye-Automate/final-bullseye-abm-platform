@@ -169,7 +169,15 @@ export async function GET(request: NextRequest) {
       listAlloNumbers(),
     ]);
 
-    const calls = callsByNumber.flat();
+    // Filtro local de respaldo: cuando dateFrom === dateTo (rango "Hoy"), la
+    // API de Allo parece no aplicar el filtro de fecha y devuelve resultados
+    // fuera de rango (se observó: "Hoy" mostraba los mismos totales que
+    // "Este mes"). Se filtra explícitamente por date_from/date_to acá,
+    // sin depender del filtrado del lado de Allo.
+    const calls = callsByNumber.flat().filter((c) => {
+      const key = callDateKey(c.date);
+      return key >= dateFrom && key <= dateTo;
+    });
 
     // Mapear IDs de usuarios de Allo
     const userMap = new Map<string, string>();

@@ -12,6 +12,11 @@ function toDateParam(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+// call.date de Allo es un timestamp ISO completo (con hora), no "YYYY-MM-DD"
+function callDateKey(isoDate: string): string {
+  return isoDate.slice(0, 10);
+}
+
 // El campo `result` de una llamada dice "ANSWERED" aunque haya caído a
 // buzón de voz (la señal telefónica se marca como contestada igual). Allo
 // tiene un campo de "voicemail detectado" con IA, pero no está expuesto en
@@ -69,7 +74,14 @@ export async function GET(req: NextRequest, { params }: Params) {
       listAlloTags(),
     ]);
 
-    const calls = callsByNumber.flat();
+    // Filtro local de respaldo: cuando dateFrom === dateTo (rango "Hoy"), la
+    // API de Allo parece no aplicar el filtro de fecha y devuelve resultados
+    // fuera de rango. Se filtra explícitamente por date_from/date_to acá,
+    // sin depender del filtrado del lado de Allo.
+    const calls = callsByNumber.flat().filter((c) => {
+      const key = callDateKey(c.date);
+      return key >= dateFrom && key <= dateTo;
+    });
 
     // SDRs que gestionan la cuenta = usuarios asignados a los números de este cliente en Allo.
     const sdrMap = new Map<string, AlloUserRef>();
