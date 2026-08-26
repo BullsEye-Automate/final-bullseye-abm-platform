@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
     // Obtener reuniones desde Supabase
     let meetingsQuery = db
       .from("meetings")
-      .select("id, sdr_nombre, fecha_reunion, realizado, prospecto_nombre, empresa, client_id")
+      .select("id, sdr_nombre, fecha_reunion, realizado, contacto_nombre, empresa, client_id")
       .gte("fecha_reunion", dateFrom)
       .lt("fecha_reunion", dateTo);
 
@@ -145,7 +145,7 @@ export async function GET(request: NextRequest) {
 
     // Procesar llamadas
     for (const call of calls) {
-      const sdrId = call.user_id || "unknown";
+      const sdrId = call.user?.id || "unknown";
       const sdrName = userMap.get(sdrId) || call.user?.name || sdrId;
 
       if (!sdrDataMap[sdrId]) {
@@ -199,10 +199,10 @@ export async function GET(request: NextRequest) {
       // Calcular tasas
       if (sdrData.llamadas_realizadas > 0) {
         const conectadas = calls.filter(
-          (c) => (c.user_id || "unknown") === sdrId && isConnected(c.duration, c.result)
+          (c) => (c.user?.id || "unknown") === sdrId && isConnected(c.duration, c.result)
         ).length;
         const contactosUnicos = new Set(
-          calls.filter((c) => (c.user_id || "unknown") === sdrId).map((c) => c.contact_number)
+          calls.filter((c) => (c.user?.id || "unknown") === sdrId).map((c) => c.contact_number)
         ).size;
         sdrData.tasa_conectadas_por_contacto =
           contactosUnicos > 0 ? (conectadas / contactosUnicos) * 100 : 0;
@@ -237,7 +237,7 @@ export async function GET(request: NextRequest) {
           id: m.id,
           sdr_nombre: m.sdr_nombre,
           fecha_reunion: m.fecha_reunion,
-          prospecto_nombre: m.prospecto_nombre,
+          prospecto_nombre: m.contacto_nombre,
           empresa: m.empresa,
           client_id: m.client_id,
           client_name: clientMap.get(m.client_id) || "Sin cliente",
