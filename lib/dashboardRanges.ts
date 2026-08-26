@@ -2,6 +2,7 @@
 // Todos los cálculos en UTC
 
 export type RangeKey =
+  | "today"
   | "this_week"
   | "last_week"
   | "this_month"
@@ -11,7 +12,8 @@ export type RangeKey =
   | "this_semester"
   | "last_semester"
   | "this_year"
-  | "last_year";
+  | "last_year"
+  | "custom";
 
 export type DateRange = {
   start: Date;
@@ -21,6 +23,7 @@ export type DateRange = {
 };
 
 export const RANGE_LABELS: Record<RangeKey, string> = {
+  today:          "Hoy",
   this_week:      "Esta semana",
   last_week:      "Semana pasada",
   this_month:     "Este mes",
@@ -31,6 +34,7 @@ export const RANGE_LABELS: Record<RangeKey, string> = {
   last_semester:  "Semestre pasado",
   this_year:      "Este año",
   last_year:      "Año pasado",
+  custom:         "Fecha personalizada",
 };
 
 // Inicio de la semana ISO (lunes) en UTC
@@ -63,6 +67,22 @@ export function resolveRange(key: RangeKey, now?: Date): DateRange {
   const d = today.getUTCDate();
 
   switch (key) {
+    case "today": {
+      const start = startOfDay(today);
+      const end = endOfDay(today);
+      const prevStart = new Date(start.getTime() - 86400000);
+      const prevEnd = new Date(prevStart.getTime() + 86400000 - 1);
+      return { start, end, label: RANGE_LABELS.today, previous: { start: prevStart, end: prevEnd } };
+    }
+
+    case "custom": {
+      // Por defecto, devuelve este mes (puede ser reemplazado con un selector de fechas después)
+      const start = new Date(Date.UTC(y, m, 1));
+      const end = endOfDay(today);
+      const prevStart = new Date(Date.UTC(y, m - 1, 1));
+      const prevEnd = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+      return { start, end, label: RANGE_LABELS.custom, previous: { start: prevStart, end: prevEnd } };
+    }
     case "this_week": {
       const weekStart = getISOWeekStart(today);
       const prevWeekStart = new Date(weekStart.getTime() - 7 * 86400000);
