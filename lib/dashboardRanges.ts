@@ -3,6 +3,7 @@
 
 export type RangeKey =
   | "today"
+  | "yesterday"
   | "this_week"
   | "last_week"
   | "this_month"
@@ -24,6 +25,7 @@ export type DateRange = {
 
 export const RANGE_LABELS: Record<RangeKey, string> = {
   today:          "Hoy",
+  yesterday:      "Ayer",
   this_week:      "Esta semana",
   last_week:      "Semana pasada",
   this_month:     "Este mes",
@@ -73,6 +75,14 @@ export function resolveRange(key: RangeKey, now?: Date): DateRange {
       const prevStart = new Date(start.getTime() - 86400000);
       const prevEnd = new Date(prevStart.getTime() + 86400000 - 1);
       return { start, end, label: RANGE_LABELS.today, previous: { start: prevStart, end: prevEnd } };
+    }
+
+    case "yesterday": {
+      const start = new Date(startOfDay(today).getTime() - 86400000);
+      const end = new Date(start.getTime() + 86400000 - 1);
+      const prevStart = new Date(start.getTime() - 86400000);
+      const prevEnd = new Date(prevStart.getTime() + 86400000 - 1);
+      return { start, end, label: RANGE_LABELS.yesterday, previous: { start: prevStart, end: prevEnd } };
     }
 
     case "custom": {
