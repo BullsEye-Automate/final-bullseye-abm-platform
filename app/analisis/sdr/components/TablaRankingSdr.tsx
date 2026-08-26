@@ -9,6 +9,7 @@ interface SdrMetrics {
   llamadas_realizadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
+  reuniones_pendientes: number;
   tasa_conectadas_por_contacto: number;
   tasa_agendada_por_conectada: number;
   tasa_realizacion_reuniones: number;
@@ -98,6 +99,12 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
               </button>
             </th>
             <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+              <button onClick={() => toggleSort("reuniones_pendientes")} className="flex items-center justify-end w-full">
+                Reuniones Pendientes
+                <SortIcon column="reuniones_pendientes" />
+              </button>
+            </th>
+            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
               <button onClick={() => toggleSort("tasa_conectadas_por_contacto")} className="flex items-center justify-end w-full">
                 Tasa Conectadas/Contacto
                 <SortIcon column="tasa_conectadas_por_contacto" />
@@ -124,6 +131,7 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
               <td className="px-4 py-3 text-right text-gray-700">{sdr.llamadas_realizadas}</td>
               <td className="px-4 py-3 text-right text-gray-700">{sdr.reuniones_agendadas}</td>
               <td className="px-4 py-3 text-right text-gray-700">{sdr.reuniones_realizadas}</td>
+              <td className="px-4 py-3 text-right text-gray-700">{sdr.reuniones_pendientes}</td>
               <td className="px-4 py-3 text-right text-gray-600">
                 {sdr.tasa_conectadas_por_contacto.toFixed(1)}%
               </td>

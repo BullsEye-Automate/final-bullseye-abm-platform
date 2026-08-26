@@ -18,6 +18,7 @@ type SdrMetrics = {
   llamadas_realizadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
+  reuniones_pendientes: number;
   tasa_conectadas_por_contacto: number;
   tasa_agendada_por_conectada: number;
   tasa_realizacion_reuniones: number;

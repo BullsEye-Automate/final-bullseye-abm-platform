@@ -3,6 +3,43 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
 import { listAlloNumbers, searchAlloCalls } from "@/lib/allo";
 
+// dashboardRanges.resolveRange corta los rangos "this_*" (en curso) en el
+// día de hoy — correcto para "llamadas realizadas" (no puede haber llamadas
+// futuras), pero incorrecto para "reuniones agendadas": una reunión
+// Pendiente puede estar agendada para un día futuro dentro del mismo
+// período (ej. agendada para el 30 si hoy es 26), y quedaba excluida.
+// Esta función calcula el fin real del período (sin cortar en "hoy") para
+// usarlo solo en la consulta de reuniones.
+function endOfDayUTC(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
+}
+
+function resolveMeetingsRangeEnd(rangeKey: RangeKey, fallbackEnd: Date, now: Date): Date {
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+
+  switch (rangeKey) {
+    case "this_week": {
+      const day = now.getUTCDay();
+      const daysUntilSunday = day === 0 ? 0 : 7 - day;
+      return endOfDayUTC(new Date(Date.UTC(y, m, now.getUTCDate() + daysUntilSunday)));
+    }
+    case "this_month":
+      return endOfDayUTC(new Date(Date.UTC(y, m + 1, 0)));
+    case "this_quarter": {
+      const qStartMonth = Math.floor(m / 3) * 3;
+      return endOfDayUTC(new Date(Date.UTC(y, qStartMonth + 3, 0)));
+    }
+    case "this_semester":
+      return endOfDayUTC(new Date(Date.UTC(y, m < 6 ? 6 : 12, 0)));
+    case "this_year":
+      return endOfDayUTC(new Date(Date.UTC(y, 12, 0)));
+    default:
+      // "today", "last_*" y "custom" ya representan un período completo
+      return fallbackEnd;
+  }
+}
+
 export const dynamic = "force-dynamic";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
@@ -13,6 +50,7 @@ type SdrMetrics = {
   llamadas_realizadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
+  reuniones_pendientes: number;
   tasa_conectadas_por_contacto: number;
   tasa_agendada_por_conectada: number;
   tasa_realizacion_reuniones: number;
@@ -78,9 +116,12 @@ export async function GET(request: NextRequest) {
 
     const db = supabaseAdmin();
     const isAllClients = clientId === "__all__";
-    const range = isValidRangeKey(rangeKey) ? resolveRange(rangeKey) : resolveRange("this_month");
+    const effectiveRangeKey: RangeKey = isValidRangeKey(rangeKey) ? rangeKey : "this_month";
+    const range = resolveRange(effectiveRangeKey);
     const dateFrom = toDateParam(range.start);
     const dateTo = toDateParam(range.end);
+    const meetingsRangeEnd = resolveMeetingsRangeEnd(effectiveRangeKey, range.end, new Date());
+    const meetingsDateTo = toDateParam(meetingsRangeEnd);
 
     // Obtener números de Allo asignados al cliente
     let assignedQuery = db.from("client_allo_numbers").select("allo_number");
@@ -129,11 +170,13 @@ export async function GET(request: NextRequest) {
     // lib/syncMeetings.ts). "sdr_nombre" solo se llena en la importación
     // manual de CSV (app/api/meetings/import) y suele venir vacío para las
     // reuniones sincronizadas desde el Excel.
+    // Límite superior inclusivo (.lte) hasta meetingsDateTo: usar .lt con la
+    // fecha de hoy excluía las reuniones agendadas para el día de hoy mismo.
     let meetingsQuery = db
       .from("meetings")
       .select("id, sdr_nombre, responsable, fecha_reunion, realizado, contacto_nombre, empresa, client_id")
       .gte("fecha_reunion", dateFrom)
-      .lt("fecha_reunion", dateTo);
+      .lte("fecha_reunion", meetingsDateTo);
 
     if (!isAllClients) {
       meetingsQuery = meetingsQuery.eq("client_id", clientId);
@@ -177,6 +220,7 @@ export async function GET(request: NextRequest) {
           llamadas_realizadas: 0,
           reuniones_agendadas: 0,
           reuniones_realizadas: 0,
+          reuniones_pendientes: 0,
           tasa_conectadas_por_contacto: 0,
           tasa_agendada_por_conectada: 0,
           tasa_realizacion_reuniones: 0,
@@ -189,7 +233,7 @@ export async function GET(request: NextRequest) {
     // Procesar reuniones (se indexan por nombre normalizado para poder
     // emparejar con el nombre del usuario de Allo aunque difieran en
     // mayúsculas, tildes o espacios)
-    const meetingsBySDR: Record<string, { agendadas: number; realizadas: number; contactos: Set<string> }> = {};
+    const meetingsBySDR: Record<string, { agendadas: number; realizadas: number; pendientes: number; contactos: Set<string> }> = {};
 
     for (const meeting of meetings || []) {
       const sdrKey = normalizeSdrName(meeting.responsable || meeting.sdr_nombre || "Sin SDR");
@@ -197,12 +241,15 @@ export async function GET(request: NextRequest) {
         meetingsBySDR[sdrKey] = {
           agendadas: 0,
           realizadas: 0,
+          pendientes: 0,
           contactos: new Set(),
         };
       }
       meetingsBySDR[sdrKey].agendadas++;
       if (meeting.realizado === "Si") {
         meetingsBySDR[sdrKey].realizadas++;
+      } else if (meeting.realizado === "Pendiente") {
+        meetingsBySDR[sdrKey].pendientes++;
       }
     }
 
@@ -217,6 +264,7 @@ export async function GET(request: NextRequest) {
       const meetingData = meetingsBySDR[normalizeSdrName(sdrData.sdr_nombre)];
       if (meetingData) {
         sdrData.reuniones_agendadas = meetingData.agendadas;
+        sdrData.reuniones_pendientes = meetingData.pendientes;
         sdrData.reuniones_realizadas = meetingData.realizadas;
       }
 
@@ -244,10 +292,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Construir resultados por día
+    // Construir resultados por día. Se extiende hasta meetingsRangeEnd (no
+    // solo range.end) para que las reuniones Pendientes agendadas para
+    // fechas futuras dentro del período también aparezcan en el gráfico.
     const resultadosPorDia: ResultadosDia[] = [];
+    const loopEnd = meetingsRangeEnd.getTime() > range.end.getTime() ? meetingsRangeEnd : range.end;
     const currentDate = new Date(range.start);
-    while (currentDate < range.end) {
+    while (currentDate < loopEnd) {
       const dateStr = toDateParam(currentDate);
       const dayCalls = calls.filter((c) => callDateKey(c.date) === dateStr);
       const dayMeetings = (meetings || []).filter((m) => m.fecha_reunion === dateStr);
