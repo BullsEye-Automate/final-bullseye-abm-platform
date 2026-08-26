@@ -275,19 +275,41 @@ export async function GET(request: NextRequest) {
     // dentro del período (no solo fecha_reunion como antes), y cada métrica
     // se bucketiza más abajo con su propio campo de fecha. El Ranking SDR
     // sigue usando solo fecha_reunion (ver meetingsForRanking), sin cambios.
-    let meetingsQuery = db
-      .from("meetings")
-      .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, contacto_nombre, empresa, client_id")
-      .or(
-        `and(fecha_reunion.gte.${dateFrom},fecha_reunion.lte.${meetingsDateTo}),` +
-          `and(fecha_agendamiento.gte.${dateFrom},fecha_agendamiento.lte.${meetingsDateTo})`
-      );
+    // PostgREST limita cada respuesta a 1000 filas por defecto. Un rango de
+    // varios meses para "todos los clientes" (ej. "Últimos 6 meses") supera
+    // fácilmente ese límite, y sin un .order() explícito el corte de filas
+    // no tiene un orden garantizado — eso hacía que reuniones recién
+    // sincronizadas quedaran fuera de la respuesta según qué tan grande fuera
+    // el período consultado (mismo mes, datos distintos según el rango
+    // elegido). Se pagina con .range() hasta traer todas las filas.
+    const MEETINGS_PAGE_SIZE = 1000;
+    const meetings: any[] = [];
+    let meetingsError: { message: string } | null = null;
+    for (let offset = 0; ; offset += MEETINGS_PAGE_SIZE) {
+      let meetingsQuery = db
+        .from("meetings")
+        .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, contacto_nombre, empresa, client_id")
+        .or(
+          `and(fecha_reunion.gte.${dateFrom},fecha_reunion.lte.${meetingsDateTo}),` +
+            `and(fecha_agendamiento.gte.${dateFrom},fecha_agendamiento.lte.${meetingsDateTo})`
+        )
+        .order("id", { ascending: true })
+        .range(offset, offset + MEETINGS_PAGE_SIZE - 1);
 
-    if (!isAllClients) {
-      meetingsQuery = meetingsQuery.eq("client_id", clientId);
+      if (!isAllClients) {
+        meetingsQuery = meetingsQuery.eq("client_id", clientId);
+      }
+
+      const { data: page, error: pageError } = await meetingsQuery;
+
+      if (pageError) {
+        meetingsError = pageError;
+        break;
+      }
+
+      meetings.push(...(page || []));
+      if (!page || page.length < MEETINGS_PAGE_SIZE) break;
     }
-
-    const { data: meetings, error: meetingsError } = await meetingsQuery;
 
     if (meetingsError) {
       return NextResponse.json({ error: meetingsError.message }, { status: 500 });
