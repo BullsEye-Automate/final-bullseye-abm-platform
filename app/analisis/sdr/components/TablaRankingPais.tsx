@@ -6,7 +6,9 @@ import { IconArrowUp, IconArrowDown, IconMaximize, IconX } from "@tabler/icons-r
 interface PaisMetrics {
   pais_key: string;
   pais_nombre: string;
+  contactos_gestionados: number;
   llamadas_realizadas: number;
+  contactos_conectados: number;
   llamadas_conectadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
@@ -17,11 +19,31 @@ interface PaisMetrics {
 }
 
 type SortKey = keyof PaisMetrics;
+type NumericKey = Exclude<SortKey, "pais_key" | "pais_nombre">;
 type SortDir = "asc" | "desc";
 
 interface TablaRankingPaisProps {
   data: PaisMetrics[];
 }
+
+const COLUMNS: { key: NumericKey; label: string }[] = [
+  { key: "contactos_gestionados", label: "Contactos Gestionados" },
+  { key: "llamadas_realizadas", label: "Llamadas" },
+  { key: "contactos_conectados", label: "Contactos Conectados" },
+  { key: "llamadas_conectadas", label: "Llamadas Conectadas" },
+  { key: "reuniones_agendadas", label: "Reuniones Agendadas" },
+  { key: "reuniones_realizadas", label: "Reuniones Realizadas" },
+  { key: "reuniones_pendientes", label: "Reuniones Pendientes" },
+  { key: "tasa_conectadas_por_contacto", label: "Tasa Conectadas/Contacto" },
+  { key: "tasa_agendada_por_conectada", label: "Tasa Agendada/Conectada" },
+  { key: "tasa_realizacion_reuniones", label: "Tasa Realización" },
+];
+
+const PERCENT_KEYS = new Set<NumericKey>([
+  "tasa_conectadas_por_contacto",
+  "tasa_agendada_por_conectada",
+  "tasa_realizacion_reuniones",
+]);
 
 export default function TablaRankingPais({ data }: TablaRankingPaisProps) {
   const [sortKey, setSortKey] = useState<SortKey>("reuniones_realizadas");
@@ -49,7 +71,9 @@ export default function TablaRankingPais({ data }: TablaRankingPaisProps) {
     const count = data.length || 1;
     const sum = (key: keyof PaisMetrics) => data.reduce((acc, pais) => acc + (pais[key] as number), 0);
     return {
+      contactos_gestionados: sum("contactos_gestionados"),
       llamadas_realizadas: sum("llamadas_realizadas"),
+      contactos_conectados: sum("contactos_conectados"),
       llamadas_conectadas: sum("llamadas_conectadas"),
       reuniones_agendadas: sum("reuniones_agendadas"),
       reuniones_realizadas: sum("reuniones_realizadas"),
@@ -97,94 +121,39 @@ export default function TablaRankingPais({ data }: TablaRankingPaisProps) {
                 <SortIcon column="pais_nombre" />
               </button>
             </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
-              <button onClick={() => toggleSort("llamadas_realizadas")} className="flex items-center justify-end w-full">
-                Llamadas
-                <SortIcon column="llamadas_realizadas" />
-              </button>
-            </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
-              <button onClick={() => toggleSort("llamadas_conectadas")} className="flex items-center justify-end w-full">
-                Llamadas Conectadas
-                <SortIcon column="llamadas_conectadas" />
-              </button>
-            </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
-              <button onClick={() => toggleSort("reuniones_agendadas")} className="flex items-center justify-end w-full">
-                Reuniones Agendadas
-                <SortIcon column="reuniones_agendadas" />
-              </button>
-            </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
-              <button onClick={() => toggleSort("reuniones_realizadas")} className="flex items-center justify-end w-full">
-                Reuniones Realizadas
-                <SortIcon column="reuniones_realizadas" />
-              </button>
-            </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
-              <button onClick={() => toggleSort("reuniones_pendientes")} className="flex items-center justify-end w-full">
-                Reuniones Pendientes
-                <SortIcon column="reuniones_pendientes" />
-              </button>
-            </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
-              <button onClick={() => toggleSort("tasa_conectadas_por_contacto")} className="flex items-center justify-end w-full">
-                Tasa Conectadas/Contacto
-                <SortIcon column="tasa_conectadas_por_contacto" />
-              </button>
-            </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
-              <button onClick={() => toggleSort("tasa_agendada_por_conectada")} className="flex items-center justify-end w-full">
-                Tasa Agendada/Conectada
-                <SortIcon column="tasa_agendada_por_conectada" />
-              </button>
-            </th>
-            <th className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
-              <button onClick={() => toggleSort("tasa_realizacion_reuniones")} className="flex items-center justify-end w-full">
-                Tasa Realización
-                <SortIcon column="tasa_realizacion_reuniones" />
-              </button>
-            </th>
+            {COLUMNS.map((col) => (
+              <th
+                key={col.key}
+                className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50"
+              >
+                <button onClick={() => toggleSort(col.key)} className="flex items-center justify-end w-full">
+                  {col.label}
+                  <SortIcon column={col.key} />
+                </button>
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
           {sortedData.map((pais, idx) => (
             <tr key={pais.pais_key} className={idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"}>
               <td className="px-4 py-3 font-medium text-gray-900">{pais.pais_nombre}</td>
-              <td className="px-4 py-3 text-right text-gray-700">{pais.llamadas_realizadas}</td>
-              <td className="px-4 py-3 text-right text-gray-700">{pais.llamadas_conectadas}</td>
-              <td className="px-4 py-3 text-right text-gray-700">{pais.reuniones_agendadas}</td>
-              <td className="px-4 py-3 text-right text-gray-700">{pais.reuniones_realizadas}</td>
-              <td className="px-4 py-3 text-right text-gray-700">{pais.reuniones_pendientes}</td>
-              <td className="px-4 py-3 text-right text-gray-600">
-                {pais.tasa_conectadas_por_contacto.toFixed(1)}%
-              </td>
-              <td className="px-4 py-3 text-right text-gray-600">
-                {pais.tasa_agendada_por_conectada.toFixed(1)}%
-              </td>
-              <td className="px-4 py-3 text-right text-gray-600">
-                {pais.tasa_realizacion_reuniones.toFixed(1)}%
-              </td>
+              {COLUMNS.map((col) => (
+                <td key={col.key} className="px-4 py-3 text-right text-gray-700">
+                  {PERCENT_KEYS.has(col.key) ? `${(pais[col.key] as number).toFixed(1)}%` : pais[col.key]}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold sticky bottom-0">
             <td className="px-4 py-3 text-gray-900">Total</td>
-            <td className="px-4 py-3 text-right text-gray-900">{totals.llamadas_realizadas}</td>
-            <td className="px-4 py-3 text-right text-gray-900">{totals.llamadas_conectadas}</td>
-            <td className="px-4 py-3 text-right text-gray-900">{totals.reuniones_agendadas}</td>
-            <td className="px-4 py-3 text-right text-gray-900">{totals.reuniones_realizadas}</td>
-            <td className="px-4 py-3 text-right text-gray-900">{totals.reuniones_pendientes}</td>
-            <td className="px-4 py-3 text-right text-gray-900">
-              {totals.tasa_conectadas_por_contacto.toFixed(1)}%
-            </td>
-            <td className="px-4 py-3 text-right text-gray-900">
-              {totals.tasa_agendada_por_conectada.toFixed(1)}%
-            </td>
-            <td className="px-4 py-3 text-right text-gray-900">
-              {totals.tasa_realizacion_reuniones.toFixed(1)}%
-            </td>
+            {COLUMNS.map((col) => (
+              <td key={col.key} className="px-4 py-3 text-right text-gray-900">
+                {PERCENT_KEYS.has(col.key) ? `${totals[col.key].toFixed(1)}%` : totals[col.key]}
+              </td>
+            ))}
           </tr>
         </tfoot>
       </table>

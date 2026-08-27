@@ -20,7 +20,9 @@ export const dynamic = "force-dynamic";
 type SdrMetrics = {
   sdr_id: string;
   sdr_nombre: string;
+  contactos_gestionados: number;
   llamadas_realizadas: number;
+  contactos_conectados: number;
   llamadas_conectadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
@@ -273,7 +275,9 @@ export async function GET(request: NextRequest) {
         sdrDataMap[sdrId] = {
           sdr_id: sdrId,
           sdr_nombre: sdrName,
+          contactos_gestionados: 0,
           llamadas_realizadas: 0,
+          contactos_conectados: 0,
           llamadas_conectadas: 0,
           reuniones_agendadas: 0,
           reuniones_realizadas: 0,
@@ -345,16 +349,22 @@ export async function GET(request: NextRequest) {
 
       // Calcular tasas
       if (sdrData.llamadas_realizadas > 0) {
-        const contactosUnicos = new Set(
-          calls.filter((c) => (c.user?.id || "unknown") === sdrId).map((c) => c.contact_number)
+        const sdrCalls = calls.filter((c) => (c.user?.id || "unknown") === sdrId);
+        const contactosUnicos = new Set(sdrCalls.map((c) => c.contact_number)).size;
+        const contactosConectados = new Set(
+          sdrCalls.filter((c) => isConnected(c.duration, c.result)).map((c) => c.contact_number)
         ).size;
+        sdrData.contactos_gestionados = contactosUnicos;
+        sdrData.contactos_conectados = contactosConectados;
         sdrData.tasa_conectadas_por_contacto =
           contactosUnicos > 0 ? (sdrData.llamadas_conectadas / contactosUnicos) * 100 : 0;
       }
 
       if (sdrData.reuniones_agendadas > 0) {
         sdrData.tasa_agendada_por_conectada =
-          sdrData.llamadas_realizadas > 0 ? (sdrData.reuniones_agendadas / sdrData.llamadas_realizadas) * 100 : 0;
+          sdrData.contactos_conectados > 0
+            ? (sdrData.reuniones_agendadas / sdrData.contactos_conectados) * 100
+            : 0;
         sdrData.tasa_realizacion_reuniones = (sdrData.reuniones_realizadas / sdrData.reuniones_agendadas) * 100;
       }
 
@@ -385,7 +395,9 @@ export async function GET(request: NextRequest) {
       sdrsData.push({
         sdr_id: sdrId,
         sdr_nombre: meetingData.displayName,
+        contactos_gestionados: 0,
         llamadas_realizadas: 0,
+        contactos_conectados: 0,
         llamadas_conectadas: 0,
         reuniones_agendadas: meetingData.agendadas,
         reuniones_realizadas: meetingData.realizadas,

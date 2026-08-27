@@ -20,7 +20,9 @@ type SdrRoster = { sdr_id: string; sdr_nombre: string };
 type SdrMetrics = {
   sdr_id: string;
   sdr_nombre: string;
+  contactos_gestionados: number;
   llamadas_realizadas: number;
+  contactos_conectados: number;
   llamadas_conectadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
@@ -46,7 +48,9 @@ type ApiResponse = {
 type PaisMetrics = {
   pais_key: string;
   pais_nombre: string;
+  contactos_gestionados: number;
   llamadas_realizadas: number;
+  contactos_conectados: number;
   llamadas_conectadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;

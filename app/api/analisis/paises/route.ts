@@ -21,7 +21,9 @@ export const dynamic = "force-dynamic";
 type PaisMetrics = {
   pais_key: string;
   pais_nombre: string;
+  contactos_gestionados: number;
   llamadas_realizadas: number;
+  contactos_conectados: number;
   llamadas_conectadas: number;
   reuniones_agendadas: number;
   reuniones_realizadas: number;
@@ -217,6 +219,7 @@ export async function GET(request: NextRequest) {
         llamadas_realizadas: number;
         llamadas_conectadas: number;
         contactos: Set<string>;
+        contactosConectados: Set<string>;
         agendadas: number;
         realizadas: number;
         pendientes: number;
@@ -232,6 +235,7 @@ export async function GET(request: NextRequest) {
           llamadas_realizadas: 0,
           llamadas_conectadas: 0,
           contactos: new Set(),
+          contactosConectados: new Set(),
           agendadas: 0,
           realizadas: 0,
           pendientes: 0,
@@ -244,8 +248,11 @@ export async function GET(request: NextRequest) {
       const label = numberCountryMap.get(call.allo_number) || "Sin país";
       const bucket = getBucket(label);
       bucket.llamadas_realizadas++;
-      if (isConnected(call.duration, call.result)) bucket.llamadas_conectadas++;
       bucket.contactos.add(call.contact_number);
+      if (isConnected(call.duration, call.result)) {
+        bucket.llamadas_conectadas++;
+        bucket.contactosConectados.add(call.contact_number);
+      }
     }
 
     for (const m of filteredMeetings) {
@@ -262,13 +269,16 @@ export async function GET(request: NextRequest) {
     const paisesData: PaisMetrics[] = Object.entries(countryDataMap).map(([key, d]) => ({
       pais_key: key,
       pais_nombre: d.displayName,
+      contactos_gestionados: d.contactos.size,
       llamadas_realizadas: d.llamadas_realizadas,
+      contactos_conectados: d.contactosConectados.size,
       llamadas_conectadas: d.llamadas_conectadas,
       reuniones_agendadas: d.agendadas,
       reuniones_realizadas: d.realizadas,
       reuniones_pendientes: d.pendientes,
       tasa_conectadas_por_contacto: d.contactos.size > 0 ? (d.llamadas_conectadas / d.contactos.size) * 100 : 0,
-      tasa_agendada_por_conectada: d.llamadas_realizadas > 0 ? (d.agendadas / d.llamadas_realizadas) * 100 : 0,
+      tasa_agendada_por_conectada:
+        d.contactosConectados.size > 0 ? (d.agendadas / d.contactosConectados.size) * 100 : 0,
       tasa_realizacion_reuniones: d.agendadas > 0 ? (d.realizadas / d.agendadas) * 100 : 0,
     }));
 
