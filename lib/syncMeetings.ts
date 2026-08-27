@@ -80,7 +80,16 @@ async function resolveClientId(
 }
 
 // preview=true: no escribe nada, solo devuelve lo que cambia / se saltea
-export async function runMeetingsSync(preview = false): Promise<SyncResult> {
+// sinceMonths: si se pasa, solo procesa filas cuya fecha de reunión o de
+// agendamiento cae dentro de esa ventana (además de las filas sin ninguna
+// fecha parseable, que se procesan siempre por seguridad). Cada fila
+// procesada hace un select + upsert secuencial contra Supabase, así que con
+// ~1400+ filas en la planilla un sync completo es lento — los meses ya
+// cerrados casi no cambian, así que el botón manual del portal usa una
+// ventana acotada (ver /api/meetings/sync) para responder rápido; el cron
+// nocturno sigue corriendo sin este filtro para no dejar nada desactualizado
+// permanentemente.
+export async function runMeetingsSync(preview = false, sinceMonths?: number): Promise<SyncResult> {
   const spreadsheetId = process.env.GOOGLE_SHEETS_MEETINGS_ID;
   if (!spreadsheetId) return { ok: false, error: "GOOGLE_SHEETS_MEETINGS_ID no configurado" };
 
@@ -92,6 +101,18 @@ export async function runMeetingsSync(preview = false): Promise<SyncResult> {
   }
 
   if (rows.length === 0) return { ok: true, synced: 0, skipped: 0 };
+
+  if (sinceMonths) {
+    const cutoff = new Date();
+    cutoff.setUTCMonth(cutoff.getUTCMonth() - sinceMonths);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    rows = rows.filter((row) => {
+      const fReunion = parseDate(row["Fecha de la reunión"]);
+      const fAgenda = parseDate(row["Fecha de agendamiento"]);
+      if (!fReunion && !fAgenda) return true; // sin fecha detectable: mejor sincronizar de más
+      return (!!fReunion && fReunion >= cutoffStr) || (!!fAgenda && fAgenda >= cutoffStr);
+    });
+  }
 
   const supabase = supabaseAdmin();
   const { data: clients } = await supabase.from("clients").select("id, name, slug");

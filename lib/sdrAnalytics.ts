@@ -95,3 +95,34 @@ export function resolveSdrKey(name: string): string {
   const normalized = normalizeSdrName(name);
   return SDR_NAME_ALIASES[normalized] || normalized;
 }
+
+// Normaliza el nombre de país solo para agrupar (ej. "méxico" y "México" no
+// deben caer en filas separadas). Usado por el Ranking País.
+export function normalizeCountryKey(label: string): string {
+  return label
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+// Une variantes del mismo país que vienen de fuentes distintas: el número
+// de Allo trae el código ISO corto del país (ej. "CL"), mientras que
+// meetings.pais viene del Excel con el nombre completo en español (ej.
+// "Chile") — sin esto, un mismo país aparecía como dos filas separadas en
+// el Ranking País, cada una con la mitad de los datos (llamadas en una,
+// reuniones en la otra) y tasas en 0%. Clave = variante normalizada, valor
+// = nombre canónico a mostrar. Se agrega una línea más cuando aparezca un
+// código nuevo — confirmado con BullsEye caso a caso, igual que
+// SDR_NAME_ALIASES.
+export const COUNTRY_NAME_ALIASES: Record<string, string> = {
+  [normalizeCountryKey("CL")]: "Chile",
+  [normalizeCountryKey("CO")]: "Colombia",
+  [normalizeCountryKey("MX")]: "México",
+};
+
+export function resolveCountryLabel(label: string): string {
+  const key = normalizeCountryKey(label);
+  return COUNTRY_NAME_ALIASES[key] || label.trim();
+}

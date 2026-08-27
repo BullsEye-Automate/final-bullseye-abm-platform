@@ -8,6 +8,8 @@ import {
   resolveMeetingsRangeEnd,
   callDateKey,
   resolveSdrKey,
+  resolveCountryLabel,
+  normalizeCountryKey,
 } from "@/lib/sdrAnalytics";
 
 export const dynamic = "force-dynamic";
@@ -26,20 +28,6 @@ type PaisMetrics = {
   tasa_agendada_por_conectada: number;
   tasa_realizacion_reuniones: number;
 };
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-// Normaliza el nombre de país solo para agrupar (ej. "méxico" y "México" no
-// deben caer en filas separadas). El nombre mostrado conserva tildes/casing
-// originales — se guarda por separado la primera variante encontrada.
-function normalizeCountryKey(label: string): string {
-  return label
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
 
 // ─── GET ────────────────────────────────────────────────────────────────────
 // Mismo reporte que /api/analisis/sdr (Ranking SDR), pero agrupado por país
@@ -135,19 +123,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Reuniones: mismo criterio que Ranking SDR (fecha_reunion dentro del
-    // período — ver comentario en /api/analisis/sdr/route.ts), agregando la
-    // columna "pais" (sincronizada desde el Excel de reuniones). Paginado
-    // para no toparse con el límite de 1000 filas de PostgREST.
+    // Reuniones: mismo criterio que Ranking SDR (ver comentario en
+    // /api/analisis/sdr/route.ts) — Agendadas por fecha_agendamiento y
+    // Realizadas por fecha_reunion+"Si", cada una con su propio campo de
+    // fecha, así que se trae toda fila que calce por CUALQUIERA de las dos
+    // dentro del período. Se agrega la columna "pais" (sincronizada desde el
+    // Excel de reuniones). Paginado para no toparse con el límite de 1000
+    // filas de PostgREST.
     const MEETINGS_PAGE_SIZE = 1000;
     const meetings: any[] = [];
     let meetingsError: { message: string } | null = null;
     for (let offset = 0; ; offset += MEETINGS_PAGE_SIZE) {
       let meetingsQuery = db
         .from("meetings")
-        .select("id, sdr_nombre, responsable, fecha_reunion, realizado, pais, client_id")
-        .gte("fecha_reunion", dateFrom)
-        .lte("fecha_reunion", meetingsDateTo)
+        .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, pais, client_id")
+        .or(
+          `and(fecha_reunion.gte.${dateFrom},fecha_reunion.lte.${meetingsDateTo}),` +
+            `and(fecha_agendamiento.gte.${dateFrom},fecha_agendamiento.lte.${meetingsDateTo})`
+        )
         .order("id", { ascending: true })
         .range(offset, offset + MEETINGS_PAGE_SIZE - 1);
 
@@ -210,12 +203,22 @@ export async function GET(request: NextRequest) {
       selectedSdrIds.length > 0
         ? calls.filter((c) => selectedSdrIds.includes(c.user?.id || "unknown"))
         : calls;
-    const filteredMeetings =
-      selectedSdrIds.length > 0
-        ? meetings.filter((m: any) =>
-            selectedMeetingKeys.has(resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR"))
-          )
-        : meetings;
+    const bySelectedSdr = (m: any) =>
+      selectedSdrIds.length === 0 ||
+      selectedMeetingKeys.has(resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR"));
+
+    // Agendadas por fecha_agendamiento y Realizadas por fecha_reunion+"Si" —
+    // mismo criterio y mismo motivo que en /api/analisis/sdr/route.ts.
+    const meetingsAgendadas = meetings.filter(
+      (m: any) => m.fecha_agendamiento >= dateFrom && m.fecha_agendamiento <= meetingsDateTo && bySelectedSdr(m)
+    );
+    const meetingsRealizadas = meetings.filter(
+      (m: any) =>
+        m.fecha_reunion >= dateFrom &&
+        m.fecha_reunion <= meetingsDateTo &&
+        m.realizado === "Si" &&
+        bySelectedSdr(m)
+    );
 
     // Agrupar por país
     const countryDataMap: Record<
@@ -231,7 +234,8 @@ export async function GET(request: NextRequest) {
       }
     > = {};
 
-    const getBucket = (label: string) => {
+    const getBucket = (rawLabel: string) => {
+      const label = resolveCountryLabel(rawLabel);
       const key = normalizeCountryKey(label);
       if (!countryDataMap[key]) {
         countryDataMap[key] = {
@@ -255,15 +259,16 @@ export async function GET(request: NextRequest) {
       bucket.contactos.add(call.contact_number);
     }
 
-    for (const m of filteredMeetings) {
+    for (const m of meetingsAgendadas) {
       const label = (m.pais && String(m.pais).trim()) || "Sin país";
       const bucket = getBucket(label);
       bucket.agendadas++;
-      if (m.realizado === "Si") {
-        bucket.realizadas++;
-      } else if (m.realizado === "Pendiente") {
-        bucket.pendientes++;
-      }
+      if (m.realizado === "Pendiente") bucket.pendientes++;
+    }
+
+    for (const m of meetingsRealizadas) {
+      const label = (m.pais && String(m.pais).trim()) || "Sin país";
+      getBucket(label).realizadas++;
     }
 
     const paisesData: PaisMetrics[] = Object.entries(countryDataMap).map(([key, d]) => ({
