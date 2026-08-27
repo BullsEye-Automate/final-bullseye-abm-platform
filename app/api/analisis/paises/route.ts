@@ -127,21 +127,25 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Reuniones: mismo criterio que Ranking SDR (ver comentario en
-    // /api/analisis/sdr/route.ts) — se cuentan por fecha_reunion dentro del
-    // período, sin importar su estado ("Agendadas" = total; "Realizadas" y
-    // "Pendientes" son subconjuntos por estado). Se agrega la columna "pais"
-    // (sincronizada desde el Excel de reuniones). Paginado para no toparse
-    // con el límite de 1000 filas de PostgREST.
+    // Reuniones: se trae toda fila que calce por fecha_reunion O por
+    // fecha_agendamiento dentro del período (igual que /api/analisis/sdr).
+    // "Reuniones Agendadas/Realizadas/Pendientes" siguen contándose por
+    // fecha_reunion (ver meetingsForRanking más abajo); fecha_agendamiento
+    // solo se usa para el numerador de "Tasa Agendada/Conectada" (ver más
+    // abajo). Se agrega la columna "pais" (sincronizada desde el Excel de
+    // reuniones). Paginado para no toparse con el límite de 1000 filas de
+    // PostgREST.
     const MEETINGS_PAGE_SIZE = 1000;
     const meetings: any[] = [];
     let meetingsError: { message: string } | null = null;
     for (let offset = 0; ; offset += MEETINGS_PAGE_SIZE) {
       let meetingsQuery = db
         .from("meetings")
-        .select("id, sdr_nombre, responsable, fecha_reunion, realizado, pais, client_id")
-        .gte("fecha_reunion", dateFrom)
-        .lte("fecha_reunion", meetingsDateTo)
+        .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, pais, client_id")
+        .or(
+          `and(fecha_reunion.gte.${dateFrom},fecha_reunion.lte.${meetingsDateTo}),` +
+            `and(fecha_agendamiento.gte.${dateFrom},fecha_agendamiento.lte.${meetingsDateTo})`
+        )
         .order("id", { ascending: true })
         .range(offset, offset + MEETINGS_PAGE_SIZE - 1);
 
@@ -204,12 +208,23 @@ export async function GET(request: NextRequest) {
       selectedSdrIds.length > 0
         ? calls.filter((c) => selectedSdrIds.includes(c.user?.id || "unknown"))
         : calls;
-    const filteredMeetings =
-      selectedSdrIds.length > 0
-        ? meetings.filter((m: any) =>
-            selectedMeetingKeys.has(resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR"))
-          )
-        : meetings;
+    const bySelectedSdr = (m: any) =>
+      selectedSdrIds.length === 0 ||
+      selectedMeetingKeys.has(resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR"));
+
+    // "Reuniones Agendadas/Realizadas/Pendientes" cuentan por fecha_reunion
+    // en el período (igual que Ranking SDR). "Agendadas en el período" usa
+    // fecha_agendamiento y se usa SOLO como numerador de "Tasa
+    // Agendada/Conectada" — mide cuántas reuniones se agendaron dentro del
+    // período (no cuántas ocurren en él), independiente de cuándo vayan a
+    // realizarse.
+    const filteredMeetingsForRanking = meetings.filter(
+      (m: any) => m.fecha_reunion >= dateFrom && m.fecha_reunion <= meetingsDateTo && bySelectedSdr(m)
+    );
+    const filteredMeetingsAgendadasEnPeriodo = meetings.filter(
+      (m: any) =>
+        m.fecha_agendamiento >= dateFrom && m.fecha_agendamiento <= meetingsDateTo && bySelectedSdr(m)
+    );
 
     // Agrupar por país
     const countryDataMap: Record<
@@ -221,6 +236,7 @@ export async function GET(request: NextRequest) {
         contactos: Set<string>;
         contactosConectados: Set<string>;
         agendadas: number;
+        agendadasEnPeriodo: number;
         realizadas: number;
         pendientes: number;
       }
@@ -237,6 +253,7 @@ export async function GET(request: NextRequest) {
           contactos: new Set(),
           contactosConectados: new Set(),
           agendadas: 0,
+          agendadasEnPeriodo: 0,
           realizadas: 0,
           pendientes: 0,
         };
@@ -255,7 +272,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    for (const m of filteredMeetings) {
+    for (const m of filteredMeetingsForRanking) {
       const label = (m.pais && String(m.pais).trim()) || "Sin país";
       const bucket = getBucket(label);
       bucket.agendadas++;
@@ -264,6 +281,11 @@ export async function GET(request: NextRequest) {
       } else if (isRealizadoPendiente(m.realizado)) {
         bucket.pendientes++;
       }
+    }
+
+    for (const m of filteredMeetingsAgendadasEnPeriodo) {
+      const label = (m.pais && String(m.pais).trim()) || "Sin país";
+      getBucket(label).agendadasEnPeriodo++;
     }
 
     const paisesData: PaisMetrics[] = Object.entries(countryDataMap).map(([key, d]) => ({
@@ -279,7 +301,7 @@ export async function GET(request: NextRequest) {
       tasa_conectadas_por_contacto:
         d.contactos.size > 0 ? (d.contactosConectados.size / d.contactos.size) * 100 : 0,
       tasa_agendada_por_conectada:
-        d.contactosConectados.size > 0 ? (d.agendadas / d.contactosConectados.size) * 100 : 0,
+        d.contactosConectados.size > 0 ? (d.agendadasEnPeriodo / d.contactosConectados.size) * 100 : 0,
       tasa_realizacion_reuniones: d.agendadas > 0 ? (d.realizadas / d.agendadas) * 100 : 0,
     }));
 

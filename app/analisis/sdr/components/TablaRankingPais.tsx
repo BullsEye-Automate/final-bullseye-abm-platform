@@ -70,7 +70,7 @@ const COLUMNS: { key: NumericKey; label: string; description: string }[] = [
   {
     key: "tasa_agendada_por_conectada",
     label: "Tasa Agendada/Conectada",
-    description: "Reuniones Agendadas ÷ Contactos Conectados — de los contactos conectados, qué porcentaje terminó en una reunión agendada.",
+    description: "Reuniones agendadas dentro del período (según su Fecha de agendamiento) ÷ Contactos Conectados — puede diferir de la columna Reuniones Agendadas, que cuenta por Fecha de la reunión.",
   },
   {
     key: "tasa_realizacion_reuniones",

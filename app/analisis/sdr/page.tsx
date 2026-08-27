@@ -14,8 +14,10 @@ import GraficoResultadosSdr from "./components/GraficoResultadosSdr";
 import TablaRankingSdr from "./components/TablaRankingSdr";
 import TablaRankingPais from "./components/TablaRankingPais";
 import SdrMultiSelect from "./components/SdrMultiSelect";
+import PaisMultiSelect from "./components/PaisMultiSelect";
 
 type SdrRoster = { sdr_id: string; sdr_nombre: string };
+type PaisRoster = { pais_key: string; pais_nombre: string };
 
 type SdrMetrics = {
   sdr_id: string;
@@ -43,6 +45,7 @@ type ApiResponse = {
   sdrs_data: SdrMetrics[];
   resultados_por_dia: ResultadosDia[];
   all_sdrs?: SdrRoster[];
+  all_paises?: PaisRoster[];
 };
 
 type PaisMetrics = {
@@ -91,6 +94,7 @@ export default function AnalisisSdr() {
   const [tablaCustomFrom, setTablaCustomFrom] = useState<string>("");
   const [tablaCustomTo, setTablaCustomTo] = useState<string>("");
   const [tablaSdrFilter, setTablaSdrFilter] = useState<string[]>([]);
+  const [tablaPaisFilter, setTablaPaisFilter] = useState<string[]>([]);
   const [tablaLoading, setTablaLoading] = useState(false);
   const [tablaData, setTablaData] = useState<ApiResponse | null>(null);
   const [tablaError, setTablaError] = useState<string | null>(null);
@@ -158,6 +162,7 @@ export default function AnalisisSdr() {
         rangeKey: tablaRangeKey,
         client_id: currentClient?.id || "__all__",
         ...(tablaSdrFilter.length > 0 && { sdr_ids: tablaSdrFilter.join(",") }),
+        ...(tablaPaisFilter.length > 0 && { paises: tablaPaisFilter.join(",") }),
         ...(tablaRangeKey === "custom" && {
           custom_from: tablaCustomFrom,
           custom_to: tablaCustomTo,
@@ -249,7 +254,7 @@ export default function AnalisisSdr() {
       loadTabla();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentClient?.id, tablaRangeKey, tablaSdrFilter, tablaCustomFrom, tablaCustomTo]);
+  }, [currentClient?.id, tablaRangeKey, tablaSdrFilter, tablaPaisFilter, tablaCustomFrom, tablaCustomTo]);
 
   useEffect(() => {
     if (currentClient?.id) {
@@ -434,6 +439,15 @@ export default function AnalisisSdr() {
               sdrs={tablaData?.all_sdrs || []}
               selected={tablaSdrFilter}
               onChange={setTablaSdrFilter}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">País</label>
+            <PaisMultiSelect
+              paises={tablaData?.all_paises || []}
+              selected={tablaPaisFilter}
+              onChange={setTablaPaisFilter}
             />
           </div>
         </div>

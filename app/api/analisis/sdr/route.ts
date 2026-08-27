@@ -11,6 +11,8 @@ import {
   resolveSdrKey,
   isRealizadoSi,
   isRealizadoPendiente,
+  resolveCountryLabel,
+  normalizeCountryKey,
 } from "@/lib/sdrAnalytics";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +61,11 @@ export async function GET(request: NextRequest) {
     // también sdr_id (singular) por compatibilidad.
     const sdrIdsParam = request.nextUrl.searchParams.get("sdr_ids") || request.nextUrl.searchParams.get("sdr_id");
     const selectedSdrIds = sdrIdsParam ? sdrIdsParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    // paises: lista de pais_key (mismo valor normalizado que devuelve
+    // /api/analisis/paises), separada por comas — filtra el Ranking SDR
+    // para ver el desempeño de los SDR solo en los países seleccionados.
+    const paisesParam = request.nextUrl.searchParams.get("paises");
+    const selectedPaisKeys = paisesParam ? paisesParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const rangeKeyRaw = request.nextUrl.searchParams.get("rangeKey") || "mes";
     const customFromParam = request.nextUrl.searchParams.get("custom_from");
     const customToParam = request.nextUrl.searchParams.get("custom_to");
@@ -134,6 +141,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         sdrs_data: [],
         resultados_por_dia: [],
+        all_sdrs: [],
+        all_paises: [],
       });
     }
 
@@ -147,6 +156,24 @@ export async function GET(request: NextRequest) {
       listAlloNumbers(),
     ]);
 
+    // Mapear número Allo -> país (mismo criterio que /api/analisis/paises:
+    // el campo "country" de la propia API de Allo, o el nombre del número
+    // si viene vacío) y número -> usuarios de Allo asignados.
+    const numberCountryMap = new Map<string, string>();
+    const userMap = new Map<string, string>();
+    for (const n of allNumbers) {
+      if (!assignedNumbers.includes(n.number)) continue;
+      const label = (n.country && n.country.trim()) || (n.name && n.name.trim()) || "Sin país";
+      numberCountryMap.set(n.number, label);
+      for (const u of n.users) {
+        userMap.set(u.id, u.name);
+      }
+    }
+    const callCountryKey = (allo_number: string) =>
+      normalizeCountryKey(resolveCountryLabel(numberCountryMap.get(allo_number) || "Sin país"));
+    const meetingCountryKey = (m: any) =>
+      normalizeCountryKey(resolveCountryLabel((m.pais && String(m.pais).trim()) || "Sin país"));
+
     // Filtros locales de respaldo, sin depender de que la API de Allo filtre
     // bien de su lado:
     // 1. Fecha: cuando dateFrom === dateTo (rango "Hoy"), Allo parece no
@@ -159,6 +186,8 @@ export async function GET(request: NextRequest) {
     //    exactamente uno de los asignados.
     // 3. Duplicados: se deduplica por id — si Allo devuelve la misma llamada
     //    en más de una consulta por número, no debe contarse dos veces.
+    // 4. País (opcional): filtro del Ranking SDR para ver el desempeño de
+    //    los SDR en países específicos.
     const seenCallIds = new Set<string>();
     const calls = callsByNumber.flat().filter((c) => {
       if (!assignedNumbers.includes(c.allo_number)) return false;
@@ -166,17 +195,9 @@ export async function GET(request: NextRequest) {
       if (key < dateFrom || key > dateTo) return false;
       if (seenCallIds.has(c.id)) return false;
       seenCallIds.add(c.id);
+      if (selectedPaisKeys.length > 0 && !selectedPaisKeys.includes(callCountryKey(c.allo_number))) return false;
       return true;
     });
-
-    // Mapear IDs de usuarios de Allo
-    const userMap = new Map<string, string>();
-    for (const n of allNumbers) {
-      if (!assignedNumbers.includes(n.number)) continue;
-      for (const u of n.users) {
-        userMap.set(u.id, u.name);
-      }
-    }
 
     // Obtener reuniones desde Supabase.
     // El SDR se identifica con "responsable" (columna "Responsable de la
@@ -209,7 +230,7 @@ export async function GET(request: NextRequest) {
     for (let offset = 0; ; offset += MEETINGS_PAGE_SIZE) {
       let meetingsQuery = db
         .from("meetings")
-        .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, contacto_nombre, empresa, client_id")
+        .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, contacto_nombre, empresa, client_id, pais")
         .or(
           `and(fecha_reunion.gte.${dateFrom},fecha_reunion.lte.${meetingsDateTo}),` +
             `and(fecha_agendamiento.gte.${dateFrom},fecha_agendamiento.lte.${meetingsDateTo})`
@@ -236,13 +257,36 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: meetingsError.message }, { status: 500 });
     }
 
+    // Roster completo de países disponibles para el filtro del Ranking SDR
+    // — los mismos que agrupa /api/analisis/paises: los de los números de
+    // Allo asignados al cliente, más los de las reuniones del período. Se
+    // calcula antes de aplicar selectedPaisKeys para que el filtro no se
+    // achique una vez que ya hay uno o más países seleccionados.
+    const allPaisesRosterMap = new Map<string, string>(); // pais_key -> nombre
+    for (const label of numberCountryMap.values()) {
+      const nombre = resolveCountryLabel(label);
+      allPaisesRosterMap.set(normalizeCountryKey(nombre), nombre);
+    }
+    for (const m of meetings) {
+      const nombre = resolveCountryLabel((m.pais && String(m.pais).trim()) || "Sin país");
+      allPaisesRosterMap.set(normalizeCountryKey(nombre), nombre);
+    }
+    const allPaisesRoster = [...allPaisesRosterMap.entries()]
+      .map(([pais_key, pais_nombre]) => ({ pais_key, pais_nombre }))
+      .sort((a, b) => a.pais_nombre.localeCompare(b.pais_nombre));
+
+    // Filtro de país del Ranking SDR: acota tanto llamadas (más arriba) como
+    // reuniones a los países seleccionados.
+    const meetingsScoped =
+      selectedPaisKeys.length > 0 ? meetings.filter((m: any) => selectedPaisKeys.includes(meetingCountryKey(m))) : meetings;
+
     // Subconjunto usado por el Ranking SDR (meetingsBySDR más abajo):
     // reuniones cuya fecha_reunion cae en el período. A diferencia del
     // gráfico "Resultados SDR" (que separa Agendadas por fecha_agendamiento
     // de Realizadas por fecha_reunion), el Ranking define "Agendadas" como
     // el total de reuniones con fecha_reunion en el período, sin importar
     // su estado — así lo confirmó BullsEye contra el reporte interno.
-    const meetingsForRanking = (meetings || []).filter(
+    const meetingsForRanking = meetingsScoped.filter(
       (m: any) => m.fecha_reunion >= dateFrom && m.fecha_reunion <= meetingsDateTo
     );
 
@@ -325,6 +369,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Reuniones agendadas por fecha_agendamiento en el período, por SDR —
+    // se usan solo como numerador de "Tasa Agendada/Conectada", que mide
+    // cuántas de las reuniones agendadas EN el período (no las que ocurren
+    // en el período pero se agendaron antes) salieron de un contacto
+    // conectado. Es distinto de la columna "Reuniones Agendadas", que
+    // cuenta por fecha_reunion (ver meetingsForRanking más arriba).
+    const agendadasPorFechaAgendamientoBySDR: Record<string, number> = {};
+    for (const m of meetingsScoped) {
+      if (!(m.fecha_agendamiento >= dateFrom && m.fecha_agendamiento <= meetingsDateTo)) continue;
+      const key = resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR");
+      agendadasPorFechaAgendamientoBySDR[key] = (agendadasPorFechaAgendamientoBySDR[key] || 0) + 1;
+    }
+
     // Calcular métricas consolidadas
     const sdrsData: SdrMetrics[] = [];
     const processedSdrIds = new Set<string>();
@@ -360,11 +417,12 @@ export async function GET(request: NextRequest) {
           contactosUnicos > 0 ? (contactosConectados / contactosUnicos) * 100 : 0;
       }
 
+      if (sdrData.contactos_conectados > 0) {
+        const agendadasEnPeriodo = agendadasPorFechaAgendamientoBySDR[meetingKey] || 0;
+        sdrData.tasa_agendada_por_conectada = (agendadasEnPeriodo / sdrData.contactos_conectados) * 100;
+      }
+
       if (sdrData.reuniones_agendadas > 0) {
-        sdrData.tasa_agendada_por_conectada =
-          sdrData.contactos_conectados > 0
-            ? (sdrData.reuniones_agendadas / sdrData.contactos_conectados) * 100
-            : 0;
         sdrData.tasa_realizacion_reuniones = (sdrData.reuniones_realizadas / sdrData.reuniones_agendadas) * 100;
       }
 
@@ -436,8 +494,8 @@ export async function GET(request: NextRequest) {
       // Agendadas: por fecha_agendamiento (cuándo se agendó). Realizadas:
       // por fecha_reunion (cuándo ocurrió efectivamente) + realizado="Si".
       // Son dos fechas distintas de la misma tabla, a propósito.
-      let dayMeetingsAgendadas = (meetings || []).filter((m: any) => m.fecha_agendamiento === dateStr);
-      let dayMeetingsRealizadas = (meetings || []).filter(
+      let dayMeetingsAgendadas = meetingsScoped.filter((m: any) => m.fecha_agendamiento === dateStr);
+      let dayMeetingsRealizadas = meetingsScoped.filter(
         (m: any) => m.fecha_reunion === dateStr && isRealizadoSi(m.realizado)
       );
 
@@ -473,6 +531,7 @@ export async function GET(request: NextRequest) {
       sdrs_data: sdrsData.sort((a, b) => b.llamadas_realizadas - a.llamadas_realizadas),
       resultados_por_dia: resultadosPorDia,
       all_sdrs: allSdrsRoster.sort((a, b) => a.sdr_nombre.localeCompare(b.sdr_nombre)),
+      all_paises: allPaisesRoster,
     });
   } catch (err) {
     console.error("Error en /api/analisis/sdr:", err);
