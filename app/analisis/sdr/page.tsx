@@ -12,6 +12,7 @@ import { useClient } from "@/lib/clientContext";
 import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
 import GraficoResultadosSdr from "./components/GraficoResultadosSdr";
 import TablaRankingSdr from "./components/TablaRankingSdr";
+import TablaRankingPais from "./components/TablaRankingPais";
 import SdrMultiSelect from "./components/SdrMultiSelect";
 
 type SdrRoster = { sdr_id: string; sdr_nombre: string };
@@ -39,6 +40,24 @@ type ResultadosDia = {
 type ApiResponse = {
   sdrs_data: SdrMetrics[];
   resultados_por_dia: ResultadosDia[];
+  all_sdrs?: SdrRoster[];
+};
+
+type PaisMetrics = {
+  pais_key: string;
+  pais_nombre: string;
+  llamadas_realizadas: number;
+  llamadas_conectadas: number;
+  reuniones_agendadas: number;
+  reuniones_realizadas: number;
+  reuniones_pendientes: number;
+  tasa_conectadas_por_contacto: number;
+  tasa_agendada_por_conectada: number;
+  tasa_realizacion_reuniones: number;
+};
+
+type PaisApiResponse = {
+  paises_data: PaisMetrics[];
   all_sdrs?: SdrRoster[];
 };
 
@@ -72,6 +91,14 @@ export default function AnalisisSdr() {
   const [tablaData, setTablaData] = useState<ApiResponse | null>(null);
   const [tablaError, setTablaError] = useState<string | null>(null);
 
+  const [paisRangeKey, setPaisRangeKey] = useState<RangeKey>("this_month");
+  const [paisCustomFrom, setPaisCustomFrom] = useState<string>("");
+  const [paisCustomTo, setPaisCustomTo] = useState<string>("");
+  const [paisSdrFilter, setPaisSdrFilter] = useState<string[]>([]);
+  const [paisLoading, setPaisLoading] = useState(false);
+  const [paisData, setPaisData] = useState<PaisApiResponse | null>(null);
+  const [paisError, setPaisError] = useState<string | null>(null);
+
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
@@ -79,6 +106,7 @@ export default function AnalisisSdr() {
   // los datos del filtro seleccionado actualmente (race condition).
   const graficoRequestId = useRef(0);
   const tablaRequestId = useRef(0);
+  const paisRequestId = useRef(0);
 
   const loadGrafico = async () => {
     // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
@@ -148,6 +176,40 @@ export default function AnalisisSdr() {
     }
   };
 
+  const loadPais = async () => {
+    // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
+    if (paisRangeKey === "custom" && (!paisCustomFrom || !paisCustomTo)) return;
+
+    const requestId = ++paisRequestId.current;
+    setPaisLoading(true);
+    setPaisError(null);
+    try {
+      const searchParams = new URLSearchParams({
+        rangeKey: paisRangeKey,
+        client_id: currentClient?.id || "__all__",
+        ...(paisSdrFilter.length > 0 && { sdr_ids: paisSdrFilter.join(",") }),
+        ...(paisRangeKey === "custom" && {
+          custom_from: paisCustomFrom,
+          custom_to: paisCustomTo,
+        }),
+      });
+
+      const response = await fetch(`/api/analisis/paises?${searchParams}`);
+      if (requestId !== paisRequestId.current) return; // respuesta obsoleta
+
+      if (!response.ok) {
+        setPaisError("Error al cargar datos");
+      } else {
+        setPaisData(await response.json());
+      }
+    } catch (err) {
+      if (requestId !== paisRequestId.current) return;
+      setPaisError((err as Error).message);
+    } finally {
+      if (requestId === paisRequestId.current) setPaisLoading(false);
+    }
+  };
+
   // Trae la última versión del Excel de reuniones (Google Sheets) a la
   // tabla `meetings` antes de recargar el reporte, para que Reuniones
   // Agendadas/Realizadas calce con el reporte interno que lee el mismo
@@ -162,7 +224,7 @@ export default function AnalisisSdr() {
         setSyncMessage(`Error al actualizar: ${data.error}`);
       } else {
         setSyncMessage(`✓ Datos actualizados — ${data.synced ?? 0} reuniones sincronizadas`);
-        await Promise.all([loadGrafico(), loadTabla()]);
+        await Promise.all([loadGrafico(), loadTabla(), loadPais()]);
       }
     } catch (err) {
       setSyncMessage(`Error al actualizar: ${(err as Error).message}`);
@@ -184,6 +246,13 @@ export default function AnalisisSdr() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, tablaRangeKey, tablaSdrFilter, tablaCustomFrom, tablaCustomTo]);
+
+  useEffect(() => {
+    if (currentClient?.id) {
+      loadPais();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentClient?.id, paisRangeKey, paisSdrFilter, paisCustomFrom, paisCustomTo]);
 
   return (
     <div className="space-y-6">
@@ -390,6 +459,90 @@ export default function AnalisisSdr() {
             </div>
           ) : (
             <TablaRankingSdr data={tablaData.sdrs_data} />
+          )
+        )}
+      </section>
+
+      {/* Sección Ranking País */}
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b">
+          <h2 className="font-semibold flex items-center gap-2">
+            <IconTrendingUp size={16} className="text-brand" /> Ranking País
+          </h2>
+        </div>
+
+        {/* Filtros específicos de la tabla — el filtro de cliente es el
+            selector global del sidebar, igual que en el resto de la página. */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Período</label>
+            <select
+              value={paisRangeKey}
+              onChange={(e) => setPaisRangeKey(e.target.value as RangeKey)}
+              className="input py-1.5 text-sm"
+            >
+              {Object.entries(RANGE_LABELS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {paisRangeKey === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={paisCustomFrom}
+                onChange={(e) => setPaisCustomFrom(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+              <span className="text-xs text-ink-muted">a</span>
+              <input
+                type="date"
+                value={paisCustomTo}
+                onChange={(e) => setPaisCustomTo(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">SDR</label>
+            <SdrMultiSelect
+              sdrs={paisData?.all_sdrs || []}
+              selected={paisSdrFilter}
+              onChange={setPaisSdrFilter}
+            />
+          </div>
+        </div>
+
+        <p className="text-xs text-ink-muted">
+          Métricas consolidadas por país (según el número de Allo de cada llamada, y el país de
+          cada reunión) — haz clic en cualquier encabezado para ordenar.
+        </p>
+
+        {paisError && (
+          <div className="flex items-center gap-2 text-error-fg text-sm p-3 rounded bg-error-bg/20 border border-error-bg">
+            <IconAlertCircle size={16} className="shrink-0" />
+            {paisError}
+          </div>
+        )}
+
+        {paisLoading && (
+          <div className="flex items-center justify-center py-12 text-ink-muted gap-2">
+            <IconLoader2 size={18} className="animate-spin" />
+            Cargando datos…
+          </div>
+        )}
+
+        {!paisLoading && paisData && (
+          paisData.paises_data.length === 0 ? (
+            <div className="flex items-center justify-center py-12 text-ink-muted">
+              No hay datos disponibles
+            </div>
+          ) : (
+            <TablaRankingPais data={paisData.paises_data} />
           )
         )}
       </section>
