@@ -126,3 +126,26 @@ export function resolveCountryLabel(label: string): string {
   const key = normalizeCountryKey(label);
   return COUNTRY_NAME_ALIASES[key] || label.trim();
 }
+
+// Compara meetings.realizado tolerando tilde/mayúsculas/espacios. La
+// sincronización automática desde el Excel siempre guarda el valor
+// canónico ("Si"/"No"/"Pendiente"/"Reagendar" — ver normalizeRealizado en
+// lib/syncMeetings.ts), pero la importación manual de CSV
+// (app/api/meetings/import) guarda el valor tal cual viene en el archivo
+// sin normalizar — una fila importada así con "Sí"/"SI" fallaba una
+// comparación exacta a "Si" y se perdía de los conteos de Realizadas.
+function normalizeStatusValue(v: string | null | undefined): string {
+  return (v ?? "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase();
+}
+
+export function isRealizadoSi(value: string | null | undefined): boolean {
+  return normalizeStatusValue(value) === "si";
+}
+
+export function isRealizadoPendiente(value: string | null | undefined): boolean {
+  return normalizeStatusValue(value) === "pendiente";
+}

@@ -9,6 +9,8 @@ import {
   resolveMeetingsRangeEnd,
   callDateKey,
   resolveSdrKey,
+  isRealizadoSi,
+  isRealizadoPendiente,
 } from "@/lib/sdrAnalytics";
 
 export const dynamic = "force-dynamic";
@@ -187,9 +189,11 @@ export async function GET(request: NextRequest) {
     // cuándo se agendó la reunión) de Realizadas (por fecha_reunion, cuándo
     // efectivamente ocurrió/ocurrirá) — dos fechas distintas de la misma fila.
     // Por eso el query trae filas que calcen por CUALQUIERA de las dos fechas
-    // dentro del período, y cada métrica se bucketiza más abajo con su
-    // propio campo de fecha — el Ranking SDR usa el mismo criterio (ver
-    // meetingsAgendadasForRanking / meetingsRealizadasForRanking).
+    // dentro del período; el gráfico bucketiza cada métrica con su propio
+    // campo más abajo. El Ranking SDR, en cambio, define "Agendadas" como el
+    // total de reuniones con fecha_reunion en el período (ver
+    // meetingsForRanking) — confirmado con BullsEye contra el reporte
+    // interno, es un criterio distinto al del gráfico a propósito.
     // PostgREST limita cada respuesta a 1000 filas por defecto. Un rango de
     // varios meses para "todos los clientes" (ej. "Últimos 6 meses") supera
     // fácilmente ese límite, y sin un .order() explícito el corte de filas
@@ -230,19 +234,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: meetingsError.message }, { status: 500 });
     }
 
-    // Subconjuntos usados por el Ranking SDR (meetingsBySDR más abajo).
-    // Agendadas se cuenta por fecha_agendamiento y Realizadas por
-    // fecha_reunion+"Si" — mismo criterio que el gráfico "Resultados SDR"
-    // (ver comentario más arriba). Antes el Ranking usaba fecha_reunion para
-    // las dos métricas, lo que dejaba "Agendadas" desalineado del reporte
-    // interno (que sí las cuenta por fecha_agendamiento): una reunión
-    // agendada dentro del período pero cuya fecha_reunion cae fuera (o
-    // viceversa) se contaba mal.
-    const meetingsAgendadasForRanking = (meetings || []).filter(
-      (m: any) => m.fecha_agendamiento >= dateFrom && m.fecha_agendamiento <= meetingsDateTo
-    );
-    const meetingsRealizadasForRanking = (meetings || []).filter(
-      (m: any) => m.fecha_reunion >= dateFrom && m.fecha_reunion <= meetingsDateTo && m.realizado === "Si"
+    // Subconjunto usado por el Ranking SDR (meetingsBySDR más abajo):
+    // reuniones cuya fecha_reunion cae en el período. A diferencia del
+    // gráfico "Resultados SDR" (que separa Agendadas por fecha_agendamiento
+    // de Realizadas por fecha_reunion), el Ranking define "Agendadas" como
+    // el total de reuniones con fecha_reunion en el período, sin importar
+    // su estado — así lo confirmó BullsEye contra el reporte interno.
+    const meetingsForRanking = (meetings || []).filter(
+      (m: any) => m.fecha_reunion >= dateFrom && m.fecha_reunion <= meetingsDateTo
     );
 
     // Obtener nombres de clientes para mapeo
@@ -302,7 +301,8 @@ export async function GET(request: NextRequest) {
       { displayName: string; agendadas: number; realizadas: number; pendientes: number; contactos: Set<string> }
     > = {};
 
-    const ensureMeetingBucket = (rawName: string) => {
+    for (const meeting of meetingsForRanking) {
+      const rawName = meeting.responsable || meeting.sdr_nombre || "Sin SDR";
       const sdrKey = resolveSdrKey(rawName);
       if (!meetingsBySDR[sdrKey]) {
         meetingsBySDR[sdrKey] = {
@@ -313,21 +313,12 @@ export async function GET(request: NextRequest) {
           contactos: new Set(),
         };
       }
-      return meetingsBySDR[sdrKey];
-    };
-
-    for (const meeting of meetingsAgendadasForRanking) {
-      const rawName = meeting.responsable || meeting.sdr_nombre || "Sin SDR";
-      const bucket = ensureMeetingBucket(rawName);
-      bucket.agendadas++;
-      if (meeting.realizado === "Pendiente") {
-        bucket.pendientes++;
+      meetingsBySDR[sdrKey].agendadas++;
+      if (isRealizadoSi(meeting.realizado)) {
+        meetingsBySDR[sdrKey].realizadas++;
+      } else if (isRealizadoPendiente(meeting.realizado)) {
+        meetingsBySDR[sdrKey].pendientes++;
       }
-    }
-
-    for (const meeting of meetingsRealizadasForRanking) {
-      const rawName = meeting.responsable || meeting.sdr_nombre || "Sin SDR";
-      ensureMeetingBucket(rawName).realizadas++;
     }
 
     // Calcular métricas consolidadas
@@ -435,7 +426,7 @@ export async function GET(request: NextRequest) {
       // Son dos fechas distintas de la misma tabla, a propósito.
       let dayMeetingsAgendadas = (meetings || []).filter((m: any) => m.fecha_agendamiento === dateStr);
       let dayMeetingsRealizadas = (meetings || []).filter(
-        (m: any) => m.fecha_reunion === dateStr && m.realizado === "Si"
+        (m: any) => m.fecha_reunion === dateStr && isRealizadoSi(m.realizado)
       );
 
       if (selectedSdrIds.length > 0) {
