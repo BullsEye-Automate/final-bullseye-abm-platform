@@ -357,7 +357,7 @@ export async function GET(request: NextRequest) {
         sdrData.contactos_gestionados = contactosUnicos;
         sdrData.contactos_conectados = contactosConectados;
         sdrData.tasa_conectadas_por_contacto =
-          contactosUnicos > 0 ? (sdrData.llamadas_conectadas / contactosUnicos) * 100 : 0;
+          contactosUnicos > 0 ? (contactosConectados / contactosUnicos) * 100 : 0;
       }
 
       if (sdrData.reuniones_agendadas > 0) {

@@ -276,7 +276,8 @@ export async function GET(request: NextRequest) {
       reuniones_agendadas: d.agendadas,
       reuniones_realizadas: d.realizadas,
       reuniones_pendientes: d.pendientes,
-      tasa_conectadas_por_contacto: d.contactos.size > 0 ? (d.llamadas_conectadas / d.contactos.size) * 100 : 0,
+      tasa_conectadas_por_contacto:
+        d.contactos.size > 0 ? (d.contactosConectados.size / d.contactos.size) * 100 : 0,
       tasa_agendada_por_conectada:
         d.contactosConectados.size > 0 ? (d.agendadas / d.contactosConectados.size) * 100 : 0,
       tasa_realizacion_reuniones: d.agendadas > 0 ? (d.realizadas / d.agendadas) * 100 : 0,

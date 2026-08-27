@@ -26,17 +26,57 @@ interface TablaRankingSdrProps {
   data: SdrMetrics[];
 }
 
-const COLUMNS: { key: NumericKey; label: string }[] = [
-  { key: "contactos_gestionados", label: "Contactos Gestionados" },
-  { key: "llamadas_realizadas", label: "Llamadas" },
-  { key: "contactos_conectados", label: "Contactos Conectados" },
-  { key: "llamadas_conectadas", label: "Llamadas Conectadas" },
-  { key: "reuniones_agendadas", label: "Reuniones Agendadas" },
-  { key: "reuniones_realizadas", label: "Reuniones Realizadas" },
-  { key: "reuniones_pendientes", label: "Reuniones Pendientes" },
-  { key: "tasa_conectadas_por_contacto", label: "Tasa Conectadas/Contacto" },
-  { key: "tasa_agendada_por_conectada", label: "Tasa Agendada/Conectada" },
-  { key: "tasa_realizacion_reuniones", label: "Tasa Realización" },
+const COLUMNS: { key: NumericKey; label: string; description: string }[] = [
+  {
+    key: "contactos_gestionados",
+    label: "Contactos Gestionados",
+    description: "Teléfonos distintos marcados en el período, sin importar si se conectaron o no.",
+  },
+  {
+    key: "llamadas_realizadas",
+    label: "Llamadas",
+    description: "Total de llamadas salientes realizadas en el período (pueden repetirse por contacto).",
+  },
+  {
+    key: "contactos_conectados",
+    label: "Contactos Conectados",
+    description: "Teléfonos distintos con al menos una llamada conectada (contestada o transferida, de 60 segundos o más).",
+  },
+  {
+    key: "llamadas_conectadas",
+    label: "Llamadas Conectadas",
+    description: "Llamadas contestadas o transferidas que duraron 60 segundos o más.",
+  },
+  {
+    key: "reuniones_agendadas",
+    label: "Reuniones Agendadas",
+    description: "Reuniones cuya fecha de reunión cae dentro del período, sin importar su estado.",
+  },
+  {
+    key: "reuniones_realizadas",
+    label: "Reuniones Realizadas",
+    description: "De las reuniones con fecha en el período, las que quedaron marcadas como \"Sí\" (se realizaron).",
+  },
+  {
+    key: "reuniones_pendientes",
+    label: "Reuniones Pendientes",
+    description: "De las reuniones con fecha en el período, las que siguen marcadas como \"Pendiente\".",
+  },
+  {
+    key: "tasa_conectadas_por_contacto",
+    label: "Contactos Conectados/Gestionados",
+    description: "Contactos Conectados ÷ Contactos Gestionados — de los teléfonos marcados, a qué porcentaje se logró conectar.",
+  },
+  {
+    key: "tasa_agendada_por_conectada",
+    label: "Tasa Agendada/Conectada",
+    description: "Reuniones Agendadas ÷ Contactos Conectados — de los contactos conectados, qué porcentaje terminó en una reunión agendada.",
+  },
+  {
+    key: "tasa_realizacion_reuniones",
+    label: "Tasa Realización",
+    description: "Reuniones Realizadas ÷ Reuniones Agendadas.",
+  },
 ];
 
 const PERCENT_KEYS = new Set<NumericKey>([
@@ -115,7 +155,10 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
           <tr>
-            <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
+            <th
+              className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50"
+              title="Nombre del SDR responsable de las llamadas y/o reuniones."
+            >
               <button onClick={() => toggleSort("sdr_nombre")} className="flex items-center">
                 SDR
                 <SortIcon column="sdr_nombre" />
@@ -125,6 +168,7 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
               <th
                 key={col.key}
                 className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50"
+                title={col.description}
               >
                 <button onClick={() => toggleSort(col.key)} className="flex items-center justify-end w-full">
                   {col.label}
