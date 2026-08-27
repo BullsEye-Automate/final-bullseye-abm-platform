@@ -138,7 +138,8 @@ export default function AnalisisSdr() {
       if (requestId !== graficoRequestId.current) return; // respuesta obsoleta
 
       if (!response.ok) {
-        setGraficoError("Error al cargar datos");
+        const body = await response.json().catch(() => null);
+        setGraficoError(body?.error || "Error al cargar datos");
       } else {
         setGraficoData(await response.json());
       }
@@ -173,7 +174,8 @@ export default function AnalisisSdr() {
       if (requestId !== tablaRequestId.current) return; // respuesta obsoleta
 
       if (!response.ok) {
-        setTablaError("Error al cargar datos");
+        const body = await response.json().catch(() => null);
+        setTablaError(body?.error || "Error al cargar datos");
       } else {
         setTablaData(await response.json());
       }
@@ -207,7 +209,8 @@ export default function AnalisisSdr() {
       if (requestId !== paisRequestId.current) return; // respuesta obsoleta
 
       if (!response.ok) {
-        setPaisError("Error al cargar datos");
+        const body = await response.json().catch(() => null);
+        setPaisError(body?.error || "Error al cargar datos");
       } else {
         setPaisData(await response.json());
       }
