@@ -236,7 +236,15 @@ export default function AnalisisClientes() {
         setSyncMessage(`Error al actualizar: ${data.error}`);
       } else {
         setSyncMessage(`✓ Datos actualizados — ${data.synced ?? 0} reuniones sincronizadas`);
-        await Promise.all([loadGrafico(), loadTabla(), loadPais()]);
+        // Secuencial, no Promise.all: cada sección llama a Allo por cada
+        // número asignado, y Allo limita a 5 requests/segundo en total. Tres
+        // secciones en paralelo (cada una con su propio throttle interno)
+        // pueden sumar más de 5 req/s entre sí y gatillar un 429 que agota
+        // los reintentos — sobre todo con "todos los clientes" y muchos
+        // números asignados.
+        await loadGrafico();
+        await loadTabla();
+        await loadPais();
       }
     } catch (err) {
       setSyncMessage(`Error al actualizar: ${(err as Error).message}`);
