@@ -11,7 +11,7 @@
 
 export type ScoreCardCategory = {
   label: string;
-  max: number;
+  max: number; // siempre NORMALIZED_MAX (5) — ver más abajo
   score: number | null; // null = la llamada no tuvo ese ítem (ej. "Manejo de Objeciones: N/A" si no hubo objeciones)
 };
 
@@ -24,16 +24,27 @@ export type CallScoreCard = {
   coaching: string | null;
 };
 
-// Orden y máximo fijos del DESGLOSE tal como lo genera el prompt de Allo.
+// Escala objetivo a la que se normaliza cada ítem del DESGLOSE. El prompt de
+// Allo cambió de escalas variables por ítem (15/10/20/10/15/15/10/5) a 1-5
+// parejo para todos — pero las llamadas analizadas ANTES del cambio quedaron
+// grabadas con su texto en la escala vieja (ej. "Apertura y Contexto: 11/15"),
+// y ese texto no se vuelve a generar. Por eso el score de cada ítem se lee
+// junto con su propio denominador (no se asume un máximo fijo) y se
+// reescala a /5, para poder promediar y comparar llamadas de antes y
+// después del cambio en una sola columna. También corrige el caso en que la
+// IA se pasa de su propio máximo (ej. "Calidad de Comunicación: 6/5") —
+// normalizar y acotar a 5 evita mostrar una nota "mayor que el máximo".
+const NORMALIZED_MAX = 5;
+
 export const SCORE_CARD_CATEGORIES: { label: string; max: number }[] = [
-  { label: "Apertura y Contexto", max: 15 },
-  { label: "Permiso y Engagement", max: 10 },
-  { label: "Discovery y Contexto", max: 20 },
-  { label: "Escucha Activa y Conversación", max: 10 },
-  { label: "Propuesta de Valor y Relevancia", max: 15 },
-  { label: "Manejo de Objeciones", max: 15 },
-  { label: "Cierre y Siguiente Paso", max: 10 },
-  { label: "Calidad de Comunicación", max: 5 },
+  { label: "Apertura y Contexto", max: NORMALIZED_MAX },
+  { label: "Permiso y Engagement", max: NORMALIZED_MAX },
+  { label: "Discovery y Contexto", max: NORMALIZED_MAX },
+  { label: "Escucha Activa y Conversación", max: NORMALIZED_MAX },
+  { label: "Propuesta de Valor y Relevancia", max: NORMALIZED_MAX },
+  { label: "Manejo de Objeciones", max: NORMALIZED_MAX },
+  { label: "Cierre y Siguiente Paso", max: NORMALIZED_MAX },
+  { label: "Calidad de Comunicación", max: NORMALIZED_MAX },
 ];
 
 function escapeRegex(s: string): string {
@@ -48,10 +59,14 @@ export function parseCallScoreCard(summary: string | null | undefined): CallScor
 
   const nivelMatch = summary.match(/NIVEL:\s*\n?\s*([^\n]+)/i);
 
-  const desglose: ScoreCardCategory[] = SCORE_CARD_CATEGORIES.map(({ label, max }) => {
-    const re = new RegExp(`${escapeRegex(label)}:\\s*(\\d+)\\s*/\\s*\\d+`, "i");
+  const desglose: ScoreCardCategory[] = SCORE_CARD_CATEGORIES.map(({ label }) => {
+    const re = new RegExp(`${escapeRegex(label)}:\\s*(\\d+(?:\\.\\d+)?)\\s*/\\s*(\\d+(?:\\.\\d+)?)`, "i");
     const m = summary.match(re);
-    return { label, max, score: m ? Number(m[1]) : null };
+    if (!m) return { label, max: NORMALIZED_MAX, score: null };
+    const rawScore = Number(m[1]);
+    const rawMax = Number(m[2]);
+    const normalized = rawMax > 0 ? Math.min((rawScore / rawMax) * NORMALIZED_MAX, NORMALIZED_MAX) : null;
+    return { label, max: NORMALIZED_MAX, score: normalized };
   });
 
   const fortalezaMatch = summary.match(

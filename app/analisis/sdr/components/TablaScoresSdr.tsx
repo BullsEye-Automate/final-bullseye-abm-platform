@@ -98,7 +98,8 @@ export default function TablaScoresSdr({ data, onCellClick }: TablaScoresSdrProp
     );
   }
 
-  const fmt = (v: number | null, max?: number) => (v == null ? "—" : max ? `${v.toFixed(1)}/${max}` : v.toFixed(1));
+  const fmt = (v: number | null, max?: number) =>
+    v == null ? "—" : max ? `${Math.round(v)}/${max}` : String(Math.round(v));
 
   const table = (
     <div className={isFullscreen ? "overflow-auto h-full" : "overflow-auto max-h-[600px]"}>
@@ -130,7 +131,7 @@ export default function TablaScoresSdr({ data, onCellClick }: TablaScoresSdrProp
               <th
                 key={label}
                 className="px-4 py-3 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50"
-                title={`Promedio de "${label}" (sobre ${max}) — haz clic en una celda para ver las llamadas.`}
+                title={`Promedio de "${label}" (sobre ${max}) — llamadas analizadas con la escala anterior se reescalan a /${max}. Haz clic en una celda para ver las llamadas.`}
               >
                 <button onClick={() => toggleSort(label)} className="flex items-center justify-end w-full">
                   {label}

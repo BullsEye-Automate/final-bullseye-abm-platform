@@ -114,7 +114,7 @@ export default function ModalScoreLlamadas({
                       </td>
                       <td className="px-4 py-2 text-gray-700">{c.cliente_nombre}</td>
                       <td className="px-4 py-2 text-right font-semibold text-gray-900">
-                        {val == null ? "N/A" : val}
+                        {val == null ? "N/A" : Math.round(val)}
                       </td>
                       <td className="px-4 py-2 text-right whitespace-nowrap">
                         <button onClick={() => setSelectedCall(c)} className="text-xs text-brand hover:underline">
