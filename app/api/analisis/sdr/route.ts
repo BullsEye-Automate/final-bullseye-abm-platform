@@ -208,15 +208,13 @@ export async function GET(request: NextRequest) {
     // Límite superior inclusivo (.lte) hasta meetingsDateTo: usar .lt con la
     // fecha de hoy excluía las reuniones agendadas para el día de hoy mismo.
     //
-    // El gráfico "Resultados SDR" distingue Agendadas (por fecha_agendamiento,
-    // cuándo se agendó la reunión) de Realizadas (por fecha_reunion, cuándo
-    // efectivamente ocurrió/ocurrirá) — dos fechas distintas de la misma fila.
-    // Por eso el query trae filas que calcen por CUALQUIERA de las dos fechas
-    // dentro del período; el gráfico bucketiza cada métrica con su propio
-    // campo más abajo. El Ranking SDR, en cambio, define "Agendadas" como el
-    // total de reuniones con fecha_reunion en el período (ver
-    // meetingsForRanking) — confirmado con BullsEye contra el reporte
-    // interno, es un criterio distinto al del gráfico a propósito.
+    // Agendadas se mide por fecha_agendamiento (cuándo se agendó la reunión)
+    // y Realizadas/Pendientes por fecha_reunion (cuándo efectivamente
+    // ocurrió/ocurrirá) — dos fechas distintas de la misma fila, tanto en el
+    // gráfico "Resultados SDR" como en el Ranking SDR (ver
+    // agendadasPorFechaAgendamientoBySDR y meetingsForRanking más abajo). Por
+    // eso el query trae filas que calcen por CUALQUIERA de las dos fechas
+    // dentro del período.
     // PostgREST limita cada respuesta a 1000 filas por defecto. Un rango de
     // varios meses para "todos los clientes" (ej. "Últimos 6 meses") supera
     // fácilmente ese límite, y sin un .order() explícito el corte de filas
@@ -280,12 +278,10 @@ export async function GET(request: NextRequest) {
     const meetingsScoped =
       selectedPaisKeys.length > 0 ? meetings.filter((m: any) => selectedPaisKeys.includes(meetingCountryKey(m))) : meetings;
 
-    // Subconjunto usado por el Ranking SDR (meetingsBySDR más abajo):
-    // reuniones cuya fecha_reunion cae en el período. A diferencia del
-    // gráfico "Resultados SDR" (que separa Agendadas por fecha_agendamiento
-    // de Realizadas por fecha_reunion), el Ranking define "Agendadas" como
-    // el total de reuniones con fecha_reunion en el período, sin importar
-    // su estado — así lo confirmó BullsEye contra el reporte interno.
+    // Subconjunto usado por el Ranking SDR (meetingsBySDR más abajo) para
+    // Realizadas y Pendientes: reuniones cuya fecha_reunion cae en el
+    // período. "Agendadas" (la columna que se muestra) se calcula aparte,
+    // por fecha_agendamiento — ver agendadasPorFechaAgendamientoBySDR.
     const meetingsForRanking = meetingsScoped.filter(
       (m: any) => m.fecha_reunion >= dateFrom && m.fecha_reunion <= meetingsDateTo
     );
@@ -369,12 +365,13 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Reuniones agendadas por fecha_agendamiento en el período, por SDR —
-    // se usan solo como numerador de "Tasa Agendada/Conectada", que mide
-    // cuántas de las reuniones agendadas EN el período (no las que ocurren
-    // en el período pero se agendaron antes) salieron de un contacto
-    // conectado. Es distinto de la columna "Reuniones Agendadas", que
-    // cuenta por fecha_reunion (ver meetingsForRanking más arriba).
+    // Reuniones agendadas por fecha_agendamiento en el período, por SDR.
+    // Alimenta dos cosas: la columna "Reuniones Agendadas" que se muestra
+    // (confirmado con BullsEye), y el numerador de "Tasa Agendada/Conectada"
+    // (cuántas de las reuniones agendadas EN el período salieron de un
+    // contacto conectado). "Reuniones Realizadas"/"Pendientes" y "Tasa
+    // Realización" siguen usando fecha_reunion (ver meetingsForRanking) —
+    // dos fechas distintas de la misma fila, a propósito.
     const agendadasPorFechaAgendamientoBySDR: Record<string, number> = {};
     for (const m of meetingsScoped) {
       if (!(m.fecha_agendamiento >= dateFrom && m.fecha_agendamiento <= meetingsDateTo)) continue;
@@ -397,11 +394,20 @@ export async function GET(request: NextRequest) {
 
       const meetingKey = resolveSdrKey(sdrData.sdr_nombre);
       const meetingData = meetingsBySDR[meetingKey];
+      // "Reuniones Agendadas" se muestra por fecha_agendamiento dentro del
+      // período (agendadasPorFechaAgendamientoBySDR) — es la única columna
+      // que cambió; Realizadas, Pendientes y ambas tasas de la derecha
+      // siguen calculándose con fecha_reunion como antes (meetingData), sin
+      // depender del nuevo valor mostrado en esta columna.
+      const agendadasEnPeriodo = agendadasPorFechaAgendamientoBySDR[meetingKey] || 0;
+      sdrData.reuniones_agendadas = agendadasEnPeriodo;
       if (meetingData) {
         claimedMeetingKeys.add(meetingKey);
-        sdrData.reuniones_agendadas = meetingData.agendadas;
         sdrData.reuniones_pendientes = meetingData.pendientes;
         sdrData.reuniones_realizadas = meetingData.realizadas;
+        if (meetingData.agendadas > 0) {
+          sdrData.tasa_realizacion_reuniones = (meetingData.realizadas / meetingData.agendadas) * 100;
+        }
       }
 
       // Calcular tasas
@@ -418,12 +424,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (sdrData.contactos_conectados > 0) {
-        const agendadasEnPeriodo = agendadasPorFechaAgendamientoBySDR[meetingKey] || 0;
         sdrData.tasa_agendada_por_conectada = (agendadasEnPeriodo / sdrData.contactos_conectados) * 100;
-      }
-
-      if (sdrData.reuniones_agendadas > 0) {
-        sdrData.tasa_realizacion_reuniones = (sdrData.reuniones_realizadas / sdrData.reuniones_agendadas) * 100;
       }
 
       allSdrsRoster.push({ sdr_id: sdrId, sdr_nombre: sdrData.sdr_nombre });
@@ -457,7 +458,9 @@ export async function GET(request: NextRequest) {
         llamadas_realizadas: 0,
         contactos_conectados: 0,
         llamadas_conectadas: 0,
-        reuniones_agendadas: meetingData.agendadas,
+        // "Reuniones Agendadas" por fecha_agendamiento, igual que en el
+        // resto de la tabla — no depende de meetingData (fecha_reunion).
+        reuniones_agendadas: agendadasPorFechaAgendamientoBySDR[meetingKey] || 0,
         reuniones_realizadas: meetingData.realizadas,
         reuniones_pendientes: meetingData.pendientes,
         tasa_conectadas_por_contacto: 0,
