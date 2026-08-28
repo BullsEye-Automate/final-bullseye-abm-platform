@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { IconX, IconArrowLeft } from "@tabler/icons-react";
+import { useMemo, useState } from "react";
+import { IconX, IconArrowLeft, IconArrowUp, IconArrowDown } from "@tabler/icons-react";
 import MarkdownLite from "@/components/MarkdownLite";
 import type { ScoreCallSummary } from "./TablaScoresSdr";
 
@@ -13,6 +13,9 @@ interface ModalScoreLlamadasProps {
   calls: ScoreCallSummary[];
   onClose: () => void;
 }
+
+type SortKey = "date" | "metric";
+type SortDir = "asc" | "desc";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" });
@@ -27,11 +30,50 @@ export default function ModalScoreLlamadas({
   onClose,
 }: ModalScoreLlamadasProps) {
   const [selectedCall, setSelectedCall] = useState<ScoreCallSummary | null>(null);
-
-  if (!isOpen) return null;
+  const [sortKey, setSortKey] = useState<SortKey>("metric");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const getMetricValue = (c: ScoreCallSummary): number | null =>
     metricKey === "puntaje_total" ? c.puntaje_total : c.desglose[metricKey] ?? null;
+
+  // Las llamadas sin valor para esta métrica (ej. "Manejo de Objeciones"
+  // cuando no hubo objeciones) quedan siempre al final, sin importar el
+  // sentido del orden.
+  const sortedCalls = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...calls].sort((a, b) => {
+      if (sortKey === "date") {
+        return a.date < b.date ? -dir : a.date > b.date ? dir : 0;
+      }
+      const va = getMetricValue(a);
+      const vb = getMetricValue(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      return (va - vb) * dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [calls, sortKey, sortDir, metricKey]);
+
+  if (!isOpen) return null;
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const SortIcon = ({ column }: { column: SortKey }) => {
+    if (sortKey !== column) return <span className="text-gray-300 ml-1">↕</span>;
+    return sortDir === "asc" ? (
+      <IconArrowUp size={12} className="inline ml-1" />
+    ) : (
+      <IconArrowDown size={12} className="inline ml-1" />
+    );
+  };
 
   const handleClose = () => {
     setSelectedCall(null);
@@ -95,15 +137,25 @@ export default function ModalScoreLlamadas({
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
                 <tr>
-                  <th className="px-4 py-2 text-left font-semibold text-gray-700">Fecha</th>
+                  <th className="px-4 py-2 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+                    <button onClick={() => toggleSort("date")} className="flex items-center">
+                      Fecha
+                      <SortIcon column="date" />
+                    </button>
+                  </th>
                   <th className="px-4 py-2 text-left font-semibold text-gray-700">Contacto</th>
                   <th className="px-4 py-2 text-left font-semibold text-gray-700">Cliente</th>
-                  <th className="px-4 py-2 text-right font-semibold text-gray-700">{metricLabel}</th>
+                  <th className="px-4 py-2 text-right font-semibold text-gray-700 cursor-pointer hover:bg-gray-100">
+                    <button onClick={() => toggleSort("metric")} className="flex items-center justify-end w-full">
+                      {metricLabel}
+                      <SortIcon column="metric" />
+                    </button>
+                  </th>
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {calls.map((c, idx) => {
+                {sortedCalls.map((c, idx) => {
                   const val = getMetricValue(c);
                   return (
                     <tr key={c.id} className={idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"}>
