@@ -76,7 +76,8 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/reporteria",          label: "Reportería",          icon: IconReportAnalytics },
       { href: "/diagnostico-empresa", label: "Diagnóstico empresa", icon: IconStethoscope },
-      { href: "/analisis/sdr",        label: "Análisis SDR",        icon: IconChartBar }
+      { href: "/analisis/sdr",        label: "Análisis SDR",        icon: IconChartBar },
+      { href: "/analisis/clientes",   label: "Análisis Clientes",   icon: IconBuilding }
     ]
   },
   {

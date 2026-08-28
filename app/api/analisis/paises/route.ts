@@ -44,6 +44,12 @@ export async function GET(request: NextRequest) {
     const clientId = request.nextUrl.searchParams.get("client_id");
     const sdrIdsParam = request.nextUrl.searchParams.get("sdr_ids") || request.nextUrl.searchParams.get("sdr_id");
     const selectedSdrIds = sdrIdsParam ? sdrIdsParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    // client_ids: filtro fino opcional (usado por Análisis Clientes) para
+    // acotar el Ranking País a uno o más clientes específicos, además del
+    // client_id/"__all__" de arriba (que sigue controlando qué números de
+    // Allo y reuniones se traen desde la base).
+    const clientIdsParam = request.nextUrl.searchParams.get("client_ids");
+    const selectedClientIds = clientIdsParam ? clientIdsParam.split(",").map((s) => s.trim()).filter(Boolean) : [];
     const rangeKeyRaw = request.nextUrl.searchParams.get("rangeKey") || "this_month";
     const customFromParam = request.nextUrl.searchParams.get("custom_from");
     const customToParam = request.nextUrl.searchParams.get("custom_to");
@@ -73,7 +79,7 @@ export async function GET(request: NextRequest) {
     const meetingsDateTo = toDateParam(meetingsRangeEnd);
 
     // Números de Allo asignados al cliente
-    let assignedQuery = db.from("client_allo_numbers").select("allo_number");
+    let assignedQuery = db.from("client_allo_numbers").select("allo_number, client_id");
     if (!isAllClients) {
       assignedQuery = assignedQuery.eq("client_id", clientId);
     }
@@ -84,9 +90,16 @@ export async function GET(request: NextRequest) {
     }
 
     const assignedNumbers = (assigned ?? []).map((r) => r.allo_number);
+    // Número de Allo -> client_id, para poder filtrar llamadas por
+    // client_ids (filtro fino de Análisis Clientes) — client_allo_numbers
+    // asegura que cada número pertenece a un único cliente.
+    const numberClientMap = new Map<string, string>();
+    for (const r of assigned ?? []) {
+      numberClientMap.set(r.allo_number, r.client_id);
+    }
 
     if (assignedNumbers.length === 0) {
-      return NextResponse.json({ paises_data: [], all_sdrs: [] });
+      return NextResponse.json({ paises_data: [], all_sdrs: [], all_clientes: [] });
     }
 
     const [callsByNumber, allNumbers] = await Promise.all([
@@ -192,6 +205,29 @@ export async function GET(request: NextRequest) {
         .map(([key, displayName]) => ({ sdr_id: `meeting-only:${key}`, sdr_nombre: displayName })),
     ];
 
+    // Roster completo de clientes disponibles para el filtro fino (los que
+    // tienen números de Allo asignados en este alcance, más los que
+    // aparecen en las reuniones del período), independiente de
+    // selectedClientIds para que el filtro no se achique al usarlo.
+    const allClientIdsSeen = new Set<string>([
+      ...numberClientMap.values(),
+      ...meetings.map((m: any) => m.client_id).filter(Boolean),
+    ]);
+    let clientNameById = new Map<string, string>();
+    if (allClientIdsSeen.size > 0) {
+      const { data: clientRows, error: clientsErr } = await db
+        .from("clients")
+        .select("id, name")
+        .in("id", [...allClientIdsSeen]);
+      if (clientsErr) {
+        console.error("Error obteniendo clientes:", clientsErr);
+      }
+      clientNameById = new Map((clientRows || []).map((c: any) => [c.id, c.name]));
+    }
+    const allClientesRoster = [...allClientIdsSeen]
+      .map((id) => ({ cliente_id: id, cliente_nombre: clientNameById.get(id) || "Cliente desconocido" }))
+      .sort((a, b) => a.cliente_nombre.localeCompare(b.cliente_nombre));
+
     // Resuelve selectedSdrIds a las claves de reuniones correspondientes
     // (mismo mecanismo que /api/analisis/sdr — un SDR seleccionado puede
     // venir como id de usuario de Allo o como "meeting-only:<key>").
@@ -204,13 +240,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const filteredCalls =
-      selectedSdrIds.length > 0
-        ? calls.filter((c) => selectedSdrIds.includes(c.user?.id || "unknown"))
-        : calls;
+    const filteredCalls = calls.filter((c) => {
+      if (selectedSdrIds.length > 0 && !selectedSdrIds.includes(c.user?.id || "unknown")) return false;
+      if (selectedClientIds.length > 0 && !selectedClientIds.includes(numberClientMap.get(c.allo_number) || "")) {
+        return false;
+      }
+      return true;
+    });
     const bySelectedSdr = (m: any) =>
       selectedSdrIds.length === 0 ||
       selectedMeetingKeys.has(resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR"));
+    const bySelectedClient = (m: any) => selectedClientIds.length === 0 || selectedClientIds.includes(m.client_id);
 
     // "Reuniones Agendadas/Realizadas/Pendientes" cuentan por fecha_reunion
     // en el período (igual que Ranking SDR). "Agendadas en el período" usa
@@ -219,11 +259,18 @@ export async function GET(request: NextRequest) {
     // período (no cuántas ocurren en él), independiente de cuándo vayan a
     // realizarse.
     const filteredMeetingsForRanking = meetings.filter(
-      (m: any) => m.fecha_reunion >= dateFrom && m.fecha_reunion <= meetingsDateTo && bySelectedSdr(m)
+      (m: any) =>
+        m.fecha_reunion >= dateFrom &&
+        m.fecha_reunion <= meetingsDateTo &&
+        bySelectedSdr(m) &&
+        bySelectedClient(m)
     );
     const filteredMeetingsAgendadasEnPeriodo = meetings.filter(
       (m: any) =>
-        m.fecha_agendamiento >= dateFrom && m.fecha_agendamiento <= meetingsDateTo && bySelectedSdr(m)
+        m.fecha_agendamiento >= dateFrom &&
+        m.fecha_agendamiento <= meetingsDateTo &&
+        bySelectedSdr(m) &&
+        bySelectedClient(m)
     );
 
     // Agrupar por país
@@ -308,6 +355,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       paises_data: paisesData.sort((a, b) => b.llamadas_realizadas - a.llamadas_realizadas),
       all_sdrs: allSdrsRoster.sort((a, b) => a.sdr_nombre.localeCompare(b.sdr_nombre)),
+      all_clientes: allClientesRoster,
     });
   } catch (err) {
     console.error("Error en /api/analisis/paises:", err);
