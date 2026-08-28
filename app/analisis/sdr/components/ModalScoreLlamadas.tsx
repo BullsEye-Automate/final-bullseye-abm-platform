@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { IconX, IconArrowLeft, IconArrowUp, IconArrowDown } from "@tabler/icons-react";
 import MarkdownLite from "@/components/MarkdownLite";
+import { scoreColor100, scoreColor5 } from "@/lib/callScoreCard";
 import type { ScoreCallSummary } from "./TablaScoresSdr";
 
 interface ModalScoreLlamadasProps {
@@ -165,7 +166,10 @@ export default function ModalScoreLlamadas({
                         <div className="text-xs text-gray-500 font-mono">{c.contact_number}</div>
                       </td>
                       <td className="px-4 py-2 text-gray-700">{c.cliente_nombre}</td>
-                      <td className="px-4 py-2 text-right font-semibold text-gray-900">
+                      <td
+                        className="px-4 py-2 text-right font-semibold text-gray-900"
+                        style={val == null ? undefined : { color: (metricKey === "puntaje_total" ? scoreColor100(val) : scoreColor5(val)).fg }}
+                      >
                         {val == null ? "N/A" : Math.round(val)}
                       </td>
                       <td className="px-4 py-2 text-right whitespace-nowrap">

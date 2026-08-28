@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { IconArrowUp, IconArrowDown, IconMaximize, IconX } from "@tabler/icons-react";
-import { SCORE_CARD_CATEGORIES } from "@/lib/callScoreCard";
+import { SCORE_CARD_CATEGORIES, scoreColor100, scoreColor5 } from "@/lib/callScoreCard";
 
 export interface ScoreCallSummary {
   id: string;
@@ -101,6 +101,16 @@ export default function TablaScoresSdr({ data, onCellClick }: TablaScoresSdrProp
   const fmt = (v: number | null, max?: number) =>
     v == null ? "—" : max ? `${Math.round(v)}/${max}` : String(Math.round(v));
 
+  // Puntaje Total se colorea sobre 100 (80+ verde, 60-79 amarillo, <60 rojo);
+  // cada ítem del DESGLOSE se colorea sobre su escala normalizada /5 (5
+  // verde, 3-4 amarillo, 1-2 rojo). Solo el texto, sin fondo — ver
+  // scoreColor100/scoreColor5 en lib/callScoreCard.ts.
+  const colorStyle = (v: number | null, scale: 100 | 5): { color: string } | undefined => {
+    if (v == null) return undefined;
+    const { fg } = scale === 100 ? scoreColor100(v) : scoreColor5(v);
+    return { color: fg };
+  };
+
   const table = (
     <div className={isFullscreen ? "overflow-auto h-full" : "overflow-auto max-h-[600px]"}>
       <table className="w-full text-sm">
@@ -148,6 +158,7 @@ export default function TablaScoresSdr({ data, onCellClick }: TablaScoresSdrProp
               <td className="px-4 py-3 text-right text-gray-700">{row.llamadas_analizadas}</td>
               <td
                 className="px-4 py-3 text-right text-gray-900 font-semibold cursor-pointer hover:underline"
+                style={colorStyle(row.puntaje_total, 100)}
                 onClick={() => onCellClick(row, "puntaje_total", "Puntaje Total")}
               >
                 {fmt(row.puntaje_total)}/100
@@ -156,6 +167,7 @@ export default function TablaScoresSdr({ data, onCellClick }: TablaScoresSdrProp
                 <td
                   key={label}
                   className="px-4 py-3 text-right text-gray-700 cursor-pointer hover:underline"
+                  style={colorStyle(row.desglose[label], 5)}
                   onClick={() => onCellClick(row, label, label)}
                 >
                   {fmt(row.desglose[label], max)}
@@ -168,9 +180,15 @@ export default function TablaScoresSdr({ data, onCellClick }: TablaScoresSdrProp
           <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold sticky bottom-0">
             <td className="px-4 py-3 text-gray-900">Promedio</td>
             <td className="px-4 py-3 text-right text-gray-900">{promedios.llamadasAnalizadas}</td>
-            <td className="px-4 py-3 text-right text-gray-900">{fmt(promedios.puntajeTotal)}/100</td>
+            <td className="px-4 py-3 text-right text-gray-900" style={colorStyle(promedios.puntajeTotal, 100)}>
+              {fmt(promedios.puntajeTotal)}/100
+            </td>
             {SCORE_CARD_CATEGORIES.map(({ label, max }) => (
-              <td key={label} className="px-4 py-3 text-right text-gray-900">
+              <td
+                key={label}
+                className="px-4 py-3 text-right text-gray-900"
+                style={colorStyle(promedios.desglose[label], 5)}
+              >
                 {fmt(promedios.desglose[label], max)}
               </td>
             ))}

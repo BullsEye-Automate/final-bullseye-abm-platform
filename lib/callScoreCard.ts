@@ -47,6 +47,34 @@ export const SCORE_CARD_CATEGORIES: { label: string; max: number }[] = [
   { label: "Calidad de Comunicación", max: NORMALIZED_MAX },
 ];
 
+// Colores compartidos por toda la UI que muestra estos puntajes (columna
+// "Score" en /llamadas, Score de Llamadas IA en Análisis SDR y su detalle
+// por llamada), para que el mismo puntaje se vea igual en todas partes. Se
+// redondea antes de clasificar para que el color siempre corresponda al
+// número que efectivamente se muestra (evita, ej., un 79.6 mostrado como
+// "80" pero coloreado como amarillo).
+export type ScoreColor = { bg: string; fg: string };
+
+const SCORE_COLOR_GREEN: ScoreColor = { bg: "#DCFCE7", fg: "#15803D" };
+const SCORE_COLOR_YELLOW: ScoreColor = { bg: "#FEF9C3", fg: "#A16207" };
+const SCORE_COLOR_RED: ScoreColor = { bg: "#FEE2E2", fg: "#B91C1C" };
+
+// Puntaje Total, sobre 100: 80-100 verde, 60-79 amarillo, 59 o menos rojo.
+export function scoreColor100(value: number): ScoreColor {
+  const rounded = Math.round(value);
+  if (rounded >= 80) return SCORE_COLOR_GREEN;
+  if (rounded >= 60) return SCORE_COLOR_YELLOW;
+  return SCORE_COLOR_RED;
+}
+
+// Ítems del DESGLOSE, normalizados a /5: 5 verde, 3-4 amarillo, 1-2 rojo.
+export function scoreColor5(value: number): ScoreColor {
+  const rounded = Math.round(value);
+  if (rounded >= 5) return SCORE_COLOR_GREEN;
+  if (rounded >= 3) return SCORE_COLOR_YELLOW;
+  return SCORE_COLOR_RED;
+}
+
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

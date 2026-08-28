@@ -116,6 +116,23 @@ export default function AnalisisClientes() {
   const tablaRequestId = useRef(0);
   const paisRequestId = useRef(0);
 
+  // Las 3 secciones llaman a Allo por cada número asignado, y Allo limita a
+  // 5 requests/segundo en total. Si dos o más secciones cargan al mismo
+  // tiempo (ej. al entrar a la página, o al cambiar de cliente — las 3
+  // dependen de currentClient.id) la suma puede superar ese límite entre sí
+  // y gatillar un 429 que agota los reintentos (mismo caso que en Análisis
+  // SDR). Esta cola encadena todas las cargas para que nunca haya más de
+  // una pegándole a Allo a la vez, sin importar qué la disparó.
+  const alloQueueRef = useRef<Promise<void>>(Promise.resolve());
+  function runQueued(fn: () => Promise<void>): Promise<void> {
+    const run = alloQueueRef.current.then(fn, fn);
+    alloQueueRef.current = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
   const loadGrafico = async () => {
     // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
     if (graficoRangeKey === "custom" && (!graficoCustomFrom || !graficoCustomTo)) return;
@@ -236,15 +253,13 @@ export default function AnalisisClientes() {
         setSyncMessage(`Error al actualizar: ${data.error}`);
       } else {
         setSyncMessage(`✓ Datos actualizados — ${data.synced ?? 0} reuniones sincronizadas`);
-        // Secuencial, no Promise.all: cada sección llama a Allo por cada
-        // número asignado, y Allo limita a 5 requests/segundo en total. Tres
-        // secciones en paralelo (cada una con su propio throttle interno)
-        // pueden sumar más de 5 req/s entre sí y gatillar un 429 que agota
-        // los reintentos — sobre todo con "todos los clientes" y muchos
-        // números asignados.
-        await loadGrafico();
-        await loadTabla();
-        await loadPais();
+        // runQueued (no Promise.all ni llamadas sueltas): encadena estas
+        // recargas con cualquier otra que ya esté en curso (ver alloQueueRef
+        // más arriba) para que nunca haya más de una sección pegándole a
+        // Allo a la vez.
+        await runQueued(loadGrafico);
+        await runQueued(loadTabla);
+        await runQueued(loadPais);
       }
     } catch (err) {
       setSyncMessage(`Error al actualizar: ${(err as Error).message}`);
@@ -255,21 +270,21 @@ export default function AnalisisClientes() {
 
   useEffect(() => {
     if (currentClient?.id) {
-      loadGrafico();
+      runQueued(loadGrafico);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, graficoRangeKey, graficoClienteFilter, graficoCustomFrom, graficoCustomTo]);
 
   useEffect(() => {
     if (currentClient?.id) {
-      loadTabla();
+      runQueued(loadTabla);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, tablaRangeKey, tablaClienteFilter, tablaCustomFrom, tablaCustomTo]);
 
   useEffect(() => {
     if (currentClient?.id) {
-      loadPais();
+      runQueued(loadPais);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, paisRangeKey, paisSdrFilter, paisClienteFilter, paisCustomFrom, paisCustomTo]);

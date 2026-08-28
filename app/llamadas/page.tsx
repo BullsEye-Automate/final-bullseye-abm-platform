@@ -18,7 +18,7 @@ import {
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
-import { parseCallScoreCard } from "@/lib/callScoreCard";
+import { parseCallScoreCard, scoreColor100 } from "@/lib/callScoreCard";
 import MarkdownLite from "@/components/MarkdownLite";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
@@ -242,12 +242,7 @@ function TagBadges({ tagIds, tags }: { tagIds: string[]; tags: AlloTag[] }) {
 function ScoreBadge({ summary }: { summary: string | null }) {
   const card = parseCallScoreCard(summary);
   if (!card) return <span className="text-xs text-ink-subtle">—</span>;
-  const { bg, fg } =
-    card.puntajeTotal >= 75
-      ? { bg: "#DCFCE7", fg: "#15803D" }
-      : card.puntajeTotal >= 50
-      ? { bg: "#FEF9C3", fg: "#A16207" }
-      : { bg: "#FEE2E2", fg: "#B91C1C" };
+  const { bg, fg } = scoreColor100(card.puntajeTotal);
   return (
     <span
       className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
