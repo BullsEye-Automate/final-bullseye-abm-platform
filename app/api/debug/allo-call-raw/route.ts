@@ -16,43 +16,62 @@ function alloHeaders() {
 export async function GET(request: NextRequest) {
   try {
     const days = Number(request.nextUrl.searchParams.get("days") || "14");
+    const minLen = Number(request.nextUrl.searchParams.get("minLen") || "400");
+    const pagesToScan = Number(request.nextUrl.searchParams.get("pages") || "5");
     const dateTo = new Date().toISOString().slice(0, 10);
     const dateFrom = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
 
-    const res = await fetch(`${ALLO_API}/v2/api/conversations/items/search`, {
-      method: "POST",
-      headers: alloHeaders(),
-      body: JSON.stringify({
-        type: "CALL",
-        sort: "DATE",
-        page: 1,
-        size: 5,
-        date_from: dateFrom,
-        date_to: dateTo,
-      }),
-      cache: "no-store",
-    });
-    const d = await res.json();
-    const items: any[] = d?.data ?? [];
-
-    if (items.length === 0) {
-      return NextResponse.json({ ok: true, note: "sin llamadas en el rango", raw_search_response: d });
+    const longSummaryItems: any[] = [];
+    let scanned = 0;
+    for (let page = 1; page <= pagesToScan; page++) {
+      const res = await fetch(`${ALLO_API}/v2/api/conversations/items/search`, {
+        method: "POST",
+        headers: alloHeaders(),
+        body: JSON.stringify({
+          type: "CALL",
+          sort: "DATE",
+          page,
+          size: 100,
+          date_from: dateFrom,
+          date_to: dateTo,
+        }),
+        cache: "no-store",
+      });
+      const d = await res.json();
+      const items: any[] = d?.data ?? [];
+      scanned += items.length;
+      for (const it of items) {
+        if (typeof it.summary === "string" && it.summary.length >= minLen) {
+          longSummaryItems.push(it);
+        }
+      }
+      if (!d?.pagination?.has_more || items.length === 0) break;
     }
 
-    // Detalle completo de la primera llamada con summary no vacío
-    const withSummary = items.find((it) => it.summary) || items[0];
-    const detailRes = await fetch(
-      `${ALLO_API}/v2/api/conversations/items/${withSummary.id}?extend=transcript`,
-      { headers: alloHeaders(), cache: "no-store" }
+    if (longSummaryItems.length === 0) {
+      return NextResponse.json({
+        ok: true,
+        note: `sin llamadas con summary >= ${minLen} chars en ${scanned} escaneadas`,
+      });
+    }
+
+    // Detalle completo de hasta 2 llamadas con summary largo (formato rico)
+    const picks = longSummaryItems.slice(0, 2);
+    const details = await Promise.all(
+      picks.map(async (it) => {
+        const detailRes = await fetch(
+          `${ALLO_API}/v2/api/conversations/items/${it.id}?extend=transcript`,
+          { headers: alloHeaders(), cache: "no-store" }
+        );
+        return detailRes.json();
+      })
     );
-    const detailData = await detailRes.json();
 
     return NextResponse.json({
       ok: true,
-      search_item_keys: Object.keys(withSummary),
-      search_item_full: withSummary,
-      detail_keys: Object.keys(detailData?.data ?? detailData ?? {}),
-      detail_full: detailData,
+      scanned,
+      found_with_long_summary: longSummaryItems.length,
+      details,
     });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
