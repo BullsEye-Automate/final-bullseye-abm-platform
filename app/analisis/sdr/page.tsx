@@ -15,9 +15,13 @@ import TablaRankingSdr from "./components/TablaRankingSdr";
 import TablaRankingPais from "./components/TablaRankingPais";
 import SdrMultiSelect from "./components/SdrMultiSelect";
 import PaisMultiSelect from "./components/PaisMultiSelect";
+import TablaScoresSdr, { type SdrScoreMetrics } from "./components/TablaScoresSdr";
+import ModalScoreLlamadas from "./components/ModalScoreLlamadas";
+import ClienteMultiSelect from "../clientes/components/ClienteMultiSelect";
 
 type SdrRoster = { sdr_id: string; sdr_nombre: string };
 type PaisRoster = { pais_key: string; pais_nombre: string };
+type ClienteRoster = { cliente_id: string; cliente_nombre: string };
 
 type SdrMetrics = {
   sdr_id: string;
@@ -68,6 +72,12 @@ type PaisApiResponse = {
   all_sdrs?: SdrRoster[];
 };
 
+type ScoresApiResponse = {
+  sdr_scores: SdrScoreMetrics[];
+  all_sdrs?: SdrRoster[];
+  all_clientes?: ClienteRoster[];
+};
+
 // Rangos propios de la sección "Resultados SDR" (no viven en
 // lib/dashboardRanges.ts para no agregar estas opciones en los demás
 // filtros de la app que comparten ese archivo). Van primero en el dropdown.
@@ -107,6 +117,20 @@ export default function AnalisisSdr() {
   const [paisData, setPaisData] = useState<PaisApiResponse | null>(null);
   const [paisError, setPaisError] = useState<string | null>(null);
 
+  const [scoresRangeKey, setScoresRangeKey] = useState<RangeKey>("this_month");
+  const [scoresCustomFrom, setScoresCustomFrom] = useState<string>("");
+  const [scoresCustomTo, setScoresCustomTo] = useState<string>("");
+  const [scoresSdrFilter, setScoresSdrFilter] = useState<string[]>([]);
+  const [scoresClienteFilter, setScoresClienteFilter] = useState<string[]>([]);
+  const [scoresLoading, setScoresLoading] = useState(false);
+  const [scoresData, setScoresData] = useState<ScoresApiResponse | null>(null);
+  const [scoresError, setScoresError] = useState<string | null>(null);
+  const [scoreModal, setScoreModal] = useState<{
+    row: SdrScoreMetrics;
+    metricKey: string;
+    metricLabel: string;
+  } | null>(null);
+
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
@@ -115,6 +139,7 @@ export default function AnalisisSdr() {
   const graficoRequestId = useRef(0);
   const tablaRequestId = useRef(0);
   const paisRequestId = useRef(0);
+  const scoresRequestId = useRef(0);
 
   const loadGrafico = async () => {
     // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
@@ -222,10 +247,48 @@ export default function AnalisisSdr() {
     }
   };
 
+  const loadScores = async () => {
+    // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
+    if (scoresRangeKey === "custom" && (!scoresCustomFrom || !scoresCustomTo)) return;
+
+    const requestId = ++scoresRequestId.current;
+    setScoresLoading(true);
+    setScoresError(null);
+    try {
+      const searchParams = new URLSearchParams({
+        rangeKey: scoresRangeKey,
+        client_id: currentClient?.id || "__all__",
+        ...(scoresSdrFilter.length > 0 && { sdr_ids: scoresSdrFilter.join(",") }),
+        ...(scoresClienteFilter.length > 0 && { cliente_ids: scoresClienteFilter.join(",") }),
+        ...(scoresRangeKey === "custom" && {
+          custom_from: scoresCustomFrom,
+          custom_to: scoresCustomTo,
+        }),
+      });
+
+      const response = await fetch(`/api/analisis/scores?${searchParams}`);
+      if (requestId !== scoresRequestId.current) return; // respuesta obsoleta
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        setScoresError(body?.error || "Error al cargar datos");
+      } else {
+        setScoresData(await response.json());
+      }
+    } catch (err) {
+      if (requestId !== scoresRequestId.current) return;
+      setScoresError((err as Error).message);
+    } finally {
+      if (requestId === scoresRequestId.current) setScoresLoading(false);
+    }
+  };
+
   // Trae la última versión del Excel de reuniones (Google Sheets) a la
   // tabla `meetings` antes de recargar el reporte, para que Reuniones
   // Agendadas/Realizadas calce con el reporte interno que lee el mismo
-  // Excel — la sincronización automática puede no haber corrido recién.
+  // Excel — la sincronización automática puede no haber corrido recién. El
+  // Score de Llamadas IA no depende de `meetings` (solo de Allo), así que
+  // no se recarga acá — tiene su propio ciclo de carga vía useEffect.
   const handleSync = async () => {
     setSyncing(true);
     setSyncMessage(null);
@@ -273,6 +336,13 @@ export default function AnalisisSdr() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, paisRangeKey, paisSdrFilter, paisCustomFrom, paisCustomTo]);
+
+  useEffect(() => {
+    if (currentClient?.id) {
+      loadScores();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentClient?.id, scoresRangeKey, scoresSdrFilter, scoresClienteFilter, scoresCustomFrom, scoresCustomTo]);
 
   return (
     <div className="space-y-6">
@@ -575,6 +645,106 @@ export default function AnalisisSdr() {
           )
         )}
       </section>
+
+      {/* Sección Score de Llamadas IA */}
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b">
+          <h2 className="font-semibold flex items-center gap-2">
+            <IconTrendingUp size={16} className="text-brand" /> Score de Llamadas IA
+          </h2>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Período</label>
+            <select
+              value={scoresRangeKey}
+              onChange={(e) => setScoresRangeKey(e.target.value as RangeKey)}
+              className="input py-1.5 text-sm"
+            >
+              {Object.entries(RANGE_LABELS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {scoresRangeKey === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={scoresCustomFrom}
+                onChange={(e) => setScoresCustomFrom(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+              <span className="text-xs text-ink-muted">a</span>
+              <input
+                type="date"
+                value={scoresCustomTo}
+                onChange={(e) => setScoresCustomTo(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">SDR</label>
+            <SdrMultiSelect
+              sdrs={scoresData?.all_sdrs || []}
+              selected={scoresSdrFilter}
+              onChange={setScoresSdrFilter}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Cliente</label>
+            <ClienteMultiSelect
+              clientes={scoresData?.all_clientes || []}
+              selected={scoresClienteFilter}
+              onChange={setScoresClienteFilter}
+            />
+          </div>
+        </div>
+
+        <p className="text-xs text-ink-muted">
+          Promedios del análisis de llamadas con IA que genera Allo (Puntaje Total y desglose por
+          ítem) — solo se incluyen llamadas que tienen ese análisis. Haz clic en cualquier nota
+          para ver las llamadas que la componen.
+        </p>
+
+        {scoresError && (
+          <div className="flex items-center gap-2 text-error-fg text-sm p-3 rounded bg-error-bg/20 border border-error-bg">
+            <IconAlertCircle size={16} className="shrink-0" />
+            {scoresError}
+          </div>
+        )}
+
+        {scoresLoading && (
+          <div className="flex items-center justify-center py-12 text-ink-muted gap-2">
+            <IconLoader2 size={18} className="animate-spin" />
+            Cargando datos…
+          </div>
+        )}
+
+        {!scoresLoading && scoresData && (
+          <TablaScoresSdr
+            data={scoresData.sdr_scores}
+            onCellClick={(row, metricKey, metricLabel) => setScoreModal({ row, metricKey, metricLabel })}
+          />
+        )}
+      </section>
+
+      {scoreModal && (
+        <ModalScoreLlamadas
+          isOpen={!!scoreModal}
+          sdrNombre={scoreModal.row.sdr_nombre}
+          metricKey={scoreModal.metricKey}
+          metricLabel={scoreModal.metricLabel}
+          calls={scoreModal.row.calls}
+          onClose={() => setScoreModal(null)}
+        />
+      )}
     </div>
   );
 }

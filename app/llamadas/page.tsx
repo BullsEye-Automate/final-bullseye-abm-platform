@@ -18,6 +18,8 @@ import {
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
+import { parseCallScoreCard } from "@/lib/callScoreCard";
+import MarkdownLite from "@/components/MarkdownLite";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -234,6 +236,29 @@ function TagBadges({ tagIds, tags }: { tagIds: string[]; tags: AlloTag[] }) {
   );
 }
 
+// Solo ~5-6% de las llamadas traen el análisis de IA con score (el resto
+// tiene un resumen corto de una línea) — "—" indica que Allo no generó ese
+// análisis para esta llamada, no que la nota sea 0.
+function ScoreBadge({ summary }: { summary: string | null }) {
+  const card = parseCallScoreCard(summary);
+  if (!card) return <span className="text-xs text-ink-subtle">—</span>;
+  const { bg, fg } =
+    card.puntajeTotal >= 75
+      ? { bg: "#DCFCE7", fg: "#15803D" }
+      : card.puntajeTotal >= 50
+      ? { bg: "#FEF9C3", fg: "#A16207" }
+      : { bg: "#FEE2E2", fg: "#B91C1C" };
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+      style={{ background: bg, color: fg }}
+      title={card.nivel ? `Nivel: ${card.nivel}` : undefined}
+    >
+      {card.puntajeTotal}/100
+    </span>
+  );
+}
+
 function ModalShell({
   title,
   onClose,
@@ -275,7 +300,7 @@ const STAT_TITLES: Record<StatKey, string> = {
   tags: "Resumen de etiquetas",
 };
 
-type CallSortKey = "date" | "user" | "contact" | "job_title" | "company" | "duration" | "result" | "tags";
+type CallSortKey = "date" | "user" | "contact" | "job_title" | "company" | "duration" | "result" | "tags" | "score";
 type SortDir = "asc" | "desc";
 
 const CALL_SORT_DEFAULT_DIR: Record<CallSortKey, SortDir> = {
@@ -287,6 +312,7 @@ const CALL_SORT_DEFAULT_DIR: Record<CallSortKey, SortDir> = {
   duration: "desc",
   result: "asc",
   tags: "desc",
+  score: "desc",
 };
 
 function callSortValue(c: CallItem, key: CallSortKey): string | number {
@@ -299,6 +325,7 @@ function callSortValue(c: CallItem, key: CallSortKey): string | number {
     case "duration": return c.duration;
     case "result": return c.result ?? "";
     case "tags": return c.tags.length;
+    case "score": return parseCallScoreCard(c.summary)?.puntajeTotal ?? -1;
   }
 }
 
@@ -384,6 +411,7 @@ function CallsTable({
             <SortableTh label="Duración" sortKey="duration" {...thProps} />
             <SortableTh label="Resultado" sortKey="result" {...thProps} />
             <SortableTh label="Etiquetas" sortKey="tags" {...thProps} className="whitespace-normal" />
+            <SortableTh label="Score" sortKey="score" {...thProps} />
           </tr>
         </thead>
         <tbody>
@@ -407,6 +435,9 @@ function CallsTable({
               </td>
               <td className="px-3 py-2">
                 <TagBadges tagIds={c.tags} tags={tags} />
+              </td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                <ScoreBadge summary={c.summary} />
               </td>
             </tr>
           ))}
@@ -558,6 +589,7 @@ function CallDetailModal({
           <div className="flex items-center gap-3">
             <ResultBadge result={detail.result} />
             <TagBadges tagIds={detail.tags} tags={tags} />
+            <ScoreBadge summary={detail.summary} />
           </div>
 
           {detail.recording_url && (
@@ -569,7 +601,7 @@ function CallDetailModal({
           {detail.summary && (
             <div>
               <div className="label mb-1">Resumen</div>
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{detail.summary}</p>
+              <MarkdownLite text={detail.summary} className="text-sm" />
             </div>
           )}
 
