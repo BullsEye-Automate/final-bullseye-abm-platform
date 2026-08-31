@@ -32,6 +32,22 @@ type SdrMetrics = {
   tasa_conectadas_por_contacto: number;
   tasa_agendada_por_conectada: number;
   tasa_realizacion_reuniones: number;
+  // Detalle (con Origen) de las reuniones que componen reuniones_agendadas /
+  // reuniones_realizadas de esta fila — alimenta el modal de "Origen" que se
+  // abre al hacer clic en esas dos columnas del Ranking SDR.
+  reuniones_agendadas_detalle: MeetingDetail[];
+  reuniones_realizadas_detalle: MeetingDetail[];
+};
+
+type MeetingDetail = {
+  id: string;
+  sdr_nombre: string;
+  client_name: string;
+  prospecto_nombre?: string;
+  empresa?: string;
+  fecha_agendamiento?: string;
+  fecha_reunion: string;
+  origen: string;
 };
 
 type Reunion = {
@@ -228,7 +244,7 @@ export async function GET(request: NextRequest) {
     for (let offset = 0; ; offset += MEETINGS_PAGE_SIZE) {
       let meetingsQuery = db
         .from("meetings")
-        .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, contacto_nombre, empresa, client_id, pais")
+        .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, contacto_nombre, empresa, client_id, pais, origen")
         .or(
           `and(fecha_reunion.gte.${dateFrom},fecha_reunion.lte.${meetingsDateTo}),` +
             `and(fecha_agendamiento.gte.${dateFrom},fecha_agendamiento.lte.${meetingsDateTo})`
@@ -303,6 +319,21 @@ export async function GET(request: NextRequest) {
 
     const clientMap = new Map(clientsData.map((c: any) => [c.id, c.name]));
 
+    // Reunión individual con su Origen, para el modal que se abre al hacer
+    // clic en "Reuniones Agendadas"/"Reuniones Realizadas" del Ranking SDR.
+    function mapMeetingDetail(m: any): MeetingDetail {
+      return {
+        id: m.id,
+        sdr_nombre: m.responsable || m.sdr_nombre || "Sin SDR",
+        client_name: clientMap.get(m.client_id) || "Sin cliente",
+        prospecto_nombre: m.contacto_nombre,
+        empresa: m.empresa,
+        fecha_agendamiento: m.fecha_agendamiento,
+        fecha_reunion: m.fecha_reunion,
+        origen: (m.origen && String(m.origen).trim()) || "Sin origen",
+      };
+    }
+
     // Agrupar datos por SDR
     const sdrDataMap: Record<string, SdrMetrics> = {};
 
@@ -325,6 +356,8 @@ export async function GET(request: NextRequest) {
           tasa_conectadas_por_contacto: 0,
           tasa_agendada_por_conectada: 0,
           tasa_realizacion_reuniones: 0,
+          reuniones_agendadas_detalle: [],
+          reuniones_realizadas_detalle: [],
         };
       }
 
@@ -344,6 +377,9 @@ export async function GET(request: NextRequest) {
       string,
       { displayName: string; agendadas: number; realizadas: number; pendientes: number; contactos: Set<string> }
     > = {};
+    // Detalle (con Origen) de las reuniones Realizadas de cada SDR — separado
+    // de meetingsBySDR porque este solo guarda conteos.
+    const realizadasDetalleBySDR: Record<string, MeetingDetail[]> = {};
 
     for (const meeting of meetingsForRanking) {
       const rawName = meeting.responsable || meeting.sdr_nombre || "Sin SDR";
@@ -360,6 +396,7 @@ export async function GET(request: NextRequest) {
       meetingsBySDR[sdrKey].agendadas++;
       if (isRealizadoSi(meeting.realizado)) {
         meetingsBySDR[sdrKey].realizadas++;
+        (realizadasDetalleBySDR[sdrKey] ||= []).push(mapMeetingDetail(meeting));
       } else if (isRealizadoPendiente(meeting.realizado)) {
         meetingsBySDR[sdrKey].pendientes++;
       }
@@ -373,10 +410,13 @@ export async function GET(request: NextRequest) {
     // Realización" siguen usando fecha_reunion (ver meetingsForRanking) —
     // dos fechas distintas de la misma fila, a propósito.
     const agendadasPorFechaAgendamientoBySDR: Record<string, number> = {};
+    // Detalle (con Origen) de esas mismas reuniones agendadas, por SDR.
+    const agendadasDetalleBySDR: Record<string, MeetingDetail[]> = {};
     for (const m of meetingsScoped) {
       if (!(m.fecha_agendamiento >= dateFrom && m.fecha_agendamiento <= meetingsDateTo)) continue;
       const key = resolveSdrKey(m.responsable || m.sdr_nombre || "Sin SDR");
       agendadasPorFechaAgendamientoBySDR[key] = (agendadasPorFechaAgendamientoBySDR[key] || 0) + 1;
+      (agendadasDetalleBySDR[key] ||= []).push(mapMeetingDetail(m));
     }
 
     // Calcular métricas consolidadas
@@ -401,6 +441,8 @@ export async function GET(request: NextRequest) {
       // depender del nuevo valor mostrado en esta columna.
       const agendadasEnPeriodo = agendadasPorFechaAgendamientoBySDR[meetingKey] || 0;
       sdrData.reuniones_agendadas = agendadasEnPeriodo;
+      sdrData.reuniones_agendadas_detalle = agendadasDetalleBySDR[meetingKey] || [];
+      sdrData.reuniones_realizadas_detalle = realizadasDetalleBySDR[meetingKey] || [];
       if (meetingData) {
         claimedMeetingKeys.add(meetingKey);
         sdrData.reuniones_pendientes = meetingData.pendientes;
@@ -466,6 +508,8 @@ export async function GET(request: NextRequest) {
         tasa_conectadas_por_contacto: 0,
         tasa_agendada_por_conectada: 0,
         tasa_realizacion_reuniones: tasaRealizacion,
+        reuniones_agendadas_detalle: agendadasDetalleBySDR[meetingKey] || [],
+        reuniones_realizadas_detalle: realizadasDetalleBySDR[meetingKey] || [],
       });
     }
 
