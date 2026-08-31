@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { IconArrowUp, IconArrowDown } from "@tabler/icons-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 
 export interface MeetingDetail {
   id: string;
@@ -50,6 +50,10 @@ const COLUMNS: { key: SortKey; label: string }[] = [
 export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDetail[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("sdr_nombre");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  // Orígenes ocultos del gráfico de torta (clic en la leyenda o en la
+  // tabla de resumen para ocultar/mostrar). No afecta la tabla de detalle
+  // de abajo, que siempre lista todas las reuniones.
+  const [hiddenOrigenes, setHiddenOrigenes] = useState<Set<string>>(new Set());
 
   const pieData = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -60,6 +64,29 @@ export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDet
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
   }, [reuniones]);
+
+  // Color estable por origen (no por índice dentro del array filtrado) para
+  // que el color de cada uno no cambie al ocultar/mostrar otros.
+  const colorByName = useMemo(() => {
+    const map = new Map<string, string>();
+    pieData.forEach((d, index) => map.set(d.name, COLORS[index % COLORS.length]));
+    return map;
+  }, [pieData]);
+
+  const visiblePieData = useMemo(
+    () => pieData.filter((d) => !hiddenOrigenes.has(d.name)),
+    [pieData, hiddenOrigenes]
+  );
+  const visibleTotal = visiblePieData.reduce((sum, d) => sum + d.value, 0);
+
+  const toggleOrigen = (name: string) => {
+    setHiddenOrigenes((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
 
   const total = reuniones.length;
 
@@ -92,7 +119,10 @@ export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDet
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload[0]) {
       const data = payload[0].payload as { name: string; value: number };
-      const percentage = total > 0 ? ((data.value / total) * 100).toFixed(1) : "0";
+      // % relativo a lo que se está mostrando en la torta (orígenes
+      // ocultos no cuentan) — la tabla de al lado sí muestra siempre el %
+      // sobre el total general.
+      const percentage = visibleTotal > 0 ? ((data.value / visibleTotal) * 100).toFixed(1) : "0";
       return (
         <div className="bg-[#251762] border border-[#62E0D8] p-3 rounded-lg shadow-xl text-xs">
           <p className="font-semibold text-white">{data.name}</p>
@@ -111,25 +141,98 @@ export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDet
 
   return (
     <div className="space-y-6">
-      <ResponsiveContainer width="100%" height={360}>
-        <PieChart>
-          <Pie
-            data={pieData}
-            cx="50%"
-            cy="50%"
-            labelLine={false}
-            label={({ name }) => name}
-            outerRadius={110}
-            dataKey="value"
-          >
-            {pieData.map((entry, index) => (
-              <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
-            ))}
-          </Pie>
-          <Tooltip content={<CustomTooltip />} />
-          <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "16px" }} />
-        </PieChart>
-      </ResponsiveContainer>
+      <div className="flex flex-col lg:flex-row gap-6 items-stretch">
+        <div className="flex-1 min-w-0">
+          {visiblePieData.length === 0 ? (
+            <div className="flex items-center justify-center h-[360px] text-ink-muted text-sm">
+              Todos los orígenes están ocultos — haz clic en la leyenda o en la tabla para mostrarlos.
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={360}>
+              <PieChart>
+                <Pie data={visiblePieData} cx="50%" cy="50%" outerRadius={130} dataKey="value">
+                  {visiblePieData.map((entry) => (
+                    <Cell key={entry.name} fill={colorByName.get(entry.name)} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+
+          {/* Leyenda propia (en vez de la de recharts) para que un origen
+              oculto siga apareciendo acá y se pueda volver a mostrar. */}
+          <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 mt-2">
+            {pieData.map((d) => {
+              const hidden = hiddenOrigenes.has(d.name);
+              return (
+                <button
+                  key={d.name}
+                  onClick={() => toggleOrigen(d.name)}
+                  className={`flex items-center gap-1.5 text-xs transition ${
+                    hidden ? "text-gray-400 line-through" : "text-gray-700 hover:text-gray-900"
+                  }`}
+                  title={hidden ? "Mostrar en el gráfico" : "Ocultar del gráfico"}
+                >
+                  <span
+                    className="w-2.5 h-2.5 rounded-sm shrink-0"
+                    style={{ backgroundColor: hidden ? "#D1D5DB" : colorByName.get(d.name) }}
+                  />
+                  {d.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="lg:w-[380px] shrink-0 overflow-auto max-h-[420px]">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold text-gray-700">Origen</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-700">Reuniones</th>
+                <th className="px-3 py-2 text-right font-semibold text-gray-700">% del total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {pieData.map((d, idx) => {
+                const hidden = hiddenOrigenes.has(d.name);
+                return (
+                  <tr
+                    key={d.name}
+                    onClick={() => toggleOrigen(d.name)}
+                    className={`cursor-pointer transition ${hidden ? "opacity-40" : ""} ${
+                      idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"
+                    }`}
+                    title={hidden ? "Mostrar en el gráfico" : "Ocultar del gráfico"}
+                  >
+                    <td className="px-3 py-2 font-medium text-gray-900">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-2.5 h-2.5 rounded-sm shrink-0"
+                          style={{ backgroundColor: colorByName.get(d.name) }}
+                        />
+                        <span className={hidden ? "line-through" : ""}>{d.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-700">{d.value}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-gray-700">
+                      {total > 0 ? ((d.value / total) * 100).toFixed(1) : "0"}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
+                <td className="px-3 py-2 text-gray-900">Total</td>
+                <td className="px-3 py-2 text-right text-gray-900">{total}</td>
+                <td className="px-3 py-2 text-right text-gray-900">100%</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
 
       <div className="overflow-auto max-h-[420px]">
         <table className="w-full text-sm">
