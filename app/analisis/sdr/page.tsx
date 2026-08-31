@@ -173,13 +173,44 @@ export default function AnalisisSdr() {
   // los reintentos. Esta cola encadena todas las cargas para que nunca haya
   // más de una pegándole a Allo a la vez, sin importar qué la disparó.
   const alloQueueRef = useRef<Promise<void>>(Promise.resolve());
-  function runQueued(fn: () => Promise<void>): Promise<void> {
+  function runQueued<T>(fn: () => Promise<T>): Promise<T> {
     const run = alloQueueRef.current.then(fn, fn);
     alloQueueRef.current = run.then(
       () => undefined,
       () => undefined
     );
     return run;
+  }
+
+  // "Resultados SDR" y "Ranking SDR" pegan a la misma API (/api/analisis/sdr)
+  // y, sin ningún filtro propio distinto (el caso más común: recién se
+  // entra a la página, o se cambia de cliente), piden exactamente la misma
+  // consulta. Antes cada sección hacía su propio fetch, duplicando el
+  // trabajo (y las llamadas a Allo) entre las dos. Este cache comparte, por
+  // URL exacta, la respuesta EN VUELO entre ambas — si llegan a pedir lo
+  // mismo al mismo tiempo, solo una pega a la API y la otra reutiliza esa
+  // misma promesa. Se limpia apenas resuelve (éxito o error): es solo para
+  // deduplicar llamadas concurrentes, no para servir datos obsoletos en
+  // cargas posteriores no simultáneas.
+  const sdrFetchCacheRef = useRef<Map<string, Promise<ApiResponse>>>(new Map());
+  function fetchSdrShared(url: string): Promise<ApiResponse> {
+    const cache = sdrFetchCacheRef.current;
+    const cached = cache.get(url);
+    if (cached) return cached;
+
+    const promise = runQueued(async () => {
+      const response = await fetch(url);
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(body?.error || "Error al cargar datos");
+      }
+      return (await response.json()) as ApiResponse;
+    });
+    cache.set(url, promise);
+    promise.catch(() => {}).finally(() => {
+      if (cache.get(url) === promise) cache.delete(url);
+    });
+    return promise;
   }
 
   const loadGrafico = async () => {
@@ -200,15 +231,9 @@ export default function AnalisisSdr() {
         }),
       });
 
-      const response = await fetch(`/api/analisis/sdr?${searchParams}`);
+      const data = await fetchSdrShared(`/api/analisis/sdr?${searchParams}`);
       if (requestId !== graficoRequestId.current) return; // respuesta obsoleta
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        setGraficoError(body?.error || "Error al cargar datos");
-      } else {
-        setGraficoData(await response.json());
-      }
+      setGraficoData(data);
     } catch (err) {
       if (requestId !== graficoRequestId.current) return;
       setGraficoError((err as Error).message);
@@ -236,15 +261,9 @@ export default function AnalisisSdr() {
         }),
       });
 
-      const response = await fetch(`/api/analisis/sdr?${searchParams}`);
+      const data = await fetchSdrShared(`/api/analisis/sdr?${searchParams}`);
       if (requestId !== tablaRequestId.current) return; // respuesta obsoleta
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        setTablaError(body?.error || "Error al cargar datos");
-      } else {
-        setTablaData(await response.json());
-      }
+      setTablaData(data);
     } catch (err) {
       if (requestId !== tablaRequestId.current) return;
       setTablaError((err as Error).message);
@@ -376,12 +395,12 @@ export default function AnalisisSdr() {
         setSyncMessage(`Error al actualizar: ${data.error}`);
       } else {
         setSyncMessage(`✓ Datos actualizados — ${data.synced ?? 0} reuniones sincronizadas`);
-        // runQueued (no Promise.all ni llamadas sueltas): encadena estas
-        // recargas con cualquier otra que ya esté en curso (ver alloQueueRef
-        // más arriba) para que nunca haya más de una sección pegándole a
-        // Allo a la vez.
-        await runQueued(loadGrafico);
-        await runQueued(loadTabla);
+        // loadGrafico/loadTabla ya encolan su propio fetch por dentro (ver
+        // fetchSdrShared) y loadPais sigue envuelto acá: entre los tres
+        // nunca hay más de una sección pegándole a Allo a la vez (mismo
+        // alloQueueRef que usa fetchSdrShared).
+        await loadGrafico();
+        await loadTabla();
         await runQueued(loadPais);
       }
     } catch (err) {
@@ -391,16 +410,19 @@ export default function AnalisisSdr() {
     }
   };
 
+  // loadGrafico/loadTabla ya encolan su propio fetch por dentro de
+  // fetchSdrShared (y comparten la respuesta cuando piden lo mismo al mismo
+  // tiempo), así que no hace falta envolverlos en runQueued acá.
   useEffect(() => {
     if (currentClient?.id) {
-      runQueued(loadGrafico);
+      loadGrafico();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, graficoRangeKey, graficoSdrFilter, graficoCustomFrom, graficoCustomTo]);
 
   useEffect(() => {
     if (currentClient?.id) {
-      runQueued(loadTabla);
+      loadTabla();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, tablaRangeKey, tablaSdrFilter, tablaPaisFilter, tablaCustomFrom, tablaCustomTo]);
