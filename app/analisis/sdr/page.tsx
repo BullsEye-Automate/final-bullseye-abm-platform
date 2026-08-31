@@ -18,6 +18,8 @@ import PaisMultiSelect from "./components/PaisMultiSelect";
 import TablaScoresSdr, { type SdrScoreMetrics } from "./components/TablaScoresSdr";
 import ModalScoreLlamadas from "./components/ModalScoreLlamadas";
 import ClienteMultiSelect from "../clientes/components/ClienteMultiSelect";
+import OrigenPieYDetalle, { type MeetingDetail } from "./components/OrigenPieYDetalle";
+import ModalOrigenReuniones from "./components/ModalOrigenReuniones";
 
 type SdrRoster = { sdr_id: string; sdr_nombre: string };
 type PaisRoster = { pais_key: string; pais_nombre: string };
@@ -36,6 +38,8 @@ type SdrMetrics = {
   tasa_conectadas_por_contacto: number;
   tasa_agendada_por_conectada: number;
   tasa_realizacion_reuniones: number;
+  reuniones_agendadas_detalle?: MeetingDetail[];
+  reuniones_realizadas_detalle?: MeetingDetail[];
 };
 
 type ResultadosDia = {
@@ -74,6 +78,12 @@ type PaisApiResponse = {
 
 type ScoresApiResponse = {
   sdr_scores: SdrScoreMetrics[];
+  all_sdrs?: SdrRoster[];
+  all_clientes?: ClienteRoster[];
+};
+
+type OrigenesApiResponse = {
+  reuniones: MeetingDetail[];
   all_sdrs?: SdrRoster[];
   all_clientes?: ClienteRoster[];
 };
@@ -131,6 +141,19 @@ export default function AnalisisSdr() {
     metricLabel: string;
   } | null>(null);
 
+  // Modal de desglose por Origen que se abre al hacer clic en "Reuniones
+  // Agendadas"/"Reuniones Realizadas" del Ranking SDR (por fila o Total).
+  const [origenModal, setOrigenModal] = useState<{ title: string; reuniones: MeetingDetail[] } | null>(null);
+
+  const [origenesRangeKey, setOrigenesRangeKey] = useState<RangeKey>("this_month");
+  const [origenesCustomFrom, setOrigenesCustomFrom] = useState<string>("");
+  const [origenesCustomTo, setOrigenesCustomTo] = useState<string>("");
+  const [origenesSdrFilter, setOrigenesSdrFilter] = useState<string[]>([]);
+  const [origenesClienteFilter, setOrigenesClienteFilter] = useState<string[]>([]);
+  const [origenesLoading, setOrigenesLoading] = useState(false);
+  const [origenesData, setOrigenesData] = useState<OrigenesApiResponse | null>(null);
+  const [origenesError, setOrigenesError] = useState<string | null>(null);
+
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
@@ -140,6 +163,7 @@ export default function AnalisisSdr() {
   const tablaRequestId = useRef(0);
   const paisRequestId = useRef(0);
   const scoresRequestId = useRef(0);
+  const origenesRequestId = useRef(0);
 
   // Las 4 secciones llaman a Allo por cada número asignado, y Allo limita a
   // 5 requests/segundo en total. Cada carga ya se pacía sola por dentro,
@@ -300,6 +324,42 @@ export default function AnalisisSdr() {
     }
   };
 
+  const loadOrigenes = async () => {
+    // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
+    if (origenesRangeKey === "custom" && (!origenesCustomFrom || !origenesCustomTo)) return;
+
+    const requestId = ++origenesRequestId.current;
+    setOrigenesLoading(true);
+    setOrigenesError(null);
+    try {
+      const searchParams = new URLSearchParams({
+        rangeKey: origenesRangeKey,
+        client_id: currentClient?.id || "__all__",
+        ...(origenesSdrFilter.length > 0 && { sdr_ids: origenesSdrFilter.join(",") }),
+        ...(origenesClienteFilter.length > 0 && { cliente_ids: origenesClienteFilter.join(",") }),
+        ...(origenesRangeKey === "custom" && {
+          custom_from: origenesCustomFrom,
+          custom_to: origenesCustomTo,
+        }),
+      });
+
+      const response = await fetch(`/api/analisis/origenes?${searchParams}`);
+      if (requestId !== origenesRequestId.current) return; // respuesta obsoleta
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        setOrigenesError(body?.error || "Error al cargar datos");
+      } else {
+        setOrigenesData(await response.json());
+      }
+    } catch (err) {
+      if (requestId !== origenesRequestId.current) return;
+      setOrigenesError((err as Error).message);
+    } finally {
+      if (requestId === origenesRequestId.current) setOrigenesLoading(false);
+    }
+  };
+
   // Trae la última versión del Excel de reuniones (Google Sheets) a la
   // tabla `meetings` antes de recargar el reporte, para que Reuniones
   // Agendadas/Realizadas calce con el reporte interno que lee el mismo
@@ -358,6 +418,26 @@ export default function AnalisisSdr() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, scoresRangeKey, scoresSdrFilter, scoresClienteFilter, scoresCustomFrom, scoresCustomTo]);
+
+  // No depende de Allo (solo consulta `meetings` en Supabase), así que no
+  // necesita pasar por runQueued/alloQueueRef.
+  useEffect(() => {
+    if (currentClient?.id) {
+      loadOrigenes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentClient?.id, origenesRangeKey, origenesSdrFilter, origenesClienteFilter, origenesCustomFrom, origenesCustomTo]);
+
+  const handleRankingOrigenClick = (
+    row: SdrMetrics | null,
+    key: "reuniones_agendadas" | "reuniones_realizadas",
+    label: string
+  ) => {
+    const detailKey = key === "reuniones_agendadas" ? "reuniones_agendadas_detalle" : "reuniones_realizadas_detalle";
+    const source = row ? [row] : tablaData?.sdrs_data || [];
+    const reuniones = source.flatMap((r) => r[detailKey] || []);
+    setOrigenModal({ title: `${label} — ${row ? row.sdr_nombre : "Total"}`, reuniones });
+  };
 
   return (
     <div className="space-y-6">
@@ -549,7 +629,8 @@ export default function AnalisisSdr() {
         </div>
 
         <p className="text-xs text-ink-muted">
-          Métricas consolidadas por SDR — haz clic en cualquier encabezado para ordenar.
+          Métricas consolidadas por SDR — haz clic en cualquier encabezado para ordenar, y en los
+          números de Reuniones Agendadas/Realizadas para ver su desglose por Origen.
         </p>
 
         {tablaError && (
@@ -572,7 +653,7 @@ export default function AnalisisSdr() {
               No hay datos disponibles
             </div>
           ) : (
-            <TablaRankingSdr data={tablaData.sdrs_data} />
+            <TablaRankingSdr data={tablaData.sdrs_data} onOrigenClick={handleRankingOrigenClick} />
           )
         )}
       </section>
@@ -750,6 +831,89 @@ export default function AnalisisSdr() {
         )}
       </section>
 
+      {/* Sección Origen de Reuniones */}
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b">
+          <h2 className="font-semibold flex items-center gap-2">
+            <IconTrendingUp size={16} className="text-brand" /> Origen de Reuniones
+          </h2>
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Período</label>
+            <select
+              value={origenesRangeKey}
+              onChange={(e) => setOrigenesRangeKey(e.target.value as RangeKey)}
+              className="input py-1.5 text-sm"
+            >
+              {Object.entries(RANGE_LABELS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {origenesRangeKey === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={origenesCustomFrom}
+                onChange={(e) => setOrigenesCustomFrom(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+              <span className="text-xs text-ink-muted">a</span>
+              <input
+                type="date"
+                value={origenesCustomTo}
+                onChange={(e) => setOrigenesCustomTo(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">SDR</label>
+            <SdrMultiSelect
+              sdrs={origenesData?.all_sdrs || []}
+              selected={origenesSdrFilter}
+              onChange={setOrigenesSdrFilter}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Cliente</label>
+            <ClienteMultiSelect
+              clientes={origenesData?.all_clientes || []}
+              selected={origenesClienteFilter}
+              onChange={setOrigenesClienteFilter}
+            />
+          </div>
+        </div>
+
+        <p className="text-xs text-ink-muted">
+          Distribución por Origen de todas las reuniones del período (según su Fecha de reunión),
+          sin importar su estado — las categorías sin reuniones en el período no se muestran.
+        </p>
+
+        {origenesError && (
+          <div className="flex items-center gap-2 text-error-fg text-sm p-3 rounded bg-error-bg/20 border border-error-bg">
+            <IconAlertCircle size={16} className="shrink-0" />
+            {origenesError}
+          </div>
+        )}
+
+        {origenesLoading && (
+          <div className="flex items-center justify-center py-12 text-ink-muted gap-2">
+            <IconLoader2 size={18} className="animate-spin" />
+            Cargando datos…
+          </div>
+        )}
+
+        {!origenesLoading && origenesData && <OrigenPieYDetalle reuniones={origenesData.reuniones} />}
+      </section>
+
       {scoreModal && (
         <ModalScoreLlamadas
           isOpen={!!scoreModal}
@@ -758,6 +922,15 @@ export default function AnalisisSdr() {
           metricLabel={scoreModal.metricLabel}
           calls={scoreModal.row.calls}
           onClose={() => setScoreModal(null)}
+        />
+      )}
+
+      {origenModal && (
+        <ModalOrigenReuniones
+          isOpen={!!origenModal}
+          title={origenModal.title}
+          reuniones={origenModal.reuniones}
+          onClose={() => setOrigenModal(null)}
         />
       )}
     </div>

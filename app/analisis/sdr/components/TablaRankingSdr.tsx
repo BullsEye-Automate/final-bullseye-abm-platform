@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { IconArrowUp, IconArrowDown, IconMaximize, IconX } from "@tabler/icons-react";
+import type { MeetingDetail } from "./OrigenPieYDetalle";
 
 interface SdrMetrics {
   sdr_id: string;
@@ -16,14 +17,22 @@ interface SdrMetrics {
   tasa_conectadas_por_contacto: number;
   tasa_agendada_por_conectada: number;
   tasa_realizacion_reuniones: number;
+  reuniones_agendadas_detalle?: MeetingDetail[];
+  reuniones_realizadas_detalle?: MeetingDetail[];
 }
 
-type SortKey = keyof SdrMetrics;
+// Columnas cuyo número se puede hacer clic para ver el desglose por Origen.
+type OrigenClickableKey = "reuniones_agendadas" | "reuniones_realizadas";
+const ORIGEN_CLICKABLE_KEYS = new Set<OrigenClickableKey>(["reuniones_agendadas", "reuniones_realizadas"]);
+
+type SortKey = keyof Omit<SdrMetrics, "reuniones_agendadas_detalle" | "reuniones_realizadas_detalle">;
 type NumericKey = Exclude<SortKey, "sdr_id" | "sdr_nombre">;
 type SortDir = "asc" | "desc";
 
 interface TablaRankingSdrProps {
   data: SdrMetrics[];
+  // row === null representa la fila "Total" (todas las filas filtradas).
+  onOrigenClick?: (row: SdrMetrics | null, key: OrigenClickableKey, label: string) => void;
 }
 
 const COLUMNS: { key: NumericKey; label: string; description: string }[] = [
@@ -85,7 +94,7 @@ const PERCENT_KEYS = new Set<NumericKey>([
   "tasa_realizacion_reuniones",
 ]);
 
-export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
+export default function TablaRankingSdr({ data, onOrigenClick }: TablaRankingSdrProps) {
   const [sortKey, setSortKey] = useState<SortKey>("reuniones_realizadas");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -184,7 +193,19 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
               <td className="px-4 py-3 font-medium text-gray-900">{sdr.sdr_nombre}</td>
               {COLUMNS.map((col) => (
                 <td key={col.key} className="px-4 py-3 text-right text-gray-700">
-                  {PERCENT_KEYS.has(col.key) ? `${(sdr[col.key] as number).toFixed(1)}%` : sdr[col.key]}
+                  {onOrigenClick && ORIGEN_CLICKABLE_KEYS.has(col.key as OrigenClickableKey) ? (
+                    <button
+                      onClick={() => onOrigenClick(sdr, col.key as OrigenClickableKey, col.label)}
+                      className="hover:underline hover:text-brand transition"
+                      title="Ver desglose por Origen"
+                    >
+                      {sdr[col.key]}
+                    </button>
+                  ) : PERCENT_KEYS.has(col.key) ? (
+                    `${(sdr[col.key] as number).toFixed(1)}%`
+                  ) : (
+                    sdr[col.key]
+                  )}
                 </td>
               ))}
             </tr>
@@ -195,7 +216,19 @@ export default function TablaRankingSdr({ data }: TablaRankingSdrProps) {
             <td className="px-4 py-3 text-gray-900">Total</td>
             {COLUMNS.map((col) => (
               <td key={col.key} className="px-4 py-3 text-right text-gray-900">
-                {PERCENT_KEYS.has(col.key) ? `${totals[col.key].toFixed(1)}%` : totals[col.key]}
+                {onOrigenClick && ORIGEN_CLICKABLE_KEYS.has(col.key as OrigenClickableKey) ? (
+                  <button
+                    onClick={() => onOrigenClick(null, col.key as OrigenClickableKey, col.label)}
+                    className="hover:underline hover:text-brand transition"
+                    title="Ver desglose por Origen"
+                  >
+                    {totals[col.key]}
+                  </button>
+                ) : PERCENT_KEYS.has(col.key) ? (
+                  `${totals[col.key].toFixed(1)}%`
+                ) : (
+                  totals[col.key]
+                )}
               </td>
             ))}
           </tr>
