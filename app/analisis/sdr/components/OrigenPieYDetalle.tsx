@@ -116,6 +116,38 @@ export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDet
     );
   };
 
+  // Etiqueta (nombre + %) dibujada dentro de la porción, en vez de afuera
+  // con línea guía — así no se pisan entre sí cuando hay una porción
+  // grande y varias chicas apretadas en un arco corto. Las porciones muy
+  // chicas (< MIN_LABEL_PERCENT) se quedan sin texto encima para que no
+  // se amontone; igual quedan coloreadas y se leen exactas en la tabla.
+  const MIN_LABEL_PERCENT = 0.04;
+  const RADIAN = Math.PI / 180;
+  const renderPieLabel = (props: any) => {
+    const { cx, cy, midAngle, innerRadius, outerRadius, percent, name } = props;
+    if (percent < MIN_LABEL_PERCENT) return null;
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.62;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+    return (
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={12}
+        fontWeight={700}
+        fill="#fff"
+        stroke="#251762"
+        strokeWidth={3}
+        paintOrder="stroke"
+        style={{ pointerEvents: "none" }}
+      >
+        {`${name} ${(percent * 100).toFixed(0)}%`}
+      </text>
+    );
+  };
+
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload[0]) {
       const data = payload[0].payload as { name: string; value: number };
@@ -150,7 +182,15 @@ export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDet
           ) : (
             <ResponsiveContainer width="100%" height={360}>
               <PieChart>
-                <Pie data={visiblePieData} cx="50%" cy="50%" outerRadius={130} dataKey="value">
+                <Pie
+                  data={visiblePieData}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={130}
+                  dataKey="value"
+                  label={renderPieLabel}
+                  labelLine={false}
+                >
                   {visiblePieData.map((entry) => (
                     <Cell key={entry.name} fill={colorByName.get(entry.name)} />
                   ))}
