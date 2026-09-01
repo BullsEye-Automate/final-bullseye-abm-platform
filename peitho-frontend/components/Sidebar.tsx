@@ -42,7 +42,14 @@ export default function Sidebar() {
       className="w-[230px] shrink-0 h-screen overflow-y-auto text-white px-3 py-5 sticky top-0 flex flex-col"
       style={{ background: "#251762" }}
     >
-      <div className="px-3 mb-6">
+      <div className="px-3 mb-6 flex items-center gap-2">
+        <div
+          className="w-8 h-8 rounded-lg bg-white/95 flex items-center justify-center shrink-0"
+          aria-hidden="true"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-peitho-icon.png" alt="" className="w-6 h-6 object-contain" />
+        </div>
         <div className="text-[22px] font-bold tracking-tight leading-none">
           <span style={{ color: "#fff" }}>Peit</span>
           <span style={{ color: "#62E0D8" }}>ho</span>

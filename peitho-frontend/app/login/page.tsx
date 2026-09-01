@@ -40,11 +40,9 @@ function LoginForm() {
     <div className="min-h-screen w-full flex items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="text-2xl font-bold tracking-tight">
-            <span style={{ color: "#251762" }}>Peit</span>
-            <span style={{ color: "#62E0D8" }}>ho</span>
-          </div>
-          <p className="text-sm text-gray-500 mt-1">Ingresa con tu cuenta de equipo</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-peitho-transparent.png" alt="Peitho" className="h-28 mx-auto" />
+          <p className="text-sm text-gray-500 -mt-2">Ingresa con tu cuenta de equipo</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
