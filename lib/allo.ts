@@ -50,9 +50,30 @@ async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 3): 
 async function alloFetch(path: string, init?: RequestInit) {
   const res = await alloFetchRaw(path, init);
   if (!res.ok) {
-    throw new Error(`Allo API error (${res.status}): ${await res.text().catch(() => "")}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`Allo API error (${res.status}): ${summarizeAlloError(text)}`);
   }
   return res.json();
+}
+
+// El body de error de Allo normalmente es JSON, pero cuando Cloudflare
+// intercepta la request (ej. la API caída, 520/521/522) devuelve una página
+// HTML larga en su lugar — mostrar eso tal cual dejaba los reportes del
+// dashboard ilegibles (una pantalla entera de HTML crudo). Acá se intenta
+// sacar un mensaje corto del JSON y, si no es JSON (HTML u otra cosa), se
+// reemplaza por un resumen genérico o se recorta.
+function summarizeAlloError(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "sin detalle";
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed?.error?.message || parsed?.message || JSON.stringify(parsed).slice(0, 300);
+  } catch {
+    if (trimmed.startsWith("<")) {
+      return "Allo no está respondiendo (la API devolvió una página de error en vez de datos) — probablemente esté caída temporalmente, reintenta en unos minutos.";
+    }
+    return trimmed.slice(0, 300);
+  }
 }
 
 // Descarga el audio de una grabación de Allo. El navegador no puede mandar
