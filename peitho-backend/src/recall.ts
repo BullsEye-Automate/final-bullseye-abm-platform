@@ -4,16 +4,19 @@
 // (analyzeMeetingAudio en postMeetingAnalysis.ts, vía Deepgram + Claude) —
 // Recall solo reemplaza CÓMO llega el audio, no qué se hace con él.
 //
-// TODO — pendiente de confirmar contra la documentación real de Recall
-// (docs.recall.ai/reference/bot_create y .../bot_retrieve, bloqueada desde
-// este entorno por el proxy de red) antes de usar esto en producción:
-//   1. El nombre exacto del campo para pasar nuestro meetingId de vuelta en
-//      el webhook (se asume `metadata` acá, hay que confirmarlo).
-//   2. El nombre exacto del campo con la URL de descarga de la grabación en
-//      la respuesta de Retrieve Bot (se asume `recording.media_shortcuts.*`
-//      o similar, placeholder abajo).
-//   3. Si conviene configurar el webhook por-bot (`webhook_url` en el body
-//      de Create Bot) o a nivel de cuenta desde el Dashboard de Recall.
+// Confirmado con una llamada real a la API (curl, 01-09-2026):
+//   - El endpoint de Create/Retrieve Bot vive bajo /api/v1/bot/, NO /v2/
+//     (v2 devuelve 404 — solo google-login-groups y otros recursos nuevos
+//     usan v2, el recurso "bot" en sí sigue siendo v1).
+//   - El campo `metadata` sí existe en el schema (confirmado, vino de vuelta
+//     como `{}` en la respuesta).
+//
+// TODO — todavía sin confirmar (no hemos tenido un bot que termine de
+// grabar una llamada real, bloqueado por la propagación de SSO de Google,
+// ver CLAUDE.md): el nombre exacto del campo con la URL de descarga de la
+// grabación en la respuesta de Retrieve Bot — el placeholder de abajo
+// (`recordings[0].media_shortcuts.audio_mixed...`) hay que confirmarlo
+// contra una respuesta real antes de confiar en él.
 
 function getRecallConfig(): { apiKey: string; region: string; loginGroupId: string | null } {
   const apiKey = process.env.RECALL_API_KEY;
@@ -25,7 +28,7 @@ function getRecallConfig(): { apiKey: string; region: string; loginGroupId: stri
 }
 
 function recallApiUrl(region: string, path: string): string {
-  return `https://${region}.recall.ai/api/v2${path}`;
+  return `https://${region}.recall.ai/api/v1${path}`;
 }
 
 // Crea el bot programado para unirse a la reunión a la hora indicada
@@ -38,8 +41,8 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
     meeting_url: meetingUrl,
     bot_name: 'Peitho',
     join_at: joinAt.toISOString(),
-    // Referencia de vuelta a nuestra reunión — ver TODO arriba, confirmar
-    // que "metadata" es el campo correcto antes de depender de esto.
+    // Referencia de vuelta a nuestra reunión — confirmado que "metadata" es
+    // el campo correcto (ver nota arriba).
     metadata: { peitho_meeting_id: meetingId },
   };
 
