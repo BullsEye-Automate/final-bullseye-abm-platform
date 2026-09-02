@@ -80,16 +80,16 @@ async function resolveClientId(
 }
 
 // preview=true: no escribe nada, solo devuelve lo que cambia / se saltea
-// sinceMonths: si se pasa, solo procesa filas cuya fecha de reunión o de
+// sinceDays: si se pasa, solo procesa filas cuya fecha de reunión o de
 // agendamiento cae dentro de esa ventana (además de las filas sin ninguna
 // fecha parseable, que se procesan siempre por seguridad). Cada fila
 // procesada hace un select + upsert secuencial contra Supabase, así que con
-// ~1400+ filas en la planilla un sync completo es lento — los meses ya
-// cerrados casi no cambian, así que el botón manual del portal usa una
-// ventana acotada (ver /api/meetings/sync) para responder rápido; el cron
-// nocturno sigue corriendo sin este filtro para no dejar nada desactualizado
-// permanentemente.
-export async function runMeetingsSync(preview = false, sinceMonths?: number): Promise<SyncResult> {
+// ~1400+ filas en la planilla un sync completo es lento — los días ya
+// pasados casi no cambian, así que el botón manual del portal (global y por
+// informe) usa una ventana acotada a un máximo de 40 días (ver
+// /api/meetings/sync) para responder rápido; el cron nocturno sigue
+// corriendo sin este filtro para no dejar nada desactualizado permanentemente.
+export async function runMeetingsSync(preview = false, sinceDays?: number): Promise<SyncResult> {
   const spreadsheetId = process.env.GOOGLE_SHEETS_MEETINGS_ID;
   if (!spreadsheetId) return { ok: false, error: "GOOGLE_SHEETS_MEETINGS_ID no configurado" };
 
@@ -102,9 +102,9 @@ export async function runMeetingsSync(preview = false, sinceMonths?: number): Pr
 
   if (rows.length === 0) return { ok: true, synced: 0, skipped: 0 };
 
-  if (sinceMonths) {
+  if (sinceDays) {
     const cutoff = new Date();
-    cutoff.setUTCMonth(cutoff.getUTCMonth() - sinceMonths);
+    cutoff.setUTCDate(cutoff.getUTCDate() - sinceDays);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
     rows = rows.filter((row) => {
       const fReunion = parseDate(row["Fecha de la reunión"]);

@@ -98,6 +98,22 @@ const GRAFICO_RANGE_LABELS: Record<string, string> = {
   ...RANGE_LABELS,
 };
 
+// Botón "Actualizar" de cada informe — versión chica del botón global de
+// arriba, para refrescar solo esa sección sin esperar a las demás.
+function RefreshButton({ onClick, loading }: { onClick: () => void; loading: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      title="Actualizar datos de este informe"
+      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs text-ink-muted hover:bg-gray-100 border border-gray-200 transition disabled:opacity-50"
+    >
+      {loading ? <IconLoader2 size={13} className="animate-spin" /> : <IconRefresh size={13} />}
+      Actualizar
+    </button>
+  );
+}
+
 export default function AnalisisSdr() {
   const { currentClient } = useClient();
 
@@ -156,6 +172,12 @@ export default function AnalisisSdr() {
 
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  // Sync por informe (botón "Actualizar" de cada sección) — independiente
+  // del botón global "Actualizar datos de reuniones".
+  const [graficoSyncing, setGraficoSyncing] = useState(false);
+  const [tablaSyncing, setTablaSyncing] = useState(false);
+  const [paisSyncing, setPaisSyncing] = useState(false);
+  const [origenesSyncing, setOrigenesSyncing] = useState(false);
 
   // Evita que una respuesta más lenta de un filtro anterior sobrescriba
   // los datos del filtro seleccionado actualmente (race condition).
@@ -209,6 +231,24 @@ export default function AnalisisSdr() {
     cache.set(url, promise);
     promise.catch(() => {}).finally(() => {
       if (cache.get(url) === promise) cache.delete(url);
+    });
+    return promise;
+  }
+
+  // Trae la última versión del Excel de reuniones (Google Sheets) a la
+  // tabla `meetings` — acotado a los últimos 40 días como máximo (ver
+  // /api/meetings/sync), para que el botón "Actualizar" responda rápido en
+  // vez de re-sincronizar todo el historial. Tanto el botón global como el
+  // de cada informe individual pasan por este mismo helper: si dos botones
+  // se aprietan casi al mismo tiempo, comparten la misma sincronización en
+  // vez de disparar dos en paralelo.
+  const meetingsSyncPromiseRef = useRef<Promise<{ error?: string; synced?: number }> | null>(null);
+  function syncMeetingsOnce(): Promise<{ error?: string; synced?: number }> {
+    if (meetingsSyncPromiseRef.current) return meetingsSyncPromiseRef.current;
+    const promise = fetch("/api/meetings/sync").then((r) => r.json());
+    meetingsSyncPromiseRef.current = promise;
+    promise.finally(() => {
+      if (meetingsSyncPromiseRef.current === promise) meetingsSyncPromiseRef.current = null;
     });
     return promise;
   }
@@ -379,34 +419,78 @@ export default function AnalisisSdr() {
     }
   };
 
-  // Trae la última versión del Excel de reuniones (Google Sheets) a la
-  // tabla `meetings` antes de recargar el reporte, para que Reuniones
-  // Agendadas/Realizadas calce con el reporte interno que lee el mismo
-  // Excel — la sincronización automática puede no haber corrido recién. El
-  // Score de Llamadas IA no depende de `meetings` (solo de Allo), así que
-  // no se recarga acá — tiene su propio ciclo de carga vía useEffect.
+  // Trae la última versión del Excel de reuniones (Google Sheets, últimos 40
+  // días) a la tabla `meetings` y recarga los 4 informes que dependen de
+  // ella, para que Reuniones Agendadas/Realizadas y Origen calcen con el
+  // reporte interno que lee el mismo Excel — la sincronización automática
+  // puede no haber corrido recién. El Score de Llamadas IA no depende de
+  // `meetings` (solo de Allo), así que no se recarga acá — tiene su propio
+  // ciclo de carga vía useEffect y su propio botón "Actualizar".
   const handleSync = async () => {
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const res = await fetch("/api/meetings/sync");
-      const data = await res.json();
+      const data = await syncMeetingsOnce();
       if (data.error) {
         setSyncMessage(`Error al actualizar: ${data.error}`);
       } else {
         setSyncMessage(`✓ Datos actualizados — ${data.synced ?? 0} reuniones sincronizadas`);
         // loadGrafico/loadTabla ya encolan su propio fetch por dentro (ver
-        // fetchSdrShared) y loadPais sigue envuelto acá: entre los tres
+        // fetchSdrShared) y loadPais sigue envuelto acá: entre los cuatro
         // nunca hay más de una sección pegándole a Allo a la vez (mismo
-        // alloQueueRef que usa fetchSdrShared).
+        // alloQueueRef que usa fetchSdrShared). loadOrigenes no usa Allo.
         await loadGrafico();
         await loadTabla();
         await runQueued(loadPais);
+        await loadOrigenes();
       }
     } catch (err) {
       setSyncMessage(`Error al actualizar: ${(err as Error).message}`);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  // Botones "Actualizar" de cada informe — igual que el botón global, pero
+  // acotados a una sola sección para no esperar a que se recarguen las
+  // demás. Score de Llamadas IA no sincroniza `meetings` (no lo usa).
+  const handleRefreshGrafico = async () => {
+    setGraficoSyncing(true);
+    try {
+      await syncMeetingsOnce();
+      await loadGrafico();
+    } finally {
+      setGraficoSyncing(false);
+    }
+  };
+
+  const handleRefreshTabla = async () => {
+    setTablaSyncing(true);
+    try {
+      await syncMeetingsOnce();
+      await loadTabla();
+    } finally {
+      setTablaSyncing(false);
+    }
+  };
+
+  const handleRefreshPais = async () => {
+    setPaisSyncing(true);
+    try {
+      await syncMeetingsOnce();
+      await runQueued(loadPais);
+    } finally {
+      setPaisSyncing(false);
+    }
+  };
+
+  const handleRefreshOrigenes = async () => {
+    setOrigenesSyncing(true);
+    try {
+      await syncMeetingsOnce();
+      await loadOrigenes();
+    } finally {
+      setOrigenesSyncing(false);
     }
   };
 
@@ -499,6 +583,7 @@ export default function AnalisisSdr() {
           <h2 className="font-semibold flex items-center gap-2">
             <IconPhone size={16} className="text-brand" /> Resultados SDR
           </h2>
+          <RefreshButton onClick={handleRefreshGrafico} loading={graficoSyncing || graficoLoading} />
         </div>
 
         {/* Filtros específicos del gráfico */}
@@ -594,6 +679,7 @@ export default function AnalisisSdr() {
           <h2 className="font-semibold flex items-center gap-2">
             <IconTrendingUp size={16} className="text-brand" /> Ranking SDR
           </h2>
+          <RefreshButton onClick={handleRefreshTabla} loading={tablaSyncing || tablaLoading} />
         </div>
 
         {/* Filtros específicos de la tabla */}
@@ -686,6 +772,7 @@ export default function AnalisisSdr() {
           <h2 className="font-semibold flex items-center gap-2">
             <IconTrendingUp size={16} className="text-brand" /> Ranking País
           </h2>
+          <RefreshButton onClick={handleRefreshPais} loading={paisSyncing || paisLoading} />
         </div>
 
         {/* Filtros específicos de la tabla — el filtro de cliente es el
@@ -770,6 +857,7 @@ export default function AnalisisSdr() {
           <h2 className="font-semibold flex items-center gap-2">
             <IconTrendingUp size={16} className="text-brand" /> Score de Llamadas IA
           </h2>
+          <RefreshButton onClick={() => runQueued(loadScores)} loading={scoresLoading} />
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
@@ -859,6 +947,7 @@ export default function AnalisisSdr() {
           <h2 className="font-semibold flex items-center gap-2">
             <IconTrendingUp size={16} className="text-brand" /> Origen de Reuniones
           </h2>
+          <RefreshButton onClick={handleRefreshOrigenes} loading={origenesSyncing || origenesLoading} />
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
