@@ -4,19 +4,19 @@
 // (analyzeMeetingAudio en postMeetingAnalysis.ts, vía Deepgram + Claude) —
 // Recall solo reemplaza CÓMO llega el audio, no qué se hace con él.
 //
-// Confirmado con una llamada real a la API (curl, 01-09-2026):
+// Confirmado con una llamada real a la API (curl, 01-09-2026 y 03-09-2026,
+// esta última con un bot que grabó una llamada real de punta a punta):
 //   - El endpoint de Create/Retrieve Bot vive bajo /api/v1/bot/, NO /v2/
 //     (v2 devuelve 404 — solo google-login-groups y otros recursos nuevos
 //     usan v2, el recurso "bot" en sí sigue siendo v1).
 //   - El campo `metadata` sí existe en el schema (confirmado, vino de vuelta
 //     como `{}` en la respuesta).
-//
-// TODO — todavía sin confirmar (no hemos tenido un bot que termine de
-// grabar una llamada real, bloqueado por la propagación de SSO de Google,
-// ver CLAUDE.md): el nombre exacto del campo con la URL de descarga de la
-// grabación en la respuesta de Retrieve Bot — el placeholder de abajo
-// (`recordings[0].media_shortcuts.audio_mixed...`) hay que confirmarlo
-// contra una respuesta real antes de confiar en él.
+//   - Por default Recall SOLO genera el video mezclado (`media_shortcuts.
+//     video_mixed`) — el audio-solo (`media_shortcuts.audio_mixed`) viene
+//     `null` a menos que se pida explícitamente con `audio_mixed_mp3: {}`
+//     dentro de `recording_config` al crear el bot (confirmado real: sin
+//     este campo, `audio_mixed` quedó `null` en la respuesta de un bot que
+//     sí completó la grabación).
 
 function getRecallConfig(): { apiKey: string; region: string; loginGroupId: string | null } {
   const apiKey = process.env.RECALL_API_KEY;
@@ -44,6 +44,9 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
     // Referencia de vuelta a nuestra reunión — confirmado que "metadata" es
     // el campo correcto (ver nota arriba).
     metadata: { peitho_meeting_id: meetingId },
+    // Solo necesitamos el audio (Deepgram, no el video) — sin esto Recall
+    // no genera el shortcut `audio_mixed` (ver nota arriba).
+    recording_config: { audio_mixed_mp3: {} },
   };
 
   if (loginGroupId) {
@@ -82,7 +85,6 @@ export async function getRecallRecordingUrl(botId: string): Promise<string> {
 
   const data = await res.json();
 
-  // Placeholder — confirmar el path real en la respuesta de Retrieve Bot.
   const url = data?.recordings?.[0]?.media_shortcuts?.audio_mixed?.data?.download_url;
   if (!url) {
     throw new Error(`No se encontró la URL de descarga de la grabación para el bot ${botId}`);
