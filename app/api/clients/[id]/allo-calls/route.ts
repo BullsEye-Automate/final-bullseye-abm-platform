@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
 import { listAlloNumbers, searchAlloCalls, listAlloTags, type AlloUserRef } from "@/lib/allo";
 import { searchHSContactsByPhones } from "@/lib/hubspot";
+import { CHILE_UTC_OFFSET_HOURS } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,6 @@ function toDateParam(d: Date): string {
 // Sin este ajuste, llamadas hechas entre las 20:00 y medianoche hora Chile
 // caen, en UTC, dentro del día calendario siguiente, quedando en el día
 // equivocado (ver /api/analisis/sdr/route.ts para el detalle).
-const CHILE_UTC_OFFSET_HOURS = -4;
 function callDateKey(isoDate: string): string {
   const shifted = new Date(new Date(isoDate).getTime() + CHILE_UTC_OFFSET_HOURS * 3600000);
   return shifted.toISOString().slice(0, 10);

@@ -1,5 +1,9 @@
-// Utilidad para resolver rangos de fecha del dashboard operativo
-// Todos los cálculos en UTC
+// Utilidad para resolver rangos de fecha del dashboard operativo.
+// "Hoy"/"Este mes"/etc. se calculan sobre el día calendario de Chile (ver
+// lib/timezone.ts) y luego se arman como límites UTC de ese mismo día — no
+// se usa el día UTC crudo del servidor, porque entre las 20:00 y medianoche
+// hora Chile el servidor ya está en el día calendario siguiente en UTC.
+import { toChileParts } from "@/lib/timezone";
 
 export type RangeKey =
   | "today"
@@ -63,7 +67,7 @@ function lastDayOfPrevMonth(year: number, month: number): Date {
 }
 
 export function resolveRange(key: RangeKey, now?: Date): DateRange {
-  const today = now ?? new Date();
+  const today = toChileParts(now ?? new Date());
   const y = today.getUTCFullYear();
   const m = today.getUTCMonth(); // 0-indexed
   const d = today.getUTCDate();
