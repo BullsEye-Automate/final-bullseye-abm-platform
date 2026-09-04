@@ -19,6 +19,6 @@
     "app/api/training/lab/route.ts": { "maxDuration": 60 },
     "app/api/analisis/salud-telefonica/route.ts": { "maxDuration": 90 },
     "app/api/analisis/horarios/route.ts": { "maxDuration": 60 },
-    "app/api/analisis/actividades-hubspot/route.ts": { "maxDuration": 60 }
+    "app/api/analisis/actividades-hubspot/route.ts": { "maxDuration": 90 }
   }
 }

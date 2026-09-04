@@ -4,7 +4,10 @@ import { fetchHSOwners, fetchHSActivityCountsByCreator } from "@/lib/hubspot";
 import { resolveSdrKey } from "@/lib/sdrAnalytics";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Con el espaciado entre requests para no chocar con el rate limit de
+// búsqueda de HubSpot (ver throttleHS en lib/hubspot.ts), traer varias
+// páginas de emails/communications puede tardar más que el límite default.
+export const maxDuration = 90;
 
 // Actividades de Correo/LinkedIn/WhatsApp registradas en HubSpot por cada
 // SDR, para sumar como columnas nuevas del Ranking SDR (ver
