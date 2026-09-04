@@ -66,6 +66,31 @@ function lastDayOfPrevMonth(year: number, month: number): Date {
   return new Date(Date.UTC(year, month, 0)); // día 0 = último del mes anterior
 }
 
+// Los rangos "en curso" (this_week/this_month/this_quarter/this_semester/
+// this_year) son parciales — terminan hoy, no al cierre del período. Sin
+// este ajuste, su "previous" comparaba contra el período anterior COMPLETO
+// (ej. "Esta semana" un jueves comparaba lunes-jueves contra la semana
+// pasada entera, lunes-domingo) — no es una comparación pareja. Se trunca
+// el fin del período anterior para que tenga la misma cantidad de días
+// transcurridos que el período actual (tope: nunca más allá del cierre
+// natural del período anterior, por si el actual ya lleva más días que el
+// anterior completo — ej. "Este mes" el día 31 comparado contra febrero).
+function truncatePreviousEnd(currentStart: Date, previousStart: Date, naturalPreviousEnd: Date, today: Date): Date {
+  const startDay = Date.UTC(currentStart.getUTCFullYear(), currentStart.getUTCMonth(), currentStart.getUTCDate());
+  const todayDay = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const elapsedDays = Math.round((todayDay - startDay) / 86400000) + 1;
+  const candidate = endOfDay(
+    new Date(
+      Date.UTC(
+        previousStart.getUTCFullYear(),
+        previousStart.getUTCMonth(),
+        previousStart.getUTCDate() + elapsedDays - 1
+      )
+    )
+  );
+  return candidate.getTime() < naturalPreviousEnd.getTime() ? candidate : naturalPreviousEnd;
+}
+
 export function resolveRange(key: RangeKey, now?: Date): DateRange {
   const today = toChileParts(now ?? new Date());
   const y = today.getUTCFullYear();
@@ -100,12 +125,12 @@ export function resolveRange(key: RangeKey, now?: Date): DateRange {
     case "this_week": {
       const weekStart = getISOWeekStart(today);
       const prevWeekStart = new Date(weekStart.getTime() - 7 * 86400000);
-      const prevWeekEnd   = new Date(weekStart.getTime() - 1);
+      const prevWeekEndNatural = new Date(weekStart.getTime() - 1);
       return {
         start: weekStart,
         end: endOfDay(today),
         label: RANGE_LABELS.this_week,
-        previous: { start: prevWeekStart, end: prevWeekEnd },
+        previous: { start: prevWeekStart, end: truncatePreviousEnd(weekStart, prevWeekStart, prevWeekEndNatural, today) },
       };
     }
 
@@ -126,10 +151,16 @@ export function resolveRange(key: RangeKey, now?: Date): DateRange {
     case "this_month": {
       const start = new Date(Date.UTC(y, m, 1));
       const end   = endOfDay(today);
-      // Período anterior: mes completo anterior
+      // Período anterior: mismos días transcurridos del mes anterior (no
+      // el mes completo) — ver truncatePreviousEnd.
       const prevStart = new Date(Date.UTC(y, m - 1, 1));
-      const prevEnd   = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
-      return { start, end, label: RANGE_LABELS.this_month, previous: { start: prevStart, end: prevEnd } };
+      const prevEndNatural = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+      return {
+        start,
+        end,
+        label: RANGE_LABELS.this_month,
+        previous: { start: prevStart, end: truncatePreviousEnd(start, prevStart, prevEndNatural, today) },
+      };
     }
 
     case "last_month": {
@@ -145,8 +176,13 @@ export function resolveRange(key: RangeKey, now?: Date): DateRange {
       const start = new Date(Date.UTC(y, qStartMonth, 1));
       const end   = endOfDay(today);
       const prevStart = new Date(Date.UTC(y, qStartMonth - 3, 1));
-      const prevEnd   = new Date(Date.UTC(y, qStartMonth, 0, 23, 59, 59, 999));
-      return { start, end, label: RANGE_LABELS.this_quarter, previous: { start: prevStart, end: prevEnd } };
+      const prevEndNatural = new Date(Date.UTC(y, qStartMonth, 0, 23, 59, 59, 999));
+      return {
+        start,
+        end,
+        label: RANGE_LABELS.this_quarter,
+        previous: { start: prevStart, end: truncatePreviousEnd(start, prevStart, prevEndNatural, today) },
+      };
     }
 
     case "last_quarter": {
@@ -163,14 +199,19 @@ export function resolveRange(key: RangeKey, now?: Date): DateRange {
       const isS1 = m < 6;
       const semStart = new Date(Date.UTC(y, isS1 ? 0 : 6, 1));
       const semEnd   = endOfDay(today);
-      // Período previo: semestre completo anterior
+      // Período previo: mismos días transcurridos del semestre anterior
       const prevStart = isS1
         ? new Date(Date.UTC(y - 1, 6, 1))  // S2 del año pasado
         : new Date(Date.UTC(y, 0, 1));       // S1 de este año
-      const prevEnd = isS1
+      const prevEndNatural = isS1
         ? new Date(Date.UTC(y - 1, 12, 0, 23, 59, 59, 999)) // fin dic año pasado
         : new Date(Date.UTC(y, 6, 0, 23, 59, 59, 999));      // fin jun este año
-      return { start: semStart, end: semEnd, label: RANGE_LABELS.this_semester, previous: { start: prevStart, end: prevEnd } };
+      return {
+        start: semStart,
+        end: semEnd,
+        label: RANGE_LABELS.this_semester,
+        previous: { start: prevStart, end: truncatePreviousEnd(semStart, prevStart, prevEndNatural, today) },
+      };
     }
 
     case "last_semester": {
@@ -196,8 +237,13 @@ export function resolveRange(key: RangeKey, now?: Date): DateRange {
       const start     = new Date(Date.UTC(y, 0, 1));
       const end       = endOfDay(today);
       const prevStart = new Date(Date.UTC(y - 1, 0, 1));
-      const prevEnd   = new Date(Date.UTC(y - 1, 11, 31, 23, 59, 59, 999));
-      return { start, end, label: RANGE_LABELS.this_year, previous: { start: prevStart, end: prevEnd } };
+      const prevEndNatural = new Date(Date.UTC(y - 1, 11, 31, 23, 59, 59, 999));
+      return {
+        start,
+        end,
+        label: RANGE_LABELS.this_year,
+        previous: { start: prevStart, end: truncatePreviousEnd(start, prevStart, prevEndNatural, today) },
+      };
     }
 
     case "last_year": {
