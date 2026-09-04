@@ -13,6 +13,12 @@ export const pool = new Pool({
   // Sin esto, una conexión de red trabada cuelga la request indefinidamente
   // en vez de fallar con un error legible.
   connectionTimeoutMillis: 10_000,
+  // connectionTimeoutMillis solo cubre CONECTARSE — una consulta que ya está
+  // corriendo y se cuelga a mitad de camino (ej. un hipo de red de Supabase
+  // después de conectar) puede quedar pegada para siempre sin esto. Se
+  // detectó real: una consulta de calendarSync.ts se quedó colgada 3+ minutos
+  // sin ningún error ni progreso.
+  query_timeout: 15_000,
 });
 
 // Sin este listener, un error en una conexión inactiva del pool (ej. Supabase
