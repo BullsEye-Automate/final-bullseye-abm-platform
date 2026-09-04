@@ -246,10 +246,11 @@ export async function GET(request: NextRequest) {
     const bySelectedCliente = (m: any) =>
       selectedClienteIds.length === 0 || selectedClienteIds.includes(m.client_id);
 
-    // "Reuniones Agendadas/Realizadas/Pendientes" cuentan por fecha_reunion
-    // en el período (igual que Ranking SDR). "Agendadas en el período" usa
-    // fecha_agendamiento y se usa SOLO como numerador de "Tasa
-    // Agendada/Conectada".
+    // "Reuniones Realizadas/Pendientes" cuentan por fecha_reunion en el
+    // período (igual que Ranking SDR) — meetingsForRanking. La columna
+    // "Reuniones Agendadas" que se muestra usa fecha_agendamiento
+    // (meetingsAgendadasEnPeriodo), y ese mismo conteo es también el
+    // numerador de "Tasa Agendada/Conectada".
     const meetingsForRanking = meetings.filter(
       (m: any) => m.fecha_reunion >= dateFrom && m.fecha_reunion <= meetingsDateTo && bySelectedCliente(m)
     );
@@ -324,7 +325,13 @@ export async function GET(request: NextRequest) {
       llamadas_realizadas: d.llamadas_realizadas,
       contactos_conectados: d.contactosConectados.size,
       llamadas_conectadas: d.llamadas_conectadas,
-      reuniones_agendadas: d.agendadas,
+      // Por fecha_agendamiento (cuándo se agendó la reunión), no por
+      // fecha_reunion — mismo criterio que Ranking SDR, para responder
+      // "cuántas reuniones agendó el equipo en este período" en vez de
+      // "cuántas reuniones con fecha en este período hay" (d.agendadas
+      // sigue siendo por fecha_reunion, se usa solo como denominador de
+      // Tasa Realización más abajo).
+      reuniones_agendadas: d.agendadasEnPeriodo,
       reuniones_realizadas: d.realizadas,
       reuniones_pendientes: d.pendientes,
       tasa_conectadas_por_contacto:
