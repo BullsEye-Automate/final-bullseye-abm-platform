@@ -18,6 +18,9 @@
 //     este campo, `audio_mixed` quedó `null` en la respuesta de un bot que
 //     sí completó la grabación).
 
+import { pool } from './db';
+import { resolveMeetingClientAndContact } from './metasSheet';
+
 function getRecallConfig(): { apiKey: string; region: string; loginGroupId: string | null } {
   const apiKey = process.env.RECALL_API_KEY;
   const region = process.env.RECALL_REGION;
@@ -90,4 +93,54 @@ export async function getRecallRecordingUrl(botId: string): Promise<string> {
     throw new Error(`No se encontró la URL de descarga de la grabación para el bot ${botId}`);
   }
   return url;
+}
+
+// Dos vías para que una reunión se lleve un bot (decidido explícitamente por
+// el usuario, ver CLAUDE.md Fase H): (a) hace match con el excel de metas —
+// implementado acá; (b) alguien invita al bot a mano a una reunión — todavía
+// no implementado, requiere sincronizar el calendario propio de
+// bot@peithob2b.com (mismo mecanismo de events.watch que ya existe para los
+// ejecutivos).
+//
+// Se llama desde dos puntos (calendarSync.ts, apenas se sincroniza el evento;
+// y meetings.ts, cada vez que se carga el listado/detalle) para cubrir ambos
+// timings reales: la reunión ya tiene su fila en el excel de metas cuando se
+// agenda, o recién se agrega al excel después — nunca rompe nada llamarlo de
+// más, es idempotente (no-op si ya tiene recall_bot_id, o si nunca hace match).
+export async function scheduleRecallBotForMeeting(meetingId: string): Promise<void> {
+  if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
+
+  try {
+    const { rows } = await pool.query(
+      `select id, meet_code, start_time, client_id, recall_bot_id from meetings where id = $1`,
+      [meetingId]
+    );
+    const meeting = rows[0];
+    if (!meeting || meeting.recall_bot_id || !meeting.meet_code || !meeting.start_time) return;
+
+    const startTime = new Date(meeting.start_time);
+    if (startTime.getTime() <= Date.now()) return; // ya pasó, no tiene sentido agendar un bot
+
+    if (!meeting.client_id) {
+      await resolveMeetingClientAndContact(meetingId);
+    }
+
+    const { rows: refreshed } = await pool.query(`select client_id from meetings where id = $1`, [meetingId]);
+    if (!refreshed[0]?.client_id) {
+      // Sin match en el excel de metas todavía — no se agenda (requisito
+      // explícito: el bot NO entra a cualquier reunión, solo a las que
+      // matchean o a las que se invita a mano).
+      return;
+    }
+
+    const meetingUrl = `https://meet.google.com/${meeting.meet_code}`;
+    const botId = await createRecallBot(meetingId, meetingUrl, startTime);
+
+    await pool.query(`update meetings set recall_bot_id = $1, updated_at = now() where id = $2`, [botId, meetingId]);
+    console.log(`[recall] bot agendado (${botId}) para la reunión ${meetingId} a las ${startTime.toISOString()}`);
+  } catch (error) {
+    // Nunca debe romper el sync de calendario ni la carga del listado/detalle
+    // de reuniones — un bot que no se pudo agendar no debe bloquear el resto.
+    console.error(`[recall] error agendando el bot para la reunión ${meetingId}`, error);
+  }
 }

@@ -6,6 +6,7 @@ import { pool } from '../db';
 import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 import { generatePreMeetingBrief } from '../preMeetingBrief';
 import { resolveMeetingClientAndContact } from '../metasSheet';
+import { scheduleRecallBotForMeeting } from '../recall';
 import { requireAuth, requireAdmin } from '../authMiddleware';
 
 export const meetingsRouter = Router();
@@ -73,9 +74,16 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     // Igual que en el detalle: se resuelve el cliente al vuelo si todavía no
     // se hizo (gratis, no llama a Claude) — necesario para poder filtrar por
     // cliente acá abajo, tanto para el rol "client" como para el filtro del admin.
+    // De paso (solo en "upcoming"), intenta agendar el bot de Recall si la
+    // reunión recién hizo match con el excel de metas — cubre el caso en que
+    // el excel se completa después de que la reunión ya se sincronizó desde
+    // Calendar (ver Fase H en CLAUDE.md). No-op si ya tiene bot o si no matchea.
     for (const row of rows) {
       if (!row.client_id) {
         await resolveMeetingClientAndContact(row.id);
+      }
+      if (scope === 'upcoming') {
+        await scheduleRecallBotForMeeting(row.id);
       }
     }
 
@@ -158,8 +166,10 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
   try {
     // Gratis (no llama a Claude) — se intenta en cada carga del detalle para
     // que nombre/cargo/industria/cliente aparezcan aunque nunca se haya usado
-    // el botón "Iniciar research".
+    // el botón "Iniciar research". De paso, intenta agendar el bot de Recall
+    // si recién hizo match (no-op si ya pasó la reunión o ya tiene bot).
     await resolveMeetingClientAndContact(id);
+    await scheduleRecallBotForMeeting(id);
 
     const { rows } = await pool.query(
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time, m.status,

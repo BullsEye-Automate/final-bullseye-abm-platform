@@ -1,6 +1,7 @@
 import type { calendar_v3 } from 'googleapis';
 import { pool } from './db';
 import { getCalendarClientByEmail } from './google';
+import { scheduleRecallBotForMeeting } from './recall';
 
 type GoogleCalendarEvent = calendar_v3.Schema$Event;
 
@@ -42,7 +43,7 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
   // del evento "maestro" que la originó — null si el evento no es recurrente.
   const recurringEventId = event.recurringEventId ?? null;
 
-  await pool.query(
+  const { rows } = await pool.query(
     `insert into meetings (google_event_id, meet_code, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id)
      values ($1, $2, $3, $4, $5, $6, $7)
      on conflict (google_event_id) do update set
@@ -52,9 +53,15 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
        empresa_contraparte = excluded.empresa_contraparte,
        start_time = excluded.start_time,
        recurring_event_id = excluded.recurring_event_id,
-       updated_at = now()`,
+       updated_at = now()
+     returning id`,
     [event.id, meetCode, ejecutivoEmail, contraparte, empresaContraparte, startTime, recurringEventId]
   );
+
+  // Best-effort — si hace match con el excel de metas, agenda el bot de
+  // Recall (Fase H); si no, no pasa nada (queda para el próximo intento
+  // lazy en meetings.ts, por si el excel se completa después).
+  await scheduleRecallBotForMeeting(rows[0].id);
 }
 
 interface ChannelRow {
