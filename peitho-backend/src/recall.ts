@@ -52,7 +52,11 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
     recording_config: { audio_mixed_mp3: {} },
   };
 
-  if (loginGroupId) {
+  // El campo google_meet solo aplica (y solo lo acepta Recall) si el link es
+  // de Meet — para Teams no hace falta nada acá: el signed-in bot de Teams
+  // se configura una vez a nivel de cuenta en el dashboard de Recall, no por
+  // bot creado (ver CLAUDE.md, Fase H).
+  if (loginGroupId && meetingUrl.includes('meet.google.com')) {
     body.google_meet = { google_login_group_id: loginGroupId };
   }
 
@@ -107,16 +111,28 @@ export async function getRecallRecordingUrl(botId: string): Promise<string> {
 // timings reales: la reunión ya tiene su fila en el excel de metas cuando se
 // agenda, o recién se agrega al excel después — nunca rompe nada llamarlo de
 // más, es idempotente (no-op si ya tiene recall_bot_id, o si nunca hace match).
-export async function scheduleRecallBotForMeeting(meetingId: string): Promise<void> {
+export async function scheduleRecallBotForMeeting(
+  meetingId: string,
+  options: { requireClientMatch?: boolean } = {}
+): Promise<void> {
   if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
+
+  // requireClientMatch=false para el disparador (b) — invitación manual del
+  // bot (ver upsertMeetingFromBotInvite en calendarSync.ts): que alguien haya
+  // invitado al bot a mano ya es señal suficiente de que quiere que grabe,
+  // sin depender de que además haga match con el excel de metas (el match
+  // sigue intentándose igual, solo para saber a qué cliente clasificarla).
+  const requireClientMatch = options.requireClientMatch ?? true;
 
   try {
     const { rows } = await pool.query(
-      `select id, meet_code, start_time, client_id, recall_bot_id from meetings where id = $1`,
+      `select id, meet_code, meeting_url, start_time, client_id, recall_bot_id from meetings where id = $1`,
       [meetingId]
     );
     const meeting = rows[0];
-    if (!meeting || meeting.recall_bot_id || !meeting.meet_code || !meeting.start_time) return;
+    const meetingUrl: string | null =
+      meeting?.meeting_url ?? (meeting?.meet_code ? `https://meet.google.com/${meeting.meet_code}` : null);
+    if (!meeting || meeting.recall_bot_id || !meetingUrl || !meeting.start_time) return;
 
     const startTime = new Date(meeting.start_time);
     if (startTime.getTime() <= Date.now()) return; // ya pasó, no tiene sentido agendar un bot
@@ -125,15 +141,16 @@ export async function scheduleRecallBotForMeeting(meetingId: string): Promise<vo
       await resolveMeetingClientAndContact(meetingId);
     }
 
-    const { rows: refreshed } = await pool.query(`select client_id from meetings where id = $1`, [meetingId]);
-    if (!refreshed[0]?.client_id) {
-      // Sin match en el excel de metas todavía — no se agenda (requisito
-      // explícito: el bot NO entra a cualquier reunión, solo a las que
-      // matchean o a las que se invita a mano).
-      return;
+    if (requireClientMatch) {
+      const { rows: refreshed } = await pool.query(`select client_id from meetings where id = $1`, [meetingId]);
+      if (!refreshed[0]?.client_id) {
+        // Sin match en el excel de metas todavía — no se agenda (requisito
+        // explícito: el bot NO entra a cualquier reunión, solo a las que
+        // matchean o a las que se invita a mano).
+        return;
+      }
     }
 
-    const meetingUrl = `https://meet.google.com/${meeting.meet_code}`;
     const botId = await createRecallBot(meetingId, meetingUrl, startTime);
 
     await pool.query(`update meetings set recall_bot_id = $1, updated_at = now() where id = $2`, [botId, meetingId]);

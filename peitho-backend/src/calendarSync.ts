@@ -28,6 +28,85 @@ function extractContraparte(event: GoogleCalendarEvent, ejecutivoEmail: string) 
   };
 }
 
+// Link de Microsoft Teams — a diferencia de Google Meet (hangoutLink /
+// conferenceData, estructurados), un evento que llegó al calendario del bot
+// como invitación a una reunión de Teams normalmente no trae conferenceData
+// de Google: el link queda como texto plano en location o description (así
+// es como Gmail/Calendar procesan una invitación .ics ajena a Google).
+const TEAMS_LINK_REGEX = /https:\/\/teams\.(?:microsoft|live)\.com\/(?:l\/meetup-join|meet)\/[^\s"'<>]+/i;
+
+// Extrae el link completo de la reunión, sea Google Meet o Microsoft Teams —
+// se usa solo para el calendario propio del bot (ver upsertMeetingFromBotInvite),
+// donde el link no siempre es de Meet como asume extractMeetCode.
+function extractMeetingUrl(event: GoogleCalendarEvent): string | null {
+  if (event.hangoutLink) return event.hangoutLink;
+
+  const videoEntry = event.conferenceData?.entryPoints?.find((entry) => entry.entryPointType === 'video');
+  if (videoEntry?.uri) return videoEntry.uri;
+
+  const text = `${event.location ?? ''} ${event.description ?? ''}`;
+  const teamsMatch = text.match(TEAMS_LINK_REGEX);
+  if (teamsMatch) return teamsMatch[0];
+
+  return null;
+}
+
+// Para un evento en el calendario propio del bot, ni el organizador (el
+// ejecutivo comercial del cliente, ej. alguien de CCHC) ni el bot mismo son
+// el prospecto — el prospecto es el otro asistente. Distinto del caso de
+// arriba (calendario de un ejecutivo de BullsEye), donde el dueño del
+// calendario SÍ es quien vende y el resto son contraparte.
+function extractContraparteFromBotInvite(event: GoogleCalendarEvent, botEmail: string) {
+  const organizerEmail = event.organizer?.email?.toLowerCase();
+  const externalAttendees = (event.attendees ?? []).filter((attendee) => {
+    const email = attendee.email?.toLowerCase();
+    if (!email || attendee.resource) return false;
+    if (email === botEmail.toLowerCase()) return false;
+    if (organizerEmail && email === organizerEmail) return false;
+    return true;
+  });
+  const contraparte = externalAttendees[0];
+  if (!contraparte?.email) return { contraparte: null, empresaContraparte: null };
+
+  return {
+    contraparte: contraparte.displayName ?? contraparte.email,
+    empresaContraparte: contraparte.email.split('@')[1] ?? null,
+  };
+}
+
+// Fase H, disparador (b): alguien invitó a bot@... a mano a una reunión que
+// no vive en ningún calendario de BullsEye (ej. el ejecutivo comercial de un
+// cliente agendó directo con el prospecto). No hay "ejecutivo" de BullsEye en
+// este evento — se deja null, no se inventa un dato falso (mismo criterio
+// que el resto del research). El client_id se resuelve después, igual que
+// siempre, matcheando empresa_contraparte + fecha contra el excel de metas.
+async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, botEmail: string) {
+  if (!event.id || event.status === 'cancelled') return;
+
+  const meetingUrl = extractMeetingUrl(event);
+  if (!meetingUrl) return; // invitación sin link de reunión reconocible (Meet o Teams) — no es para nosotros
+
+  const { contraparte, empresaContraparte } = extractContraparteFromBotInvite(event, botEmail);
+  const startTime = event.start?.dateTime ?? event.start?.date ?? null;
+  const recurringEventId = event.recurringEventId ?? null;
+
+  const { rows } = await pool.query(
+    `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id)
+     values ($1, $2, null, $3, $4, $5, $6)
+     on conflict (google_event_id) do update set
+       meeting_url = excluded.meeting_url,
+       contraparte = excluded.contraparte,
+       empresa_contraparte = excluded.empresa_contraparte,
+       start_time = excluded.start_time,
+       recurring_event_id = excluded.recurring_event_id,
+       updated_at = now()
+     returning id`,
+    [event.id, meetingUrl, contraparte, empresaContraparte, startTime, recurringEventId]
+  );
+
+  await scheduleRecallBotForMeeting(rows[0].id, { requireClientMatch: false });
+}
+
 async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail: string) {
   if (!event.id || event.status === 'cancelled') {
     // Manejo de reuniones canceladas queda fuera del scope del MVP (ver arquitectura, sección 4)
@@ -144,8 +223,17 @@ export async function syncChannelChanges(channelId: string) {
     }
 
     console.log(`[sync] canal ${channelId}: página ${page} trajo ${response.data.items?.length ?? 0} eventos, guardando en la base...`);
+    // El calendario de bot@... (Fase H, disparador "invitación manual") se
+    // procesa distinto: ese buzón no es de ningún ejecutivo de BullsEye, así
+    // que ni extractMeetCode ni extractContraparte (que asumen eso) aplican.
+    const botEmail = process.env.PEITHO_BOT_GOOGLE_ACCOUNT_EMAIL;
+    const isBotCalendar = !!botEmail && channel.google_account_email.toLowerCase() === botEmail.toLowerCase();
     for (const event of response.data.items ?? []) {
-      await upsertMeetingFromEvent(event, channel.google_account_email);
+      if (isBotCalendar) {
+        await upsertMeetingFromBotInvite(event, channel.google_account_email);
+      } else {
+        await upsertMeetingFromEvent(event, channel.google_account_email);
+      }
     }
 
     pageToken = response.data.nextPageToken ?? undefined;
