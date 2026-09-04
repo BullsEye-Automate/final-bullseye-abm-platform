@@ -140,18 +140,28 @@ export async function scheduleRecallBotForMeeting(
   // sigue intentándose igual, solo para saber a qué cliente clasificarla).
   const requireClientMatch = options.requireClientMatch ?? true;
 
+  console.log(`[recall] scheduleRecallBotForMeeting(${meetingId}) arrancó`);
   try {
     const { rows } = await pool.query(
       `select id, meet_code, meeting_url, start_time, client_id, recall_bot_id from meetings where id = $1`,
       [meetingId]
     );
+    console.log(`[recall] reunión ${meetingId}: select inicial OK`);
     const meeting = rows[0];
     const meetingUrl: string | null =
       meeting?.meeting_url ?? (meeting?.meet_code ? `https://meet.google.com/${meeting.meet_code}` : null);
-    if (!meeting || meeting.recall_bot_id || !meetingUrl || !meeting.start_time) return;
+    if (!meeting || meeting.recall_bot_id || !meetingUrl || !meeting.start_time) {
+      console.log(
+        `[recall] reunión ${meetingId}: no se agenda (existe=${!!meeting}, recall_bot_id=${meeting?.recall_bot_id}, meetingUrl=${meetingUrl}, start_time=${meeting?.start_time})`
+      );
+      return;
+    }
 
     const startTime = new Date(meeting.start_time);
-    if (startTime.getTime() <= Date.now()) return; // ya pasó, no tiene sentido agendar un bot
+    if (startTime.getTime() <= Date.now()) {
+      console.log(`[recall] reunión ${meetingId}: start_time ya pasó (${startTime.toISOString()}), no se agenda`);
+      return; // ya pasó, no tiene sentido agendar un bot
+    }
 
     if (!meeting.client_id) {
       console.log(`[recall] reunión ${meetingId}: resolviendo cliente contra el excel de metas...`);

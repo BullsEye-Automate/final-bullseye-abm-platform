@@ -81,15 +81,18 @@ function extractContraparteFromBotInvite(event: GoogleCalendarEvent, botEmail: s
 // que el resto del research). El client_id se resuelve después, igual que
 // siempre, matcheando empresa_contraparte + fecha contra el excel de metas.
 async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, botEmail: string) {
+  console.log(`[bot-invite] procesando evento ${event.id} (status=${event.status})...`);
   if (!event.id || event.status === 'cancelled') return;
 
   const meetingUrl = extractMeetingUrl(event);
+  console.log(`[bot-invite] evento ${event.id}: link detectado = ${meetingUrl ?? '(ninguno)'}`);
   if (!meetingUrl) return; // invitación sin link de reunión reconocible (Meet o Teams) — no es para nosotros
 
   const { contraparte, empresaContraparte } = extractContraparteFromBotInvite(event, botEmail);
   const startTime = event.start?.dateTime ?? event.start?.date ?? null;
   const recurringEventId = event.recurringEventId ?? null;
 
+  console.log(`[bot-invite] evento ${event.id}: guardando en meetings (contraparte=${contraparte ?? '?'})...`);
   const { rows } = await pool.query(
     `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id)
      values ($1, $2, null, $3, $4, $5, $6)
@@ -103,8 +106,10 @@ async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, botEmail: 
      returning id`,
     [event.id, meetingUrl, contraparte, empresaContraparte, startTime, recurringEventId]
   );
+  console.log(`[bot-invite] evento ${event.id}: guardado como reunión ${rows[0].id}, agendando bot...`);
 
   await scheduleRecallBotForMeeting(rows[0].id, { requireClientMatch: false });
+  console.log(`[bot-invite] evento ${event.id}: scheduleRecallBotForMeeting terminó`);
 }
 
 async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail: string) {
@@ -228,6 +233,7 @@ export async function syncChannelChanges(channelId: string) {
     // que ni extractMeetCode ni extractContraparte (que asumen eso) aplican.
     const botEmail = process.env.PEITHO_BOT_GOOGLE_ACCOUNT_EMAIL;
     const isBotCalendar = !!botEmail && channel.google_account_email.toLowerCase() === botEmail.toLowerCase();
+    console.log(`[sync] canal ${channelId}: isBotCalendar=${isBotCalendar} (botEmail env=${botEmail ?? '(no seteado)'})`);
     for (const event of response.data.items ?? []) {
       if (isBotCalendar) {
         await upsertMeetingFromBotInvite(event, channel.google_account_email);
