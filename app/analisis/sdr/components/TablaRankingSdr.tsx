@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import { IconArrowUp, IconArrowDown, IconMaximize, IconX } from "@tabler/icons-react";
 import type { MeetingDetail } from "./OrigenPieYDetalle";
+import { resolveSdrKey } from "@/lib/sdrAnalytics";
+
+export type ActividadHubspotSdr = { sdr_key: string; email: number; linkedin: number; whatsapp: number };
 
 interface SdrMetrics {
   sdr_id: string;
@@ -23,7 +26,16 @@ interface SdrMetrics {
 
 // "Llamadas x Contacto" no viene de la API — se calcula acá mismo a partir
 // de Llamadas ÷ Contactos Gestionados, ya que ambos ya están en cada fila.
-type DerivedMetrics = SdrMetrics & { llamadas_por_contacto: number };
+// Las 3 columnas de actividades de HubSpot (Correo/LinkedIn/WhatsApp) sí
+// vienen de una API aparte (/api/analisis/actividades-hubspot, ver
+// page.tsx) — se cruzan acá por nombre de SDR normalizado, igual que el
+// propio Ranking SDR cruza Allo con `meetings`.
+type DerivedMetrics = SdrMetrics & {
+  llamadas_por_contacto: number;
+  actividades_email: number;
+  actividades_linkedin: number;
+  actividades_whatsapp: number;
+};
 
 // Columnas cuyo número se puede hacer clic para ver el desglose por Origen.
 type OrigenClickableKey = "reuniones_agendadas" | "reuniones_realizadas";
@@ -37,6 +49,10 @@ interface TablaRankingSdrProps {
   data: SdrMetrics[];
   // row === null representa la fila "Total" (todas las filas filtradas).
   onOrigenClick?: (row: SdrMetrics | null, key: OrigenClickableKey, label: string) => void;
+  // Actividades de HubSpot por SDR (ver /api/analisis/actividades-hubspot),
+  // keyed por sdr_key (mismo resolveSdrKey usado para cruzar Allo↔meetings).
+  // A diferencia del resto de la tabla, no se filtra por cliente ni país.
+  actividadesHubspot?: ActividadHubspotSdr[];
 }
 
 const COLUMNS: { key: NumericKey; label: string; description: string }[] = [
@@ -64,6 +80,24 @@ const COLUMNS: { key: NumericKey; label: string; description: string }[] = [
     key: "llamadas_conectadas",
     label: "Llamadas Conectadas",
     description: "Llamadas contestadas o transferidas que duraron 60 segundos o más.",
+  },
+  {
+    key: "actividades_email",
+    label: "Correos (HubSpot)",
+    description:
+      "Correos registrados por el SDR en HubSpot en el período. A diferencia del resto de la tabla, es el total del SDR en TODOS los clientes — HubSpot aún no distingue a qué cliente de BullsEye pertenece cada actividad.",
+  },
+  {
+    key: "actividades_linkedin",
+    label: "LinkedIn (HubSpot)",
+    description:
+      "Mensajes de LinkedIn registrados por el SDR en HubSpot en el período. Total del SDR en TODOS los clientes (ver nota de Correos).",
+  },
+  {
+    key: "actividades_whatsapp",
+    label: "WhatsApp (HubSpot)",
+    description:
+      "Mensajes de WhatsApp registrados por el SDR en HubSpot en el período. Total del SDR en TODOS los clientes (ver nota de Correos).",
   },
   {
     key: "reuniones_agendadas",
@@ -106,18 +140,30 @@ const PERCENT_KEYS = new Set<NumericKey>([
 // Columnas de razón (no porcentaje, no entero) que se muestran con 1 decimal.
 const RATIO_KEYS = new Set<NumericKey>(["llamadas_por_contacto"]);
 
-export default function TablaRankingSdr({ data, onOrigenClick }: TablaRankingSdrProps) {
+export default function TablaRankingSdr({ data, onOrigenClick, actividadesHubspot }: TablaRankingSdrProps) {
   const [sortKey, setSortKey] = useState<SortKey>("reuniones_realizadas");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const actividadesPorSdrKey = useMemo(() => {
+    const map = new Map<string, ActividadHubspotSdr>();
+    for (const a of actividadesHubspot || []) map.set(a.sdr_key, a);
+    return map;
+  }, [actividadesHubspot]);
+
   const dataWithDerived: DerivedMetrics[] = useMemo(
     () =>
-      data.map((d) => ({
-        ...d,
-        llamadas_por_contacto: d.contactos_gestionados > 0 ? d.llamadas_realizadas / d.contactos_gestionados : 0,
-      })),
-    [data]
+      data.map((d) => {
+        const actividad = actividadesPorSdrKey.get(resolveSdrKey(d.sdr_nombre));
+        return {
+          ...d,
+          llamadas_por_contacto: d.contactos_gestionados > 0 ? d.llamadas_realizadas / d.contactos_gestionados : 0,
+          actividades_email: actividad?.email || 0,
+          actividades_linkedin: actividad?.linkedin || 0,
+          actividades_whatsapp: actividad?.whatsapp || 0,
+        };
+      }),
+    [data, actividadesPorSdrKey]
   );
 
   const sortedData = useMemo(() => {
@@ -138,8 +184,8 @@ export default function TablaRankingSdr({ data, onOrigenClick }: TablaRankingSdr
   }, [dataWithDerived, sortKey, sortDir]);
 
   const totals = useMemo(() => {
-    const count = data.length || 1;
-    const sum = (key: keyof SdrMetrics) => data.reduce((acc, sdr) => acc + (sdr[key] as number), 0);
+    const count = dataWithDerived.length || 1;
+    const sum = (key: keyof DerivedMetrics) => dataWithDerived.reduce((acc, sdr) => acc + (sdr[key] as number), 0);
     const totalContactos = sum("contactos_gestionados");
     const totalLlamadas = sum("llamadas_realizadas");
     return {
@@ -150,6 +196,9 @@ export default function TablaRankingSdr({ data, onOrigenClick }: TablaRankingSdr
       llamadas_por_contacto: totalContactos > 0 ? totalLlamadas / totalContactos : 0,
       contactos_conectados: sum("contactos_conectados"),
       llamadas_conectadas: sum("llamadas_conectadas"),
+      actividades_email: sum("actividades_email"),
+      actividades_linkedin: sum("actividades_linkedin"),
+      actividades_whatsapp: sum("actividades_whatsapp"),
       reuniones_agendadas: sum("reuniones_agendadas"),
       reuniones_realizadas: sum("reuniones_realizadas"),
       reuniones_pendientes: sum("reuniones_pendientes"),
@@ -157,7 +206,7 @@ export default function TablaRankingSdr({ data, onOrigenClick }: TablaRankingSdr
       tasa_agendada_por_conectada: sum("tasa_agendada_por_conectada") / count,
       tasa_realizacion_reuniones: sum("tasa_realizacion_reuniones") / count,
     };
-  }, [data]);
+  }, [dataWithDerived]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {

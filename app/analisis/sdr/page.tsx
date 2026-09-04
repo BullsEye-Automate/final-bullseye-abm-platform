@@ -12,7 +12,7 @@ import {
 import { useClient } from "@/lib/clientContext";
 import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
 import GraficoResultadosSdr from "./components/GraficoResultadosSdr";
-import TablaRankingSdr from "./components/TablaRankingSdr";
+import TablaRankingSdr, { type ActividadHubspotSdr } from "./components/TablaRankingSdr";
 import TablaRankingPais from "./components/TablaRankingPais";
 import SdrMultiSelect from "./components/SdrMultiSelect";
 import PaisMultiSelect from "./components/PaisMultiSelect";
@@ -160,6 +160,14 @@ export default function AnalisisSdr() {
   const [tablaData, setTablaData] = useState<ApiResponse | null>(null);
   const [tablaError, setTablaError] = useState<string | null>(null);
 
+  // Actividades de HubSpot (Correo/LinkedIn/WhatsApp) para las 3 columnas
+  // extra del Ranking SDR — fuente aparte de /api/analisis/sdr (no depende
+  // de Allo/meetings), sigue el mismo Período que la tabla. A propósito no
+  // depende de sdr/país/cliente: es el total del SDR en todos los clientes
+  // (ver nota en TablaRankingSdr.tsx).
+  const [actividadesHubspotData, setActividadesHubspotData] = useState<ActividadHubspotSdr[]>([]);
+  const [actividadesHubspotError, setActividadesHubspotError] = useState<string | null>(null);
+
   const [paisRangeKey, setPaisRangeKey] = useState<RangeKey>("this_month");
   const [paisCustomFrom, setPaisCustomFrom] = useState<string>("");
   const [paisCustomTo, setPaisCustomTo] = useState<string>("");
@@ -231,6 +239,7 @@ export default function AnalisisSdr() {
   const origenesRequestId = useRef(0);
   const saludRequestId = useRef(0);
   const horariosRequestId = useRef(0);
+  const actividadesHubspotRequestId = useRef(0);
 
   // Las 4 secciones llaman a Allo por cada número asignado, y Allo limita a
   // 5 requests/segundo en total. Cada carga ya se pacía sola por dentro,
@@ -354,6 +363,37 @@ export default function AnalisisSdr() {
       setTablaError((err as Error).message);
     } finally {
       if (requestId === tablaRequestId.current) setTablaLoading(false);
+    }
+  };
+
+  // No pega a Allo (es HubSpot), así que no pasa por runQueued/alloQueueRef.
+  const loadActividadesHubspot = async () => {
+    if (tablaRangeKey === "custom" && (!tablaCustomFrom || !tablaCustomTo)) return;
+
+    const requestId = ++actividadesHubspotRequestId.current;
+    setActividadesHubspotError(null);
+    try {
+      const searchParams = new URLSearchParams({
+        rangeKey: tablaRangeKey,
+        ...(tablaRangeKey === "custom" && {
+          custom_from: tablaCustomFrom,
+          custom_to: tablaCustomTo,
+        }),
+      });
+
+      const response = await fetch(`/api/analisis/actividades-hubspot?${searchParams}`);
+      if (requestId !== actividadesHubspotRequestId.current) return; // respuesta obsoleta
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        setActividadesHubspotError(body?.error || "Error al cargar datos");
+      } else {
+        const data = await response.json();
+        setActividadesHubspotData(data.actividades || []);
+      }
+    } catch (err) {
+      if (requestId !== actividadesHubspotRequestId.current) return;
+      setActividadesHubspotError((err as Error).message);
     }
   };
 
@@ -585,7 +625,7 @@ export default function AnalisisSdr() {
     setTablaSyncing(true);
     try {
       await syncMeetingsOnce();
-      await loadTabla();
+      await Promise.all([loadTabla(), loadActividadesHubspot()]);
     } finally {
       setTablaSyncing(false);
     }
@@ -627,6 +667,14 @@ export default function AnalisisSdr() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, tablaRangeKey, tablaSdrFilter, tablaPaisFilter, tablaCustomFrom, tablaCustomTo]);
+
+  // No depende de currentClient (es el total del SDR en todos los clientes,
+  // ver nota en TablaRankingSdr.tsx) ni de sdr/país (HubSpot no expone esos
+  // filtros acá) — solo del Período de la tabla.
+  useEffect(() => {
+    loadActividadesHubspot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tablaRangeKey, tablaCustomFrom, tablaCustomTo]);
 
   useEffect(() => {
     if (currentClient?.id) {
@@ -879,6 +927,13 @@ export default function AnalisisSdr() {
           </div>
         )}
 
+        {actividadesHubspotError && (
+          <div className="flex items-center gap-2 text-error-fg text-sm p-3 rounded bg-error-bg/20 border border-error-bg">
+            <IconAlertCircle size={16} className="shrink-0" />
+            No se pudieron cargar las actividades de HubSpot (Correo/LinkedIn/WhatsApp): {actividadesHubspotError}
+          </div>
+        )}
+
         {tablaLoading && (
           <div className="flex items-center justify-center py-12 text-ink-muted gap-2">
             <IconLoader2 size={18} className="animate-spin" />
@@ -892,7 +947,11 @@ export default function AnalisisSdr() {
               No hay datos disponibles
             </div>
           ) : (
-            <TablaRankingSdr data={tablaData.sdrs_data} onOrigenClick={handleRankingOrigenClick} />
+            <TablaRankingSdr
+              data={tablaData.sdrs_data}
+              onOrigenClick={handleRankingOrigenClick}
+              actividadesHubspot={actividadesHubspotData}
+            />
           )
         )}
       </section>
