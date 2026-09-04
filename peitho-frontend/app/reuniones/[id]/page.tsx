@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { fetchMeeting, fetchMe } from "@/lib/peithoBackend";
+import { fetchMeeting, fetchMe, fetchClients } from "@/lib/peithoBackend";
 import ResearchButton from "@/components/ResearchButton";
 import LinkedinUrlForm from "@/components/LinkedinUrlForm";
+import AssignClientForm from "@/components/AssignClientForm";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Agendada",
@@ -40,6 +41,9 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
   // restringe a admin (Fase E); acá solo se ocultan para no mostrar botones
   // que a un usuario "client" le van a fallar con 403.
   const isAdmin = me?.role === "admin";
+  // GET /clients es admin-only en el backend — solo se pide si hace falta,
+  // para no fallar con 403 en la carga de la página de un usuario "client".
+  const clients = isAdmin ? await fetchClients() : [];
 
   const analysis = meeting.analysis;
   const preBrief = meeting.pre_brief;
@@ -88,6 +92,9 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             Datos tomados del excel de metas — si algo falta, es porque esta reunión no hizo match ahí todavía.
           </p>
         {isAdmin && <LinkedinUrlForm meetingId={meeting.id} initialUrl={meeting.contacto_linkedin_url} />}
+        {isAdmin && (
+          <AssignClientForm meetingId={meeting.id} clients={clients} initialClientId={meeting.client_id} />
+        )}
       </Section>
 
       {preBrief && (

@@ -275,6 +275,45 @@ meetingsRouter.put('/meetings/:id/contacto-linkedin', requireAuth, requireAdmin,
   }
 });
 
+// Corregir/asignar a mano el cliente de una reunión — admin-only. Necesario
+// para reuniones que se llevan un bot por invitación manual (Fase H, punto b,
+// todavía sin conectar) o cualquier caso donde el match automático contra el
+// excel de metas (metasSheet.ts) se equivocó o nunca hizo match.
+meetingsRouter.put('/meetings/:id/client', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { client_id } = req.body ?? {};
+
+  if (client_id !== null && typeof client_id !== 'string') {
+    res.status(400).json({ error: 'client_id debe ser un string (uuid) o null' });
+    return;
+  }
+
+  try {
+    if (client_id) {
+      const { rowCount } = await pool.query(`select id from clients where id = $1`, [client_id]);
+      if (rowCount === 0) {
+        res.status(400).json({ error: 'El cliente indicado no existe' });
+        return;
+      }
+    }
+
+    const { rowCount } = await pool.query(
+      `update meetings set client_id = $1, updated_at = now() where id = $2`,
+      [client_id, id]
+    );
+
+    if (rowCount === 0) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error corrigiendo el cliente de la reunión', error);
+    res.status(500).json({ error: 'Error guardando el cliente' });
+  }
+});
+
 // Dispara el research pre-reunión (Paso 2 del roadmap frontend) — a diferencia
 // del análisis post-reunión, esto NO es automático: el ejecutivo lo pide con
 // un botón ("Iniciar research") desde el frontend, porque no todas las
