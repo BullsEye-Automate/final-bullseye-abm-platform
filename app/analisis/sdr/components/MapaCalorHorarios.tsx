@@ -89,16 +89,21 @@ export default function MapaCalorHorarios({
       )}
 
       <div className="overflow-x-auto">
-        <table className="border-separate" style={{ borderSpacing: 3 }}>
+        <table
+          className="border-separate w-full min-w-[720px]"
+          style={{ borderSpacing: 4, tableLayout: "fixed" }}
+        >
+          <colgroup>
+            <col style={{ width: 110 }} />
+            {horasConDatos.map((h) => (
+              <col key={h} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               <th className="text-xs text-ink-muted font-medium text-left pr-2 sticky left-0 bg-white" />
               {horasConDatos.map((h) => (
-                <th
-                  key={h}
-                  className="text-[10px] text-ink-muted font-medium text-center px-1"
-                  style={{ minWidth: 34 }}
-                >
+                <th key={h} className="text-xs text-ink-muted font-medium text-center px-1 pb-1">
                   {String(h).padStart(2, "0")}h
                 </th>
               ))}
@@ -107,7 +112,7 @@ export default function MapaCalorHorarios({
           <tbody>
             {DIAS.map((diaLabel, dia) => (
               <tr key={dia}>
-                <td className="text-xs text-gray-700 font-medium pr-2 whitespace-nowrap sticky left-0 bg-white">
+                <td className="text-sm text-gray-700 font-medium pr-2 whitespace-nowrap sticky left-0 bg-white">
                   {diaLabel}
                 </td>
                 {horasConDatos.map((hora) => {
@@ -115,11 +120,11 @@ export default function MapaCalorHorarios({
                   return (
                     <td
                       key={hora}
-                      className="text-center align-middle rounded"
-                      style={{ width: 34, height: 30, backgroundColor: colorForTasa(celda.tasa, celda.llamadas) }}
+                      className="text-center align-middle rounded-lg"
+                      style={{ height: 52, backgroundColor: colorForTasa(celda.tasa, celda.llamadas) }}
                       title={`${diaLabel} ${String(hora).padStart(2, "0")}:00 — ${celda.llamadas} llamadas, ${celda.conectadas} conectadas (${celda.llamadas > 0 ? celda.tasa.toFixed(0) : 0}%)`}
                     >
-                      <span className="text-[10px] font-medium" style={{ color: textColorFor(celda.tasa, celda.llamadas) }}>
+                      <span className="text-sm font-medium" style={{ color: textColorFor(celda.tasa, celda.llamadas) }}>
                         {celda.llamadas > 0 ? `${celda.tasa.toFixed(0)}%` : ""}
                       </span>
                     </td>
