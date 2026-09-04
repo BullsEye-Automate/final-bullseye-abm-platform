@@ -5,6 +5,11 @@ import { listAlloNumbers, searchAlloCalls } from "@/lib/allo";
 import { isConnected, toDateParam, callDateKey, resolveCountryLabel } from "@/lib/sdrAnalytics";
 
 export const dynamic = "force-dynamic";
+// Este reporte pide dos períodos por número (actual + anterior, para la
+// comparación) — el doble de volumen que cualquier otro reporte de
+// Análisis SDR, que solo pide un período. Con "todos los clientes" y
+// rangos amplios puede tardar más que el límite por defecto.
+export const maxDuration = 90;
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 // "Salud Telefónica": para cada número de Allo asignado a un cliente, cuántas
