@@ -20,10 +20,14 @@ import ModalScoreLlamadas from "./components/ModalScoreLlamadas";
 import ClienteMultiSelect from "../clientes/components/ClienteMultiSelect";
 import OrigenPieYDetalle, { type MeetingDetail } from "./components/OrigenPieYDetalle";
 import ModalOrigenReuniones from "./components/ModalOrigenReuniones";
+import NumeroMultiSelect from "./components/NumeroMultiSelect";
+import TablaSaludTelefonica, { type NumeroSalud } from "./components/TablaSaludTelefonica";
+import GraficoSaludTelefonica from "./components/GraficoSaludTelefonica";
 
 type SdrRoster = { sdr_id: string; sdr_nombre: string };
 type PaisRoster = { pais_key: string; pais_nombre: string };
 type ClienteRoster = { cliente_id: string; cliente_nombre: string };
+type NumeroRoster = { numero: string; numero_nombre: string };
 
 type SdrMetrics = {
   sdr_id: string;
@@ -86,6 +90,18 @@ type OrigenesApiResponse = {
   reuniones: MeetingDetail[];
   all_sdrs?: SdrRoster[];
   all_clientes?: ClienteRoster[];
+};
+
+type EvolucionDia = {
+  fecha: string;
+  porNumero: Record<string, { llamadas: number; conectadas: number }>;
+};
+
+type SaludApiResponse = {
+  numeros_data: NumeroSalud[];
+  resultados_por_dia: EvolucionDia[];
+  all_clientes?: ClienteRoster[];
+  all_numeros?: NumeroRoster[];
 };
 
 // Rangos propios de la sección "Resultados SDR" (no viven en
@@ -170,6 +186,15 @@ export default function AnalisisSdr() {
   const [origenesData, setOrigenesData] = useState<OrigenesApiResponse | null>(null);
   const [origenesError, setOrigenesError] = useState<string | null>(null);
 
+  const [saludRangeKey, setSaludRangeKey] = useState<RangeKey>("this_month");
+  const [saludCustomFrom, setSaludCustomFrom] = useState<string>("");
+  const [saludCustomTo, setSaludCustomTo] = useState<string>("");
+  const [saludClienteFilter, setSaludClienteFilter] = useState<string[]>([]);
+  const [saludNumeroFilter, setSaludNumeroFilter] = useState<string[]>([]);
+  const [saludLoading, setSaludLoading] = useState(false);
+  const [saludData, setSaludData] = useState<SaludApiResponse | null>(null);
+  const [saludError, setSaludError] = useState<string | null>(null);
+
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   // Sync por informe (botón "Actualizar" de cada sección) — independiente
@@ -186,6 +211,7 @@ export default function AnalisisSdr() {
   const paisRequestId = useRef(0);
   const scoresRequestId = useRef(0);
   const origenesRequestId = useRef(0);
+  const saludRequestId = useRef(0);
 
   // Las 4 secciones llaman a Allo por cada número asignado, y Allo limita a
   // 5 requests/segundo en total. Cada carga ya se pacía sola por dentro,
@@ -419,6 +445,42 @@ export default function AnalisisSdr() {
     }
   };
 
+  const loadSalud = async () => {
+    // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
+    if (saludRangeKey === "custom" && (!saludCustomFrom || !saludCustomTo)) return;
+
+    const requestId = ++saludRequestId.current;
+    setSaludLoading(true);
+    setSaludError(null);
+    try {
+      const searchParams = new URLSearchParams({
+        rangeKey: saludRangeKey,
+        client_id: currentClient?.id || "__all__",
+        ...(saludClienteFilter.length > 0 && { cliente_ids: saludClienteFilter.join(",") }),
+        ...(saludNumeroFilter.length > 0 && { numeros: saludNumeroFilter.join(",") }),
+        ...(saludRangeKey === "custom" && {
+          custom_from: saludCustomFrom,
+          custom_to: saludCustomTo,
+        }),
+      });
+
+      const response = await fetch(`/api/analisis/salud-telefonica?${searchParams}`);
+      if (requestId !== saludRequestId.current) return; // respuesta obsoleta
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        setSaludError(body?.error || "Error al cargar datos");
+      } else {
+        setSaludData(await response.json());
+      }
+    } catch (err) {
+      if (requestId !== saludRequestId.current) return;
+      setSaludError((err as Error).message);
+    } finally {
+      if (requestId === saludRequestId.current) setSaludLoading(false);
+    }
+  };
+
   // Trae la última versión del Excel de reuniones (Google Sheets, últimos 40
   // días) a la tabla `meetings` y recarga los 4 informes que dependen de
   // ella, para que Reuniones Agendadas/Realizadas y Origen calcen con el
@@ -533,6 +595,13 @@ export default function AnalisisSdr() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, origenesRangeKey, origenesSdrFilter, origenesClienteFilter, origenesCustomFrom, origenesCustomTo]);
+
+  useEffect(() => {
+    if (currentClient?.id) {
+      runQueued(loadSalud);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentClient?.id, saludRangeKey, saludClienteFilter, saludNumeroFilter, saludCustomFrom, saludCustomTo]);
 
   const handleRankingOrigenClick = (
     row: SdrMetrics | null,
@@ -1023,6 +1092,105 @@ export default function AnalisisSdr() {
         )}
 
         {!origenesLoading && origenesData && <OrigenPieYDetalle reuniones={origenesData.reuniones} />}
+      </section>
+
+      {/* Sección Salud Telefónica */}
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b">
+          <h2 className="font-semibold flex items-center gap-2">
+            <IconPhone size={16} className="text-brand" /> Salud Telefónica
+          </h2>
+          <RefreshButton onClick={() => runQueued(loadSalud)} loading={saludLoading} />
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Período</label>
+            <select
+              value={saludRangeKey}
+              onChange={(e) => setSaludRangeKey(e.target.value as RangeKey)}
+              className="input py-1.5 text-sm"
+            >
+              {Object.entries(RANGE_LABELS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {saludRangeKey === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={saludCustomFrom}
+                onChange={(e) => setSaludCustomFrom(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+              <span className="text-xs text-ink-muted">a</span>
+              <input
+                type="date"
+                value={saludCustomTo}
+                onChange={(e) => setSaludCustomTo(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Cliente</label>
+            <ClienteMultiSelect
+              clientes={saludData?.all_clientes || []}
+              selected={saludClienteFilter}
+              onChange={setSaludClienteFilter}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Número</label>
+            <NumeroMultiSelect
+              numeros={saludData?.all_numeros || []}
+              selected={saludNumeroFilter}
+              onChange={setSaludNumeroFilter}
+            />
+          </div>
+        </div>
+
+        <p className="text-xs text-ink-muted">
+          Llamadas y tasa de conexión (sin buzón de voz) por número de Allo, comparada contra el
+          período anterior — una caída sostenida suele ser señal de que el número quedó marcado
+          como spam por las operadoras. Filas en rojo/amarillo destacan caídas fuertes.
+        </p>
+
+        {saludError && (
+          <div className="flex items-center gap-2 text-error-fg text-sm p-3 rounded bg-error-bg/20 border border-error-bg">
+            <IconAlertCircle size={16} className="shrink-0" />
+            {saludError}
+          </div>
+        )}
+
+        {saludLoading && (
+          <div className="flex items-center justify-center py-12 text-ink-muted gap-2">
+            <IconLoader2 size={18} className="animate-spin" />
+            Cargando datos…
+          </div>
+        )}
+
+        {!saludLoading && saludData && (
+          saludData.numeros_data.length === 0 ? (
+            <div className="flex items-center justify-center py-12 text-ink-muted">
+              No hay datos disponibles
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <GraficoSaludTelefonica
+                resultadosPorDia={saludData.resultados_por_dia}
+                numeros={saludData.numeros_data.map((n) => ({ numero: n.numero, numero_nombre: n.numero_nombre }))}
+              />
+              <TablaSaludTelefonica data={saludData.numeros_data} />
+            </div>
+          )
+        )}
       </section>
 
       {scoreModal && (
