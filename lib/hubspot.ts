@@ -210,6 +210,36 @@ export async function patchHSContact(contactId: string, props: Record<string, st
 // atribuye por hs_created_by_user_id (quién la registró), no por
 // hubspot_owner_id (el propietario asignado puede ser otra persona).
 
+// HubSpot limita las búsquedas (search) a unos pocos requests/segundo por
+// cuenta, compartido entre todos los objetos (contacts, companies, emails,
+// communications, etc. — el 429 lo confirma: "policyName":"SECONDLY",
+// "groupName":"publicapi:crm:search:oauth"). Como acá se pagina por dos
+// tipos de engagement en paralelo, es fácil pasarse de ese límite. Se
+// espacian las requests y se reintenta automáticamente ante un 429, mismo
+// patrón que lib/allo.ts.
+const HS_MIN_INTERVAL_MS = 350; // ~2.8 req/s, con margen bajo el límite de HubSpot
+let hsLastRequestAt = 0;
+
+async function throttleHS() {
+  const now = Date.now();
+  const nextSlot = Math.max(now, hsLastRequestAt + HS_MIN_INTERVAL_MS);
+  hsLastRequestAt = nextSlot;
+  if (nextSlot > now) await new Promise((r) => setTimeout(r, nextSlot - now));
+}
+
+async function hsFetchWithRetry(url: string, init: RequestInit, retriesLeft = 5): Promise<Response> {
+  await throttleHS();
+  const res = await fetch(url, init);
+  if (res.status === 429 && retriesLeft > 0) {
+    const retryAfterHeader = res.headers.get("Retry-After");
+    const parsed = retryAfterHeader ? Number(retryAfterHeader) : NaN;
+    const waitSeconds = Number.isFinite(parsed) && parsed > 0 ? parsed : 2;
+    await new Promise((r) => setTimeout(r, (waitSeconds + 0.3) * 1000));
+    return hsFetchWithRetry(url, init, retriesLeft - 1);
+  }
+  return res;
+}
+
 export type HSOwner = {
   id: string;
   userId?: number;
@@ -230,7 +260,7 @@ export async function fetchHSOwners(): Promise<HSOwner[]> {
     url.searchParams.set("archived", "false");
     if (after) url.searchParams.set("after", after);
 
-    const res = await fetch(url.toString(), { headers: hsHeaders() });
+    const res = await hsFetchWithRetry(url.toString(), { headers: hsHeaders() });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`HubSpot ${res.status} listando owners: ${text.slice(0, 300)}`);
@@ -273,7 +303,7 @@ async function searchHSEngagementsByCreator(
     };
     if (after) body.after = after;
 
-    const res = await fetch(`${HS}/crm/v3/objects/${objectType}/search`, {
+    const res = await hsFetchWithRetry(`${HS}/crm/v3/objects/${objectType}/search`, {
       method: "POST",
       headers: hsHeaders(),
       body: JSON.stringify(body),
