@@ -1,0 +1,114 @@
+import fs from 'fs';
+import path from 'path';
+import { Router } from 'express';
+import { Webhook } from 'svix';
+import { pool } from '../db';
+import { getRecallRecordingUrl } from '../recall';
+import { analyzeMeetingAudio } from '../postMeetingAnalysis';
+
+export const webhooksRouter = Router();
+
+const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Recall entrega sus webhooks vía Svix — si RECALL_WEBHOOK_SECRET está seteada
+// (Recall Dashboard → Webhooks → tu endpoint → "Signing Secret", empieza con
+// "whsec_"), se verifica la firma contra el body crudo (req.rawBody, capturado
+// en app.ts). Sin esa variable, se acepta sin verificar (arranque rápido en
+// local/dev) — seteala en producción antes de exponer esta URL públicamente.
+function verifyRecallWebhook(req: any): { event: string; data: any } | null {
+  const body = req.rawBody as Buffer | undefined;
+  if (!body) return null;
+
+  const secret = process.env.RECALL_WEBHOOK_SECRET;
+  if (!secret) {
+    try {
+      return JSON.parse(body.toString('utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  try {
+    const wh = new Webhook(secret);
+    const payload = wh.verify(body, {
+      'svix-id': req.header('svix-id') ?? '',
+      'svix-timestamp': req.header('svix-timestamp') ?? '',
+      'svix-signature': req.header('svix-signature') ?? '',
+    });
+    return payload as unknown as { event: string; data: any };
+  } catch (error) {
+    console.error('[webhooks/recall] firma inválida', error);
+    return null;
+  }
+}
+
+// Recall manda un webhook por cada cambio de estado del bot (joining_call,
+// in_call_recording, done, fatal, ...) — solo nos importa "done" (grabación
+// lista para descargar). El resto se ignora silenciosamente (200, sin acción).
+webhooksRouter.post('/webhooks/recall', async (req, res) => {
+  const payload = verifyRecallWebhook(req);
+  if (!payload) {
+    res.status(401).json({ error: 'Firma de webhook inválida o body faltante' });
+    return;
+  }
+
+  const statusCode = payload?.data?.data?.code;
+  const botId = payload?.data?.bot?.id;
+  const meetingIdFromMetadata = payload?.data?.bot?.metadata?.peitho_meeting_id;
+
+  // Respondemos 200 de inmediato — Recall/Svix reintenta si no le contestamos
+  // rápido, y descargar+transcribir puede tardar varios minutos.
+  res.json({ status: 'ok' });
+
+  if (statusCode !== 'done' || !botId) {
+    return;
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `select id, audio_path, status from meetings where recall_bot_id = $1 or ($2::text is not null and id = $2::uuid)`,
+      [botId, meetingIdFromMetadata ?? null]
+    );
+    const meeting = rows[0];
+    if (!meeting) {
+      console.error(`[webhooks/recall] no se encontró ninguna reunión para el bot ${botId}`);
+      return;
+    }
+
+    // Idempotencia — Svix puede reintentar la misma entrega ("done" es un
+    // evento único por bot, pero mejor no volver a descargar/transcribir si
+    // ya se hizo).
+    if (meeting.status === 'captured' || meeting.status === 'analyzed') {
+      console.log(`[webhooks/recall] reunión ${meeting.id} ya estaba en status=${meeting.status}, se ignora`);
+      return;
+    }
+
+    console.log(`[webhooks/recall] bot ${botId}: descargando audio para la reunión ${meeting.id}...`);
+    const downloadUrl = await getRecallRecordingUrl(botId);
+
+    const audioRes = await fetch(downloadUrl);
+    if (!audioRes.ok) {
+      throw new Error(`Descarga del audio respondió ${audioRes.status}`);
+    }
+    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+
+    const audioPath = path.join(uploadsDir, `${meeting.id}-${Date.now()}.mp3`);
+    fs.writeFileSync(audioPath, audioBuffer);
+
+    await pool.query(`update meetings set audio_path = $1, status = 'captured', updated_at = now() where id = $2`, [
+      audioPath,
+      meeting.id,
+    ]);
+
+    console.log(`[webhooks/recall] audio guardado en ${audioPath} para la reunión ${meeting.id}`);
+
+    analyzeMeetingAudio(meeting.id).catch((error) => {
+      console.error(`[webhooks/recall] falló el análisis de la reunión ${meeting.id}`, error);
+    });
+  } catch (error) {
+    console.error(`[webhooks/recall] error procesando el bot ${botId}`, error);
+  }
+});

@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { pool } from './db';
 import { ANALISIS_SYSTEM_PROMPT, buildAnalisisUserMessage } from './prompts/analisisPostReunion';
@@ -26,8 +27,19 @@ function getDeepgramApiKey(): string {
   return key;
 }
 
+// La extensión de Chrome sube .webm; el bot de Recall (Fase H) sube .mp3
+// (media_shortcuts.audio_mixed, formato mp3) — Deepgram necesita el
+// Content-Type real del archivo, no uno fijo.
+const DEEPGRAM_CONTENT_TYPES: Record<string, string> = {
+  '.webm': 'audio/webm',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+};
+
 async function transcribeAudio(filePath: string): Promise<any> {
   const audioBuffer = fs.readFileSync(filePath);
+  const contentType = DEEPGRAM_CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? 'audio/webm';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DEEPGRAM_TIMEOUT_MS);
 
@@ -38,7 +50,7 @@ async function transcribeAudio(filePath: string): Promise<any> {
         method: 'POST',
         headers: {
           Authorization: `Token ${getDeepgramApiKey()}`,
-          'Content-Type': 'audio/webm',
+          'Content-Type': contentType,
         },
         body: audioBuffer,
         signal: controller.signal,
