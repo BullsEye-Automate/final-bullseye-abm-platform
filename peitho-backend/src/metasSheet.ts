@@ -34,17 +34,30 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 // La hoja tiene ~15-20 tabs distintos (comisiones, prospección, OKRs, etc.) —
 // en vez de hardcodear el nombre exacto del tab (frágil, se puede renombrar),
 // se detecta el que tiene las columnas que necesitamos.
+// Sin timeout explícito, una llamada a la API de Sheets que se cuelga (red
+// lenta, algo raro del lado de Google) deja la promesa pendiente para
+// siempre — y con eso, cualquier flujo que dependa de resolveMeetingClientAndContact
+// (research, análisis post-reunión, scheduleRecallBotForMeeting) se cuelga
+// entero. Mismo patrón que ya usa calendarSync.ts para events.list/events.watch.
+const SHEETS_TIMEOUT_MS = 15_000;
+
 async function findReunionesTabTitle(sheets: sheets_v4.Sheets, spreadsheetId: string): Promise<string> {
-  const { data } = await sheets.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties.title' });
+  const { data } = await sheets.spreadsheets.get(
+    { spreadsheetId, fields: 'sheets.properties.title' },
+    { timeout: SHEETS_TIMEOUT_MS }
+  );
   const titles = (data.sheets ?? [])
     .map((s) => s.properties?.title)
     .filter((title): title is string => Boolean(title));
 
   for (const title of titles) {
-    const { data: headerData } = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `'${title}'!1:1`,
-    });
+    const { data: headerData } = await sheets.spreadsheets.values.get(
+      {
+        spreadsheetId,
+        range: `'${title}'!1:1`,
+      },
+      { timeout: SHEETS_TIMEOUT_MS }
+    );
     const header = (headerData.values?.[0] ?? []).map((h) => String(h).trim());
     if (REQUIRED_HEADERS.every((required) => header.includes(required))) {
       return title;
@@ -70,10 +83,13 @@ async function loadReunionesRows(forceRefresh = false): Promise<SheetRow[]> {
   const { sheets } = await getSheetsClientByEmail(accountEmail);
   const tabTitle = cache?.tabTitle ?? (await findReunionesTabTitle(sheets, spreadsheetId));
 
-  const { data } = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `'${tabTitle}'!A:W`,
-  });
+  const { data } = await sheets.spreadsheets.values.get(
+    {
+      spreadsheetId,
+      range: `'${tabTitle}'!A:W`,
+    },
+    { timeout: SHEETS_TIMEOUT_MS }
+  );
 
   const values = data.values ?? [];
   const header = (values[0] ?? []).map((h) => String(h).trim());

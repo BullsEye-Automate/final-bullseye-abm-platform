@@ -34,6 +34,22 @@ function recallApiUrl(region: string, path: string): string {
   return `https://${region}.recall.ai/api/v1${path}`;
 }
 
+const RECALL_TIMEOUT_MS = 15_000;
+
+// Sin esto, un fetch a Recall que se cuelga (red lenta, algo raro del lado de
+// Recall) deja la promesa pendiente para siempre — y con eso,
+// scheduleRecallBotForMeeting() (llamado desde el sync de calendario) se
+// cuelga entero. Mismo patrón que ya usa transcribeAudio en postMeetingAnalysis.ts.
+async function fetchRecall(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), RECALL_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // Crea el bot programado para unirse a la reunión a la hora indicada
 // (`joinAt`) — Recall lo mantiene en espera y lo hace entrar solo, no hace
 // falta un cron propio para "despertar" al bot en el momento justo.
@@ -60,7 +76,7 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
     body.google_meet = { google_login_group_id: loginGroupId };
   }
 
-  const res = await fetch(recallApiUrl(region, '/bot/'), {
+  const res = await fetchRecall(recallApiUrl(region, '/bot/'), {
     method: 'POST',
     headers: {
       Authorization: `Token ${apiKey}`,
@@ -82,7 +98,7 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
 export async function getRecallRecordingUrl(botId: string): Promise<string> {
   const { apiKey, region } = getRecallConfig();
 
-  const res = await fetch(recallApiUrl(region, `/bot/${botId}/`), {
+  const res = await fetchRecall(recallApiUrl(region, `/bot/${botId}/`), {
     headers: { Authorization: `Token ${apiKey}` },
   });
 
@@ -138,6 +154,7 @@ export async function scheduleRecallBotForMeeting(
     if (startTime.getTime() <= Date.now()) return; // ya pasó, no tiene sentido agendar un bot
 
     if (!meeting.client_id) {
+      console.log(`[recall] reunión ${meetingId}: resolviendo cliente contra el excel de metas...`);
       await resolveMeetingClientAndContact(meetingId);
     }
 
@@ -151,6 +168,7 @@ export async function scheduleRecallBotForMeeting(
       }
     }
 
+    console.log(`[recall] reunión ${meetingId}: creando bot en Recall (${meetingUrl})...`);
     const botId = await createRecallBot(meetingId, meetingUrl, startTime);
 
     await pool.query(`update meetings set recall_bot_id = $1, updated_at = now() where id = $2`, [botId, meetingId]);
