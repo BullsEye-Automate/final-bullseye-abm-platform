@@ -21,11 +21,15 @@ interface SdrMetrics {
   reuniones_realizadas_detalle?: MeetingDetail[];
 }
 
+// "Llamadas x Contacto" no viene de la API — se calcula acá mismo a partir
+// de Llamadas ÷ Contactos Gestionados, ya que ambos ya están en cada fila.
+type DerivedMetrics = SdrMetrics & { llamadas_por_contacto: number };
+
 // Columnas cuyo número se puede hacer clic para ver el desglose por Origen.
 type OrigenClickableKey = "reuniones_agendadas" | "reuniones_realizadas";
 const ORIGEN_CLICKABLE_KEYS = new Set<OrigenClickableKey>(["reuniones_agendadas", "reuniones_realizadas"]);
 
-type SortKey = keyof Omit<SdrMetrics, "reuniones_agendadas_detalle" | "reuniones_realizadas_detalle">;
+type SortKey = keyof Omit<DerivedMetrics, "reuniones_agendadas_detalle" | "reuniones_realizadas_detalle">;
 type NumericKey = Exclude<SortKey, "sdr_id" | "sdr_nombre">;
 type SortDir = "asc" | "desc";
 
@@ -45,6 +49,11 @@ const COLUMNS: { key: NumericKey; label: string; description: string }[] = [
     key: "llamadas_realizadas",
     label: "Llamadas",
     description: "Total de llamadas salientes realizadas en el período (pueden repetirse por contacto).",
+  },
+  {
+    key: "llamadas_por_contacto",
+    label: "Llamadas x Contacto",
+    description: "Llamadas ÷ Contactos Gestionados — promedio de intentos por cada contacto marcado.",
   },
   {
     key: "contactos_conectados",
@@ -94,13 +103,25 @@ const PERCENT_KEYS = new Set<NumericKey>([
   "tasa_realizacion_reuniones",
 ]);
 
+// Columnas de razón (no porcentaje, no entero) que se muestran con 1 decimal.
+const RATIO_KEYS = new Set<NumericKey>(["llamadas_por_contacto"]);
+
 export default function TablaRankingSdr({ data, onOrigenClick }: TablaRankingSdrProps) {
   const [sortKey, setSortKey] = useState<SortKey>("reuniones_realizadas");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const dataWithDerived: DerivedMetrics[] = useMemo(
+    () =>
+      data.map((d) => ({
+        ...d,
+        llamadas_por_contacto: d.contactos_gestionados > 0 ? d.llamadas_realizadas / d.contactos_gestionados : 0,
+      })),
+    [data]
+  );
+
   const sortedData = useMemo(() => {
-    const sorted = [...data].sort((a, b) => {
+    const sorted = [...dataWithDerived].sort((a, b) => {
       const aVal = a[sortKey];
       const bVal = b[sortKey];
 
@@ -114,14 +135,19 @@ export default function TablaRankingSdr({ data, onOrigenClick }: TablaRankingSdr
     });
 
     return sorted;
-  }, [data, sortKey, sortDir]);
+  }, [dataWithDerived, sortKey, sortDir]);
 
   const totals = useMemo(() => {
     const count = data.length || 1;
     const sum = (key: keyof SdrMetrics) => data.reduce((acc, sdr) => acc + (sdr[key] as number), 0);
+    const totalContactos = sum("contactos_gestionados");
+    const totalLlamadas = sum("llamadas_realizadas");
     return {
-      contactos_gestionados: sum("contactos_gestionados"),
-      llamadas_realizadas: sum("llamadas_realizadas"),
+      contactos_gestionados: totalContactos,
+      llamadas_realizadas: totalLlamadas,
+      // Se recalcula sobre los totales (no un promedio de razones por SDR)
+      // para reflejar el promedio real del período completo.
+      llamadas_por_contacto: totalContactos > 0 ? totalLlamadas / totalContactos : 0,
       contactos_conectados: sum("contactos_conectados"),
       llamadas_conectadas: sum("llamadas_conectadas"),
       reuniones_agendadas: sum("reuniones_agendadas"),
@@ -203,6 +229,8 @@ export default function TablaRankingSdr({ data, onOrigenClick }: TablaRankingSdr
                     </button>
                   ) : PERCENT_KEYS.has(col.key) ? (
                     `${(sdr[col.key] as number).toFixed(1)}%`
+                  ) : RATIO_KEYS.has(col.key) ? (
+                    (sdr[col.key] as number).toFixed(1)
                   ) : (
                     sdr[col.key]
                   )}
@@ -226,6 +254,8 @@ export default function TablaRankingSdr({ data, onOrigenClick }: TablaRankingSdr
                   </button>
                 ) : PERCENT_KEYS.has(col.key) ? (
                   `${totals[col.key].toFixed(1)}%`
+                ) : RATIO_KEYS.has(col.key) ? (
+                  totals[col.key].toFixed(1)
                 ) : (
                   totals[col.key]
                 )}
