@@ -7,6 +7,7 @@ import {
   IconAlertCircle,
   IconTrendingUp,
   IconRefresh,
+  IconClock,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
@@ -23,6 +24,7 @@ import ModalOrigenReuniones from "./components/ModalOrigenReuniones";
 import NumeroMultiSelect from "./components/NumeroMultiSelect";
 import TablaSaludTelefonica, { type NumeroSalud } from "./components/TablaSaludTelefonica";
 import GraficoSaludTelefonica from "./components/GraficoSaludTelefonica";
+import MapaCalorHorarios, { type CeldaHeatmap } from "./components/MapaCalorHorarios";
 
 type SdrRoster = { sdr_id: string; sdr_nombre: string };
 type PaisRoster = { pais_key: string; pais_nombre: string };
@@ -102,6 +104,13 @@ type SaludApiResponse = {
   resultados_por_dia: EvolucionDia[];
   all_clientes?: ClienteRoster[];
   all_numeros?: NumeroRoster[];
+};
+
+type HorariosApiResponse = {
+  heatmap: CeldaHeatmap[];
+  total_llamadas: number;
+  all_clientes?: ClienteRoster[];
+  all_paises?: PaisRoster[];
 };
 
 // Rangos propios de la sección "Resultados SDR" (no viven en
@@ -195,6 +204,15 @@ export default function AnalisisSdr() {
   const [saludData, setSaludData] = useState<SaludApiResponse | null>(null);
   const [saludError, setSaludError] = useState<string | null>(null);
 
+  const [horariosRangeKey, setHorariosRangeKey] = useState<RangeKey>("this_month");
+  const [horariosCustomFrom, setHorariosCustomFrom] = useState<string>("");
+  const [horariosCustomTo, setHorariosCustomTo] = useState<string>("");
+  const [horariosClienteFilter, setHorariosClienteFilter] = useState<string[]>([]);
+  const [horariosPaisFilter, setHorariosPaisFilter] = useState<string[]>([]);
+  const [horariosLoading, setHorariosLoading] = useState(false);
+  const [horariosData, setHorariosData] = useState<HorariosApiResponse | null>(null);
+  const [horariosError, setHorariosError] = useState<string | null>(null);
+
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   // Sync por informe (botón "Actualizar" de cada sección) — independiente
@@ -212,6 +230,7 @@ export default function AnalisisSdr() {
   const scoresRequestId = useRef(0);
   const origenesRequestId = useRef(0);
   const saludRequestId = useRef(0);
+  const horariosRequestId = useRef(0);
 
   // Las 4 secciones llaman a Allo por cada número asignado, y Allo limita a
   // 5 requests/segundo en total. Cada carga ya se pacía sola por dentro,
@@ -481,6 +500,42 @@ export default function AnalisisSdr() {
     }
   };
 
+  const loadHorarios = async () => {
+    // Con "Fecha personalizada" esperamos a que ambas fechas estén elegidas
+    if (horariosRangeKey === "custom" && (!horariosCustomFrom || !horariosCustomTo)) return;
+
+    const requestId = ++horariosRequestId.current;
+    setHorariosLoading(true);
+    setHorariosError(null);
+    try {
+      const searchParams = new URLSearchParams({
+        rangeKey: horariosRangeKey,
+        client_id: currentClient?.id || "__all__",
+        ...(horariosClienteFilter.length > 0 && { cliente_ids: horariosClienteFilter.join(",") }),
+        ...(horariosPaisFilter.length > 0 && { paises: horariosPaisFilter.join(",") }),
+        ...(horariosRangeKey === "custom" && {
+          custom_from: horariosCustomFrom,
+          custom_to: horariosCustomTo,
+        }),
+      });
+
+      const response = await fetch(`/api/analisis/horarios?${searchParams}`);
+      if (requestId !== horariosRequestId.current) return; // respuesta obsoleta
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        setHorariosError(body?.error || "Error al cargar datos");
+      } else {
+        setHorariosData(await response.json());
+      }
+    } catch (err) {
+      if (requestId !== horariosRequestId.current) return;
+      setHorariosError((err as Error).message);
+    } finally {
+      if (requestId === horariosRequestId.current) setHorariosLoading(false);
+    }
+  };
+
   // Trae la última versión del Excel de reuniones (Google Sheets, últimos 40
   // días) a la tabla `meetings` y recarga los 4 informes que dependen de
   // ella, para que Reuniones Agendadas/Realizadas y Origen calcen con el
@@ -602,6 +657,13 @@ export default function AnalisisSdr() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentClient?.id, saludRangeKey, saludClienteFilter, saludNumeroFilter, saludCustomFrom, saludCustomTo]);
+
+  useEffect(() => {
+    if (currentClient?.id) {
+      runQueued(loadHorarios);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentClient?.id, horariosRangeKey, horariosClienteFilter, horariosPaisFilter, horariosCustomFrom, horariosCustomTo]);
 
   const handleRankingOrigenClick = (
     row: SdrMetrics | null,
@@ -1190,6 +1252,92 @@ export default function AnalisisSdr() {
               <TablaSaludTelefonica data={saludData.numeros_data} />
             </div>
           )
+        )}
+      </section>
+
+      {/* Sección Mejores Horarios para Conectar */}
+      <section className="card space-y-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap pb-3 border-b">
+          <h2 className="font-semibold flex items-center gap-2">
+            <IconClock size={16} className="text-brand" /> Mejores Horarios para Conectar
+          </h2>
+          <RefreshButton onClick={() => runQueued(loadHorarios)} loading={horariosLoading} />
+        </div>
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Período</label>
+            <select
+              value={horariosRangeKey}
+              onChange={(e) => setHorariosRangeKey(e.target.value as RangeKey)}
+              className="input py-1.5 text-sm"
+            >
+              {Object.entries(RANGE_LABELS).map(([k, l]) => (
+                <option key={k} value={k}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {horariosRangeKey === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={horariosCustomFrom}
+                onChange={(e) => setHorariosCustomFrom(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+              <span className="text-xs text-ink-muted">a</span>
+              <input
+                type="date"
+                value={horariosCustomTo}
+                onChange={(e) => setHorariosCustomTo(e.target.value)}
+                className="input py-1.5 text-sm"
+              />
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">Cliente</label>
+            <ClienteMultiSelect
+              clientes={horariosData?.all_clientes || []}
+              selected={horariosClienteFilter}
+              onChange={setHorariosClienteFilter}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium">País</label>
+            <PaisMultiSelect
+              paises={horariosData?.all_paises || []}
+              selected={horariosPaisFilter}
+              onChange={setHorariosPaisFilter}
+            />
+          </div>
+        </div>
+
+        <p className="text-xs text-ink-muted">
+          Tasa de conexión (sin buzón de voz) por día y hora de Chile, sumando todas las llamadas del
+          período — muestra en qué horarios más nos contestan el teléfono.
+        </p>
+
+        {horariosError && (
+          <div className="flex items-center gap-2 text-error-fg text-sm p-3 rounded bg-error-bg/20 border border-error-bg">
+            <IconAlertCircle size={16} className="shrink-0" />
+            {horariosError}
+          </div>
+        )}
+
+        {horariosLoading && (
+          <div className="flex items-center justify-center py-12 text-ink-muted gap-2">
+            <IconLoader2 size={18} className="animate-spin" />
+            Cargando datos…
+          </div>
+        )}
+
+        {!horariosLoading && horariosData && (
+          <MapaCalorHorarios heatmap={horariosData.heatmap} totalLlamadas={horariosData.total_llamadas} />
         )}
       </section>
 
