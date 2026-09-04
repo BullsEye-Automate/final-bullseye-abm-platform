@@ -4,6 +4,7 @@
 // no duplicar (y potencialmente desalinear) esta lógica en cada reporte
 // nuevo que agrupe los mismos datos de otra forma.
 import type { RangeKey } from "@/lib/dashboardRanges";
+import { CHILE_UTC_OFFSET_HOURS, toChileParts } from "@/lib/timezone";
 
 export const MIN_REAL_CONVERSATION_SECONDS = 60;
 
@@ -26,15 +27,21 @@ export function endOfDayUTC(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999));
 }
 
+// `now` es el instante real (ej. new Date()) — se traslada acá mismo a
+// horario de Chile antes de leer año/mes/día, para no depender de que cada
+// caller recuerde hacerlo (mismo bug que dashboardRanges.resolveRange: sin
+// esto, entre las 20:00 y medianoche hora Chile el servidor en UTC ya está
+// en el día/mes calendario siguiente).
 export function resolveMeetingsRangeEnd(rangeKey: RangeKey, fallbackEnd: Date, now: Date): Date {
-  const y = now.getUTCFullYear();
-  const m = now.getUTCMonth();
+  const chileNow = toChileParts(now);
+  const y = chileNow.getUTCFullYear();
+  const m = chileNow.getUTCMonth();
 
   switch (rangeKey) {
     case "this_week": {
-      const day = now.getUTCDay();
+      const day = chileNow.getUTCDay();
       const daysUntilSunday = day === 0 ? 0 : 7 - day;
-      return endOfDayUTC(new Date(Date.UTC(y, m, now.getUTCDate() + daysUntilSunday)));
+      return endOfDayUTC(new Date(Date.UTC(y, m, chileNow.getUTCDate() + daysUntilSunday)));
     }
     case "this_month":
       return endOfDayUTC(new Date(Date.UTC(y, m + 1, 0)));
@@ -61,8 +68,10 @@ export function resolveMeetingsRangeEnd(rangeKey: RangeKey, fallbackEnd: Date, n
 // el dashboard de Allo: la app contaba menos llamadas que Allo).
 // NOTA: asume horario de Chile para todos los números — si en el futuro
 // se opera con clientes en otro país, esto debe volverse por número
-// (AlloNumber.country) en vez de un offset fijo.
-export const CHILE_UTC_OFFSET_HOURS = -4;
+// (AlloNumber.country) en vez de un offset fijo. CHILE_UTC_OFFSET_HOURS
+// vive en lib/timezone.ts (compartido con dashboardRanges.resolveRange) y
+// se re-exporta acá para no romper imports existentes de este archivo.
+export { CHILE_UTC_OFFSET_HOURS };
 export function callDateKey(isoDate: string): string {
   const shifted = new Date(new Date(isoDate).getTime() + CHILE_UTC_OFFSET_HOURS * 3600000);
   return shifted.toISOString().slice(0, 10);

@@ -14,6 +14,7 @@ import {
   resolveCountryLabel,
   normalizeCountryKey,
 } from "@/lib/sdrAnalytics";
+import { toChileParts } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -106,7 +107,9 @@ export async function GET(request: NextRequest) {
 
     if (isLastNMonths) {
       const n = LAST_N_MONTHS[rangeKeyRaw];
-      const now = new Date();
+      // Se traslada a horario de Chile antes de leer año/mes — mismo
+      // criterio que dashboardRanges.resolveRange (ver lib/timezone.ts).
+      const now = toChileParts(new Date());
       const y = now.getUTCFullYear();
       const m = now.getUTCMonth();
       const start = new Date(Date.UTC(y, m - (n - 1), 1));
