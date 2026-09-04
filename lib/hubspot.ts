@@ -199,6 +199,131 @@ export async function patchHSContact(contactId: string, props: Record<string, st
   return res.ok;
 }
 
+// ── Actividades por SDR (Ranking SDR) ───────────────────────────────────────────
+// Cuenta actividades de Correo/LinkedIn/WhatsApp registradas en HubSpot por
+// cada SDR, para las columnas nuevas del Ranking SDR (ver
+// app/api/analisis/actividades-hubspot/route.ts). HubSpot no tiene un objeto
+// único de "actividades" — Correo vive en el objeto "emails" y LinkedIn/
+// WhatsApp en "communications" (distinguidos por hs_communication_channel_type;
+// confirmado con BullsEye: el filtro "Comunicación" del timeline de HubSpot
+// agrupa Correos/LinkedIn/WhatsApp/SMS/Llamadas bajo ese mismo criterio). Se
+// atribuye por hs_created_by_user_id (quién la registró), no por
+// hubspot_owner_id (el propietario asignado puede ser otra persona).
+
+export type HSOwner = {
+  id: string;
+  userId?: number;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+};
+
+export async function fetchHSOwners(): Promise<HSOwner[]> {
+  const owners: HSOwner[] = [];
+  let after: string | undefined;
+  let pages = 0;
+  const MAX_PAGES = 20; // 100/página — de sobra para cualquier equipo de BullsEye
+
+  do {
+    const url = new URL(`${HS}/crm/v3/owners`);
+    url.searchParams.set("limit", "100");
+    url.searchParams.set("archived", "false");
+    if (after) url.searchParams.set("after", after);
+
+    const res = await fetch(url.toString(), { headers: hsHeaders() });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`HubSpot ${res.status} listando owners: ${text.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    for (const o of data.results ?? []) {
+      owners.push({ id: o.id, userId: o.userId, email: o.email, firstName: o.firstName, lastName: o.lastName });
+    }
+    after = data.paging?.next?.after;
+    pages++;
+  } while (after && pages < MAX_PAGES);
+
+  return owners;
+}
+
+async function searchHSEngagementsByCreator(
+  objectType: "emails" | "communications",
+  dateFromMs: number,
+  dateToMs: number,
+  extraProperties: string[]
+): Promise<Record<string, string>[]> {
+  const results: Record<string, string>[] = [];
+  let after: string | undefined;
+  let pages = 0;
+  const MAX_PAGES = 100; // 100/página, hasta 10k por tipo — tope de seguridad
+
+  do {
+    const body: Record<string, unknown> = {
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "hs_timestamp", operator: "GTE", value: dateFromMs },
+            { propertyName: "hs_timestamp", operator: "LTE", value: dateToMs },
+          ],
+        },
+      ],
+      properties: ["hs_timestamp", "hs_created_by_user_id", ...extraProperties],
+      limit: 100,
+      sorts: [{ propertyName: "hs_timestamp", direction: "ASCENDING" }],
+    };
+    if (after) body.after = after;
+
+    const res = await fetch(`${HS}/crm/v3/objects/${objectType}/search`, {
+      method: "POST",
+      headers: hsHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`HubSpot ${res.status} buscando ${objectType}: ${text.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    for (const r of data.results ?? []) {
+      results.push(r.properties ?? {});
+    }
+    after = data.paging?.next?.after;
+    pages++;
+  } while (after && pages < MAX_PAGES);
+
+  return results;
+}
+
+export type HSActivityCounts = { email: number; linkedin: number; whatsapp: number };
+
+// key del Map = hs_created_by_user_id (string) de HubSpot.
+export async function fetchHSActivityCountsByCreator(
+  dateFromMs: number,
+  dateToMs: number
+): Promise<Map<string, HSActivityCounts>> {
+  const byUserId = new Map<string, HSActivityCounts>();
+  const bump = (userId: string | undefined, field: keyof HSActivityCounts) => {
+    if (!userId) return;
+    const cur = byUserId.get(userId) || { email: 0, linkedin: 0, whatsapp: 0 };
+    cur[field]++;
+    byUserId.set(userId, cur);
+  };
+
+  const [emails, comms] = await Promise.all([
+    searchHSEngagementsByCreator("emails", dateFromMs, dateToMs, []),
+    searchHSEngagementsByCreator("communications", dateFromMs, dateToMs, ["hs_communication_channel_type"]),
+  ]);
+
+  for (const e of emails) bump(e.hs_created_by_user_id, "email");
+  for (const c of comms) {
+    const channel = (c.hs_communication_channel_type || "").toUpperCase();
+    if (channel.includes("LINKEDIN")) bump(c.hs_created_by_user_id, "linkedin");
+    else if (channel.includes("WHATS")) bump(c.hs_created_by_user_id, "whatsapp");
+    // SMS y otros canales no se cuentan — fuera del alcance de este reporte.
+  }
+
+  return byUserId;
+}
+
 // ── Engagement Score ───────────────────────────────────────────────────────────
 export function computeEngagementScore(opts: {
   emailSent?:           boolean;
