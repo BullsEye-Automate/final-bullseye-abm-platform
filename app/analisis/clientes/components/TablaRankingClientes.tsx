@@ -50,7 +50,7 @@ const COLUMNS: { key: NumericKey; label: string; description: string }[] = [
   {
     key: "reuniones_agendadas",
     label: "Reuniones Agendadas",
-    description: "Reuniones cuya fecha de reunión cae dentro del período, sin importar su estado.",
+    description: "Reuniones cuya Fecha de agendamiento cae dentro del período (sin importar cuándo ocurre la reunión).",
   },
   {
     key: "reuniones_realizadas",
@@ -70,7 +70,7 @@ const COLUMNS: { key: NumericKey; label: string; description: string }[] = [
   {
     key: "tasa_agendada_por_conectada",
     label: "Tasa Agendada/Conectada",
-    description: "Reuniones agendadas dentro del período (según su Fecha de agendamiento) ÷ Contactos Conectados — puede diferir de la columna Reuniones Agendadas, que cuenta por Fecha de la reunión.",
+    description: "Reuniones agendadas dentro del período (según su Fecha de agendamiento) ÷ Contactos Conectados — mismo numerador que la columna Reuniones Agendadas.",
   },
   {
     key: "tasa_realizacion_reuniones",
