@@ -9,7 +9,15 @@ export const clientsRouter = Router();
 // Todas las rutas de este archivo las llama únicamente el frontend web
 // (nunca la extensión de Chrome ni los webhooks de Google) — se exige sesión
 // de Supabase Auth en todas, con permisos más finos por ruta abajo.
-clientsRouter.use(requireAuth);
+//
+// Bug real encontrado (04-09-2026): sin el prefijo '/clients' acá, este
+// middleware se aplicaba a CUALQUIER request que llegara a esta altura de la
+// cadena — como clientsRouter se monta sin path propio (app.use(clientsRouter)
+// en app.ts), Express lo hace pasar por acá a TODO lo que no haya sido
+// respondido ya por un router anterior. Eso bloqueaba silenciosamente
+// /webhooks/recall (registrado después) con 401 "Falta el token de sesión",
+// sin que el código de webhooks.ts llegara siquiera a ejecutarse.
+clientsRouter.use('/clients', requireAuth);
 
 // En memoria (no a disco) — el archivo se sube directo a Supabase Storage,
 // nunca se guarda en el filesystem del backend. 50MB porque es el límite
