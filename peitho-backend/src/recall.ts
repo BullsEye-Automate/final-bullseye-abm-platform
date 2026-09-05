@@ -1,8 +1,14 @@
 // Fase H — Recall.ai crea un bot ("Peitho") que se une a la reunión y la
-// graba, reemplazando chrome.tabCapture (la extensión de Chrome). El audio
-// grabado sigue alimentando exactamente el mismo pipeline que ya existe
-// (analyzeMeetingAudio en postMeetingAnalysis.ts, vía Deepgram + Claude) —
-// Recall solo reemplaza CÓMO llega el audio, no qué se hace con él.
+// graba, reemplazando chrome.tabCapture (la extensión de Chrome).
+//
+// El análisis post-reunión (Claude, en postMeetingAnalysis.ts) ya NO
+// transcribe con Deepgram sobre el audio descargado — usa el transcript
+// nativo de Recall (recording_config.transcript, provider deepgram_async),
+// que trae el nombre real de cada hablante en vez de la heurística "el
+// primero que habla es el ejecutivo" (limitación conocida del pipeline
+// original, documentada más abajo en este mismo archivo de CLAUDE.md). El
+// audio-solo (audio_mixed_mp3) se sigue pidiendo igual como respaldo, por si
+// el transcript de Recall fallara en algún caso — ver getRecallRecordingUrl.
 //
 // Confirmado con una llamada real a la API (curl, 01-09-2026 y 03-09-2026,
 // esta última con un bot que grabó una llamada real de punta a punta):
@@ -63,9 +69,14 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
     // Referencia de vuelta a nuestra reunión — confirmado que "metadata" es
     // el campo correcto (ver nota arriba).
     metadata: { peitho_meeting_id: meetingId },
-    // Solo necesitamos el audio (Deepgram, no el video) — sin esto Recall
-    // no genera el shortcut `audio_mixed` (ver nota arriba).
-    recording_config: { audio_mixed_mp3: {} },
+    // audio_mixed_mp3: respaldo, no lo usa el análisis por default (ver nota
+    // arriba). transcript.provider.deepgram_async: transcript nativo de
+    // Recall con nombre real de cada hablante, en vez de Deepgram sobre el
+    // audio descargado + heurística de "primer hablante = ejecutivo".
+    recording_config: {
+      audio_mixed_mp3: {},
+      transcript: { provider: { deepgram_async: {} } },
+    },
   };
 
   // El campo google_meet solo aplica (y solo lo acepta Recall) si el link es
@@ -111,6 +122,30 @@ export async function getRecallRecordingUrl(botId: string): Promise<string> {
   const url = data?.recordings?.[0]?.media_shortcuts?.audio_mixed?.data?.download_url;
   if (!url) {
     throw new Error(`No se encontró la URL de descarga de la grabación para el bot ${botId}`);
+  }
+  return url;
+}
+
+// Igual que getRecallRecordingUrl, pero para el transcript nativo de Recall
+// (media_shortcuts.transcript) — confirmado por documentación real que el
+// JSON descargado es un array de segmentos por participante:
+// [{ participant: { name, ... }, words: [{ text, ... }, ...] }, ...].
+export async function getRecallTranscriptUrl(botId: string): Promise<string> {
+  const { apiKey, region } = getRecallConfig();
+
+  const res = await fetchRecall(recallApiUrl(region, `/bot/${botId}/`), {
+    headers: { Authorization: `Token ${apiKey}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Recall respondió ${res.status} consultando el bot ${botId}: ${await res.text()}`);
+  }
+
+  const data = await res.json();
+
+  const url = data?.recordings?.[0]?.media_shortcuts?.transcript?.data?.download_url;
+  if (!url) {
+    throw new Error(`No se encontró la URL de descarga del transcript para el bot ${botId}`);
   }
   return url;
 }

@@ -3,8 +3,8 @@ import path from 'path';
 import { Router } from 'express';
 import { Webhook } from 'svix';
 import { pool } from '../db';
-import { getRecallRecordingUrl } from '../recall';
-import { analyzeMeetingAudio } from '../postMeetingAnalysis';
+import { getRecallRecordingUrl, getRecallTranscriptUrl } from '../recall';
+import { analyzeMeetingAudio, buildTranscriptFromRecall } from '../postMeetingAnalysis';
 
 export const webhooksRouter = Router();
 
@@ -140,10 +140,29 @@ webhooksRouter.post('/webhooks/recall', async (req, res) => {
     const audioPath = path.join(uploadsDir, `${meeting.id}-${Date.now()}.mp3`);
     fs.writeFileSync(audioPath, audioBuffer);
 
-    await pool.query(`update meetings set audio_path = $1, status = 'captured', updated_at = now() where id = $2`, [
-      audioPath,
-      meeting.id,
-    ]);
+    // El transcript de Recall (nombre real de cada hablante, ver
+    // postMeetingAnalysis.ts) reemplaza a Deepgram para el análisis — si por
+    // algo falla (ej. no se generó a tiempo), no se aborta todo el flujo:
+    // el audio ya descargado queda como respaldo y analyzeMeetingAudio cae
+    // a Deepgram sobre él si transcript_text quedó vacío.
+    let transcriptText: string | null = null;
+    try {
+      console.log(`[webhooks/recall] bot ${botId}: bajando transcript para la reunión ${meeting.id}...`);
+      const transcriptUrl = await getRecallTranscriptUrl(botId);
+      const transcriptRes = await fetch(transcriptUrl);
+      if (!transcriptRes.ok) {
+        throw new Error(`Descarga del transcript respondió ${transcriptRes.status}`);
+      }
+      const segments = await transcriptRes.json();
+      transcriptText = buildTranscriptFromRecall(segments) || null;
+    } catch (error) {
+      console.error(`[webhooks/recall] no se pudo bajar el transcript de Recall para el bot ${botId}`, error);
+    }
+
+    await pool.query(
+      `update meetings set audio_path = $1, transcript_text = $2, status = 'captured', updated_at = now() where id = $3`,
+      [audioPath, transcriptText, meeting.id]
+    );
 
     console.log(`[webhooks/recall] audio guardado en ${audioPath} para la reunión ${meeting.id}`);
 

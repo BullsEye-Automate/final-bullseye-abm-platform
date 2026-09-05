@@ -67,9 +67,37 @@ async function transcribeAudio(filePath: string): Promise<any> {
   }
 }
 
+// Transcript nativo de Recall (Fase H) — reemplaza a Deepgram+heurística para
+// las reuniones capturadas por el bot. Trae el nombre REAL de cada hablante
+// (diarización por participante de la plataforma, no acústica), así que acá
+// no hace falta adivinar quién es el ejecutivo — el prompt de análisis ya
+// recibe por separado los nombres de ejecutivo/contraparte (columnas de
+// `meetings`) y puede correlacionarlos él mismo contra estos nombres reales.
+// Formato confirmado por la documentación de Recall: un array de segmentos
+// por participante, cada uno con sus palabras.
+interface RecallTranscriptSegment {
+  participant?: { name?: string | null } | null;
+  words?: Array<{ text?: string }>;
+}
+
+export function buildTranscriptFromRecall(segments: RecallTranscriptSegment[]): string {
+  const lines: string[] = [];
+  for (const segment of segments) {
+    const name = segment.participant?.name?.trim() || 'Desconocido';
+    const text = (segment.words ?? [])
+      .map((word) => word.text ?? '')
+      .join(' ')
+      .trim();
+    if (text) lines.push(`[${name}] ${text}`);
+  }
+  return lines.join('\n');
+}
+
 // Sin diarización distinguible, Deepgram no separa hablantes por rol — se asume
 // que quien habla primero es el ejecutivo (quien inicia la llamada), como sugiere
-// la arquitectura del prompt (ver docs/peitho_prompt_analisis_v1.md).
+// la arquitectura del prompt (ver docs/peitho_prompt_analisis_v1.md). Queda como
+// fallback solo para la extensión de Chrome (nunca tiene transcript_text de
+// Recall) — ver analyzeMeetingAudio.
 function buildTranscriptText(deepgramResponse: any): string {
   const utterances: DeepgramUtterance[] = deepgramResponse?.results?.utterances ?? [];
 
@@ -159,7 +187,7 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
   await resolveMeetingClientAndContact(meetingId);
 
   const { rows } = await pool.query(
-    `select m.id, m.ejecutivo, m.contraparte, m.audio_path, m.start_time, m.client_id,
+    `select m.id, m.ejecutivo, m.contraparte, m.audio_path, m.transcript_text, m.start_time, m.client_id,
             c.name as cliente_bullseye
      from meetings m
      left join clients c on c.id = m.client_id
@@ -168,15 +196,27 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
   );
   const meeting = rows[0];
   if (!meeting) throw new Error(`Reunión ${meetingId} no encontrada`);
-  if (!meeting.audio_path) throw new Error(`Reunión ${meetingId} no tiene audio_path`);
 
-  console.log(`[analysis] reunión ${meetingId}: transcribiendo con Deepgram...`);
-  const deepgramResponse = await transcribeAudio(meeting.audio_path);
-  const transcript = buildTranscriptText(deepgramResponse);
-  const durationSeconds = deepgramResponse?.metadata?.duration ?? null;
+  // El bot de Recall (Fase H) ya deja el transcript armado (con nombres
+  // reales) en transcript_text al bajar la grabación — ver webhooks.ts. Solo
+  // se recurre a Deepgram sobre el audio si no hay transcript_text (flujo
+  // viejo de la extensión de Chrome, que nunca lo tiene).
+  let transcript: string;
+  let durationSeconds: number | null = null;
+
+  if (meeting.transcript_text) {
+    console.log(`[analysis] reunión ${meetingId}: usando el transcript de Recall (sin Deepgram)...`);
+    transcript = meeting.transcript_text;
+  } else {
+    if (!meeting.audio_path) throw new Error(`Reunión ${meetingId} no tiene audio_path ni transcript_text`);
+    console.log(`[analysis] reunión ${meetingId}: transcribiendo con Deepgram...`);
+    const deepgramResponse = await transcribeAudio(meeting.audio_path);
+    transcript = buildTranscriptText(deepgramResponse);
+    durationSeconds = deepgramResponse?.metadata?.duration ?? null;
+  }
 
   if (!transcript) {
-    throw new Error(`Deepgram no devolvió transcripción para la reunión ${meetingId}`);
+    throw new Error(`No se encontró transcripción para la reunión ${meetingId}`);
   }
 
   const baseConocimiento = await getClientKnowledgeBaseContext(meeting.client_id);
