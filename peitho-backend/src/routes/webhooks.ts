@@ -37,12 +37,17 @@ function verifyRecallWebhook(req: any): { event: string; data: any } | null {
     }
   }
 
-  const svixId = req.header('svix-id');
-  const svixTimestamp = req.header('svix-timestamp');
-  const svixSignature = req.header('svix-signature');
+  // Recall manda los headers con el naming del estándar "Standard Webhooks"
+  // (webhook-id/webhook-timestamp/webhook-signature), no el legacy svix-*
+  // — confirmado real viendo un intento fallido en el dashboard de Recall.
+  // La librería `svix` igual espera el objeto de headers con claves svix-*,
+  // así que se leen con cualquiera de los dos nombres y se remapean.
+  const svixId = req.header('webhook-id') ?? req.header('svix-id');
+  const svixTimestamp = req.header('webhook-timestamp') ?? req.header('svix-timestamp');
+  const svixSignature = req.header('webhook-signature') ?? req.header('svix-signature');
   if (!svixId || !svixTimestamp || !svixSignature) {
     console.error(
-      `[webhooks/recall] rechazado: faltan headers svix (svix-id=${!!svixId}, svix-timestamp=${!!svixTimestamp}, svix-signature=${!!svixSignature})`
+      `[webhooks/recall] rechazado: faltan headers de firma (id=${!!svixId}, timestamp=${!!svixTimestamp}, signature=${!!svixSignature})`
     );
     return null;
   }
