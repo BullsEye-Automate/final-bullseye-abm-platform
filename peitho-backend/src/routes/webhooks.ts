@@ -20,23 +20,39 @@ if (!fs.existsSync(uploadsDir)) {
 // local/dev) — seteala en producción antes de exponer esta URL públicamente.
 function verifyRecallWebhook(req: any): { event: string; data: any } | null {
   const body = req.rawBody as Buffer | undefined;
-  if (!body) return null;
+  if (!body) {
+    console.error(
+      `[webhooks/recall] rechazado: no hay rawBody (content-type recibido: "${req.header('content-type')}")`
+    );
+    return null;
+  }
 
   const secret = process.env.RECALL_WEBHOOK_SECRET;
   if (!secret) {
     try {
       return JSON.parse(body.toString('utf8'));
     } catch {
+      console.error('[webhooks/recall] rechazado: RECALL_WEBHOOK_SECRET no seteada y el body no es JSON válido');
       return null;
     }
+  }
+
+  const svixId = req.header('svix-id');
+  const svixTimestamp = req.header('svix-timestamp');
+  const svixSignature = req.header('svix-signature');
+  if (!svixId || !svixTimestamp || !svixSignature) {
+    console.error(
+      `[webhooks/recall] rechazado: faltan headers svix (svix-id=${!!svixId}, svix-timestamp=${!!svixTimestamp}, svix-signature=${!!svixSignature})`
+    );
+    return null;
   }
 
   try {
     const wh = new Webhook(secret);
     const payload = wh.verify(body, {
-      'svix-id': req.header('svix-id') ?? '',
-      'svix-timestamp': req.header('svix-timestamp') ?? '',
-      'svix-signature': req.header('svix-signature') ?? '',
+      'svix-id': svixId,
+      'svix-timestamp': svixTimestamp,
+      'svix-signature': svixSignature,
     });
     return payload as unknown as { event: string; data: any };
   } catch (error) {
