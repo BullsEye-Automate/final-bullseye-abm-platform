@@ -70,7 +70,21 @@ function verifyRecallWebhook(req: any): { event: string; data: any } | null {
 // in_call_recording, done, fatal, ...) — solo nos importa "done" (grabación
 // lista para descargar). El resto se ignora silenciosamente (200, sin acción).
 webhooksRouter.post('/webhooks/recall', async (req, res) => {
-  const payload = verifyRecallWebhook(req);
+  console.log(
+    `[webhooks/recall] POST recibido — headers: ${JSON.stringify({
+      'content-type': req.header('content-type'),
+      'webhook-id': req.header('webhook-id'),
+      'webhook-timestamp': req.header('webhook-timestamp'),
+      'webhook-signature': req.header('webhook-signature'),
+    })}`
+  );
+  let payload: { event: string; data: any } | null;
+  try {
+    payload = verifyRecallWebhook(req);
+  } catch (error) {
+    console.error('[webhooks/recall] excepción no capturada en verifyRecallWebhook', error);
+    payload = null;
+  }
   if (!payload) {
     res.status(401).json({ error: 'Firma de webhook inválida o body faltante' });
     return;
