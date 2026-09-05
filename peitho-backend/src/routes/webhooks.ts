@@ -53,13 +53,20 @@ function verifyRecallWebhook(req: any): { event: string; data: any } | null {
   }
 
   try {
+    // wh.verify() en esta versión de la librería `svix` NO devuelve el
+    // payload parseado — su tipo de retorno es literalmente `undefined`,
+    // solo lanza una excepción si la firma es inválida. Confirmado real: sin
+    // este fix, un webhook con firma VÁLIDA igual se rechazaba con 401 en
+    // silencio (sin ningún error), porque `payload` quedaba `undefined` pase
+    // lo que pase — nunca se llegó a ver "firma inválida" en los logs porque
+    // la firma nunca fue el problema.
     const wh = new Webhook(secret);
-    const payload = wh.verify(body, {
+    wh.verify(body, {
       'svix-id': svixId,
       'svix-timestamp': svixTimestamp,
       'svix-signature': svixSignature,
     });
-    return payload as unknown as { event: string; data: any };
+    return JSON.parse(body.toString('utf8'));
   } catch (error) {
     console.error('[webhooks/recall] firma inválida', error);
     return null;
