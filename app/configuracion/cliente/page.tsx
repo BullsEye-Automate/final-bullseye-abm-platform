@@ -127,6 +127,17 @@ export default function ConfigClientePage() {
   const [alloSearchOpen, setAlloSearchOpen]     = useState(false);
   const [alloAssignError, setAlloAssignError]   = useState<string | null>(null);
 
+  // Campañas Lemlist
+  type LemlistCampaign = { id: string; name: string; status: string | null };
+  type AssignedCampaign = { id: string; campaign_id: string; campaign_name: string | null; is_active: boolean };
+  const [lemlistCampaigns, setLemlistCampaigns]       = useState<LemlistCampaign[]>([]);
+  const [lemlistCampaignsState, setLemlistCampaignsState] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [assignedCampaigns, setAssignedCampaigns]     = useState<AssignedCampaign[]>([]);
+  const [assignedLoading, setAssignedLoading]         = useState(false);
+  const [campaignSearch, setCampaignSearch]           = useState("");
+  const [campaignSearchOpen, setCampaignSearchOpen]   = useState(false);
+  const [campaignAssignError, setCampaignAssignError] = useState<string | null>(null);
+
   function set(field: keyof Config) {
     return (v: string) => setForm((f) => ({ ...f, [field]: v }));
   }
@@ -181,7 +192,58 @@ export default function ConfigClientePage() {
       .then((d) => setClientAllo(d.numbers ?? []))
       .catch(() => {})
       .finally(() => setClientAlloLoading(false));
+
+    // Cargar campañas Lemlist asignadas
+    setAssignedLoading(true);
+    fetch(`/api/clients/${currentClient.id}/lemlist-campaigns`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => setAssignedCampaigns(d.campaigns ?? []))
+      .catch(() => {})
+      .finally(() => setAssignedLoading(false));
   }, [currentClient?.id]);
+
+  // Cargar catálogo de campañas Lemlist cuando se selecciona cliente
+  useEffect(() => {
+    if (!currentClient) return;
+    setLemlistCampaignsState("loading");
+    fetch(`/api/lemlist/campaigns?client_id=${currentClient.id}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) { setLemlistCampaignsState("error"); return; }
+        setLemlistCampaigns(d.campaigns ?? []);
+        setLemlistCampaignsState("done");
+      })
+      .catch(() => setLemlistCampaignsState("error"));
+  }, [currentClient?.id]);
+
+  async function assignLemlistCampaign(c: { id: string; name: string }) {
+    if (!currentClient) return;
+    setCampaignAssignError(null);
+    const res = await fetch(`/api/clients/${currentClient.id}/lemlist-campaigns`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ campaign_id: c.id, campaign_name: c.name }),
+    });
+    const d = await res.json();
+    if (!res.ok) { setCampaignAssignError(d.error ?? "Error al asignar campaña"); return; }
+    setAssignedCampaigns((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), campaign_id: c.id, campaign_name: c.name, is_active: true },
+    ]);
+    setCampaignSearch("");
+    setCampaignSearchOpen(false);
+  }
+
+  async function removeLemlistCampaign(campaignId: string) {
+    if (!currentClient) return;
+    const res = await fetch(`/api/clients/${currentClient.id}/lemlist-campaigns`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ campaign_id: campaignId }),
+    });
+    if (!res.ok) return;
+    setAssignedCampaigns((prev) => prev.filter((c) => c.campaign_id !== campaignId));
+  }
 
   // Cargar el catálogo de números de Allo del workspace (una sola vez)
   useEffect(() => {
@@ -482,13 +544,73 @@ export default function ConfigClientePage() {
               value={form.lemlist_api_key}
               onChange={set("lemlist_api_key")}
             />
-            <Field
-              label="Campaign ID principal"
-              hint="ID de la campaña de outreach activa (email + LinkedIn). Se encuentra en la URL de la campaña en Lemlist."
-              placeholder="cam_xxxxxxxxxxxxxxxxxx"
-              value={form.lemlist_campaign_id}
-              onChange={set("lemlist_campaign_id")}
-            />
+            {/* Selector multi-campaña */}
+            <div>
+              <label className="label block mb-1">Campañas de outreach</label>
+              <p className="text-xs text-ink-subtle mb-2">
+                Asocia una o más campañas de Lemlist a este cliente. La reportería consolida los datos de todas.
+              </p>
+
+              {/* Campañas ya asignadas */}
+              {assignedLoading ? (
+                <div className="flex items-center gap-2 text-xs text-ink-muted py-2">
+                  <IconLoader2 size={13} className="animate-spin" /> Cargando campañas asignadas…
+                </div>
+              ) : assignedCampaigns.length > 0 ? (
+                <div className="space-y-1.5 mb-3">
+                  {assignedCampaigns.map((c) => (
+                    <div key={c.campaign_id}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-[#E5E2F0] bg-white text-sm">
+                      <div>
+                        <span className="font-medium">{c.campaign_name ?? c.campaign_id}</span>
+                        <span className="ml-2 text-xs text-ink-muted font-mono">{c.campaign_id}</span>
+                      </div>
+                      <button onClick={() => removeLemlistCampaign(c.campaign_id)}
+                        className="text-ink-muted hover:text-red-500 transition">
+                        <IconX size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-ink-muted mb-3">Sin campañas asignadas.</p>
+              )}
+
+              {/* Buscador para agregar campaña */}
+              <div className="relative">
+                <input
+                  className="input text-sm"
+                  placeholder={lemlistCampaignsState === "loading" ? "Cargando campañas de Lemlist…" : "Buscar campaña de Lemlist…"}
+                  value={campaignSearch}
+                  disabled={lemlistCampaignsState === "loading"}
+                  onFocus={() => setCampaignSearchOpen(true)}
+                  onBlur={() => setTimeout(() => setCampaignSearchOpen(false), 150)}
+                  onChange={(e) => { setCampaignSearch(e.target.value); setCampaignSearchOpen(true); }}
+                />
+                {campaignSearchOpen && lemlistCampaigns.length > 0 && (
+                  <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-white border border-[#E5E2F0] rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                    {lemlistCampaigns
+                      .filter((c) =>
+                        (!campaignSearch || c.name.toLowerCase().includes(campaignSearch.toLowerCase())) &&
+                        !assignedCampaigns.some((a) => a.campaign_id === c.id)
+                      )
+                      .map((c) => (
+                        <button key={c.id} onMouseDown={() => assignLemlistCampaign(c)}
+                          className="w-full text-left px-3 py-2.5 text-sm hover:bg-[#F5F3FF] transition flex items-center justify-between gap-2">
+                          <span>{c.name}</span>
+                          <span className="text-xs text-ink-muted font-mono shrink-0">{c.id}</span>
+                        </button>
+                      ))}
+                  </div>
+                )}
+              </div>
+              {campaignAssignError && (
+                <p className="text-xs text-red-500 mt-1">{campaignAssignError}</p>
+              )}
+              {lemlistCampaignsState === "error" && (
+                <p className="text-xs text-red-400 mt-1">No se pudo cargar el catálogo de Lemlist.</p>
+              )}
+            </div>
             <Field
               label="Campaign ID puente — Teléfonos (lookup 1 a 1)"
               hint="Campaña sin pasos usada por 'Buscar teléfono' para enriquecer un contacto puntual. No la compartas con la de Búsqueda manual de abajo — mezclar ambos procesos hace que los leads se pisen entre sí."
