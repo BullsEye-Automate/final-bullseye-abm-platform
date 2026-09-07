@@ -51,6 +51,15 @@ function extractMeetingUrl(event: GoogleCalendarEvent): string | null {
   return null;
 }
 
+// Mismo dominio que INTERNAL_DOMAIN en routes/meetings.ts — acá se necesita
+// para excluir a OTROS asistentes de BullsEye (ej. un segundo ejecutivo que
+// acompaña a la reunión), no solo al organizador. Sin esto, si ese segundo
+// asistente no es el organizador, podía quedar seleccionado como "contraparte"
+// antes que el prospecto real, resolviendo empresaContraparte a
+// bullseye-abm.com y ocultando la reunión entera por el filtro de
+// INTERNAL_DOMAIN — confirmado real con una reunión de prueba.
+const BULLSEYE_DOMAIN = 'bullseye-abm.com';
+
 // Para un evento en el calendario propio del bot, ni el organizador (el
 // ejecutivo comercial del cliente, ej. alguien de CCHC) ni el bot mismo son
 // el prospecto — el prospecto es el otro asistente. Distinto del caso de
@@ -63,6 +72,7 @@ function extractContraparteFromBotInvite(event: GoogleCalendarEvent, botEmail: s
     if (!email || attendee.resource) return false;
     if (email === botEmail.toLowerCase()) return false;
     if (organizerEmail && email === organizerEmail) return false;
+    if (email.endsWith(`@${BULLSEYE_DOMAIN}`)) return false;
     return true;
   });
   const contraparte = externalAttendees[0];
