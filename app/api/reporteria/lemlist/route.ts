@@ -148,8 +148,11 @@ async function fetchCampaign(apiKey: string, campaignId: string) {
   if (leadsRes.status === "fulfilled" && !leadsRes.value.ok) {
     console.error(`[lemlist] leads HTTP ${leadsRes.value.status} para campaña ${campaignId}`);
   }
+  // Log de estructura cruda para diagnosticar el formato de la respuesta
+  console.log(`[lemlist] leads raw keys:`, leadsRaw ? Object.keys(leadsRaw).join(", ") : "null/vacío",
+    "| isArray:", Array.isArray(leadsRaw), "| length:", Array.isArray(leadsRaw) ? leadsRaw.length : "N/A");
   const leads = normalizeLeads(leadsRaw);
-  console.log(`[lemlist] campaña ${campaignId}: ${leads.length} leads`);
+  console.log(`[lemlist] campaña ${campaignId}: ${leads.length} leads normalizados`);
 
   // Construir mapa de leads por email para lookup rápido
   const leadsMap = new Map<string, any>();
