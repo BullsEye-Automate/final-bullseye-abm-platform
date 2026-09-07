@@ -3,7 +3,7 @@
 //
 // El análisis post-reunión (Claude, en postMeetingAnalysis.ts) ya NO
 // transcribe con Deepgram sobre el audio descargado — usa el transcript
-// nativo de Recall (recording_config.transcript, provider deepgram_async),
+// nativo de Recall (recording_config.transcript, provider deepgram_streaming),
 // que trae el nombre real de cada hablante en vez de la heurística "el
 // primero que habla es el ejecutivo" (limitación conocida del pipeline
 // original, documentada más abajo en este mismo archivo de CLAUDE.md). El
@@ -70,12 +70,20 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
     // el campo correcto (ver nota arriba).
     metadata: { peitho_meeting_id: meetingId },
     // audio_mixed_mp3: respaldo, no lo usa el análisis por default (ver nota
-    // arriba). transcript.provider.deepgram_async: transcript nativo de
+    // arriba). transcript.provider.deepgram_streaming: transcript nativo de
     // Recall con nombre real de cada hablante, en vez de Deepgram sobre el
     // audio descargado + heurística de "primer hablante = ejecutivo".
+    // "deepgram_async" (usado en un intento anterior) NO es un valor válido —
+    // confirmado real con un 400 de Recall que además canceló la creación
+    // ENTERA del bot (ni siquiera entraba a la reunión): "Must provide
+    // exactly one of: assembly_ai_async_chunked, assembly_ai_streaming,
+    // assembly_ai_v3_streaming, aws_transcribe_streaming, deepgram_streaming,
+    // elevenlabs_streaming, gladia_v1_streaming, gladia_v2_streaming,
+    // meeting_captions, recallai_streaming, rev_streaming,
+    // speechmatics_streaming, symbl_streaming, zoom_rtms."
     recording_config: {
       audio_mixed_mp3: {},
-      transcript: { provider: { deepgram_async: {} } },
+      transcript: { provider: { deepgram_streaming: {} } },
     },
   };
 
