@@ -54,18 +54,27 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     // hacia adelante indefinidamente (se vieron filas hasta el año 2051).
     // "is distinct from" en vez de "<>" para no descartar filas con
     // empresa_contraparte en null (dominio desconocido, se muestran igual).
+    //
+    // Excepción al filtro de dominio interno: si a la reunión se invitó al
+    // bot a mano (upsertMeetingFromBotInvite en calendarSync.ts, único lugar
+    // que setea meeting_url), que se haya invitado ya es señal explícita de
+    // que se quiere grabar/registrar — no debe ocultarse aunque la
+    // contraparte detectada termine siendo de bullseye-abm.com (ej. no hay
+    // ningún asistente externo real, o quedan solo personas del equipo). Esas
+    // reuniones quedan sin client_id hasta que alguien las clasifique a mano
+    // o hagan match con el excel de metas.
     const { rows } = await pool.query(
       scope === 'upcoming'
         ? `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, client_id
            from meetings
            where start_time >= now()
-             and lower(empresa_contraparte) is distinct from $1
+             and (meeting_url is not null or lower(empresa_contraparte) is distinct from $1)
              and recurring_event_id is null
            order by start_time asc`
         : `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, client_id
            from meetings
            where start_time < now() and start_time >= now() - interval '90 days'
-             and lower(empresa_contraparte) is distinct from $1
+             and (meeting_url is not null or lower(empresa_contraparte) is distinct from $1)
              and recurring_event_id is null
            order by start_time desc`,
       [INTERNAL_DOMAIN]
