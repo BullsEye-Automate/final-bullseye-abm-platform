@@ -21,8 +21,31 @@
 //     este campo, `audio_mixed` quedó `null` en la respuesta de un bot que
 //     sí completó la grabación).
 
+import fs from 'fs';
+import path from 'path';
 import { pool } from './db';
 import { resolveMeetingClientAndContact } from './metasSheet';
+
+// Imagen que muestra el bot como su "cámara" mientras graba (logo de Peitho,
+// 1280x720 JPEG generado a partir de logo-peitho-transparent.png en
+// peitho-frontend/public) — Recall exige base64 vía
+// recording_config.automatic_video_output, no un archivo/URL. Se lee y
+// codifica una sola vez (no en cada bot creado): el archivo no cambia en
+// caliente, y a diferencia del bot signed-in de Google (que usa la foto de
+// perfil de la cuenta), un bot anónimo (ej. Teams) no tiene otra forma de
+// mostrar marca — sin esto, su recuadro de video queda en negro.
+const BOT_VIDEO_IMAGE_PATH = path.join(__dirname, '..', 'assets', 'recall-bot-video.jpg');
+let cachedBotVideoBase64: string | null | undefined;
+function getBotVideoBase64(): string | null {
+  if (cachedBotVideoBase64 !== undefined) return cachedBotVideoBase64;
+  try {
+    cachedBotVideoBase64 = fs.readFileSync(BOT_VIDEO_IMAGE_PATH).toString('base64');
+  } catch (error) {
+    console.error(`[recall] no se pudo leer la imagen del bot (${BOT_VIDEO_IMAGE_PATH})`, error);
+    cachedBotVideoBase64 = null;
+  }
+  return cachedBotVideoBase64;
+}
 
 function getRecallConfig(): { apiKey: string; region: string; loginGroupId: string | null } {
   const apiKey = process.env.RECALL_API_KEY;
@@ -88,6 +111,19 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
       audio_mixed_mp3: {},
     },
   };
+
+  // Logo de Peitho como "cámara" del bot — mismo tanto antes (in_call_not_
+  // recording, mientras espera/se conecta) como durante la grabación
+  // (in_call_recording), así nunca queda un recuadro negro. Confirmado por
+  // documentación de Recall que este campo va en la raíz del body, no dentro
+  // de recording_config.
+  const botVideoBase64 = getBotVideoBase64();
+  if (botVideoBase64) {
+    body.automatic_video_output = {
+      in_call_recording: { kind: 'jpeg', b64_data: botVideoBase64 },
+      in_call_not_recording: { kind: 'jpeg', b64_data: botVideoBase64 },
+    };
+  }
 
   // El campo google_meet solo aplica (y solo lo acepta Recall) si el link es
   // de Meet — para Teams no hace falta nada acá: el signed-in bot de Teams
