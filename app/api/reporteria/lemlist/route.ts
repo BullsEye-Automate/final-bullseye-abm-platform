@@ -334,49 +334,63 @@ export async function GET(req: NextRequest) {
   const isAll = clientId === "__all__";
 
   try {
-    // Clientes a procesar
-    let clientRows: { id: string; name: string; lemlist_campaign_id: string | null; lemlist_api_key: string | null }[] = [];
+    // Clientes a procesar: {id, name, apiKey, campaignIds[]}
+    type ClientEntry = { id: string; name: string; apiKey: string; campaignIds: string[] };
+    let clientEntries: ClientEntry[] = [];
 
-    if (isAll) {
-      const { data: clients } = await db.from("clients").select("id, name").eq("is_active", true);
-      if (!clients?.length) return NextResponse.json({ error: "No hay clientes activos" }, { status: 404 });
+    const clientIds = isAll
+      ? (await db.from("clients").select("id, name").eq("is_active", true)).data?.map((c: any) => c.id) ?? []
+      : [clientId];
 
-      const { data: configs } = await db
-        .from("client_configs")
-        .select("client_id, lemlist_campaign_id, lemlist_api_key")
-        .in("client_id", clients.map((c: { id: string }) => c.id));
+    if (!clientIds.length) return NextResponse.json({ error: "No hay clientes activos" }, { status: 404 });
 
-      clientRows = clients.flatMap((cl: { id: string; name: string }) => {
-        const cfg = configs?.find((c: { client_id: string }) => c.client_id === cl.id);
-        if (!cfg?.lemlist_campaign_id) return [];
-        return [{ id: cl.id, name: cl.name, lemlist_campaign_id: cfg.lemlist_campaign_id, lemlist_api_key: cfg.lemlist_api_key }];
-      });
-    } else {
-      const { data: cfg } = await db
-        .from("client_configs")
-        .select("lemlist_campaign_id, lemlist_api_key")
-        .eq("client_id", clientId)
-        .maybeSingle();
+    const [clientsData, configsData, assignedData] = await Promise.all([
+      db.from("clients").select("id, name").in("id", clientIds),
+      db.from("client_configs").select("client_id, lemlist_api_key").in("client_id", clientIds),
+      db.from("client_lemlist_campaigns").select("client_id, campaign_id").in("client_id", clientIds).eq("is_active", true),
+    ]);
 
-      if (!cfg?.lemlist_campaign_id) {
-        return NextResponse.json({ error: "No hay campaña Lemlist configurada para este cliente" }, { status: 404 });
-      }
+    for (const cl of clientsData.data ?? []) {
+      const cfg = configsData.data?.find((c: any) => c.client_id === cl.id);
+      const apiKey = cfg?.lemlist_api_key ?? process.env.LEMLIST_API_KEY ?? "";
+      if (!apiKey) continue;
 
-      const { data: cl } = await db.from("clients").select("name").eq("id", clientId).maybeSingle();
-      clientRows = [{ id: clientId, name: cl?.name ?? clientId, lemlist_campaign_id: cfg.lemlist_campaign_id, lemlist_api_key: cfg.lemlist_api_key }];
+      // Campañas de la nueva tabla
+      const campaignIds = (assignedData.data ?? [])
+        .filter((r: any) => r.client_id === cl.id)
+        .map((r: any) => r.campaign_id as string);
+
+      if (!campaignIds.length) continue;
+      clientEntries.push({ id: cl.id, name: cl.name, apiKey, campaignIds });
     }
 
-    if (!clientRows.length) {
-      return NextResponse.json({ error: "Ningún cliente tiene campaña Lemlist configurada" }, { status: 404 });
+    if (!clientEntries.length) {
+      return NextResponse.json({ error: "Ningún cliente tiene campañas Lemlist configuradas" }, { status: 404 });
     }
 
-    // Fetch en paralelo para todos los clientes
-    const results = await Promise.all(clientRows.map(async (cl) => {
-      const apiKey = cl.lemlist_api_key ?? process.env.LEMLIST_API_KEY ?? "";
-      if (!apiKey) return null;
-      const { reports, leads, campaignName } = await fetchCampaign(apiKey, cl.lemlist_campaign_id!);
-      const eng = computeEngagement(leads, cl.name);
-      return { cl, reports, leads, campaignName, eng };
+    // Fetch: por cada cliente, fetch de todas sus campañas en paralelo y merge
+    const results = await Promise.all(clientEntries.map(async (cl) => {
+      const campaignResults = await Promise.all(
+        cl.campaignIds.map((cid) => fetchCampaign(cl.apiKey, cid).catch(() => null))
+      );
+      const valid = campaignResults.filter(Boolean) as NonNullable<(typeof campaignResults)[0]>[];
+      if (!valid.length) return null;
+
+      // Merge campañas del mismo cliente
+      const mergedReports = {
+        emailsSent:              valid.reduce((s, v) => s + v.reports.emailsSent, 0),
+        emailsOpened:            valid.reduce((s, v) => s + v.reports.emailsOpened, 0),
+        emailsClicked:           valid.reduce((s, v) => s + v.reports.emailsClicked, 0),
+        emailsReplied:           valid.reduce((s, v) => s + v.reports.emailsReplied, 0),
+        linkedinReplied:         valid.reduce((s, v) => s + v.reports.linkedinReplied, 0),
+        linkedinInvitesAccepted: valid.reduce((s, v) => s + v.reports.linkedinInvitesAccepted, 0),
+        emailsBounced:           valid.reduce((s, v) => s + v.reports.emailsBounced, 0),
+      };
+      const mergedLeads = valid.flatMap((v) => v.leads);
+      const campaignName = valid.length === 1 ? valid[0].campaignName : `${valid.length} campañas`;
+
+      const eng = computeEngagement(mergedLeads, cl.name);
+      return { cl, reports: mergedReports, leads: mergedLeads, campaignName, eng };
     }));
     const valid = results.filter(Boolean) as NonNullable<(typeof results)[0]>[];
 
