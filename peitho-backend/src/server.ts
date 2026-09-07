@@ -1,8 +1,20 @@
 import 'dotenv/config';
 import { app } from './app';
 import { pool } from './db';
+import { checkAndRetryFailedRecallBots } from './recall';
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
+
+// Cada 1 min, revisa bots de Recall que ya deberían haber intentado unirse y
+// reintenta los que fallaron por el "sso_not_configured" intermitente (ver
+// checkAndRetryFailedRecallBots en recall.ts) — así no depende de que alguien
+// note a mano, en plena reunión, que el bot no llegó.
+const RECALL_RETRY_POLL_MS = 60_000;
+setInterval(() => {
+  checkAndRetryFailedRecallBots().catch((error) =>
+    console.error('[startup] error en el chequeo periódico de bots de Recall fallidos', error)
+  );
+}, RECALL_RETRY_POLL_MS);
 
 // Si el proceso anterior murió a mitad de un research (ej. Ctrl+C, o un
 // crash) el fire-and-forget nunca llegó a marcar 'failed', y esa reunión

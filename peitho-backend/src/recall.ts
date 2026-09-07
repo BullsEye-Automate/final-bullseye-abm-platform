@@ -160,6 +160,79 @@ export async function getRecallTranscriptUrl(botId: string): Promise<string> {
   return url;
 }
 
+// Devuelve el bot completo tal cual lo entrega Recall (status_changes
+// incluido) — usado por checkAndRetryFailedRecallBots para ver en qué quedó
+// un bot después de su intento de unirse.
+async function getRecallBot(botId: string): Promise<any> {
+  const { apiKey, region } = getRecallConfig();
+
+  const res = await fetchRecall(recallApiUrl(region, `/bot/${botId}/`), {
+    headers: { Authorization: `Token ${apiKey}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Recall respondió ${res.status} consultando el bot ${botId}: ${await res.text()}`);
+  }
+
+  return res.json();
+}
+
+const MAX_RECALL_BOT_RETRIES = 2;
+
+// Confirmado real (07-09-2026, con dos reuniones reales de prospectos en
+// juego): el bot puede fallar al entrar con "sso_not_configured" aunque toda
+// la config esté bien (Recall dashboard mostraba el login "Ready") — es un
+// rechazo intermitente de Google al momento real de unirse, no un problema de
+// configuración persistente. Un segundo bot creado inmediatamente después
+// entró sin problema. Esta función revisa periódicamente los bots de
+// reuniones que ya deberían haber intentado unirse y, si fallaron
+// específicamente por esto, crea un bot nuevo (join inmediato) en vez de
+// depender de que alguien lo note a mano en plena reunión.
+//
+// Se acota a sub_code === 'sso_not_configured' a propósito (no cualquier
+// "fatal") — otros motivos de fallo (ej. link de reunión inválido) son
+// permanentes y reintentar no cambiaría nada, solo gastaría bot-horas.
+export async function checkAndRetryFailedRecallBots(): Promise<void> {
+  if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
+
+  const { rows } = await pool.query(
+    `select id, meet_code, meeting_url, start_time, recall_bot_id, recall_bot_retries
+     from meetings
+     where recall_bot_id is not null
+       and status not in ('captured', 'analyzed')
+       and recall_bot_retries < $1
+       and start_time <= now() - interval '90 seconds'
+       and start_time >= now() - interval '20 minutes'`,
+    [MAX_RECALL_BOT_RETRIES]
+  );
+
+  for (const meeting of rows) {
+    const meetingUrl: string | null =
+      meeting.meeting_url ?? (meeting.meet_code ? `https://meet.google.com/${meeting.meet_code}` : null);
+    if (!meetingUrl) continue; // no debería pasar (scheduleRecallBotForMeeting ya exige meetingUrl), pero por las dudas
+
+    try {
+      const bot = await getRecallBot(meeting.recall_bot_id);
+      const lastStatus = bot?.status_changes?.[bot.status_changes.length - 1];
+      if (lastStatus?.code !== 'fatal' || lastStatus?.sub_code !== 'sso_not_configured') continue;
+
+      console.log(
+        `[recall] reunión ${meeting.id}: bot ${meeting.recall_bot_id} falló con sso_not_configured (reintento ${
+          meeting.recall_bot_retries + 1
+        }/${MAX_RECALL_BOT_RETRIES}), creando uno nuevo con join inmediato...`
+      );
+      const newBotId = await createRecallBot(meeting.id, meetingUrl, new Date());
+      await pool.query(
+        `update meetings set recall_bot_id = $1, recall_bot_retries = recall_bot_retries + 1, updated_at = now() where id = $2`,
+        [newBotId, meeting.id]
+      );
+      console.log(`[recall] reunión ${meeting.id}: bot reintentado (${newBotId})`);
+    } catch (error) {
+      console.error(`[recall] error reintentando el bot de la reunión ${meeting.id}`, error);
+    }
+  }
+}
+
 // Dos vías para que una reunión se lleve un bot (decidido explícitamente por
 // el usuario, ver CLAUDE.md Fase H): (a) hace match con el excel de metas —
 // implementado acá; (b) alguien invita al bot a mano a una reunión — todavía
