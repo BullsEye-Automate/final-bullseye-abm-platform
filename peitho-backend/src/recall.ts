@@ -1,14 +1,11 @@
 // Fase H — Recall.ai crea un bot ("Peitho") que se une a la reunión y la
 // graba, reemplazando chrome.tabCapture (la extensión de Chrome).
 //
-// El análisis post-reunión (Claude, en postMeetingAnalysis.ts) ya NO
-// transcribe con Deepgram sobre el audio descargado — usa el transcript
-// nativo de Recall (recording_config.transcript, provider deepgram_streaming),
-// que trae el nombre real de cada hablante en vez de la heurística "el
-// primero que habla es el ejecutivo" (limitación conocida del pipeline
-// original, documentada más abajo en este mismo archivo de CLAUDE.md). El
-// audio-solo (audio_mixed_mp3) se sigue pidiendo igual como respaldo, por si
-// el transcript de Recall fallara en algún caso — ver getRecallRecordingUrl.
+// El análisis post-reunión (Claude, en postMeetingAnalysis.ts) transcribe con
+// Deepgram sobre el audio descargado — el intento de reemplazarlo por el
+// transcript nativo de Recall (recording_config.transcript) quedó revertido
+// por ahora, ver el comentario en createRecallBot() con el detalle de los dos
+// intentos fallidos reales.
 //
 // Confirmado con una llamada real a la API (curl, 01-09-2026 y 03-09-2026,
 // esta última con un bot que grabó una llamada real de punta a punta):
@@ -69,21 +66,26 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
     // Referencia de vuelta a nuestra reunión — confirmado que "metadata" es
     // el campo correcto (ver nota arriba).
     metadata: { peitho_meeting_id: meetingId },
-    // audio_mixed_mp3: respaldo, no lo usa el análisis por default (ver nota
-    // arriba). transcript.provider.deepgram_streaming: transcript nativo de
-    // Recall con nombre real de cada hablante, en vez de Deepgram sobre el
-    // audio descargado + heurística de "primer hablante = ejecutivo".
-    // "deepgram_async" (usado en un intento anterior) NO es un valor válido —
-    // confirmado real con un 400 de Recall que además canceló la creación
-    // ENTERA del bot (ni siquiera entraba a la reunión): "Must provide
-    // exactly one of: assembly_ai_async_chunked, assembly_ai_streaming,
-    // assembly_ai_v3_streaming, aws_transcribe_streaming, deepgram_streaming,
-    // elevenlabs_streaming, gladia_v1_streaming, gladia_v2_streaming,
-    // meeting_captions, recallai_streaming, rev_streaming,
-    // speechmatics_streaming, symbl_streaming, zoom_rtms."
+    // audio_mixed_mp3: lo único que pedimos por ahora — el análisis transcribe
+    // este audio con Deepgram tal cual (ver postMeetingAnalysis.ts), como
+    // siempre.
+    //
+    // El transcript nativo de Recall (recording_config.transcript) quedó
+    // REVERTIDO — dos intentos reales fallaron en producción, justo antes de
+    // una reunión real con un prospecto (no se puede volver a probar sin
+    // arriesgar perderse otra reunión):
+    //   1. "deepgram_async" no es un valor de proveedor válido — 400 de
+    //      Recall, cancela la creación ENTERA del bot (ni siquiera entraba a
+    //      la reunión).
+    //   2. El siguiente intento, "deepgram_streaming" (nombre correcto según
+    //      el error de arriba), también falló: 400 "Deepgram credentials not
+    //      configured" — hay que cargar una API key de Deepgram propia en el
+    //      dashboard de Recall (https://us-west-2.recall.ai/dashboard/
+    //      transcription) antes de poder usar este proveedor, paso que no se
+    //      ha hecho. Reintentar esto en frío (sin una reunión real en juego)
+    //      una vez esa config esté lista en el dashboard.
     recording_config: {
       audio_mixed_mp3: {},
-      transcript: { provider: { deepgram_streaming: {} } },
     },
   };
 
