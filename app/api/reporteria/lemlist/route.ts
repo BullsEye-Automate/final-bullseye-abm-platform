@@ -117,31 +117,92 @@ function labelForActivity(type: string): string {
 
 // ─── Fetch datos de una campaña ───────────────────────────────────────────────
 
+const ACTIVITY_FETCH_TYPES = [
+  "emailsOpened",
+  "emailsClicked",
+  "emailsReplied",
+  "linkedinReplied",
+  "linkedinInviteAccepted",
+  "emailsBounced",
+] as const;
+
 async function fetchCampaign(apiKey: string, campaignId: string) {
   const creds = Buffer.from(`:${apiKey}`).toString("base64");
   const headers = { Authorization: `Basic ${creds}` };
 
-  const [reportsRes, leadsRes, campaignRes] = await Promise.allSettled([
-    fetch(`https://api.lemlist.com/api/campaigns/${campaignId}/reports`, { headers }),
-    fetch(`https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=100&offset=0`, { headers }),
+  // Usar /api/activities (patrón probado en el proyecto) + leads para nombre/empresa
+  const settled = await Promise.allSettled([
     fetch(`https://api.lemlist.com/api/campaigns/${campaignId}`, { headers }),
+    fetch(`https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=500&offset=0`, { headers }),
+    ...ACTIVITY_FETCH_TYPES.map(t =>
+      fetch(`https://api.lemlist.com/api/activities?type=${t}&campaignId=${campaignId}&limit=500`, { headers })
+    ),
   ]);
 
-  const reports = reportsRes.status === "fulfilled" && reportsRes.value.ok
-    ? await reportsRes.value.json().catch(() => null)
-    : null;
+  const campaign = settled[0].status === "fulfilled" && settled[0].value.ok
+    ? await settled[0].value.json().catch(() => null) : null;
 
-  const leadsRaw = leadsRes.status === "fulfilled" && leadsRes.value.ok
-    ? await leadsRes.value.json().catch(() => null)
-    : null;
+  const leadsRaw = settled[1].status === "fulfilled" && settled[1].value.ok
+    ? await settled[1].value.json().catch(() => null) : null;
+  const leads = normalizeLeads(leadsRaw);
 
-  const campaign = campaignRes.status === "fulfilled" && campaignRes.value.ok
-    ? await campaignRes.value.json().catch(() => null)
-    : null;
+  // Construir mapa de leads por email para lookup rápido
+  const leadsMap = new Map<string, any>();
+  for (const lead of leads) {
+    const email = (lead.email ?? "").toLowerCase().trim();
+    if (email) leadsMap.set(email, lead);
+  }
+
+  // Parsear actividades por tipo
+  const activitiesByType: Record<string, any[]> = {};
+  for (let i = 0; i < ACTIVITY_FETCH_TYPES.length; i++) {
+    const result = settled[i + 2];
+    if (result.status === "fulfilled" && result.value.ok) {
+      const data = await result.value.json().catch(() => null);
+      const items: any[] = Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
+      activitiesByType[ACTIVITY_FETCH_TYPES[i]] = items;
+    } else {
+      activitiesByType[ACTIVITY_FETCH_TYPES[i]] = [];
+    }
+  }
+
+  // Contar leads únicos por tipo de actividad
+  function uniqueEmails(type: string): Set<string> {
+    const s = new Set<string>();
+    for (const a of activitiesByType[type] ?? []) {
+      const email = (a.email ?? a.leadEmail ?? "").toLowerCase().trim();
+      if (email) s.add(email);
+    }
+    return s;
+  }
+
+  const reports = {
+    emailsSent:              leads.length,
+    emailsOpened:            uniqueEmails("emailsOpened").size,
+    emailsClicked:           uniqueEmails("emailsClicked").size,
+    emailsReplied:           uniqueEmails("emailsReplied").size,
+    linkedinReplied:         uniqueEmails("linkedinReplied").size,
+    linkedinInvitesAccepted: uniqueEmails("linkedinInviteAccepted").size,
+    emailsBounced:           uniqueEmails("emailsBounced").size,
+  };
+
+  // Reconstruir leads con sus actividades para scoring de engagement
+  const leadsWithActivities = leads.map((lead: any) => {
+    const email = (lead.email ?? "").toLowerCase().trim();
+    const activities: { type: string; at: string }[] = [];
+    for (const [type, acts] of Object.entries(activitiesByType)) {
+      for (const a of acts) {
+        if ((a.email ?? a.leadEmail ?? "").toLowerCase().trim() === email) {
+          activities.push({ type, at: a.createdAt ?? a.date ?? "" });
+        }
+      }
+    }
+    return { ...lead, activities };
+  });
 
   return {
-    reports: reports ?? {},
-    leads: normalizeLeads(leadsRaw),
+    reports,
+    leads: leadsWithActivities,
     campaignName: campaign?.name ?? campaignId,
   };
 }

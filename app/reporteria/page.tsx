@@ -256,9 +256,14 @@ function LemlistTab({ currentClient }: { currentClient: { id: string; name: stri
   return (
     <div className="space-y-4">
       {/* Botón actualizar */}
-      <div className="flex justify-end">
+      <div className="flex justify-end items-center gap-3">
+        {loading && data && (
+          <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <IconLoader2 size={13} className="animate-spin" /> Actualizando…
+          </span>
+        )}
         <button onClick={load} disabled={loading}
-          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition">
+          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50">
           <IconRefresh size={14} className={loading ? "animate-spin" : ""} />
           Actualizar
         </button>
