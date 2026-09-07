@@ -210,9 +210,15 @@ function LemlistTab({ currentClient }: { currentClient: { id: string; name: stri
     try {
       const res = await fetch(`/api/reporteria/lemlist?client_id=${currentClient.id}`);
       const d = await res.json();
-      if (!res.ok) setError(d.error ?? "Error al cargar datos de Lemlist");
-      else setData(d);
+      if (!res.ok) {
+        console.error("[LemlistTab] API error:", res.status, d);
+        setError(`${d.error ?? "Error al cargar datos de Lemlist"} (HTTP ${res.status})`);
+      } else {
+        console.log("[LemlistTab] datos:", d);
+        setData(d);
+      }
     } catch (e: any) {
+      console.error("[LemlistTab] fetch error:", e);
       setError(e?.message ?? "Error de red");
     }
     setLoading(false);

@@ -142,9 +142,14 @@ async function fetchCampaign(apiKey: string, campaignId: string) {
   const campaign = settled[0].status === "fulfilled" && settled[0].value.ok
     ? await settled[0].value.json().catch(() => null) : null;
 
-  const leadsRaw = settled[1].status === "fulfilled" && settled[1].value.ok
-    ? await settled[1].value.json().catch(() => null) : null;
+  const leadsRes = settled[1];
+  const leadsRaw = leadsRes.status === "fulfilled" && leadsRes.value.ok
+    ? await leadsRes.value.json().catch(() => null) : null;
+  if (leadsRes.status === "fulfilled" && !leadsRes.value.ok) {
+    console.error(`[lemlist] leads HTTP ${leadsRes.value.status} para campaña ${campaignId}`);
+  }
   const leads = normalizeLeads(leadsRaw);
+  console.log(`[lemlist] campaña ${campaignId}: ${leads.length} leads`);
 
   // Construir mapa de leads por email para lookup rápido
   const leadsMap = new Map<string, any>();
@@ -161,7 +166,10 @@ async function fetchCampaign(apiKey: string, campaignId: string) {
       const data = await result.value.json().catch(() => null);
       const items: any[] = Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
       activitiesByType[ACTIVITY_FETCH_TYPES[i]] = items;
+      console.log(`[lemlist] ${ACTIVITY_FETCH_TYPES[i]}: ${items.length} actividades`);
     } else {
+      const status = result.status === "fulfilled" ? result.value.status : "rejected";
+      console.error(`[lemlist] ${ACTIVITY_FETCH_TYPES[i]} falló: ${status}`);
       activitiesByType[ACTIVITY_FETCH_TYPES[i]] = [];
     }
   }
