@@ -95,6 +95,10 @@ export interface MeetingDetail extends MeetingListItem {
   contacto_cargo: string | null;
   contacto_industria: string | null;
   contacto_linkedin_url: string | null;
+  // Transcripción real (Fase H — nombre real de cada hablante vía Recall, o
+  // Deepgram como fallback para la extensión de Chrome). Null si la reunión
+  // no se ha grabado/analizado todavía.
+  transcript_text: string | null;
 }
 
 export interface ClientListItem {
