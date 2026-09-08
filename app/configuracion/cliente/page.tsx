@@ -216,6 +216,18 @@ export default function ConfigClientePage() {
       .catch(() => setLemlistCampaignsState("error"));
   }, [currentClient?.id]);
 
+  async function removeAllLemlistCampaigns() {
+    if (!currentClient) return;
+    for (const c of assignedCampaigns) {
+      await fetch(`/api/clients/${currentClient.id}/lemlist-campaigns`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaign_id: c.campaign_id }),
+      });
+    }
+    setAssignedCampaigns([]);
+  }
+
   async function assignAllLemlistCampaigns() {
     if (!currentClient) return;
     const unassigned = lemlistCampaigns.filter(
@@ -594,13 +606,21 @@ export default function ConfigClientePage() {
                 <p className="text-xs text-ink-muted mb-3">Sin campañas asignadas.</p>
               )}
 
-              {/* Agregar todas */}
-              {lemlistCampaigns.length > 0 && lemlistCampaigns.some((c) => !assignedCampaigns.some((a) => a.campaign_id === c.id)) && (
-                <button onClick={assignAllLemlistCampaigns}
-                  className="mb-2 text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition text-ink-muted">
-                  + Agregar todas ({lemlistCampaigns.filter((c) => !assignedCampaigns.some((a) => a.campaign_id === c.id)).length})
-                </button>
-              )}
+              {/* Acciones en batch */}
+              <div className="flex gap-2 mb-2">
+                {lemlistCampaigns.length > 0 && lemlistCampaigns.some((c) => !assignedCampaigns.some((a) => a.campaign_id === c.id)) && (
+                  <button onClick={assignAllLemlistCampaigns}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition text-ink-muted">
+                    + Agregar todas ({lemlistCampaigns.filter((c) => !assignedCampaigns.some((a) => a.campaign_id === c.id)).length})
+                  </button>
+                )}
+                {assignedCampaigns.length > 0 && (
+                  <button onClick={removeAllLemlistCampaigns}
+                    className="text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition text-ink-muted">
+                    Quitar todas
+                  </button>
+                )}
+              </div>
 
               {/* Buscador para agregar campaña */}
               <div className="relative">
