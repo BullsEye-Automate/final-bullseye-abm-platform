@@ -251,12 +251,20 @@ webhooksRouter.post('/webhooks/recall', async (req, res) => {
       console.error(`[webhooks/recall] falló el análisis de la reunión ${meeting.id}`, error);
     });
 
-    // Fire-and-forget a propósito — ver el comentario en saveVideoBackup()
-    // de por qué esto nunca debe estar en la misma cadena de awaits que lo
-    // de arriba.
-    saveVideoBackup(botId, meeting.id).catch((error) => {
-      console.error(`[webhooks/recall] error inesperado guardando el video del bot ${botId}`, error);
-    });
+    // DESACTIVADO (08-09-2026): saveVideoBackup() cargaba el video entero en
+    // memoria (Buffer.from(await videoRes.arrayBuffer())) antes de subirlo a
+    // Supabase Storage — con un video de varios cientos de MB esto reventó la
+    // RAM del contenedor de Railway y mató el proceso a mitad de camino (el
+    // correo de Railway confirmó "deployment ran out of memory"), sin ningún
+    // error en los logs porque un OOM mata el proceso de un tazo. Esto pasaba
+    // AUNQUE ya sea fire-and-forget y corra después de guardar audio/análisis
+    // — un OOM se lleva puesto todo el proceso, no solo esta función. Queda
+    // apagado hasta reescribirlo con streaming (pipe directo de la descarga a
+    // la subida, sin buffer completo en memoria) — no borrar saveVideoBackup(),
+    // es la base para esa reescritura.
+    // saveVideoBackup(botId, meeting.id).catch((error) => {
+    //   console.error(`[webhooks/recall] error inesperado guardando el video del bot ${botId}`, error);
+    // });
   } catch (error) {
     console.error(`[webhooks/recall] error procesando el bot ${botId}`, error);
   }
