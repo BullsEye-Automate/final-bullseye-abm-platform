@@ -3,6 +3,11 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { KB_CATEGORIES, KB_CATEGORY_GROUPS } from "@/lib/knowledgeBaseCategories";
+import { supabaseBrowser } from "@/lib/supabase/client";
+
+function backendUrl(): string {
+  return process.env.NEXT_PUBLIC_PEITHO_BACKEND_URL ?? "http://localhost:3001";
+}
 
 // `defaultCategory` precarga el <select> con la categoría seleccionada en el
 // sidebar (Fase F) — si el usuario está viendo "Presentaciones" y sube un
@@ -28,11 +33,23 @@ export default function DocumentUploadForm({
     setUploading(true);
     setError(null);
     try {
+      // Sube directo a peitho-backend (no vía proxy de Next.js) — Vercel
+      // corta el body de una función serverless en 4.5MB en el plan Hobby,
+      // y una presentación comercial real ya superó eso (confirmado: 4.7MB
+      // rechazado). El backend en Railway no tiene ese límite (acepta hasta
+      // 50MB, ver routes/clients.ts) — requiere CORS habilitado ahí para
+      // este origen (PEITHO_FRONTEND_ORIGINS) y mandar el token de sesión
+      // nosotros mismos, ya que no hay proxy server-side que lo agregue.
+      const {
+        data: { session },
+      } = await supabaseBrowser().auth.getSession();
+
       const formData = new FormData();
       formData.append("file", file);
       if (category) formData.append("category", category);
-      const res = await fetch(`/api/clients/${clientId}/documents`, {
+      const res = await fetch(`${backendUrl()}/clients/${clientId}/documents`, {
         method: "POST",
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : undefined,
         body: formData,
       });
       if (!res.ok) {
