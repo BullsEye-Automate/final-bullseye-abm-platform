@@ -25,20 +25,28 @@ export async function GET(req: NextRequest) {
   const headers = { Authorization: `Basic ${credentials}` };
   const camp = assigned[0];
 
-  // Probar varios endpoints posibles para estadísticas nativas
-  const endpoints = [
-    `/api/campaigns/${camp.campaign_id}/stats`,
-    `/api/campaigns/${camp.campaign_id}/analytics`,
-    `/api/campaigns/${camp.campaign_id}/leads?limit=5&offset=0`,
-    `/api/activities?campaignId=${camp.campaign_id}&limit=3`,
-  ];
+  // Probar distintos límites en actividades para ver cuál funciona
+  const [r100, r500, r1000, r5000, rNoLimit] = await Promise.all([
+    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=100`, { headers }),
+    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=500`, { headers }),
+    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=1000`, { headers }),
+    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=5000`, { headers }),
+    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}`, { headers }),
+  ]);
 
-  const results: Record<string, any> = {};
-  for (const ep of endpoints) {
-    const res = await fetch(`https://api.lemlist.com${ep}`, { headers, cache: "no-store" });
-    const body = await res.json().catch(() => null);
-    results[ep] = { status: res.status, body };
-  }
+  const parse = async (r: Response) => {
+    const body = await r.json().catch(() => null);
+    const items = Array.isArray(body) ? body : (body?.data ?? body?.activities ?? body?.items ?? []);
+    return { status: r.status, count: items.length, first: items[0] ?? null };
+  };
 
-  return NextResponse.json({ campaignId: camp.campaign_id, campaignName: camp.campaign_name, results });
+  return NextResponse.json({
+    campaignId: camp.campaign_id,
+    campaignName: camp.campaign_name,
+    "limit=100":   await parse(r100),
+    "limit=500":   await parse(r500),
+    "limit=1000":  await parse(r1000),
+    "limit=5000":  await parse(r5000),
+    "sin limit":   await parse(rNoLimit),
+  });
 }
