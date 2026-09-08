@@ -12,9 +12,15 @@ const STATUS_LABEL: Record<string, string> = {
   analyzed: "Analizada",
 };
 
+// timeZone explícito — ver el mismo fix en MeetingsTable.tsx (sin esto,
+// toLocaleString usa la zona del servidor, no la de Chile).
 function formatDate(value: string | null): string {
   if (!value) return "Sin fecha";
-  return new Date(value).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" });
+  return new Date(value).toLocaleString("es-CL", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/Santiago",
+  });
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

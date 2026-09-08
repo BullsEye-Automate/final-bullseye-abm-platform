@@ -5,8 +5,14 @@ import { useRouter } from "next/navigation";
 import type { KnowledgeBaseDocument } from "@/lib/peithoBackend";
 import { kbCategoryLabel } from "@/lib/knowledgeBaseCategories";
 
+// timeZone explícito — ver el mismo fix en MeetingsTable.tsx (sin esto,
+// toLocaleString usa la zona del servidor, no la de Chile).
 function formatDate(value: string): string {
-  return new Date(value).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" });
+  return new Date(value).toLocaleString("es-CL", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/Santiago",
+  });
 }
 
 export default function DocumentList({

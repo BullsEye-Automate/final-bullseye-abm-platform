@@ -10,11 +10,16 @@ const STATUS_LABEL: Record<MeetingListItem["status"], string> = {
   analyzed: "Analizada",
 };
 
+// timeZone explícito — bug real (08-09-2026): sin esto, toLocaleString usa
+// la zona del entorno donde corre el Server Component (Vercel = UTC), no la
+// de Chile, y mostraba "7:30 p.m." para una reunión que en realidad era a
+// las 16:30 hora de Chile (el dato en la base sí estaba correcto).
 function formatDate(value: string | null): string {
   if (!value) return "Sin fecha";
   return new Date(value).toLocaleString("es-CL", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "America/Santiago",
   });
 }
 
