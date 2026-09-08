@@ -174,16 +174,27 @@ async function fetchActivities(type: string, campaignId: string, headers: Record
   return Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
 }
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
 async function fetchCampaign(apiKey: string, campaignId: string, db: any, since?: string) {
   const creds = Buffer.from(`:${apiKey}`).toString("base64");
   const headers = { Authorization: `Basic ${creds}` };
 
-  const [campaign, leads, ...activityPages] = await Promise.all([
+  // Campaña + leads en paralelo (2 requests)
+  const [campaign, leads] = await Promise.all([
     fetch(`https://api.lemlist.com/api/campaigns/${campaignId}`, { headers })
       .then(r => r.ok ? r.json().catch(() => null) : null).catch(() => null),
     fetchAllLeads(campaignId, headers),
-    ...ACTIVITY_FETCH_TYPES.map(t => fetchActivities(t, campaignId, headers)),
   ]);
+
+  // Actividades de a 2 tipos en paralelo con pausa entre grupos para no saturar rate limit
+  const activityPages: any[][] = [];
+  for (let i = 0; i < ACTIVITY_FETCH_TYPES.length; i += 2) {
+    const pair = ACTIVITY_FETCH_TYPES.slice(i, i + 2);
+    const results = await Promise.all(pair.map(t => fetchActivities(t, campaignId, headers)));
+    activityPages.push(...results);
+    if (i + 2 < ACTIVITY_FETCH_TYPES.length) await sleep(150);
+  }
 
   console.log(`[lemlist] campaña ${campaignId}: ${leads.length} leads`);
 
@@ -448,7 +459,7 @@ export async function GET(req: NextRequest) {
     // Fetch: por cada cliente, fetch de campañas en lotes de 4 para evitar rate limiting
     const results = await runInBatches(clientEntries, 2, async (cl) => {
       const campaignResults = await runInBatches(
-        cl.campaignIds, 4,
+        cl.campaignIds, 2,
         (cid) => fetchCampaign(cl.apiKey, cid, db, since).catch(() => null)
       );
       const valid = campaignResults.filter(Boolean) as NonNullable<(typeof campaignResults)[0]>[];
