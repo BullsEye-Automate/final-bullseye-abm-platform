@@ -98,6 +98,12 @@ function getISOWeek(date: Date): number {
   return Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
 }
 
+const PERSONAL_EMAIL_DOMAINS = new Set([
+  "gmail.com","googlemail.com","hotmail.com","hotmail.cl","outlook.com","outlook.cl",
+  "yahoo.com","yahoo.cl","yahoo.es","icloud.com","me.com","live.com","live.cl",
+  "msn.com","protonmail.com","proton.me",
+]);
+
 function normalizeLeads(raw: any): any[] {
   if (Array.isArray(raw)) return raw;
   if (raw?.items && Array.isArray(raw.items)) return raw.items;
@@ -235,7 +241,7 @@ async function fetchCampaign(apiKey: string, campaignId: string, db: any) {
       email,
       firstName:   contact?.firstName  || data.firstName  || "",
       lastName:    contact?.lastName   || data.lastName   || "",
-      companyName: contact?.companyName || data.companyName || domain,
+      companyName: contact?.companyName || data.companyName || (PERSONAL_EMAIL_DOMAINS.has(domain) ? "" : domain),
       activities:  data.activities,
     };
   });
@@ -278,8 +284,7 @@ function computeEngagement(leads: any[], clientName: string) {
   // Por empresa
   const coMap = new Map<string, { contactCount: number; replyCount: number; totalScore: number; bestAction: string }>();
   for (const lead of leads) {
-    const emailDomain = lead.email ? lead.email.split("@")[1] ?? "" : "";
-    const co = lead.companyName ?? lead.company ?? (emailDomain ? emailDomain : "Desconocida");
+    const co = lead.companyName || "Sin empresa";
     const activities: any[] = lead.activities ?? [];
     let score = 0;
     let hasReply = false;
