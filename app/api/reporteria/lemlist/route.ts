@@ -104,6 +104,16 @@ const PERSONAL_EMAIL_DOMAINS = new Set([
   "msn.com","protonmail.com","proton.me",
 ]);
 
+async function runInBatches<T>(items: T[], batchSize: number, fn: (item: T) => Promise<any>): Promise<any[]> {
+  const results: any[] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
 function normalizeLeads(raw: any): any[] {
   if (Array.isArray(raw)) return raw;
   if (raw?.items && Array.isArray(raw.items)) return raw.items;
@@ -412,10 +422,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Ningún cliente tiene campañas Lemlist configuradas" }, { status: 404 });
     }
 
-    // Fetch: por cada cliente, fetch de todas sus campañas en paralelo y merge
-    const results = await Promise.all(clientEntries.map(async (cl) => {
-      const campaignResults = await Promise.all(
-        cl.campaignIds.map((cid) => fetchCampaign(cl.apiKey, cid, db).catch(() => null))
+    // Fetch: por cada cliente, fetch de campañas en lotes de 4 para evitar rate limiting
+    const results = await runInBatches(clientEntries, 2, async (cl) => {
+      const campaignResults = await runInBatches(
+        cl.campaignIds, 4,
+        (cid) => fetchCampaign(cl.apiKey, cid, db).catch(() => null)
       );
       const valid = campaignResults.filter(Boolean) as NonNullable<(typeof campaignResults)[0]>[];
       if (!valid.length) return null;
@@ -435,7 +446,7 @@ export async function GET(req: NextRequest) {
 
       const eng = computeEngagement(mergedLeads, cl.name);
       return { cl, reports: mergedReports, leads: mergedLeads, campaignName, eng };
-    }));
+    });
     const valid = results.filter(Boolean) as NonNullable<(typeof results)[0]>[];
 
     if (!valid.length) return NextResponse.json({ error: "No se pudo obtener datos de Lemlist" }, { status: 502 });
@@ -500,7 +511,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Weekly trend global (average across clients)
-    const globalTrend: WeeklyPoint[] = valid[0].eng.weeklyTrend.map((_, i) => ({
+    const globalTrend: WeeklyPoint[] = valid[0].eng.weeklyTrend.map((_: any, i: number) => ({
       label: valid[0].eng.weeklyTrend[i].label,
       replyRate: Math.round(
         valid.reduce((s, v) => s + (v.eng.weeklyTrend[i]?.replyRate ?? 0), 0) / valid.length * 10
