@@ -133,6 +133,19 @@ Después de confirmar la Tarea 5, el usuario pidió un cambio de rumbo: en vez d
 
 ---
 
+## Backlog documentado (sin fecha — pedido explícito del usuario: "dejar en la cola pero documentados")
+
+Pestañas del rediseño (Paso 5, `DetailTabs` en `/reuniones/[id]`) que hoy son placeholders explícitos ("Próximamente") en vez de datos inventados:
+
+- **"Aprendizaje"** — todavía no tiene alcance definido. No se sabe qué debería mostrar (¿tendencias de coaching a través de varias reuniones de un mismo vendedor? ¿comparación contra el playbook? ¿algo agregado por vendedor a lo largo del tiempo, no por reunión individual?). Bloqueado hasta que el usuario defina qué necesita ver ahí — sin eso no se puede ni estimar el esfuerzo.
+- **"Propuesta de correo"** — alcance más claro: generar con IA un borrador de correo de seguimiento post-reunión, mismo patrón que el research pre-reunión (Claude + transcripción/análisis de la reunión + base de conocimiento del cliente como contexto). Relativamente rápido de construir cuando se priorice — no tiene los prerrequisitos de infraestructura que sí tiene el ítem de abajo.
+- **Mostrar video de la reunión en la pestaña "Transcripción"** (idea nueva, 08-09-2026) — el texto de la transcripción (`transcript_text`) ya está resuelto, esa parte no es trabajo nuevo. El video es más grande de lo que parece porque tiene 3 prerrequisitos reales, no solo "traer el archivo de Recall":
+  1. Recall ya genera `media_shortcuts.video_mixed` por default (a diferencia del audio, que necesita pedirse explícito con `audio_mixed_mp3` en `recording_config` — ver `recall.ts`) — bajarlo es sencillo, mismo patrón que ya existe para el audio en `webhooks.ts`.
+  2. **Pero hoy los archivos de reuniones (audio, y el video que se sumaría) se guardan en disco local de Railway (`peitho-backend/uploads/`), no en Supabase Storage** — riesgo ya documentado y nunca resuelto para el audio ("no sirve para el deploy final... evaluar mover esto a Supabase Storage o S3"). Un video agrega más urgencia a resolver esto: son archivos más pesados, y el disco local de un contenedor no está garantizado que sobreviva un redeploy.
+  3. Hoy no existe ningún endpoint que sirva estos archivos al frontend (ni audio ni video) — el navegador nunca los toca directamente. Habría que construir uno nuevo, respetando el mismo scoping por `client_id` que ya se aplica al resto de los datos de la reunión (un usuario "client" no puede ver el video de la reunión de otro cliente).
+
+---
+
 ## Identidad de marca
 
 Definida por el usuario (no vía el prompt de `docs/prompt_logo_peitho.md` que se le redactó — terminó decidiendo distinto a la recomendación ahí):
