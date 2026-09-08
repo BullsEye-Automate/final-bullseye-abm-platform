@@ -142,44 +142,46 @@ const ACTIVITY_FETCH_TYPES = [
   "emailsBounced",
 ] as const;
 
+// Pagina un endpoint de Lemlist hasta obtener todos los items
+async function fetchAllPages(url: string, headers: Record<string, string>): Promise<any[]> {
+  const PAGE = 500;
+  const all: any[] = [];
+  let offset = 0;
+  while (true) {
+    const sep = url.includes("?") ? "&" : "?";
+    const res = await fetch(`${url}${sep}limit=${PAGE}&offset=${offset}`, { headers }).catch(() => null);
+    if (!res || !res.ok) break;
+    const data = await res.json().catch(() => null);
+    const items: any[] = Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
+    all.push(...items);
+    if (items.length < PAGE) break;      // última página
+    offset += PAGE;
+    if (offset > 10000) break;           // tope de seguridad
+  }
+  return all;
+}
+
 async function fetchCampaign(apiKey: string, campaignId: string, db: any, since?: string) {
   const creds = Buffer.from(`:${apiKey}`).toString("base64");
   const headers = { Authorization: `Basic ${creds}` };
 
-  const settled = await Promise.allSettled([
-    fetch(`https://api.lemlist.com/api/campaigns/${campaignId}`, { headers }),
-    fetch(`https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=500&offset=0`, { headers }),
+  // Fetch campaña + leads (paginados) + actividades (paginadas) en paralelo
+  const [campaignRes, leads, ...activityPages] = await Promise.all([
+    fetch(`https://api.lemlist.com/api/campaigns/${campaignId}`, { headers }).then(r => r.ok ? r.json().catch(() => null) : null),
+    fetchAllPages(`https://api.lemlist.com/api/campaigns/${campaignId}/leads`, headers),
     ...ACTIVITY_FETCH_TYPES.map(t =>
-      fetch(`https://api.lemlist.com/api/activities?type=${t}&campaignId=${campaignId}&limit=500`, { headers })
+      fetchAllPages(`https://api.lemlist.com/api/activities?type=${t}&campaignId=${campaignId}`, headers)
     ),
   ]);
 
-  const campaign = settled[0].status === "fulfilled" && settled[0].value.ok
-    ? await settled[0].value.json().catch(() => null) : null;
-
-  const leadsRes = settled[1];
-  const leadsRaw = leadsRes.status === "fulfilled" && leadsRes.value.ok
-    ? await leadsRes.value.json().catch(() => null) : null;
-  if (leadsRes.status === "fulfilled" && !leadsRes.value.ok) {
-    console.error(`[lemlist] leads HTTP ${leadsRes.value.status} para campaña ${campaignId}`);
-  }
-  const leads = normalizeLeads(leadsRaw);
+  const campaign = campaignRes;
   console.log(`[lemlist] campaña ${campaignId}: ${leads.length} leads`);
 
-  // Parsear actividades por tipo
+  // Actividades por tipo (paginadas completas)
   const activitiesByType: Record<string, any[]> = {};
   for (let i = 0; i < ACTIVITY_FETCH_TYPES.length; i++) {
-    const result = settled[i + 2];
-    if (result.status === "fulfilled" && result.value.ok) {
-      const data = await result.value.json().catch(() => null);
-      const items: any[] = Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
-      activitiesByType[ACTIVITY_FETCH_TYPES[i]] = items;
-      console.log(`[lemlist] ${ACTIVITY_FETCH_TYPES[i]}: ${items.length} actividades`);
-    } else {
-      const status = result.status === "fulfilled" ? result.value.status : "rejected";
-      console.error(`[lemlist] ${ACTIVITY_FETCH_TYPES[i]} falló: ${status}`);
-      activitiesByType[ACTIVITY_FETCH_TYPES[i]] = [];
-    }
+    activitiesByType[ACTIVITY_FETCH_TYPES[i]] = activityPages[i] ?? [];
+    console.log(`[lemlist] ${ACTIVITY_FETCH_TYPES[i]}: ${activitiesByType[ACTIVITY_FETCH_TYPES[i]].length}`);
   }
 
   // Filtrar actividades por fecha si se pasó `since`
