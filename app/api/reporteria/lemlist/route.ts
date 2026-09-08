@@ -126,11 +126,10 @@ const ACTIVITY_FETCH_TYPES = [
   "emailsBounced",
 ] as const;
 
-async function fetchCampaign(apiKey: string, campaignId: string) {
+async function fetchCampaign(apiKey: string, campaignId: string, db: any) {
   const creds = Buffer.from(`:${apiKey}`).toString("base64");
   const headers = { Authorization: `Basic ${creds}` };
 
-  // Usar /api/activities (patrón probado en el proyecto) + leads para nombre/empresa
   const settled = await Promise.allSettled([
     fetch(`https://api.lemlist.com/api/campaigns/${campaignId}`, { headers }),
     fetch(`https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=500&offset=0`, { headers }),
@@ -150,13 +149,6 @@ async function fetchCampaign(apiKey: string, campaignId: string) {
   }
   const leads = normalizeLeads(leadsRaw);
   console.log(`[lemlist] campaña ${campaignId}: ${leads.length} leads`);
-
-  // Construir mapa de leads por email para lookup rápido
-  const leadsMap = new Map<string, any>();
-  for (const lead of leads) {
-    const email = (lead.email ?? "").toLowerCase().trim();
-    if (email) leadsMap.set(email, lead);
-  }
 
   // Parsear actividades por tipo
   const activitiesByType: Record<string, any[]> = {};
@@ -194,18 +186,45 @@ async function fetchCampaign(apiKey: string, campaignId: string) {
     emailsBounced:           uniqueEmails("emailsBounced").size,
   };
 
-  // Reconstruir leads con sus actividades para scoring de engagement
-  const leadsWithActivities = leads.map((lead: any) => {
-    const email = (lead.email ?? "").toLowerCase().trim();
-    const activities: { type: string; at: string }[] = [];
-    for (const [type, acts] of Object.entries(activitiesByType)) {
-      for (const a of acts) {
-        if ((a.email ?? a.leadEmail ?? "").toLowerCase().trim() === email) {
-          activities.push({ type, at: a.createdAt ?? a.date ?? "" });
-        }
-      }
+  // Construir mapa email → actividades desde las actividades (no desde leads, que no traen email)
+  const emailActivities = new Map<string, { type: string; at: string }[]>();
+  for (const [type, acts] of Object.entries(activitiesByType)) {
+    for (const a of acts) {
+      const email = (a.email ?? a.leadEmail ?? "").toLowerCase().trim();
+      if (!email) continue;
+      if (!emailActivities.has(email)) emailActivities.set(email, []);
+      emailActivities.get(email)!.push({ type, at: a.createdAt ?? a.date ?? "" });
     }
-    return { ...lead, activities };
+  }
+
+  // Enriquecer emails con datos de Supabase contacts
+  const emailsArray = Array.from(emailActivities.keys());
+  let contactMap = new Map<string, { firstName: string; lastName: string; companyName: string }>();
+  if (emailsArray.length > 0) {
+    const { data: supaContacts } = await db
+      .from("contacts")
+      .select("email, first_name, last_name, companies(company_name)")
+      .in("email", emailsArray);
+    for (const c of supaContacts ?? []) {
+      contactMap.set((c.email ?? "").toLowerCase(), {
+        firstName:   c.first_name  ?? "",
+        lastName:    c.last_name   ?? "",
+        companyName: (c.companies as any)?.company_name ?? "",
+      });
+    }
+  }
+
+  // Construir leadsWithActivities para scoring
+  const leadsWithActivities = Array.from(emailActivities.entries()).map(([email, activities]) => {
+    const contact = contactMap.get(email);
+    const domain = email.split("@")[1] ?? "";
+    return {
+      email,
+      firstName:   contact?.firstName  ?? "",
+      lastName:    contact?.lastName   ?? "",
+      companyName: contact?.companyName ?? domain,
+      activities,
+    };
   });
 
   return {
@@ -378,7 +397,7 @@ export async function GET(req: NextRequest) {
     // Fetch: por cada cliente, fetch de todas sus campañas en paralelo y merge
     const results = await Promise.all(clientEntries.map(async (cl) => {
       const campaignResults = await Promise.all(
-        cl.campaignIds.map((cid) => fetchCampaign(cl.apiKey, cid).catch(() => null))
+        cl.campaignIds.map((cid) => fetchCampaign(cl.apiKey, cid, db).catch(() => null))
       );
       const valid = campaignResults.filter(Boolean) as NonNullable<(typeof campaignResults)[0]>[];
       if (!valid.length) return null;
@@ -428,7 +447,7 @@ export async function GET(req: NextRequest) {
         clientId: cl.id,
         clientName: cl.name,
         campaignName,
-        campaignId: cl.lemlist_campaign_id!,
+        campaignId: cl.campaignIds[0] ?? "",
         sent,
         opened,
         openRate:     sent > 0 ? Math.round((opened / sent) * 1000) / 10 : 0,
