@@ -422,20 +422,21 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   const isAll = clientId === "__all__";
 
-  // Caché: período como clave, TTL 60 minutos
+  // Caché: período como clave
+  // - sin force → TTL 60 min
+  // - con force  → TTL 5 min (evita refrescos inconsistentes por rate limiting)
   const cacheKey = since ? `since:${since.slice(0, 10)}` : "all";
-  if (!force) {
-    const { data: cached } = await db
-      .from("lemlist_report_cache")
-      .select("data, fetched_at")
-      .eq("client_id", clientId)
-      .eq("period", cacheKey)
-      .single();
-    if (cached) {
-      const ageMin = (Date.now() - new Date(cached.fetched_at).getTime()) / 60000;
-      if (ageMin < 60) {
-        return NextResponse.json({ ...cached.data, _cached: true, _ageMin: Math.round(ageMin) });
-      }
+  const cacheTTL = force ? 5 : 60;
+  const { data: cached } = await db
+    .from("lemlist_report_cache")
+    .select("data, fetched_at")
+    .eq("client_id", clientId)
+    .eq("period", cacheKey)
+    .single();
+  if (cached) {
+    const ageMin = (Date.now() - new Date(cached.fetched_at).getTime()) / 60000;
+    if (ageMin < cacheTTL) {
+      return NextResponse.json({ ...cached.data, _cached: true, _ageMin: Math.round(ageMin) });
     }
   }
 
