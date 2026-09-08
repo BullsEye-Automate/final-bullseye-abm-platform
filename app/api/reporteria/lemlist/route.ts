@@ -186,20 +186,33 @@ async function fetchCampaign(apiKey: string, campaignId: string, db: any) {
     emailsBounced:           uniqueEmails("emailsBounced").size,
   };
 
-  // Construir mapa email → actividades desde las actividades (no desde leads, que no traen email)
-  const emailActivities = new Map<string, { type: string; at: string }[]>();
+  // Construir mapa email → {actividades + nombre/empresa de la actividad}
+  type EmailData = {
+    activities: { type: string; at: string }[];
+    firstName: string;
+    lastName: string;
+    companyName: string;
+  };
+  const emailData = new Map<string, EmailData>();
   for (const [type, acts] of Object.entries(activitiesByType)) {
     for (const a of acts) {
       const email = (a.email ?? a.leadEmail ?? "").toLowerCase().trim();
       if (!email) continue;
-      if (!emailActivities.has(email)) emailActivities.set(email, []);
-      emailActivities.get(email)!.push({ type, at: a.createdAt ?? a.date ?? "" });
+      if (!emailData.has(email)) {
+        emailData.set(email, {
+          activities: [],
+          firstName:   a.leadFirstName   ?? a.firstName   ?? "",
+          lastName:    a.leadLastName    ?? a.lastName    ?? "",
+          companyName: a.leadCompanyName ?? a.companyName ?? "",
+        });
+      }
+      emailData.get(email)!.activities.push({ type, at: a.createdAt ?? a.date ?? "" });
     }
   }
 
-  // Enriquecer emails con datos de Supabase contacts
-  const emailsArray = Array.from(emailActivities.keys());
-  let contactMap = new Map<string, { firstName: string; lastName: string; companyName: string }>();
+  // Enriquecer con datos de Supabase contacts (prioridad sobre Lemlist cuando están)
+  const emailsArray = Array.from(emailData.keys());
+  const contactMap = new Map<string, { firstName: string; lastName: string; companyName: string }>();
   if (emailsArray.length > 0) {
     const { data: supaContacts } = await db
       .from("contacts")
@@ -215,15 +228,15 @@ async function fetchCampaign(apiKey: string, campaignId: string, db: any) {
   }
 
   // Construir leadsWithActivities para scoring
-  const leadsWithActivities = Array.from(emailActivities.entries()).map(([email, activities]) => {
+  const leadsWithActivities = Array.from(emailData.entries()).map(([email, data]) => {
     const contact = contactMap.get(email);
-    const domain = email.split("@")[1] ?? "";
+    const domain  = email.split("@")[1] ?? "";
     return {
       email,
-      firstName:   contact?.firstName  ?? "",
-      lastName:    contact?.lastName   ?? "",
-      companyName: contact?.companyName ?? domain,
-      activities,
+      firstName:   contact?.firstName  || data.firstName  || "",
+      lastName:    contact?.lastName   || data.lastName   || "",
+      companyName: contact?.companyName || data.companyName || domain,
+      activities:  data.activities,
     };
   });
 
