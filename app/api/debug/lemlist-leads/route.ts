@@ -5,7 +5,7 @@ import { getLemlistApiKey } from "@/lib/lemlistKey";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Endpoint de debug — busca una campaña con actividades y muestra la estructura real
+// Endpoint de debug — muestra la estructura real del objeto campaña y sus stats nativas
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("client_id");
   if (!clientId) return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
@@ -27,28 +27,26 @@ export async function GET(req: NextRequest) {
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const headers = { Authorization: `Basic ${credentials}` };
 
-  // Buscar la primera campaña que tenga actividades de emailsOpened
-  let sampleActivity: any = null;
-  let sampleCampaignId = "";
-  for (const camp of assigned) {
-    const res = await fetch(
-      `https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=2`,
-      { headers, cache: "no-store" }
-    );
-    const data = await res.json().catch(() => null);
-    const items: any[] = Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
-    if (items.length > 0) {
-      sampleActivity = items[0];
-      sampleCampaignId = camp.campaign_id;
-      break;
-    }
-  }
+  // Fetch primera campaña para ver su estructura
+  const firstCamp = assigned[0];
+  const [campaignRes, reportsRes] = await Promise.all([
+    fetch(`https://api.lemlist.com/api/campaigns/${firstCamp.campaign_id}`, { headers, cache: "no-store" }),
+    fetch(`https://api.lemlist.com/api/campaigns/${firstCamp.campaign_id}/reports`, { headers, cache: "no-store" }),
+  ]);
+
+  const campaignData = await campaignRes.json().catch(() => null);
+  const reportsData  = await reportsRes.json().catch(() => null);
 
   return NextResponse.json({
-    totalCampaigns: assigned.length,
-    campaignWithActivity: sampleCampaignId || null,
-    // Muestra todos los campos de una actividad real
-    activitySample: sampleActivity,
-    activityFields: sampleActivity ? Object.keys(sampleActivity) : [],
+    campaignId:     firstCamp.campaign_id,
+    campaignName:   firstCamp.campaign_name,
+    campaignStatus: campaignRes.status,
+    reportsStatus:  reportsRes.status,
+    // Estructura completa del objeto campaña
+    campaignSample: campaignData,
+    campaignFields: campaignData ? Object.keys(campaignData) : [],
+    // Estructura del endpoint /reports
+    reportsSample:  reportsData,
+    reportsFields:  reportsData && typeof reportsData === "object" ? Object.keys(reportsData) : [],
   });
 }
