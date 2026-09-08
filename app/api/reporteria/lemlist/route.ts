@@ -246,7 +246,8 @@ function computeEngagement(leads: any[], clientName: string) {
   // Por empresa
   const coMap = new Map<string, { contactCount: number; replyCount: number; totalScore: number; bestAction: string }>();
   for (const lead of leads) {
-    const co = lead.companyName || "Desconocida";
+    const emailDomain = lead.email ? lead.email.split("@")[1] ?? "" : "";
+    const co = lead.companyName ?? lead.company ?? (emailDomain ? emailDomain : "Desconocida");
     const activities: any[] = lead.activities ?? [];
     let score = 0;
     let hasReply = false;
@@ -310,10 +311,11 @@ function computeEngagement(leads: any[], clientName: string) {
       if ((SCORE_MAP[act.type] ?? 0) >= 5) {
         const fn = lead.firstName ?? lead.first_name ?? "";
         const ln = lead.lastName  ?? lead.last_name  ?? "";
+        const actEmailDomain = lead.email ? lead.email.split("@")[1] ?? "" : "";
         allActs.push({
           firstName: (fn || ln) ? fn : (lead.email ?? ""),
           lastName:  (fn || ln) ? ln : "",
-          companyName: lead.companyName ?? lead.company ?? "",
+          companyName: lead.companyName ?? lead.company ?? actEmailDomain,
           clientName,
           type: act.type,
           at: act.at ?? "",
