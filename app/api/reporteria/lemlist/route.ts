@@ -230,10 +230,13 @@ function computeEngagement(leads: any[], clientName: string) {
         lastActivity = { type: act.type, at: act.at };
       }
     }
+    const firstName = lead.firstName ?? lead.first_name ?? "";
+    const lastName  = lead.lastName  ?? lead.last_name  ?? "";
+    const displayName = (firstName || lastName) ? null : (lead.email ?? "");
     return {
-      firstName: lead.firstName ?? "",
-      lastName: lead.lastName ?? "",
-      companyName: lead.companyName ?? "",
+      firstName: displayName ? displayName : firstName,
+      lastName:  displayName ? ""           : lastName,
+      companyName: lead.companyName ?? lead.company ?? "",
       score,
       lastActivityType: lastActivity?.type ?? "",
       lastActivityAt: lastActivity?.at ?? "",
@@ -283,6 +286,7 @@ function computeEngagement(leads: any[], clientName: string) {
     const d = new Date(now.getTime() - (7 - i) * 7 * 86400000);
     return { weekNum: getISOWeek(d), year: d.getFullYear(), label: `Sem ${i + 1}`, replies: 0, sent: 0 };
   });
+  const totalLeads = leads.length || 1;
   for (const lead of leads) {
     for (const act of lead.activities ?? []) {
       if (!act.at) continue;
@@ -291,13 +295,12 @@ function computeEngagement(leads: any[], clientName: string) {
       const yr = d.getFullYear();
       const wk = weeks.find(w => w.weekNum === wn && w.year === yr);
       if (!wk) continue;
-      if (act.type === "emailsSent") wk.sent++;
       if (act.type === "emailsReplied" || act.type === "linkedinReplied") wk.replies++;
     }
   }
   const weeklyTrend: WeeklyPoint[] = weeks.map(w => ({
     label: w.label,
-    replyRate: w.sent > 0 ? Math.round((w.replies / w.sent) * 1000) / 10 : 0,
+    replyRate: Math.round((w.replies / totalLeads) * 1000) / 10,
   }));
 
   // Actividad reciente (eventos de alto valor, los 6 más recientes)
@@ -305,10 +308,12 @@ function computeEngagement(leads: any[], clientName: string) {
   for (const lead of leads) {
     for (const act of lead.activities ?? []) {
       if ((SCORE_MAP[act.type] ?? 0) >= 5) {
+        const fn = lead.firstName ?? lead.first_name ?? "";
+        const ln = lead.lastName  ?? lead.last_name  ?? "";
         allActs.push({
-          firstName: lead.firstName ?? "",
-          lastName: lead.lastName ?? "",
-          companyName: lead.companyName ?? "",
+          firstName: (fn || ln) ? fn : (lead.email ?? ""),
+          lastName:  (fn || ln) ? ln : "",
+          companyName: lead.companyName ?? lead.company ?? "",
           clientName,
           type: act.type,
           at: act.at ?? "",
