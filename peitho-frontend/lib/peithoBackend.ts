@@ -10,6 +10,10 @@ export interface MeetingListItem {
   // Fase E — para el filtro de cliente en la vista admin.
   client_id: string | null;
   cliente_bullseye: string | null;
+  // Solo vienen pobladas en scope=upcoming (mini-dashboard de "Reuniones
+  // futuras") — el backend las omite en scope=past, quedan undefined ahí.
+  pre_brief_status?: PreBriefStatus;
+  has_bot?: boolean;
 }
 
 // Forma del JSON que genera el prompt de análisis post-reunión (ver

@@ -1,5 +1,5 @@
 import { fetchMeetings, fetchClients, fetchMe } from "@/lib/peithoBackend";
-import MeetingsTable from "@/components/MeetingsTable";
+import ReunionesFuturasView from "@/components/ReunionesFuturasView";
 import ClientFilter from "@/components/ClientFilter";
 
 // Módulo 1 (esqueleto): listado simple. La página de detalle con el research
@@ -32,7 +32,7 @@ export default async function ReunionesFuturasPage({
         </div>
         {isAdmin && <ClientFilter clients={clients} />}
       </div>
-      <MeetingsTable meetings={meetings} detailBasePath="/reuniones" showClientColumn={isAdmin} />
+      <ReunionesFuturasView meetings={meetings} detailBasePath="/reuniones" showClientColumn={isAdmin} />
     </div>
   );
 }

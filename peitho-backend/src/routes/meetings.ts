@@ -63,9 +63,14 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     // ningún asistente externo real, o quedan solo personas del equipo). Esas
     // reuniones quedan sin client_id hasta que alguien las clasifique a mano
     // o hagan match con el excel de metas.
+    // pre_brief_status y has_bot: solo se usan hoy para el mini-dashboard de
+    // "Reuniones futuras" (contar cuántas tienen research listo / bot
+    // agendado) — livianos, no rompe el criterio de "no incluir
+    // audio_path/analysis completos" de arriba (eso sigue fuera).
     const { rows } = await pool.query(
       scope === 'upcoming'
-        ? `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, client_id
+        ? `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, client_id,
+                  pre_brief_status, (recall_bot_id is not null) as has_bot
            from meetings
            where start_time >= now()
              and (meeting_url is not null or lower(empresa_contraparte) is distinct from $1)
