@@ -6,6 +6,7 @@ import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 import AssignClientForm from "@/components/AssignClientForm";
 import DetailTabs from "@/components/DetailTabs";
 import MeetingVideoPlayer from "@/components/MeetingVideoPlayer";
+import CollapsibleSection from "@/components/CollapsibleSection";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Agendada",
@@ -295,6 +296,7 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
       </Section>
 
       {preBrief && (
+        <CollapsibleSection label="research" defaultOpen={!analysis}>
         <Section title="Investigación de empresa y prospecto">
           {preBrief.resumen_contexto && <p className="text-sm text-gray-700">{preBrief.resumen_contexto}</p>}
 
@@ -471,6 +473,7 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             </div>
           )}
         </Section>
+        </CollapsibleSection>
       )}
 
       {meeting.pre_brief_status === "failed" && (
