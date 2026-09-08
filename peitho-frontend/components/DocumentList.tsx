@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { KnowledgeBaseDocument } from "@/lib/peithoBackend";
+import { kbCategoryLabel } from "@/lib/knowledgeBaseCategories";
 
 function formatDate(value: string): string {
   return new Date(value).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short" });
@@ -12,10 +13,14 @@ export default function DocumentList({
   clientId,
   documents,
   readOnly = false,
+  showCategory = false,
 }: {
   clientId: string;
   documents: KnowledgeBaseDocument[];
   readOnly?: boolean;
+  // Fase F — solo tiene sentido en la vista "Todo el material" (mezcla
+  // categorías); dentro de una categoría ya seleccionada es redundante.
+  showCategory?: boolean;
 }) {
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -41,6 +46,7 @@ export default function DocumentList({
           <div>
             <p className="text-sm font-medium text-gray-900">{doc.file_name}</p>
             <p className="text-xs text-gray-500 mt-0.5">
+              {showCategory && <span>{kbCategoryLabel(doc.category)} · </span>}
               {formatDate(doc.uploaded_at)}
               {!doc.content_extracted && (
                 <span className="text-amber-600"> · no se pudo extraer el texto de este archivo</span>

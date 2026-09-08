@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { pool } from '../db';
-import { uploadKnowledgeBaseDocument, deleteKnowledgeBaseDocument } from '../knowledgeBase';
+import { uploadKnowledgeBaseDocument, deleteKnowledgeBaseDocument, KB_CATEGORY_KEYS, KbCategoryKey } from '../knowledgeBase';
 import { requireAuth, requireAdmin } from '../authMiddleware';
 
 export const clientsRouter = Router();
@@ -101,7 +101,7 @@ clientsRouter.get('/clients/:id/documents', async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `select id, file_name, file_type, uploaded_at, (content is not null) as content_extracted
+      `select id, file_name, file_type, category, uploaded_at, (content is not null) as content_extracted
        from knowledge_base_documents
        where client_id = $1
        order by uploaded_at desc`,
@@ -122,6 +122,19 @@ clientsRouter.post('/clients/:id/documents', requireAdmin, uploadSingleFile, asy
     return;
   }
 
+  // Fase F — categoría opcional (multer entrega los campos de texto del
+  // multipart en req.body igual que un form normal). Vacío/ausente = sin
+  // categorizar; cualquier otro valor debe ser una de las categorías fijas.
+  const rawCategory = req.body?.category;
+  let category: KbCategoryKey | null = null;
+  if (typeof rawCategory === 'string' && rawCategory.trim()) {
+    if (!KB_CATEGORY_KEYS.includes(rawCategory as KbCategoryKey)) {
+      res.status(400).json({ error: 'Categoría inválida' });
+      return;
+    }
+    category = rawCategory as KbCategoryKey;
+  }
+
   try {
     const { rowCount } = await pool.query(`select id from clients where id = $1`, [id]);
     if (rowCount === 0) {
@@ -135,7 +148,7 @@ clientsRouter.post('/clients/:id/documents', requireAdmin, uploadSingleFile, asy
     // corruptos si no se re-decodifica como UTF-8 — bug real visto con
     // "bullseye_icp_formatted — BullsEye.pdf".
     const fileName = Buffer.from(req.file.originalname, 'latin1').toString('utf8');
-    const result = await uploadKnowledgeBaseDocument(id, fileName, req.file.buffer);
+    const result = await uploadKnowledgeBaseDocument(id, fileName, req.file.buffer, category);
     res.status(201).json(result);
   } catch (error) {
     console.error('Error subiendo documento a la base de conocimiento', error);

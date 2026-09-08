@@ -107,6 +107,9 @@ export interface KnowledgeBaseDocument {
   id: string;
   file_name: string;
   file_type: string | null;
+  // Fase F — una de KB_CATEGORIES (lib/knowledgeBaseCategories.ts) o null si
+  // no se categorizó (documentos subidos antes de este cambio, o a propósito).
+  category: string | null;
   uploaded_at: string;
   content_extracted: boolean;
 }

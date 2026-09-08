@@ -19,6 +19,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   const outgoing = new FormData();
   outgoing.append("file", file);
+  const category = incoming.get("category");
+  if (typeof category === "string" && category) outgoing.append("category", category);
 
   const res = await fetch(`${backendUrl()}/clients/${params.id}/documents`, {
     method: "POST",

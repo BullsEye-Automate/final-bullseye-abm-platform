@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchClients, fetchClientDocuments, fetchMe } from "@/lib/peithoBackend";
-import DocumentUploadForm from "@/components/DocumentUploadForm";
-import DocumentList from "@/components/DocumentList";
+import KnowledgeBaseView from "@/components/KnowledgeBaseView";
 
 // Un usuario "client" puede VER (no subir/borrar) la base de conocimiento de
 // su propio cliente — aclaración explícita del usuario en la Fase E. El
@@ -33,21 +32,7 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
         <h1 className="text-xl font-semibold text-gray-900 mt-2">{clientName}</h1>
       </div>
 
-      {isAdmin && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">Subir documento</h2>
-          <p className="text-xs text-gray-500">
-            Formatos soportados: PDF, Word, PowerPoint, Excel, texto plano, OpenDocument, RTF. Máximo 50MB por
-            archivo (límite del plan actual de Supabase Storage).
-          </p>
-          <DocumentUploadForm clientId={params.id} />
-        </div>
-      )}
-
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <h2 className="text-sm font-semibold text-gray-900 mb-2">Documentos ({documents.length})</h2>
-        <DocumentList clientId={params.id} documents={documents} readOnly={!isAdmin} />
-      </div>
+      <KnowledgeBaseView clientId={params.id} documents={documents} readOnly={!isAdmin} />
     </div>
   );
 }

@@ -11,6 +11,19 @@ import { getSupabaseAdminClient } from './supabaseAdmin';
 
 const STORAGE_BUCKET = 'knowledge-base';
 
+// Fase F — categorías fijas (ver migración 015), mismas para todos los
+// clientes. `routes/clients.ts` valida contra esta lista antes de guardar.
+export const KB_CATEGORY_KEYS = [
+  'propuesta_valor',
+  'icp_perfiles',
+  'presentaciones',
+  'casos_exito',
+  'manejo_objeciones',
+  'videos_comerciales',
+  'imagenes_logos',
+] as const;
+export type KbCategoryKey = (typeof KB_CATEGORY_KEYS)[number];
+
 const TEXT_EXTENSIONS = new Set(['txt', 'md']);
 
 function getExtension(fileName: string): string {
@@ -52,7 +65,8 @@ async function extractText(buffer: Buffer, fileName: string): Promise<string | n
 export async function uploadKnowledgeBaseDocument(
   clientId: string,
   fileName: string,
-  buffer: Buffer
+  buffer: Buffer,
+  category: KbCategoryKey | null
 ): Promise<{ id: string; fileName: string; fileType: string; contentExtracted: boolean }> {
   const supabase = getSupabaseAdminClient();
   const ext = getExtension(fileName);
@@ -68,10 +82,10 @@ export async function uploadKnowledgeBaseDocument(
   const content = await extractText(buffer, fileName);
 
   const { rows } = await pool.query(
-    `insert into knowledge_base_documents (client_id, file_name, file_type, storage_path, content)
-     values ($1, $2, $3, $4, $5)
+    `insert into knowledge_base_documents (client_id, file_name, file_type, storage_path, content, category)
+     values ($1, $2, $3, $4, $5, $6)
      returning id`,
-    [clientId, fileName, ext, storagePath, content]
+    [clientId, fileName, ext, storagePath, content, category]
   );
 
   return { id: rows[0].id, fileName, fileType: ext, contentExtracted: content !== null };
