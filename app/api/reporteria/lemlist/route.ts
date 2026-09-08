@@ -142,39 +142,49 @@ const ACTIVITY_FETCH_TYPES = [
   "emailsBounced",
 ] as const;
 
-// Pagina un endpoint de Lemlist hasta obtener todos los items
-async function fetchAllPages(url: string, headers: Record<string, string>): Promise<any[]> {
+// Pagina el endpoint de leads (soporta offset)
+async function fetchAllLeads(campaignId: string, headers: Record<string, string>): Promise<any[]> {
   const PAGE = 500;
   const all: any[] = [];
   let offset = 0;
   while (true) {
-    const sep = url.includes("?") ? "&" : "?";
-    const res = await fetch(`${url}${sep}limit=${PAGE}&offset=${offset}`, { headers }).catch(() => null);
+    const res = await fetch(
+      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=${PAGE}&offset=${offset}`,
+      { headers }
+    ).catch(() => null);
     if (!res || !res.ok) break;
     const data = await res.json().catch(() => null);
-    const items: any[] = Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
+    const items: any[] = Array.isArray(data) ? data : (data?.data ?? data?.items ?? []);
     all.push(...items);
-    if (items.length < PAGE) break;      // última página
+    if (items.length < PAGE) break;
     offset += PAGE;
-    if (offset > 10000) break;           // tope de seguridad
+    if (offset > 20000) break;
   }
   return all;
+}
+
+// Actividades: sin offset (no soportado), usar límite alto
+async function fetchActivities(type: string, campaignId: string, headers: Record<string, string>): Promise<any[]> {
+  const res = await fetch(
+    `https://api.lemlist.com/api/activities?type=${type}&campaignId=${campaignId}&limit=5000`,
+    { headers }
+  ).catch(() => null);
+  if (!res || !res.ok) return [];
+  const data = await res.json().catch(() => null);
+  return Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
 }
 
 async function fetchCampaign(apiKey: string, campaignId: string, db: any, since?: string) {
   const creds = Buffer.from(`:${apiKey}`).toString("base64");
   const headers = { Authorization: `Basic ${creds}` };
 
-  // Fetch campaña + leads (paginados) + actividades (paginadas) en paralelo
-  const [campaignRes, leads, ...activityPages] = await Promise.all([
-    fetch(`https://api.lemlist.com/api/campaigns/${campaignId}`, { headers }).then(r => r.ok ? r.json().catch(() => null) : null),
-    fetchAllPages(`https://api.lemlist.com/api/campaigns/${campaignId}/leads`, headers),
-    ...ACTIVITY_FETCH_TYPES.map(t =>
-      fetchAllPages(`https://api.lemlist.com/api/activities?type=${t}&campaignId=${campaignId}`, headers)
-    ),
+  const [campaign, leads, ...activityPages] = await Promise.all([
+    fetch(`https://api.lemlist.com/api/campaigns/${campaignId}`, { headers })
+      .then(r => r.ok ? r.json().catch(() => null) : null).catch(() => null),
+    fetchAllLeads(campaignId, headers),
+    ...ACTIVITY_FETCH_TYPES.map(t => fetchActivities(t, campaignId, headers)),
   ]);
 
-  const campaign = campaignRes;
   console.log(`[lemlist] campaña ${campaignId}: ${leads.length} leads`);
 
   // Actividades por tipo (paginadas completas)
