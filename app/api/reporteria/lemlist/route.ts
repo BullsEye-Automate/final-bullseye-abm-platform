@@ -163,10 +163,10 @@ async function fetchAllLeads(campaignId: string, headers: Record<string, string>
   return all;
 }
 
-// Actividades: sin offset (no soportado), usar límite alto
+// Actividades: Lemlist soporta hasta limit=500 (valores mayores devuelven vacío)
 async function fetchActivities(type: string, campaignId: string, headers: Record<string, string>): Promise<any[]> {
   const res = await fetch(
-    `https://api.lemlist.com/api/activities?type=${type}&campaignId=${campaignId}&limit=5000`,
+    `https://api.lemlist.com/api/activities?type=${type}&campaignId=${campaignId}&limit=500`,
     { headers }
   ).catch(() => null);
   if (!res || !res.ok) return [];
