@@ -197,9 +197,11 @@ function TrendChart({ data, label, color }: { data: { label: string; replyRate: 
 // ─── Tab: Campañas Lemlist ────────────────────────────────────────────────────
 
 function LemlistTab({ currentClient, period }: { currentClient: { id: string; name: string } | null; period: Period }) {
-  const [data, setData]       = useState<LemlistReportData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [data, setData]           = useState<LemlistReportData | null>(null);
+  const [loading, setLoading]     = useState(false);
+  const [syncing, setSyncing]     = useState(false);
+  const [syncDone, setSyncDone]   = useState(false);
+  const [error, setError]         = useState<string | null>(null);
   const [fromCache, setFromCache] = useState(false);
 
   const isAll = !currentClient || currentClient.id === ALL_CLIENTS.id;
@@ -214,20 +216,33 @@ function LemlistTab({ currentClient, period }: { currentClient: { id: string; na
       const forceParam = force ? "&force=1" : "";
       const res = await fetch(`/api/reporteria/lemlist?client_id=${currentClient.id}${sinceParam}${forceParam}`);
       const d = await res.json();
-      if (!res.ok) {
-        console.error("[LemlistTab] API error:", res.status, d);
-        setError(`${d.error ?? "Error al cargar datos de Lemlist"} (HTTP ${res.status})`);
-      } else {
-        console.log("[LemlistTab] datos:", d);
-        setData(d);
-        setFromCache(!!d._cached);
-      }
+      if (!res.ok) setError(d.error ?? "Error al cargar datos de Lemlist");
+      else { setData(d); setFromCache(!!d._cached); }
     } catch (e: any) {
-      console.error("[LemlistTab] fetch error:", e);
       setError(e?.message ?? "Error de red");
     }
     setLoading(false);
   }, [currentClient, period]);
+
+  const sync = useCallback(async () => {
+    if (!currentClient || isAll) return;
+    setSyncing(true);
+    setSyncDone(false);
+    setError(null);
+    try {
+      const res = await fetch("/api/lemlist/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: currentClient.id }),
+      });
+      const d = await res.json();
+      if (!res.ok) setError(`Error al sincronizar: ${d.error ?? res.status}`);
+      else { setSyncDone(true); await load(true); }
+    } catch (e: any) {
+      setError(e?.message ?? "Error de red al sincronizar");
+    }
+    setSyncing(false);
+  }, [currentClient, isAll, load]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -250,13 +265,47 @@ function LemlistTab({ currentClient, period }: { currentClient: { id: string; na
 
   if (error) {
     return (
-      <div className="card border-l-4 border-red-400 px-5 py-4 text-red-600 text-sm flex items-center gap-2">
-        <IconX size={16} /> {error}
+      <div className="space-y-3">
+        <div className="card border-l-4 border-red-400 px-5 py-4 text-red-600 text-sm flex items-center gap-2">
+          <IconX size={16} /> {error}
+        </div>
+        {!isAll && (
+          <div className="flex justify-end">
+            <button onClick={sync} disabled={syncing}
+              className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-[#62E0D8] text-[#62E0D8] hover:bg-[rgba(98,224,216,0.08)] transition disabled:opacity-50">
+              {syncing ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
+              {syncing ? "Sincronizando…" : "Sincronizar desde Lemlist"}
+            </button>
+          </div>
+        )}
       </div>
     );
   }
 
   if (!data) return null;
+
+  if (data._needsSync) {
+    return (
+      <div className="card flex flex-col items-center justify-center py-16 gap-4 text-center">
+        <div className="text-4xl">🔄</div>
+        <div>
+          <div className="font-semibold text-ink mb-1">Sin datos sincronizados</div>
+          <div className="text-sm text-ink-muted max-w-sm">
+            Aún no hay datos de Lemlist almacenados para este cliente.<br />
+            Haz clic en "Sincronizar" para traer todas las actividades desde Lemlist.
+          </div>
+        </div>
+        {!isAll && (
+          <button onClick={sync} disabled={syncing}
+            className="flex items-center gap-2 text-sm px-5 py-2.5 rounded-xl font-semibold transition disabled:opacity-50"
+            style={{ background: "#62E0D8", color: "#251762" }}>
+            {syncing ? <IconLoader2 size={15} className="animate-spin" /> : <IconRefresh size={15} />}
+            {syncing ? "Sincronizando… (puede tardar 1-2 min)" : "Sincronizar desde Lemlist"}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   // Calcular alertas
   const avgReplyRate = data.replyRate;
@@ -266,17 +315,32 @@ function LemlistTab({ currentClient, period }: { currentClient: { id: string; na
 
   return (
     <div className="space-y-4">
-      {/* Botón actualizar */}
+      {/* Barra de acciones */}
       <div className="flex justify-end items-center gap-3">
-        {fromCache && !loading && (
-          <span className="text-xs text-ink-muted">Datos en caché</span>
-        )}
-        {loading && data && (
-          <span className="flex items-center gap-1.5 text-xs text-ink-muted">
-            <IconLoader2 size={13} className="animate-spin" /> Actualizando…
+        {data._lastSyncedAt && !loading && (
+          <span className="text-xs text-ink-muted">
+            Sincronizado: {new Date(data._lastSyncedAt).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}
           </span>
         )}
-        <button onClick={() => load(true)} disabled={loading}
+        {fromCache && !loading && <span className="text-xs text-ink-muted">· caché</span>}
+        {syncDone && !syncing && (
+          <span className="flex items-center gap-1 text-xs text-green-600">
+            <IconCheck size={12} /> Sincronizado
+          </span>
+        )}
+        {(loading || syncing) && data && (
+          <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <IconLoader2 size={13} className="animate-spin" /> {syncing ? "Sincronizando…" : "Actualizando…"}
+          </span>
+        )}
+        {!isAll && (
+          <button onClick={sync} disabled={syncing || loading}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#62E0D8] text-[#62E0D8] hover:bg-[rgba(98,224,216,0.08)] transition disabled:opacity-50">
+            {syncing ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
+            {syncing ? "Sincronizando…" : "Sincronizar"}
+          </button>
+        )}
+        <button onClick={() => load(true)} disabled={loading || syncing}
           className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50">
           <IconRefresh size={14} className={loading ? "animate-spin" : ""} />
           Actualizar
@@ -766,8 +830,8 @@ type Tab = "resumen" | "lemlist";
 
 export default function ReporteriaPage() {
   const { currentClient } = useClient();
-  const [activeTab, setActiveTab]         = useState<Tab>("resumen");
-  const [period, setPeriod]               = useState<Period>("all");
+  const [activeTab, setActiveTab]       = useState<Tab>("resumen");
+  const [period, setPeriod]             = useState<Period>("all");
   const [lemlistPeriod, setLemlistPeriod] = useState<Period>("30d");
   const [stats, setStats]         = useState<Stats | null>(null);
   const [loading, setLoading]     = useState(false);

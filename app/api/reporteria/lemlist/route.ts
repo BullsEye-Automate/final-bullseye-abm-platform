@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getLemlistApiKey } from "@/lib/lemlistKey";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,7 +55,6 @@ export type ClientCampaignStats = {
 };
 
 export type LemlistReportData = {
-  // KPIs globales
   totalSent: number;
   totalOpened: number;
   openRate: number;
@@ -67,19 +65,17 @@ export type LemlistReportData = {
   totalLinkedinAccepted: number;
   totalBounced: number;
   bounceRate: number;
-  campaignName?: string;  // solo en modo individual
-  // Desglose por cliente (modo "todos")
+  campaignName?: string;
   perClient: ClientCampaignStats[];
-  // Contactos y empresas
   topContacts: ContactEngagement[];
   topCompanies: CompanyEngagement[];
-  // Tendencia semanal
   weeklyTrend: WeeklyPoint[];
-  // Actividad reciente
   recentActivity: RecentActivityItem[];
+  _needsSync?: boolean;
+  _lastSyncedAt?: string | null;
 };
 
-// ─── Scoring de engagement ───────────────────────────────────────────────────
+// ─── Scoring ─────────────────────────────────────────────────────────────────
 
 const SCORE_MAP: Record<string, number> = {
   emailsReplied:          10,
@@ -104,22 +100,6 @@ const PERSONAL_EMAIL_DOMAINS = new Set([
   "msn.com","protonmail.com","proton.me",
 ]);
 
-async function runInBatches<T>(items: T[], batchSize: number, fn: (item: T) => Promise<any>): Promise<any[]> {
-  const results: any[] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const batchResults = await Promise.all(batch.map(fn));
-    results.push(...batchResults);
-  }
-  return results;
-}
-
-function normalizeLeads(raw: any): any[] {
-  if (Array.isArray(raw)) return raw;
-  if (raw?.items && Array.isArray(raw.items)) return raw.items;
-  return [];
-}
-
 function labelForActivity(type: string): string {
   const map: Record<string, string> = {
     emailsReplied:          "Email reply",
@@ -131,215 +111,49 @@ function labelForActivity(type: string): string {
   return map[type] ?? type;
 }
 
-// ─── Fetch datos de una campaña ───────────────────────────────────────────────
-
-const ACTIVITY_FETCH_TYPES = [
-  "emailsOpened",
-  "emailsClicked",
-  "emailsReplied",
-  "linkedinReplied",
-  "linkedinInviteAccepted",
-  "emailsBounced",
-] as const;
-
-// Pagina el endpoint de leads (soporta offset)
-async function fetchAllLeads(campaignId: string, headers: Record<string, string>): Promise<any[]> {
-  const PAGE = 500;
-  const all: any[] = [];
-  let offset = 0;
-  while (true) {
-    const res = await fetch(
-      `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=${PAGE}&offset=${offset}`,
-      { headers }
-    ).catch(() => null);
-    if (!res || !res.ok) break;
-    const data = await res.json().catch(() => null);
-    const items: any[] = Array.isArray(data) ? data : (data?.data ?? data?.items ?? []);
-    all.push(...items);
-    if (items.length < PAGE) break;
-    offset += PAGE;
-    if (offset > 20000) break;
-  }
-  return all;
-}
-
-// Actividades: Lemlist soporta hasta limit=500 (valores mayores devuelven vacío)
-async function fetchActivities(type: string, campaignId: string, headers: Record<string, string>): Promise<any[]> {
-  const res = await fetch(
-    `https://api.lemlist.com/api/activities?type=${type}&campaignId=${campaignId}&limit=500`,
-    { headers }
-  ).catch(() => null);
-  if (!res || !res.ok) return [];
-  const data = await res.json().catch(() => null);
-  return Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
-}
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-async function fetchCampaign(apiKey: string, campaignId: string, db: any, since?: string) {
-  const creds = Buffer.from(`:${apiKey}`).toString("base64");
-  const headers = { Authorization: `Basic ${creds}` };
-
-  // Campaña + leads en paralelo (2 requests)
-  const [campaign, leads] = await Promise.all([
-    fetch(`https://api.lemlist.com/api/campaigns/${campaignId}`, { headers })
-      .then(r => r.ok ? r.json().catch(() => null) : null).catch(() => null),
-    fetchAllLeads(campaignId, headers),
-  ]);
-
-  // Actividades de a 2 tipos en paralelo con pausa entre grupos para no saturar rate limit
-  const activityPages: any[][] = [];
-  for (let i = 0; i < ACTIVITY_FETCH_TYPES.length; i += 2) {
-    const pair = ACTIVITY_FETCH_TYPES.slice(i, i + 2);
-    const results = await Promise.all(pair.map(t => fetchActivities(t, campaignId, headers)));
-    activityPages.push(...results);
-    if (i + 2 < ACTIVITY_FETCH_TYPES.length) await sleep(150);
-  }
-
-  console.log(`[lemlist] campaña ${campaignId}: ${leads.length} leads`);
-
-  // Actividades por tipo (paginadas completas)
-  const activitiesByType: Record<string, any[]> = {};
-  for (let i = 0; i < ACTIVITY_FETCH_TYPES.length; i++) {
-    activitiesByType[ACTIVITY_FETCH_TYPES[i]] = activityPages[i] ?? [];
-    console.log(`[lemlist] ${ACTIVITY_FETCH_TYPES[i]}: ${activitiesByType[ACTIVITY_FETCH_TYPES[i]].length}`);
-  }
-
-  // Filtrar actividades por fecha si se pasó `since`
-  if (since) {
-    for (const type of Object.keys(activitiesByType)) {
-      activitiesByType[type] = activitiesByType[type].filter((a: any) => {
-        const at = a.createdAt ?? a.date ?? "";
-        return at >= since;
-      });
-    }
-  }
-
-  // Contar leads únicos por tipo de actividad
-  function uniqueEmails(type: string): Set<string> {
-    const s = new Set<string>();
-    for (const a of activitiesByType[type] ?? []) {
-      const email = (a.email ?? a.leadEmail ?? "").toLowerCase().trim();
-      if (email) s.add(email);
-    }
-    return s;
-  }
-
-  const reports = {
-    emailsSent:              leads.length,
-    emailsOpened:            uniqueEmails("emailsOpened").size,
-    emailsClicked:           uniqueEmails("emailsClicked").size,
-    emailsReplied:           uniqueEmails("emailsReplied").size,
-    linkedinReplied:         uniqueEmails("linkedinReplied").size,
-    linkedinInvitesAccepted: uniqueEmails("linkedinInviteAccepted").size,
-    emailsBounced:           uniqueEmails("emailsBounced").size,
-  };
-
-  // Construir mapa email → {actividades + nombre/empresa de la actividad}
-  type EmailData = {
-    activities: { type: string; at: string }[];
-    firstName: string;
-    lastName: string;
-    companyName: string;
-  };
-  const emailData = new Map<string, EmailData>();
-  for (const [type, acts] of Object.entries(activitiesByType)) {
-    for (const a of acts) {
-      const email = (a.email ?? a.leadEmail ?? "").toLowerCase().trim();
-      if (!email) continue;
-      if (!emailData.has(email)) {
-        emailData.set(email, {
-          activities: [],
-          firstName:   a.leadFirstName   ?? a.firstName   ?? "",
-          lastName:    a.leadLastName    ?? a.lastName    ?? "",
-          companyName: a.leadCompanyName ?? a.companyName ?? "",
-        });
-      }
-      emailData.get(email)!.activities.push({ type, at: a.createdAt ?? a.date ?? "" });
-    }
-  }
-
-  // Enriquecer con datos de Supabase contacts (prioridad sobre Lemlist cuando están)
-  const emailsArray = Array.from(emailData.keys());
-  const contactMap = new Map<string, { firstName: string; lastName: string; companyName: string }>();
-  if (emailsArray.length > 0) {
-    const { data: supaContacts } = await db
-      .from("contacts")
-      .select("email, first_name, last_name, companies(company_name)")
-      .in("email", emailsArray);
-    for (const c of supaContacts ?? []) {
-      contactMap.set((c.email ?? "").toLowerCase(), {
-        firstName:   c.first_name  ?? "",
-        lastName:    c.last_name   ?? "",
-        companyName: (c.companies as any)?.company_name ?? "",
-      });
-    }
-  }
-
-  // Construir leadsWithActivities para scoring
-  const leadsWithActivities = Array.from(emailData.entries()).map(([email, data]) => {
-    const contact = contactMap.get(email);
-    const domain  = email.split("@")[1] ?? "";
-    return {
-      email,
-      firstName:   contact?.firstName  || data.firstName  || "",
-      lastName:    contact?.lastName   || data.lastName   || "",
-      companyName: contact?.companyName || data.companyName || (PERSONAL_EMAIL_DOMAINS.has(domain) ? "" : domain),
-      activities:  data.activities,
-    };
-  });
-
-  return {
-    reports,
-    leads: leadsWithActivities,
-    campaignName: campaign?.name ?? campaignId,
-  };
-}
-
 // ─── Computar engagement ──────────────────────────────────────────────────────
 
-function computeEngagement(leads: any[], clientName: string) {
-  // Por contacto
-  const contacts: ContactEngagement[] = leads.map((lead) => {
-    const activities: any[] = lead.activities ?? [];
+function computeEngagement(
+  leadsWithActivities: { email: string; firstName: string; lastName: string; companyName: string; activities: { type: string; at: string }[] }[],
+  clientName: string
+) {
+  const contacts: ContactEngagement[] = leadsWithActivities.map((lead) => {
     let score = 0;
     let lastActivity: { type: string; at: string } | null = null;
-    for (const act of activities) {
+    for (const act of lead.activities) {
       const pts = SCORE_MAP[act.type] ?? 0;
       score += pts;
       if (pts > 0 && (!lastActivity || act.at > lastActivity.at)) {
         lastActivity = { type: act.type, at: act.at };
       }
     }
-    const firstName = lead.firstName ?? lead.first_name ?? "";
-    const lastName  = lead.lastName  ?? lead.last_name  ?? "";
-    const displayName = (firstName || lastName) ? null : (lead.email ?? "");
+    const fn = lead.firstName;
+    const ln = lead.lastName;
+    const displayName = (fn || ln) ? null : lead.email;
     return {
-      firstName: displayName ? displayName : firstName,
-      lastName:  displayName ? ""           : lastName,
-      companyName: lead.companyName ?? lead.company ?? "",
+      firstName: displayName ? displayName : fn,
+      lastName:  displayName ? ""           : ln,
+      companyName: lead.companyName,
       score,
       lastActivityType: lastActivity?.type ?? "",
       lastActivityAt: lastActivity?.at ?? "",
     };
   }).sort((a, b) => b.score - a.score).slice(0, 10);
 
-  // Por empresa
   const coMap = new Map<string, { contactCount: number; replyCount: number; totalScore: number; bestAction: string }>();
-  for (const lead of leads) {
+  for (const lead of leadsWithActivities) {
     const co = lead.companyName || "Sin empresa";
-    const activities: any[] = lead.activities ?? [];
     let score = 0;
     let hasReply = false;
     let bestAction = "";
-    for (const act of activities) {
+    for (const act of lead.activities) {
       const pts = SCORE_MAP[act.type] ?? 0;
       score += pts;
       if (act.type === "emailsReplied" || act.type === "linkedinReplied") hasReply = true;
       if (!bestAction && pts >= 5) bestAction = act.type;
     }
     if (!bestAction) {
-      for (const act of activities) { if (SCORE_MAP[act.type]) { bestAction = act.type; break; } }
+      for (const act of lead.activities) { if (SCORE_MAP[act.type]) { bestAction = act.type; break; } }
     }
     const ex = coMap.get(co) ?? { contactCount: 0, replyCount: 0, totalScore: 0, bestAction: "" };
     coMap.set(co, {
@@ -361,15 +175,14 @@ function computeEngagement(leads: any[], clientName: string) {
     .sort((a, b) => b.totalScore - a.totalScore)
     .slice(0, 10);
 
-  // Tendencia semanal (últimas 8 semanas)
   const now = new Date();
   const weeks = Array.from({ length: 8 }, (_, i) => {
     const d = new Date(now.getTime() - (7 - i) * 7 * 86400000);
-    return { weekNum: getISOWeek(d), year: d.getFullYear(), label: `Sem ${i + 1}`, replies: 0, sent: 0 };
+    return { weekNum: getISOWeek(d), year: d.getFullYear(), label: `Sem ${i + 1}`, replies: 0 };
   });
-  const totalLeads = leads.length || 1;
-  for (const lead of leads) {
-    for (const act of lead.activities ?? []) {
+  const totalLeads = leadsWithActivities.length || 1;
+  for (const lead of leadsWithActivities) {
+    for (const act of lead.activities) {
       if (!act.at) continue;
       const d = new Date(act.at);
       const wn = getISOWeek(d);
@@ -384,21 +197,20 @@ function computeEngagement(leads: any[], clientName: string) {
     replyRate: Math.round((w.replies / totalLeads) * 1000) / 10,
   }));
 
-  // Actividad reciente (eventos de alto valor, los 6 más recientes)
   const allActs: RecentActivityItem[] = [];
-  for (const lead of leads) {
-    for (const act of lead.activities ?? []) {
+  for (const lead of leadsWithActivities) {
+    for (const act of lead.activities) {
       if ((SCORE_MAP[act.type] ?? 0) >= 5) {
-        const fn = lead.firstName ?? lead.first_name ?? "";
-        const ln = lead.lastName  ?? lead.last_name  ?? "";
+        const fn = lead.firstName;
+        const ln = lead.lastName;
         const actEmailDomain = lead.email ? lead.email.split("@")[1] ?? "" : "";
         allActs.push({
-          firstName: (fn || ln) ? fn : (lead.email ?? ""),
+          firstName: (fn || ln) ? fn : lead.email,
           lastName:  (fn || ln) ? ln : "",
-          companyName: lead.companyName ?? lead.company ?? actEmailDomain,
+          companyName: lead.companyName || actEmailDomain,
           clientName,
           type: act.type,
-          at: act.at ?? "",
+          at: act.at,
         });
       }
     }
@@ -407,6 +219,46 @@ function computeEngagement(leads: any[], clientName: string) {
   const recentActivity = allActs.slice(0, 6);
 
   return { contacts, topCompanies, weeklyTrend, recentActivity };
+}
+
+// ─── Construir leads desde actividades de Supabase ────────────────────────────
+
+function buildLeadsFromActivities(
+  activities: any[],
+  contactMap: Map<string, { firstName: string; lastName: string; companyName: string }>
+) {
+  const emailData = new Map<string, {
+    activities: { type: string; at: string }[];
+    firstName: string;
+    lastName: string;
+    companyName: string;
+  }>();
+
+  for (const a of activities) {
+    const email = (a.lead_email ?? "").toLowerCase().trim();
+    if (!email) continue;
+    if (!emailData.has(email)) {
+      emailData.set(email, {
+        activities: [],
+        firstName:   a.lead_first_name   ?? "",
+        lastName:    a.lead_last_name    ?? "",
+        companyName: a.lead_company_name ?? "",
+      });
+    }
+    emailData.get(email)!.activities.push({ type: a.type, at: a.created_at ?? "" });
+  }
+
+  return Array.from(emailData.entries()).map(([email, data]) => {
+    const contact = contactMap.get(email);
+    const domain  = email.split("@")[1] ?? "";
+    return {
+      email,
+      firstName:   contact?.firstName   || data.firstName   || "",
+      lastName:    contact?.lastName    || data.lastName    || "",
+      companyName: contact?.companyName || data.companyName || (PERSONAL_EMAIL_DOMAINS.has(domain) ? "" : domain),
+      activities:  data.activities,
+    };
+  });
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -422,10 +274,8 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   const isAll = clientId === "__all__";
 
-  // Caché: período como clave
-  // - sin force → TTL 60 min
-  // - con force  → TTL 5 min (evita refrescos inconsistentes por rate limiting)
-  const cacheKey = since ? `since:${since.slice(0, 10)}` : "all";
+  // Caché — clave diferente de la versión anterior (prefijo "db:") para no mezclar con datos viejos
+  const cacheKey = since ? `db:since:${since.slice(0, 10)}` : "db:all";
   const cacheTTL = force ? 5 : 60;
   const { data: cached } = await db
     .from("lemlist_report_cache")
@@ -441,81 +291,87 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Clientes a procesar: {id, name, apiKey, campaignIds[]}
-    type ClientEntry = { id: string; name: string; apiKey: string; campaignIds: string[] };
-    let clientEntries: ClientEntry[] = [];
-
     const clientIds = isAll
-      ? (await db.from("clients").select("id, name").eq("is_active", true)).data?.map((c: any) => c.id) ?? []
+      ? (await db.from("clients").select("id").eq("is_active", true)).data?.map((c: any) => c.id) ?? []
       : [clientId];
 
     if (!clientIds.length) return NextResponse.json({ error: "No hay clientes activos" }, { status: 404 });
 
-    const [clientsData, configsData, assignedData] = await Promise.all([
+    const [clientsData, assignedData, syncLogData] = await Promise.all([
       db.from("clients").select("id, name").in("id", clientIds),
-      db.from("client_configs").select("client_id, lemlist_api_key").in("client_id", clientIds),
-      db.from("client_lemlist_campaigns").select("client_id, campaign_id").in("client_id", clientIds).eq("is_active", true),
+      db.from("client_lemlist_campaigns").select("client_id, campaign_id, campaign_name").in("client_id", clientIds).eq("is_active", true),
+      db.from("lemlist_sync_log").select("client_id, last_synced_at").in("client_id", clientIds),
     ]);
 
-    for (const cl of clientsData.data ?? []) {
-      const cfg = configsData.data?.find((c: any) => c.client_id === cl.id);
-      const apiKey = cfg?.lemlist_api_key ?? process.env.LEMLIST_API_KEY ?? "";
-      if (!apiKey) continue;
+    const clientMap = new Map<string, string>(
+      (clientsData.data ?? []).map((c: any) => [c.id, c.name])
+    );
+    const syncMap = new Map<string, string | null>(
+      (syncLogData.data ?? []).map((s: any) => [s.client_id, s.last_synced_at])
+    );
 
-      // Campañas de la nueva tabla
-      const campaignIds = (assignedData.data ?? [])
-        .filter((r: any) => r.client_id === cl.id)
-        .map((r: any) => r.campaign_id as string);
-
-      if (!campaignIds.length) continue;
-      clientEntries.push({ id: cl.id, name: cl.name, apiKey, campaignIds });
+    const campaignsByClient = new Map<string, { campaignId: string; campaignName: string | null }[]>();
+    for (const r of (assignedData.data ?? [])) {
+      if (!campaignsByClient.has(r.client_id)) campaignsByClient.set(r.client_id, []);
+      campaignsByClient.get(r.client_id)!.push({ campaignId: r.campaign_id, campaignName: r.campaign_name });
     }
 
-    if (!clientEntries.length) {
-      return NextResponse.json({ error: "Ningún cliente tiene campañas Lemlist configuradas" }, { status: 404 });
-    }
-
-    // Fetch: por cada cliente, fetch de campañas en lotes de 4 para evitar rate limiting
-    const results = await runInBatches(clientEntries, 2, async (cl) => {
-      const campaignResults = await runInBatches(
-        cl.campaignIds, 2,
-        (cid) => fetchCampaign(cl.apiKey, cid, db, since).catch(() => null)
-      );
-      const valid = campaignResults.filter(Boolean) as NonNullable<(typeof campaignResults)[0]>[];
-      if (!valid.length) return null;
-
-      // Merge campañas del mismo cliente
-      const mergedReports = {
-        emailsSent:              valid.reduce((s, v) => s + v.reports.emailsSent, 0),
-        emailsOpened:            valid.reduce((s, v) => s + v.reports.emailsOpened, 0),
-        emailsClicked:           valid.reduce((s, v) => s + v.reports.emailsClicked, 0),
-        emailsReplied:           valid.reduce((s, v) => s + v.reports.emailsReplied, 0),
-        linkedinReplied:         valid.reduce((s, v) => s + v.reports.linkedinReplied, 0),
-        linkedinInvitesAccepted: valid.reduce((s, v) => s + v.reports.linkedinInvitesAccepted, 0),
-        emailsBounced:           valid.reduce((s, v) => s + v.reports.emailsBounced, 0),
-      };
-      const mergedLeads = valid.flatMap((v) => v.leads);
-      const campaignName = valid.length === 1 ? valid[0].campaignName : `${valid.length} campañas`;
-
-      const eng = computeEngagement(mergedLeads, cl.name);
-      return { cl, reports: mergedReports, leads: mergedLeads, campaignName, eng };
-    });
-    const valid = results.filter(Boolean) as NonNullable<(typeof results)[0]>[];
-
-    if (!valid.length) return NextResponse.json({ error: "No se pudo obtener datos de Lemlist" }, { status: 502 });
-
-    // Agregar totales
+    const perClient: ClientCampaignStats[] = [];
     let totalSent = 0, totalOpened = 0, totalReplied = 0;
     let totalEmailReplied = 0, totalLinkedinReplied = 0, totalLinkedinAccepted = 0, totalBounced = 0;
 
-    const perClient: ClientCampaignStats[] = valid.map(({ cl, reports, campaignName }) => {
-      const sent     = reports.emailsSent ?? 0;
-      const opened   = reports.emailsOpened ?? 0;
-      const replied  = (reports.emailsReplied ?? 0) + (reports.linkedinReplied ?? 0);
-      const emailR   = reports.emailsReplied ?? 0;
-      const liR      = reports.linkedinReplied ?? 0;
-      const liA      = reports.linkedinInvitesAccepted ?? 0;
-      const bounced  = reports.emailsBounced ?? 0;
+    const allLeadsWithActivities: ReturnType<typeof buildLeadsFromActivities> = [];
+    let needsSync = false;
+    let firstSyncedAt: string | null = null;
+
+    for (const cid of clientIds) {
+      const clientName = clientMap.get(cid) ?? cid;
+      const campaigns = campaignsByClient.get(cid) ?? [];
+      const lastSynced = syncMap.get(cid) ?? null;
+      if (!firstSyncedAt && lastSynced) firstSyncedAt = lastSynced;
+
+      if (!campaigns.length) continue;
+
+      const campaignIds = campaigns.map(c => c.campaignId);
+
+      const { count: sentCount } = await db
+        .from("lemlist_leads_synced")
+        .select("id", { count: "exact", head: true })
+        .eq("client_id", cid)
+        .in("campaign_id", campaignIds);
+
+      let activitiesQuery = db
+        .from("lemlist_activities")
+        .select("type, lead_email, lead_first_name, lead_last_name, lead_company_name, created_at")
+        .eq("client_id", cid)
+        .in("campaign_id", campaignIds)
+        .order("created_at", { ascending: false })
+        .limit(50000);
+
+      if (since) activitiesQuery = activitiesQuery.gte("created_at", since);
+
+      const { data: activities } = await activitiesQuery;
+
+      if (!lastSynced && (!sentCount || sentCount === 0) && (!activities || activities.length === 0)) {
+        needsSync = true;
+      }
+
+      function countUnique(type: string) {
+        const emails = new Set<string>();
+        for (const a of activities ?? []) {
+          if (a.type === type && a.lead_email) emails.add(a.lead_email.toLowerCase());
+        }
+        return emails.size;
+      }
+
+      const opened   = countUnique("emailsOpened");
+      const clicked  = countUnique("emailsClicked");
+      const emailR   = countUnique("emailsReplied");
+      const liR      = countUnique("linkedinReplied");
+      const liA      = countUnique("linkedinInviteAccepted");
+      const bounced  = countUnique("emailsBounced");
+      const sent     = sentCount ?? 0;
+      const replied  = emailR + liR;
 
       totalSent             += sent;
       totalOpened           += opened;
@@ -525,33 +381,67 @@ export async function GET(req: NextRequest) {
       totalLinkedinAccepted += liA;
       totalBounced          += bounced;
 
-      return {
-        clientId: cl.id,
-        clientName: cl.name,
-        campaignName,
-        campaignId: cl.campaignIds[0] ?? "",
+      const campName = campaigns.length === 1
+        ? (campaigns[0].campaignName ?? campaigns[0].campaignId)
+        : `${campaigns.length} campañas`;
+
+      perClient.push({
+        clientId: cid,
+        clientName,
+        campaignName: campName,
+        campaignId: campaigns[0]?.campaignId ?? "",
         sent,
         opened,
-        openRate:     sent > 0 ? Math.round((opened / sent) * 1000) / 10 : 0,
-        clicked:      reports.emailsClicked ?? 0,
+        openRate:        sent > 0 ? Math.round((opened / sent) * 1000) / 10 : 0,
+        clicked,
         replied,
-        replyRate:    sent > 0 ? Math.round((replied / sent) * 1000) / 10 : 0,
-        emailReplied: emailR,
+        replyRate:       sent > 0 ? Math.round((replied / sent) * 1000) / 10 : 0,
+        emailReplied:    emailR,
         linkedinReplied: liR,
         linkedinAccepted: liA,
         bounced,
-        bounceRate:   sent > 0 ? Math.round((bounced / sent) * 1000) / 10 : 0,
-      };
-    });
+        bounceRate:      sent > 0 ? Math.round((bounced / sent) * 1000) / 10 : 0,
+      });
 
-    // Combinar contactos, empresas, actividad de todos los clientes
-    const allContacts = valid.flatMap(v => v.eng.contacts);
-    const allCompanies = valid.flatMap(v => v.eng.topCompanies);
-    const allActivity = valid.flatMap(v => v.eng.recentActivity);
+      // Enriquecer con datos de contacts de Supabase
+      const emailsInActivities = [...new Set(
+        (activities ?? []).map((a: any) => a.lead_email).filter(Boolean).map((e: string) => e.toLowerCase())
+      )];
+      const contactMap = new Map<string, { firstName: string; lastName: string; companyName: string }>();
+      if (emailsInActivities.length > 0) {
+        const { data: supaContacts } = await db
+          .from("contacts")
+          .select("email, first_name, last_name, companies(company_name)")
+          .in("email", emailsInActivities);
+        for (const c of supaContacts ?? []) {
+          contactMap.set((c.email ?? "").toLowerCase(), {
+            firstName:   c.first_name ?? "",
+            lastName:    c.last_name  ?? "",
+            companyName: (c.companies as any)?.company_name ?? "",
+          });
+        }
+      }
 
-    // Merge companies across clients
+      const leads = buildLeadsFromActivities(activities ?? [], contactMap);
+      allLeadsWithActivities.push(...leads);
+    }
+
+    if (needsSync && perClient.length === 0) {
+      return NextResponse.json({
+        _needsSync: true,
+        _lastSyncedAt: null,
+        totalSent: 0, totalOpened: 0, openRate: 0, totalReplied: 0, replyRate: 0,
+        totalEmailReplied: 0, totalLinkedinReplied: 0, totalLinkedinAccepted: 0,
+        totalBounced: 0, bounceRate: 0, perClient: [],
+        topContacts: [], topCompanies: [], weeklyTrend: [], recentActivity: [],
+      } as LemlistReportData);
+    }
+
+    const primaryClient = perClient[0];
+    const eng = computeEngagement(allLeadsWithActivities, primaryClient?.clientName ?? "");
+
     const coMerge = new Map<string, CompanyEngagement>();
-    for (const co of allCompanies) {
+    for (const co of eng.topCompanies) {
       const ex = coMerge.get(co.companyName);
       if (!ex) { coMerge.set(co.companyName, { ...co }); continue; }
       coMerge.set(co.companyName, {
@@ -562,14 +452,6 @@ export async function GET(req: NextRequest) {
         temperature: ((ex.replyCount + co.replyCount) > 0 ? "hot" : (ex.totalScore + co.totalScore) > 5 ? "warm" : "cold") as "hot" | "warm" | "cold",
       });
     }
-
-    // Weekly trend global (average across clients)
-    const globalTrend: WeeklyPoint[] = valid[0].eng.weeklyTrend.map((_: any, i: number) => ({
-      label: valid[0].eng.weeklyTrend[i].label,
-      replyRate: Math.round(
-        valid.reduce((s, v) => s + (v.eng.weeklyTrend[i]?.replyRate ?? 0), 0) / valid.length * 10
-      ) / 10,
-    }));
 
     const payload: LemlistReportData = {
       totalSent,
@@ -582,15 +464,15 @@ export async function GET(req: NextRequest) {
       totalLinkedinAccepted,
       totalBounced,
       bounceRate:   totalSent > 0 ? Math.round((totalBounced / totalSent) * 1000) / 10 : 0,
-      campaignName: valid.length === 1 ? valid[0].campaignName : undefined,
+      campaignName: perClient.length === 1 ? perClient[0].campaignName : undefined,
       perClient,
-      topContacts: allContacts.sort((a, b) => b.score - a.score).slice(0, 10),
+      topContacts: eng.contacts,
       topCompanies: Array.from(coMerge.values()).sort((a, b) => b.totalScore - a.totalScore).slice(0, 10),
-      weeklyTrend: globalTrend,
-      recentActivity: allActivity.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6),
+      weeklyTrend: eng.weeklyTrend,
+      recentActivity: eng.recentActivity,
+      _lastSyncedAt: firstSyncedAt,
     };
 
-    // Guardar en caché
     await db.from("lemlist_report_cache").upsert(
       { client_id: clientId, period: cacheKey, data: payload, fetched_at: new Date().toISOString() },
       { onConflict: "client_id,period" }
