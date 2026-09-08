@@ -1,5 +1,5 @@
 import { fetchMeetings, fetchClients, fetchMe } from "@/lib/peithoBackend";
-import MeetingsTable from "@/components/MeetingsTable";
+import ReunionesPasadasView from "@/components/ReunionesPasadasView";
 import ClientFilter from "@/components/ClientFilter";
 
 // Módulo 2 (esqueleto): listado simple. La página de detalle tipo DIIO (con
@@ -32,7 +32,7 @@ export default async function ReunionesPasadasPage({
         </div>
         {isAdmin && <ClientFilter clients={clients} />}
       </div>
-      <MeetingsTable meetings={meetings} detailBasePath="/reuniones" showClientColumn={isAdmin} showPuntaje />
+      <ReunionesPasadasView meetings={meetings} detailBasePath="/reuniones" showClientColumn={isAdmin} />
     </div>
   );
 }
