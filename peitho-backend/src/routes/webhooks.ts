@@ -44,6 +44,19 @@ async function fetchWithTimeout(url: string, timeoutMs: number = DOWNLOAD_TIMEOU
   }
 }
 
+// Bug real (08-09-2026, reunión de Coderslab): la subida a Supabase Storage
+// (supabase-js) no acepta un AbortSignal como fetch() — sin esto, un upload
+// colgado (red lenta, bucket mal configurado, lo que sea) se queda
+// esperando para siempre igual que el bug de arriba, sin ningún error en
+// los logs. Promise.race no cancela la operación real, pero al menos deja
+// de esperarla — el proceso puede seguir en vez de quedar pegado.
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Timeout (${label})`)), timeoutMs)),
+  ]);
+}
+
 // Recall entrega sus webhooks vía Svix — si RECALL_WEBHOOK_SECRET está seteada
 // (Recall Dashboard → Webhooks → tu endpoint → "Signing Secret", empieza con
 // "whsec_"), se verifica la firma contra el body crudo (req.rawBody, capturado
@@ -101,6 +114,43 @@ function verifyRecallWebhook(req: any): { event: string; data: any } | null {
   } catch (error) {
     console.error('[webhooks/recall] firma inválida', error);
     return null;
+  }
+}
+
+// Respaldo de video (30 días) — se llama SIN esperar (fire-and-forget) desde
+// el handler principal, después de que audio/transcript/análisis ya se
+// guardaron. Bug real (08-09-2026, reunión de Coderslab): antes esto corría
+// ANTES del UPDATE que guarda audio_path/transcript_text/status, en la misma
+// cadena de awaits — cuando la subida a Supabase Storage se colgó (ver
+// withTimeout arriba), bloqueó que se guardara TODO, incluido el audio ya
+// descargado, dejando la reunión pegada en status='scheduled' para siempre
+// aunque el bot sí hubiera grabado bien. Ahora un cuelgue acá nunca puede
+// bloquear el camino crítico (audio + transcripción + análisis).
+async function saveVideoBackup(botId: string, meetingId: string): Promise<void> {
+  try {
+    console.log(`[webhooks/recall] bot ${botId}: bajando video para la reunión ${meetingId}...`);
+    const videoUrl = await getRecallVideoUrl(botId);
+    const videoRes = await fetchWithTimeout(videoUrl, VIDEO_DOWNLOAD_TIMEOUT_MS);
+    if (!videoRes.ok) {
+      throw new Error(`Descarga del video respondió ${videoRes.status}`);
+    }
+    const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
+    const storagePath = `${meetingId}/${Date.now()}.mp4`;
+    const supabase = getSupabaseAdminClient();
+    const { error: uploadError } = await withTimeout(
+      supabase.storage.from(VIDEO_BUCKET).upload(storagePath, videoBuffer, { contentType: 'video/mp4' }),
+      VIDEO_DOWNLOAD_TIMEOUT_MS,
+      'subida a Supabase Storage'
+    );
+    if (uploadError) throw new Error(`Supabase Storage respondió: ${uploadError.message}`);
+
+    await pool.query(`update meetings set video_path = $1, updated_at = now() where id = $2`, [
+      storagePath,
+      meetingId,
+    ]);
+    console.log(`[webhooks/recall] video guardado en ${VIDEO_BUCKET}/${storagePath} para la reunión ${meetingId}`);
+  } catch (error) {
+    console.error(`[webhooks/recall] no se pudo guardar el video para el bot ${botId}`, error);
   }
 }
 
@@ -190,39 +240,22 @@ webhooksRouter.post('/webhooks/recall', async (req, res) => {
       console.error(`[webhooks/recall] no se pudo bajar el transcript de Recall para el bot ${botId}`, error);
     }
 
-    // Respaldo de video (30 días) — best-effort, igual que el transcript: si
-    // falla (bucket no creado todavía, timeout, etc.) no debe tumbar el
-    // resto del pipeline, el análisis ya no depende del video para nada.
-    let videoPath: string | null = null;
-    try {
-      console.log(`[webhooks/recall] bot ${botId}: bajando video para la reunión ${meeting.id}...`);
-      const videoUrl = await getRecallVideoUrl(botId);
-      const videoRes = await fetchWithTimeout(videoUrl, VIDEO_DOWNLOAD_TIMEOUT_MS);
-      if (!videoRes.ok) {
-        throw new Error(`Descarga del video respondió ${videoRes.status}`);
-      }
-      const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
-      const storagePath = `${meeting.id}/${Date.now()}.mp4`;
-      const supabase = getSupabaseAdminClient();
-      const { error: uploadError } = await supabase.storage
-        .from(VIDEO_BUCKET)
-        .upload(storagePath, videoBuffer, { contentType: 'video/mp4' });
-      if (uploadError) throw new Error(`Supabase Storage respondió: ${uploadError.message}`);
-      videoPath = storagePath;
-      console.log(`[webhooks/recall] video guardado en ${VIDEO_BUCKET}/${storagePath} para la reunión ${meeting.id}`);
-    } catch (error) {
-      console.error(`[webhooks/recall] no se pudo guardar el video para el bot ${botId}`, error);
-    }
-
     await pool.query(
-      `update meetings set audio_path = $1, transcript_text = $2, video_path = $3, status = 'captured', updated_at = now() where id = $4`,
-      [audioPath, transcriptText, videoPath, meeting.id]
+      `update meetings set audio_path = $1, transcript_text = $2, status = 'captured', updated_at = now() where id = $3`,
+      [audioPath, transcriptText, meeting.id]
     );
 
     console.log(`[webhooks/recall] audio guardado en ${audioPath} para la reunión ${meeting.id}`);
 
     analyzeMeetingAudio(meeting.id).catch((error) => {
       console.error(`[webhooks/recall] falló el análisis de la reunión ${meeting.id}`, error);
+    });
+
+    // Fire-and-forget a propósito — ver el comentario en saveVideoBackup()
+    // de por qué esto nunca debe estar en la misma cadena de awaits que lo
+    // de arriba.
+    saveVideoBackup(botId, meeting.id).catch((error) => {
+      console.error(`[webhooks/recall] error inesperado guardando el video del bot ${botId}`, error);
     });
   } catch (error) {
     console.error(`[webhooks/recall] error procesando el bot ${botId}`, error);
