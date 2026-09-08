@@ -5,7 +5,6 @@ import { getLemlistApiKey } from "@/lib/lemlistKey";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Endpoint de debug — muestra la estructura real del objeto campaña y sus stats nativas
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("client_id");
   if (!clientId) return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
@@ -20,33 +19,26 @@ export async function GET(req: NextRequest) {
     .eq("client_id", clientId)
     .eq("is_active", true);
 
-  if (!assigned?.length) {
-    return NextResponse.json({ error: "Sin campañas asignadas" }, { status: 400 });
-  }
+  if (!assigned?.length) return NextResponse.json({ error: "Sin campañas asignadas" }, { status: 400 });
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const headers = { Authorization: `Basic ${credentials}` };
+  const camp = assigned[0];
 
-  // Fetch primera campaña para ver su estructura
-  const firstCamp = assigned[0];
-  const [campaignRes, reportsRes] = await Promise.all([
-    fetch(`https://api.lemlist.com/api/campaigns/${firstCamp.campaign_id}`, { headers, cache: "no-store" }),
-    fetch(`https://api.lemlist.com/api/campaigns/${firstCamp.campaign_id}/reports`, { headers, cache: "no-store" }),
-  ]);
+  // Probar varios endpoints posibles para estadísticas nativas
+  const endpoints = [
+    `/api/campaigns/${camp.campaign_id}/stats`,
+    `/api/campaigns/${camp.campaign_id}/analytics`,
+    `/api/campaigns/${camp.campaign_id}/leads?limit=5&offset=0`,
+    `/api/activities?campaignId=${camp.campaign_id}&limit=3`,
+  ];
 
-  const campaignData = await campaignRes.json().catch(() => null);
-  const reportsData  = await reportsRes.json().catch(() => null);
+  const results: Record<string, any> = {};
+  for (const ep of endpoints) {
+    const res = await fetch(`https://api.lemlist.com${ep}`, { headers, cache: "no-store" });
+    const body = await res.json().catch(() => null);
+    results[ep] = { status: res.status, body };
+  }
 
-  return NextResponse.json({
-    campaignId:     firstCamp.campaign_id,
-    campaignName:   firstCamp.campaign_name,
-    campaignStatus: campaignRes.status,
-    reportsStatus:  reportsRes.status,
-    // Estructura completa del objeto campaña
-    campaignSample: campaignData,
-    campaignFields: campaignData ? Object.keys(campaignData) : [],
-    // Estructura del endpoint /reports
-    reportsSample:  reportsData,
-    reportsFields:  reportsData && typeof reportsData === "object" ? Object.keys(reportsData) : [],
-  });
+  return NextResponse.json({ campaignId: camp.campaign_id, campaignName: camp.campaign_name, results });
 }
