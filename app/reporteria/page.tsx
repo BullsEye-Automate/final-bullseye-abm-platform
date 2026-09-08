@@ -46,7 +46,8 @@ function periodToDates(p: Period): { from?: string; to?: string } {
   if (p === "all") return {};
   const now  = new Date();
   const days = p === "7d" ? 7 : p === "30d" ? 30 : 90;
-  const from = new Date(now.getTime() - days * 86400000).toISOString();
+  // Inicio del día (medianoche) para que el límite sea estable entre clicks
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days).toISOString();
   return { from, to: now.toISOString() };
 }
 
