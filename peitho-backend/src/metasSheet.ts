@@ -115,6 +115,20 @@ function normalizeCompanyName(name: string | null | undefined): string {
   return (name ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Bug real (08-09-2026, Noventiq): empresa_contraparte se guarda como el
+// DOMINIO del correo del invitado (ej. "noventiq.com", desde
+// extractContraparte en calendarSync.ts — es lo único disponible en el
+// evento de Calendar), pero el excel de metas tiene el nombre "limpio" de la
+// empresa (ej. "Noventiq", sin TLD). El match exacto entre
+// normalizeCompanyName de ambos nunca calzaba en ese caso — la fila existía
+// en el excel pero nunca se encontraba. Esto quita el TLD como fallback,
+// solo si el match exacto no encontró nada (para no romper casos donde el
+// nombre real de la empresa SÍ incluye un TLD, ej. "Trabajando.com", que ya
+// venía matcheando bien con el exacto).
+function stripDomainSuffix(domain: string): string {
+  return domain.replace(/\.(com|cl|co|io|net|org|mx|pe|ar|us|latam|la|cloud|app)$/i, '');
+}
+
 // Formato observado en la hoja: d/m/yyyy (a veces yy de 2 dígitos). Es una
 // hoja mantenida a mano — hay filas con fechas claramente mal tipeadas, así
 // que esto es solo un desempate entre candidatos, no la condición principal.
@@ -136,7 +150,15 @@ function matchMeetingRow(
   const empresaNorm = normalizeCompanyName(meeting.empresa_contraparte);
   if (!empresaNorm) return null;
 
-  const candidatos = rows.filter((row) => normalizeCompanyName(row.empresa) === empresaNorm);
+  let candidatos = rows.filter((row) => normalizeCompanyName(row.empresa) === empresaNorm);
+
+  if (candidatos.length === 0) {
+    const empresaSinTld = stripDomainSuffix(empresaNorm);
+    if (empresaSinTld !== empresaNorm) {
+      candidatos = rows.filter((row) => normalizeCompanyName(row.empresa) === empresaSinTld);
+    }
+  }
+
   if (candidatos.length === 0) return null;
   if (candidatos.length === 1) return candidatos[0];
 
