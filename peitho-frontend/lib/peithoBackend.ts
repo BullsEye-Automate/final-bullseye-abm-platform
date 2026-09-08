@@ -136,6 +136,35 @@ export interface UserRoleItem {
   client_name: string | null;
 }
 
+// Paso 6 — Panel de control. `tasa`/`alta_prediccion` son sobre
+// prediccion_exito.puntaje (predicción de Claude, 1-5), NO una tasa de
+// conversión real de negocio (eso vive en HubSpot, fuera de Peitho) — se
+// muestran en el frontend etiquetadas explícitamente como "predicho".
+export interface FunnelStage {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface FunnelSegment {
+  label: string;
+  total: number;
+  alta_prediccion: number;
+  tasa: number;
+  puntaje_promedio: number | null;
+}
+
+export interface FunnelData {
+  meta: { from: string | null; to: string | null; threshold: number; client_id: string | null };
+  funnel: FunnelStage[];
+  // No es parte del funnel (no es subconjunto de "predicción alta") — KPI
+  // aparte. Ver comentario en peitho-backend/src/routes/panel.ts.
+  con_compromisos: number;
+  desempeno_vendedor_promedio: number | null;
+  por_cargo: FunnelSegment[];
+  por_industria: FunnelSegment[];
+}
+
 function backendUrl(): string {
   return process.env.PEITHO_BACKEND_URL ?? "http://localhost:3001";
 }

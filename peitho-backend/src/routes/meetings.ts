@@ -14,8 +14,10 @@ export const meetingsRouter = Router();
 // Dominio propio de BullsEye — se usa para excluir reuniones internas
 // (ej. dos personas del equipo) de las listas del frontend. Mismo patrón de
 // hardcoding que EMPRESA_CLIENTE en postMeetingAnalysis.ts: Peitho todavía no
-// modela múltiples clientes, así que esto es fijo por ahora.
-const INTERNAL_DOMAIN = 'bullseye-abm.com';
+// modela múltiples clientes, así que esto es fijo por ahora. Exportada para
+// que routes/panel.ts (Panel de control) reutilice el mismo criterio de
+// exclusión en vez de duplicar el string.
+export const INTERNAL_DOMAIN = 'bullseye-abm.com';
 
 const uploadsDir = path.join(__dirname, '..', '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
