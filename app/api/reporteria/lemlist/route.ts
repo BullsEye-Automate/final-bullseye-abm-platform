@@ -142,7 +142,7 @@ const ACTIVITY_FETCH_TYPES = [
   "emailsBounced",
 ] as const;
 
-async function fetchCampaign(apiKey: string, campaignId: string, db: any) {
+async function fetchCampaign(apiKey: string, campaignId: string, db: any, since?: string) {
   const creds = Buffer.from(`:${apiKey}`).toString("base64");
   const headers = { Authorization: `Basic ${creds}` };
 
@@ -179,6 +179,16 @@ async function fetchCampaign(apiKey: string, campaignId: string, db: any) {
       const status = result.status === "fulfilled" ? result.value.status : "rejected";
       console.error(`[lemlist] ${ACTIVITY_FETCH_TYPES[i]} falló: ${status}`);
       activitiesByType[ACTIVITY_FETCH_TYPES[i]] = [];
+    }
+  }
+
+  // Filtrar actividades por fecha si se pasó `since`
+  if (since) {
+    for (const type of Object.keys(activitiesByType)) {
+      activitiesByType[type] = activitiesByType[type].filter((a: any) => {
+        const at = a.createdAt ?? a.date ?? "";
+        return at >= since;
+      });
     }
   }
 
@@ -381,6 +391,7 @@ function computeEngagement(leads: any[], clientName: string) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const clientId = searchParams.get("client_id");
+  const since    = searchParams.get("since") ?? undefined;
 
   if (!clientId) return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
 
@@ -426,7 +437,7 @@ export async function GET(req: NextRequest) {
     const results = await runInBatches(clientEntries, 2, async (cl) => {
       const campaignResults = await runInBatches(
         cl.campaignIds, 4,
-        (cid) => fetchCampaign(cl.apiKey, cid, db).catch(() => null)
+        (cid) => fetchCampaign(cl.apiKey, cid, db, since).catch(() => null)
       );
       const valid = campaignResults.filter(Boolean) as NonNullable<(typeof campaignResults)[0]>[];
       if (!valid.length) return null;
