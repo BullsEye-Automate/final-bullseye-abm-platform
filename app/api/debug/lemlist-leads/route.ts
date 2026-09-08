@@ -4,6 +4,7 @@ import { getLemlistApiKey } from "@/lib/lemlistKey";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("client_id");
@@ -23,30 +24,31 @@ export async function GET(req: NextRequest) {
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
   const headers = { Authorization: `Basic ${credentials}` };
-  const camp = assigned[0];
 
-  // Probar distintos límites en actividades para ver cuál funciona
-  const [r100, r500, r1000, r5000, rNoLimit] = await Promise.all([
-    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=100`, { headers }),
-    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=500`, { headers }),
-    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=1000`, { headers }),
-    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=5000`, { headers }),
-    fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}`, { headers }),
-  ]);
+  // Para cada campaña, contar actividades por tipo
+  const summary = await Promise.all(assigned.map(async (camp: any) => {
+    const [opens, replied, liAccepted, liReplied, leads] = await Promise.all([
+      fetch(`https://api.lemlist.com/api/activities?type=emailsOpened&campaignId=${camp.campaign_id}&limit=500`, { headers })
+        .then(r => r.json()).then(d => (Array.isArray(d) ? d : d?.items ?? []).length).catch(() => -1),
+      fetch(`https://api.lemlist.com/api/activities?type=emailsReplied&campaignId=${camp.campaign_id}&limit=500`, { headers })
+        .then(r => r.json()).then(d => (Array.isArray(d) ? d : d?.items ?? []).length).catch(() => -1),
+      fetch(`https://api.lemlist.com/api/activities?type=linkedinInviteAccepted&campaignId=${camp.campaign_id}&limit=500`, { headers })
+        .then(r => r.json()).then(d => (Array.isArray(d) ? d : d?.items ?? []).length).catch(() => -1),
+      fetch(`https://api.lemlist.com/api/activities?type=linkedinReplied&campaignId=${camp.campaign_id}&limit=500`, { headers })
+        .then(r => r.json()).then(d => (Array.isArray(d) ? d : d?.items ?? []).length).catch(() => -1),
+      fetch(`https://api.lemlist.com/api/campaigns/${camp.campaign_id}/leads?limit=1&offset=0`, { headers })
+        .then(r => r.json()).then(d => (Array.isArray(d) ? d : d?.items ?? [])[0]?._id ? "ok" : "?").catch(() => "err"),
+    ]);
+    return { name: camp.campaign_name, id: camp.campaign_id, opens, replied, liAccepted, liReplied, leads };
+  }));
 
-  const parse = async (r: Response) => {
-    const body = await r.json().catch(() => null);
-    const items = Array.isArray(body) ? body : (body?.data ?? body?.activities ?? body?.items ?? []);
-    return { status: r.status, count: items.length, first: items[0] ?? null };
-  };
+  const withActivity = summary.filter(c => c.opens > 0 || c.replied > 0 || c.liAccepted > 0 || c.liReplied > 0);
+  const zeros = summary.filter(c => c.opens === 0 && c.replied === 0 && c.liAccepted === 0 && c.liReplied === 0);
 
   return NextResponse.json({
-    campaignId: camp.campaign_id,
-    campaignName: camp.campaign_name,
-    "limit=100":   await parse(r100),
-    "limit=500":   await parse(r500),
-    "limit=1000":  await parse(r1000),
-    "limit=5000":  await parse(r5000),
-    "sin limit":   await parse(rNoLimit),
+    total: assigned.length,
+    withActivity,
+    zerosCount: zeros.length,
+    zeroNames: zeros.map((c: any) => c.name),
   });
 }
