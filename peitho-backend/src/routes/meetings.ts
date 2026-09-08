@@ -93,14 +93,25 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     // reunión recién hizo match con el excel de metas — cubre el caso en que
     // el excel se completa después de que la reunión ya se sincronizó desde
     // Calendar (ver Fase H en CLAUDE.md). No-op si ya tiene bot o si no matchea.
-    for (const row of rows) {
-      if (!row.client_id) {
-        await resolveMeetingClientAndContact(row.id);
-      }
-      if (scope === 'upcoming') {
-        await scheduleRecallBotForMeeting(row.id);
-      }
-    }
+    //
+    // Bug real de performance encontrado (08-09-2026): esto corría en un
+    // for...of con await secuencial — con muchas reuniones sin client_id (el
+    // caso normal: nunca van a matchear y esto se repite en cada carga de la
+    // página), cada una sumaba una consulta a Postgres una detrás de otra,
+    // haciendo el listado visiblemente lento. Promise.allSettled corre las
+    // filas en paralelo (acotado igual por el máximo de conexiones del pool,
+    // pg default 10) — allSettled en vez de all para que una fila que falle
+    // (ej. un error puntual de Recall) no tumbe la resolución de las demás.
+    await Promise.allSettled(
+      rows.map(async (row) => {
+        if (!row.client_id) {
+          await resolveMeetingClientAndContact(row.id);
+        }
+        if (scope === 'upcoming') {
+          await scheduleRecallBotForMeeting(row.id);
+        }
+      })
+    );
 
     // Se vuelve a consultar client_id/nombre del cliente después de resolver
     // arriba (la resolución puede haber cambiado filas que antes venían null).
