@@ -216,6 +216,24 @@ export default function ConfigClientePage() {
       .catch(() => setLemlistCampaignsState("error"));
   }, [currentClient?.id]);
 
+  async function assignAllLemlistCampaigns() {
+    if (!currentClient) return;
+    const unassigned = lemlistCampaigns.filter(
+      (c) => !assignedCampaigns.some((a) => a.campaign_id === c.id)
+    );
+    for (const c of unassigned) {
+      await fetch(`/api/clients/${currentClient.id}/lemlist-campaigns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaign_id: c.id, campaign_name: c.name }),
+      });
+    }
+    setAssignedCampaigns((prev) => [
+      ...prev,
+      ...unassigned.map((c) => ({ id: crypto.randomUUID(), campaign_id: c.id, campaign_name: c.name, is_active: true })),
+    ]);
+  }
+
   async function assignLemlistCampaign(c: { id: string; name: string }) {
     if (!currentClient) return;
     setCampaignAssignError(null);
@@ -574,6 +592,14 @@ export default function ConfigClientePage() {
                 </div>
               ) : (
                 <p className="text-xs text-ink-muted mb-3">Sin campañas asignadas.</p>
+              )}
+
+              {/* Agregar todas */}
+              {lemlistCampaigns.length > 0 && lemlistCampaigns.some((c) => !assignedCampaigns.some((a) => a.campaign_id === c.id)) && (
+                <button onClick={assignAllLemlistCampaigns}
+                  className="mb-2 text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition text-ink-muted">
+                  + Agregar todas ({lemlistCampaigns.filter((c) => !assignedCampaigns.some((a) => a.campaign_id === c.id)).length})
+                </button>
               )}
 
               {/* Buscador para agregar campaña */}
