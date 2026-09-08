@@ -196,6 +196,31 @@ export async function getRecallTranscriptUrl(botId: string): Promise<string> {
   return url;
 }
 
+// Igual que getRecallRecordingUrl, pero para el video mezclado
+// (media_shortcuts.video_mixed) — a diferencia del audio, Recall lo genera
+// por default sin que haga falta pedirlo en recording_config (ver
+// createRecallBot). Se usa para guardar un respaldo de 30 días en Supabase
+// Storage (ver webhooks.ts).
+export async function getRecallVideoUrl(botId: string): Promise<string> {
+  const { apiKey, region } = getRecallConfig();
+
+  const res = await fetchRecall(recallApiUrl(region, `/bot/${botId}/`), {
+    headers: { Authorization: `Token ${apiKey}` },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Recall respondió ${res.status} consultando el bot ${botId}: ${await res.text()}`);
+  }
+
+  const data = await res.json();
+
+  const url = data?.recordings?.[0]?.media_shortcuts?.video_mixed?.data?.download_url;
+  if (!url) {
+    throw new Error(`No se encontró la URL de descarga del video para el bot ${botId}`);
+  }
+  return url;
+}
+
 // Devuelve el bot completo tal cual lo entrega Recall (status_changes
 // incluido) — usado por checkAndRetryFailedRecallBots para ver en qué quedó
 // un bot después de su intento de unirse.

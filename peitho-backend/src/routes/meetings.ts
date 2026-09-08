@@ -8,6 +8,13 @@ import { generatePreMeetingBrief } from '../preMeetingBrief';
 import { resolveMeetingClientAndContact } from '../metasSheet';
 import { scheduleRecallBotForMeeting } from '../recall';
 import { requireAuth, requireAdmin } from '../authMiddleware';
+import { getSupabaseAdminClient } from '../supabaseAdmin';
+
+const VIDEO_BUCKET = 'meeting-videos';
+// El link firmado es de un solo uso mental — se pide cada vez que el
+// frontend abre la pestaña de video, no se guarda ni se reutiliza, así que
+// no hace falta que dure mucho.
+const VIDEO_SIGNED_URL_TTL_SECONDS = 60 * 10;
 
 export const meetingsRouter = Router();
 
@@ -207,6 +214,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time, m.status,
               m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
+              (m.video_path is not null) as video_available,
               c.name as cliente_bullseye
        from meetings m
        left join clients c on c.id = m.client_id
@@ -243,6 +251,44 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error en GET /meetings/:id', error);
     res.status(500).json({ error: 'Error consultando la reunión' });
+  }
+});
+
+// Devuelve una URL firmada (temporal) para reproducir el respaldo de video
+// de la reunión — el bucket es privado, no se puede linkear directo. Mismo
+// scoping por client_id que GET /meetings/:id (404, no 403, para no revelar
+// que la reunión existe si es de otro cliente).
+meetingsRouter.get('/meetings/:id/video', requireAuth, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { rows } = await pool.query(`select client_id, video_path from meetings where id = $1`, [id]);
+    const meeting = rows[0];
+    if (!meeting) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+    if (req.peithoUser!.role === 'client' && meeting.client_id !== req.peithoUser!.clientId) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+    if (!meeting.video_path) {
+      res.status(404).json({ error: 'Esta reunión no tiene video disponible (venció el respaldo de 30 días, o nunca se guardó)' });
+      return;
+    }
+
+    const supabase = getSupabaseAdminClient();
+    const { data, error } = await supabase.storage
+      .from(VIDEO_BUCKET)
+      .createSignedUrl(meeting.video_path, VIDEO_SIGNED_URL_TTL_SECONDS);
+    if (error || !data?.signedUrl) {
+      throw new Error(error?.message ?? 'Supabase Storage no devolvió una URL firmada');
+    }
+
+    res.json({ url: data.signedUrl });
+  } catch (error) {
+    console.error('Error en GET /meetings/:id/video', error);
+    res.status(500).json({ error: 'Error generando el link del video' });
   }
 });
 

@@ -5,6 +5,7 @@ import ResearchButton from "@/components/ResearchButton";
 import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 import AssignClientForm from "@/components/AssignClientForm";
 import DetailTabs from "@/components/DetailTabs";
+import MeetingVideoPlayer from "@/components/MeetingVideoPlayer";
 
 const STATUS_LABEL: Record<string, string> = {
   scheduled: "Agendada",
@@ -211,19 +212,29 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
   // habla/% de palabra que sí muestra DIIO) — Peitho hoy solo tiene certeza
   // de quién es el ejecutivo y quién la contraparte, no de esas métricas por
   // hablante, así que solo se muestran los nombres reales.
-  const transcriptTabContent = meeting.transcript_text ? (
-    <Section title="Transcripción">
-      <div className="flex items-center gap-2 text-xs text-gray-500 pb-3 border-b border-gray-50">
-        <span className="font-medium text-gray-700">{meeting.ejecutivo ?? "Ejecutivo"}</span>
-        <span>·</span>
-        <span className="font-medium text-gray-700">{meeting.contraparte ?? "Contraparte"}</span>
-      </div>
-      <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans max-h-[600px] overflow-y-auto">
-        {meeting.transcript_text}
-      </pre>
-    </Section>
-  ) : (
-    <p className="text-sm text-gray-500">Todavía no hay transcripción disponible para esta reunión.</p>
+  const transcriptTabContent = (
+    <>
+      {meeting.video_available && (
+        <Section title="Video de la reunión">
+          <p className="text-xs text-gray-400 -mt-1">Respaldo disponible por 30 días desde la fecha de la reunión.</p>
+          <MeetingVideoPlayer meetingId={meeting.id} />
+        </Section>
+      )}
+      {meeting.transcript_text ? (
+        <Section title="Transcripción">
+          <div className="flex items-center gap-2 text-xs text-gray-500 pb-3 border-b border-gray-50">
+            <span className="font-medium text-gray-700">{meeting.ejecutivo ?? "Ejecutivo"}</span>
+            <span>·</span>
+            <span className="font-medium text-gray-700">{meeting.contraparte ?? "Contraparte"}</span>
+          </div>
+          <pre className="whitespace-pre-wrap text-sm text-gray-700 font-sans max-h-[600px] overflow-y-auto">
+            {meeting.transcript_text}
+          </pre>
+        </Section>
+      ) : (
+        <p className="text-sm text-gray-500">Todavía no hay transcripción disponible para esta reunión.</p>
+      )}
+    </>
   );
 
   const aprendizajeTabContent = (

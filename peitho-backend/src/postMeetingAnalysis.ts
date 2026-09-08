@@ -232,10 +232,16 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
     baseConocimiento,
   });
 
-  await pool.query(`update meetings set analysis = $1, status = 'analyzed', updated_at = now() where id = $2`, [
-    analysis,
-    meetingId,
-  ]);
+  // Bug real (08-09-2026, reunión de Noventiq): cuando el transcript de
+  // Recall falla y se cae a Deepgram, `transcript` queda armado en memoria
+  // (arriba) y se usa para el prompt de Claude, pero nunca se guardaba de
+  // vuelta en transcript_text — la pestaña "Transcripción" del frontend
+  // mostraba "no disponible" aunque el análisis sí se hubiera generado bien.
+  // Guardarlo acá es idempotente: si ya venía de Recall, es el mismo valor.
+  await pool.query(
+    `update meetings set analysis = $1, transcript_text = $2, status = 'analyzed', updated_at = now() where id = $3`,
+    [analysis, transcript, meetingId]
+  );
 
   console.log(`[analysis] reunión ${meetingId}: análisis guardado, status=analyzed`);
 }

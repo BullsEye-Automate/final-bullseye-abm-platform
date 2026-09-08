@@ -3,8 +3,17 @@ import path from 'path';
 import { Router } from 'express';
 import { Webhook } from 'svix';
 import { pool } from '../db';
-import { getRecallRecordingUrl, getRecallTranscriptUrl } from '../recall';
+import { getRecallRecordingUrl, getRecallTranscriptUrl, getRecallVideoUrl } from '../recall';
 import { analyzeMeetingAudio, buildTranscriptFromRecall } from '../postMeetingAnalysis';
+import { getSupabaseAdminClient } from '../supabaseAdmin';
+
+// Bucket privado de Supabase Storage para el respaldo de video de 30 días
+// (a diferencia de audio/transcript, que se usan para el análisis y no
+// necesitan reproducirse después, el video es pesado — se guarda acá en vez
+// de en el disco local de Railway, igual que la Base de conocimiento). Hay
+// que crearlo a mano una vez en Supabase Studio → Storage → New bucket
+// (privado), igual que "knowledge-base".
+const VIDEO_BUCKET = 'meeting-videos';
 
 export const webhooksRouter = Router();
 
@@ -22,9 +31,12 @@ if (!fs.existsSync(uploadsDir)) {
 // la reunión queda pegada en status='scheduled' para siempre, sin ningún
 // error en los logs que lo explique.
 const DOWNLOAD_TIMEOUT_MS = 60_000;
-async function fetchWithTimeout(url: string): Promise<Response> {
+// El video pesa mucho más que el audio-solo — le damos más margen antes de
+// darlo por colgado.
+const VIDEO_DOWNLOAD_TIMEOUT_MS = 180_000;
+async function fetchWithTimeout(url: string, timeoutMs: number = DOWNLOAD_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(url, { signal: controller.signal });
   } finally {
@@ -178,9 +190,33 @@ webhooksRouter.post('/webhooks/recall', async (req, res) => {
       console.error(`[webhooks/recall] no se pudo bajar el transcript de Recall para el bot ${botId}`, error);
     }
 
+    // Respaldo de video (30 días) — best-effort, igual que el transcript: si
+    // falla (bucket no creado todavía, timeout, etc.) no debe tumbar el
+    // resto del pipeline, el análisis ya no depende del video para nada.
+    let videoPath: string | null = null;
+    try {
+      console.log(`[webhooks/recall] bot ${botId}: bajando video para la reunión ${meeting.id}...`);
+      const videoUrl = await getRecallVideoUrl(botId);
+      const videoRes = await fetchWithTimeout(videoUrl, VIDEO_DOWNLOAD_TIMEOUT_MS);
+      if (!videoRes.ok) {
+        throw new Error(`Descarga del video respondió ${videoRes.status}`);
+      }
+      const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
+      const storagePath = `${meeting.id}/${Date.now()}.mp4`;
+      const supabase = getSupabaseAdminClient();
+      const { error: uploadError } = await supabase.storage
+        .from(VIDEO_BUCKET)
+        .upload(storagePath, videoBuffer, { contentType: 'video/mp4' });
+      if (uploadError) throw new Error(`Supabase Storage respondió: ${uploadError.message}`);
+      videoPath = storagePath;
+      console.log(`[webhooks/recall] video guardado en ${VIDEO_BUCKET}/${storagePath} para la reunión ${meeting.id}`);
+    } catch (error) {
+      console.error(`[webhooks/recall] no se pudo guardar el video para el bot ${botId}`, error);
+    }
+
     await pool.query(
-      `update meetings set audio_path = $1, transcript_text = $2, status = 'captured', updated_at = now() where id = $3`,
-      [audioPath, transcriptText, meeting.id]
+      `update meetings set audio_path = $1, transcript_text = $2, video_path = $3, status = 'captured', updated_at = now() where id = $4`,
+      [audioPath, transcriptText, videoPath, meeting.id]
     );
 
     console.log(`[webhooks/recall] audio guardado en ${audioPath} para la reunión ${meeting.id}`);

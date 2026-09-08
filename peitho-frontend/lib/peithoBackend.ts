@@ -99,6 +99,12 @@ export interface MeetingDetail extends MeetingListItem {
   // Deepgram como fallback para la extensión de Chrome). Null si la reunión
   // no se ha grabado/analizado todavía.
   transcript_text: string | null;
+  // Respaldo de video de la reunión (30 días desde la fecha, después se
+  // borra solo — ver videoRetention.ts). true si todavía está disponible;
+  // el archivo en sí nunca se expone acá, se pide una URL firmada aparte
+  // vía GET /api/meetings/:id/video (proxy) cuando el usuario abre la
+  // pestaña de video.
+  video_available?: boolean;
 }
 
 export interface ClientListItem {

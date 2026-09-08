@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { app } from './app';
 import { pool } from './db';
 import { checkAndRetryFailedRecallBots } from './recall';
+import { deleteExpiredMeetingVideos } from './videoRetention';
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
 
@@ -15,6 +16,20 @@ setInterval(() => {
     console.error('[startup] error en el chequeo periódico de bots de Recall fallidos', error)
   );
 }, RECALL_RETRY_POLL_MS);
+
+// Borra videos de reuniones con más de 30 días (ver videoRetention.ts) —
+// una vez al día alcanza sobra, no hace falta más seguido que eso.
+const VIDEO_RETENTION_POLL_MS = 24 * 60 * 60 * 1000;
+setInterval(() => {
+  deleteExpiredMeetingVideos().catch((error) =>
+    console.error('[startup] error en el borrado periódico de videos vencidos', error)
+  );
+}, VIDEO_RETENTION_POLL_MS);
+// Corre también una vez al arrancar — si el servidor estuvo caído varios
+// días, no hay que esperar 24h más para la primera limpieza.
+deleteExpiredMeetingVideos().catch((error) =>
+  console.error('[startup] error en el borrado inicial de videos vencidos', error)
+);
 
 // Si el proceso anterior murió a mitad de un research (ej. Ctrl+C, o un
 // crash) el fire-and-forget nunca llegó a marcar 'failed', y esa reunión
