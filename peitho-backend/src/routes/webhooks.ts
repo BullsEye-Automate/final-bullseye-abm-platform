@@ -13,6 +13,25 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
+// Bug real (08-09-2026, reunión de Noventiq con 2 bots vinculados): la
+// descarga del audio/transcript de Recall usaba fetch() sin ningún timeout
+// — a diferencia de casi cualquier otra llamada de red del proyecto (ver
+// CLAUDE.md: "sin esto, un problema de red se manifiesta como un colgue
+// silencioso e indiagnosticable"). Si la descarga se cuelga (o el proceso
+// se reinicia por un deploy a mitad de camino y el retry vuelve a colgarse),
+// la reunión queda pegada en status='scheduled' para siempre, sin ningún
+// error en los logs que lo explique.
+const DOWNLOAD_TIMEOUT_MS = 60_000;
+async function fetchWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DOWNLOAD_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // Recall entrega sus webhooks vía Svix — si RECALL_WEBHOOK_SECRET está seteada
 // (Recall Dashboard → Webhooks → tu endpoint → "Signing Secret", empieza con
 // "whsec_"), se verifica la firma contra el body crudo (req.rawBody, capturado
@@ -131,7 +150,7 @@ webhooksRouter.post('/webhooks/recall', async (req, res) => {
     console.log(`[webhooks/recall] bot ${botId}: descargando audio para la reunión ${meeting.id}...`);
     const downloadUrl = await getRecallRecordingUrl(botId);
 
-    const audioRes = await fetch(downloadUrl);
+    const audioRes = await fetchWithTimeout(downloadUrl);
     if (!audioRes.ok) {
       throw new Error(`Descarga del audio respondió ${audioRes.status}`);
     }
@@ -149,7 +168,7 @@ webhooksRouter.post('/webhooks/recall', async (req, res) => {
     try {
       console.log(`[webhooks/recall] bot ${botId}: bajando transcript para la reunión ${meeting.id}...`);
       const transcriptUrl = await getRecallTranscriptUrl(botId);
-      const transcriptRes = await fetch(transcriptUrl);
+      const transcriptRes = await fetchWithTimeout(transcriptUrl);
       if (!transcriptRes.ok) {
         throw new Error(`Descarga del transcript respondió ${transcriptRes.status}`);
       }
