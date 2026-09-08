@@ -197,9 +197,10 @@ function TrendChart({ data, label, color }: { data: { label: string; replyRate: 
 // ─── Tab: Campañas Lemlist ────────────────────────────────────────────────────
 
 function LemlistTab({ currentClient }: { currentClient: { id: string; name: string } | null }) {
-  const [data, setData]     = useState<LemlistReportData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
+  const [data, setData]         = useState<LemlistReportData | null>(null);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+  const [period, setPeriod]     = useState<Period>("30d");
 
   const isAll = !currentClient || currentClient.id === ALL_CLIENTS.id;
 
@@ -208,7 +209,9 @@ function LemlistTab({ currentClient }: { currentClient: { id: string; name: stri
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/reporteria/lemlist?client_id=${currentClient.id}`);
+      const { from } = periodToDates(period);
+      const sinceParam = from ? `&since=${encodeURIComponent(from)}` : "";
+      const res = await fetch(`/api/reporteria/lemlist?client_id=${currentClient.id}${sinceParam}`);
       const d = await res.json();
       if (!res.ok) {
         console.error("[LemlistTab] API error:", res.status, d);
@@ -222,7 +225,7 @@ function LemlistTab({ currentClient }: { currentClient: { id: string; name: stri
       setError(e?.message ?? "Error de red");
     }
     setLoading(false);
-  }, [currentClient]);
+  }, [currentClient, period]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -234,19 +237,40 @@ function LemlistTab({ currentClient }: { currentClient: { id: string; name: stri
     );
   }
 
+  const periodSelector = (
+    <div className="flex gap-1 p-1 rounded-lg bg-gray-100 w-fit">
+      {PERIOD_OPTIONS.map(opt => (
+        <button key={opt.value}
+          onClick={() => { setPeriod(opt.value); setData(null); }}
+          className="text-xs px-3 py-1 rounded-md font-medium transition"
+          style={period === opt.value
+            ? { background: "#fff", color: "#251762", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
+            : { color: "#6B6480" }}>
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+
   if (loading && !data) {
     return (
-      <div className="card flex items-center justify-center py-16 gap-2 text-ink-muted">
-        <IconLoader2 size={20} className="animate-spin" />
-        <span className="text-sm">Cargando datos de Lemlist…</span>
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">{periodSelector}<span /></div>
+        <div className="card flex items-center justify-center py-16 gap-2 text-ink-muted">
+          <IconLoader2 size={20} className="animate-spin" />
+          <span className="text-sm">Cargando datos de Lemlist…</span>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="card border-l-4 border-red-400 px-5 py-4 text-red-600 text-sm flex items-center gap-2">
-        <IconX size={16} /> {error}
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">{periodSelector}<span /></div>
+        <div className="card border-l-4 border-red-400 px-5 py-4 text-red-600 text-sm flex items-center gap-2">
+          <IconX size={16} /> {error}
+        </div>
       </div>
     );
   }
@@ -261,18 +285,34 @@ function LemlistTab({ currentClient }: { currentClient: { id: string; name: stri
 
   return (
     <div className="space-y-4">
-      {/* Botón actualizar */}
-      <div className="flex justify-end items-center gap-3">
-        {loading && data && (
-          <span className="flex items-center gap-1.5 text-xs text-ink-muted">
-            <IconLoader2 size={13} className="animate-spin" /> Actualizando…
-          </span>
-        )}
-        <button onClick={load} disabled={loading}
-          className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50">
-          <IconRefresh size={14} className={loading ? "animate-spin" : ""} />
-          Actualizar
-        </button>
+      {/* Toolbar: filtro de período + botón actualizar */}
+      <div className="flex justify-between items-center gap-3">
+        {/* Selector de período */}
+        <div className="flex gap-1 p-1 rounded-lg bg-gray-100">
+          {PERIOD_OPTIONS.map(opt => (
+            <button key={opt.value}
+              onClick={() => { setPeriod(opt.value); setData(null); }}
+              className="text-xs px-3 py-1 rounded-md font-medium transition"
+              style={period === opt.value
+                ? { background: "#fff", color: "#251762", boxShadow: "0 1px 3px rgba(0,0,0,0.1)" }
+                : { color: "#6B6480" }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-3">
+          {loading && data && (
+            <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+              <IconLoader2 size={13} className="animate-spin" /> Actualizando…
+            </span>
+          )}
+          <button onClick={load} disabled={loading}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50">
+            <IconRefresh size={14} className={loading ? "animate-spin" : ""} />
+            Actualizar
+          </button>
+        </div>
       </div>
 
       {/* Alertas (solo en modo "todos" o si hay problemas) */}
