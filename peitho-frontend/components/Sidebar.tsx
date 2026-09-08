@@ -111,9 +111,8 @@ export default function Sidebar() {
   return (
     <aside className="w-[256px] shrink-0 h-screen overflow-y-auto bg-white border-r border-[#E3E0EC] px-3.5 pt-[22px] pb-4 sticky top-0 flex flex-col gap-0.5">
       <div className="px-2 mb-[22px] flex items-center gap-2">
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#251762" strokeWidth="1.5" aria-hidden="true">
-          <path d="M12 3c-2.2 3.2-2.2 6.4 0 9.4 2.2-3 2.2-6.2 0-9.4z" />
-        </svg>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo-peitho-icon-crop.png" alt="" className="h-[24px] w-auto object-contain" aria-hidden="true" />
         <div className="text-[18px] font-bold tracking-tight leading-none">
           <span style={{ color: "#1C1530" }}>Peit</span>
           <span style={{ color: "#251762" }}>ho</span>
