@@ -152,10 +152,16 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
     [event.id, meetCode, ejecutivoEmail, contraparte, empresaContraparte, startTime, recurringEventId]
   );
 
-  // Best-effort — si hace match con el excel de metas, agenda el bot de
-  // Recall (Fase H); si no, no pasa nada (queda para el próximo intento
-  // lazy en meetings.ts, por si el excel se completa después).
-  await scheduleRecallBotForMeeting(rows[0].id);
+  // Bug real (08-09-2026): una reunión con un prospecto externo real no
+  // agendó el bot porque requireClientMatch defaulteaba a true y el match
+  // con el excel de metas no había pasado todavía — el usuario tuvo que
+  // crear el bot a mano en plena llamada. El match es solo para CLASIFICAR
+  // a qué cliente pertenece (para el dashboard), no debería bloquear la
+  // grabación. Solo se exige el match cuando la contraparte es alguien de
+  // BullsEye mismo (reunión interna, ej. un standup) — cualquier contraparte
+  // externa real agenda el bot igual, matchee o no con el excel.
+  const isInternalMeeting = empresaContraparte?.toLowerCase() === BULLSEYE_DOMAIN;
+  await scheduleRecallBotForMeeting(rows[0].id, { requireClientMatch: isInternalMeeting });
 }
 
 interface ChannelRow {

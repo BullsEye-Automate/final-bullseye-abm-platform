@@ -110,7 +110,13 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
           await resolveMeetingClientAndContact(row.id);
         }
         if (scope === 'upcoming') {
-          await scheduleRecallBotForMeeting(row.id);
+          // requireClientMatch: false — las filas de este endpoint ya
+          // pasaron el filtro SQL de arriba (sin dominio interno, o con
+          // meeting_url por invitación manual al bot), así que cualquiera
+          // acá es una reunión externa real: no debe depender de que
+          // además haya matcheado el excel de metas (ver el mismo fix en
+          // GET /meetings/:id, bug real 08-09-2026).
+          await scheduleRecallBotForMeeting(row.id, { requireClientMatch: false });
         }
       })
     );
@@ -194,10 +200,8 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
   try {
     // Gratis (no llama a Claude) — se intenta en cada carga del detalle para
     // que nombre/cargo/industria/cliente aparezcan aunque nunca se haya usado
-    // el botón "Iniciar research". De paso, intenta agendar el bot de Recall
-    // si recién hizo match (no-op si ya pasó la reunión o ya tiene bot).
+    // el botón "Iniciar research".
     await resolveMeetingClientAndContact(id);
-    await scheduleRecallBotForMeeting(id);
 
     const { rows } = await pool.query(
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time, m.status,
@@ -215,6 +219,17 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
       res.status(404).json({ error: 'Reunión no encontrada' });
       return;
     }
+
+    // De paso, intenta agendar el bot de Recall si todavía no tiene uno
+    // (no-op si ya pasó la reunión o ya tiene bot). Bug real (08-09-2026):
+    // una reunión con un prospecto real (contraparte externa) nunca se
+    // agendó porque requireClientMatch defaulteaba a true y esa reunión no
+    // había hecho match con el excel de metas — el match es solo para
+    // CLASIFICAR a qué cliente pertenece, no debería bloquear la grabación.
+    // Solo se exige el match cuando la contraparte es alguien de BullsEye
+    // mismo (reunión interna) — mismo criterio que INTERNAL_DOMAIN arriba.
+    const isInternalMeeting = meeting.empresa_contraparte?.toLowerCase() === INTERNAL_DOMAIN;
+    await scheduleRecallBotForMeeting(id, { requireClientMatch: isInternalMeeting });
 
     // Un usuario "client" solo puede ver el detalle de reuniones de su propio
     // client_id — se responde 404 (no 403) para no revelar que la reunión
