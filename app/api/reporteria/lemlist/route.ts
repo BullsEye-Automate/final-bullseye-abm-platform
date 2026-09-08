@@ -415,11 +415,29 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const clientId = searchParams.get("client_id");
   const since    = searchParams.get("since") ?? undefined;
+  const force    = searchParams.get("force") === "1";
 
   if (!clientId) return NextResponse.json({ error: "Se requiere client_id" }, { status: 400 });
 
   const db = supabaseAdmin();
   const isAll = clientId === "__all__";
+
+  // Caché: período como clave, TTL 60 minutos
+  const cacheKey = since ? `since:${since.slice(0, 10)}` : "all";
+  if (!force) {
+    const { data: cached } = await db
+      .from("lemlist_report_cache")
+      .select("data, fetched_at")
+      .eq("client_id", clientId)
+      .eq("period", cacheKey)
+      .single();
+    if (cached) {
+      const ageMin = (Date.now() - new Date(cached.fetched_at).getTime()) / 60000;
+      if (ageMin < 60) {
+        return NextResponse.json({ ...cached.data, _cached: true, _ageMin: Math.round(ageMin) });
+      }
+    }
+  }
 
   try {
     // Clientes a procesar: {id, name, apiKey, campaignIds[]}
@@ -570,6 +588,12 @@ export async function GET(req: NextRequest) {
       weeklyTrend: globalTrend,
       recentActivity: allActivity.sort((a, b) => b.at.localeCompare(a.at)).slice(0, 6),
     };
+
+    // Guardar en caché
+    await db.from("lemlist_report_cache").upsert(
+      { client_id: clientId, period: cacheKey, data: payload, fetched_at: new Date().toISOString() },
+      { onConflict: "client_id,period" }
+    );
 
     return NextResponse.json(payload);
   } catch (e: any) {

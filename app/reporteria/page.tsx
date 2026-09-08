@@ -200,17 +200,19 @@ function LemlistTab({ currentClient, period }: { currentClient: { id: string; na
   const [data, setData]       = useState<LemlistReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
+  const [fromCache, setFromCache] = useState(false);
 
   const isAll = !currentClient || currentClient.id === ALL_CLIENTS.id;
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!currentClient) return;
     setLoading(true);
     setError(null);
     try {
       const { from } = periodToDates(period);
       const sinceParam = from ? `&since=${encodeURIComponent(from)}` : "";
-      const res = await fetch(`/api/reporteria/lemlist?client_id=${currentClient.id}${sinceParam}`);
+      const forceParam = force ? "&force=1" : "";
+      const res = await fetch(`/api/reporteria/lemlist?client_id=${currentClient.id}${sinceParam}${forceParam}`);
       const d = await res.json();
       if (!res.ok) {
         console.error("[LemlistTab] API error:", res.status, d);
@@ -218,6 +220,7 @@ function LemlistTab({ currentClient, period }: { currentClient: { id: string; na
       } else {
         console.log("[LemlistTab] datos:", d);
         setData(d);
+        setFromCache(!!d._cached);
       }
     } catch (e: any) {
       console.error("[LemlistTab] fetch error:", e);
@@ -265,12 +268,15 @@ function LemlistTab({ currentClient, period }: { currentClient: { id: string; na
     <div className="space-y-4">
       {/* Botón actualizar */}
       <div className="flex justify-end items-center gap-3">
+        {fromCache && !loading && (
+          <span className="text-xs text-ink-muted">Datos en caché</span>
+        )}
         {loading && data && (
           <span className="flex items-center gap-1.5 text-xs text-ink-muted">
             <IconLoader2 size={13} className="animate-spin" /> Actualizando…
           </span>
         )}
-        <button onClick={load} disabled={loading}
+        <button onClick={() => load(true)} disabled={loading}
           className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition disabled:opacity-50">
           <IconRefresh size={14} className={loading ? "animate-spin" : ""} />
           Actualizar
