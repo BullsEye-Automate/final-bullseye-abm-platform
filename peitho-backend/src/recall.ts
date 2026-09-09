@@ -324,6 +324,16 @@ export async function checkAndRetryFailedRecallBots(): Promise<void> {
 // sin ningún error en los logs que lo explicara, y Peitho se perdió la
 // reunión entera. Tolerancia de 2 minutos entre join_at y start_time para no
 // disparar por redondeos menores que no son el bug real.
+//
+// Ya NO se filtra por `start_time > now()` — segundo bug real encontrado el
+// mismo día: para una reunión cuyo start_time YA PASÓ pero cuyo bot quedó
+// desalineado apuntando a una fecha futura (ej. la misma reunión de Edward
+// Rojas, con el bot todavía "Scheduled for September 10" un día después de
+// que la reunión real ya había ocurrido), no tiene sentido CREAR un
+// reemplazo (la reunión ya no va a pasar), pero tampoco hay que dejar ese
+// bot huérfano esperando entrar solo a una reunión ya terminada — se separa
+// en dos ramas: reunión futura → cancelar y recrear (como antes); reunión ya
+// pasada → cancelar nomás, sin crear nada, y limpiar recall_bot_id.
 export async function checkAndFixStaleRecallBots(): Promise<void> {
   if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
 
@@ -331,8 +341,7 @@ export async function checkAndFixStaleRecallBots(): Promise<void> {
     `select id, meet_code, meeting_url, start_time, recall_bot_id
      from meetings
      where recall_bot_id is not null
-       and status = 'scheduled'
-       and start_time > now()`
+       and status = 'scheduled'`
   );
 
   for (const meeting of rows) {
@@ -342,11 +351,27 @@ export async function checkAndFixStaleRecallBots(): Promise<void> {
 
     try {
       const bot = await getRecallBot(meeting.recall_bot_id);
-      if (!bot?.join_at) continue; // sin join_at en la respuesta, no hay nada que comparar
+      if (!bot?.join_at) continue; // sin join_at en la respuesta — ya despachó o algo distinto, no tocar
 
       const botJoinAtMs = new Date(bot.join_at).getTime();
+      // Si el bot ya está a punto de despachar (o ya debería haberlo hecho),
+      // no hay que tocarlo — puede estar entrando a la reunión justo ahora.
+      if (botJoinAtMs <= Date.now() + 60_000) continue;
+
       const meetingStartMs = new Date(meeting.start_time).getTime();
       if (Math.abs(botJoinAtMs - meetingStartMs) <= 2 * 60_000) continue; // alineado, nada que hacer
+
+      if (meetingStartMs <= Date.now()) {
+        // La reunión ya pasó y el bot quedó apuntando a una fecha futura
+        // equivocada — limpieza de huérfano, sin crear reemplazo.
+        console.log(
+          `[recall] reunión ${meeting.id}: bot ${meeting.recall_bot_id} quedó huérfano (join_at=${bot.join_at} futuro, pero la reunión ya pasó, start_time=${meeting.start_time}) — cancelando sin reemplazo...`
+        );
+        await cancelRecallBot(meeting.recall_bot_id);
+        await pool.query(`update meetings set recall_bot_id = null, updated_at = now() where id = $1`, [meeting.id]);
+        console.log(`[recall] reunión ${meeting.id}: bot huérfano cancelado`);
+        continue;
+      }
 
       console.log(
         `[recall] reunión ${meeting.id}: bot ${meeting.recall_bot_id} desalineado (join_at=${bot.join_at}, start_time=${meeting.start_time}) — cancelando y recreando con el horario correcto...`
