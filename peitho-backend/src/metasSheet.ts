@@ -206,21 +206,46 @@ function rowMatchesMeetingDate(row: SheetRow, meetingStart: Date): boolean {
   return dateKeyInTimezone(meetingStart, timezoneForCountry(row.pais)) === rowDateKey;
 }
 
-// Filtro por empresa/prospecto (con el mismo fallback de stripDomainSuffix
-// de siempre) dentro de un conjunto ya acotado de filas candidatas. Solo
-// devuelve una fila si el filtro deja exactamente una — con más de una no
-// hay forma de saber cuál es sin adivinar.
+// Quita todo lo que no sea letra/número (espacios, puntos, guiones) — para
+// comparar un dominio corto contra el nombre completo de la empresa sin que
+// un espacio de más/de menos rompa el match (ver fuzzyMatch abajo).
+function fuzzyCompanyKey(name: string): string {
+  return normalizeCompanyName(name).replace(/[^a-z0-9]/g, '');
+}
+
+// Filtro por empresa/prospecto dentro de un conjunto ya acotado de filas
+// candidatas (por fecha). Solo devuelve una fila si el filtro deja
+// exactamente una — con más de una no hay forma de saber cuál es sin
+// adivinar.
 function desambiguarPorEmpresa(candidatos: SheetRow[], empresaContraparte: string | null): SheetRow | null {
   const empresaNorm = normalizeCompanyName(empresaContraparte);
   if (!empresaNorm) return null;
 
   let match = candidatos.filter((row) => normalizeCompanyName(row.empresa) === empresaNorm);
+
+  const empresaSinTld = stripDomainSuffix(empresaNorm);
+  if (match.length === 0 && empresaSinTld !== empresaNorm) {
+    match = candidatos.filter((row) => normalizeCompanyName(row.empresa) === empresaSinTld);
+  }
+
+  // Bug real (09-09-2026, Intime Chile): el dominio del correo suele ser una
+  // versión corta del nombre (ej. "intime.cl" -> sin TLD "intime"), mientras
+  // el excel tiene el nombre completo con el país incluido ("Intime Chile")
+  // — ninguno de los dos matches de arriba (exactos) calza ahí. Último
+  // fallback: comparar ambos sin separadores y aceptar que uno sea prefijo
+  // del otro (mínimo 4 caracteres para no matchear por casualidad con
+  // nombres cortos tipo "abc"). Solo se usa dentro de un conjunto YA acotado
+  // por fecha exacta, así que el riesgo de un falso positivo es bajo.
   if (match.length === 0) {
-    const empresaSinTld = stripDomainSuffix(empresaNorm);
-    if (empresaSinTld !== empresaNorm) {
-      match = candidatos.filter((row) => normalizeCompanyName(row.empresa) === empresaSinTld);
+    const key = fuzzyCompanyKey(empresaSinTld || empresaNorm);
+    if (key.length >= 4) {
+      match = candidatos.filter((row) => {
+        const rowKey = fuzzyCompanyKey(row.empresa);
+        return rowKey.length >= 4 && (rowKey.startsWith(key) || key.startsWith(rowKey));
+      });
     }
   }
+
   return match.length === 1 ? match[0] : null;
 }
 
