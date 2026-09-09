@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { MeetingListItem } from "@/lib/peithoBackend";
+import type { ClientListItem, MeetingListItem } from "@/lib/peithoBackend";
+import InlineClientSelect from "@/components/InlineClientSelect";
 
 const STATUS_LABEL: Record<MeetingListItem["status"], string> = {
   scheduled: "Agendada",
@@ -120,6 +121,7 @@ export default function MeetingsTable({
   detailBasePath,
   showClientColumn = false,
   showPuntaje = false,
+  clients,
 }: {
   meetings: MeetingListItem[];
   detailBasePath?: string;
@@ -127,6 +129,11 @@ export default function MeetingsTable({
   // un usuario "client" ya sabe que todo lo que ve es suyo.
   showClientColumn?: boolean;
   showPuntaje?: boolean;
+  // Si viene (solo el admin la trae), la columna Cliente es editable inline
+  // con InlineClientSelect en vez de solo texto — pedido explícito del
+  // usuario para poder clasificar de corrido las reuniones sin cliente sin
+  // entrar al detalle de cada una.
+  clients?: ClientListItem[];
 }) {
   const router = useRouter();
   const [sortField, setSortField] = useState<SortField | null>(null);
@@ -211,7 +218,15 @@ export default function MeetingsTable({
               <td className="px-4 py-3">
                 <EmpresaCell nombre={meeting.empresa_nombre} dominio={meeting.empresa_contraparte} />
               </td>
-              {showClientColumn && <td className="px-4 py-3">{meeting.cliente_bullseye ?? "—"}</td>}
+              {showClientColumn && (
+                <td className="px-4 py-3">
+                  {clients ? (
+                    <InlineClientSelect meetingId={meeting.id} clients={clients} initialClientId={meeting.client_id} />
+                  ) : (
+                    meeting.cliente_bullseye ?? "—"
+                  )}
+                </td>
+              )}
               {showPuntaje && (
                 <>
                   <td className="px-4 py-3">

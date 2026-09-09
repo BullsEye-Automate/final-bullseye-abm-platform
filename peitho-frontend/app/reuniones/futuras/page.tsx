@@ -32,7 +32,12 @@ export default async function ReunionesFuturasPage({
         </div>
         {isAdmin && <ClientFilter clients={clients} />}
       </div>
-      <ReunionesFuturasView meetings={meetings} detailBasePath="/reuniones" showClientColumn={isAdmin} />
+      <ReunionesFuturasView
+        meetings={meetings}
+        detailBasePath="/reuniones"
+        showClientColumn={isAdmin}
+        clients={isAdmin ? clients : undefined}
+      />
     </div>
   );
 }

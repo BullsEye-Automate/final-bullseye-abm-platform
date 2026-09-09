@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { MeetingListItem } from "@/lib/peithoBackend";
+import type { ClientListItem, MeetingListItem } from "@/lib/peithoBackend";
 import MeetingsTable from "@/components/MeetingsTable";
 
 // "all" es el default ahora (pedido explícito del usuario, 09-09-2026: antes
@@ -70,10 +70,14 @@ export default function ReunionesFuturasView({
   meetings,
   detailBasePath,
   showClientColumn,
+  clients,
 }: {
   meetings: MeetingListItem[];
   detailBasePath: string;
   showClientColumn: boolean;
+  // Solo la trae el admin — habilita la edición inline del cliente en la
+  // tabla (ver MeetingsTable/InlineClientSelect).
+  clients?: ClientListItem[];
 }) {
   const [range, setRange] = useState<RangeKey>("all");
   const now = useMemo(() => new Date(), []);
@@ -165,7 +169,12 @@ export default function ReunionesFuturasView({
         <StatCard value={stats.clientes} label="Clientes distintos" />
       </div>
 
-      <MeetingsTable meetings={filtered} detailBasePath={detailBasePath} showClientColumn={showClientColumn} />
+      <MeetingsTable
+        meetings={filtered}
+        detailBasePath={detailBasePath}
+        showClientColumn={showClientColumn}
+        clients={clients}
+      />
     </div>
   );
 }

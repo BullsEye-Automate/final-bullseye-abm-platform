@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { MeetingListItem } from "@/lib/peithoBackend";
+import type { ClientListItem, MeetingListItem } from "@/lib/peithoBackend";
 import MeetingsTable from "@/components/MeetingsTable";
 
 // Filtro de rango de fechas + buscador (empresa o nombre del prospecto) sobre
@@ -12,10 +12,14 @@ export default function ReunionesPasadasView({
   meetings,
   detailBasePath,
   showClientColumn,
+  clients,
 }: {
   meetings: MeetingListItem[];
   detailBasePath: string;
   showClientColumn: boolean;
+  // Solo la trae el admin — habilita la edición inline del cliente en la
+  // tabla (ver MeetingsTable/InlineClientSelect).
+  clients?: ClientListItem[];
 }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -94,7 +98,13 @@ export default function ReunionesPasadasView({
         </div>
       </div>
 
-      <MeetingsTable meetings={filtered} detailBasePath={detailBasePath} showClientColumn={showClientColumn} showPuntaje />
+      <MeetingsTable
+        meetings={filtered}
+        detailBasePath={detailBasePath}
+        showClientColumn={showClientColumn}
+        showPuntaje
+        clients={clients}
+      />
     </div>
   );
 }
