@@ -4,7 +4,7 @@ import { Router } from 'express';
 import { Webhook } from 'svix';
 import { pool } from '../db';
 import { getRecallRecordingUrl, getRecallTranscriptUrl, getRecallVideoUrl } from '../recall';
-import { analyzeMeetingAudio, buildTranscriptFromRecall } from '../postMeetingAnalysis';
+import { analyzeMeetingAudio, buildTranscriptFromRecall, computeParticipantStats } from '../postMeetingAnalysis';
 import { getSupabaseAdminClient } from '../supabaseAdmin';
 
 // Bucket privado de Supabase Storage para el respaldo de video de 30 días
@@ -144,6 +144,18 @@ export async function processRecallDone(botId: string, meetingId: string): Promi
   // el audio ya descargado queda como respaldo y analyzeMeetingAudio cae
   // a Deepgram sobre él si transcript_text quedó vacío.
   let transcriptText: string | null = null;
+  // Participantes reales (nombre por diarización de plataforma, ver
+  // computeParticipantStats) — se usan para (a) mostrar "Participantes de la
+  // llamada" en el detalle y (b) detectar `ejecutivo` por heurística ("quien
+  // más habla", pedido explícito del usuario 09-09-2026): muchas reuniones
+  // las agenda directamente el cliente de BullsEye con el prospecto, sin
+  // nadie de BullsEye en el calendario, así que no hay ningún organizador de
+  // quien "heredar" ese campo — se sobreescribe acá siempre que haya
+  // transcript real, incluso si `ejecutivo` ya tenía un valor del calendario
+  // (que puede ser incorrecto — ej. alguien invitado que en realidad no
+  // participa de la llamada).
+  let participantes: { nombre: string; palabras: number }[] | null = null;
+  let ejecutivoDetectado: string | null = null;
   try {
     console.log(`[webhooks/recall] bot ${botId}: bajando transcript para la reunión ${meetingId}...`);
     const transcriptUrl = await getRecallTranscriptUrl(botId);
@@ -153,13 +165,21 @@ export async function processRecallDone(botId: string, meetingId: string): Promi
     }
     const segments = await transcriptRes.json();
     transcriptText = buildTranscriptFromRecall(segments) || null;
+    participantes = computeParticipantStats(segments);
+    if (participantes.length > 0) {
+      ejecutivoDetectado = participantes[0].nombre;
+    }
   } catch (error) {
     console.error(`[webhooks/recall] no se pudo bajar el transcript de Recall para el bot ${botId}`, error);
   }
 
   await pool.query(
-    `update meetings set audio_path = $1, transcript_text = $2, status = 'captured', updated_at = now() where id = $3`,
-    [audioPath, transcriptText, meetingId]
+    `update meetings
+     set audio_path = $1, transcript_text = $2, status = 'captured', updated_at = now(),
+         participantes = coalesce($4::jsonb, participantes),
+         ejecutivo = coalesce($5, ejecutivo)
+     where id = $3`,
+    [audioPath, transcriptText, meetingId, participantes ? JSON.stringify(participantes) : null, ejecutivoDetectado]
   );
 
   console.log(`[webhooks/recall] audio guardado en ${audioPath} para la reunión ${meetingId}`);

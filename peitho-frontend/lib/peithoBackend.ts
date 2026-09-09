@@ -114,6 +114,12 @@ export interface MeetingDetail extends MeetingListItem {
   // peitho-backend/src/routes/webhooks.ts) y quedó pegada en status='scheduled'
   // pese a que Recall ya terminó de grabar.
   recall_bot_available?: boolean;
+  // Participantes reales de la llamada (nombre por diarización de Recall,
+  // no heurística) ordenados de mayor a menor por cuánto habló cada uno —
+  // el primero es quien el backend usó para detectar `ejecutivo` (ver
+  // computeParticipantStats en postMeetingAnalysis.ts). Null si la reunión
+  // no tiene transcript de Recall (ej. flujo viejo de la extensión de Chrome).
+  participantes?: Array<{ nombre: string; palabras: number }> | null;
 }
 
 export interface ClientListItem {

@@ -301,6 +301,48 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
         )}
       </Section>
 
+      {/* Participantes reales de la llamada (nombre por diarización de
+          Recall) — solo con transcript nativo de Recall, nunca con el flujo
+          viejo de la extensión de Chrome. El primero (más palabras) es quien
+          el backend detectó como `ejecutivo` — reemplaza depender de quién
+          organizó el evento en el calendario, que puede no ser quien
+          realmente participa de la llamada. */}
+      {meeting.participantes && meeting.participantes.length > 0 && (
+        <Section title="Participantes de la llamada">
+          <div className="space-y-2.5">
+            {(() => {
+              const total = meeting.participantes!.reduce((sum, p) => sum + p.palabras, 0);
+              return meeting.participantes!.map((p, i) => {
+                const pct = total > 0 ? Math.round((p.palabras / total) * 100) : 0;
+                return (
+                  <div key={p.nombre} className="flex items-center gap-3 text-sm">
+                    <span className="w-44 shrink-0 truncate text-gray-700">
+                      {p.nombre}
+                      {i === 0 && (
+                        <span
+                          className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                          style={{ background: "rgba(98,224,216,0.15)", color: "#251762" }}
+                        >
+                          Ejecutivo detectado
+                        </span>
+                      )}
+                    </span>
+                    <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: "#251762" }} />
+                    </div>
+                    <span className="w-10 shrink-0 text-right text-xs text-gray-400">{pct}%</span>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+          <p className="text-xs text-gray-400 pt-1">
+            Detectado automáticamente por quién habla más en la grabación — no depende de quién organizó el
+            evento en el calendario.
+          </p>
+        </Section>
+      )}
+
       {preBrief && (
         <CollapsibleSection label="research" defaultOpen={!analysis}>
         <Section title="Investigación de empresa y prospecto">

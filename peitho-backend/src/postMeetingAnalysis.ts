@@ -93,6 +93,37 @@ export function buildTranscriptFromRecall(segments: RecallTranscriptSegment[]): 
   return lines.join('\n');
 }
 
+export interface ParticipantStat {
+  nombre: string;
+  palabras: number;
+}
+
+// "Peitho" es el nombre de perfil de la cuenta de Google del bot (ver
+// createRecallBot en recall.ts) — nunca debería hablar (no tiene micrófono),
+// pero se excluye igual por las dudas para no contaminar el conteo.
+const BOT_PARTICIPANT_NAME = 'peitho';
+
+// Cuenta palabras por participante real (nombre de la plataforma, vía
+// diarización de Recall) y ordena de mayor a menor — usado para (a) mostrar
+// "Participantes de la llamada" en el detalle de la reunión y (b) detectar
+// quién es el ejecutivo por heurística ("quien más habla" — pedido explícito
+// del usuario, 09-09-2026: muchas reuniones ahora las agenda directamente el
+// cliente de BullsEye con el prospecto, sin nadie de BullsEye en el
+// calendario, así que no hay ningún organizador de quien "heredar" el campo
+// ejecutivo — el transcript real es la única señal disponible).
+export function computeParticipantStats(segments: RecallTranscriptSegment[]): ParticipantStat[] {
+  const counts = new Map<string, number>();
+  for (const segment of segments) {
+    const name = segment.participant?.name?.trim();
+    if (!name || name.toLowerCase() === BOT_PARTICIPANT_NAME) continue;
+    const wordCount = (segment.words ?? []).length;
+    counts.set(name, (counts.get(name) ?? 0) + wordCount);
+  }
+  return Array.from(counts.entries())
+    .map(([nombre, palabras]) => ({ nombre, palabras }))
+    .sort((a, b) => b.palabras - a.palabras);
+}
+
 // Sin diarización distinguible, Deepgram no separa hablantes por rol — se asume
 // que quien habla primero es el ejecutivo (quien inicia la llamada), como sugiere
 // la arquitectura del prompt (ver docs/peitho_prompt_analisis_v1.md). Queda como

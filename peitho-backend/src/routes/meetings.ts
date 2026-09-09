@@ -216,6 +216,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time, m.status,
               m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
+              m.participantes,
               (m.video_path is not null) as video_available,
               (m.recall_bot_id is not null) as recall_bot_available,
               c.name as cliente_bullseye
