@@ -148,7 +148,7 @@ function extractContraparteFromBotInvite(event: GoogleCalendarEvent, botEmail: s
 // este evento — se deja null, no se inventa un dato falso (mismo criterio
 // que el resto del research). El client_id se resuelve después, igual que
 // siempre, matcheando empresa_contraparte + fecha contra el excel de metas.
-async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, botEmail: string) {
+export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, botEmail: string) {
   console.log(`[bot-invite] procesando evento ${event.id} (status=${event.status})...`);
   if (!event.id || event.status === 'cancelled') return;
 
@@ -180,6 +180,42 @@ async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, botEmail: 
 
   await scheduleRecallBotForMeeting(rows[0].id, { requireClientMatch: false });
   console.log(`[bot-invite] evento ${event.id}: scheduleRecallBotForMeeting terminó`);
+}
+
+// Re-sincronización manual de UNA reunión de invitación al bot (Fase H,
+// disparador b) — pedido explícito del usuario (09-09-2026): reuniones que
+// ya se habían sincronizado ANTES del fix de extractContraparteFromBotInvite
+// (excluir por dominio del organizador, no solo su dirección) se quedaron con
+// `contraparte`/`empresa_contraparte` mal calculados (ej. "Paula Rios
+// Arriagada"/"ccc.cl" en vez del prospecto real) — arreglar el código no
+// corrige esas filas ya guardadas, solo aplica en el próximo evento real de
+// Calendar (que puede no llegar nunca si nadie vuelve a tocar ese evento).
+// Esto re-pide el evento a Google por su google_event_id y vuelve a correr
+// upsertMeetingFromBotInvite con la lógica actual, sin depender de que
+// Calendar avise un cambio.
+export async function resyncBotInviteMeeting(meetingId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { rows } = await pool.query(`select google_event_id, meeting_url from meetings where id = $1`, [meetingId]);
+  const meeting = rows[0];
+  if (!meeting) return { ok: false, error: 'Reunión no encontrada' };
+  if (!meeting.meeting_url) {
+    return { ok: false, error: 'Esta reunión no vino de una invitación al bot — no aplica la re-sincronización' };
+  }
+
+  const botEmail = process.env.PEITHO_BOT_GOOGLE_ACCOUNT_EMAIL;
+  if (!botEmail) return { ok: false, error: 'Falta PEITHO_BOT_GOOGLE_ACCOUNT_EMAIL en las variables de entorno' };
+
+  try {
+    const { calendar } = await getCalendarClientByEmail(botEmail);
+    const { data: event } = await calendar.events.get(
+      { calendarId: 'primary', eventId: meeting.google_event_id },
+      { timeout: 15_000 }
+    );
+    await upsertMeetingFromBotInvite(event, botEmail);
+    return { ok: true };
+  } catch (error: any) {
+    console.error(`[bot-invite] error re-sincronizando la reunión ${meetingId} desde Calendar`, error);
+    return { ok: false, error: error?.message ?? 'Error re-sincronizando desde Calendar' };
+  }
 }
 
 async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail: string) {

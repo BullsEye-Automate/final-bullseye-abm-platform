@@ -15,6 +15,12 @@ export interface MeetingListItem {
   // Fase E — para el filtro de cliente en la vista admin.
   client_id: string | null;
   cliente_bullseye: string | null;
+  // Ejecutivo del CLIENTE de BullsEye (ej. CCHC) que toma la reunión — viene
+  // de la columna "Sales Manager" del excel de metas. Distinto de `ejecutivo`
+  // (reservado para un SDR/ejecutivo de BullsEye): en una reunión de
+  // invitación manual al bot no hay ningún BullsEye en la llamada, así que
+  // `ejecutivo` queda null y este es el único dato de "quién la toma".
+  cliente_sales_manager: string | null;
   // Solo vienen pobladas en scope=upcoming (mini-dashboard de "Reuniones
   // futuras") — el backend las omite en scope=past, quedan undefined ahí.
   pre_brief_status?: PreBriefStatus;
@@ -119,6 +125,10 @@ export interface MeetingDetail extends MeetingListItem {
   // peitho-backend/src/routes/webhooks.ts) y quedó pegada en status='scheduled'
   // pese a que Recall ya terminó de grabar.
   recall_bot_available?: boolean;
+  // true si la reunión vino de una invitación manual al bot (Fase H,
+  // disparador b) — habilita el botón "Volver a sincronizar desde Calendar"
+  // (solo aplica a este flujo, no al calendario normal de un ejecutivo).
+  is_bot_invite?: boolean;
   // Participantes reales de la llamada (nombre por diarización de Recall,
   // no heurística) ordenados de mayor a menor por cuánto habló cada uno —
   // el primero es quien el backend usó para detectar `ejecutivo` (ver

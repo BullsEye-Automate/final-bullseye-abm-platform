@@ -213,7 +213,10 @@ export default function MeetingsTable({
               }`}
             >
               <td className="px-4 py-3">{formatDate(meeting.start_time)}</td>
-              <td className="px-4 py-3">{meeting.ejecutivo ?? "—"}</td>
+              <td className="px-4 py-3">
+                {meeting.ejecutivo ??
+                  (meeting.cliente_sales_manager ? `${meeting.cliente_sales_manager} (cliente)` : "—")}
+              </td>
               <td className="px-4 py-3">{meeting.contraparte ?? "—"}</td>
               <td className="px-4 py-3">
                 <EmpresaCell nombre={meeting.empresa_nombre} dominio={meeting.empresa_contraparte} />

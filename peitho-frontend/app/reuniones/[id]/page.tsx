@@ -6,6 +6,7 @@ import ReprocessButton from "@/components/ReprocessButton";
 import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 import AssignClientForm from "@/components/AssignClientForm";
 import DeleteMeetingButton from "@/components/DeleteMeetingButton";
+import ResyncCalendarButton from "@/components/ResyncCalendarButton";
 import DetailTabs from "@/components/DetailTabs";
 import MeetingVideoPlayer from "@/components/MeetingVideoPlayer";
 import CollapsibleSection from "@/components/CollapsibleSection";
@@ -268,6 +269,7 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             <ReprocessButton meetingId={meeting.id} status={meeting.status} />
           )}
           {isAdmin && <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />}
+          {isAdmin && meeting.is_bot_invite && <ResyncCalendarButton meetingId={meeting.id} />}
           {isAdmin && <DeleteMeetingButton meetingId={meeting.id} />}
         </div>
       </div>
@@ -292,6 +294,10 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             <div>
               <p className="text-xs font-medium text-gray-500">Cliente BullsEye</p>
               <p className="text-gray-700">{meeting.cliente_bullseye ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Sales Manager (cliente)</p>
+              <p className="text-gray-700">{meeting.cliente_sales_manager ?? "—"}</p>
             </div>
           </div>
           <p className="text-xs text-gray-400 pt-1">

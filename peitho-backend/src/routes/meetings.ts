@@ -5,7 +5,8 @@ import multer from 'multer';
 import { pool } from '../db';
 import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 import { generatePreMeetingBrief } from '../preMeetingBrief';
-import { resolveMeetingClientAndContact } from '../metasSheet';
+import { resolveMeetingClientAndContact, refreshMatchedRowFields } from '../metasSheet';
+import { resyncBotInviteMeeting } from '../calendarSync';
 import { scheduleRecallBotForMeeting, cancelRecallBot } from '../recall';
 import { processRecallDone } from './webhooks';
 import { requireAuth, requireAdmin } from '../authMiddleware';
@@ -79,14 +80,14 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     // audio_path/analysis completos" de arriba (eso sigue fuera).
     const { rows } = await pool.query(
       scope === 'upcoming'
-        ? `select id, ejecutivo, contraparte, empresa_contraparte, empresa_nombre, start_time, status, client_id,
+        ? `select id, ejecutivo, contraparte, empresa_contraparte, empresa_nombre, cliente_sales_manager, start_time, status, client_id,
                   pre_brief_status, (recall_bot_id is not null) as has_bot
            from meetings
            where start_time >= now()
              and (meeting_url is not null or lower(empresa_contraparte) is distinct from $1)
              and recurring_event_id is null
            order by start_time asc`
-        : `select id, ejecutivo, contraparte, empresa_contraparte, empresa_nombre, start_time, status, client_id,
+        : `select id, ejecutivo, contraparte, empresa_contraparte, empresa_nombre, cliente_sales_manager, start_time, status, client_id,
                   (analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
                   (analysis->'prediccion_exito'->>'puntaje')::int as prediccion_exito
            from meetings
@@ -218,12 +219,13 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
     await resolveMeetingClientAndContact(id);
 
     const { rows } = await pool.query(
-      `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.empresa_nombre, m.start_time, m.status,
+      `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status,
               m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
               m.participantes,
               (m.video_path is not null) as video_available,
               (m.recall_bot_id is not null) as recall_bot_available,
+              (m.meeting_url is not null) as is_bot_invite,
               c.name as cliente_bullseye
        from meetings m
        left join clients c on c.id = m.client_id
@@ -410,6 +412,28 @@ meetingsRouter.put('/meetings/:id/client', requireAuth, requireAdmin, async (req
     console.error('Error corrigiendo el cliente de la reunión', error);
     res.status(500).json({ error: 'Error guardando el cliente' });
   }
+});
+
+// Re-sincronización manual admin-only — para una reunión de invitación al bot
+// (meeting_url no nulo) cuyo contraparte/empresa_contraparte quedaron mal
+// calculados por un bug ya corregido (ej. CCHC/Paula Rios, 09-09-2026: el
+// código viejo no excluía a otra persona del mismo cliente además del
+// organizador). Arreglar el código no corrige las filas ya guardadas — esto
+// vuelve a pedir el evento a Google Calendar y recalcula todo con la lógica
+// actual, sin esperar a que Calendar avise un cambio real. De paso refresca
+// los campos ya matcheados del excel (ej. cliente_sales_manager, agregado
+// después del primer match de esta reunión) desde la misma fila.
+meetingsRouter.post('/meetings/:id/resync-calendar', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  const result = await resyncBotInviteMeeting(id);
+  if (!result.ok) {
+    res.status(400).json({ error: result.error });
+    return;
+  }
+
+  await refreshMatchedRowFields(id);
+  res.json({ status: 'ok' });
 });
 
 // Borrado manual — admin-only, pedido explícito del usuario para poder

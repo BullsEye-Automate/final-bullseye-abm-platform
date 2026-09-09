@@ -20,6 +20,10 @@ interface SheetRow {
   industria: string;
   fechaReunion: string;
   pais: string;
+  // Ejecutivo del cliente de BullsEye (ej. CCHC) que toma la reunión — solo
+  // se rellena cuando ese cliente tiene varios ejecutivos y pide asignarlos
+  // por nombre, así que viene vacío la mayoría de las filas.
+  salesManager: string;
   idReunion: string;
 }
 
@@ -105,6 +109,7 @@ async function loadReunionesRows(forceRefresh = false): Promise<SheetRow[]> {
     industria: String(raw[col('Industria')] ?? '').trim(),
     fechaReunion: String(raw[col('Fecha de la reunión')] ?? '').trim(),
     pais: String(raw[col('País')] ?? '').trim(),
+    salesManager: String(raw[col('Sales Manager')] ?? '').trim(),
     idReunion: String(raw[col('ID Reunión')] ?? '').trim(),
   }));
 
@@ -337,9 +342,10 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
          contacto_industria = coalesce(nullif($4, ''), contacto_industria),
          metas_sheet_match_id = nullif($5, ''),
          empresa_nombre = coalesce(nullif($6, ''), empresa_nombre),
+         cliente_sales_manager = coalesce(nullif($7, ''), cliente_sales_manager),
          updated_at = now()
-       where id = $7`,
-      [clientId, match.contacto, match.cargo, match.industria, match.idReunion, match.empresa, meetingId]
+       where id = $8`,
+      [clientId, match.contacto, match.cargo, match.industria, match.idReunion, match.empresa, match.salesManager, meetingId]
     );
     console.log(
       `[metas-sheet] reunión ${meetingId}: match encontrado (cliente="${match.cliente}", contacto="${match.contacto}")`
@@ -347,4 +353,34 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
   } catch (error) {
     console.error(`[metas-sheet] reunión ${meetingId}: error resolviendo cliente/contacto`, error);
   }
+}
+
+// resolveMeetingClientAndContact no toca nada si la reunión ya tiene
+// client_id — bien para no pisar una asignación manual, pero significa que
+// una reunión que ya había matcheado ANTES de que existiera una columna
+// nueva (ej. cliente_sales_manager) se queda sin ese dato para siempre. Se
+// usa desde el botón de re-sincronización manual (POST
+// /meetings/:id/resync-calendar) para refrescar esos campos desde la MISMA
+// fila ya matcheada (via metas_sheet_match_id), sin volver a correr el
+// matching ni tocar client_id.
+export async function refreshMatchedRowFields(meetingId: string): Promise<void> {
+  const { rows } = await pool.query(`select metas_sheet_match_id from meetings where id = $1`, [meetingId]);
+  const matchId = rows[0]?.metas_sheet_match_id;
+  if (!matchId) return;
+
+  const sheetRows = await loadReunionesRows();
+  const row = sheetRows.find((r) => r.idReunion === matchId);
+  if (!row) return;
+
+  await pool.query(
+    `update meetings set
+       contacto_nombre = coalesce(nullif($1, ''), contacto_nombre),
+       contacto_cargo = coalesce(nullif($2, ''), contacto_cargo),
+       contacto_industria = coalesce(nullif($3, ''), contacto_industria),
+       empresa_nombre = coalesce(nullif($4, ''), empresa_nombre),
+       cliente_sales_manager = coalesce(nullif($5, ''), cliente_sales_manager),
+       updated_at = now()
+     where id = $6`,
+    [row.contacto, row.cargo, row.industria, row.empresa, row.salesManager, meetingId]
+  );
 }
