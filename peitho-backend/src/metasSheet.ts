@@ -143,7 +143,54 @@ function parseSheetDate(raw: string): Date | null {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
-function matchMeetingRow(
+// El excel se llena en hora de Chile (fecha "de calendario", sin huso
+// horario) pero start_time de una reunión viene en UTC — comparar el día
+// crudo de start_time contra la fecha del excel es el mismo tipo de bug de
+// huso horario que ya mordió una vez en esta investigación (una reunión de
+// las 20:xx UTC es de otro día en Chile). Intl.DateTimeFormat con la zona
+// horaria de Chile resuelve el offset correcto (-3 o -4) sin hardcodearlo,
+// incluyendo el cambio de horario de verano.
+const MEETING_TIMEZONE = 'America/Santiago';
+
+function chileDateKey(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: MEETING_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function sheetDateKey(raw: string): string | null {
+  const parsed = parseSheetDate(raw);
+  return parsed ? parsed.toISOString().slice(0, 10) : null;
+}
+
+// Filtro por empresa/prospecto (con el mismo fallback de stripDomainSuffix
+// de siempre) dentro de un conjunto ya acotado de filas candidatas. Solo
+// devuelve una fila si el filtro deja exactamente una — con más de una no
+// hay forma de saber cuál es sin adivinar.
+function desambiguarPorEmpresa(candidatos: SheetRow[], empresaContraparte: string | null): SheetRow | null {
+  const empresaNorm = normalizeCompanyName(empresaContraparte);
+  if (!empresaNorm) return null;
+
+  let match = candidatos.filter((row) => normalizeCompanyName(row.empresa) === empresaNorm);
+  if (match.length === 0) {
+    const empresaSinTld = stripDomainSuffix(empresaNorm);
+    if (empresaSinTld !== empresaNorm) {
+      match = candidatos.filter((row) => normalizeCompanyName(row.empresa) === empresaSinTld);
+    }
+  }
+  return match.length === 1 ? match[0] : null;
+}
+
+// Fallback (09-09-2026): matching viejo, por empresa primero y fecha más
+// cercana como desempate — para cuando la reunión no tiene ningún candidato
+// por fecha exacta (típicamente porque el excel tiene la fecha mal tipeada,
+// ver "es una hoja mantenida a mano" más abajo). Sin esto, un typo de fecha
+// en el excel dejaría la reunión sin matchear de plano, cuando antes sí
+// encontraba la fila por empresa.
+function matchMeetingRowPorEmpresaYFechaMasCercana(
   rows: SheetRow[],
   meeting: { empresa_contraparte: string | null; start_time: string | null }
 ): SheetRow | null {
@@ -151,19 +198,15 @@ function matchMeetingRow(
   if (!empresaNorm) return null;
 
   let candidatos = rows.filter((row) => normalizeCompanyName(row.empresa) === empresaNorm);
-
   if (candidatos.length === 0) {
     const empresaSinTld = stripDomainSuffix(empresaNorm);
     if (empresaSinTld !== empresaNorm) {
       candidatos = rows.filter((row) => normalizeCompanyName(row.empresa) === empresaSinTld);
     }
   }
-
   if (candidatos.length === 0) return null;
   if (candidatos.length === 1) return candidatos[0];
 
-  // Mismo prospecto con varias reuniones registradas (ej. segunda reunión) —
-  // se desambigua por la fecha más cercana a la del calendario.
   const meetingDate = meeting.start_time ? new Date(meeting.start_time) : null;
   if (!meetingDate) return candidatos[0];
 
@@ -179,6 +222,33 @@ function matchMeetingRow(
     }
   }
   return mejor ?? candidatos[0];
+}
+
+// Pedido explícito del usuario (09-09-2026): matchear primero por fecha
+// (dato confiable — viene de Calendar, no de una extracción de dominio que
+// puede fallar como ya pasó con CCHC/Paula Rios) y usar la empresa solo
+// para desambiguar entre las reuniones agendadas ese mismo día para
+// clientes distintos — al revés del orden anterior (empresa primero, fecha
+// como desempate). Como beneficio extra, esto también puede matchear
+// reuniones donde empresa_contraparte quedó null (ver caso del Zoom sin
+// asistentes) si ese día solo hay una reunión en el excel.
+function matchMeetingRow(
+  rows: SheetRow[],
+  meeting: { empresa_contraparte: string | null; start_time: string | null }
+): SheetRow | null {
+  if (meeting.start_time) {
+    const meetingDateKey = chileDateKey(new Date(meeting.start_time));
+    const candidatosPorFecha = rows.filter((row) => sheetDateKey(row.fechaReunion) === meetingDateKey);
+
+    if (candidatosPorFecha.length === 1) return candidatosPorFecha[0];
+    if (candidatosPorFecha.length > 1) {
+      return desambiguarPorEmpresa(candidatosPorFecha, meeting.empresa_contraparte);
+    }
+  }
+
+  // Sin ningún candidato con esa fecha exacta (o sin start_time) — probable
+  // typo de fecha en el excel, cae al matching viejo por empresa.
+  return matchMeetingRowPorEmpresaYFechaMasCercana(rows, meeting);
 }
 
 async function findOrCreateClient(name: string, externalId: string | null): Promise<string> {
