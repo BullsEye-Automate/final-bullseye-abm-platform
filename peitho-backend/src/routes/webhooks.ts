@@ -117,6 +117,58 @@ function verifyRecallWebhook(req: any): { event: string; data: any } | null {
   }
 }
 
+// Baja audio + transcript de un bot de Recall ya terminado y los guarda,
+// dejando la reunión en status='captured' y disparando el análisis — extraído
+// del handler de /webhooks/recall para poder reusarlo desde el endpoint de
+// reprocesamiento manual (POST /meetings/:id/reprocess en meetings.ts), que
+// existe para recuperar reuniones que quedaron pegadas en 'scheduled' porque
+// el proceso se cayó (ej. el OOM del respaldo de video) antes de llegar acá.
+// No hace ninguna verificación de idempotencia — eso es responsabilidad de
+// quien la llama (ver el chequeo de status en el handler del webhook de abajo).
+export async function processRecallDone(botId: string, meetingId: string): Promise<void> {
+  console.log(`[webhooks/recall] bot ${botId}: descargando audio para la reunión ${meetingId}...`);
+  const downloadUrl = await getRecallRecordingUrl(botId);
+
+  const audioRes = await fetchWithTimeout(downloadUrl);
+  if (!audioRes.ok) {
+    throw new Error(`Descarga del audio respondió ${audioRes.status}`);
+  }
+  const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+
+  const audioPath = path.join(uploadsDir, `${meetingId}-${Date.now()}.mp3`);
+  fs.writeFileSync(audioPath, audioBuffer);
+
+  // El transcript de Recall (nombre real de cada hablante, ver
+  // postMeetingAnalysis.ts) reemplaza a Deepgram para el análisis — si por
+  // algo falla (ej. no se generó a tiempo), no se aborta todo el flujo:
+  // el audio ya descargado queda como respaldo y analyzeMeetingAudio cae
+  // a Deepgram sobre él si transcript_text quedó vacío.
+  let transcriptText: string | null = null;
+  try {
+    console.log(`[webhooks/recall] bot ${botId}: bajando transcript para la reunión ${meetingId}...`);
+    const transcriptUrl = await getRecallTranscriptUrl(botId);
+    const transcriptRes = await fetchWithTimeout(transcriptUrl);
+    if (!transcriptRes.ok) {
+      throw new Error(`Descarga del transcript respondió ${transcriptRes.status}`);
+    }
+    const segments = await transcriptRes.json();
+    transcriptText = buildTranscriptFromRecall(segments) || null;
+  } catch (error) {
+    console.error(`[webhooks/recall] no se pudo bajar el transcript de Recall para el bot ${botId}`, error);
+  }
+
+  await pool.query(
+    `update meetings set audio_path = $1, transcript_text = $2, status = 'captured', updated_at = now() where id = $3`,
+    [audioPath, transcriptText, meetingId]
+  );
+
+  console.log(`[webhooks/recall] audio guardado en ${audioPath} para la reunión ${meetingId}`);
+
+  analyzeMeetingAudio(meetingId).catch((error) => {
+    console.error(`[webhooks/recall] falló el análisis de la reunión ${meetingId}`, error);
+  });
+}
+
 // Respaldo de video (30 días) — se llama SIN esperar (fire-and-forget) desde
 // el handler principal, después de que audio/transcript/análisis ya se
 // guardaron. Bug real (08-09-2026, reunión de Coderslab): antes esto corría
@@ -209,47 +261,7 @@ webhooksRouter.post('/webhooks/recall', async (req, res) => {
       return;
     }
 
-    console.log(`[webhooks/recall] bot ${botId}: descargando audio para la reunión ${meeting.id}...`);
-    const downloadUrl = await getRecallRecordingUrl(botId);
-
-    const audioRes = await fetchWithTimeout(downloadUrl);
-    if (!audioRes.ok) {
-      throw new Error(`Descarga del audio respondió ${audioRes.status}`);
-    }
-    const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-
-    const audioPath = path.join(uploadsDir, `${meeting.id}-${Date.now()}.mp3`);
-    fs.writeFileSync(audioPath, audioBuffer);
-
-    // El transcript de Recall (nombre real de cada hablante, ver
-    // postMeetingAnalysis.ts) reemplaza a Deepgram para el análisis — si por
-    // algo falla (ej. no se generó a tiempo), no se aborta todo el flujo:
-    // el audio ya descargado queda como respaldo y analyzeMeetingAudio cae
-    // a Deepgram sobre él si transcript_text quedó vacío.
-    let transcriptText: string | null = null;
-    try {
-      console.log(`[webhooks/recall] bot ${botId}: bajando transcript para la reunión ${meeting.id}...`);
-      const transcriptUrl = await getRecallTranscriptUrl(botId);
-      const transcriptRes = await fetchWithTimeout(transcriptUrl);
-      if (!transcriptRes.ok) {
-        throw new Error(`Descarga del transcript respondió ${transcriptRes.status}`);
-      }
-      const segments = await transcriptRes.json();
-      transcriptText = buildTranscriptFromRecall(segments) || null;
-    } catch (error) {
-      console.error(`[webhooks/recall] no se pudo bajar el transcript de Recall para el bot ${botId}`, error);
-    }
-
-    await pool.query(
-      `update meetings set audio_path = $1, transcript_text = $2, status = 'captured', updated_at = now() where id = $3`,
-      [audioPath, transcriptText, meeting.id]
-    );
-
-    console.log(`[webhooks/recall] audio guardado en ${audioPath} para la reunión ${meeting.id}`);
-
-    analyzeMeetingAudio(meeting.id).catch((error) => {
-      console.error(`[webhooks/recall] falló el análisis de la reunión ${meeting.id}`, error);
-    });
+    await processRecallDone(botId, meeting.id);
 
     // DESACTIVADO (08-09-2026): saveVideoBackup() cargaba el video entero en
     // memoria (Buffer.from(await videoRes.arrayBuffer())) antes de subirlo a

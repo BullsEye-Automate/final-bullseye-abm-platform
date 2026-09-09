@@ -7,6 +7,7 @@ import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 import { generatePreMeetingBrief } from '../preMeetingBrief';
 import { resolveMeetingClientAndContact } from '../metasSheet';
 import { scheduleRecallBotForMeeting } from '../recall';
+import { processRecallDone } from './webhooks';
 import { requireAuth, requireAdmin } from '../authMiddleware';
 import { getSupabaseAdminClient } from '../supabaseAdmin';
 
@@ -400,6 +401,44 @@ meetingsRouter.put('/meetings/:id/client', requireAuth, requireAdmin, async (req
   } catch (error) {
     console.error('Error corrigiendo el cliente de la reunión', error);
     res.status(500).json({ error: 'Error guardando el cliente' });
+  }
+});
+
+// Recuperación manual para una reunión que quedó pegada en status='scheduled'
+// pese a que el bot de Recall ya terminó de grabar — pasa cuando el proceso
+// se cayó a mitad del webhook de /webhooks/recall (ej. el OOM real del
+// respaldo de video, 08-09-2026, ver webhooks.ts) antes de guardar
+// audio_path/transcript_text/status. Recall/Svix no reintentan el evento
+// 'done' indefinidamente, así que sin esto una reunión así queda perdida para
+// siempre. Requiere que la reunión ya tenga recall_bot_id (si nunca se
+// agendó un bot, no hay nada que reprocesar). Corre en el mismo proceso que
+// el resto del backend — no evita un OOM si el video sigue causándolo, pero
+// el respaldo de video está desactivado, así que este camino ya no debería
+// cargar el archivo completo en memoria.
+meetingsRouter.post('/meetings/:id/reprocess', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { rows } = await pool.query(`select recall_bot_id, status from meetings where id = $1`, [id]);
+    const meeting = rows[0];
+    if (!meeting) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+    if (!meeting.recall_bot_id) {
+      res.status(400).json({ error: 'Esta reunión no tiene un bot de Recall asociado (recall_bot_id vacío)' });
+      return;
+    }
+
+    console.log(`[reprocess] reunión ${id}: reprocesamiento manual solicitado (status actual=${meeting.status})...`);
+    res.json({ status: 'ok' });
+
+    processRecallDone(meeting.recall_bot_id, id).catch((error) => {
+      console.error(`[reprocess] falló el reprocesamiento manual de la reunión ${id}`, error);
+    });
+  } catch (error) {
+    console.error('Error iniciando el reprocesamiento manual de la reunión', error);
+    res.status(500).json({ error: 'Error iniciando el reprocesamiento' });
   }
 });
 
