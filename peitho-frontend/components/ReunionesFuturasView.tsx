@@ -4,12 +4,18 @@ import { useMemo, useState } from "react";
 import type { MeetingListItem } from "@/lib/peithoBackend";
 import MeetingsTable from "@/components/MeetingsTable";
 
-type RangeKey = "week" | "nextWeek" | "month";
+// "all" es el default ahora (pedido explícito del usuario, 09-09-2026: antes
+// solo se podía filtrar por semana/mes, y una reunión fuera de esos rangos
+// quedaba invisible sin darse cuenta) — se ven todas las reuniones futuras
+// de entrada, y estos filtros acotan sobre esa lista completa.
+type RangeKey = "all" | "week" | "nextWeek" | "month" | "custom";
 
 const RANGE_LABEL: Record<RangeKey, string> = {
+  all: "Todas",
   week: "Esta semana",
   nextWeek: "Próxima semana",
   month: "Este mes",
+  custom: "Rango personalizado",
 };
 
 function startOfWeek(d: Date): Date {
@@ -21,7 +27,11 @@ function startOfWeek(d: Date): Date {
   return monday;
 }
 
-function rangeFor(key: RangeKey, now: Date): { start: Date; end: Date } {
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function presetRangeFor(key: "week" | "nextWeek" | "month", now: Date): { start: Date; end: Date } {
   if (key === "week" || key === "nextWeek") {
     const monday = startOfWeek(now);
     if (key === "nextWeek") monday.setDate(monday.getDate() + 7);
@@ -52,9 +62,10 @@ function StatCard({ value, label, color }: { value: string | number; label: stri
   );
 }
 
-// Filtro semanal + mini-dashboard sobre "Reuniones futuras" — filtra en el
-// navegador sobre las reuniones ya traídas (scope=upcoming no tiene límite de
-// fecha del lado del backend, así que no hace falta un endpoint nuevo).
+// Filtro semanal/mensual/personalizado + mini-dashboard sobre "Reuniones
+// futuras" — filtra en el navegador sobre las reuniones ya traídas
+// (scope=upcoming no tiene límite de fecha del lado del backend, así que no
+// hace falta un endpoint nuevo).
 export default function ReunionesFuturasView({
   meetings,
   detailBasePath,
@@ -64,18 +75,32 @@ export default function ReunionesFuturasView({
   detailBasePath: string;
   showClientColumn: boolean;
 }) {
-  const [range, setRange] = useState<RangeKey>("week");
+  const [range, setRange] = useState<RangeKey>("all");
   const now = useMemo(() => new Date(), []);
-  const { start, end } = useMemo(() => rangeFor(range, now), [range, now]);
+  const [customFrom, setCustomFrom] = useState(isoDate(now));
+  const [customTo, setCustomTo] = useState(() => {
+    const d = new Date(now);
+    d.setMonth(d.getMonth() + 2);
+    return isoDate(d);
+  });
+
+  const bounds = useMemo(() => {
+    if (range === "all") return null;
+    if (range === "custom") {
+      return { start: new Date(`${customFrom}T00:00:00`), end: new Date(`${customTo}T23:59:59.999`) };
+    }
+    return presetRangeFor(range, now);
+  }, [range, now, customFrom, customTo]);
 
   const filtered = useMemo(
     () =>
       meetings.filter((m) => {
         if (!m.start_time) return false;
+        if (!bounds) return true; // "all" — sin acotar
         const t = new Date(m.start_time);
-        return t >= start && t <= end;
+        return t >= bounds.start && t <= bounds.end;
       }),
-    [meetings, start, end]
+    [meetings, bounds]
   );
 
   const stats = useMemo(() => {
@@ -104,13 +129,33 @@ export default function ReunionesFuturasView({
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 border border-gray-100 bg-white rounded-[11px] px-[13px] py-[9px] text-[13px] text-gray-500">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#948DA8" strokeWidth="2">
-            <rect x="3" y="5" width="18" height="16" rx="2.5" />
-            <line x1="3" y1="10" x2="21" y2="10" />
-          </svg>
-          {formatRange(start, end)}
-        </div>
+        {range === "custom" ? (
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="border border-gray-100 rounded-[11px] px-3 py-2 bg-white outline-none focus:border-[#62E0D8]"
+            />
+            <span>—</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="border border-gray-100 rounded-[11px] px-3 py-2 bg-white outline-none focus:border-[#62E0D8]"
+            />
+          </div>
+        ) : (
+          bounds && (
+            <div className="flex items-center gap-2 border border-gray-100 bg-white rounded-[11px] px-[13px] py-[9px] text-[13px] text-gray-500">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#948DA8" strokeWidth="2">
+                <rect x="3" y="5" width="18" height="16" rx="2.5" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              {formatRange(bounds.start, bounds.end)}
+            </div>
+          )
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
