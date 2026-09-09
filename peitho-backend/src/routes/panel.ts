@@ -84,6 +84,12 @@ panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
   }
   const whereClause = conditions.join(' and ');
 
+  // Copia previa a agregar `threshold` — la query de distribución (abajo) no
+  // referencia $thresholdIdx en absoluto, y Postgres rechaza el bind si se le
+  // pasan más parámetros que placeholders referenciados en la query ("bind
+  // message supplies N parameters, but prepared statement requires N-1").
+  const paramsSinThreshold = [...params];
+
   params.push(threshold);
   const thresholdIdx = params.length;
 
@@ -170,7 +176,7 @@ panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
     ] = await Promise.all([
       pool.query(segmentQuery('contacto_cargo'), params),
       pool.query(segmentQuery('contacto_industria'), params),
-      pool.query(distribucionQuery, params),
+      pool.query(distribucionQuery, paramsSinThreshold),
       pool.query(porEjecutivoQuery, baseParams),
     ]);
 
