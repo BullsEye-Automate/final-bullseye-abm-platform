@@ -105,6 +105,12 @@ export interface MeetingDetail extends MeetingListItem {
   // vía GET /api/meetings/:id/video (proxy) cuando el usuario abre la
   // pestaña de video.
   video_available?: boolean;
+  // true si la reunión ya tiene un bot de Recall asociado (recall_bot_id) —
+  // habilita el botón "Reprocesar grabación" para recuperarla a mano si el
+  // proceso se cayó a mitad del webhook de /webhooks/recall (ver
+  // peitho-backend/src/routes/webhooks.ts) y quedó pegada en status='scheduled'
+  // pese a que Recall ya terminó de grabar.
+  recall_bot_available?: boolean;
 }
 
 export interface ClientListItem {

@@ -216,6 +216,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
               m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
               (m.video_path is not null) as video_available,
+              (m.recall_bot_id is not null) as recall_bot_available,
               c.name as cliente_bullseye
        from meetings m
        left join clients c on c.id = m.client_id

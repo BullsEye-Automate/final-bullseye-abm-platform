@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchMeeting, fetchMe, fetchClients } from "@/lib/peithoBackend";
 import ResearchButton from "@/components/ResearchButton";
+import ReprocessButton from "@/components/ReprocessButton";
 import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 import AssignClientForm from "@/components/AssignClientForm";
 import DetailTabs from "@/components/DetailTabs";
@@ -261,7 +262,12 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             {STATUS_LABEL[meeting.status] ?? meeting.status}
           </p>
         </div>
-        {isAdmin && <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />}
+        <div className="flex items-start gap-2">
+          {isAdmin && meeting.recall_bot_available && (
+            <ReprocessButton meetingId={meeting.id} status={meeting.status} />
+          )}
+          {isAdmin && <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />}
+        </div>
       </div>
 
       {/* Siempre visible (no solo cuando hay match del excel) — el formulario de
