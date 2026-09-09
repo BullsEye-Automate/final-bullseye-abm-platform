@@ -89,6 +89,146 @@ function FunnelChart({ funnel }: { funnel: FunnelData["funnel"] }) {
   );
 }
 
+// Distribución de prediccion_exito (1-5) — pedido explícito del usuario
+// (09-09-2026): ver comentario del tipo en lib/peithoBackend.ts.
+function PrediccionDistribution({ distribucion }: { distribucion: FunnelData["distribucion_prediccion"] }) {
+  const total = distribucion.reduce((sum, b) => sum + b.total, 0);
+  const max = Math.max(1, ...distribucion.map((b) => b.total));
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+      <h2 className="text-sm font-semibold text-gray-900 mb-1">Distribución de predicción de éxito</h2>
+      <p className="text-xs text-gray-500 mb-5">
+        % de reuniones analizadas ({total}) en cada puntaje de predicción (1 a 5).
+      </p>
+      {total === 0 ? (
+        <p className="text-sm text-gray-400">Todavía no hay reuniones analizadas en este rango.</p>
+      ) : (
+        <div className="space-y-3">
+          {distribucion.map((b) => (
+            <div key={b.puntaje}>
+              <div className="flex items-baseline justify-between text-xs text-gray-500 mb-1">
+                <span className="font-medium text-gray-700">{THRESHOLD_LABEL[b.puntaje]}</span>
+                <span>
+                  <span className="font-semibold text-gray-900">{Math.round(b.pct * 100)}%</span>
+                  {" · "}
+                  {b.total} {b.total === 1 ? "reunión" : "reuniones"}
+                </span>
+              </div>
+              <div className="h-5 rounded-[4px] bg-gray-50 overflow-hidden">
+                <div
+                  className="h-5 rounded-[4px]"
+                  style={{
+                    width: `${Math.max((b.total / max) * 100, b.total > 0 ? 3 : 0)}%`,
+                    background: FUNNEL_COLORS[b.puntaje - 1] ?? FUNNEL_COLORS[FUNNEL_COLORS.length - 1],
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type EjecutivoSortField = "desempeno_promedio" | "prediccion_promedio" | "total";
+
+// Ranking de ejecutivos por desempeño — pedido explícito del usuario
+// (09-09-2026): sortable de mayor a menor y viceversa. A diferencia de
+// SegmentRanking (orden fijo, viene ya ordenado del backend), acá el usuario
+// puede reordenar por cualquiera de las 3 columnas numéricas — se ordena en
+// el navegador porque la lista ya viene completa (una fila por ejecutivo, no
+// hay paginación que perder).
+function EjecutivoRankingTable({ ranking }: { ranking: FunnelData["por_ejecutivo"] }) {
+  const [sortField, setSortField] = useState<EjecutivoSortField>("desempeno_promedio");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const sorted = useMemo(() => {
+    return [...ranking].sort((a, b) => {
+      const av = a[sortField] ?? -1;
+      const bv = b[sortField] ?? -1;
+      return sortDir === "asc" ? av - bv : bv - av;
+    });
+  }, [ranking, sortField, sortDir]);
+
+  function toggleSort(field: EjecutivoSortField) {
+    if (field !== sortField) {
+      setSortField(field);
+      setSortDir("desc");
+      return;
+    }
+    setSortDir((prev) => (prev === "desc" ? "asc" : "desc"));
+  }
+
+  function SortableHeader({ field, label }: { field: EjecutivoSortField; label: string }) {
+    const active = sortField === field;
+    return (
+      <button
+        onClick={() => toggleSort(field)}
+        className="flex items-center gap-1 hover:text-gray-700 ml-auto"
+      >
+        {label}
+        <svg
+          width="11"
+          height="11"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          style={{ transform: active && sortDir === "asc" ? "rotate(180deg)" : undefined, opacity: active ? 1 : 0.5 }}
+        >
+          <polyline points="7 10 12 15 17 10" />
+        </svg>
+      </button>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+      <h2 className="text-sm font-semibold text-gray-900 mb-1">Ranking de ejecutivos</h2>
+      <p className="text-xs text-gray-500 mb-4">
+        Por desempeño del vendedor (1-10) — mínimo 3 reuniones analizadas por ejecutivo.
+      </p>
+      {ranking.length === 0 ? (
+        <p className="text-sm text-gray-400">Todavía no hay suficientes reuniones analizadas para rankear ejecutivos.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                <th className="py-2 pr-3 font-medium">Ejecutivo</th>
+                <th className="py-2 px-3 font-medium text-right">
+                  <SortableHeader field="total" label="Reuniones" />
+                </th>
+                <th className="py-2 px-3 font-medium text-right">
+                  <SortableHeader field="desempeno_promedio" label="Desempeño" />
+                </th>
+                <th className="py-2 pl-3 font-medium text-right">
+                  <SortableHeader field="prediccion_promedio" label="Predicción" />
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((e) => (
+                <tr key={e.label} className="border-b border-gray-50 last:border-0">
+                  <td className="py-2.5 pr-3 text-gray-700">{e.label}</td>
+                  <td className="py-2.5 px-3 text-right text-gray-500">{e.total}</td>
+                  <td className="py-2.5 px-3 text-right font-semibold text-gray-900">
+                    {e.desempeno_promedio != null ? `${e.desempeno_promedio.toFixed(1)}/10` : "—"}
+                  </td>
+                  <td className="py-2.5 pl-3 text-right text-gray-500">
+                    {e.prediccion_promedio != null ? `${e.prediccion_promedio.toFixed(1)}/5` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SegmentRanking({
   title,
   segments,
@@ -139,9 +279,35 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
   const [to, setTo] = useState(isoDate(new Date()));
   const [threshold, setThreshold] = useState(4);
   const [clientId, setClientId] = useState("");
+  const [ejecutivo, setEjecutivo] = useState("");
+  const [ejecutivos, setEjecutivos] = useState<string[]>([]);
   const [data, setData] = useState<FunnelData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Filtro cascada (09-09-2026, pedido explícito del usuario): la lista de
+  // ejecutivos se refetchea cada vez que cambia el cliente elegido, y el
+  // ejecutivo seleccionado se resetea (uno de otro cliente ya no aplica acá)
+  // — para el rol "client" (clientId siempre ""/fijo del lado del backend)
+  // esto corre una sola vez al montar, listando los ejecutivos de su propio
+  // cliente.
+  useEffect(() => {
+    let active = true;
+    setEjecutivo("");
+    const params = new URLSearchParams();
+    if (isAdmin && clientId) params.set("client_id", clientId);
+    fetch(`/api/panel/ejecutivos?${params.toString()}`, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((json: string[]) => {
+        if (active) setEjecutivos(json);
+      })
+      .catch(() => {
+        if (active) setEjecutivos([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [clientId, isAdmin]);
 
   useEffect(() => {
     let active = true;
@@ -149,6 +315,7 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
     setError(null);
     const params = new URLSearchParams({ from, to, threshold: String(threshold) });
     if (isAdmin && clientId) params.set("client_id", clientId);
+    if (ejecutivo) params.set("ejecutivo", ejecutivo);
     fetch(`/api/panel/funnel?${params.toString()}`, { cache: "no-store" })
       .then(async (res) => {
         if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? "Error");
@@ -166,7 +333,7 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
     return () => {
       active = false;
     };
-  }, [from, to, threshold, clientId, isAdmin]);
+  }, [from, to, threshold, clientId, ejecutivo, isAdmin]);
 
   const kpis = useMemo(() => {
     if (!data) return null;
@@ -223,6 +390,25 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
             ))}
           </select>
         )}
+        {/* Cascada: para admin, solo tiene sentido elegir ejecutivo después de
+            elegir cliente (ver comentario del useEffect de arriba) — se oculta
+            si no hay cliente elegido, para no dejar clickeable un selector
+            que mezclaría ejecutivos de todos los clientes. Un rol "client" ya
+            tiene su cliente fijo del lado del backend, así que lo ve directo. */}
+        {(!isAdmin || clientId) && ejecutivos.length > 0 && (
+          <select
+            value={ejecutivo}
+            onChange={(e) => setEjecutivo(e.target.value)}
+            className="text-sm border border-gray-100 rounded-[11px] px-3 py-2 bg-white outline-none focus:border-[#62E0D8]"
+          >
+            <option value="">Todos los ejecutivos</option>
+            {ejecutivos.map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -243,6 +429,10 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
           </div>
 
           <FunnelChart funnel={data.funnel} />
+
+          <PrediccionDistribution distribucion={data.distribucion_prediccion} />
+
+          <EjecutivoRankingTable ranking={data.por_ejecutivo} />
 
           <div className="grid md:grid-cols-2 gap-5">
             <SegmentRanking title="Por cargo del contacto" segments={data.por_cargo} />

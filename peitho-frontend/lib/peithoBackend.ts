@@ -180,8 +180,34 @@ export interface FunnelSegment {
   puntaje_promedio: number | null;
 }
 
+// Desglose de prediccion_exito (1-5) — pedido explícito del usuario
+// (09-09-2026): "de 100 reuniones, 20% con predicción 1, 40% con
+// predicción 2, ...". Siempre 5 elementos (1 a 5), aunque algún puntaje
+// tenga 0 reuniones — así el reporte muestra la escala completa.
+export interface PrediccionBucket {
+  puntaje: number;
+  total: number;
+  pct: number;
+}
+
+// Ranking de ejecutivos por desempeño (desempeno_vendedor.puntaje, 1-10) —
+// a diferencia de FunnelSegment, no tiene tasa/alta_prediccion porque no
+// rankea por prediccion_exito sino por desempeno_vendedor.
+export interface EjecutivoRanking {
+  label: string;
+  total: number;
+  desempeno_promedio: number | null;
+  prediccion_promedio: number | null;
+}
+
 export interface FunnelData {
-  meta: { from: string | null; to: string | null; threshold: number; client_id: string | null };
+  meta: {
+    from: string | null;
+    to: string | null;
+    threshold: number;
+    client_id: string | null;
+    ejecutivo: string | null;
+  };
   funnel: FunnelStage[];
   // No es parte del funnel (no es subconjunto de "predicción alta") — KPI
   // aparte. Ver comentario en peitho-backend/src/routes/panel.ts.
@@ -189,6 +215,8 @@ export interface FunnelData {
   desempeno_vendedor_promedio: number | null;
   por_cargo: FunnelSegment[];
   por_industria: FunnelSegment[];
+  distribucion_prediccion: PrediccionBucket[];
+  por_ejecutivo: EjecutivoRanking[];
 }
 
 function backendUrl(): string {

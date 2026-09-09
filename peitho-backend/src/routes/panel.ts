@@ -32,6 +32,17 @@ panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
     clientId = req.query.client_id;
   }
 
+  // Filtro cascada (09-09-2026, pedido explícito del usuario): el frontend
+  // exige elegir cliente antes de habilitar este selector, pero acá se acepta
+  // igual sin cliente elegido (ej. rol "client", que ya tiene su client_id
+  // fijo) — permite ver el desempeño de un ejecutivo puntual dentro del
+  // dashboard entero (KPIs, funnel, distribución y segmentos), no solo en el
+  // ranking de abajo.
+  let ejecutivo: string | null = null;
+  if (typeof req.query.ejecutivo === 'string' && req.query.ejecutivo) {
+    ejecutivo = req.query.ejecutivo;
+  }
+
   const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : null;
   const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : null;
   if ((from && Number.isNaN(Date.parse(from))) || (to && Number.isNaN(Date.parse(to)))) {
@@ -42,23 +53,34 @@ panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
   // Mismo criterio de exclusión que GET /meetings: sin series recurrentes,
   // sin reuniones internas de BullsEye (salvo invitación manual del bot, que
   // trae meeting_url) — este dashboard mide desempeño con prospectos reales.
-  const conditions: string[] = [
+  // `baseConditions`/`baseParams` (sin el filtro de ejecutivo puntual) se
+  // reusan para el ranking de ejecutivos de abajo — un ranking de "quién es
+  // el mejor" no tiene sentido acotado a un solo ejecutivo ya elegido.
+  const baseConditions: string[] = [
     'recurring_event_id is null',
     '(meeting_url is not null or lower(empresa_contraparte) is distinct from $1)',
   ];
-  const params: unknown[] = [INTERNAL_DOMAIN];
+  const baseParams: unknown[] = [INTERNAL_DOMAIN];
 
   if (from) {
-    params.push(from);
-    conditions.push(`start_time >= $${params.length}`);
+    baseParams.push(from);
+    baseConditions.push(`start_time >= $${baseParams.length}`);
   }
   if (to) {
-    params.push(to);
-    conditions.push(`start_time <= $${params.length}`);
+    baseParams.push(to);
+    baseConditions.push(`start_time <= $${baseParams.length}`);
   }
   if (clientId) {
-    params.push(clientId);
-    conditions.push(`client_id = $${params.length}`);
+    baseParams.push(clientId);
+    baseConditions.push(`client_id = $${baseParams.length}`);
+  }
+  const baseWhereClause = baseConditions.join(' and ');
+
+  const conditions = [...baseConditions];
+  const params = [...baseParams];
+  if (ejecutivo) {
+    params.push(ejecutivo);
+    conditions.push(`ejecutivo = $${params.length}`);
   }
   const whereClause = conditions.join(' and ');
 
@@ -111,9 +133,45 @@ panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
       limit 10
     `;
 
-    const [{ rows: porCargoRows }, { rows: porIndustriaRows }] = await Promise.all([
+    // Distribución de prediccion_exito (1-5) — pedido explícito del usuario
+    // (09-09-2026): "de 100 reuniones, tenemos 20% con predicción 1, 40% con
+    // predicción 2, ...". Se completan los 5 baldes aunque alguno tenga 0
+    // reuniones, para que el reporte muestre siempre la escala entera.
+    const distribucionQuery = `
+      select (analysis->'prediccion_exito'->>'puntaje')::int as puntaje, count(*) as total
+      from meetings
+      where status = 'analyzed' and (analysis->'prediccion_exito'->>'puntaje') is not null and ${whereClause}
+      group by (analysis->'prediccion_exito'->>'puntaje')::int
+    `;
+
+    // Ranking de ejecutivos por desempeño (desempeno_vendedor.puntaje, 1-10)
+    // — pedido explícito del usuario. Usa baseWhereClause (cliente + fechas,
+    // SIN el filtro de un ejecutivo puntual) porque es un ranking entre
+    // todos los ejecutivos, no el desempeño de uno solo. Mismo mínimo de
+    // muestra (3 reuniones) que los otros segmentos, por la misma razón: no
+    // mostrar a alguien como "el mejor" basado en una sola reunión.
+    const porEjecutivoQuery = `
+      select ejecutivo as label,
+             count(*) as total,
+             avg((analysis->'desempeno_vendedor'->>'puntaje')::numeric) as desempeno_promedio,
+             avg((analysis->'prediccion_exito'->>'puntaje')::numeric) as prediccion_promedio
+      from meetings
+      where status = 'analyzed' and ejecutivo is not null and ${baseWhereClause}
+      group by ejecutivo
+      having count(*) >= 3
+      order by avg((analysis->'desempeno_vendedor'->>'puntaje')::numeric) desc nulls last
+    `;
+
+    const [
+      { rows: porCargoRows },
+      { rows: porIndustriaRows },
+      { rows: distribucionRows },
+      { rows: porEjecutivoRows },
+    ] = await Promise.all([
       pool.query(segmentQuery('contacto_cargo'), params),
       pool.query(segmentQuery('contacto_industria'), params),
+      pool.query(distribucionQuery, params),
+      pool.query(porEjecutivoQuery, baseParams),
     ]);
 
     const mapSegment = (rows: Record<string, unknown>[]) =>
@@ -129,17 +187,71 @@ panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
         };
       });
 
+    const distMap = new Map<number, number>();
+    for (const row of distribucionRows) distMap.set(Number(row.puntaje), Number(row.total));
+    const totalConPrediccion = Array.from(distMap.values()).reduce((sum, n) => sum + n, 0);
+    const distribucionPrediccion = [1, 2, 3, 4, 5].map((puntaje) => {
+      const total = distMap.get(puntaje) ?? 0;
+      return { puntaje, total, pct: totalConPrediccion > 0 ? total / totalConPrediccion : 0 };
+    });
+
+    const porEjecutivo = porEjecutivoRows.map((r) => ({
+      label: String(r.label),
+      total: Number(r.total),
+      desempeno_promedio: r.desempeno_promedio != null ? Number(r.desempeno_promedio) : null,
+      prediccion_promedio: r.prediccion_promedio != null ? Number(r.prediccion_promedio) : null,
+    }));
+
     res.json({
-      meta: { from, to, threshold, client_id: clientId },
+      meta: { from, to, threshold, client_id: clientId, ejecutivo },
       funnel,
       con_compromisos: Number(f.con_compromisos),
       desempeno_vendedor_promedio:
         f.desempeno_vendedor_promedio != null ? Number(f.desempeno_vendedor_promedio) : null,
       por_cargo: mapSegment(porCargoRows),
       por_industria: mapSegment(porIndustriaRows),
+      distribucion_prediccion: distribucionPrediccion,
+      por_ejecutivo: porEjecutivo,
     });
   } catch (error) {
     console.error('Error en GET /panel/funnel', error);
     res.status(500).json({ error: 'Error calculando el panel de control' });
+  }
+});
+
+// Lista de ejecutivos disponibles para el selector cascada (elegir cliente
+// primero, después ejecutivo) — pedido explícito del usuario (09-09-2026).
+// Sin filtrar por status: un ejecutivo con reuniones agendadas/capturadas
+// pero todavía ninguna analizada igual debería aparecer en el selector.
+panelRouter.get('/panel/ejecutivos', requireAuth, async (req, res) => {
+  const peithoUser = req.peithoUser!;
+
+  let clientId: string | null = null;
+  if (peithoUser.role === 'client') {
+    clientId = peithoUser.clientId;
+  } else if (typeof req.query.client_id === 'string' && req.query.client_id) {
+    clientId = req.query.client_id;
+  }
+
+  const conditions: string[] = [
+    'recurring_event_id is null',
+    '(meeting_url is not null or lower(empresa_contraparte) is distinct from $1)',
+    'ejecutivo is not null',
+  ];
+  const params: unknown[] = [INTERNAL_DOMAIN];
+  if (clientId) {
+    params.push(clientId);
+    conditions.push(`client_id = $${params.length}`);
+  }
+
+  try {
+    const { rows } = await pool.query(
+      `select distinct ejecutivo from meetings where ${conditions.join(' and ')} order by ejecutivo asc`,
+      params
+    );
+    res.json(rows.map((row) => row.ejecutivo as string));
+  } catch (error) {
+    console.error('Error en GET /panel/ejecutivos', error);
+    res.status(500).json({ error: 'Error listando ejecutivos' });
   }
 });
