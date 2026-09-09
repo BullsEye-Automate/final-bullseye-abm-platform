@@ -19,6 +19,7 @@ interface SheetRow {
   cargo: string;
   industria: string;
   fechaReunion: string;
+  pais: string;
   idReunion: string;
 }
 
@@ -103,6 +104,7 @@ async function loadReunionesRows(forceRefresh = false): Promise<SheetRow[]> {
     cargo: String(raw[col('Cargo')] ?? '').trim(),
     industria: String(raw[col('Industria')] ?? '').trim(),
     fechaReunion: String(raw[col('Fecha de la reunión')] ?? '').trim(),
+    pais: String(raw[col('País')] ?? '').trim(),
     idReunion: String(raw[col('ID Reunión')] ?? '').trim(),
   }));
 
@@ -143,18 +145,42 @@ function parseSheetDate(raw: string): Date | null {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
-// El excel se llena en hora de Chile (fecha "de calendario", sin huso
-// horario) pero start_time de una reunión viene en UTC — comparar el día
-// crudo de start_time contra la fecha del excel es el mismo tipo de bug de
-// huso horario que ya mordió una vez en esta investigación (una reunión de
-// las 20:xx UTC es de otro día en Chile). Intl.DateTimeFormat con la zona
-// horaria de Chile resuelve el offset correcto (-3 o -4) sin hardcodearlo,
-// incluyendo el cambio de horario de verano.
-const MEETING_TIMEZONE = 'America/Santiago';
+// Cada fila del excel se agenda y se registra en la hora LOCAL del país de
+// esa reunión (columna "País" — Chile, Perú, México, Colombia, ...), no
+// necesariamente en hora de Chile. Bug real (09-09-2026): la primera
+// versión de este archivo convertía siempre a hora de Chile sin mirar el
+// país de la fila — para una reunión de un país con offset distinto (ej.
+// Colombia, UTC-5 vs. los UTC-3/-4 de Chile) eso puede cruzar la medianoche
+// distinto y dar el día de calendario equivocado, el mismo tipo de bug de
+// huso horario que ya mordió antes en esta investigación. Por eso la
+// comparación de fecha se hace por fila, resolviendo la zona horaria según
+// el país de ESA fila, no una fija para toda la hoja.
+const DEFAULT_TIMEZONE = 'America/Santiago'; // fallback si el país no está en el mapa o viene vacío — Chile es la mayoría de las filas
 
-function chileDateKey(date: Date): string {
+const COUNTRY_TIMEZONES: Record<string, string> = {
+  chile: 'America/Santiago',
+  peru: 'America/Lima',
+  perú: 'America/Lima',
+  mexico: 'America/Mexico_City',
+  méxico: 'America/Mexico_City',
+  colombia: 'America/Bogota',
+  argentina: 'America/Argentina/Buenos_Aires',
+  ecuador: 'America/Guayaquil',
+  panama: 'America/Panama',
+  panamá: 'America/Panama',
+  'estados unidos': 'America/New_York',
+  usa: 'America/New_York',
+};
+
+function timezoneForCountry(pais: string | null | undefined): string {
+  const key = (pais ?? '').trim().toLowerCase();
+  if (!key) return DEFAULT_TIMEZONE;
+  return COUNTRY_TIMEZONES[key] ?? DEFAULT_TIMEZONE;
+}
+
+function dateKeyInTimezone(date: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: MEETING_TIMEZONE,
+    timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -164,6 +190,15 @@ function chileDateKey(date: Date): string {
 function sheetDateKey(raw: string): string | null {
   const parsed = parseSheetDate(raw);
   return parsed ? parsed.toISOString().slice(0, 10) : null;
+}
+
+// ¿La fecha de esta fila (en la zona horaria de SU país) es el mismo día de
+// calendario que start_time de la reunión? No hay una única "fecha de la
+// reunión" válida para toda la hoja — depende del país de cada fila.
+function rowMatchesMeetingDate(row: SheetRow, meetingStart: Date): boolean {
+  const rowDateKey = sheetDateKey(row.fechaReunion);
+  if (!rowDateKey) return false;
+  return dateKeyInTimezone(meetingStart, timezoneForCountry(row.pais)) === rowDateKey;
 }
 
 // Filtro por empresa/prospecto (con el mismo fallback de stripDomainSuffix
@@ -237,8 +272,8 @@ function matchMeetingRow(
   meeting: { empresa_contraparte: string | null; start_time: string | null }
 ): SheetRow | null {
   if (meeting.start_time) {
-    const meetingDateKey = chileDateKey(new Date(meeting.start_time));
-    const candidatosPorFecha = rows.filter((row) => sheetDateKey(row.fechaReunion) === meetingDateKey);
+    const meetingStart = new Date(meeting.start_time);
+    const candidatosPorFecha = rows.filter((row) => rowMatchesMeetingDate(row, meetingStart));
 
     if (candidatosPorFecha.length === 1) return candidatosPorFecha[0];
     if (candidatosPorFecha.length > 1) {
