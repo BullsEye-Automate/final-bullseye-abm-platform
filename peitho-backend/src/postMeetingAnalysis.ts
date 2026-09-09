@@ -150,7 +150,14 @@ async function runAnalysisPrompt(input: {
   const response = await anthropic.messages.create(
     {
       model: 'claude-sonnet-5',
-      max_tokens: 4096,
+      // Bug real (09-09-2026, reunión de CodersLab/Camila Ormeño): con
+      // max_tokens=4096, una reunión con transcript largo + base de
+      // conocimiento grande dejó tan poco margen de contexto para la salida
+      // que Claude cortó la respuesta apenas después de abrir el bloque
+      // ```json — JSON.parse fallaba con un texto de 7 caracteres, sin forma
+      // de saberlo hasta loguear stop_reason/usage (ver el catch de abajo).
+      // Subido a 8192 como margen razonable para un esquema tan detallado.
+      max_tokens: 8192,
       thinking: { type: 'disabled' },
       system: [{ type: 'text', text: ANALISIS_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: userMessage }],
@@ -174,7 +181,16 @@ async function runAnalysisPrompt(input: {
   try {
     return JSON.parse(cleaned);
   } catch {
-    throw new Error(`No se pudo parsear el JSON de Claude: ${textBlock.text.slice(0, 500)}`);
+    // Se loguea stop_reason + conteo de tokens (no solo el texto) para poder
+    // distinguir "se cortó por max_tokens" de "el modelo mandó un JSON mal
+    // formado" sin tener que reproducir el fallo de nuevo — ver el bug real
+    // de arriba, que costó una ronda entera de ida y vuelta para diagnosticar
+    // porque el log original solo mostraba los primeros 500 caracteres.
+    throw new Error(
+      `No se pudo parsear el JSON de Claude (stop_reason=${response.stop_reason}, ` +
+        `output_tokens=${response.usage.output_tokens}, largo_texto=${textBlock.text.length}): ` +
+        textBlock.text.slice(0, 1500)
+    );
   }
 }
 
