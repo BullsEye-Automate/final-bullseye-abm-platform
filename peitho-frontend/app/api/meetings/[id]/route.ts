@@ -18,3 +18,15 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   const body = await res.json();
   return NextResponse.json(body, { status: res.status });
 }
+
+// Lo usa DeleteMeetingButton (client component) — borrado manual admin-only
+// para reuniones creadas por error.
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+  const token = await getAccessToken();
+  const res = await fetch(`${backendUrl()}/meetings/${params.id}`, {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  const body = await res.json();
+  return NextResponse.json(body, { status: res.status });
+}

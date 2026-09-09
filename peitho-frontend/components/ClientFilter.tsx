@@ -28,6 +28,7 @@ export default function ClientFilter({ clients }: { clients: ClientListItem[] })
       style={{ ["--tw-ring-color" as string]: "#62E0D8" }}
     >
       <option value="">Todos los clientes</option>
+      <option value="sin_cliente">Sin cliente asignado</option>
       {clients.map((client) => (
         <option key={client.id} value={client.id}>
           {client.name}

@@ -6,7 +6,7 @@ import { pool } from '../db';
 import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 import { generatePreMeetingBrief } from '../preMeetingBrief';
 import { resolveMeetingClientAndContact } from '../metasSheet';
-import { scheduleRecallBotForMeeting } from '../recall';
+import { scheduleRecallBotForMeeting, cancelRecallBot } from '../recall';
 import { processRecallDone } from './webhooks';
 import { requireAuth, requireAdmin } from '../authMiddleware';
 import { getSupabaseAdminClient } from '../supabaseAdmin';
@@ -152,6 +152,11 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     const peithoUser = req.peithoUser!;
     if (peithoUser.role === 'client') {
       result = result.filter((row) => row.client_id === peithoUser.clientId);
+    } else if (req.query.client_id === 'sin_cliente') {
+      // Filtro admin-only para encontrar reuniones que nunca hicieron match
+      // con el excel de metas (o donde el match se equivocó) y así poder
+      // asignarles el cliente a mano con PUT /meetings/:id/client.
+      result = result.filter((row) => !row.client_id);
     } else if (typeof req.query.client_id === 'string' && req.query.client_id) {
       result = result.filter((row) => row.client_id === req.query.client_id);
     }
@@ -404,6 +409,41 @@ meetingsRouter.put('/meetings/:id/client', requireAuth, requireAdmin, async (req
   } catch (error) {
     console.error('Error corrigiendo el cliente de la reunión', error);
     res.status(500).json({ error: 'Error guardando el cliente' });
+  }
+});
+
+// Borrado manual — admin-only, pedido explícito del usuario para poder
+// limpiar reuniones creadas por error (ej. un evento de prueba, un
+// duplicado, una sincronización que enganchó algo que no correspondía).
+// Best-effort: si la reunión ya tiene un bot de Recall agendado, se intenta
+// cancelar primero (mismo criterio que cancelStaleRecallBotIfRescheduled en
+// calendarSync.ts) para no dejar un bot entrando solo a una reunión que en
+// Peitho ya no existe; un fallo cancelando no bloquea el borrado en sí.
+meetingsRouter.delete('/meetings/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { rows } = await pool.query(`select recall_bot_id from meetings where id = $1`, [id]);
+    const meeting = rows[0];
+    if (!meeting) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    if (meeting.recall_bot_id) {
+      try {
+        await cancelRecallBot(meeting.recall_bot_id);
+      } catch (error) {
+        console.error(`[meetings] no se pudo cancelar el bot de Recall ${meeting.recall_bot_id} al borrar la reunión ${id}`, error);
+      }
+    }
+
+    await pool.query(`delete from meetings where id = $1`, [id]);
+    console.log(`[meetings] reunión ${id} borrada a mano`);
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error borrando la reunión', error);
+    res.status(500).json({ error: 'Error borrando la reunión' });
   }
 });
 

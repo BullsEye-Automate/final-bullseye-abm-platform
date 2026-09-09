@@ -5,6 +5,7 @@ import ResearchButton from "@/components/ResearchButton";
 import ReprocessButton from "@/components/ReprocessButton";
 import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 import AssignClientForm from "@/components/AssignClientForm";
+import DeleteMeetingButton from "@/components/DeleteMeetingButton";
 import DetailTabs from "@/components/DetailTabs";
 import MeetingVideoPlayer from "@/components/MeetingVideoPlayer";
 import CollapsibleSection from "@/components/CollapsibleSection";
@@ -267,6 +268,7 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             <ReprocessButton meetingId={meeting.id} status={meeting.status} />
           )}
           {isAdmin && <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />}
+          {isAdmin && <DeleteMeetingButton meetingId={meeting.id} />}
         </div>
       </div>
 
