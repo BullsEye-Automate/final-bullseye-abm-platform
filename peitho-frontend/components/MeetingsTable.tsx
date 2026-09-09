@@ -23,6 +23,36 @@ function formatDate(value: string | null): string {
   });
 }
 
+// Muestra el nombre real de la empresa (excel de metas) en vez del dominio
+// crudo cuando está disponible, y lo linkea a ese dominio como sitio web — no
+// hay una columna de URL propia en el excel, pero empresa_contraparte ya ES
+// un dominio (derivado del calendario/email), así que sirve como base del
+// link sin necesitar un dato nuevo. stopPropagation para no disparar el
+// click-through a la página de detalle que tiene la fila entera.
+function EmpresaCell({
+  nombre,
+  dominio,
+}: {
+  nombre: string | null | undefined;
+  dominio: string | null | undefined;
+}) {
+  const label = nombre ?? dominio;
+  if (!label) return <span className="text-gray-300">—</span>;
+  if (!dominio || !dominio.includes(".")) return <>{label}</>;
+  return (
+    <a
+      href={`https://${dominio}`}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="hover:underline"
+      style={{ color: "#251762" }}
+    >
+      {label}
+    </a>
+  );
+}
+
 function PuntajeBadge({ puntaje }: { puntaje: number | null | undefined }) {
   if (puntaje == null) return <span className="text-gray-300">—</span>;
   const [bg, color] =
@@ -178,7 +208,9 @@ export default function MeetingsTable({
               <td className="px-4 py-3">{formatDate(meeting.start_time)}</td>
               <td className="px-4 py-3">{meeting.ejecutivo ?? "—"}</td>
               <td className="px-4 py-3">{meeting.contraparte ?? "—"}</td>
-              <td className="px-4 py-3">{meeting.empresa_contraparte ?? "—"}</td>
+              <td className="px-4 py-3">
+                <EmpresaCell nombre={meeting.empresa_nombre} dominio={meeting.empresa_contraparte} />
+              </td>
               {showClientColumn && <td className="px-4 py-3">{meeting.cliente_bullseye ?? "—"}</td>}
               {showPuntaje && (
                 <>

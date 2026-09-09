@@ -79,14 +79,14 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     // audio_path/analysis completos" de arriba (eso sigue fuera).
     const { rows } = await pool.query(
       scope === 'upcoming'
-        ? `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, client_id,
+        ? `select id, ejecutivo, contraparte, empresa_contraparte, empresa_nombre, start_time, status, client_id,
                   pre_brief_status, (recall_bot_id is not null) as has_bot
            from meetings
            where start_time >= now()
              and (meeting_url is not null or lower(empresa_contraparte) is distinct from $1)
              and recurring_event_id is null
            order by start_time asc`
-        : `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, client_id,
+        : `select id, ejecutivo, contraparte, empresa_contraparte, empresa_nombre, start_time, status, client_id,
                   (analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
                   (analysis->'prediccion_exito'->>'puntaje')::int as prediccion_exito
            from meetings
@@ -213,7 +213,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
     await resolveMeetingClientAndContact(id);
 
     const { rows } = await pool.query(
-      `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.start_time, m.status,
+      `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.empresa_nombre, m.start_time, m.status,
               m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
               m.participantes,

@@ -231,9 +231,10 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
          contacto_cargo = coalesce(nullif($3, ''), contacto_cargo),
          contacto_industria = coalesce(nullif($4, ''), contacto_industria),
          metas_sheet_match_id = nullif($5, ''),
+         empresa_nombre = coalesce(nullif($6, ''), empresa_nombre),
          updated_at = now()
-       where id = $6`,
-      [clientId, match.contacto, match.cargo, match.industria, match.idReunion, meetingId]
+       where id = $7`,
+      [clientId, match.contacto, match.cargo, match.industria, match.idReunion, match.empresa, meetingId]
     );
     console.log(
       `[metas-sheet] reunión ${meetingId}: match encontrado (cliente="${match.cliente}", contacto="${match.contacto}")`

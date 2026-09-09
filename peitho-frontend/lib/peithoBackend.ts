@@ -5,6 +5,11 @@ export interface MeetingListItem {
   ejecutivo: string | null;
   contraparte: string | null;
   empresa_contraparte: string | null;
+  // Nombre real de la empresa según el excel de metas (ej. "CodersLab") — a
+  // diferencia de empresa_contraparte (el dominio, ej. "coderslab.io", que se
+  // sigue usando como base del link a su sitio). Null si la reunión no hizo
+  // match en el excel todavía.
+  empresa_nombre: string | null;
   start_time: string | null;
   status: "scheduled" | "captured" | "analyzed";
   // Fase E — para el filtro de cliente en la vista admin.
