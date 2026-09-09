@@ -109,14 +109,28 @@ const BULLSEYE_DOMAIN = 'bullseye-abm.com';
 // el prospecto — el prospecto es el otro asistente. Distinto del caso de
 // arriba (calendario de un ejecutivo de BullsEye), donde el dueño del
 // calendario SÍ es quien vende y el resto son contraparte.
+//
+// Bug real (09-09-2026, CCHC): se excluía solo la dirección exacta del
+// organizador, no todo su dominio — en las reuniones de CCHC hay otra
+// persona de CCHC además del organizador (ej. Paula Rios, citada
+// aparentemente en varias reuniones) que quedaba como "contraparte" por ser
+// la primera asistente externa de la lista. Eso resolvía empresa_contraparte
+// a "ccc.cl" (el dominio del propio cliente, no del prospecto), y por diseño
+// esa columna nunca va a matchear contra la hoja de metas — ahí "Empresa" es
+// el prospecto (ej. "Intime Chile"), CCHC solo aparece en la columna
+// "Cliente". Fix: excluir por dominio del organizador completo, no solo su
+// dirección — así cualquier otro asistente del mismo cliente queda afuera
+// igual que el organizador.
 function extractContraparteFromBotInvite(event: GoogleCalendarEvent, botEmail: string) {
   const organizerEmail = event.organizer?.email?.toLowerCase();
+  const organizerDomain = organizerEmail?.split('@')[1];
   const externalAttendees = (event.attendees ?? []).filter((attendee) => {
     const email = attendee.email?.toLowerCase();
     if (!email || attendee.resource) return false;
     if (email === botEmail.toLowerCase()) return false;
-    if (organizerEmail && email === organizerEmail) return false;
-    if (email.endsWith(`@${BULLSEYE_DOMAIN}`)) return false;
+    const domain = email.split('@')[1];
+    if (organizerDomain && domain === organizerDomain) return false;
+    if (domain === BULLSEYE_DOMAIN) return false;
     return true;
   });
   const contraparte = externalAttendees[0];
