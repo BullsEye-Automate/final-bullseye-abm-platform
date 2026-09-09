@@ -1,9 +1,53 @@
 import type { calendar_v3 } from 'googleapis';
 import { pool } from './db';
 import { getCalendarClientByEmail } from './google';
-import { scheduleRecallBotForMeeting } from './recall';
+import { scheduleRecallBotForMeeting, cancelRecallBot } from './recall';
 
 type GoogleCalendarEvent = calendar_v3.Schema$Event;
+
+// Bug real (09-09-2026, reunión de hacku.com/Edward Rojas): la reunión se
+// reagendó en Calendar (start_time cambió) DESPUÉS de que ya existiera un
+// recall_bot_id — scheduleRecallBotForMeeting solo revisa "¿ya tiene bot?" y
+// si sí, no hace nada más, sin comparar si start_time cambió desde que se
+// creó. El bot viejo se quedó esperando a la hora original (24h15min antes
+// de la hora real) y nunca entró a la reunión reagendada — Peitho se la
+// perdió por completo, sin ningún error en los logs que lo explicara.
+//
+// Se llama ANTES del upsert (necesita el start_time viejo, que el upsert
+// está por sobreescribir) en ambos flujos de sync. Si detecta que la
+// reunión ya tenía un bot Y el horario cambió Y todavía está en
+// status='scheduled' (el bot no llegó a grabar nada todavía — si ya grabó,
+// cancelar/recrear no tiene sentido ni es seguro), cancela el bot viejo en
+// Recall y limpia recall_bot_id en la base para que
+// scheduleRecallBotForMeeting (llamado después del upsert, como siempre)
+// cree uno nuevo con el horario correcto.
+async function cancelStaleRecallBotIfRescheduled(googleEventId: string, newStartTime: string | null): Promise<void> {
+  if (!newStartTime) return;
+  try {
+    const { rows } = await pool.query(
+      `select id, start_time, recall_bot_id, status from meetings where google_event_id = $1`,
+      [googleEventId]
+    );
+    const existing = rows[0];
+    if (!existing || !existing.recall_bot_id || existing.status !== 'scheduled') return;
+
+    const oldStartTime = existing.start_time ? new Date(existing.start_time).getTime() : null;
+    const newStartTimeMs = new Date(newStartTime).getTime();
+    if (oldStartTime === newStartTimeMs) return; // no cambió, nada que hacer
+
+    console.log(
+      `[recall] reunión ${existing.id}: start_time cambió (${existing.start_time} → ${newStartTime}) y ya tenía bot ${existing.recall_bot_id} — cancelando para recrear con el horario correcto...`
+    );
+    await cancelRecallBot(existing.recall_bot_id);
+    await pool.query(`update meetings set recall_bot_id = null, updated_at = now() where id = $1`, [existing.id]);
+  } catch (error) {
+    // Mismo criterio que scheduleRecallBotForMeeting: nunca debe romper el
+    // sync de calendario — si falla la cancelación, el bot viejo queda
+    // "colgado" con el horario equivocado (mismo bug de siempre, no uno
+    // nuevo), pero el sync del resto de los eventos sigue.
+    console.error(`[recall] error cancelando el bot viejo del evento ${googleEventId} para recrearlo`, error);
+  }
+}
 
 function extractMeetCode(event: GoogleCalendarEvent): string | null {
   const link = event.hangoutLink;
@@ -102,6 +146,8 @@ async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, botEmail: 
   const startTime = event.start?.dateTime ?? event.start?.date ?? null;
   const recurringEventId = event.recurringEventId ?? null;
 
+  await cancelStaleRecallBotIfRescheduled(event.id, startTime);
+
   console.log(`[bot-invite] evento ${event.id}: guardando en meetings (contraparte=${contraparte ?? '?'})...`);
   const { rows } = await pool.query(
     `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id)
@@ -136,6 +182,8 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
   // Google marca cada ocurrencia expandida de una serie recurrente con el id
   // del evento "maestro" que la originó — null si el evento no es recurrente.
   const recurringEventId = event.recurringEventId ?? null;
+
+  await cancelStaleRecallBotIfRescheduled(event.id, startTime);
 
   const { rows } = await pool.query(
     `insert into meetings (google_event_id, meet_code, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id)

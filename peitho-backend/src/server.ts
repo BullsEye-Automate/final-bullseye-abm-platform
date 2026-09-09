@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { app } from './app';
 import { pool } from './db';
-import { checkAndRetryFailedRecallBots } from './recall';
+import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots } from './recall';
 import { deleteExpiredMeetingVideos } from './videoRetention';
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
@@ -14,6 +14,17 @@ const RECALL_RETRY_POLL_MS = 60_000;
 setInterval(() => {
   checkAndRetryFailedRecallBots().catch((error) =>
     console.error('[startup] error en el chequeo periódico de bots de Recall fallidos', error)
+  );
+}, RECALL_RETRY_POLL_MS);
+
+// Mismo intervalo, chequeo aparte: bots ya agendados cuyo join_at quedó
+// desalineado del start_time actual de la reunión (ej. reagendos que
+// ocurrieron antes del fix de cancelStaleRecallBotIfRescheduled en
+// calendarSync.ts, o cualquier otro camino futuro que reagende sin pasar por
+// ahí) — ver el comentario en checkAndFixStaleRecallBots en recall.ts.
+setInterval(() => {
+  checkAndFixStaleRecallBots().catch((error) =>
+    console.error('[startup] error en el chequeo periódico de bots de Recall desalineados', error)
   );
 }, RECALL_RETRY_POLL_MS);
 

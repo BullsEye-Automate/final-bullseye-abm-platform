@@ -150,6 +150,26 @@ export async function createRecallBot(meetingId: string, meetingUrl: string, joi
   return data.id;
 }
 
+// Cancela un bot que todavía no despachó (join_at futuro, no entró a la
+// reunión) — Recall no tiene forma de "reagendar" un join_at directo
+// (confirmado mirando el dashboard: el menú de acciones de un bot
+// "Scheduled" solo tiene Delete, no Edit/Reschedule), así que la única forma
+// de corregir el horario es cancelar y crear uno nuevo. Se usa cuando una
+// reunión se reagenda (start_time cambia) después de que ya existía un bot
+// creado para el horario viejo — ver el bug real documentado en
+// calendarSync.ts. 404 (ya cancelado/borrado a mano, o ya se despachó) no es
+// un error real acá.
+export async function cancelRecallBot(botId: string): Promise<void> {
+  const { apiKey, region } = getRecallConfig();
+  const res = await fetchRecall(recallApiUrl(region, `/bot/${botId}/`), {
+    method: 'DELETE',
+    headers: { Authorization: `Token ${apiKey}` },
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Recall respondió ${res.status} cancelando el bot ${botId}: ${await res.text()}`);
+  }
+}
+
 // Se llama cuando el webhook de Recall avisa que la grabación ya está lista.
 // Devuelve la URL para descargar el audio/video de la reunión.
 export async function getRecallRecordingUrl(botId: string): Promise<string> {
@@ -290,6 +310,56 @@ export async function checkAndRetryFailedRecallBots(): Promise<void> {
       console.log(`[recall] reunión ${meeting.id}: bot reintentado (${newBotId})`);
     } catch (error) {
       console.error(`[recall] error reintentando el bot de la reunión ${meeting.id}`, error);
+    }
+  }
+}
+
+// Red de seguridad para bots ya agendados con un horario desalineado —
+// cancelStaleRecallBotIfRescheduled (calendarSync.ts) corrige esto hacia
+// adelante en el momento del reagendado, pero esta función revisa
+// periódicamente (mismo intervalo que checkAndRetryFailedRecallBots, ver
+// server.ts) los bots ya creados por si alguno quedó desalineado de todos
+// modos — bug real (09-09-2026, reunión de hacku.com/Edward Rojas): un bot
+// quedó apuntando a un join_at de un horario viejo después de un reagendado,
+// sin ningún error en los logs que lo explicara, y Peitho se perdió la
+// reunión entera. Tolerancia de 2 minutos entre join_at y start_time para no
+// disparar por redondeos menores que no son el bug real.
+export async function checkAndFixStaleRecallBots(): Promise<void> {
+  if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
+
+  const { rows } = await pool.query(
+    `select id, meet_code, meeting_url, start_time, recall_bot_id
+     from meetings
+     where recall_bot_id is not null
+       and status = 'scheduled'
+       and start_time > now()`
+  );
+
+  for (const meeting of rows) {
+    const meetingUrl: string | null =
+      meeting.meeting_url ?? (meeting.meet_code ? `https://meet.google.com/${meeting.meet_code}` : null);
+    if (!meetingUrl) continue; // no debería pasar, pero por las dudas
+
+    try {
+      const bot = await getRecallBot(meeting.recall_bot_id);
+      if (!bot?.join_at) continue; // sin join_at en la respuesta, no hay nada que comparar
+
+      const botJoinAtMs = new Date(bot.join_at).getTime();
+      const meetingStartMs = new Date(meeting.start_time).getTime();
+      if (Math.abs(botJoinAtMs - meetingStartMs) <= 2 * 60_000) continue; // alineado, nada que hacer
+
+      console.log(
+        `[recall] reunión ${meeting.id}: bot ${meeting.recall_bot_id} desalineado (join_at=${bot.join_at}, start_time=${meeting.start_time}) — cancelando y recreando con el horario correcto...`
+      );
+      await cancelRecallBot(meeting.recall_bot_id);
+      const newBotId = await createRecallBot(meeting.id, meetingUrl, new Date(meeting.start_time));
+      await pool.query(`update meetings set recall_bot_id = $1, updated_at = now() where id = $2`, [
+        newBotId,
+        meeting.id,
+      ]);
+      console.log(`[recall] reunión ${meeting.id}: bot recreado (${newBotId}) con el horario correcto`);
+    } catch (error) {
+      console.error(`[recall] error revisando/corrigiendo el bot de la reunión ${meeting.id}`, error);
     }
   }
 }
