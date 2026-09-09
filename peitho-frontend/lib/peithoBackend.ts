@@ -14,10 +14,13 @@ export interface MeetingListItem {
   // futuras") — el backend las omite en scope=past, quedan undefined ahí.
   pre_brief_status?: PreBriefStatus;
   has_bot?: boolean;
-  // Solo viene poblado en scope=past (columna "Puntaje" de "Reuniones
-  // pasadas") — desempeno_vendedor.puntaje (1-10) extraído del análisis;
-  // null si la reunión todavía no tiene análisis.
+  // Solo vienen pobladas en scope=past (columnas "Desempeño" y "Predicción de
+  // éxito" de "Reuniones pasadas") — extraídas del análisis; null si la
+  // reunión todavía no tiene análisis. desempeno_vendedor.puntaje es 1-10
+  // (habilidad del vendedor); prediccion_exito.puntaje es 1-5 (probabilidad
+  // de cierre del deal) — no confundir, son escalas y preguntas distintas.
   puntaje?: number | null;
+  prediccion_exito?: number | null;
 }
 
 // Forma del JSON que genera el prompt de análisis post-reunión (ver

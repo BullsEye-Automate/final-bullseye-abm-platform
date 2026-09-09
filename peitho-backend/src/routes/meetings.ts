@@ -87,7 +87,8 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
              and recurring_event_id is null
            order by start_time asc`
         : `select id, ejecutivo, contraparte, empresa_contraparte, start_time, status, client_id,
-                  (analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje
+                  (analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
+                  (analysis->'prediccion_exito'->>'puntaje')::int as prediccion_exito
            from meetings
            where start_time < now() and start_time >= now() - interval '90 days'
              and (meeting_url is not null or lower(empresa_contraparte) is distinct from $1)
