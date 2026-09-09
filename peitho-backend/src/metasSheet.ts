@@ -381,20 +381,35 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
 }
 
 // resolveMeetingClientAndContact no toca nada si la reunión ya tiene
-// client_id — bien para no pisar una asignación manual, pero significa que
-// una reunión que ya había matcheado ANTES de que existiera una columna
-// nueva (ej. cliente_sales_manager) se queda sin ese dato para siempre. Se
-// usa desde el botón de re-sincronización manual (POST
-// /meetings/:id/resync-calendar) para refrescar esos campos desde la MISMA
-// fila ya matcheada (via metas_sheet_match_id), sin volver a correr el
-// matching ni tocar client_id.
+// client_id — bien para no pisar una asignación manual (ej. AssignClientForm,
+// "Corregir cliente"), pero como consecuencia esa reunión NUNCA llega a
+// intentar el match contra el excel: si el cliente se asignó a mano (en vez
+// de por match automático), metas_sheet_match_id se queda null para
+// siempre, y contacto_nombre/cargo/industria/empresa_nombre/
+// cliente_sales_manager tampoco se llenan nunca — bug real (09-09-2026,
+// Intime Chile/Julio Antunez): el usuario corrigió el cliente a mano y el
+// botón de re-sincronizar no traía ninguno de esos datos porque no tenía de
+// dónde sacarlos.
+//
+// Se usa desde el botón de re-sincronización manual (POST
+// /meetings/:id/resync-calendar). Si ya hay metas_sheet_match_id, refresca
+// desde esa MISMA fila (caso: columna nueva agregada después del match).
+// Si no hay (caso: cliente asignado a mano, nunca hubo match), corre el
+// matching de siempre (por fecha + empresa) para encontrar la fila y
+// llenar los campos de contacto — sin tocar client_id en ningún caso, para
+// no pisar la corrección manual del admin.
 export async function refreshMatchedRowFields(meetingId: string): Promise<void> {
-  const { rows } = await pool.query(`select metas_sheet_match_id from meetings where id = $1`, [meetingId]);
-  const matchId = rows[0]?.metas_sheet_match_id;
-  if (!matchId) return;
+  const { rows } = await pool.query(
+    `select empresa_contraparte, start_time, metas_sheet_match_id from meetings where id = $1`,
+    [meetingId]
+  );
+  const meeting = rows[0];
+  if (!meeting) return;
 
   const sheetRows = await loadReunionesRows();
-  const row = sheetRows.find((r) => r.idReunion === matchId);
+  const row = meeting.metas_sheet_match_id
+    ? sheetRows.find((r) => r.idReunion === meeting.metas_sheet_match_id) ?? null
+    : matchMeetingRow(sheetRows, meeting);
   if (!row) return;
 
   await pool.query(
@@ -402,10 +417,11 @@ export async function refreshMatchedRowFields(meetingId: string): Promise<void> 
        contacto_nombre = coalesce(nullif($1, ''), contacto_nombre),
        contacto_cargo = coalesce(nullif($2, ''), contacto_cargo),
        contacto_industria = coalesce(nullif($3, ''), contacto_industria),
-       empresa_nombre = coalesce(nullif($4, ''), empresa_nombre),
-       cliente_sales_manager = coalesce(nullif($5, ''), cliente_sales_manager),
+       metas_sheet_match_id = coalesce(metas_sheet_match_id, nullif($4, '')),
+       empresa_nombre = coalesce(nullif($5, ''), empresa_nombre),
+       cliente_sales_manager = coalesce(nullif($6, ''), cliente_sales_manager),
        updated_at = now()
-     where id = $6`,
-    [row.contacto, row.cargo, row.industria, row.empresa, row.salesManager, meetingId]
+     where id = $7`,
+    [row.contacto, row.cargo, row.industria, row.idReunion, row.empresa, row.salesManager, meetingId]
   );
 }
