@@ -232,16 +232,26 @@ function desambiguarPorEmpresa(candidatos: SheetRow[], empresaContraparte: strin
   // versión corta del nombre (ej. "intime.cl" -> sin TLD "intime"), mientras
   // el excel tiene el nombre completo con el país incluido ("Intime Chile")
   // — ninguno de los dos matches de arriba (exactos) calza ahí. Último
-  // fallback: comparar ambos sin separadores y aceptar que uno sea prefijo
-  // del otro (mínimo 4 caracteres para no matchear por casualidad con
-  // nombres cortos tipo "abc"). Solo se usa dentro de un conjunto YA acotado
-  // por fecha exacta, así que el riesgo de un falso positivo es bajo.
+  // fallback: comparar ambos sin separadores y aceptar que uno CONTENGA al
+  // otro (mínimo 4 caracteres para no matchear por casualidad con nombres
+  // cortos tipo "abc"). Solo se usa dentro de un conjunto YA acotado por
+  // fecha exacta, así que el riesgo de un falso positivo es bajo.
+  //
+  // Segundo bug real (10-09-2026, Banco BICE): a diferencia de "Intime
+  // Chile" (la palabra de más va al FINAL), acá la excel tiene la palabra de
+  // más al PRINCIPIO ("Banco BICE" vs. dominio "bice.cl" -> sin TLD "bice")
+  // — "bice" nunca es prefijo de "bancobice" (empieza con "banco"), así que
+  // el `startsWith` de antes no lo encontraba y la reunión se quedaba sin
+  // client_id para siempre (candidatosPorFecha.length > 1 nunca cae al
+  // fallback viejo por empresa — ver matchMeetingRow). Cambiado de
+  // startsWith a includes para cubrir la palabra de más en cualquier
+  // posición, no solo al final.
   if (match.length === 0) {
     const key = fuzzyCompanyKey(empresaSinTld || empresaNorm);
     if (key.length >= 4) {
       match = candidatos.filter((row) => {
         const rowKey = fuzzyCompanyKey(row.empresa);
-        return rowKey.length >= 4 && (rowKey.startsWith(key) || key.startsWith(rowKey));
+        return rowKey.length >= 4 && (rowKey.includes(key) || key.includes(rowKey));
       });
     }
   }

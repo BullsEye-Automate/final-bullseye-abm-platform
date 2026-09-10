@@ -303,8 +303,15 @@ export async function fetchMeeting(id: string): Promise<MeetingDetail | null> {
   return res.json();
 }
 
-export async function fetchClients(): Promise<ClientListItem[]> {
-  const res = await backendFetch("/clients");
+// grouped=true (Base de conocimiento, 10-09-2026): colapsa clientes que
+// comparten el mismo external_id de la maestra (ej. "CChC"/"CChC - Valle")
+// en un solo ítem, con el conteo de documentos sumado — mismo ICP y misma
+// base de conocimiento para todas las variantes regionales de un cliente.
+// El resto de las pantallas (selector de cliente de una reunión, filtros)
+// llaman esto sin el flag, y siguen viendo cada `clients.id` por separado —
+// ahí sí hace falta distinguir cada variante para asignar la reunión correcta.
+export async function fetchClients(grouped = false): Promise<ClientListItem[]> {
+  const res = await backendFetch(grouped ? "/clients?grouped=true" : "/clients");
   if (!res.ok) {
     throw new Error(`peitho-backend respondió ${res.status} en /clients`);
   }

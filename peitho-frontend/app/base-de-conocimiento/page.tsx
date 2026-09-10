@@ -21,7 +21,7 @@ export default async function BaseDeConocimientoPage() {
     );
   }
 
-  const clients = await fetchClients();
+  const clients = await fetchClients(true);
 
   return (
     <div className="space-y-6">

@@ -7,6 +7,13 @@ import KnowledgeBaseView from "@/components/KnowledgeBaseView";
 // su propio cliente — aclaración explícita del usuario en la Fase E. El
 // backend ya rechaza esto para otro client_id (404); acá se corta antes para
 // no depender de que fetchClients() (admin-only) no reviente para ese rol.
+//
+// fetchClients(true) (10-09-2026): el admin llega acá desde el listado
+// agrupado por external_id (/base-de-conocimiento) — hay que buscar en esa
+// MISMA vista agrupada para encontrar el `id` representativo del grupo y
+// mostrar el nombre combinado (ej. "CChC + CChC - Valle"). fetchClientDocuments
+// ya trae documentos de todo el grupo sin importar esto (ver
+// resolveClientGroupIds en el backend).
 export default async function ClientKnowledgeBasePage({ params }: { params: { id: string } }) {
   const me = await fetchMe();
   const isAdmin = me?.role === "admin";
@@ -15,7 +22,7 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
 
   const [client, documents] = await Promise.all([
     isAdmin
-      ? fetchClients().then((clients) => clients.find((c) => c.id === params.id) ?? null)
+      ? fetchClients(true).then((clients) => clients.find((c) => c.id === params.id) ?? null)
       : Promise.resolve(me?.clientName ? { name: me.clientName, website_url: null } : null),
     fetchClientDocuments(params.id),
   ]);

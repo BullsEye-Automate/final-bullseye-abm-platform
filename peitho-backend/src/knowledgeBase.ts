@@ -27,6 +27,28 @@ export type KbCategoryKey = (typeof KB_CATEGORY_KEYS)[number];
 
 const TEXT_EXTENSIONS = new Set(['txt', 'md']);
 
+// Pedido explícito del usuario (10-09-2026): en la maestra de clientes, varias
+// filas de `clients` a propósito comparten el mismo `external_id` cuando son
+// variantes regionales de un mismo grupo para otra herramienta interna (ej.
+// "CChC"/"CChC - Valle", "Nisum"/"Nisum Perú"/"Nisum Colombia" — ver
+// migración 021 y la nota de Fase "Sincronización masiva de clientes" en
+// CLAUDE.md). Eso es intencional para que el matching de reuniones por
+// nombre exacto (metasSheet.ts) siga distinguiendo cada variante — pero para
+// la Base de conocimiento deben tratarse como un solo ICP: subir un
+// documento para "CChC" debe servir también para "CChC - Valle". Esta
+// función resuelve el grupo completo de client_id que comparten
+// external_id (o solo el propio id si no tiene external_id) — se usa tanto
+// para leer el contexto de los prompts (getClientKnowledgeBaseContext) como
+// para listar/autorizar documentos (routes/clients.ts).
+export async function resolveClientGroupIds(clientId: string): Promise<string[]> {
+  const { rows } = await pool.query(`select external_id from clients where id = $1`, [clientId]);
+  const externalId = rows[0]?.external_id ?? null;
+  if (!externalId) return [clientId];
+
+  const { rows: siblings } = await pool.query(`select id from clients where external_id = $1`, [externalId]);
+  return siblings.map((r) => r.id);
+}
+
 function getExtension(fileName: string): string {
   return fileName.split('.').pop()?.toLowerCase() ?? '';
 }
@@ -106,12 +128,17 @@ const MAX_CONTEXT_CHARS = 30_000;
 export async function getClientKnowledgeBaseContext(clientId: string | null): Promise<string | null> {
   if (!clientId) return null;
 
+  // Incluye documentos de todo el grupo (ver resolveClientGroupIds) — un
+  // documento subido para "CChC" también debe informar el research/análisis
+  // de una reunión resuelta contra "CChC - Valle", y viceversa.
+  const groupIds = await resolveClientGroupIds(clientId);
+
   const { rows } = await pool.query(
     `select file_name, content
      from knowledge_base_documents
-     where client_id = $1 and content is not null
+     where client_id = any($1) and content is not null
      order by uploaded_at desc`,
-    [clientId]
+    [groupIds]
   );
   if (rows.length === 0) return null;
 

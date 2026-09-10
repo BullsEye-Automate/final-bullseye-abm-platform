@@ -5,6 +5,7 @@ import {
   uploadKnowledgeBaseDocument,
   deleteKnowledgeBaseDocument,
   fetchAndStoreWebsiteContent,
+  resolveClientGroupIds,
   KB_CATEGORY_KEYS,
   KbCategoryKey,
 } from '../knowledgeBase';
@@ -54,15 +55,35 @@ function uploadSingleFile(req: Request, res: Response, next: NextFunction) {
 
 // Listado completo de clientes — solo el admin necesita esto (para el
 // selector de cliente y la gestión de la base de conocimiento de cualquiera).
-clientsRouter.get('/clients', requireAdmin, async (_req, res) => {
+//
+// ?grouped=true (pedido explícito del usuario, 10-09-2026): la Base de
+// conocimiento (/base-de-conocimiento) debe mostrar un solo ítem por grupo de
+// `external_id` (ej. "CChC"/"CChC - Valle" cuentan como un solo ICP — ver
+// resolveClientGroupIds en knowledgeBase.ts), con el conteo de documentos
+// sumado entre todos los miembros del grupo. El listado SIN el query param
+// (usado por el selector de cliente de una reunión — AssignClientForm,
+// InlineClientSelect) sigue devolviendo una fila por cada `clients.id` real,
+// sin agrupar: ahí sí hace falta distinguir "CChC" de "CChC - Valle" porque
+// son reuniones agendadas para prospectos distintos.
+clientsRouter.get('/clients', requireAdmin, async (req, res) => {
+  const grouped = req.query.grouped === 'true';
   try {
     const { rows } = await pool.query(
-      `select c.id, c.name, c.website_url,
-              count(k.id)::int as documentos
-       from clients c
-       left join knowledge_base_documents k on k.client_id = c.id
-       group by c.id, c.name, c.website_url
-       order by c.name asc`
+      grouped
+        ? `select min(c.id) as id,
+                  string_agg(distinct c.name, ' + ' order by c.name) as name,
+                  (array_agg(c.website_url) filter (where c.website_url is not null))[1] as website_url,
+                  count(distinct k.id)::int as documentos
+           from clients c
+           left join knowledge_base_documents k on k.client_id = c.id
+           group by coalesce(c.external_id, c.id::text)
+           order by name asc`
+        : `select c.id, c.name, c.website_url,
+                  count(k.id)::int as documentos
+           from clients c
+           left join knowledge_base_documents k on k.client_id = c.id
+           group by c.id, c.name, c.website_url
+           order by c.name asc`
     );
     res.json(rows);
   } catch (error) {
@@ -161,22 +182,28 @@ clientsRouter.put('/clients/:id/website', requireAdmin, async (req, res) => {
 });
 
 // Un usuario "client" puede VER (no subir/borrar) la base de conocimiento de
-// su propio cliente — aclaración explícita del usuario en la Fase E.
+// su propio cliente — aclaración explícita del usuario en la Fase E. Trae
+// documentos de TODO el grupo de external_id (resolveClientGroupIds) — así
+// un documento subido para "CChC" también aparece acá cuando se navega a
+// "CChC - Valle" (y viceversa), sin importar bajo cuál `clients.id`
+// específico quedó guardado el archivo.
 clientsRouter.get('/clients/:id/documents', async (req, res) => {
   const { id } = req.params;
 
-  if (req.peithoUser!.role === 'client' && req.peithoUser!.clientId !== id) {
-    res.status(404).json({ error: 'Cliente no encontrado' });
-    return;
-  }
-
   try {
+    const groupIds = await resolveClientGroupIds(id);
+
+    if (req.peithoUser!.role === 'client' && !groupIds.includes(req.peithoUser!.clientId ?? '')) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
+
     const { rows } = await pool.query(
       `select id, file_name, file_type, category, uploaded_at, (content is not null) as content_extracted
        from knowledge_base_documents
-       where client_id = $1
+       where client_id = any($1)
        order by uploaded_at desc`,
-      [id]
+      [groupIds]
     );
     res.json(rows);
   } catch (error) {
