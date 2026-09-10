@@ -16,6 +16,9 @@ INSTRUCCIONES DE ANÁLISIS:
 7. Presta especial atención a cifras, plazos y compromisos concretos aunque aparezcan de forma casual dentro de pasajes largos o con ruido conversacional (muletillas, interrupciones, cortes). No ignores un dato relevante solo porque está rodeado de conversación informal.
 8. \`desempeno_vendedor\` es distinto de \`prediccion_exito\`: prediccion_exito evalúa qué tan probable es que este deal avance; desempeno_vendedor evalúa qué tan bien ejecutó el vendedor la llamada como habilidad comercial, independiente de si el prospecto termina comprando o no. Un vendedor puede ejecutar impecable una llamada que igual no avanza (mal fit, mal timing), y viceversa. Básate en las 5 métricas de desempeño de arriba pero da un juicio holístico, no un promedio mecánico. Las oportunidades de mejora deben ser específicas y accionables (qué decir o hacer distinto la próxima vez), no genéricas ("mejorar la escucha").
 9. Si el bloque "BASE DE CONOCIMIENTO DEL CLIENTE" trae contenido, son documentos reales del cliente al que representa el ejecutivo en esta llamada (ICP, propuesta de valor, casos de éxito) — úsalo para evaluar \`propuesta_valor_presentada\`: compara lo que el ejecutivo dijo en la transcripción contra el material real (¿mencionó los diferenciadores correctos? ¿mostró un caso de éxito relevante para el rubro del prospecto, o ninguno? ¿dijo algo que contradice el material?). Úsalo también para que \`recomendaciones_proximos_pasos\` sugiera casos de éxito o argumentos concretos del material que el ejecutivo no usó y le hubieran servido, en vez de consejos genéricos. Si el bloque viene vacío, evalúa \`propuesta_valor_presentada\` solo con criterio general de ventas B2B, sin inventar que existe material que no se te dio.
+10. \`fit_empresa\` y \`fit_contacto\` son evaluaciones DISTINTAS a \`prediccion_exito\`: no miden si el deal va a avanzar, miden qué tan bien calza el prospecto contra el ICP (perfil de cliente ideal) real del cliente al que representa el ejecutivo — un prospecto puede calzar perfecto con el ICP y aun así no avanzar (mal timing, presupuesto), o calzar mal y aun así mostrar interés. Necesitan que el bloque "BASE DE CONOCIMIENTO DEL CLIENTE" incluya un ICP explícito (rubro/tamaño/perfil de cliente objetivo) para tener una base real de comparación:
+   - Si HAY un ICP identificable en la base de conocimiento: \`fit_empresa\` compara el rubro, tamaño y señales de la empresa del prospecto (contexto de la reunión + lo que reveló la transcripción) contra ese ICP — 10 es un calce perfecto, 1 es claramente fuera de perfil. \`fit_contacto\` compara el cargo/rol del contacto (dado en el contexto, o lo que reveló la conversación) y su nivel de poder de decisión contra el perfil de comprador ideal del ICP, si lo especifica — si el ICP no especifica un perfil de comprador, usa criterio general B2B (alguien con poder de decisión o influencia real en la compra puntúa más alto que alguien sin ninguno).
+   - Si NO hay ningún ICP identificable en la base de conocimiento (bloque vacío, o documentos que no describen un perfil de cliente): deja \`puntaje\` en null y \`justificacion\` explicando que falta el ICP del cliente en la base de conocimiento — nunca inventes o asumas un ICP genérico para poder dar una nota.
 
 ESQUEMA DE SALIDA (JSON):
 
@@ -28,6 +31,14 @@ ESQUEMA DE SALIDA (JSON):
     "puntaje": <entero 1-5>,
     "etiqueta": "<Muy bajo | Bajo | Regular | Bueno | Muy bueno>",
     "justificacion": "<2-4 frases explicando el porqué, mencionando señales concretas de la conversación>"
+  },
+  "fit_empresa": {
+    "puntaje": <entero 1-10, o null si no hay ICP en la base de conocimiento>,
+    "justificacion": "<2-4 frases explicando el porqué contra el ICP, o explicando que falta el ICP>"
+  },
+  "fit_contacto": {
+    "puntaje": <entero 1-10, o null si no hay ICP en la base de conocimiento>,
+    "justificacion": "<2-4 frases explicando el porqué según el cargo/rol y lo que reveló la conversación, o explicando que falta el ICP>"
   },
   "metricas_desempeno_ejecutivo": {
     "descubrimiento": {"puntaje": <1-5>, "comentario": "<qué tan bien entendió el dolor y contexto del cliente>"},
@@ -79,6 +90,11 @@ interface BuildAnalisisUserMessageInput {
   duracion: string;
   transcript: string;
   baseConocimiento: string | null;
+  // Datos confirmados del excel de metas (no adivinados) — ver instrucción 10,
+  // fit_empresa/fit_contacto. Null si esta reunión no hizo match ahí todavía.
+  empresaProspecto: string | null;
+  contactoCargo: string | null;
+  contactoIndustria: string | null;
 }
 
 export function buildAnalisisUserMessage(input: BuildAnalisisUserMessageInput): string {
@@ -90,7 +106,12 @@ export function buildAnalisisUserMessage(input: BuildAnalisisUserMessageInput): 
 - Fecha: ${input.fecha}
 - Duración: ${input.duracion}
 
-BASE DE CONOCIMIENTO DEL CLIENTE (documentos subidos por BullsEye sobre "${input.empresaCliente}" — ICP, propuesta de valor, casos de éxito; ver instrucción 9. Vacío si todavía no se subió nada):
+DATOS CONFIRMADOS DEL PROSPECTO (del excel de metas de BullsEye, no adivinados — usar para fit_empresa/fit_contacto, ver instrucción 10. Cualquier campo en "(sin dato)" significa que no hizo match ahí, no que el prospecto no tenga ese dato):
+- Empresa del prospecto: ${input.empresaProspecto ?? '(sin dato)'}
+- Cargo del contacto: ${input.contactoCargo ?? '(sin dato)'}
+- Industria: ${input.contactoIndustria ?? '(sin dato)'}
+
+BASE DE CONOCIMIENTO DEL CLIENTE (documentos subidos por BullsEye sobre "${input.empresaCliente}" — ICP, propuesta de valor, casos de éxito; ver instrucciones 9 y 10. Vacío si todavía no se subió nada):
 ${input.baseConocimiento ?? '(sin base de conocimiento cargada para este cliente)'}
 
 TRANSCRIPCIÓN:

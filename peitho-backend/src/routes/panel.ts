@@ -101,7 +101,9 @@ panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
          count(*) filter (where status = 'analyzed') as analizadas,
          count(*) filter (where status = 'analyzed' and (analysis->'prediccion_exito'->>'puntaje')::int >= $${thresholdIdx}) as alta_prediccion,
          count(*) filter (where status = 'analyzed' and jsonb_array_length(coalesce(analysis->'compromisos', '[]'::jsonb)) > 0) as con_compromisos,
-         avg((analysis->'desempeno_vendedor'->>'puntaje')::numeric) filter (where status = 'analyzed') as desempeno_vendedor_promedio
+         avg((analysis->'desempeno_vendedor'->>'puntaje')::numeric) filter (where status = 'analyzed') as desempeno_vendedor_promedio,
+         avg((analysis->'fit_empresa'->>'puntaje')::numeric) filter (where status = 'analyzed') as fit_empresa_promedio,
+         avg((analysis->'fit_contacto'->>'puntaje')::numeric) filter (where status = 'analyzed') as fit_contacto_promedio
        from meetings
        where ${whereClause}`,
       params
@@ -214,6 +216,8 @@ panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
       con_compromisos: Number(f.con_compromisos),
       desempeno_vendedor_promedio:
         f.desempeno_vendedor_promedio != null ? Number(f.desempeno_vendedor_promedio) : null,
+      fit_empresa_promedio: f.fit_empresa_promedio != null ? Number(f.fit_empresa_promedio) : null,
+      fit_contacto_promedio: f.fit_contacto_promedio != null ? Number(f.fit_contacto_promedio) : null,
       por_cargo: mapSegment(porCargoRows),
       por_industria: mapSegment(porIndustriaRows),
       distribucion_prediccion: distribucionPrediccion,

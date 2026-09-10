@@ -164,6 +164,9 @@ async function runAnalysisPrompt(input: {
   durationSeconds: number | null;
   empresaCliente: string;
   baseConocimiento: string | null;
+  empresaProspecto: string | null;
+  contactoCargo: string | null;
+  contactoIndustria: string | null;
 }): Promise<unknown> {
   const anthropic = new Anthropic();
 
@@ -176,6 +179,9 @@ async function runAnalysisPrompt(input: {
     duracion: formatDuration(input.durationSeconds),
     transcript: input.transcript,
     baseConocimiento: input.baseConocimiento,
+    empresaProspecto: input.empresaProspecto,
+    contactoCargo: input.contactoCargo,
+    contactoIndustria: input.contactoIndustria,
   });
 
   const response = await anthropic.messages.create(
@@ -235,6 +241,7 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
 
   const { rows } = await pool.query(
     `select m.id, m.ejecutivo, m.contraparte, m.audio_path, m.transcript_text, m.start_time, m.client_id,
+            m.empresa_nombre, m.contacto_cargo, m.contacto_industria,
             c.name as cliente_bullseye
      from meetings m
      left join clients c on c.id = m.client_id
@@ -277,6 +284,9 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
     durationSeconds,
     empresaCliente: meeting.cliente_bullseye ?? EMPRESA_CLIENTE_FALLBACK,
     baseConocimiento,
+    empresaProspecto: meeting.empresa_nombre,
+    contactoCargo: meeting.contacto_cargo,
+    contactoIndustria: meeting.contacto_industria,
   });
 
   // Bug real (08-09-2026, reunión de Noventiq): cuando el transcript de

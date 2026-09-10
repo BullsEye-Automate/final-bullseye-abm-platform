@@ -146,6 +146,67 @@ export default function AnalysisView({
         </div>
       )}
 
+      {/* Fit Score (10-09-2026) — qué tan bien calza el prospecto contra el ICP
+          real del cliente (base de conocimiento), no si el deal va a avanzar
+          (eso es prediccion_exito, arriba). puntaje viene null con
+          justificación cuando el cliente no tiene ICP cargado todavía —
+          nunca se inventa un número, se muestra "Sin ICP cargado" en vez de
+          ocultar la tarjeta, para que quede visible que falta ese dato. */}
+      {(analysis.fit_empresa || analysis.fit_contacto) && (
+        <div className="grid md:grid-cols-2 gap-4">
+          {analysis.fit_empresa && (
+            <CardShell className="p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-3">
+                Fit Score — empresa
+              </p>
+              {analysis.fit_empresa.puntaje != null ? (
+                <span
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full"
+                  style={{
+                    background: scoreColors(analysis.fit_empresa.puntaje, 10).bg,
+                    color: scoreColors(analysis.fit_empresa.puntaje, 10).fg,
+                  }}
+                >
+                  {analysis.fit_empresa.puntaje}/10
+                </span>
+              ) : (
+                <span className="inline-flex items-center text-sm font-semibold px-3 py-1 rounded-full bg-gray-100 text-gray-500">
+                  Sin ICP cargado
+                </span>
+              )}
+              {analysis.fit_empresa.justificacion && (
+                <p className="text-sm text-gray-600 mt-3 leading-relaxed">{analysis.fit_empresa.justificacion}</p>
+              )}
+            </CardShell>
+          )}
+          {analysis.fit_contacto && (
+            <CardShell className="p-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-3">
+                Fit Score — contacto
+              </p>
+              {analysis.fit_contacto.puntaje != null ? (
+                <span
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full"
+                  style={{
+                    background: scoreColors(analysis.fit_contacto.puntaje, 10).bg,
+                    color: scoreColors(analysis.fit_contacto.puntaje, 10).fg,
+                  }}
+                >
+                  {analysis.fit_contacto.puntaje}/10
+                </span>
+              ) : (
+                <span className="inline-flex items-center text-sm font-semibold px-3 py-1 rounded-full bg-gray-100 text-gray-500">
+                  Sin ICP cargado
+                </span>
+              )}
+              {analysis.fit_contacto.justificacion && (
+                <p className="text-sm text-gray-600 mt-3 leading-relaxed">{analysis.fit_contacto.justificacion}</p>
+              )}
+            </CardShell>
+          )}
+        </div>
+      )}
+
       {analysis.apuntes_clave?.resumen_general && (
         <CardShell className="p-5">
           <SectionHeading>Resumen general</SectionHeading>

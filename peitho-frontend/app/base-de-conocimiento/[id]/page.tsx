@@ -13,13 +13,14 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
 
   if (!isAdmin && me?.clientId !== params.id) notFound();
 
-  const [clientName, documents] = await Promise.all([
+  const [client, documents] = await Promise.all([
     isAdmin
-      ? fetchClients().then((clients) => clients.find((c) => c.id === params.id)?.name ?? null)
-      : Promise.resolve(me?.clientName ?? null),
+      ? fetchClients().then((clients) => clients.find((c) => c.id === params.id) ?? null)
+      : Promise.resolve(me?.clientName ? { name: me.clientName, website_url: null } : null),
     fetchClientDocuments(params.id),
   ]);
-  if (!clientName) notFound();
+  if (!client) notFound();
+  const clientName = client.name;
 
   return (
     <div className="space-y-6">
@@ -32,7 +33,12 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
         <h1 className="text-xl font-semibold text-gray-900 mt-2">{clientName}</h1>
       </div>
 
-      <KnowledgeBaseView clientId={params.id} documents={documents} readOnly={!isAdmin} />
+      <KnowledgeBaseView
+        clientId={params.id}
+        documents={documents}
+        readOnly={!isAdmin}
+        websiteUrl={client.website_url}
+      />
     </div>
   );
 }

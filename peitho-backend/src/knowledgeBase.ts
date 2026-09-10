@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'crypto';
 import { OfficeParser } from 'officeparser';
+import Anthropic from '@anthropic-ai/sdk';
 import { pool } from './db';
 import { getSupabaseAdminClient } from './supabaseAdmin';
 
@@ -122,6 +123,81 @@ export async function getClientKnowledgeBaseContext(clientId: string | null): Pr
   }
 
   return context.trim() || null;
+}
+
+const WEBSITE_FETCH_TIMEOUT_MS = 60_000;
+// Prefijo fijo para poder encontrar y reemplazar el "documento" generado del
+// sitio web en el próximo fetch (ver abajo) — sin esto, cada vez que se
+// actualiza la URL se acumularía un documento viejo desactualizado además
+// del nuevo.
+const WEBSITE_DOCUMENT_PREFIX = 'Sitio web —';
+
+// Pedido explícito del usuario (10-09-2026): la URL del sitio web de un
+// cliente se guarda en clients.website_url, y de paso se trae su contenido
+// real para sumarlo a la base de conocimiento — así el research pre-reunión
+// y el análisis post-reunión lo usan automático (getClientKnowledgeBaseContext
+// ya concatena todos los documentos de un cliente, este queda como uno más,
+// sin tocar esos prompts). Usa la tool `web_fetch` de Claude en vez de un
+// scraper propio — mismo patrón ya probado en preMeetingBrief.ts, más
+// robusto que un fetch+regex casero contra sitios con JS.
+export async function fetchAndStoreWebsiteContent(
+  clientId: string,
+  url: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return { ok: false, error: 'La URL no es válida' };
+  }
+
+  try {
+    const anthropic = new Anthropic();
+    const response = await anthropic.messages.create(
+      {
+        model: 'claude-sonnet-5',
+        max_tokens: 4096,
+        thinking: { type: 'disabled' },
+        tools: [{ type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 1 }],
+        messages: [
+          {
+            role: 'user',
+            content: `Entra a ${url} y devolveme el contenido de texto relevante para entender esta empresa: a qué se dedica, qué productos/servicios ofrece, a qué tipo de cliente le vende (su ICP — perfil de cliente ideal), diferenciadores frente a competidores. Sin comentarios ni opiniones tuyas, sin texto de navegación/footer/legal — solo el contenido útil, en texto plano.`,
+          },
+        ],
+      },
+      { timeout: WEBSITE_FETCH_TIMEOUT_MS }
+    );
+
+    // Con la tool activa la respuesta trae varios bloques intercalados
+    // (mismo patrón que preMeetingBrief.ts) — el texto final es el ÚLTIMO
+    // bloque de tipo texto, no content[0].
+    const textBlocks = response.content.filter((block) => block.type === 'text');
+    const last = textBlocks[textBlocks.length - 1];
+    const text = last && last.type === 'text' ? last.text.trim() : '';
+    if (!text) {
+      return { ok: false, error: 'No se pudo extraer contenido del sitio (puede estar bloqueado o vacío)' };
+    }
+
+    // Reemplaza el documento generado del sitio anterior, si existía —
+    // evita acumular versiones viejas cada vez que se actualiza la URL.
+    await pool.query(
+      `delete from knowledge_base_documents where client_id = $1 and file_name like $2`,
+      [clientId, `${WEBSITE_DOCUMENT_PREFIX}%`]
+    );
+
+    await uploadKnowledgeBaseDocument(
+      clientId,
+      `${WEBSITE_DOCUMENT_PREFIX} ${hostname}.txt`,
+      Buffer.from(text, 'utf-8'),
+      'icp_perfiles'
+    );
+
+    return { ok: true };
+  } catch (error) {
+    console.error(`[knowledge-base] error obteniendo contenido de ${url}`, error);
+    return { ok: false, error: error instanceof Error ? error.message : 'Error obteniendo el sitio web' };
+  }
 }
 
 export async function deleteKnowledgeBaseDocument(clientId: string, documentId: string): Promise<boolean> {

@@ -343,6 +343,8 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
       asistencia: pct(realizadas, agendadas),
       altaPrediccionRate: pct(altaPrediccion, analizadas),
       desempeno: data.desempeno_vendedor_promedio != null ? data.desempeno_vendedor_promedio.toFixed(1) : "—",
+      fitEmpresa: data.fit_empresa_promedio != null ? data.fit_empresa_promedio.toFixed(1) : "—",
+      fitContacto: data.fit_contacto_promedio != null ? data.fit_contacto_promedio.toFixed(1) : "—",
     };
   }, [data]);
 
@@ -426,6 +428,25 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
               sub="de las reuniones ya analizadas"
             />
             <StatCard value={kpis!.desempeno === "—" ? "—" : `${kpis!.desempeno}/10`} label="Desempeño del vendedor" sub="promedio del período" />
+          </div>
+
+          {/* Fit Score (10-09-2026) — promedio de qué tan bien calzan los
+              prospectos del período contra el ICP real de cada cliente
+              (base de conocimiento). Separado del grid de 4 KPIs de arriba
+              (no es del mismo tipo: mide fit, no actividad/desempeño), y
+              puede venir "—" si ningún cliente del filtro tiene ICP cargado
+              todavía — no es un bug, es la falta de ese dato. */}
+          <div className="grid grid-cols-2 gap-3.5">
+            <StatCard
+              value={kpis!.fitEmpresa === "—" ? "—" : `${kpis!.fitEmpresa}/10`}
+              label="Fit Score empresa (promedio)"
+              sub="qué tan alineados con el ICP"
+            />
+            <StatCard
+              value={kpis!.fitContacto === "—" ? "—" : `${kpis!.fitContacto}/10`}
+              label="Fit Score contacto (promedio)"
+              sub="qué tan alineados con el ICP"
+            />
           </div>
 
           <FunnelChart funnel={data.funnel} />

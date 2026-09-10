@@ -180,6 +180,8 @@ export default function MeetingsTable({
             {showClientColumn && <th className="px-4 py-3 font-medium">Cliente</th>}
             {showPuntaje && (
               <>
+                <th className="px-4 py-3 font-medium">Fit empresa</th>
+                <th className="px-4 py-3 font-medium">Fit contacto</th>
                 <th className="px-4 py-3 font-medium">
                   <button
                     onClick={() => toggleSort("puntaje")}
@@ -232,6 +234,12 @@ export default function MeetingsTable({
               )}
               {showPuntaje && (
                 <>
+                  <td className="px-4 py-3">
+                    <PuntajeBadge puntaje={meeting.fit_empresa} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <PuntajeBadge puntaje={meeting.fit_contacto} />
+                  </td>
                   <td className="px-4 py-3">
                     <PuntajeBadge puntaje={meeting.puntaje} />
                   </td>

@@ -32,6 +32,10 @@ export interface MeetingListItem {
   // de cierre del deal) — no confundir, son escalas y preguntas distintas.
   puntaje?: number | null;
   prediccion_exito?: number | null;
+  // Fit Score (10-09-2026) — igual que puntaje/prediccion_exito, solo vienen
+  // pobladas en scope=past, extraídas de analysis.fit_empresa/fit_contacto.
+  fit_empresa?: number | null;
+  fit_contacto?: number | null;
 }
 
 // Forma del JSON que genera el prompt de análisis post-reunión (ver
@@ -48,6 +52,19 @@ export interface MeetingAnalysis {
   prediccion_exito?: {
     puntaje?: number;
     etiqueta?: string;
+    justificacion?: string;
+  };
+  // Fit Score (10-09-2026) — distinto de prediccion_exito: mide qué tan bien
+  // calza el prospecto contra el ICP real del cliente (base de
+  // conocimiento), no si el deal va a avanzar. puntaje null (con
+  // justificacion explicando por qué) si el cliente no tiene un ICP subido
+  // todavía — nunca un número inventado.
+  fit_empresa?: {
+    puntaje?: number | null;
+    justificacion?: string;
+  };
+  fit_contacto?: {
+    puntaje?: number | null;
     justificacion?: string;
   };
   metricas_desempeno_ejecutivo?: Record<string, { puntaje?: number; comentario?: string }>;
@@ -141,6 +158,10 @@ export interface ClientListItem {
   id: string;
   name: string;
   documentos: number;
+  // URL del sitio web del cliente (10-09-2026) — al guardarla, el backend
+  // trae su contenido y lo suma a la base de conocimiento como un documento
+  // más (ver fetchAndStoreWebsiteContent en knowledgeBase.ts).
+  website_url: string | null;
 }
 
 export interface KnowledgeBaseDocument {
@@ -223,6 +244,11 @@ export interface FunnelData {
   // aparte. Ver comentario en peitho-backend/src/routes/panel.ts.
   con_compromisos: number;
   desempeno_vendedor_promedio: number | null;
+  // Fit Score (10-09-2026) — promedio de fit_empresa/fit_contacto (1-10)
+  // entre las reuniones analizadas del rango filtrado. Null si ninguna
+  // reunión del rango tiene el campo (ej. ningún cliente con ICP cargado).
+  fit_empresa_promedio: number | null;
+  fit_contacto_promedio: number | null;
   por_cargo: FunnelSegment[];
   por_industria: FunnelSegment[];
   distribucion_prediccion: PrediccionBucket[];

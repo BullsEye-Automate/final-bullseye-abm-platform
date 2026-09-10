@@ -5,6 +5,7 @@ import type { KnowledgeBaseDocument } from "@/lib/peithoBackend";
 import { KB_CATEGORIES, KB_CATEGORY_GROUPS } from "@/lib/knowledgeBaseCategories";
 import DocumentList from "@/components/DocumentList";
 import DocumentUploadForm from "@/components/DocumentUploadForm";
+import WebsiteUrlForm from "@/components/WebsiteUrlForm";
 
 // Fase F — sidebar de categorías sobre la Base de conocimiento de un
 // cliente. Igual que ReunionesFuturasView/ReunionesPasadasView, filtra en el
@@ -14,10 +15,12 @@ export default function KnowledgeBaseView({
   clientId,
   documents,
   readOnly,
+  websiteUrl,
 }: {
   clientId: string;
   documents: KnowledgeBaseDocument[];
   readOnly: boolean;
+  websiteUrl?: string | null;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -73,6 +76,12 @@ export default function KnowledgeBaseView({
       </aside>
 
       <div className="flex-1 min-w-0 space-y-6">
+        {!readOnly && (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <WebsiteUrlForm clientId={clientId} initialUrl={websiteUrl ?? null} />
+          </div>
+        )}
+
         {!readOnly && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
             <h2 className="text-sm font-semibold text-gray-900">Subir documento</h2>

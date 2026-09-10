@@ -1,7 +1,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { pool } from '../db';
-import { uploadKnowledgeBaseDocument, deleteKnowledgeBaseDocument, KB_CATEGORY_KEYS, KbCategoryKey } from '../knowledgeBase';
+import {
+  uploadKnowledgeBaseDocument,
+  deleteKnowledgeBaseDocument,
+  fetchAndStoreWebsiteContent,
+  KB_CATEGORY_KEYS,
+  KbCategoryKey,
+} from '../knowledgeBase';
 import { requireAuth, requireAdmin } from '../authMiddleware';
 import { syncClientesDesdeMaestra } from '../clientesMaestra';
 
@@ -51,11 +57,11 @@ function uploadSingleFile(req: Request, res: Response, next: NextFunction) {
 clientsRouter.get('/clients', requireAdmin, async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      `select c.id, c.name,
+      `select c.id, c.name, c.website_url,
               count(k.id)::int as documentos
        from clients c
        left join knowledge_base_documents k on k.client_id = c.id
-       group by c.id, c.name
+       group by c.id, c.name, c.website_url
        order by c.name asc`
     );
     res.json(rows);
@@ -110,6 +116,47 @@ clientsRouter.post('/clients/sync-maestra', requireAdmin, async (_req, res) => {
   } catch (error) {
     console.error('Error en POST /clients/sync-maestra', error);
     res.status(500).json({ error: error instanceof Error ? error.message : 'Error sincronizando la maestra de clientes' });
+  }
+});
+
+// Pedido explícito del usuario (10-09-2026): guardar la URL del sitio del
+// cliente y de paso traer su contenido a la base de conocimiento
+// (fetchAndStoreWebsiteContent) — admin-only, mismo criterio que
+// subir/borrar documentos. Guarda la URL siempre; si el fetch del contenido
+// falla (sitio caído, bloqueado, etc.) no rompe la respuesta — se informa
+// en el JSON para que el frontend lo muestre, pero la URL queda guardada
+// igual y se puede reintentar después.
+clientsRouter.put('/clients/:id/website', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { website_url: websiteUrl } = req.body ?? {};
+
+  if (websiteUrl !== null && typeof websiteUrl !== 'string') {
+    res.status(400).json({ error: 'website_url debe ser un string o null' });
+    return;
+  }
+  const trimmed = websiteUrl?.trim() || null;
+  if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+    res.status(400).json({ error: 'La URL debe empezar con http:// o https://' });
+    return;
+  }
+
+  try {
+    const { rowCount } = await pool.query(`update clients set website_url = $1 where id = $2`, [trimmed, id]);
+    if (rowCount === 0) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
+
+    if (!trimmed) {
+      res.json({ status: 'ok', fetched: false });
+      return;
+    }
+
+    const fetchResult = await fetchAndStoreWebsiteContent(id, trimmed);
+    res.json({ status: 'ok', fetched: fetchResult.ok, fetch_error: fetchResult.ok ? null : fetchResult.error });
+  } catch (error) {
+    console.error('Error en PUT /clients/:id/website', error);
+    res.status(500).json({ error: 'Error guardando la URL del sitio' });
   }
 });
 
