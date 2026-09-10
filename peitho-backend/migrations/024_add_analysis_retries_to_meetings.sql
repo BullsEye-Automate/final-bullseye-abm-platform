@@ -1,0 +1,16 @@
+-- Reintento automático del análisis post-reunión (10-09-2026, pedido
+-- explícito del usuario: "necesito que el análisis de las reuniones corra
+-- sola post reu"). Confirmado real revisando recall.ts: el transcript nativo
+-- de Recall quedó REVERTIDO (dos intentos reales fallaron — ver el
+-- comentario en createRecallBot()), así que `recording_config` hoy NUNCA
+-- pide transcript — getRecallTranscriptUrl() no tiene de dónde sacar una URL
+-- y siempre tira error, capturado en silencio en processRecallDone
+-- (webhooks.ts). Cada reunión cae 100% del tiempo al fallback de Deepgram,
+-- y si ESE paso (o el llamado a Claude después) falla una vez, la reunión
+-- se queda en status='captured' para siempre sin que nadie lo note, porque
+-- analyzeMeetingAudio() se dispara fire-and-forget sin ningún reintento.
+-- Mismo patrón que recall_bot_retries (migración 015) — un chequeo periódico
+-- (ver retryStuckAnalyses en postMeetingAnalysis.ts) reintenta sola una
+-- reunión pegada en 'captured', hasta un tope, sin depender de que un admin
+-- haga clic en "Reintentar análisis".
+alter table meetings add column if not exists analysis_retries integer not null default 0;

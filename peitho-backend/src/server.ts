@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { app } from './app';
 import { pool } from './db';
 import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots } from './recall';
+import { retryStuckAnalyses } from './postMeetingAnalysis';
 import { deleteExpiredMeetingVideos } from './videoRetention';
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
@@ -25,6 +26,19 @@ setInterval(() => {
 setInterval(() => {
   checkAndFixStaleRecallBots().catch((error) =>
     console.error('[startup] error en el chequeo periódico de bots de Recall desalineados', error)
+  );
+}, RECALL_RETRY_POLL_MS);
+
+// Reintento automático del análisis post-reunión (10-09-2026, pedido
+// explícito del usuario: "necesito que el análisis de las reuniones corra
+// sola post reu") — mismo intervalo que los chequeos de Recall de arriba.
+// Ver el comentario completo en retryStuckAnalyses (postMeetingAnalysis.ts):
+// hoy toda reunión cae al fallback de Deepgram (el transcript nativo de
+// Recall quedó revertido), y si ese paso o el llamado a Claude fallan una
+// vez, nadie se entera hasta que un admin nota que quedó en "Capturada".
+setInterval(() => {
+  retryStuckAnalyses().catch((error) =>
+    console.error('[startup] error en el chequeo periódico de análisis pegados', error)
   );
 }, RECALL_RETRY_POLL_MS);
 

@@ -302,3 +302,42 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
 
   console.log(`[analysis] reunión ${meetingId}: análisis guardado, status=analyzed`);
 }
+
+const MAX_ANALYSIS_RETRIES = 3;
+
+// Reintento automático (10-09-2026, pedido explícito del usuario: "necesito
+// que el análisis de las reuniones corra sola post reu") — hoy toda reunión
+// cae al fallback de Deepgram (el transcript nativo de Recall quedó
+// revertido, ver el comentario en recall.ts/createRecallBot), y
+// analyzeMeetingAudio() se dispara fire-and-forget sin ningún reintento
+// tanto desde el webhook de Recall como desde la subida de la extensión de
+// Chrome — si Deepgram o Claude fallan una sola vez (rate limit, timeout,
+// JSON cortado), la reunión queda en status='captured' para siempre sin que
+// nadie lo note. Esta función (llamada cada 1 min desde server.ts, mismo
+// intervalo que checkAndRetryFailedRecallBots) reintenta sola cualquier
+// reunión pegada, reusando el audio_path/transcript_text ya guardados — sin
+// volver a descargar nada de Recall — hasta un tope de intentos.
+export async function retryStuckAnalyses(): Promise<void> {
+  const { rows } = await pool.query(
+    `select id, analysis_retries from meetings
+     where status = 'captured'
+       and analysis_retries < $1
+       and updated_at <= now() - interval '3 minutes'`,
+    [MAX_ANALYSIS_RETRIES]
+  );
+
+  for (const meeting of rows) {
+    console.log(
+      `[analysis] reunión ${meeting.id}: quedó pegada en status=captured, reintentando automáticamente (intento ${
+        meeting.analysis_retries + 1
+      }/${MAX_ANALYSIS_RETRIES})...`
+    );
+    await pool.query(
+      `update meetings set analysis_retries = analysis_retries + 1, updated_at = now() where id = $1`,
+      [meeting.id]
+    );
+    analyzeMeetingAudio(meeting.id).catch((error) => {
+      console.error(`[analysis] reintento automático falló para la reunión ${meeting.id}`, error);
+    });
+  }
+}
