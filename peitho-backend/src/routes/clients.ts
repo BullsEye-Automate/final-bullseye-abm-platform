@@ -70,7 +70,7 @@ clientsRouter.get('/clients', requireAdmin, async (req, res) => {
   try {
     const { rows } = await pool.query(
       grouped
-        ? `select min(c.id) as id,
+        ? `select (array_agg(c.id order by c.name asc))[1] as id,
                   string_agg(distinct c.name, ' + ' order by c.name) as name,
                   (array_agg(c.website_url) filter (where c.website_url is not null))[1] as website_url,
                   count(distinct k.id)::int as documentos
