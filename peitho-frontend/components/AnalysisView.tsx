@@ -29,13 +29,16 @@ function scoreColors(score: number | null | undefined, scale: 5 | 10 = 5) {
   return { bg: "#FBE7E4", fg: "#C0392B" };
 }
 
-function CardShell({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+// Exportados (10-09-2026) para que PreBriefView.tsx (rediseño del research
+// pre-reunión, mismo pedido de "meterle diseño" que ya se hizo acá) reuse
+// exactamente el mismo lenguaje visual en vez de duplicarlo.
+export function CardShell({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm ${className}`}>{children}</div>
   );
 }
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
+export function SectionHeading({ children }: { children: React.ReactNode }) {
   return <h2 className="text-sm font-semibold text-gray-900 mb-3">{children}</h2>;
 }
 
@@ -47,7 +50,7 @@ const METRIC_LABEL: Record<string, string> = {
   claridad_propuesta_valor: "Claridad de la propuesta de valor",
 };
 
-function TagList({
+export function TagList({
   items,
   dotColor,
 }: {

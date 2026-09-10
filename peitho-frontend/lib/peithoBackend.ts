@@ -157,6 +157,10 @@ export interface MeetingDetail extends MeetingListItem {
   // computeParticipantStats en postMeetingAnalysis.ts). Null si la reunión
   // no tiene transcript de Recall (ej. flujo viejo de la extensión de Chrome).
   participantes?: Array<{ nombre: string; palabras: number }> | null;
+  // Link público de research (10-09-2026) — ver ShareResearchButton.tsx.
+  // Null hasta que un admin lo genera la primera vez con "Compartir con el
+  // cliente"; se usa para armar /research-compartido/<token>.
+  research_share_token?: string | null;
 }
 
 export interface ClientListItem {
@@ -330,6 +334,34 @@ export async function fetchUserRoles(): Promise<UserRoleItem[]> {
   const res = await backendFetch("/admin/user-roles");
   if (!res.ok) {
     throw new Error(`peitho-backend respondió ${res.status} en /admin/user-roles`);
+  }
+  return res.json();
+}
+
+// Lo mínimo que ve un CLIENTE externo por el link público de research
+// (10-09-2026, sin login) — nunca client_id, analysis, transcript_text, ni
+// nada de otra reunión. Ver routes/publicResearch.ts en el backend.
+export interface PublicResearch {
+  contraparte: string | null;
+  empresa_contraparte: string | null;
+  empresa_nombre: string | null;
+  contacto_nombre: string | null;
+  contacto_cargo: string | null;
+  contacto_industria: string | null;
+  start_time: string | null;
+  pre_brief: PreBrief;
+  cliente_bullseye: string | null;
+}
+
+// Sin backendFetch (esta página no tiene sesión de Supabase — es pública a
+// propósito) y sin pasar por un proxy de Next.js: GET /public/research/:token
+// no requiere auth en el backend, así que un Server Component puede pedirlo
+// directo. cache: "no-store" igual que el resto — el link puede revocarse.
+export async function fetchPublicResearch(token: string): Promise<PublicResearch | null> {
+  const res = await fetch(`${backendUrl()}/public/research/${token}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`peitho-backend respondió ${res.status} en /public/research/${token}`);
   }
   return res.json();
 }

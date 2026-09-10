@@ -10,6 +10,8 @@ import DeleteMeetingButton from "@/components/DeleteMeetingButton";
 import ResyncCalendarButton from "@/components/ResyncCalendarButton";
 import DetailTabs from "@/components/DetailTabs";
 import AnalysisView from "@/components/AnalysisView";
+import PreBriefView from "@/components/PreBriefView";
+import ShareResearchButton from "@/components/ShareResearchButton";
 import MeetingVideoPlayer from "@/components/MeetingVideoPlayer";
 import CollapsibleSection from "@/components/CollapsibleSection";
 
@@ -221,182 +223,14 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
 
       {preBrief && (
         <CollapsibleSection label="research" defaultOpen={!analysis}>
-        <Section title="Investigación de empresa y prospecto">
-          {preBrief.resumen_contexto && <p className="text-sm text-gray-700">{preBrief.resumen_contexto}</p>}
-
-          {preBrief.perfil_empresa && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Empresa</p>
-              <p className="text-sm text-gray-700">
-                {preBrief.perfil_empresa.rubro ?? "Rubro desconocido"}
-                {preBrief.perfil_empresa.tamaño_estimado ? ` · ${preBrief.perfil_empresa.tamaño_estimado}` : ""}
-              </p>
-              {preBrief.perfil_empresa.info_insuficiente && (
-                <p className="text-xs text-gray-400 mt-0.5">Información encontrada limitada.</p>
-              )}
-              {!!preBrief.perfil_empresa.senales_relevantes?.length && (
-                <ul className="list-disc list-inside text-sm text-gray-700 mt-1 space-y-0.5">
-                  {preBrief.perfil_empresa.senales_relevantes.map((s, i) => (
-                    <li key={i}>{s}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-
-          {preBrief.perfil_contacto && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Contacto</p>
-              <p className="text-sm text-gray-700">
-                {preBrief.perfil_contacto.cargo_estimado ?? "Cargo desconocido"}
-                {preBrief.perfil_contacto.rol_probable_en_decision
-                  ? ` · rol probable: ${preBrief.perfil_contacto.rol_probable_en_decision}`
-                  : ""}
-              </p>
-            </div>
-          )}
-
-          {!!preBrief.experiencia_contacto?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Experiencia laboral previa</p>
-              <ul className="text-sm text-gray-700 space-y-0.5">
-                {preBrief.experiencia_contacto.map((e, i) => (
-                  <li key={i}>
-                    {e.cargo} — {e.empresa}
-                    {e.periodo ? ` (${e.periodo})` : ""}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {!!preBrief.icebreakers_sugeridos?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Icebreakers sugeridos</p>
-              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                {preBrief.icebreakers_sugeridos.map((ib, i) => (
-                  <li key={i}>{ib}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {!!preBrief.competidores_directos?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Competidores directos</p>
-              <ul className="text-sm text-gray-700 space-y-0.5">
-                {preBrief.competidores_directos.map((c, i) => (
-                  <li key={i}>
-                    <span className="font-medium text-gray-900">{c.nombre}</span>
-                    {c.comentario ? ` — ${c.comentario}` : ""}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {!!preBrief.temas_recomendados?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Temas recomendados (según base de conocimiento)</p>
-              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                {preBrief.temas_recomendados.map((t, i) => (
-                  <li key={i}>{t}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {!!preBrief.temas_evitar?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Temas a evitar</p>
-              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                {preBrief.temas_evitar.map((t, i) => (
-                  <li key={i}>{t}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {!!preBrief.casos_exito_sugeridos?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-2">Casos de éxito sugeridos</p>
-              <ul className="space-y-2">
-                {preBrief.casos_exito_sugeridos.map((c, i) => (
-                  <li key={i} className="text-sm">
-                    <span className="font-medium text-gray-900">{c.caso}</span>
-                    {c.por_que_aplica && <p className="text-gray-600 mt-0.5">{c.por_que_aplica}</p>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {!!preBrief.hilos_abiertos?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-2">Hilos abiertos de la reunión anterior</p>
-              <ul className="space-y-2">
-                {preBrief.hilos_abiertos.map((h, i) => (
-                  <li key={i} className="text-sm">
-                    <span className="font-medium text-gray-900">
-                      {h.tema} {h.prioridad ? `(${h.prioridad})` : ""}
-                    </span>
-                    {h.sugerencia && <p className="text-gray-600 mt-0.5">{h.sugerencia}</p>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {!!preBrief.objeciones_ya_planteadas?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-2">Objeciones ya planteadas</p>
-              <ul className="space-y-2">
-                {preBrief.objeciones_ya_planteadas.map((o, i) => (
-                  <li key={i} className="text-sm">
-                    <span className="font-medium text-gray-900">{o.objecion}</span>
-                    {o.como_evitar_repetirla && <p className="text-gray-600 mt-0.5">{o.como_evitar_repetirla}</p>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {preBrief.objetivo_sugerido_reunion && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Objetivo sugerido</p>
-              <p className="text-sm text-gray-700">{preBrief.objetivo_sugerido_reunion}</p>
-            </div>
-          )}
-
-          {!!preBrief.preguntas_clave_a_indagar?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Preguntas clave a indagar</p>
-              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                {preBrief.preguntas_clave_a_indagar.map((p, i) => (
-                  <li key={i}>{p}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {!!preBrief.riesgos_a_considerar?.length && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Riesgos a considerar</p>
-              <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                {preBrief.riesgos_a_considerar.map((r, i) => (
-                  <li key={i}>{r}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {preBrief.recomendacion_personalizacion && (
-            <div className="pt-2">
-              <p className="text-xs font-medium text-gray-500 mb-1">Recomendación de personalización</p>
-              <p className="text-sm text-gray-700">{preBrief.recomendacion_personalizacion}</p>
-            </div>
-          )}
-        </Section>
+          <div className="space-y-3">
+            {isAdmin && (
+              <div className="flex justify-end">
+                <ShareResearchButton meetingId={meeting.id} initialToken={meeting.research_share_token ?? null} />
+              </div>
+            )}
+            <PreBriefView preBrief={preBrief} />
+          </div>
         </CollapsibleSection>
       )}
 

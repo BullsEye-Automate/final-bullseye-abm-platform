@@ -7,6 +7,7 @@ import { clientsRouter } from './routes/clients';
 import { adminRouter } from './routes/admin';
 import { webhooksRouter } from './routes/webhooks';
 import { panelRouter } from './routes/panel';
+import { publicResearchRouter } from './routes/publicResearch';
 
 export const app = express();
 
@@ -57,3 +58,4 @@ app.use(clientsRouter);
 app.use(adminRouter);
 app.use(webhooksRouter);
 app.use(panelRouter);
+app.use(publicResearchRouter);
