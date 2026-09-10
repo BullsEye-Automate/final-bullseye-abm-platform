@@ -130,6 +130,11 @@ export interface MeetingDetail extends MeetingListItem {
   // Deepgram como fallback para la extensión de Chrome). Null si la reunión
   // no se ha grabado/analizado todavía.
   transcript_text: string | null;
+  // Usado por ReanalyzeButton para detectar cuándo terminó un recálculo
+  // manual del análisis — a diferencia de ReprocessButton (que espera un
+  // cambio de `status`), recalcular no cambia el status (ya estaba
+  // 'analyzed' antes y después), así que se compara este timestamp.
+  updated_at?: string;
   // Respaldo de video de la reunión (30 días desde la fecha, después se
   // borra solo — ver videoRetention.ts). true si todavía está disponible;
   // el archivo en sí nunca se expone acá, se pide una URL firmada aparte

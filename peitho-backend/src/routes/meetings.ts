@@ -222,7 +222,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
 
     const { rows } = await pool.query(
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status,
-              m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text,
+              m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text, m.updated_at,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
               m.participantes,
               (m.video_path is not null) as video_available,
@@ -508,6 +508,44 @@ meetingsRouter.post('/meetings/:id/reprocess', requireAuth, requireAdmin, async 
   } catch (error) {
     console.error('Error iniciando el reprocesamiento manual de la reunión', error);
     res.status(500).json({ error: 'Error iniciando el reprocesamiento' });
+  }
+});
+
+// Recalcula el análisis de una reunión que YA tiene transcript_text guardado
+// (venga de Recall o de Deepgram) — pedido explícito del usuario (10-09-2026)
+// para poder reprocesar reuniones viejas cuando cambia el prompt/schema de
+// análisis (ej. el Fit Score nuevo) sin gastar de nuevo la descarga de
+// audio/transcript de Recall ni depender de que el bot siga disponible ahí.
+// A diferencia de /reprocess (que vuelve a bajar todo desde Recall vía
+// processRecallDone), esto llama directo a analyzeMeetingAudio, que ya
+// prioriza transcript_text por sobre volver a transcribir (ver
+// postMeetingAnalysis.ts) — no toca la API de Recall en ningún momento.
+meetingsRouter.post('/meetings/:id/reanalyze', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { rows } = await pool.query(`select id, transcript_text from meetings where id = $1`, [id]);
+    const meeting = rows[0];
+    if (!meeting) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+    if (!meeting.transcript_text) {
+      res.status(400).json({
+        error: 'Esta reunión no tiene transcripción guardada — no se puede recalcular sin volver a grabar',
+      });
+      return;
+    }
+
+    console.log(`[reanalyze] reunión ${id}: recálculo manual solicitado (reusando transcript guardado)...`);
+    res.json({ status: 'ok' });
+
+    analyzeMeetingAudio(id).catch((error) => {
+      console.error(`[reanalyze] falló el recálculo manual de la reunión ${id}`, error);
+    });
+  } catch (error) {
+    console.error('Error iniciando el recálculo del análisis', error);
+    res.status(500).json({ error: 'Error iniciando el recálculo' });
   }
 });
 

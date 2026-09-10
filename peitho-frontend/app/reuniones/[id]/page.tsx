@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { fetchMeeting, fetchMe, fetchClients } from "@/lib/peithoBackend";
 import ResearchButton from "@/components/ResearchButton";
 import ReprocessButton from "@/components/ReprocessButton";
+import ReanalyzeButton from "@/components/ReanalyzeButton";
 import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 import AssignClientForm from "@/components/AssignClientForm";
 import DeleteMeetingButton from "@/components/DeleteMeetingButton";
@@ -131,6 +132,9 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
         <div className="flex items-start gap-2">
           {isAdmin && meeting.recall_bot_available && (
             <ReprocessButton meetingId={meeting.id} status={meeting.status} />
+          )}
+          {isAdmin && meeting.status === "analyzed" && meeting.transcript_text && (
+            <ReanalyzeButton meetingId={meeting.id} updatedAt={meeting.updated_at} />
           )}
           {isAdmin && <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />}
           {isAdmin && meeting.is_bot_invite && <ResyncCalendarButton meetingId={meeting.id} />}
