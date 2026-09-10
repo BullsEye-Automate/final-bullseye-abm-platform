@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { fetchClients, fetchMe } from "@/lib/peithoBackend";
 import NewClientForm from "@/components/NewClientForm";
+import SyncMaestraButton from "@/components/SyncMaestraButton";
 
 // Un usuario "client" solo tiene un cliente propio — se lo manda directo a
 // su base de conocimiento en vez de mostrarle este listado (que además es
@@ -24,12 +25,15 @@ export default async function BaseDeConocimientoPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">Base de conocimiento</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Documentación por cliente (ICP, buyer persona, propuesta de valor, casos de éxito, presentaciones) que
-          Peitho usa para preparar el research y el análisis de reuniones.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Base de conocimiento</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Documentación por cliente (ICP, buyer persona, propuesta de valor, casos de éxito, presentaciones) que
+            Peitho usa para preparar el research y el análisis de reuniones.
+          </p>
+        </div>
+        <SyncMaestraButton />
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">

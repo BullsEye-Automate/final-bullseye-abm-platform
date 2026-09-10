@@ -3,6 +3,7 @@ import multer from 'multer';
 import { pool } from '../db';
 import { uploadKnowledgeBaseDocument, deleteKnowledgeBaseDocument, KB_CATEGORY_KEYS, KbCategoryKey } from '../knowledgeBase';
 import { requireAuth, requireAdmin } from '../authMiddleware';
+import { syncClientesDesdeMaestra } from '../clientesMaestra';
 
 export const clientsRouter = Router();
 
@@ -67,25 +68,48 @@ clientsRouter.get('/clients', requireAdmin, async (_req, res) => {
 // Los clientes normalmente se crean solos al hacer match con el excel de
 // metas (ver metasSheet.ts) — este endpoint es para el caso donde alguien
 // quiere subir documentación de un cliente antes de que exista cualquier
-// reunión suya en Peitho.
+// reunión suya en Peitho. external_id es opcional — pedido explícito del
+// usuario (10-09-2026): permite pegar el mismo "ID Cliente" que usa la
+// maestra de BullsEye para vincular con otra herramienta interna, incluso
+// creando el cliente a mano de a uno (fuera del sync masivo de abajo).
 clientsRouter.post('/clients', requireAdmin, async (req, res) => {
-  const { name } = req.body ?? {};
+  const { name, external_id: externalId } = req.body ?? {};
   if (typeof name !== 'string' || !name.trim()) {
     res.status(400).json({ error: 'Falta el nombre del cliente' });
+    return;
+  }
+  if (externalId !== undefined && externalId !== null && typeof externalId !== 'string') {
+    res.status(400).json({ error: 'external_id debe ser un string o null' });
     return;
   }
 
   try {
     const { rows } = await pool.query(
-      `insert into clients (name) values ($1)
-       on conflict (name) do update set name = excluded.name
-       returning id, name`,
-      [name.trim()]
+      `insert into clients (name, external_id) values ($1, $2)
+       on conflict (name) do update set name = excluded.name,
+         external_id = coalesce(excluded.external_id, clients.external_id)
+       returning id, name, external_id`,
+      [name.trim(), externalId?.trim() || null]
     );
     res.status(201).json(rows[0]);
   } catch (error) {
     console.error('Error en POST /clients', error);
     res.status(500).json({ error: 'Error creando el cliente' });
+  }
+});
+
+// Sincronización masiva contra la maestra de clientes de BullsEye (otra
+// pestaña del mismo spreadsheet de metas) — crea/actualiza todos los
+// clientes con Status Cliente = "Activo", con su external_id. Reusable
+// (botón en /base-de-conocimiento), no un script de una sola vez — la
+// maestra puede cambiar con el tiempo.
+clientsRouter.post('/clients/sync-maestra', requireAdmin, async (_req, res) => {
+  try {
+    const result = await syncClientesDesdeMaestra();
+    res.json(result);
+  } catch (error) {
+    console.error('Error en POST /clients/sync-maestra', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Error sincronizando la maestra de clientes' });
   }
 });
 
