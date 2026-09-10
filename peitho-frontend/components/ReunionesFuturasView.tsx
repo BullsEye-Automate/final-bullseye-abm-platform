@@ -51,14 +51,50 @@ function formatRange(start: Date, end: Date): string {
   return `${day(start)} — ${day(end)} ${monthYear}`;
 }
 
-function StatCard({ value, label, color }: { value: string | number; label: string; color?: string }) {
+// `onClick`/`active` (pedido explícito del usuario, 10-09-2026): la tarjeta
+// "Con research listo" ahora también funciona como filtro de la tabla de
+// abajo — clic para mostrar solo esas reuniones, clic de nuevo para
+// sacar el filtro. Las demás tarjetas (sin onClick) siguen siendo solo
+// informativas, sin cambiar su apariencia.
+function StatCard({
+  value,
+  label,
+  color,
+  onClick,
+  active,
+}: {
+  value: string | number;
+  label: string;
+  color?: string;
+  onClick?: () => void;
+  active?: boolean;
+}) {
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="bg-white rounded-[14px] border border-gray-100 shadow-sm px-[18px] py-4 flex flex-col gap-1">
+    <Tag
+      onClick={onClick}
+      className="bg-white rounded-[14px] border shadow-sm px-[18px] py-4 flex flex-col gap-1 text-left transition"
+      style={{
+        borderColor: active ? "#62E0D8" : "#F3F2F8",
+        boxShadow: active ? "0 0 0 1px #62E0D8" : undefined,
+        cursor: onClick ? "pointer" : undefined,
+      }}
+    >
       <div className="text-[22px] font-bold" style={{ color: color ?? "#1C1530" }}>
         {value}
       </div>
-      <div className="text-xs text-gray-500">{label}</div>
-    </div>
+      <div className="text-xs text-gray-500 flex items-center gap-1.5">
+        {label}
+        {onClick && (
+          <span
+            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+            style={active ? { background: "#EFECFA", color: "#251762" } : { background: "#F3F2F8", color: "#948DA8" }}
+          >
+            {active ? "Filtrando" : "Filtrar"}
+          </span>
+        )}
+      </div>
+    </Tag>
   );
 }
 
@@ -80,6 +116,7 @@ export default function ReunionesFuturasView({
   clients?: ClientListItem[];
 }) {
   const [range, setRange] = useState<RangeKey>("all");
+  const [soloConResearch, setSoloConResearch] = useState(false);
   const now = useMemo(() => new Date(), []);
   const [customFrom, setCustomFrom] = useState(isoDate(now));
   const [customTo, setCustomTo] = useState(() => {
@@ -113,6 +150,15 @@ export default function ReunionesFuturasView({
     const clientes = new Set(filtered.map((m) => m.client_id ?? m.empresa_contraparte).filter(Boolean));
     return { total: filtered.length, researchListo, sinBot, clientes: clientes.size };
   }, [filtered]);
+
+  // Filtro de la tarjeta "Con research listo" — se aplica DESPUÉS del rango de
+  // fechas (mismo criterio de "filtra sobre lo ya acotado" que el resto de
+  // esta vista), así el conteo de la tarjeta sigue reflejando el rango
+  // completo aunque el filtro esté activo.
+  const tableRows = useMemo(
+    () => (soloConResearch ? filtered.filter((m) => m.pre_brief_status === "done") : filtered),
+    [filtered, soloConResearch]
+  );
 
   return (
     <div className="space-y-5">
@@ -164,13 +210,19 @@ export default function ReunionesFuturasView({
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
         <StatCard value={stats.total} label="Reuniones en el rango" />
-        <StatCard value={stats.researchListo} label="Con research listo" color="#1F8A5C" />
+        <StatCard
+          value={stats.researchListo}
+          label="Con research listo"
+          color="#1F8A5C"
+          active={soloConResearch}
+          onClick={() => setSoloConResearch((v) => !v)}
+        />
         <StatCard value={stats.sinBot} label="Sin bot agendado" color="#B4740E" />
         <StatCard value={stats.clientes} label="Clientes distintos" />
       </div>
 
       <MeetingsTable
-        meetings={filtered}
+        meetings={tableRows}
         detailBasePath={detailBasePath}
         showClientColumn={showClientColumn}
         clients={clients}

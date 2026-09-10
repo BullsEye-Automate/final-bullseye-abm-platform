@@ -85,7 +85,18 @@ function PrediccionBadge({ puntaje }: { puntaje: number | null | undefined }) {
   );
 }
 
-type SortField = "puntaje" | "prediccion_exito";
+type SortField = "start_time" | "puntaje" | "prediccion_exito";
+
+// start_time es un string ISO (no un número) — se convierte a timestamp acá
+// para poder reusar el mismo comparador genérico que ya usaban puntaje/
+// prediccion_exito. Sin fecha, va al final tanto en asc como en desc (-Infinity
+// para que "menor" en asc la mande al final visualmente al invertir con desc).
+function sortValue(meeting: MeetingListItem, field: SortField): number {
+  if (field === "start_time") {
+    return meeting.start_time ? new Date(meeting.start_time).getTime() : -Infinity;
+  }
+  return meeting[field] ?? -1;
+}
 
 // Flecha de orden reusada por ambas columnas ordenables — misma UI que antes,
 // solo parametrizada por qué campo controla.
@@ -142,8 +153,8 @@ export default function MeetingsTable({
   const sorted = useMemo(() => {
     if (!sortDir || !sortField) return meetings;
     return [...meetings].sort((a, b) => {
-      const av = a[sortField] ?? -1;
-      const bv = b[sortField] ?? -1;
+      const av = sortValue(a, sortField);
+      const bv = sortValue(b, sortField);
       return sortDir === "asc" ? av - bv : bv - av;
     });
   }, [meetings, sortField, sortDir]);
@@ -151,16 +162,22 @@ export default function MeetingsTable({
   function toggleSort(field: SortField) {
     if (sortField !== field) {
       setSortField(field);
-      setSortDir("desc");
+      // Fecha: primer clic muestra la más próxima primero ("de más reciente
+      // a más lejano", pedido explícito del usuario) — al revés de
+      // puntaje/predicción, donde el primer clic muestra el puntaje más
+      // alto primero (más intuitivo para esas dos columnas).
+      setSortDir(field === "start_time" ? "asc" : "desc");
       return;
     }
     setSortDir((prev) => {
-      if (prev === "desc") return "asc";
-      if (prev === "asc") {
+      const first = field === "start_time" ? "asc" : "desc";
+      const second = field === "start_time" ? "desc" : "asc";
+      if (prev === first) return second;
+      if (prev === second) {
         setSortField(null);
         return null;
       }
-      return "desc";
+      return first;
     });
   }
 
@@ -173,7 +190,15 @@ export default function MeetingsTable({
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
-            <th className="px-4 py-3 font-medium">Fecha</th>
+            <th className="px-4 py-3 font-medium">
+              <button
+                onClick={() => toggleSort("start_time")}
+                className="flex items-center gap-1 hover:text-gray-700"
+              >
+                Fecha
+                <SortArrow active={sortField === "start_time"} dir={sortDir} />
+              </button>
+            </th>
             <th className="px-4 py-3 font-medium">Ejecutivo</th>
             <th className="px-4 py-3 font-medium">Contraparte</th>
             <th className="px-4 py-3 font-medium">Empresa</th>
