@@ -350,11 +350,26 @@ export async function syncChannelChanges(channelId: string) {
     const botEmail = process.env.PEITHO_BOT_GOOGLE_ACCOUNT_EMAIL;
     const isBotCalendar = !!botEmail && channel.google_account_email.toLowerCase() === botEmail.toLowerCase();
     console.log(`[sync] canal ${channelId}: isBotCalendar=${isBotCalendar} (botEmail env=${botEmail ?? '(no seteado)'})`);
+    // Cada evento se procesa con su propio try/catch — bug real (11-09-2026):
+    // este for...of no atrapaba errores por evento, así que si UNO solo
+    // lanzaba una excepción (ej. un dato inesperado de un evento puntual), el
+    // loop se cortaba ahí mismo y el resto de los eventos de esa página
+    // (incluido cualquier evento bueno que viniera después) nunca se
+    // procesaban — y como la excepción también impedía llegar a guardar el
+    // nextSyncToken más abajo, el próximo webhook volvía a traer el MISMO
+    // lote y fallaba exactamente en el mismo punto, para siempre, en
+    // silencio (el catch de la ruta del webhook solo loguea, no avisa a
+    // nadie). Con esto, un evento problemático se loguea y se salta, pero el
+    // resto de la página se sigue procesando y el sync_token avanza igual.
     for (const event of response.data.items ?? []) {
-      if (isBotCalendar) {
-        await upsertMeetingFromBotInvite(event, channel.google_account_email);
-      } else {
-        await upsertMeetingFromEvent(event, channel.google_account_email);
+      try {
+        if (isBotCalendar) {
+          await upsertMeetingFromBotInvite(event, channel.google_account_email);
+        } else {
+          await upsertMeetingFromEvent(event, channel.google_account_email);
+        }
+      } catch (error) {
+        console.error(`[sync] canal ${channelId}: error procesando el evento ${event.id ?? '(sin id)'}, se continúa con el resto`, error);
       }
     }
 
