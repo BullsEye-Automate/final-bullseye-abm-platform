@@ -827,7 +827,7 @@ export default function SubirCampanaPage() {
             disabled={parsed.length === 0}
           >
             <IconSparkles size={15} />
-            Generar mensajes con IA para {parsed.length} contacto{parsed.length !== 1 ? "s" : ""}
+            Generar mensajes con {clientModel === "claude-haiku-4-5-20251001" ? "Haiku (económico)" : "Sonnet"} para {parsed.length} contacto{parsed.length !== 1 ? "s" : ""}
           </button>
         </div>
       )}
@@ -962,7 +962,7 @@ export default function SubirCampanaPage() {
               className="btn-primary flex items-center gap-2 text-sm w-full justify-center disabled:opacity-50"
             >
               {segmentsLoading ? <IconLoader2 size={15} className="animate-spin" /> : <IconSparkles size={15} />}
-              {segmentsLoading ? "Cargando segmentos…" : `Generar mensajes con IA para ${parsed.length} contactos`}
+              {segmentsLoading ? "Cargando segmentos…" : `Generar mensajes con ${clientModel === "claude-haiku-4-5-20251001" ? "Haiku (económico)" : "Sonnet"} para ${parsed.length} contactos`}
             </button>
           </div>
         </div>
