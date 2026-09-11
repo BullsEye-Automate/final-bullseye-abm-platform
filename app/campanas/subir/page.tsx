@@ -437,6 +437,7 @@ export default function SubirCampanaPage() {
   const [fileError, setFileError]   = useState<string | null>(null);
   const [segments, setSegments]         = useState<SegmentOption[]>([]);
   const [segmentsLoading, setSegmentsLoading] = useState(false);
+  const [clientModel, setClientModel]   = useState<string | null>(null);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string>("");
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
   const [deepResearchSet, setDeepResearchSet] = useState<Set<number>>(new Set());
@@ -461,6 +462,14 @@ export default function SubirCampanaPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGenerating, isActiveGeneration]);
+
+  useEffect(() => {
+    if (!currentClient?.id) { setClientModel(null); return; }
+    fetch(`/api/clients/${currentClient.id}/config`)
+      .then(r => r.json())
+      .then(d => setClientModel(d.config?.claude_model ?? null))
+      .catch(() => setClientModel(null));
+  }, [currentClient?.id]);
 
   // ── Cargar segmentos del cliente (se ejecuta al montar y cuando cambia el cliente) ──
   useEffect(() => {
@@ -839,11 +848,24 @@ export default function SubirCampanaPage() {
           </div>
 
           <div className="card px-5 py-5 space-y-4">
-            <div>
-              <p className="font-semibold text-ink">Elige el segmento para esta carga</p>
-              <p className="text-sm text-ink-muted mt-0.5">
-                Claude usará las fuentes de conocimiento, ejemplos y guía de estilo del segmento seleccionado para generar todos los mensajes.
-              </p>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-semibold text-ink">Elige el segmento para esta carga</p>
+                <p className="text-sm text-ink-muted mt-0.5">
+                  Claude usará las fuentes de conocimiento, ejemplos y guía de estilo del segmento seleccionado para generar todos los mensajes.
+                </p>
+              </div>
+              {currentClient && (
+                clientModel === "claude-haiku-4-5-20251001" ? (
+                  <span title="Modo económico: Claude Haiku" className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-700">
+                    ⚡ Haiku
+                  </span>
+                ) : (
+                  <span title="Modelo estándar: Claude Sonnet" className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-surface-subtle text-ink-muted border border-border">
+                    ✦ Sonnet
+                  </span>
+                )
+              )}
             </div>
 
             {segmentsLoading ? (
