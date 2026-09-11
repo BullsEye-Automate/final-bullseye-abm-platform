@@ -225,6 +225,52 @@ function fuzzyCompanyKey(name: string): string {
   return normalizeCompanyName(name).replace(/[^a-z0-9]/g, '');
 }
 
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Matching de cliente por título del evento (11-09-2026), pedido explícito
+// del usuario: con ~170 reuniones/mes el matching por dominio de correo vs.
+// el excel de metas no escala (ver bugs reales de arriba: tildes, dominios
+// de 3 letras, razones sociales sin relación textual con el dominio).
+// Muchos clientes de BullsEye agendan ellos mismos la reunión con el
+// prospecto y suelen poner el nombre del cliente en el título ("Servicios
+// Umine", "Presentación CChC") — comparar contra la lista corta y
+// controlada de `clients` (no contra texto libre de una empresa externa) es
+// una señal mucho más confiable. Coincidencia de PALABRA/FRASE COMPLETA
+// (con bordes que no sean letra/número a los lados) para no matchear un
+// nombre de cliente corto como substring de otra palabra cualquiera.
+// Ambigüedad genuina (2+ clientes NO relacionados reconocidos en el título)
+// devuelve null — mismo criterio conservador que desambiguarPorEmpresa:
+// mejor no adivinar. Caso especial: variantes regionales de un mismo grupo
+// comparten el nombre base (ej. "CChC" y "CChC - Valle", ver migración 021)
+// — un título como "Reunión CChC - Valle" matchea ambas, pero no es
+// ambigüedad real: la más larga/específica CONTIENE a la más corta como
+// substring, así que se prefiere la más larga en vez de rendirse.
+export function matchClientByTitle(
+  title: string | null | undefined,
+  clients: Array<{ id: string; name: string }>
+): { id: string; name: string } | null {
+  const normalizedTitle = normalizeCompanyName(title);
+  if (!normalizedTitle) return null;
+
+  const matches = clients
+    .map((client) => ({ client, norm: normalizeCompanyName(client.name) }))
+    .filter(({ norm }) => {
+      if (!norm) return false;
+      const pattern = new RegExp(`(^|[^a-z0-9])${escapeRegExp(norm)}([^a-z0-9]|$)`, 'i');
+      return pattern.test(normalizedTitle);
+    });
+
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0].client;
+
+  matches.sort((a, b) => b.norm.length - a.norm.length);
+  const [longest, ...rest] = matches;
+  const allContainedInLongest = rest.every(({ norm }) => longest.norm.includes(norm));
+  return allContainedInLongest ? longest.client : null;
+}
+
 // Filtro por empresa/prospecto dentro de un conjunto ya acotado de filas
 // candidatas (por fecha). Solo devuelve una fila si el filtro deja
 // exactamente una — con más de una no hay forma de saber cuál es sin
@@ -369,41 +415,77 @@ async function findOrCreateClient(name: string, externalId: string | null): Prom
 // Best-effort: si no hay match o la integración no está configurada todavía,
 // no rompe el research/análisis — simplemente esos campos quedan vacíos
 // (mismo criterio que ya usamos: mejor vacío que un dato falso).
+//
+// Rediseño (11-09-2026, pedido explícito del usuario): "primero viendo el
+// filtro por nombre del evento + fecha y hora y luego si no se logra, pasar
+// a ver el detalle del excel". El título del evento (meeting_title) se
+// compara primero contra los clientes conocidos (matchClientByTitle) — si
+// hay exactamente un cliente reconocible en el título, se usa directo, sin
+// depender del excel para nada (ni siquiera de que la fila exista ahí). El
+// excel de metas se sigue consultando SIEMPRE igual, tanto para resolver el
+// cliente cuando el título no alcanzó, como para enriquecer contacto_*
+// /empresa_nombre/cliente_sales_manager incluso cuando el cliente ya vino
+// del título (el título no trae esos datos).
 export async function resolveMeetingClientAndContact(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select id, empresa_contraparte, start_time, client_id from meetings where id = $1`,
+    `select id, empresa_contraparte, start_time, client_id, meeting_title from meetings where id = $1`,
     [meetingId]
   );
   const meeting = rows[0];
   if (!meeting || meeting.client_id) return;
 
   try {
+    let clientId: string | null = null;
+
+    if (meeting.meeting_title) {
+      const { rows: clientRows } = await pool.query(`select id, name from clients`);
+      const titleMatch = matchClientByTitle(meeting.meeting_title, clientRows);
+      if (titleMatch) {
+        clientId = titleMatch.id;
+        console.log(
+          `[metas-sheet] reunión ${meetingId}: cliente detectado por el título del evento ("${meeting.meeting_title}" → "${titleMatch.name}")`
+        );
+      }
+    }
+
     const sheetRows = await loadReunionesRows();
     const match = matchMeetingRow(sheetRows, meeting);
-    if (!match) {
+
+    if (!clientId && match?.cliente) {
+      clientId = await findOrCreateClient(match.cliente, match.clienteId);
+    }
+
+    if (!clientId && !match) {
       console.log(
-        `[metas-sheet] reunión ${meetingId}: sin match en el excel de metas (empresa="${meeting.empresa_contraparte}")`
+        `[metas-sheet] reunión ${meetingId}: sin match por título ni en el excel de metas (empresa="${meeting.empresa_contraparte}")`
       );
       return;
     }
 
-    const clientId = match.cliente ? await findOrCreateClient(match.cliente, match.clienteId) : null;
-
     await pool.query(
       `update meetings set
-         client_id = $1,
+         client_id = coalesce($1, client_id),
          contacto_nombre = coalesce(nullif($2, ''), contacto_nombre),
          contacto_cargo = coalesce(nullif($3, ''), contacto_cargo),
          contacto_industria = coalesce(nullif($4, ''), contacto_industria),
-         metas_sheet_match_id = nullif($5, ''),
+         metas_sheet_match_id = coalesce(nullif($5, ''), metas_sheet_match_id),
          empresa_nombre = coalesce(nullif($6, ''), empresa_nombre),
          cliente_sales_manager = coalesce(nullif($7, ''), cliente_sales_manager),
          updated_at = now()
        where id = $8`,
-      [clientId, match.contacto, match.cargo, match.industria, match.idReunion, match.empresa, match.salesManager, meetingId]
+      [
+        clientId,
+        match?.contacto ?? null,
+        match?.cargo ?? null,
+        match?.industria ?? null,
+        match?.idReunion ?? null,
+        match?.empresa ?? null,
+        match?.salesManager ?? null,
+        meetingId,
+      ]
     );
     console.log(
-      `[metas-sheet] reunión ${meetingId}: match encontrado (cliente="${match.cliente}", contacto="${match.contacto}")`
+      `[metas-sheet] reunión ${meetingId}: cliente resuelto${match ? `, contacto="${match.contacto}" (excel)` : ' (sin match en el excel para enriquecer el contacto)'}`
     );
   } catch (error) {
     console.error(`[metas-sheet] reunión ${meetingId}: error resolviendo cliente/contacto`, error);

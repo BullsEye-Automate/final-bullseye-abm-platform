@@ -164,17 +164,18 @@ export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, bot
 
   console.log(`[bot-invite] evento ${event.id}: guardando en meetings (contraparte=${contraparte ?? '?'})...`);
   const { rows } = await pool.query(
-    `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id)
-     values ($1, $2, null, $3, $4, $5, $6)
+    `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id, meeting_title)
+     values ($1, $2, null, $3, $4, $5, $6, $7)
      on conflict (google_event_id) do update set
        meeting_url = excluded.meeting_url,
        contraparte = excluded.contraparte,
        empresa_contraparte = excluded.empresa_contraparte,
        start_time = excluded.start_time,
        recurring_event_id = excluded.recurring_event_id,
+       meeting_title = excluded.meeting_title,
        updated_at = now()
      returning id`,
-    [event.id, meetingUrl, contraparte, empresaContraparte, startTime, recurringEventId]
+    [event.id, meetingUrl, contraparte, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
   );
   console.log(`[bot-invite] evento ${event.id}: guardado como reunión ${rows[0].id}, agendando bot...`);
 
@@ -236,8 +237,8 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
   await cancelStaleRecallBotIfRescheduled(event.id, startTime);
 
   const { rows } = await pool.query(
-    `insert into meetings (google_event_id, meet_code, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id)
-     values ($1, $2, $3, $4, $5, $6, $7)
+    `insert into meetings (google_event_id, meet_code, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id, meeting_title)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
      on conflict (google_event_id) do update set
        meet_code = excluded.meet_code,
        ejecutivo = excluded.ejecutivo,
@@ -245,9 +246,10 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
        empresa_contraparte = excluded.empresa_contraparte,
        start_time = excluded.start_time,
        recurring_event_id = excluded.recurring_event_id,
+       meeting_title = excluded.meeting_title,
        updated_at = now()
      returning id`,
-    [event.id, meetCode, ejecutivoEmail, contraparte, empresaContraparte, startTime, recurringEventId]
+    [event.id, meetCode, ejecutivoEmail, contraparte, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
   );
 
   // Bug real (08-09-2026): una reunión con un prospecto externo real no

@@ -1,0 +1,13 @@
+-- Matching de cliente por título del evento (11-09-2026), pedido explícito
+-- del usuario: con ~170 reuniones/mes el matching por dominio de correo vs.
+-- el excel de metas (texto libre) no escala -- tildes, dominios de 3 letras,
+-- razones sociales sin relación textual con el dominio, todos bugs reales
+-- encontrados hoy mismo. Muchos clientes de BullsEye agendan ellos mismos
+-- la reunión con el prospecto y suelen poner el nombre del cliente en el
+-- título ("Servicios Umine", "Presentación CChC") -- eso es una señal mucho
+-- más confiable que el dominio, porque se compara contra la lista corta y
+-- controlada de `clients`, no contra texto libre de una empresa externa.
+-- Guardamos el título crudo del evento para poder matchear contra él (ver
+-- matchClientByTitle en metasSheet.ts) y para poder revisarlo a mano si hace
+-- falta calibrar el matching más adelante.
+alter table meetings add column if not exists meeting_title text;
