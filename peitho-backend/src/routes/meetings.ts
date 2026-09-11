@@ -79,25 +79,30 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     // "Reuniones futuras" (contar cuántas tienen research listo / bot
     // agendado) — livianos, no rompe el criterio de "no incluir
     // audio_path/analysis completos" de arriba (eso sigue fuera).
+    // cliente_bullseye ahora se trae en el mismo select (join) en vez de una
+    // segunda consulta después de resolver — ver bug de performance más abajo.
     const { rows } = await pool.query(
       scope === 'upcoming'
-        ? `select id, ejecutivo, contraparte, contacto_nombre, empresa_contraparte, empresa_nombre, cliente_sales_manager, start_time, status, client_id,
-                  pre_brief_status, (recall_bot_id is not null) as has_bot
-           from meetings
-           where start_time >= now()
-             and (meeting_url is not null or lower(empresa_contraparte) is distinct from $1)
-             and recurring_event_id is null
-           order by start_time asc`
-        : `select id, ejecutivo, contraparte, contacto_nombre, empresa_contraparte, empresa_nombre, cliente_sales_manager, start_time, status, client_id,
-                  (analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
-                  (analysis->'prediccion_exito'->>'puntaje')::int as prediccion_exito,
-                  (analysis->'fit_empresa'->>'puntaje')::int as fit_empresa,
-                  (analysis->'fit_contacto'->>'puntaje')::int as fit_contacto
-           from meetings
-           where start_time < now() and start_time >= now() - interval '90 days'
-             and (meeting_url is not null or lower(empresa_contraparte) is distinct from $1)
-             and recurring_event_id is null
-           order by start_time desc`,
+        ? `select m.id, m.ejecutivo, m.contraparte, m.contacto_nombre, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status, m.client_id,
+                  m.pre_brief_status, (m.recall_bot_id is not null) as has_bot, c.name as cliente_bullseye
+           from meetings m
+           left join clients c on c.id = m.client_id
+           where m.start_time >= now()
+             and (m.meeting_url is not null or lower(m.empresa_contraparte) is distinct from $1)
+             and m.recurring_event_id is null
+           order by m.start_time asc`
+        : `select m.id, m.ejecutivo, m.contraparte, m.contacto_nombre, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status, m.client_id,
+                  (m.analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
+                  (m.analysis->'prediccion_exito'->>'puntaje')::int as prediccion_exito,
+                  (m.analysis->'fit_empresa'->>'puntaje')::int as fit_empresa,
+                  (m.analysis->'fit_contacto'->>'puntaje')::int as fit_contacto,
+                  c.name as cliente_bullseye
+           from meetings m
+           left join clients c on c.id = m.client_id
+           where m.start_time < now() and m.start_time >= now() - interval '90 days'
+             and (m.meeting_url is not null or lower(m.empresa_contraparte) is distinct from $1)
+             and m.recurring_event_id is null
+           order by m.start_time desc`,
       [INTERNAL_DOMAIN]
     );
 
@@ -113,11 +118,20 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     // for...of con await secuencial — con muchas reuniones sin client_id (el
     // caso normal: nunca van a matchear y esto se repite en cada carga de la
     // página), cada una sumaba una consulta a Postgres una detrás de otra,
-    // haciendo el listado visiblemente lento. Promise.allSettled corre las
-    // filas en paralelo (acotado igual por el máximo de conexiones del pool,
-    // pg default 10) — allSettled en vez de all para que una fila que falle
-    // (ej. un error puntual de Recall) no tumbe la resolución de las demás.
-    await Promise.allSettled(
+    // haciendo el listado visiblemente lento.
+    //
+    // Segundo bug real de performance encontrado (11-09-2026): pasar esto a
+    // Promise.allSettled corrió las filas en paralelo, pero seguía siendo
+    // `await`-ado ANTES de responder — con "Reuniones futuras" en particular,
+    // scheduleRecallBotForMeeting hace una llamada HTTP real a la API de
+    // Recall por cada fila sin bot todavía, así que la respuesta HTTP seguía
+    // esperando esas llamadas de red (los ~5s reportados por el usuario). Como
+    // esta resolución es best-effort e idempotente (ya corre en cada carga de
+    // la página, y en el sync de Calendar), no hace falta que el usuario
+    // espere el resultado: se dispara en segundo plano (sin await) y la
+    // respuesta sale con el estado actual de la base. Si algo se resuelve
+    // recién en este ciclo, se refleja solo en la próxima carga/refresh.
+    Promise.allSettled(
       rows.map(async (row) => {
         if (!row.client_id) {
           await resolveMeetingClientAndContact(row.id);
@@ -132,26 +146,13 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
           await scheduleRecallBotForMeeting(row.id, { requireClientMatch: false });
         }
       })
-    );
+    ).catch((error) => {
+      // No debería pasar nunca (allSettled no rechaza), pero por si acaso no
+      // se pierde el error en silencio.
+      console.error('Error resolviendo cliente/bot en segundo plano', error);
+    });
 
-    // Se vuelve a consultar client_id/nombre del cliente después de resolver
-    // arriba (la resolución puede haber cambiado filas que antes venían null).
-    const ids = rows.map((row) => row.id);
     let result = rows;
-    if (ids.length > 0) {
-      const { rows: withClient } = await pool.query(
-        `select m.id, m.client_id, c.name as cliente_bullseye from meetings m
-         left join clients c on c.id = m.client_id
-         where m.id = any($1)`,
-        [ids]
-      );
-      const byId = new Map(withClient.map((r) => [r.id, r]));
-      result = rows.map((row) => ({
-        ...row,
-        client_id: byId.get(row.id)?.client_id ?? null,
-        cliente_bullseye: byId.get(row.id)?.cliente_bullseye ?? null,
-      }));
-    }
 
     const peithoUser = req.peithoUser!;
     if (peithoUser.role === 'client') {
@@ -216,11 +217,6 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
   const { id } = req.params;
 
   try {
-    // Gratis (no llama a Claude) — se intenta en cada carga del detalle para
-    // que nombre/cargo/industria/cliente aparezcan aunque nunca se haya usado
-    // el botón "Iniciar research".
-    await resolveMeetingClientAndContact(id);
-
     const { rows } = await pool.query(
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status,
               m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text, m.updated_at,
@@ -242,16 +238,35 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
       return;
     }
 
-    // De paso, intenta agendar el bot de Recall si todavía no tiene uno
-    // (no-op si ya pasó la reunión o ya tiene bot). Bug real (08-09-2026):
-    // una reunión con un prospecto real (contraparte externa) nunca se
-    // agendó porque requireClientMatch defaulteaba a true y esa reunión no
-    // había hecho match con el excel de metas — el match es solo para
-    // CLASIFICAR a qué cliente pertenece, no debería bloquear la grabación.
-    // Solo se exige el match cuando la contraparte es alguien de BullsEye
-    // mismo (reunión interna) — mismo criterio que INTERNAL_DOMAIN arriba.
+    // Gratis (no llama a Claude) — se intenta en cada carga del detalle para
+    // que nombre/cargo/industria/cliente aparezcan aunque nunca se haya usado
+    // el botón "Iniciar research". De paso, intenta agendar el bot de Recall
+    // si todavía no tiene uno (no-op si ya pasó la reunión o ya tiene bot).
+    // Bug real (08-09-2026): una reunión con un prospecto real (contraparte
+    // externa) nunca se agendó porque requireClientMatch defaulteaba a true y
+    // esa reunión no había hecho match con el excel de metas — el match es
+    // solo para CLASIFICAR a qué cliente pertenece, no debería bloquear la
+    // grabación. Solo se exige el match cuando la contraparte es alguien de
+    // BullsEye mismo (reunión interna) — mismo criterio que INTERNAL_DOMAIN
+    // arriba.
+    //
+    // Bug real de performance encontrado (11-09-2026): ambas llamadas se
+    // `await`-eaban antes de responder — resolveMeetingClientAndContact pega
+    // contra Google Sheets y scheduleRecallBotForMeeting contra la API de
+    // Recall, así que abrir el detalle de CUALQUIER reunión quedaba
+    // bloqueado esperando dos llamadas de red externas (mismo patrón que el
+    // fix de GET /meetings). Se disparan ahora en segundo plano, sin await
+    // — la respuesta sale con el estado actual de la fila; si algo se
+    // resuelve recién en este ciclo, se refleja solo en la próxima
+    // carga/refresh (ya es el comportamiento normal de este endpoint desde
+    // hace rato: "Re-sincronizar desde Calendar" y el research ya dependen
+    // de recargar la página para ver el resultado).
     const isInternalMeeting = meeting.empresa_contraparte?.toLowerCase() === INTERNAL_DOMAIN;
-    await scheduleRecallBotForMeeting(id, { requireClientMatch: isInternalMeeting });
+    resolveMeetingClientAndContact(id)
+      .then(() => scheduleRecallBotForMeeting(id, { requireClientMatch: isInternalMeeting }))
+      .catch((error) => {
+        console.error(`Error resolviendo cliente/bot en segundo plano para reunión ${id}`, error);
+      });
 
     // Un usuario "client" solo puede ver el detalle de reuniones de su propio
     // client_id — se responde 404 (no 403) para no revelar que la reunión
