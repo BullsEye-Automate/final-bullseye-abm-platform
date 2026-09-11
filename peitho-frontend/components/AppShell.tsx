@@ -5,9 +5,13 @@ import Sidebar from "./Sidebar";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  // /research-compartido (10-09-2026) — link público que se manda al cliente
-  // externo, sin login: tampoco debe llevar el Sidebar interno de Peitho.
-  const isPublic = pathname?.startsWith("/login") || pathname?.startsWith("/research-compartido");
+  // /research-compartido (10-09-2026) y /analisis-compartido (11-09-2026) —
+  // links públicos que se mandan al cliente externo, sin login: tampoco
+  // deben llevar el Sidebar interno de Peitho.
+  const isPublic =
+    pathname?.startsWith("/login") ||
+    pathname?.startsWith("/research-compartido") ||
+    pathname?.startsWith("/analisis-compartido");
 
   if (isPublic) {
     return <>{children}</>;

@@ -1,13 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Rutas públicas: el login, y el link de research compartido (10-09-2026,
-// pedido explícito del usuario — el cliente externo lo abre sin login, y
-// solo ve el research de ESA reunión, protegido por el token impredecible
-// de la URL en vez de por sesión). Todo lo demás requiere sesión de
+// Rutas públicas: el login, el link de research compartido (10-09-2026) y el
+// link de análisis/feedback compartido (11-09-2026) — pedido explícito del
+// usuario en ambos casos: el cliente externo los abre sin login, y solo ve
+// el research/análisis de ESA reunión, protegido por el token impredecible
+// de la URL en vez de por sesión. Todo lo demás requiere sesión de
 // Supabase Auth del proyecto "peitho" (mismo patrón que
 // bullseye-abm-platform/middleware.ts).
-const PUBLIC_PAGE_PREFIXES = ["/login", "/research-compartido"];
+const PUBLIC_PAGE_PREFIXES = ["/login", "/research-compartido", "/analisis-compartido"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

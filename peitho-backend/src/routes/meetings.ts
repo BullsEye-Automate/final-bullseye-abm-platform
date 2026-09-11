@@ -225,7 +225,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status,
               m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text, m.updated_at,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
-              m.participantes, m.research_share_token,
+              m.participantes, m.research_share_token, m.analysis_share_token,
               (m.video_path is not null) as video_available,
               (m.recall_bot_id is not null) as recall_bot_available,
               (m.meeting_url is not null) as is_bot_invite,
@@ -628,6 +628,54 @@ meetingsRouter.delete('/meetings/:id/research/share', requireAuth, requireAdmin,
     res.json({ status: 'ok' });
   } catch (error) {
     console.error('Error revocando el link de research compartido', error);
+    res.status(500).json({ error: 'Error revocando el link' });
+  }
+});
+
+// Compartir el análisis/feedback post-reunión con el cliente (11-09-2026),
+// pedido explícito del usuario ("la posibilidad de generar un link para
+// compartir el feedback de una reunion con el cliente... que en ese link
+// solo se pueda ver el feedback de esa reunion y nada mas de peitho") —
+// mismo patrón que /research/share arriba: genera (o reusa) un token de solo
+// lectura para ESTA reunión, resuelto en /analisis-compartido/:token (sin
+// login, ver routes/publicAnalysis.ts), que nunca expone el pre_brief, la
+// transcripción, ni ninguna otra reunión.
+meetingsRouter.post('/meetings/:id/analysis/share', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { rows } = await pool.query(`select analysis_share_token from meetings where id = $1`, [id]);
+    const meeting = rows[0];
+    if (!meeting) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    let token = meeting.analysis_share_token as string | null;
+    if (!token) {
+      token = randomUUID();
+      await pool.query(`update meetings set analysis_share_token = $1 where id = $2`, [token, id]);
+    }
+
+    res.json({ token });
+  } catch (error) {
+    console.error('Error generando el link de análisis compartido', error);
+    res.status(500).json({ error: 'Error generando el link' });
+  }
+});
+
+meetingsRouter.delete('/meetings/:id/analysis/share', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { rowCount } = await pool.query(`update meetings set analysis_share_token = null where id = $1`, [id]);
+    if (rowCount === 0) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error revocando el link de análisis compartido', error);
     res.status(500).json({ error: 'Error revocando el link' });
   }
 });

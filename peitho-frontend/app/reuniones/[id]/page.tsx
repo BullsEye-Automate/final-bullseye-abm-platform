@@ -12,6 +12,7 @@ import DetailTabs from "@/components/DetailTabs";
 import AnalysisView from "@/components/AnalysisView";
 import PreBriefView from "@/components/PreBriefView";
 import ShareResearchButton from "@/components/ShareResearchButton";
+import ShareAnalysisButton from "@/components/ShareAnalysisButton";
 import MeetingVideoPlayer from "@/components/MeetingVideoPlayer";
 import CollapsibleSection from "@/components/CollapsibleSection";
 
@@ -76,7 +77,14 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
   const analysisTabContent = !analysis ? (
     <p className="text-sm text-gray-500">Todavía no hay análisis generado para esta reunión.</p>
   ) : (
-    <AnalysisView analysis={analysis} ejecutivo={meeting.ejecutivo} />
+    <div className="space-y-3">
+      {isAdmin && (
+        <div className="flex justify-end">
+          <ShareAnalysisButton meetingId={meeting.id} initialToken={meeting.analysis_share_token ?? null} />
+        </div>
+      )}
+      <AnalysisView analysis={analysis} ejecutivo={meeting.ejecutivo} />
+    </div>
   );
 
   // Panel de participantes sin métricas inventadas (sentiment/tiempo de

@@ -161,6 +161,10 @@ export interface MeetingDetail extends MeetingListItem {
   // Null hasta que un admin lo genera la primera vez con "Compartir con el
   // cliente"; se usa para armar /research-compartido/<token>.
   research_share_token?: string | null;
+  // Link público del análisis/feedback post-reunión (11-09-2026) — mismo
+  // patrón que research_share_token, ver ShareAnalysisButton.tsx. Se usa
+  // para armar /analisis-compartido/<token>.
+  analysis_share_token?: string | null;
 }
 
 export interface ClientListItem {
@@ -362,6 +366,34 @@ export async function fetchPublicResearch(token: string): Promise<PublicResearch
   if (res.status === 404) return null;
   if (!res.ok) {
     throw new Error(`peitho-backend respondió ${res.status} en /public/research/${token}`);
+  }
+  return res.json();
+}
+
+// Lo mínimo que ve un CLIENTE externo por el link público de análisis/feedback
+// (11-09-2026, sin login) — nunca client_id, pre_brief, transcript_text, ni
+// nada de otra reunión. Ver routes/publicAnalysis.ts en el backend.
+export interface PublicAnalysis {
+  contraparte: string | null;
+  empresa_contraparte: string | null;
+  empresa_nombre: string | null;
+  ejecutivo: string | null;
+  contacto_nombre: string | null;
+  contacto_cargo: string | null;
+  contacto_industria: string | null;
+  start_time: string | null;
+  analysis: MeetingAnalysis;
+  cliente_bullseye: string | null;
+}
+
+// Mismo patrón que fetchPublicResearch — sin backendFetch (sin sesión de
+// Supabase, a propósito) y directo al backend (GET /public/analysis/:token
+// no requiere auth).
+export async function fetchPublicAnalysis(token: string): Promise<PublicAnalysis | null> {
+  const res = await fetch(`${backendUrl()}/public/analysis/${token}`, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`peitho-backend respondió ${res.status} en /public/analysis/${token}`);
   }
   return res.json();
 }
