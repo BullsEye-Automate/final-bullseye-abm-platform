@@ -145,3 +145,34 @@ export async function renewExpiringCalendarWatches(): Promise<void> {
     }
   }
 }
+
+// Red de seguridad adicional (11-09-2026): renovar antes de que expire no
+// alcanza si el canal sigue vigente pero su sincronización quedó atascada
+// por otro motivo (ej. el webhook de Google se perdió, o quedó pegado en un
+// sync_token de antes del fix de errores-por-evento en calendarSync.ts) —
+// confirmado real con las reuniones de Crossnet: el canal de
+// bot@peithob2b.com todavía no estaba cerca de expirar, así que
+// renewExpiringCalendarWatches() no lo tocó, y las reuniones siguieron sin
+// aparecer después del primer deploy. Esto fuerza un reintento de la
+// sincronización incremental de CADA canal activo, sin esperar a que Google
+// avise ni a que se acerque la expiración — barato, porque events.list con
+// syncToken normalmente no trae nada nuevo si no cambió nada.
+export async function catchUpAllActiveChannels(): Promise<void> {
+  const { rows } = await pool.query<{ channel_id: string; google_account_email: string }>(
+    `select distinct on (c.id) w.channel_id, c.google_account_email
+     from calendar_watch_channels w
+     join google_credentials c on c.id = w.google_credential_id
+     order by c.id, w.created_at desc`
+  );
+
+  for (const row of rows) {
+    try {
+      await syncChannelChanges(row.channel_id);
+    } catch (error) {
+      console.error(
+        `[calendar-watch-renewal] error en la sincronización de respaldo del canal ${row.channel_id} (${row.google_account_email})`,
+        error
+      );
+    }
+  }
+}

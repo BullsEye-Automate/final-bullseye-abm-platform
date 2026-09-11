@@ -4,7 +4,7 @@ import { pool } from './db';
 import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots } from './recall';
 import { retryStuckAnalyses } from './routes/webhooks';
 import { deleteExpiredMeetingVideos } from './videoRetention';
-import { renewExpiringCalendarWatches } from './calendarWatchRenewal';
+import { renewExpiringCalendarWatches, catchUpAllActiveChannels } from './calendarWatchRenewal';
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
 
@@ -73,6 +73,26 @@ setInterval(() => {
 }, CALENDAR_WATCH_RENEWAL_POLL_MS);
 renewExpiringCalendarWatches().catch((error) =>
   console.error('[startup] error en la renovación inicial de watches de Calendar', error)
+);
+
+// Bug real (11-09-2026, mismo día): renovar antes de la expiración no basta
+// — el canal de bot@peithob2b.com todavía no estaba cerca de vencer cuando
+// se desplegó el fix de arriba, así que renewExpiringCalendarWatches() no lo
+// tocó, y las reuniones de Crossnet siguieron sin aparecer incluso después
+// del deploy (mientras que el calendario de un ejecutivo, cuyo canal SÍ
+// estaba por vencer, se renovó y sí trajo eventos nuevos). Esto fuerza un
+// reintento de sincronización de cada canal activo cada 15 min, sin esperar
+// a que Google avise ni a que se acerque la expiración — cubre webhooks
+// perdidos y cualquier sync que haya quedado atascado. Barato: sin cambios
+// reales, events.list con syncToken no trae nada.
+const CALENDAR_CATCHUP_SYNC_POLL_MS = 15 * 60 * 1000;
+setInterval(() => {
+  catchUpAllActiveChannels().catch((error) =>
+    console.error('[startup] error en la sincronización periódica de respaldo de Calendar', error)
+  );
+}, CALENDAR_CATCHUP_SYNC_POLL_MS);
+catchUpAllActiveChannels().catch((error) =>
+  console.error('[startup] error en la sincronización inicial de respaldo de Calendar', error)
 );
 
 // Si el proceso anterior murió a mitad de un research (ej. Ctrl+C, o un
