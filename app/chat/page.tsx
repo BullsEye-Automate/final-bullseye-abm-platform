@@ -152,31 +152,36 @@ export default function ChatPage() {
     setMessages(updated);
     setPendingImage(null);
 
-    const apiMessages = updated.map((m) => ({ role: m.role, content: m.content }));
+    try {
+      const apiMessages = updated.map((m) => ({ role: m.role, content: m.content }));
 
-    const res = await fetch("/api/agente-contenido", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        clientId,
-        messages:         apiMessages,
-        emailType,
-        channel,
-        segmentId:        segmentId || undefined,
-        recipientName,
-        recipientCompany,
-        recipientTitle,
-        referrerName:     emailType === "referral" ? referrerName : undefined,
-        meetingDate:      emailType === "meeting"  ? meetingDate  : undefined,
-        contextNotes,
-        save:             isFirst,
-        image:            image ? { base64: image.base64, mediaType: image.mediaType } : undefined,
-      }),
-    });
+      const res = await fetch("/api/agente-contenido", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientId,
+          messages:         apiMessages,
+          emailType,
+          channel,
+          segmentId:        segmentId || undefined,
+          recipientName,
+          recipientCompany,
+          recipientTitle,
+          referrerName:     emailType === "referral" ? referrerName : undefined,
+          meetingDate:      emailType === "meeting"  ? meetingDate  : undefined,
+          contextNotes,
+          save:             isFirst,
+          image:            image ? { base64: image.base64, mediaType: image.mediaType } : undefined,
+        }),
+      });
 
-    const data = await res.json();
-    setMessages((prev) => [...prev, { role: "assistant", content: data.message ?? "Error al generar." }]);
-    setLoading(false);
+      const data = await res.json();
+      setMessages((prev) => [...prev, { role: "assistant", content: data.message ?? data.error ?? "Error al generar." }]);
+    } catch {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Error de conexión. Intenta de nuevo." }]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleImagePick(e: React.ChangeEvent<HTMLInputElement>) {
