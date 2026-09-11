@@ -188,10 +188,10 @@ export default function MeetingsTable({
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
       <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="min-w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
-            <th className="px-4 py-3 font-medium">
+            <th className="px-4 py-3 font-medium whitespace-nowrap">
               <button
                 onClick={() => toggleSort("start_time")}
                 className="flex items-center gap-1 hover:text-gray-700"
@@ -200,15 +200,15 @@ export default function MeetingsTable({
                 <SortArrow active={sortField === "start_time"} dir={sortDir} />
               </button>
             </th>
-            <th className="px-4 py-3 font-medium">Ejecutivo</th>
-            <th className="px-4 py-3 font-medium">Contraparte</th>
-            <th className="px-4 py-3 font-medium">Empresa</th>
-            {showClientColumn && <th className="px-4 py-3 font-medium">Cliente</th>}
+            <th className="px-4 py-3 font-medium whitespace-nowrap">Ejecutivo</th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">Contraparte</th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">Empresa</th>
+            {showClientColumn && <th className="px-4 py-3 font-medium whitespace-nowrap">Cliente</th>}
             {showPuntaje && (
               <>
-                <th className="px-4 py-3 font-medium">Fit empresa</th>
-                <th className="px-4 py-3 font-medium">Fit contacto</th>
-                <th className="px-4 py-3 font-medium">
+                <th className="px-4 py-3 font-medium whitespace-nowrap">Fit empresa</th>
+                <th className="px-4 py-3 font-medium whitespace-nowrap">Fit contacto</th>
+                <th className="px-4 py-3 font-medium whitespace-nowrap">
                   <button
                     onClick={() => toggleSort("puntaje")}
                     className="flex items-center gap-1 hover:text-gray-700"
@@ -217,7 +217,7 @@ export default function MeetingsTable({
                     <SortArrow active={sortField === "puntaje"} dir={sortDir} />
                   </button>
                 </th>
-                <th className="px-4 py-3 font-medium">
+                <th className="px-4 py-3 font-medium whitespace-nowrap">
                   <button
                     onClick={() => toggleSort("prediccion_exito")}
                     className="flex items-center gap-1 hover:text-gray-700"
@@ -228,7 +228,7 @@ export default function MeetingsTable({
                 </th>
               </>
             )}
-            <th className="px-4 py-3 font-medium">Estado</th>
+            <th className="px-4 py-3 font-medium whitespace-nowrap">Estado</th>
           </tr>
         </thead>
         <tbody>
@@ -240,17 +240,17 @@ export default function MeetingsTable({
                 detailBasePath ? "cursor-pointer" : ""
               }`}
             >
-              <td className="px-4 py-3">{formatDate(meeting.start_time)}</td>
-              <td className="px-4 py-3">
+              <td className="px-4 py-3 whitespace-nowrap">{formatDate(meeting.start_time)}</td>
+              <td className="px-4 py-3 whitespace-nowrap">
                 {meeting.ejecutivo ??
                   (meeting.cliente_sales_manager ? `${meeting.cliente_sales_manager} (cliente)` : "—")}
               </td>
-              <td className="px-4 py-3">{meeting.contraparte ?? "—"}</td>
-              <td className="px-4 py-3">
+              <td className="px-4 py-3 whitespace-nowrap">{meeting.contraparte ?? "—"}</td>
+              <td className="px-4 py-3 whitespace-nowrap">
                 <EmpresaCell nombre={meeting.empresa_nombre} dominio={meeting.empresa_contraparte} />
               </td>
               {showClientColumn && (
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 whitespace-nowrap">
                   {clients ? (
                     <InlineClientSelect meetingId={meeting.id} clients={clients} initialClientId={meeting.client_id} />
                   ) : (
@@ -260,21 +260,21 @@ export default function MeetingsTable({
               )}
               {showPuntaje && (
                 <>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <PuntajeBadge puntaje={meeting.fit_empresa} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <PuntajeBadge puntaje={meeting.fit_contacto} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <PuntajeBadge puntaje={meeting.puntaje} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 whitespace-nowrap">
                     <PrediccionBadge puntaje={meeting.prediccion_exito} />
                   </td>
                 </>
               )}
-              <td className="px-4 py-3">{STATUS_LABEL[meeting.status]}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{STATUS_LABEL[meeting.status]}</td>
             </tr>
           ))}
         </tbody>
