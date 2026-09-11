@@ -133,11 +133,23 @@ export async function getClientKnowledgeBaseContext(clientId: string | null): Pr
   // de una reunión resuelta contra "CChC - Valle", y viceversa.
   const groupIds = await resolveClientGroupIds(clientId);
 
+  // Bug real (11-09-2026, cliente Umine): el orden era solo `uploaded_at
+  // desc` (más reciente primero) — si un cliente sube el ICP y después,
+  // en la misma sesión, varias presentaciones/brochures de venta, esos
+  // documentos más nuevos quedan primero en la cola y el ICP (más viejo de
+  // ese lote) queda al final. Con varios documentos grandes, el corte de
+  // MAX_CONTEXT_CHARS podía llenarse ANTES de llegar al ICP, dejándolo
+  // fuera del contexto que ve Claude sin que nada lo avise — el prompt de
+  // Fit Score entonces reportaba (correctamente, dado lo que sí recibió)
+  // "sin ICP cargado" pese a que el documento estaba subido y bien
+  // extraído. Fix: ICP/perfiles siempre primero (es el documento más
+  // crítico para Fit Score y para orientar research/análisis), el resto
+  // por recencia como antes.
   const { rows } = await pool.query(
     `select file_name, content
      from knowledge_base_documents
      where client_id = any($1) and content is not null
-     order by uploaded_at desc`,
+     order by (category = 'icp_perfiles') desc, uploaded_at desc`,
     [groupIds]
   );
   if (rows.length === 0) return null;
