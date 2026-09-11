@@ -226,6 +226,19 @@ export async function retryStuckAnalyses(): Promise<void> {
     [MAX_ANALYSIS_RETRIES]
   );
 
+  // Bug real (11-09-2026, "El despliegue se quedó sin memoria" — Railway):
+  // este loop disparaba TODOS los reintentos en paralelo, fire-and-forget,
+  // sin ningún límite de concurrencia. Si hay varias reuniones pegadas a la
+  // vez (ej. justo después de que la migración 025 resetea el contador de
+  // reintentos de un lote entero), cada processRecallDone descarga el audio
+  // COMPLETO de Recall en memoria (Buffer.from(await
+  // audioRes.arrayBuffer())) — varios audios de reuniones de ~1h en
+  // memoria al mismo tiempo revientan la RAM del contenedor, el mismo
+  // patrón que ya tumbó el proceso una vez con el respaldo de video (ver
+  // saveVideoBackup, desactivado por esto mismo). Como esto corre en un
+  // timer de fondo (no bloquea ninguna request de usuario), no hay costo
+  // real en procesarlos de a uno: `await` cada reintento antes de pasar al
+  // siguiente acota el pico de memoria a un solo audio a la vez.
   for (const meeting of rows) {
     console.log(
       `[analysis] reunión ${meeting.id}: quedó pegada en status=captured, reintentando automáticamente vía ${
@@ -236,12 +249,15 @@ export async function retryStuckAnalyses(): Promise<void> {
       `update meetings set analysis_retries = analysis_retries + 1, updated_at = now() where id = $1`,
       [meeting.id]
     );
-    const retryPromise = meeting.recall_bot_id
-      ? processRecallDone(meeting.recall_bot_id, meeting.id)
-      : analyzeMeetingAudio(meeting.id);
-    retryPromise.catch((error) => {
+    try {
+      if (meeting.recall_bot_id) {
+        await processRecallDone(meeting.recall_bot_id, meeting.id);
+      } else {
+        await analyzeMeetingAudio(meeting.id);
+      }
+    } catch (error) {
       console.error(`[analysis] reintento automático falló para la reunión ${meeting.id}`, error);
-    });
+    }
   }
 }
 
