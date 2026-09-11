@@ -175,15 +175,10 @@ export default function ChatPage() {
         }),
       });
 
-      if (!res.ok) {
-        const text = await res.text().catch(() => `HTTP ${res.status}`);
-        setMessages((prev) => [...prev, { role: "assistant", content: `Error ${res.status}: ${text.slice(0, 200)}` }]);
-        return;
-      }
       const data = await res.json();
       setMessages((prev) => [...prev, { role: "assistant", content: data.message ?? data.error ?? "Error al generar." }]);
-    } catch (err) {
-      setMessages((prev) => [...prev, { role: "assistant", content: `Error: ${err instanceof Error ? err.message : String(err)}` }]);
+    } catch {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Error de conexión. Intenta de nuevo." }]);
     } finally {
       setLoading(false);
     }
