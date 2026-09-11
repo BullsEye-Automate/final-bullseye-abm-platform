@@ -13,6 +13,7 @@ const PUBLIC_PAGE_PREFIXES = [
   "/review/empresas",
   "/revision",
   "/oportunidades/resumen-feedback/compartido",
+  "/chat",
 ];
 
 // Rutas de API públicas: cada una valida su propio token o secreto de webhook
@@ -29,6 +30,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/clay/scored-contacts",
   "/api/test-debug", // endpoint de diagnóstico
   "/api/admin/debug-ai-usage", // endpoint de debug para auditar ai_usage_log
+  "/api/agente-contenido",    // agente de contenido SDR — accesible desde /chat sin sesión
 ];
 
 function isPublicPath(pathname: string, method: string): boolean {
