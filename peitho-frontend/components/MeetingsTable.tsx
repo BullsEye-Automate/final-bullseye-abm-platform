@@ -187,6 +187,7 @@ export default function MeetingsTable({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
@@ -278,6 +279,7 @@ export default function MeetingsTable({
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

@@ -189,6 +189,62 @@ export async function processRecallDone(botId: string, meetingId: string): Promi
   });
 }
 
+const MAX_ANALYSIS_RETRIES = 3;
+
+// Reintento automático (10-09-2026, pedido explícito del usuario: "necesito
+// que el análisis de las reuniones corra sola post reu") — hoy toda reunión
+// cae al fallback de Deepgram (el transcript nativo de Recall quedó
+// revertido, ver el comentario en recall.ts/createRecallBot), y
+// analyzeMeetingAudio()/processRecallDone() se disparan fire-and-forget sin
+// ningún reintento — si Deepgram o Claude fallan una sola vez (rate limit,
+// timeout, JSON cortado), la reunión queda en status='captured' para siempre
+// sin que nadie lo note. Esta función (llamada cada 1 min desde server.ts,
+// mismo intervalo que checkAndRetryFailedRecallBots) reintenta sola
+// cualquier reunión pegada, hasta un tope de intentos.
+//
+// Corregido (11-09-2026, reporte real del usuario: 3 reuniones del día
+// seguían pegadas pese al primer intento de este fix): la primera versión
+// vivía en postMeetingAnalysis.ts y llamaba directo a analyzeMeetingAudio(),
+// que depende de audio_path — un archivo en el disco LOCAL de Railway
+// (uploads/), que se borra en cada redeploy (ver CLAUDE.md, "disco efímero").
+// Con ~24 redeploys del backend en 2 días, cualquier reunión capturada antes
+// del redeploy más reciente ya tenía su audio_path apuntando a un archivo que
+// ya no existe — el reintento fallaba siempre, silenciosamente, agotando el
+// tope de analysis_retries sin ninguna chance real de éxito. Ahora, si la
+// reunión tiene recall_bot_id (vino de un bot de Recall, no de la extensión
+// de Chrome), se reintenta con processRecallDone() — que vuelve a descargar
+// audio+transcript FRESCOS desde la API de Recall (que retiene grabaciones
+// ~7 días) en vez de depender del disco local. Solo cae a analyzeMeetingAudio
+// directo para el flujo legado sin bot (extensión de Chrome), donde sí es
+// correcto reusar el audio ya subido.
+export async function retryStuckAnalyses(): Promise<void> {
+  const { rows } = await pool.query(
+    `select id, recall_bot_id, analysis_retries from meetings
+     where status = 'captured'
+       and analysis_retries < $1
+       and updated_at <= now() - interval '3 minutes'`,
+    [MAX_ANALYSIS_RETRIES]
+  );
+
+  for (const meeting of rows) {
+    console.log(
+      `[analysis] reunión ${meeting.id}: quedó pegada en status=captured, reintentando automáticamente vía ${
+        meeting.recall_bot_id ? 'processRecallDone (re-descarga desde Recall)' : 'analyzeMeetingAudio (audio ya subido)'
+      } (intento ${meeting.analysis_retries + 1}/${MAX_ANALYSIS_RETRIES})...`
+    );
+    await pool.query(
+      `update meetings set analysis_retries = analysis_retries + 1, updated_at = now() where id = $1`,
+      [meeting.id]
+    );
+    const retryPromise = meeting.recall_bot_id
+      ? processRecallDone(meeting.recall_bot_id, meeting.id)
+      : analyzeMeetingAudio(meeting.id);
+    retryPromise.catch((error) => {
+      console.error(`[analysis] reintento automático falló para la reunión ${meeting.id}`, error);
+    });
+  }
+}
+
 // Respaldo de video (30 días) — se llama SIN esperar (fire-and-forget) desde
 // el handler principal, después de que audio/transcript/análisis ya se
 // guardaron. Bug real (08-09-2026, reunión de Coderslab): antes esto corría

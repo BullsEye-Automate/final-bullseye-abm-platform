@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { app } from './app';
 import { pool } from './db';
 import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots } from './recall';
-import { retryStuckAnalyses } from './postMeetingAnalysis';
+import { retryStuckAnalyses } from './routes/webhooks';
 import { deleteExpiredMeetingVideos } from './videoRetention';
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
