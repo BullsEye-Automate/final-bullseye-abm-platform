@@ -245,7 +245,7 @@ export default function MeetingsTable({
                 {meeting.ejecutivo ??
                   (meeting.cliente_sales_manager ? `${meeting.cliente_sales_manager} (cliente)` : "—")}
               </td>
-              <td className="px-4 py-3 whitespace-nowrap">{meeting.contraparte ?? "—"}</td>
+              <td className="px-4 py-3 whitespace-nowrap">{meeting.contacto_nombre ?? meeting.contraparte ?? "—"}</td>
               <td className="px-4 py-3 whitespace-nowrap">
                 <EmpresaCell nombre={meeting.empresa_nombre} dominio={meeting.empresa_contraparte} />
               </td>

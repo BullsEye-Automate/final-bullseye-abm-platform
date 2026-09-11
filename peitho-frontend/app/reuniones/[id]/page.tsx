@@ -132,7 +132,7 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             ← Reuniones
           </Link>
           <h1 className="text-xl font-semibold text-gray-900 mt-2">
-            {meeting.contraparte ?? "Reunión"}
+            {meeting.contacto_nombre ?? meeting.contraparte ?? "Reunión"}
             {(meeting.empresa_nombre ?? meeting.empresa_contraparte)
               ? ` — ${meeting.empresa_nombre ?? meeting.empresa_contraparte}`
               : ""}

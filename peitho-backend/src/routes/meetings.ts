@@ -81,14 +81,14 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     // audio_path/analysis completos" de arriba (eso sigue fuera).
     const { rows } = await pool.query(
       scope === 'upcoming'
-        ? `select id, ejecutivo, contraparte, empresa_contraparte, empresa_nombre, cliente_sales_manager, start_time, status, client_id,
+        ? `select id, ejecutivo, contraparte, contacto_nombre, empresa_contraparte, empresa_nombre, cliente_sales_manager, start_time, status, client_id,
                   pre_brief_status, (recall_bot_id is not null) as has_bot
            from meetings
            where start_time >= now()
              and (meeting_url is not null or lower(empresa_contraparte) is distinct from $1)
              and recurring_event_id is null
            order by start_time asc`
-        : `select id, ejecutivo, contraparte, empresa_contraparte, empresa_nombre, cliente_sales_manager, start_time, status, client_id,
+        : `select id, ejecutivo, contraparte, contacto_nombre, empresa_contraparte, empresa_nombre, cliente_sales_manager, start_time, status, client_id,
                   (analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
                   (analysis->'prediccion_exito'->>'puntaje')::int as prediccion_exito,
                   (analysis->'fit_empresa'->>'puntaje')::int as fit_empresa,

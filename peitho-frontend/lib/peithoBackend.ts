@@ -4,6 +4,12 @@ export interface MeetingListItem {
   id: string;
   ejecutivo: string | null;
   contraparte: string | null;
+  // Nombre real del contacto según el excel de metas (ej. "Claudia Rodriguez
+  // Páez") — a diferencia de contraparte (lo que trajo Google Calendar del
+  // evento, que a veces es el nombre de la invitación y a veces solo el
+  // correo si Google no le asoció un nombre a ese asistente). Null si la
+  // reunión no hizo match en el excel todavía.
+  contacto_nombre: string | null;
   empresa_contraparte: string | null;
   // Nombre real de la empresa según el excel de metas (ej. "CodersLab") — a
   // diferencia de empresa_contraparte (el dominio, ej. "coderslab.io", que se
