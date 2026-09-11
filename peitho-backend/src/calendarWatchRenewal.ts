@@ -118,7 +118,8 @@ export async function renewExpiringCalendarWatches(): Promise<void> {
              where w.google_credential_id = c.id order by w.created_at desc limit 1) as channel_id,
             (select w.expiration from calendar_watch_channels w
              where w.google_credential_id = c.id order by w.created_at desc limit 1) as expiration
-     from google_credentials c`
+     from google_credentials c
+     where c.calendar_watch_enabled`
   );
 
   for (const account of accounts) {
@@ -162,6 +163,7 @@ export async function catchUpAllActiveChannels(): Promise<void> {
     `select distinct on (c.id) w.channel_id, c.google_account_email
      from calendar_watch_channels w
      join google_credentials c on c.id = w.google_credential_id
+     where c.calendar_watch_enabled
      order by c.id, w.created_at desc`
   );
 
