@@ -84,6 +84,7 @@ Para cualquier ajuste o variación, aplica los cambios directamente y devuelve e
 }
 
 export async function POST(req: NextRequest) {
+  try {
   const userId = getUserIdFromRequest(req);
   const body = await req.json();
   const {
@@ -192,4 +193,9 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ message: assistantText, parsed });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("agente-contenido error:", msg);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
