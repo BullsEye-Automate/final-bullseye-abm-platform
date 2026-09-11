@@ -322,7 +322,35 @@ function desambiguarPorEmpresa(candidatos: SheetRow[], empresaContraparte: strin
     }
   }
 
+  // Cuarto bug real (11-09-2026, "husi.org.co"/"Hospital Universitario San
+  // Ignacio"): a diferencia de los casos de arriba, acá no hay NINGUNA
+  // relación de substring entre el dominio y el nombre — es una relación de
+  // SIGLA (Hospital+Universitario+San+Ignacio -> "HUSI"). Ningún fallback de
+  // arriba puede encontrar esto porque todos comparan substrings, nunca
+  // iniciales. Último recurso: armar la sigla del nombre de cada fila
+  // (primera letra de cada palabra) y compararla contra el dominio sin TLD
+  // -- solo si calzan EXACTO (no substring, para no generar falsos positivos
+  // con siglas de 3-4 letras) y dentro del mismo conjunto ya acotado por
+  // fecha exacta.
+  if (match.length === 0) {
+    // La primera etiqueta del dominio, no stripDomainSuffix (que solo saca
+    // UN sufijo) -- "husi.org.co" tiene 2 niveles de TLD, stripDomainSuffix
+    // solo sacaría el ".co" y dejaría "husi.org" (con punto todavía).
+    const primeraEtiqueta = empresaNorm.split('.')[0];
+    if (primeraEtiqueta.length >= 3 && /^[a-z0-9]+$/.test(primeraEtiqueta)) {
+      match = candidatos.filter((row) => acronym(row.empresa) === primeraEtiqueta);
+    }
+  }
+
   return match.length === 1 ? match[0] : null;
+}
+
+function acronym(name: string): string {
+  return normalizeCompanyName(name)
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map((word) => word[0])
+    .join('');
 }
 
 // Fallback (09-09-2026): matching viejo, por empresa primero y fecha más
