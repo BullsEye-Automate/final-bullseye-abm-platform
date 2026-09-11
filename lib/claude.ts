@@ -14,3 +14,17 @@ export function anthropic(): Anthropic {
 
 export const CLAUDE_MODEL = process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
 export const HAIKU_MODEL  = process.env.CLAUDE_HAIKU_MODEL || "claude-haiku-4-5-20251001";
+
+/** Devuelve el modelo configurado para el cliente, o el default global si no tiene uno asignado. */
+export async function getClientModel(db: any, clientId: string): Promise<string> {
+  try {
+    const { data } = await db
+      .from("client_configs")
+      .select("claude_model")
+      .eq("client_id", clientId)
+      .maybeSingle();
+    return data?.claude_model ?? CLAUDE_MODEL;
+  } catch {
+    return CLAUDE_MODEL;
+  }
+}

@@ -13,6 +13,7 @@ import {
   computeEngagementScore,
 } from "@/lib/hubspot";
 import { generateContactMessages } from "@/lib/messageGenerator";
+import { getClientModel } from "@/lib/claude";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -116,6 +117,8 @@ async function refreshClientContacts(
 
   const { data: client } = await db.from("clients").select("name").eq("id", config.client_id).maybeSingle();
 
+  const clientModel = await getClientModel(db, config.client_id);
+
   let trainingConfig: Record<string, string | null> = {};
   try {
     const { data: tc } = await db
@@ -200,6 +203,7 @@ async function refreshClientContacts(
             companyName:      companyName               || undefined,
             icpContext:       enrichedContext,
             language:         "es",
+            model:            clientModel,
           }, userId);
 
           const msgUpdate: Record<string, string | undefined> = {};

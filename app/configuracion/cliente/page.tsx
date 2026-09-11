@@ -28,6 +28,7 @@ type Config = {
   lemlist_manual_search_campaign_id:  string;
   clay_companies_table_id:            string;
   clay_contacts_table_id:             string;
+  claude_model:                       string;
 };
 
 type ClientWebhooks = {
@@ -42,6 +43,7 @@ const EMPTY_CONFIG: Config = {
   lemlist_manual_search_campaign_id:  "",
   clay_companies_table_id:            "",
   clay_contacts_table_id:             "",
+  claude_model:                       "",
 };
 
 const EMPTY_WEBHOOKS: ClientWebhooks = {
@@ -165,6 +167,7 @@ export default function ConfigClientePage() {
           lemlist_manual_search_campaign_id:  cfg.lemlist_manual_search_campaign_id  ?? "",
           clay_companies_table_id:            cfg.clay_companies_table_id            ?? "",
           clay_contacts_table_id:             cfg.clay_contacts_table_id             ?? "",
+          claude_model:                       cfg.claude_model                       ?? "",
         } : EMPTY_CONFIG);
 
         const cl = clientData.client;
@@ -706,6 +709,42 @@ export default function ConfigClientePage() {
               value={form.clay_contacts_table_id}
               onChange={set("clay_contacts_table_id")}
             />
+          </section>
+
+          {/* Modelo de IA */}
+          <section className="card space-y-4">
+            <h2 className="font-semibold flex items-center gap-2">
+              <IconTool size={18} className="text-brand" /> Modelo de IA
+            </h2>
+            <p className="text-sm text-ink-muted">
+              Modelo de Claude usado para generar mensajes de outreach. El modo económico reduce costos pero puede bajar la calidad del copy.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, claude_model: "" }))}
+                className={`flex-1 rounded-lg border px-4 py-3 text-sm text-left transition-colors ${
+                  !form.claude_model
+                    ? "border-brand bg-brand/10 text-brand font-medium"
+                    : "border-border hover:border-ink-subtle"
+                }`}
+              >
+                <div className="font-medium">Estándar</div>
+                <div className="text-xs text-ink-muted mt-0.5">Claude Sonnet · Mayor calidad</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, claude_model: "claude-haiku-4-5-20251001" }))}
+                className={`flex-1 rounded-lg border px-4 py-3 text-sm text-left transition-colors ${
+                  form.claude_model === "claude-haiku-4-5-20251001"
+                    ? "border-brand bg-brand/10 text-brand font-medium"
+                    : "border-border hover:border-ink-subtle"
+                }`}
+              >
+                <div className="font-medium">Económico</div>
+                <div className="text-xs text-ink-muted mt-0.5">Claude Haiku · Menor costo</div>
+              </button>
+            </div>
           </section>
 
           {/* Allo */}
