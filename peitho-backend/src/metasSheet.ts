@@ -118,8 +118,20 @@ async function loadReunionesRows(forceRefresh = false): Promise<SheetRow[]> {
   return rows;
 }
 
+// Bug real (11-09-2026, "Ecológica"/Umine): no sacaba tildes — "EcoLógica"
+// (excel) normalizaba a "ecológica", mientras que "ecologica.cl" (dominio,
+// sin acentos) normalizaba a "ecologica" — nunca calzaban exacto por un solo
+// carácter, y encima fuzzyCompanyKey (abajo) borraba la "ó" en vez de
+// convertirla a "o", corrompiendo también el fallback difuso ("ecolgica",
+// con una letra de menos). Mismo patrón de normalize('NFKD') + quitar marcas
+// diacríticas que ya usa sanitizeForStoragePath en knowledgeBase.ts.
 function normalizeCompanyName(name: string | null | undefined): string {
-  return (name ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return (name ?? '')
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
 }
 
 // Bug real (08-09-2026, Noventiq): empresa_contraparte se guarda como el
@@ -233,9 +245,10 @@ function desambiguarPorEmpresa(candidatos: SheetRow[], empresaContraparte: strin
   // el excel tiene el nombre completo con el país incluido ("Intime Chile")
   // — ninguno de los dos matches de arriba (exactos) calza ahí. Último
   // fallback: comparar ambos sin separadores y aceptar que uno CONTENGA al
-  // otro (mínimo 4 caracteres para no matchear por casualidad con nombres
-  // cortos tipo "abc"). Solo se usa dentro de un conjunto YA acotado por
-  // fecha exacta, así que el riesgo de un falso positivo es bajo.
+  // otro (mínimo 3 caracteres, ver bug de "wom.cl" más abajo, para no
+  // matchear por casualidad con nombres cortísimos tipo "ab"). Solo se usa
+  // dentro de un conjunto YA acotado por fecha exacta, así que el riesgo de
+  // un falso positivo es bajo.
   //
   // Segundo bug real (10-09-2026, Banco BICE): a diferencia de "Intime
   // Chile" (la palabra de más va al FINAL), acá la excel tiene la palabra de
@@ -246,12 +259,19 @@ function desambiguarPorEmpresa(candidatos: SheetRow[], empresaContraparte: strin
   // fallback viejo por empresa — ver matchMeetingRow). Cambiado de
   // startsWith a includes para cubrir la palabra de más en cualquier
   // posición, no solo al final.
+  // Tercer bug real (11-09-2026, "wom.cl"/WOM Chile): el mínimo de 4
+  // caracteres descartaba de plano cualquier dominio corto de 3 letras (ej.
+  // "wom", tras sacarle el TLD) aunque el nombre del excel lo contuviera
+  // claramente ("WOM Chile" -> "womchile" sí incluye "wom"). Bajado a 3 --
+  // el riesgo de falso positivo se mantiene bajo porque esto solo corre
+  // dentro de un conjunto ya acotado por fecha exacta (ver comentario de
+  // arriba), y 2 caracteres sí sería demasiado corto para evitar choques.
   if (match.length === 0) {
     const key = fuzzyCompanyKey(empresaSinTld || empresaNorm);
-    if (key.length >= 4) {
+    if (key.length >= 3) {
       match = candidatos.filter((row) => {
         const rowKey = fuzzyCompanyKey(row.empresa);
-        return rowKey.length >= 4 && (rowKey.includes(key) || key.includes(rowKey));
+        return rowKey.length >= 3 && (rowKey.includes(key) || key.includes(rowKey));
       });
     }
   }
