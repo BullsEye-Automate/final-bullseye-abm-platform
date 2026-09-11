@@ -84,6 +84,14 @@ Para cualquier ajuste o variación, aplica los cambios directamente y devuelve e
 }
 
 export async function POST(req: NextRequest) {
+  // diagnóstico temporal
+  const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const hasAnthropicKey = !!process.env.ANTHROPIC_API_KEY;
+  if (!hasServiceKey || !hasAnthropicKey) {
+    return NextResponse.json({
+      error: `Env vars faltantes: ${!hasServiceKey ? "SUPABASE_SERVICE_ROLE_KEY " : ""}${!hasAnthropicKey ? "ANTHROPIC_API_KEY" : ""}`.trim()
+    }, { status: 500 });
+  }
   try {
   const userId = getUserIdFromRequest(req);
   const body = await req.json();
