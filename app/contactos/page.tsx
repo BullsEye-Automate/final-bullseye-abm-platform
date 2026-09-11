@@ -99,6 +99,7 @@ export default function ContactosPage() {
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
 
   const [refreshing, setRefreshing] = useState(false);
+  const [clientModel, setClientModel] = useState<string | null>(null);
 
   // Modal de generación antes de enviar a Lemlist
   const [sendModal, setSendModal] = useState<{ contactIds: string[]; companyId?: string } | null>(null);
@@ -125,6 +126,13 @@ export default function ContactosPage() {
 
   useEffect(() => { if (!clientLoading) load(bucket); }, [bucket, currentClient?.id, clientLoading]);
   useEffect(() => { if (!clientLoading) loadApprovedCompanies(); }, [currentClient?.id, clientLoading]);
+  useEffect(() => {
+    if (!currentClient) { setClientModel(null); return; }
+    fetch(`/api/clients/${currentClient.id}/config`)
+      .then(r => r.json())
+      .then(d => setClientModel(d.config?.claude_model ?? null))
+      .catch(() => setClientModel(null));
+  }, [currentClient?.id]);
 
   function toggleCompany(id: string) {
     setExpandedCompanies(prev => {
@@ -343,6 +351,15 @@ export default function ContactosPage() {
               {`Aprobar y enviar a Lemlist (${allIds.length})`}
             </button>
           )}
+          {clientModel === "claude-haiku-4-5-20251001" ? (
+            <span title="Este cliente usa Claude Haiku (modo económico) para generar mensajes" className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-700">
+              ⚡ Haiku
+            </span>
+          ) : clientModel === null && currentClient ? (
+            <span title="Este cliente usa Claude Sonnet (modelo estándar) para generar mensajes" className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-surface-subtle text-ink-muted border border-border">
+              ✦ Sonnet
+            </span>
+          ) : null}
           <button className="btn-secondary" onClick={refreshFromLemlist} disabled={refreshing || !currentClient} title="Jala emails/teléfonos enriquecidos de Lemlist y sincroniza con HubSpot">
             <IconRefresh size={14} /> {refreshing ? "Sincronizando…" : "Sync Lemlist → HubSpot"}
           </button>
