@@ -14,6 +14,7 @@ import {
   computeEngagementScore,
 } from "@/lib/hubspot";
 import { generateContactMessages } from "@/lib/messageGenerator";
+import { getClientModel } from "@/lib/claude";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,6 +119,8 @@ export async function POST(req: NextRequest) {
     trainingConfig = tc ?? {};
   } catch { /* tabla puede no existir */ }
 
+  const clientModel = await getClientModel(db, body.client_id);
+
   const { data: icpCtx } = await db
     .from("client_ai_context")
     .select("content")
@@ -199,6 +202,7 @@ export async function POST(req: NextRequest) {
             companyName:      companyName               || undefined,
             icpContext:       enrichedContext,
             language:         "es",
+            model:            clientModel,
           }, userId);
 
           const msgUpdate: Record<string, string | undefined> = {};
