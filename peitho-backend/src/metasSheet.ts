@@ -221,7 +221,7 @@ function rowMatchesMeetingDate(row: SheetRow, meetingStart: Date): boolean {
 // Quita todo lo que no sea letra/número (espacios, puntos, guiones) — para
 // comparar un dominio corto contra el nombre completo de la empresa sin que
 // un espacio de más/de menos rompa el match (ver fuzzyMatch abajo).
-function fuzzyCompanyKey(name: string): string {
+export function fuzzyCompanyKey(name: string): string {
   return normalizeCompanyName(name).replace(/[^a-z0-9]/g, '');
 }
 

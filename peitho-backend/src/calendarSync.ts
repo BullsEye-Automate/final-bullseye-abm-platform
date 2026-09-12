@@ -2,6 +2,7 @@ import type { calendar_v3 } from 'googleapis';
 import { pool } from './db';
 import { getCalendarClientByEmail } from './google';
 import { scheduleRecallBotForMeeting, cancelRecallBot } from './recall';
+import { matchClientByTitle, fuzzyCompanyKey } from './metasSheet';
 
 type GoogleCalendarEvent = calendar_v3.Schema$Event;
 
@@ -121,7 +122,29 @@ const BULLSEYE_DOMAIN = 'bullseye-abm.com';
 // "Cliente". Fix: excluir por dominio del organizador completo, no solo su
 // dirección — así cualquier otro asistente del mismo cliente queda afuera
 // igual que el organizador.
-function extractContraparteFromBotInvite(event: GoogleCalendarEvent, botEmail: string) {
+// Bug real (12-09-2026, Crossnet/Siigo): cuando el organizador es un SDR de
+// BullsEye (no el ejecutivo del cliente ni el prospecto — pasa seguido, el
+// SDR arma la reunión e invita a ambos), quedan DOS asistentes externos: uno
+// del cliente (ej. "dgalan@crossnet.cl") y el prospecto real (ej.
+// "ronald.atencio@siigo.com"). Excluir solo el dominio del organizador no
+// alcanza acá porque el organizador (bullseye-abm.com) es un tercer dominio
+// distinto a ambos. `clientNameHint` (resuelto por el título del evento, ver
+// upsertMeetingFromBotInvite) permite excluir también al asistente cuyo
+// dominio corresponde al cliente — así el primer asistente externo que
+// sobrevive es el prospecto real, no el cliente.
+function isClientOwnDomain(domain: string, clientNameHint: string | null): boolean {
+  if (!clientNameHint) return false;
+  const domainKey = fuzzyCompanyKey(domain.split('.')[0]);
+  const clientKey = fuzzyCompanyKey(clientNameHint);
+  if (domainKey.length < 3 || clientKey.length < 3) return false;
+  return domainKey.includes(clientKey) || clientKey.includes(domainKey);
+}
+
+function extractContraparteFromBotInvite(
+  event: GoogleCalendarEvent,
+  botEmail: string,
+  clientNameHint: string | null
+) {
   const organizerEmail = event.organizer?.email?.toLowerCase();
   const organizerDomain = organizerEmail?.split('@')[1];
   const externalAttendees = (event.attendees ?? []).filter((attendee) => {
@@ -131,6 +154,7 @@ function extractContraparteFromBotInvite(event: GoogleCalendarEvent, botEmail: s
     const domain = email.split('@')[1];
     if (organizerDomain && domain === organizerDomain) return false;
     if (domain === BULLSEYE_DOMAIN) return false;
+    if (domain && isClientOwnDomain(domain, clientNameHint)) return false;
     return true;
   });
   const contraparte = externalAttendees[0];
@@ -156,7 +180,18 @@ export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, bot
   console.log(`[bot-invite] evento ${event.id}: link detectado = ${meetingUrl ?? '(ninguno)'}`);
   if (!meetingUrl) return; // invitación sin link de reunión reconocible (Meet o Teams) — no es para nosotros
 
-  const { contraparte, empresaContraparte } = extractContraparteFromBotInvite(event, botEmail);
+  // Mismo matching por título que resuelve client_id más adelante (ver
+  // resolveMeetingClientAndContact en metasSheet.ts) — acá se usa solo como
+  // pista para no confundir a un asistente del cliente con el prospecto real
+  // (ver isClientOwnDomain arriba), no para asignar client_id todavía.
+  const { rows: allClients } = await pool.query<{ id: string; name: string }>('select id, name from clients');
+  const clientHint = matchClientByTitle(event.summary, allClients);
+
+  const { contraparte, empresaContraparte } = extractContraparteFromBotInvite(
+    event,
+    botEmail,
+    clientHint?.name ?? null
+  );
   const startTime = event.start?.dateTime ?? event.start?.date ?? null;
   const recurringEventId = event.recurringEventId ?? null;
 
