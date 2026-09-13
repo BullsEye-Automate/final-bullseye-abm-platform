@@ -26,8 +26,14 @@ async function fetchAllLeads(campaignId: string, headers: Record<string, string>
       `https://api.lemlist.com/api/campaigns/${campaignId}/leads?limit=${PAGE}&offset=${offset}`,
       { headers }
     ).catch(() => null);
-    if (!res || !res.ok) break;
+    if (!res) { console.error(`[sync] leads fetch error camp=${campaignId}`); break; }
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.error(`[sync] leads ${res.status} camp=${campaignId}:`, txt.slice(0, 200));
+      break;
+    }
     const data = await res.json().catch(() => null);
+    console.log(`[sync] leads camp=${campaignId} offset=${offset} keys=`, data ? Object.keys(data) : null, "isArray=", Array.isArray(data));
     const items: any[] = Array.isArray(data) ? data : (data?.items ?? []);
     all.push(...items);
     if (items.length < PAGE) break;
@@ -42,8 +48,14 @@ async function fetchActivities(type: string, campaignId: string, headers: Record
     `https://api.lemlist.com/api/activities?type=${type}&campaignId=${campaignId}&limit=500`,
     { headers }
   ).catch(() => null);
-  if (!res || !res.ok) return [];
+  if (!res) { console.error(`[sync] activities fetch error type=${type} camp=${campaignId}`); return []; }
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    console.error(`[sync] activities ${res.status} type=${type} camp=${campaignId}:`, txt.slice(0, 200));
+    return [];
+  }
   const data = await res.json().catch(() => null);
+  console.log(`[sync] activities type=${type} camp=${campaignId} keys=`, data ? Object.keys(data) : null, "isArray=", Array.isArray(data));
   return Array.isArray(data) ? data : (data?.data ?? data?.activities ?? data?.items ?? []);
 }
 
