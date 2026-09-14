@@ -33,8 +33,10 @@ async function fetchAllLeads(campaignId: string, headers: Record<string, string>
       break;
     }
     const data = await res.json().catch(() => null);
-    console.log(`[sync] leads camp=${campaignId} offset=${offset} keys=`, data ? Object.keys(data) : null, "isArray=", Array.isArray(data));
     const items: any[] = Array.isArray(data) ? data : (data?.items ?? []);
+    if (offset === 0 && items.length > 0) {
+      console.log(`[sync] leads SAMPLE camp=${campaignId}:`, JSON.stringify(items[0]).slice(0, 300));
+    }
     all.push(...items);
     if (items.length < PAGE) break;
     offset += PAGE;
@@ -91,9 +93,12 @@ export async function POST(req: NextRequest) {
         campaign_id:   camp.campaign_id,
         campaign_name: camp.campaign_name ?? null,
       }));
+      const firstRow = rows[0];
+      console.log(`[sync] leads upsert sample row camp=${camp.campaign_id}:`, JSON.stringify(firstRow).slice(0, 300));
       const { error } = await db
         .from("lemlist_leads_synced")
         .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+      if (error) console.error(`[sync] leads upsert error camp=${camp.campaign_id}:`, error.message, error.code);
       if (!error) totalLeads += rows.length;
     }
 
@@ -122,6 +127,7 @@ export async function POST(req: NextRequest) {
         const { error } = await db
           .from("lemlist_activities")
           .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+        if (error) console.error(`[sync] activities upsert error type=${pair[j]} camp=${camp.campaign_id}:`, error.message, error.code);
         if (!error) totalActivities += rows.length;
       }
 
