@@ -376,7 +376,9 @@ function LemlistTab({ currentClient, period }: { currentClient: { id: string; na
           <div className="text-3xl font-bold" style={{ color: data.openRate >= 30 ? "#22c55e" : "#f59e0b" }}>
             {data.openRate}%
           </div>
-          <div className="text-xs text-ink-muted">{data.totalOpened.toLocaleString()} abiertos</div>
+          <div className="text-xs text-ink-muted">
+            {data.totalOpened.toLocaleString()} únicos · {(data.totalOpenedRaw ?? data.totalOpened).toLocaleString()} totales
+          </div>
         </div>
         <div className="card px-5 py-4">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-1">Reply rate</div>

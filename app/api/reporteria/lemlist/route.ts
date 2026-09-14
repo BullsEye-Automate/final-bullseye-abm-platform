@@ -57,6 +57,7 @@ export type ClientCampaignStats = {
 export type LemlistReportData = {
   totalSent: number;
   totalOpened: number;
+  totalOpenedRaw: number;
   openRate: number;
   totalReplied: number;
   replyRate: number;
@@ -317,7 +318,7 @@ export async function GET(req: NextRequest) {
     }
 
     const perClient: ClientCampaignStats[] = [];
-    let totalSent = 0, totalOpened = 0, totalReplied = 0;
+    let totalSent = 0, totalOpened = 0, totalOpenedRaw = 0, totalReplied = 0;
     let totalEmailReplied = 0, totalLinkedinReplied = 0, totalLinkedinAccepted = 0, totalBounced = 0;
 
     const allLeadsWithActivities: ReturnType<typeof buildLeadsFromActivities> = [];
@@ -365,6 +366,7 @@ export async function GET(req: NextRequest) {
       }
 
       const opened   = countUnique("emailsOpened");
+      const openedRaw = (activities ?? []).filter(a => a.type === "emailsOpened").length;
       const clicked  = countUnique("emailsClicked");
       const emailR   = countUnique("emailsReplied");
       const liR      = countUnique("linkedinReplied");
@@ -375,6 +377,7 @@ export async function GET(req: NextRequest) {
 
       totalSent             += sent;
       totalOpened           += opened;
+      totalOpenedRaw        += openedRaw;
       totalReplied          += replied;
       totalEmailReplied     += emailR;
       totalLinkedinReplied  += liR;
@@ -430,7 +433,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         _needsSync: true,
         _lastSyncedAt: null,
-        totalSent: 0, totalOpened: 0, openRate: 0, totalReplied: 0, replyRate: 0,
+        totalSent: 0, totalOpened: 0, totalOpenedRaw: 0, openRate: 0, totalReplied: 0, replyRate: 0,
         totalEmailReplied: 0, totalLinkedinReplied: 0, totalLinkedinAccepted: 0,
         totalBounced: 0, bounceRate: 0, perClient: [],
         topContacts: [], topCompanies: [], weeklyTrend: [], recentActivity: [],
@@ -456,6 +459,7 @@ export async function GET(req: NextRequest) {
     const payload: LemlistReportData = {
       totalSent,
       totalOpened,
+      totalOpenedRaw,
       openRate:     totalSent > 0 ? Math.round((totalOpened / totalSent) * 1000) / 10 : 0,
       totalReplied,
       replyRate:    totalSent > 0 ? Math.round((totalReplied / totalSent) * 1000) / 10 : 0,
