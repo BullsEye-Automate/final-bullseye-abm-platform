@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds, resolveConnected } from "@/lib/allo";
 import { toDateParam, callDateKey, resolveCountryLabel, normalizeCountryKey } from "@/lib/sdrAnalytics";
 import { toChileParts } from "@/lib/timezone";
 
@@ -163,7 +163,7 @@ export async function GET(request: NextRequest) {
 
         grid[dia][hora].llamadas++;
         totalLlamadas++;
-        if (connectedCallIds.has(call.id)) {
+        if (resolveConnected(call, connectedCallIds)) {
           grid[dia][hora].conectadas++;
         }
       }
