@@ -6,12 +6,6 @@
 import type { RangeKey } from "@/lib/dashboardRanges";
 import { CHILE_UTC_OFFSET_HOURS, toChileParts } from "@/lib/timezone";
 
-export const MIN_REAL_CONVERSATION_SECONDS = 60;
-
-export function isConnected(duration: number, result: string | null): boolean {
-  return (result === "ANSWERED" || result === "TRANSFERRED") && duration >= MIN_REAL_CONVERSATION_SECONDS;
-}
-
 export function toDateParam(d: Date): string {
   return d.toISOString().slice(0, 10);
 }

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls } from "@/lib/allo";
-import { isConnected, toDateParam, callDateKey, resolveCountryLabel, normalizeCountryKey } from "@/lib/sdrAnalytics";
+import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds } from "@/lib/allo";
+import { toDateParam, callDateKey, resolveCountryLabel, normalizeCountryKey } from "@/lib/sdrAnalytics";
 import { toChileParts } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
@@ -133,9 +133,12 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const callsByNumber = await Promise.all(
-      numerosEnAlcance.map((n) => searchAlloCalls({ allo_number: n, date_from: dateFrom, date_to: dateTo, direction: "OUTBOUND" }))
-    );
+    const [callsByNumber, connectedCallIds] = await Promise.all([
+      Promise.all(
+        numerosEnAlcance.map((n) => searchAlloCalls({ allo_number: n, date_from: dateFrom, date_to: dateTo, direction: "OUTBOUND" }))
+      ),
+      fetchAlloConnectedCallIds({ allo_numbers: numerosEnAlcance, date_from: dateFrom, date_to: dateTo }),
+    ]);
 
     // Grilla Día (0=Lunes...6=Domingo) × Hora (0-23, hora de Chile).
     const grid: { llamadas: number; conectadas: number }[][] = Array.from({ length: 7 }, () =>
@@ -160,7 +163,7 @@ export async function GET(request: NextRequest) {
 
         grid[dia][hora].llamadas++;
         totalLlamadas++;
-        if (isConnected(call.duration, call.result)) {
+        if (connectedCallIds.has(call.id)) {
           grid[dia][hora].conectadas++;
         }
       }

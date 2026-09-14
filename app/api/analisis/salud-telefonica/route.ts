@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls } from "@/lib/allo";
-import { isConnected, toDateParam, callDateKey, resolveCountryLabel } from "@/lib/sdrAnalytics";
+import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds } from "@/lib/allo";
+import { toDateParam, callDateKey, resolveCountryLabel } from "@/lib/sdrAnalytics";
 
 export const dynamic = "force-dynamic";
 // Este reporte pide dos períodos por número (actual + anterior, para la
@@ -157,11 +157,14 @@ export async function GET(request: NextRequest) {
     // anterior hasta el fin del período actual, y se separa por fecha del
     // lado del cliente — evita duplicar las llamadas a Allo (una por
     // "actual" y otra por "anterior") por cada número.
-    const callsByNumber = await Promise.all(
-      numerosEnAlcance.map((n) =>
-        searchAlloCalls({ allo_number: n, date_from: prevDateFrom, date_to: dateTo, direction: "OUTBOUND" })
-      )
-    );
+    const [callsByNumber, connectedCallIds] = await Promise.all([
+      Promise.all(
+        numerosEnAlcance.map((n) =>
+          searchAlloCalls({ allo_number: n, date_from: prevDateFrom, date_to: dateTo, direction: "OUTBOUND" })
+        )
+      ),
+      fetchAlloConnectedCallIds({ allo_numbers: numerosEnAlcance, date_from: prevDateFrom, date_to: dateTo }),
+    ]);
 
     const seenCallIds = new Set<string>();
     const porDiaPorNumero = new Map<string, Map<string, { llamadas: number; conectadas: number }>>();
@@ -185,7 +188,7 @@ export async function GET(request: NextRequest) {
         seenCallIds.add(call.id);
 
         const key = callDateKey(call.date);
-        const connected = isConnected(call.duration, call.result);
+        const connected = connectedCallIds.has(call.id);
 
         if (key >= dateFrom && key <= dateTo) {
           totales.llamadas++;
