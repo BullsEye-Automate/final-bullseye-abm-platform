@@ -132,6 +132,26 @@ export interface MeetingDetail extends MeetingListItem {
   contacto_cargo: string | null;
   contacto_industria: string | null;
   contacto_linkedin_url: string | null;
+  // 'none' (sin intentar/sin match), 'auto' (match confiable contra el
+  // excel), 'tentative' (2+ filas candidatas para la misma fecha, sin forma
+  // de elegir una sin adivinar — ver contacto_match_candidates) o 'manual'
+  // (un admin eligió un candidato o editó los campos a mano). Ver
+  // matchMeetingRow en metasSheet.ts (backend) para el criterio completo.
+  contacto_match_status?: 'none' | 'auto' | 'tentative' | 'manual';
+  // Solo poblado cuando contacto_match_status === 'tentative' — snapshot de
+  // las filas candidatas del excel para que TentativeMatchReview las muestre
+  // sin tener que releer la planilla.
+  contacto_match_candidates?: Array<{
+    idReunion: string;
+    cliente: string;
+    clienteId: string | null;
+    empresa: string;
+    contacto: string;
+    cargo: string;
+    industria: string;
+    fechaReunion: string;
+    salesManager: string;
+  }> | null;
   // Transcripción real (Fase H — nombre real de cada hablante vía Recall, o
   // Deepgram como fallback para la extensión de Chrome). Null si la reunión
   // no se ha grabado/analizado todavía.

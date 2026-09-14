@@ -6,7 +6,7 @@ import multer from 'multer';
 import { pool } from '../db';
 import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 import { generatePreMeetingBrief } from '../preMeetingBrief';
-import { resolveMeetingClientAndContact, refreshMatchedRowFields } from '../metasSheet';
+import { resolveMeetingClientAndContact, refreshMatchedRowFields, resolveTentativeMatch } from '../metasSheet';
 import { resyncBotInviteMeeting } from '../calendarSync';
 import { scheduleRecallBotForMeeting, cancelRecallBot } from '../recall';
 import { processRecallDone } from './webhooks';
@@ -221,6 +221,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status,
               m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text, m.updated_at,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
+              m.contacto_match_status, m.contacto_match_candidates,
               m.participantes, m.research_share_token, m.analysis_share_token,
               (m.video_path is not null) as video_available,
               (m.recall_bot_id is not null) as recall_bot_available,
@@ -429,6 +430,89 @@ meetingsRouter.put('/meetings/:id/client', requireAuth, requireAdmin, async (req
   } catch (error) {
     console.error('Error corrigiendo el cliente de la reunión', error);
     res.status(500).json({ error: 'Error guardando el cliente' });
+  }
+});
+
+// Edición manual admin-only de los campos de contacto/empresa — pedido
+// explícito del usuario (15-09-2026): "la facultad para admin de poder
+// cambiar manualmente la información de una reunión... el sales manager, el
+// nombre, el cargo, todo lo que sea necesario para que el research pueda
+// correr bien". Complementa (no reemplaza) el match automático contra el
+// excel de metas — sirve para los casos donde ese match nunca encontró la
+// fila correcta, o la encontró con datos desactualizados. Cualquier campo
+// omitido en el body queda sin tocar; un string vacío borra el campo (queda
+// null), a diferencia de omitirlo. Marca contacto_match_status='manual' y
+// limpia cualquier candidato pendiente — una edición a mano cierra la
+// revisión, no hace falta seguir preguntando.
+meetingsRouter.put('/meetings/:id/contact-info', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { contacto_nombre, contacto_cargo, contacto_industria, empresa_nombre, cliente_sales_manager } = req.body ?? {};
+
+  const fields: Array<{ column: string; value: unknown }> = [
+    { column: 'contacto_nombre', value: contacto_nombre },
+    { column: 'contacto_cargo', value: contacto_cargo },
+    { column: 'contacto_industria', value: contacto_industria },
+    { column: 'empresa_nombre', value: empresa_nombre },
+    { column: 'cliente_sales_manager', value: cliente_sales_manager },
+  ].filter((f) => f.value !== undefined);
+
+  if (fields.length === 0) {
+    res.status(400).json({ error: 'No se envió ningún campo para actualizar' });
+    return;
+  }
+  if (fields.some((f) => f.value !== null && typeof f.value !== 'string')) {
+    res.status(400).json({ error: 'Cada campo debe ser un string o null' });
+    return;
+  }
+
+  try {
+    const setClauses = fields.map((f, i) => `${f.column} = $${i + 1}`);
+    const values = fields.map((f) => (typeof f.value === 'string' ? (f.value.trim() || null) : null));
+
+    const { rowCount } = await pool.query(
+      `update meetings set ${setClauses.join(', ')}, contacto_match_status = 'manual', contacto_match_candidates = null, updated_at = now()
+       where id = $${fields.length + 1}`,
+      [...values, id]
+    );
+
+    if (rowCount === 0) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error guardando la info de contacto de la reunión', error);
+    res.status(500).json({ error: 'Error guardando los cambios' });
+  }
+});
+
+// Resuelve una reunión que quedó 'tentative' (2+ filas candidatas del excel
+// de metas para la misma fecha, sin forma de elegir una sin adivinar — ver
+// matchMeetingRow en metasSheet.ts) — admin-only, pedido explícito del
+// usuario ("que me permita aprobar o rechazar el match"). Body:
+// { id_reunion: string } para elegir un candidato, o { id_reunion: null }
+// para rechazarlos a todos (la reunión queda sin match, pero deja de estar
+// pendiente de revisión).
+meetingsRouter.post('/meetings/:id/resolve-tentative-match', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { id_reunion } = req.body ?? {};
+
+  if (id_reunion !== null && typeof id_reunion !== 'string') {
+    res.status(400).json({ error: 'id_reunion debe ser un string o null' });
+    return;
+  }
+
+  try {
+    const result = await resolveTentativeMatch(id, id_reunion);
+    if (!result.ok) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error resolviendo el match tentativo de la reunión', error);
+    res.status(500).json({ error: 'Error guardando la elección' });
   }
 });
 

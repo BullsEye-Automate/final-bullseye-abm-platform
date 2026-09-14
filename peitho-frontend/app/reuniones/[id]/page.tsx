@@ -6,6 +6,8 @@ import ReprocessButton from "@/components/ReprocessButton";
 import ReanalyzeButton from "@/components/ReanalyzeButton";
 import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 import AssignClientForm from "@/components/AssignClientForm";
+import ManualContactForm from "@/components/ManualContactForm";
+import TentativeMatchReview from "@/components/TentativeMatchReview";
 import DeleteMeetingButton from "@/components/DeleteMeetingButton";
 import ResyncCalendarButton from "@/components/ResyncCalendarButton";
 import DetailTabs from "@/components/DetailTabs";
@@ -159,6 +161,9 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
           LinkedIn de abajo debe estar disponible aunque esta reunión no haya
           hecho match todavía. */}
       <Section title="Ficha del contacto">
+          {isAdmin && meeting.contacto_match_status === "tentative" && meeting.contacto_match_candidates && (
+            <TentativeMatchReview meetingId={meeting.id} candidates={meeting.contacto_match_candidates} />
+          )}
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <p className="text-xs font-medium text-gray-500">Nombre</p>
@@ -171,6 +176,10 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             <div>
               <p className="text-xs font-medium text-gray-500">Industria</p>
               <p className="text-gray-700">{meeting.contacto_industria ?? "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-gray-500">Empresa</p>
+              <p className="text-gray-700">{meeting.empresa_nombre ?? "—"}</p>
             </div>
             <div>
               <p className="text-xs font-medium text-gray-500">Cliente BullsEye</p>
@@ -187,6 +196,18 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
         {isAdmin && <LinkedinUrlForm meetingId={meeting.id} initialUrl={meeting.contacto_linkedin_url} />}
         {isAdmin && (
           <AssignClientForm meetingId={meeting.id} clients={clients} initialClientId={meeting.client_id} />
+        )}
+        {isAdmin && (
+          <ManualContactForm
+            meetingId={meeting.id}
+            initial={{
+              contacto_nombre: meeting.contacto_nombre,
+              contacto_cargo: meeting.contacto_cargo,
+              contacto_industria: meeting.contacto_industria,
+              empresa_nombre: meeting.empresa_nombre,
+              cliente_sales_manager: meeting.cliente_sales_manager,
+            }}
+          />
         )}
       </Section>
 

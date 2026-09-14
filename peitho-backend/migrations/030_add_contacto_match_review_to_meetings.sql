@@ -1,0 +1,22 @@
+-- Bug real (15-09-2026, SeguriMaxima/Interex): una reunión quedaba con
+-- client_id resuelto (por el título del evento, "BullsEye") pero
+-- contacto_nombre/cargo/industria/empresa_nombre vacíos porque el match
+-- contra el excel de metas no encontraba una fila única (2+ reuniones ese
+-- mismo día, sin relación de texto entre el dominio del contacto y el
+-- nombre de la empresa en el excel) — y como client_id ya estaba seteado,
+-- nada marcaba la reunión para revisión manual: quedaba con apariencia de
+-- "resuelta" mientras le faltaba toda la info de contacto.
+--
+-- contacto_match_status distingue por qué está en el estado en que está:
+--   'none'      - no se intentó, o no se encontró ninguna fila candidata.
+--   'auto'      - matchMeetingRow encontró una fila única con confianza.
+--   'tentative' - 2+ filas candidatas (mismo día, y si aplica mismo
+--                 cliente) sin forma de elegir una sin adivinar — queda
+--                 pendiente de que un admin la revise y elija.
+--   'manual'    - un admin eligió una fila tentativa, o editó los campos
+--                 de contacto a mano.
+-- contacto_match_candidates guarda un snapshot de las filas candidatas
+-- cuando el estado es 'tentative', para que el admin pueda elegir sin
+-- tener que volver a leer el excel en ese momento.
+alter table meetings add column if not exists contacto_match_status text not null default 'none';
+alter table meetings add column if not exists contacto_match_candidates jsonb;

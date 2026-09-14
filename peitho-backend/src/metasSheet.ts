@@ -455,6 +455,14 @@ function matchByEmail(
   return mejor ?? candidatos[0];
 }
 
+export interface MeetingRowMatch {
+  status: 'matched' | 'tentative' | 'none';
+  row: SheetRow | null;
+  // Solo poblado si status === 'tentative' — filas candidatas entre las que
+  // no se puede elegir sin adivinar, para que un admin las revise.
+  candidates: SheetRow[];
+}
+
 // Pedido explícito del usuario (09-09-2026): matchear primero por fecha
 // (dato confiable — viene de Calendar, no de una extracción de dominio que
 // puede fallar como ya pasó con CCHC/Paula Rios) y usar la empresa solo
@@ -463,32 +471,95 @@ function matchByEmail(
 // como desempate). Como beneficio extra, esto también puede matchear
 // reuniones donde empresa_contraparte quedó null (ver caso del Zoom sin
 // asistentes) si ese día solo hay una reunión en el excel.
+//
+// Bug real (15-09-2026, SeguriMaxima/Interex): con 2+ candidatos el mismo
+// día, se intentaba desambiguar SOLO por empresa (dominio del contacto vs.
+// nombre en el excel) — acá el dominio era "interex.cl" y el excel tenía
+// "SeguriMaxima", sin ninguna relación de texto, así que fallaba y la
+// función se rendía (null) sin intentar nada más. Pero el título del
+// evento ya había dejado clarísimo el cliente ("BullsEye", via
+// knownClientName) — con eso solo, filtrar los candidatos de ese mismo día
+// a los que pertenecen a ese cliente ya los deja en uno solo. Ahora se
+// intenta, en orden: (1) acotar por knownClientName, (2) desambiguar por
+// empresa dentro de ese conjunto (ya acotado o no), (3) el correo exacto
+// del contacto como último desempate. Si después de los tres todavía
+// quedan 2+ candidatos, en vez de rendirse en silencio (el bug real de
+// arriba) se devuelven como 'tentative' para que un admin elija — pedido
+// explícito del usuario ("que me permita aprobar o rechazar el match").
 function matchMeetingRow(
   rows: SheetRow[],
   meeting: { empresa_contraparte: string | null; start_time: string | null; contraparte_email?: string | null },
   knownClientName: string | null = null
-): SheetRow | null {
+): MeetingRowMatch {
   if (meeting.start_time) {
     const meetingStart = new Date(meeting.start_time);
-    const candidatosPorFecha = rows.filter((row) => rowMatchesMeetingDate(row, meetingStart));
+    let candidatosPorFecha = rows.filter((row) => rowMatchesMeetingDate(row, meetingStart));
 
-    if (candidatosPorFecha.length === 1) return candidatosPorFecha[0];
+    if (candidatosPorFecha.length === 1) {
+      return { status: 'matched', row: candidatosPorFecha[0], candidates: [] };
+    }
+
     if (candidatosPorFecha.length > 1) {
-      return desambiguarPorEmpresa(candidatosPorFecha, meeting.empresa_contraparte);
+      if (knownClientName) {
+        const knownKey = normalizeCompanyName(knownClientName);
+        const narrowed = candidatosPorFecha.filter((row) => normalizeCompanyName(row.cliente) === knownKey);
+        if (narrowed.length === 1) return { status: 'matched', row: narrowed[0], candidates: [] };
+        if (narrowed.length > 1) candidatosPorFecha = narrowed;
+      }
+
+      const porEmpresa = desambiguarPorEmpresa(candidatosPorFecha, meeting.empresa_contraparte);
+      if (porEmpresa) return { status: 'matched', row: porEmpresa, candidates: [] };
+
+      const porCorreo = matchByEmail(rows, meeting.contraparte_email ?? null, meetingStart, knownClientName);
+      if (porCorreo) return { status: 'matched', row: porCorreo, candidates: [] };
+
+      return { status: 'tentative', row: null, candidates: candidatosPorFecha };
     }
   }
 
   // Sin ningún candidato con esa fecha exacta (o sin start_time) — probable
   // typo de fecha en el excel, cae al matching viejo por empresa.
   const porEmpresa = matchMeetingRowPorEmpresaYFechaMasCercana(rows, meeting);
-  if (porEmpresa) return porEmpresa;
+  if (porEmpresa) return { status: 'matched', row: porEmpresa, candidates: [] };
 
-  return matchByEmail(
+  const porCorreo = matchByEmail(
     rows,
     meeting.contraparte_email ?? null,
     meeting.start_time ? new Date(meeting.start_time) : null,
     knownClientName
   );
+  if (porCorreo) return { status: 'matched', row: porCorreo, candidates: [] };
+
+  return { status: 'none', row: null, candidates: [] };
+}
+
+// Snapshot de una fila candidata guardado en meetings.contacto_match_candidates
+// (jsonb) cuando el match queda 'tentative' — lo suficiente para mostrarla en
+// el admin y para aplicarla después sin tener que releer el excel.
+export interface ContactMatchCandidate {
+  idReunion: string;
+  cliente: string;
+  clienteId: string | null;
+  empresa: string;
+  contacto: string;
+  cargo: string;
+  industria: string;
+  fechaReunion: string;
+  salesManager: string;
+}
+
+function toCandidateSummary(row: SheetRow): ContactMatchCandidate {
+  return {
+    idReunion: row.idReunion,
+    cliente: row.cliente,
+    clienteId: row.clienteId,
+    empresa: row.empresa,
+    contacto: row.contacto,
+    cargo: row.cargo,
+    industria: row.industria,
+    fechaReunion: row.fechaReunion,
+    salesManager: row.salesManager,
+  };
 }
 
 async function findOrCreateClient(name: string, externalId: string | null): Promise<string> {
@@ -549,17 +620,40 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
     }
 
     const sheetRows = await loadReunionesRows();
-    // titleMatch?.name se pasa como pista para desambiguar el fallback por
-    // correo (ver matchByEmail) si el mismo contacto aparece en el excel
-    // para más de un cliente — sin esto, ese caso se rendiría (null) en vez
-    // de arriesgar el cliente equivocado.
+    // titleMatch?.name se pasa como pista para acotar candidatos ambiguos
+    // (mismo día, 2+ filas) al cliente ya conocido antes de intentar
+    // cualquier otro desempate — ver el comentario de matchMeetingRow.
     const match = matchMeetingRow(sheetRows, meeting, titleMatch?.name ?? null);
 
-    if (!clientId && match?.cliente) {
-      clientId = await findOrCreateClient(match.cliente, match.clienteId);
+    if (match.status === 'tentative') {
+      // Bug real (15-09-2026, SeguriMaxima/Interex): antes, con 2+
+      // candidatos irresolubles, la función se rendía en silencio y —si el
+      // título ya había resuelto el cliente— la reunión quedaba con
+      // apariencia de "resuelta" (client_id seteado) sin ninguna marca de
+      // que el contacto real seguía sin encontrarse. Ahora queda explícito
+      // como 'tentative', con los candidatos guardados para que un admin
+      // elija (ver resolveTentativeMatch).
+      console.log(
+        `[metas-sheet] reunión ${meetingId}: ${match.candidates.length} candidatos ambiguos para la fecha — queda pendiente de revisión manual`
+      );
+      await pool.query(
+        `update meetings set
+           client_id = coalesce($1, client_id),
+           contacto_match_status = 'tentative',
+           contacto_match_candidates = $2::jsonb,
+           updated_at = now()
+         where id = $3`,
+        [clientId, JSON.stringify(match.candidates.map(toCandidateSummary)), meetingId]
+      );
+      return;
     }
 
-    if (!clientId && !match) {
+    const row = match.row;
+    if (!clientId && row?.cliente) {
+      clientId = await findOrCreateClient(row.cliente, row.clienteId);
+    }
+
+    if (!clientId && !row) {
       console.log(
         `[metas-sheet] reunión ${meetingId}: sin match por título ni en el excel de metas (empresa="${meeting.empresa_contraparte}")`
       );
@@ -575,25 +669,74 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
          metas_sheet_match_id = coalesce(nullif($5, ''), metas_sheet_match_id),
          empresa_nombre = coalesce(nullif($6, ''), empresa_nombre),
          cliente_sales_manager = coalesce(nullif($7, ''), cliente_sales_manager),
+         contacto_match_status = case when $5 is not null and $5 <> '' then 'auto' else contacto_match_status end,
          updated_at = now()
        where id = $8`,
       [
         clientId,
-        match?.contacto ?? null,
-        match?.cargo ?? null,
-        match?.industria ?? null,
-        match?.idReunion ?? null,
-        match?.empresa ?? null,
-        match?.salesManager ?? null,
+        row?.contacto ?? null,
+        row?.cargo ?? null,
+        row?.industria ?? null,
+        row?.idReunion ?? null,
+        row?.empresa ?? null,
+        row?.salesManager ?? null,
         meetingId,
       ]
     );
     console.log(
-      `[metas-sheet] reunión ${meetingId}: cliente resuelto${match ? `, contacto="${match.contacto}" (excel)` : ' (sin match en el excel para enriquecer el contacto)'}`
+      `[metas-sheet] reunión ${meetingId}: cliente resuelto${row ? `, contacto="${row.contacto}" (excel)` : ' (sin match en el excel para enriquecer el contacto)'}`
     );
   } catch (error) {
     console.error(`[metas-sheet] reunión ${meetingId}: error resolviendo cliente/contacto`, error);
   }
+}
+
+// Pedido explícito del usuario (15-09-2026): darle al admin la facultad de
+// elegir cuál de los candidatos 'tentative' es el correcto (o rechazarlos a
+// todos) en vez de que Peitho adivine. `idReunion` identifica cuál de los
+// candidatos guardados en contacto_match_candidates se elige — null rechaza
+// todos (la reunión queda sin match, pero ya no pendiente de revisión).
+export async function resolveTentativeMatch(
+  meetingId: string,
+  idReunion: string | null
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { rows } = await pool.query(
+    `select contacto_match_candidates, client_id from meetings where id = $1`,
+    [meetingId]
+  );
+  const meeting = rows[0];
+  if (!meeting) return { ok: false, error: 'Reunión no encontrada' };
+
+  if (idReunion === null) {
+    await pool.query(
+      `update meetings set contacto_match_status = 'manual', contacto_match_candidates = null, updated_at = now() where id = $1`,
+      [meetingId]
+    );
+    return { ok: true };
+  }
+
+  const candidates: ContactMatchCandidate[] = meeting.contacto_match_candidates ?? [];
+  const chosen = candidates.find((c) => c.idReunion === idReunion);
+  if (!chosen) return { ok: false, error: 'El candidato elegido ya no está disponible — reintentá la re-sincronización' };
+
+  const clientId = meeting.client_id ?? (await findOrCreateClient(chosen.cliente, chosen.clienteId));
+
+  await pool.query(
+    `update meetings set
+       client_id = $1,
+       contacto_nombre = coalesce(nullif($2, ''), contacto_nombre),
+       contacto_cargo = coalesce(nullif($3, ''), contacto_cargo),
+       contacto_industria = coalesce(nullif($4, ''), contacto_industria),
+       metas_sheet_match_id = $5,
+       empresa_nombre = coalesce(nullif($6, ''), empresa_nombre),
+       cliente_sales_manager = coalesce(nullif($7, ''), cliente_sales_manager),
+       contacto_match_status = 'manual',
+       contacto_match_candidates = null,
+       updated_at = now()
+     where id = $8`,
+    [clientId, chosen.contacto, chosen.cargo, chosen.industria, chosen.idReunion, chosen.empresa, chosen.salesManager, meetingId]
+  );
+  return { ok: true };
 }
 
 // resolveMeetingClientAndContact no toca nada si la reunión ya tiene
@@ -626,13 +769,29 @@ export async function refreshMatchedRowFields(meetingId: string): Promise<void> 
   if (!meeting) return;
 
   const sheetRows = await loadReunionesRows();
-  // c.name (el cliente YA asignado a esta reunión, manual o automático) se
-  // pasa como pista para el fallback por correo — si el mismo contacto
-  // aparece en el excel para más de un cliente, esto evita traer datos de
-  // la fila equivocada (ver matchByEmail).
-  const row = meeting.metas_sheet_match_id
-    ? sheetRows.find((r) => r.idReunion === meeting.metas_sheet_match_id) ?? null
-    : matchMeetingRow(sheetRows, meeting, meeting.cliente_nombre ?? null);
+
+  let row: SheetRow | null = null;
+  if (meeting.metas_sheet_match_id) {
+    row = sheetRows.find((r) => r.idReunion === meeting.metas_sheet_match_id) ?? null;
+  } else {
+    // c.name (el cliente YA asignado a esta reunión, manual o automático) se
+    // pasa como pista para acotar candidatos ambiguos — si el mismo contacto
+    // aparece en el excel para más de un cliente, esto evita traer datos de
+    // la fila equivocada (ver matchMeetingRow/matchByEmail).
+    const match = matchMeetingRow(sheetRows, meeting, meeting.cliente_nombre ?? null);
+    if (match.status === 'tentative') {
+      await pool.query(
+        `update meetings set
+           contacto_match_status = 'tentative',
+           contacto_match_candidates = $1::jsonb,
+           updated_at = now()
+         where id = $2`,
+        [JSON.stringify(match.candidates.map(toCandidateSummary)), meetingId]
+      );
+      return;
+    }
+    row = match.row;
+  }
   if (!row) return;
 
   await pool.query(
@@ -643,6 +802,7 @@ export async function refreshMatchedRowFields(meetingId: string): Promise<void> 
        metas_sheet_match_id = coalesce(metas_sheet_match_id, nullif($4, '')),
        empresa_nombre = coalesce(nullif($5, ''), empresa_nombre),
        cliente_sales_manager = coalesce(nullif($6, ''), cliente_sales_manager),
+       contacto_match_status = 'auto',
        updated_at = now()
      where id = $7`,
     [row.contacto, row.cargo, row.industria, row.idReunion, row.empresa, row.salesManager, meetingId]
