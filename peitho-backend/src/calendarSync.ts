@@ -218,10 +218,24 @@ function extractContraparteFromBotInvite(
 
 // Fase H, disparador (b): alguien invitó a bot@... a mano a una reunión que
 // no vive en ningún calendario de BullsEye (ej. el ejecutivo comercial de un
-// cliente agendó directo con el prospecto). No hay "ejecutivo" de BullsEye en
-// este evento — se deja null, no se inventa un dato falso (mismo criterio
-// que el resto del research). El client_id se resuelve después, igual que
-// siempre, matcheando empresa_contraparte + fecha contra el excel de metas.
+// cliente agendó directo con el prospecto) — en ese caso no hay "ejecutivo"
+// de BullsEye en el evento y se deja null, no se inventa un dato falso.
+// Bug real (14-09-2026, reunión de Meghie Rosell/Flowen): esa suposición no
+// siempre es cierta — a veces SÍ hay un BullsEye real en la llamada (ej.
+// ccontador@bullseye-abm.com, invitada como asistente no-opcional) pero el
+// evento lo organizó el prospecto directo con el bot en copia, así que de
+// todas formas entra por este flujo. Si el evento trae un asistente de
+// BullsEye no-opcional, se usa ese como `ejecutivo` — null solo si de verdad
+// no hay ninguno.
+function resolveEjecutivoFromBotInvite(event: GoogleCalendarEvent): string | null {
+  const requiredBullseyeAttendee = (event.attendees ?? []).find((attendee) => {
+    const email = attendee.email?.toLowerCase();
+    if (!email || attendee.resource || attendee.optional) return false;
+    return email.split('@')[1] === BULLSEYE_DOMAIN;
+  });
+  return requiredBullseyeAttendee?.email?.toLowerCase() ?? null;
+}
+
 export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, botEmail: string) {
   console.log(`[bot-invite] procesando evento ${event.id} (status=${event.status})...`);
   if (!event.id || event.status === 'cancelled') return;
@@ -242,17 +256,19 @@ export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, bot
     botEmail,
     clientHint?.name ?? null
   );
+  const ejecutivo = resolveEjecutivoFromBotInvite(event);
   const startTime = event.start?.dateTime ?? event.start?.date ?? null;
   const recurringEventId = event.recurringEventId ?? null;
 
   await cancelStaleRecallBotIfRescheduled(event.id, startTime);
 
-  console.log(`[bot-invite] evento ${event.id}: guardando en meetings (contraparte=${contraparte ?? '?'})...`);
+  console.log(`[bot-invite] evento ${event.id}: guardando en meetings (ejecutivo=${ejecutivo ?? '(ninguno)'}, contraparte=${contraparte ?? '?'})...`);
   const { rows } = await pool.query(
     `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, contraparte_email, empresa_contraparte, start_time, recurring_event_id, meeting_title)
-     values ($1, $2, null, $3, $4, $5, $6, $7, $8)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      on conflict (google_event_id) do update set
        meeting_url = excluded.meeting_url,
+       ejecutivo = excluded.ejecutivo,
        contraparte = excluded.contraparte,
        contraparte_email = excluded.contraparte_email,
        empresa_contraparte = excluded.empresa_contraparte,
@@ -261,7 +277,7 @@ export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, bot
        meeting_title = excluded.meeting_title,
        updated_at = now()
      returning id`,
-    [event.id, meetingUrl, contraparte, contraparteEmail, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
+    [event.id, meetingUrl, ejecutivo, contraparte, contraparteEmail, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
   );
   console.log(`[bot-invite] evento ${event.id}: guardado como reunión ${rows[0].id}, agendando bot...`);
 
@@ -308,6 +324,29 @@ export async function resyncBotInviteMeeting(meetingId: string): Promise<{ ok: t
 async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail: string) {
   if (!event.id || event.status === 'cancelled') {
     // Manejo de reuniones canceladas queda fuera del scope del MVP (ver arquitectura, sección 4)
+    return;
+  }
+
+  // Bug real (14-09-2026, reunión de Meghie Rosell/Flowen): el mismo
+  // google_event_id puede llegar por ESTE flujo (calendario de un ejecutivo,
+  // ej. un invitado opcional que también está conectado a Peitho) Y por el
+  // flujo de invitación al bot (calendario de bot@peithob2b.com, también
+  // invitado al mismo evento) — ambos comparten el mismo `on conflict
+  // (google_event_id)` pero cada UPDATE solo toca su propio subconjunto de
+  // columnas, así que la fila terminaba como un híbrido inconsistente:
+  // meeting_url/contraparte calculados por el flujo del bot (correcto, el
+  // organizador real es externo) junto con ejecutivo/meet_code pisados por
+  // este flujo (mirando solo el calendario del invitado opcional, sin ver
+  // que el prospecto organizó todo directo con el bot). Si la fila ya existe
+  // con meeting_url seteado, ya quedó clasificada por el flujo del bot — ese
+  // flujo es el autoritativo para este evento, así que este flujo no debe
+  // tocarla más.
+  const { rows: existingRows } = await pool.query<{ meeting_url: string | null }>(
+    'select meeting_url from meetings where google_event_id = $1',
+    [event.id]
+  );
+  if (existingRows[0]?.meeting_url) {
+    console.log(`[sync] evento ${event.id}: ya está clasificado como invitación al bot (meeting_url seteado) — se ignora desde el flujo de calendario de ejecutivo`);
     return;
   }
 
