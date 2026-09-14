@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls, listAlloTags, type AlloUserRef } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, listAlloTags, fetchAlloConnectedCallIds, type AlloUserRef } from "@/lib/allo";
 import { searchHSContactsByPhones } from "@/lib/hubspot";
 import { CHILE_UTC_OFFSET_HOURS } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
+// Ahora también pide, en paralelo, las llamadas "conectadas" (etapa
+// Conversación) de Allo vía su endpoint de analíticas — margen extra sobre
+// el default para rangos amplios con "todos los clientes".
+export const maxDuration = 60;
 
 type Params = { params: { id: string } };
 
@@ -22,21 +26,6 @@ function toDateParam(d: Date): string {
 function callDateKey(isoDate: string): string {
   const shifted = new Date(new Date(isoDate).getTime() + CHILE_UTC_OFFSET_HOURS * 3600000);
   return shifted.toISOString().slice(0, 10);
-}
-
-// El campo `result` de una llamada dice "ANSWERED" aunque haya caído a
-// buzón de voz (la señal telefónica se marca como contestada igual). Allo
-// tiene un campo de "voicemail detectado" con IA, pero no está expuesto en
-// ningún endpoint de la API — solo se ve en su propio dashboard, y ni
-// siquiera ahí es 100% consistente. Como aproximación, se descartan las
-// contestadas cortas: en los casos reales revisados (cliente CCCH, agosto),
-// los buzones de voz y cortes inmediatos nunca pasaron de 51s, mientras que
-// las conversaciones reales duraron 1m49s y 2m58s — 60s separa ambos grupos
-// con margen. Es una heurística ajustable, no una regla exacta.
-const MIN_REAL_CONVERSATION_SECONDS = 60;
-
-function isRealConnection(c: { result: string | null; duration: number }): boolean {
-  return (c.result === "ANSWERED" || c.result === "TRANSFERRED") && c.duration >= MIN_REAL_CONVERSATION_SECONDS;
 }
 
 export async function GET(req: NextRequest, { params }: Params) {
@@ -71,7 +60,7 @@ export async function GET(req: NextRequest, { params }: Params) {
     const dateFrom = toDateParam(range.start);
     const dateTo = toDateParam(range.end);
 
-    const [callsByNumber, allNumbers, tags] = await Promise.all([
+    const [callsByNumber, allNumbers, tags, connectedCallIds] = await Promise.all([
       Promise.all(
         assignedNumbers.map((n) =>
           searchAlloCalls({ allo_number: n, date_from: dateFrom, date_to: dateTo, direction: "OUTBOUND" })
@@ -79,6 +68,7 @@ export async function GET(req: NextRequest, { params }: Params) {
       ),
       listAlloNumbers(),
       listAlloTags(),
+      fetchAlloConnectedCallIds({ allo_numbers: assignedNumbers, date_from: dateFrom, date_to: dateTo }),
     ]);
 
     // Filtros locales de respaldo, sin depender de que la API de Allo filtre
@@ -116,10 +106,13 @@ export async function GET(req: NextRequest, { params }: Params) {
         contact_job_title: hs?.job_title ?? c.extracted_contact.job_title,
         contact_company: hs?.company_name ?? c.extracted_contact.company,
         hubspot_contact_id: hs?.contact_id ?? null,
+        // Etapa "Conversación" del embudo de Allo (voicemail:false) — ver
+        // fetchAlloConnectedCallIds en lib/allo.ts.
+        connected: connectedCallIds.has(c.id),
       };
     });
 
-    const connected = enrichedCalls.filter(isRealConnection);
+    const connected = enrichedCalls.filter((c) => c.connected);
     const meetings = enrichedCalls.filter((c) => c.tags.includes("meeting_booked"));
     const uniqueContacts = new Set(enrichedCalls.map((c) => c.contact_number));
     const uniqueCompanies = new Set(

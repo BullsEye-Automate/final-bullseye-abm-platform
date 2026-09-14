@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds } from "@/lib/allo";
 import {
-  isConnected,
   toDateParam,
   endOfDayUTC,
   resolveMeetingsRangeEnd,
@@ -17,6 +16,10 @@ import {
 import { toChileParts } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
+// Ahora también pide, en paralelo, las llamadas "conectadas" (etapa
+// Conversación) de Allo vía su endpoint de analíticas — margen extra sobre
+// el default para rangos amplios con "todos los clientes".
+export const maxDuration = 60;
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -166,13 +169,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Obtener llamadas desde Allo
-    const [callsByNumber, allNumbers] = await Promise.all([
+    const [callsByNumber, allNumbers, connectedCallIds] = await Promise.all([
       Promise.all(
         assignedNumbers.map((n) =>
           searchAlloCalls({ allo_number: n, date_from: dateFrom, date_to: dateTo, direction: "OUTBOUND" })
         )
       ),
       listAlloNumbers(),
+      fetchAlloConnectedCallIds({ allo_numbers: assignedNumbers, date_from: dateFrom, date_to: dateTo }),
     ]);
 
     // Mapear número Allo -> país (mismo criterio que /api/analisis/paises:
@@ -365,7 +369,7 @@ export async function GET(request: NextRequest) {
       }
 
       sdrDataMap[sdrId].llamadas_realizadas++;
-      if (isConnected(call.duration, call.result)) {
+      if (connectedCallIds.has(call.id)) {
         sdrDataMap[sdrId].llamadas_conectadas++;
       }
     }
@@ -460,7 +464,7 @@ export async function GET(request: NextRequest) {
         const sdrCalls = calls.filter((c) => (c.user?.id || "unknown") === sdrId);
         const contactosUnicos = new Set(sdrCalls.map((c) => c.contact_number)).size;
         const contactosConectados = new Set(
-          sdrCalls.filter((c) => isConnected(c.duration, c.result)).map((c) => c.contact_number)
+          sdrCalls.filter((c) => connectedCallIds.has(c.id)).map((c) => c.contact_number)
         ).size;
         sdrData.contactos_gestionados = contactosUnicos;
         sdrData.contactos_conectados = contactosConectados;

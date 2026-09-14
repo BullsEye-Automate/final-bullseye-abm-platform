@@ -212,6 +212,54 @@ export async function searchAlloCalls(params: {
   return items;
 }
 
+// IDs de las llamadas salientes que Allo clasifica en la etapa
+// "Conversación" de su propio embudo (Dial → Conectada → Conversación →
+// Conversión, visible en su dashboard de analíticas outbound). Esta es la
+// definición oficial de Allo de una llamada realmente conectada — excluye
+// tanto las que nunca contestaron como las que sí "conectaron" (la línea
+// se levantó) pero sin que hubiera una conversación real (buzón de voz,
+// corte inmediato, etc.). Reemplaza la heurística anterior de
+// resultado+duración (ver git history), que solo aproximaba este mismo
+// criterio porque el campo "result" del listado normal de llamadas no
+// distingue buzón de voz de una respuesta real, y ese detalle solo lo
+// expone este endpoint de analíticas (no el de búsqueda simple de
+// conversations/items/search).
+export async function fetchAlloConnectedCallIds(params: {
+  allo_numbers: string[];
+  date_from: string; // YYYY-MM-DD
+  date_to: string;   // YYYY-MM-DD
+}): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const allo_numbers = [...new Set(params.allo_numbers.filter(Boolean))];
+  if (allo_numbers.length === 0) return ids;
+
+  let page = 1;
+  const maxPages = 200; // 100/página — tope de seguridad, ver listAllHSCompanies en lib/hubspot.ts
+
+  while (page <= maxPages) {
+    const d = await alloFetch("/v2/api/analytics/outbound", {
+      method: "POST",
+      body: JSON.stringify({
+        date_from: params.date_from,
+        date_to: params.date_to,
+        allo_numbers,
+        extend: "items",
+        stage: "CONVERSATION",
+        page,
+        size: 100,
+      }),
+    });
+    const pageItems: any[] = d?.data?.items?.data ?? [];
+    for (const it of pageItems) {
+      if (it?.id) ids.add(it.id);
+    }
+    const pagination = d?.data?.items?.pagination;
+    if (!pagination?.has_more || pageItems.length === 0) break;
+    page += 1;
+  }
+  return ids;
+}
+
 export type AlloCallDetail = AlloCallItem & {
   transcript: { speaker: string; text: string; time: string }[] | null;
 };
