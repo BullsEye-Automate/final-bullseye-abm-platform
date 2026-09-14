@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds, resolveConnected } from "@/lib/allo";
 import {
   toDateParam,
   endOfDayUTC,
@@ -369,7 +369,7 @@ export async function GET(request: NextRequest) {
       }
 
       sdrDataMap[sdrId].llamadas_realizadas++;
-      if (connectedCallIds.has(call.id)) {
+      if (resolveConnected(call, connectedCallIds)) {
         sdrDataMap[sdrId].llamadas_conectadas++;
       }
     }
@@ -464,7 +464,7 @@ export async function GET(request: NextRequest) {
         const sdrCalls = calls.filter((c) => (c.user?.id || "unknown") === sdrId);
         const contactosUnicos = new Set(sdrCalls.map((c) => c.contact_number)).size;
         const contactosConectados = new Set(
-          sdrCalls.filter((c) => connectedCallIds.has(c.id)).map((c) => c.contact_number)
+          sdrCalls.filter((c) => resolveConnected(c, connectedCallIds)).map((c) => c.contact_number)
         ).size;
         sdrData.contactos_gestionados = contactosUnicos;
         sdrData.contactos_conectados = contactosConectados;

@@ -212,6 +212,13 @@ export async function searchAlloCalls(params: {
   return items;
 }
 
+// Aproximación de respaldo si fetchAlloConnectedCallIds no puede traer la
+// clasificación oficial de Allo (ver más abajo) — NUNCA la fuente primaria,
+// solo para que el reporte no se caiga entero si ese endpoint falla.
+function isLikelyConnectedFallback(call: { duration: number; result: string | null }): boolean {
+  return (call.result === "ANSWERED" || call.result === "TRANSFERRED") && call.duration >= 60;
+}
+
 // IDs de las llamadas salientes que Allo clasifica en la etapa
 // "Conversación" de su propio embudo (Dial → Conectada → Conversación →
 // Conversión, visible en su dashboard de analíticas outbound). Esta es la
@@ -224,40 +231,59 @@ export async function searchAlloCalls(params: {
 // distingue buzón de voz de una respuesta real, y ese detalle solo lo
 // expone este endpoint de analíticas (no el de búsqueda simple de
 // conversations/items/search).
+//
+// Devuelve null si la llamada al endpoint de analíticas falla (ej. si el
+// formato exacto del body no calza con lo que espera Allo) — el caller debe
+// usar isLikelyConnectedFallback en ese caso en vez de tratar null como "sin
+// conectadas". Se degrada así, en vez de dejar caer el reporte entero con un
+// error, mientras se termina de confirmar el contrato real de este endpoint
+// (no se pudo probar en vivo contra la API real antes de este cambio).
 export async function fetchAlloConnectedCallIds(params: {
   allo_numbers: string[];
   date_from: string; // YYYY-MM-DD
   date_to: string;   // YYYY-MM-DD
-}): Promise<Set<string>> {
+}): Promise<Set<string> | null> {
   const ids = new Set<string>();
   const allo_numbers = [...new Set(params.allo_numbers.filter(Boolean))];
   if (allo_numbers.length === 0) return ids;
 
-  let page = 1;
-  const maxPages = 200; // 100/página — tope de seguridad, ver listAllHSCompanies en lib/hubspot.ts
+  try {
+    let page = 1;
+    const maxPages = 200; // 100/página — tope de seguridad, ver listAllHSCompanies en lib/hubspot.ts
 
-  while (page <= maxPages) {
-    const d = await alloFetch("/v2/api/analytics/outbound", {
-      method: "POST",
-      body: JSON.stringify({
-        date_from: params.date_from,
-        date_to: params.date_to,
-        allo_numbers,
-        extend: "items",
-        stage: "CONVERSATION",
-        page,
-        size: 100,
-      }),
-    });
-    const pageItems: any[] = d?.data?.items?.data ?? [];
-    for (const it of pageItems) {
-      if (it?.id) ids.add(it.id);
+    while (page <= maxPages) {
+      const d = await alloFetch("/v2/api/analytics/outbound", {
+        method: "POST",
+        body: JSON.stringify({
+          date_from: params.date_from,
+          date_to: params.date_to,
+          allo_numbers,
+          extend: "items",
+          stage: "CONVERSATION",
+          page,
+          size: 100,
+        }),
+      });
+      const pageItems: any[] = d?.data?.items?.data ?? [];
+      for (const it of pageItems) {
+        if (it?.id) ids.add(it.id);
+      }
+      const pagination = d?.data?.items?.pagination;
+      if (!pagination?.has_more || pageItems.length === 0) break;
+      page += 1;
     }
-    const pagination = d?.data?.items?.pagination;
-    if (!pagination?.has_more || pageItems.length === 0) break;
-    page += 1;
+    return ids;
+  } catch (err) {
+    console.error("fetchAlloConnectedCallIds falló, se usa el respaldo por duración:", err);
+    return null;
   }
-  return ids;
+}
+
+export function resolveConnected(
+  call: { id: string; duration: number; result: string | null },
+  connectedCallIds: Set<string> | null
+): boolean {
+  return connectedCallIds ? connectedCallIds.has(call.id) : isLikelyConnectedFallback(call);
 }
 
 export type AlloCallDetail = AlloCallItem & {

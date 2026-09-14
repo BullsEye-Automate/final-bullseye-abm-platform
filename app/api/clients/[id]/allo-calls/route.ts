@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls, listAlloTags, fetchAlloConnectedCallIds, type AlloUserRef } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, listAlloTags, fetchAlloConnectedCallIds, resolveConnected, type AlloUserRef } from "@/lib/allo";
 import { searchHSContactsByPhones } from "@/lib/hubspot";
 import { CHILE_UTC_OFFSET_HOURS } from "@/lib/timezone";
 
@@ -108,7 +108,7 @@ export async function GET(req: NextRequest, { params }: Params) {
         hubspot_contact_id: hs?.contact_id ?? null,
         // Etapa "Conversación" del embudo de Allo (voicemail:false) — ver
         // fetchAlloConnectedCallIds en lib/allo.ts.
-        connected: connectedCallIds.has(c.id),
+        connected: resolveConnected(c, connectedCallIds),
       };
     });
 

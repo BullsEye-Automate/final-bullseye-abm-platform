@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds, resolveConnected } from "@/lib/allo";
 import {
   toDateParam,
   resolveMeetingsRangeEnd,
@@ -317,7 +317,7 @@ export async function GET(request: NextRequest) {
       const bucket = getBucket(label);
       bucket.llamadas_realizadas++;
       bucket.contactos.add(call.contact_number);
-      if (connectedCallIds.has(call.id)) {
+      if (resolveConnected(call, connectedCallIds)) {
         bucket.llamadas_conectadas++;
         bucket.contactosConectados.add(call.contact_number);
       }

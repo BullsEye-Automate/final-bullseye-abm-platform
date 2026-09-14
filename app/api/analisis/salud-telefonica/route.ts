@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds, resolveConnected } from "@/lib/allo";
 import { toDateParam, callDateKey, resolveCountryLabel } from "@/lib/sdrAnalytics";
 
 export const dynamic = "force-dynamic";
@@ -188,7 +188,7 @@ export async function GET(request: NextRequest) {
         seenCallIds.add(call.id);
 
         const key = callDateKey(call.date);
-        const connected = connectedCallIds.has(call.id);
+        const connected = resolveConnected(call, connectedCallIds);
 
         if (key >= dateFrom && key <= dateTo) {
           totales.llamadas++;
