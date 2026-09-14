@@ -60,6 +60,37 @@ function extractMeetCode(event: GoogleCalendarEvent): string | null {
   return null;
 }
 
+// Bug real (14-09-2026, reunión de Meghie Rosell/Flowen): `ejecutivo` se
+// guardaba directo como la cuenta cuyo canal de Calendar sincronizó el
+// evento — no necesariamente quien realmente llevó la reunión. Cuando una
+// reunión tiene más de una cuenta de BullsEye vigilada por Peitho en el
+// mismo evento (ej. jkarmy invitado como opcional sin conectarse nunca,
+// ccontador como organizadora real que sí atendió), CADA canal sincroniza
+// el mismo evento y el `on conflict ... ejecutivo = excluded.ejecutivo`
+// deja el valor de quien haya sincronizado último — pura carrera, sin
+// ninguna relación con quién de verdad estuvo en la llamada. Fix: en vez de
+// confiar en el canal que avisó, se resuelve `ejecutivo` a partir de los
+// datos del propio evento (organizador si es de BullsEye, si no el primer
+// asistente de BullsEye NO opcional), que son los mismos sin importar cuál
+// canal procese el evento — todas las sincronizaciones de un mismo evento
+// convergen al mismo valor correcto en vez de pisarse entre sí. Solo cae al
+// dueño del canal que sincronizó (comportamiento viejo) si el evento no da
+// ninguna pista mejor (ej. sin lista de asistentes).
+function resolveEjecutivo(event: GoogleCalendarEvent, ejecutivoEmail: string): string {
+  const organizerEmail = event.organizer?.email?.toLowerCase();
+  if (organizerEmail && organizerEmail.split('@')[1] === BULLSEYE_DOMAIN) {
+    return organizerEmail;
+  }
+  const requiredBullseyeAttendee = (event.attendees ?? []).find((attendee) => {
+    const email = attendee.email?.toLowerCase();
+    if (!email || attendee.resource || attendee.optional) return false;
+    return email.split('@')[1] === BULLSEYE_DOMAIN;
+  });
+  if (requiredBullseyeAttendee?.email) return requiredBullseyeAttendee.email.toLowerCase();
+
+  return ejecutivoEmail.toLowerCase();
+}
+
 // Bug real (14-09-2026): a diferencia de extractContraparteFromBotInvite
 // (que sí excluye bullseye-abm.com completo), este flujo solo excluía el
 // correo exacto del ejecutivo dueño del calendario — un compañero de
@@ -283,6 +314,7 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
   const meetCode = extractMeetCode(event);
   if (!meetCode) return; // sin link de Meet, no es una reunión que Peitho deba capturar
 
+  const resolvedEjecutivo = resolveEjecutivo(event, ejecutivoEmail);
   const { contraparte, contraparteEmail, empresaContraparte } = extractContraparte(event, ejecutivoEmail);
   const startTime = event.start?.dateTime ?? event.start?.date ?? null;
   // Google marca cada ocurrencia expandida de una serie recurrente con el id
@@ -305,7 +337,7 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
        meeting_title = excluded.meeting_title,
        updated_at = now()
      returning id`,
-    [event.id, meetCode, ejecutivoEmail, contraparte, contraparteEmail, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
+    [event.id, meetCode, resolvedEjecutivo, contraparte, contraparteEmail, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
   );
 
   // Bug real (08-09-2026): una reunión con un prospecto externo real no
