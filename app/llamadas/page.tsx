@@ -44,6 +44,10 @@ type CallItem = {
   contact_job_title: string | null;
   contact_company: string | null;
   hubspot_contact_id: string | null;
+  // Etapa "Conversación" del embudo de Allo (voicemail:false) — el mismo
+  // criterio oficial de Allo, calculado server-side (ver
+  // fetchAlloConnectedCallIds en lib/allo.ts).
+  connected: boolean;
 };
 
 type CallDetail = CallItem & {
@@ -76,21 +80,15 @@ type StatKey = "llamadas" | "conectados" | "reuniones" | "contactos" | "empresas
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-// El campo `result` de Allo dice "ANSWERED" aunque haya caído a buzón de
-// voz. Allo detecta eso internamente con IA, pero ese dato no está
-// expuesto en ningún endpoint de su API (solo se ve en su propio dashboard,
-// y ni ahí es 100% consistente) — como aproximación, se descartan las
-// contestadas cortas (mismo criterio y mismo umbral que en la API, ver
-// MIN_REAL_CONVERSATION_SECONDS en app/api/clients/[id]/allo-calls/route.ts).
+// Aproximación de "buzón de voz" para el filtro de esta tabla: contestada o
+// transferida pero por debajo del umbral de conversación real. No es lo
+// mismo que "no conectada" (c.connected === false) — eso también incluye
+// llamadas que nunca se contestaron. Allo distingue esto con más precisión
+// internamente (ver c.connected, calculado server-side desde su propio
+// embudo de analíticas), pero no expone un flag de "es buzón de voz" por
+// llamada — solo la etapa del embudo que alcanzó.
 const MIN_REAL_CONVERSATION_SECONDS = 60;
 
-function isConnected(c: CallItem): boolean {
-  return (c.result === "ANSWERED" || c.result === "TRANSFERRED") && c.duration >= MIN_REAL_CONVERSATION_SECONDS;
-}
-
-// Aproximación de "buzón de voz": contestada/transferida pero por debajo del
-// umbral de conversación real (ver isConnected). Una llamada que nunca fue
-// contestada (ej. CLOSED) tampoco es buzón de voz, así que no cuenta acá.
 function isVoicemailCall(c: CallItem): boolean {
   return (c.result === "ANSWERED" || c.result === "TRANSFERRED") && c.duration < MIN_REAL_CONVERSATION_SECONDS;
 }
@@ -680,7 +678,7 @@ export default function LlamadasPage() {
 
   const stats: Stats = useMemo(
     () => {
-      const conectadas = filteredCalls.filter(isConnected);
+      const conectadas = filteredCalls.filter((c) => c.connected);
       const duracionTotal = conectadas.reduce((sum, c) => sum + c.duration, 0);
       const duracionPromedio = conectadas.length > 0 ? duracionTotal / conectadas.length : 0;
 
@@ -728,7 +726,7 @@ export default function LlamadasPage() {
   const statModalCalls = useMemo(() => {
     switch (statModal) {
       case "llamadas": return filteredCalls;
-      case "conectados": return filteredCalls.filter(isConnected);
+      case "conectados": return filteredCalls.filter((c) => c.connected);
       case "reuniones": return filteredCalls.filter((c) => c.tags.includes("meeting_booked"));
       case "tags": return filteredCalls;
       default: return filteredCalls;
@@ -945,8 +943,8 @@ export default function LlamadasPage() {
         <ModalShell title={STAT_TITLES[statModal]} onClose={() => setStatModal(null)} maxWidth="max-w-4xl">
           {statModal === "conectados" && (
             <p className="text-xs text-ink-muted mb-3">
-              Aproximado: contestadas o transferidas de {MIN_REAL_CONVERSATION_SECONDS}s o más. Allo detecta buzón de
-              voz con más precisión, pero ese dato no está disponible en su API todavía.
+              Etapa "Conversación" del embudo de Allo (excluye buzón de voz) — el mismo criterio que usa el
+              propio dashboard de Allo.
             </p>
           )}
           {statModal === "contactos" ? (

@@ -19,6 +19,10 @@
     "app/api/training/lab/route.ts": { "maxDuration": 60 },
     "app/api/analisis/salud-telefonica/route.ts": { "maxDuration": 90 },
     "app/api/analisis/horarios/route.ts": { "maxDuration": 60 },
-    "app/api/analisis/actividades-hubspot/route.ts": { "maxDuration": 90 }
+    "app/api/analisis/actividades-hubspot/route.ts": { "maxDuration": 90 },
+    "app/api/analisis/sdr/route.ts": { "maxDuration": 60 },
+    "app/api/analisis/paises/route.ts": { "maxDuration": 60 },
+    "app/api/analisis/clientes/route.ts": { "maxDuration": 60 },
+    "app/api/clients/[id]/allo-calls/route.ts": { "maxDuration": 60 }
   }
 }

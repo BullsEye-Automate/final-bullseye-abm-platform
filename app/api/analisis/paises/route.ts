@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds } from "@/lib/allo";
 import {
-  isConnected,
   toDateParam,
   resolveMeetingsRangeEnd,
   callDateKey,
@@ -15,6 +14,10 @@ import {
 } from "@/lib/sdrAnalytics";
 
 export const dynamic = "force-dynamic";
+// Ahora también pide, en paralelo, las llamadas "conectadas" (etapa
+// Conversación) de Allo vía su endpoint de analíticas — margen extra sobre
+// el default para rangos amplios con "todos los clientes".
+export const maxDuration = 60;
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
@@ -102,13 +105,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ paises_data: [], all_sdrs: [], all_clientes: [] });
     }
 
-    const [callsByNumber, allNumbers] = await Promise.all([
+    const [callsByNumber, allNumbers, connectedCallIds] = await Promise.all([
       Promise.all(
         assignedNumbers.map((n) =>
           searchAlloCalls({ allo_number: n, date_from: dateFrom, date_to: dateTo, direction: "OUTBOUND" })
         )
       ),
       listAlloNumbers(),
+      fetchAlloConnectedCallIds({ allo_numbers: assignedNumbers, date_from: dateFrom, date_to: dateTo }),
     ]);
 
     // Mismos filtros de respaldo que /api/analisis/sdr (ver ese archivo para
@@ -313,7 +317,7 @@ export async function GET(request: NextRequest) {
       const bucket = getBucket(label);
       bucket.llamadas_realizadas++;
       bucket.contactos.add(call.contact_number);
-      if (isConnected(call.duration, call.result)) {
+      if (connectedCallIds.has(call.id)) {
         bucket.llamadas_conectadas++;
         bucket.contactosConectados.add(call.contact_number);
       }
