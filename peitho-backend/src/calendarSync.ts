@@ -396,6 +396,7 @@ interface ChannelRow {
   calendar_id: string;
   sync_token: string | null;
   google_account_email: string;
+  calendar_watch_enabled: boolean;
 }
 
 /**
@@ -404,7 +405,7 @@ interface ChannelRow {
  */
 export async function syncChannelChanges(channelId: string) {
   const { rows } = await pool.query<ChannelRow>(
-    `select w.id, w.calendar_id, w.sync_token, c.google_account_email
+    `select w.id, w.calendar_id, w.sync_token, c.google_account_email, c.calendar_watch_enabled
      from calendar_watch_channels w
      join google_credentials c on c.id = w.google_credential_id
      where w.channel_id = $1`,
@@ -413,6 +414,21 @@ export async function syncChannelChanges(channelId: string) {
   const channel = rows[0];
   if (!channel) {
     console.warn(`Notificación recibida para un canal desconocido: ${channelId}`);
+    return;
+  }
+
+  // Bug real (14-09-2026, pedido explícito del usuario): `calendar_watch_enabled`
+  // (migración 028) solo se chequeaba en los jobs periódicos de renovación/
+  // catchup, no acá — así que una cuenta marcada como "no vigilar" (ej. el
+  // calendario personal de jkarmy, que necesita quedar conectado solo para
+  // leer el excel de metas vía Sheets, sin que Peitho cree reuniones/agende
+  // bots desde SU calendario) seguía sincronizando igual mientras su canal
+  // ya activo no expirara (~7 días) — Google le seguía avisando cambios y
+  // este webhook los procesaba sin mirar la bandera. Con este chequeo, el
+  // webhook llega igual (barato, no hace nada) pero no crea ni actualiza
+  // ninguna reunión — sin tocar las credenciales que Sheets sigue usando.
+  if (!channel.calendar_watch_enabled) {
+    console.log(`[sync] canal ${channelId} (${channel.google_account_email}): calendar_watch_enabled=false, se ignora la notificación`);
     return;
   }
 
