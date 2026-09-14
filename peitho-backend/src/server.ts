@@ -8,27 +8,53 @@ import { renewExpiringCalendarWatches, catchUpAllActiveChannels } from './calend
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
 
+// Bug real (14-09-2026): Railway mandó 3 avisos de "Deploy Ran Out of
+// Memory" — la causa real no fue ninguna integración externa, fue que
+// TODOS los procesos periódicos de abajo se lanzan con setInterval sin
+// esperar a que la corrida anterior termine. Para el reintento de análisis
+// en particular (retryStuckAnalyses, cada 60s) eso es catastrófico: bajar
+// el audio completo + transcribir con Deepgram + correr el prompt de
+// análisis con Claude para una reunión real fácilmente toma más de 60
+// segundos — así que mientras una reunión seguía "pegada" en captured (el
+// intento anterior ni siquiera había terminado), el siguiente tick la
+// volvía a agarrar y lanzaba OTRO intento completo en paralelo, encima del
+// que ya estaba corriendo. Confirmado real en los logs: el mismo audio de
+// la misma reunión se descargó 3 veces distintas en un lapso de minutos.
+// Este wrapper hace que un tick se salte por completo si la corrida
+// anterior de esa misma función todavía no terminó — aplica a los 5
+// procesos periódicos de este archivo, no solo al de análisis, porque
+// ninguno tenía esta protección.
+function everyGuarded(label: string, fn: () => Promise<void>, intervalMs: number) {
+  let running = false;
+  const tick = () => {
+    if (running) {
+      console.warn(`[startup] ${label}: la corrida anterior todavía no termina, se salta este ciclo`);
+      return;
+    }
+    running = true;
+    fn()
+      .catch((error) => console.error(`[startup] error en ${label}`, error))
+      .finally(() => {
+        running = false;
+      });
+  };
+  setInterval(tick, intervalMs);
+  return tick;
+}
+
 // Cada 1 min, revisa bots de Recall que ya deberían haber intentado unirse y
 // reintenta los que fallaron por el "sso_not_configured" intermitente (ver
 // checkAndRetryFailedRecallBots en recall.ts) — así no depende de que alguien
 // note a mano, en plena reunión, que el bot no llegó.
 const RECALL_RETRY_POLL_MS = 60_000;
-setInterval(() => {
-  checkAndRetryFailedRecallBots().catch((error) =>
-    console.error('[startup] error en el chequeo periódico de bots de Recall fallidos', error)
-  );
-}, RECALL_RETRY_POLL_MS);
+everyGuarded('chequeo de bots de Recall fallidos', checkAndRetryFailedRecallBots, RECALL_RETRY_POLL_MS);
 
 // Mismo intervalo, chequeo aparte: bots ya agendados cuyo join_at quedó
 // desalineado del start_time actual de la reunión (ej. reagendos que
 // ocurrieron antes del fix de cancelStaleRecallBotIfRescheduled en
 // calendarSync.ts, o cualquier otro camino futuro que reagende sin pasar por
 // ahí) — ver el comentario en checkAndFixStaleRecallBots en recall.ts.
-setInterval(() => {
-  checkAndFixStaleRecallBots().catch((error) =>
-    console.error('[startup] error en el chequeo periódico de bots de Recall desalineados', error)
-  );
-}, RECALL_RETRY_POLL_MS);
+everyGuarded('chequeo de bots de Recall desalineados', checkAndFixStaleRecallBots, RECALL_RETRY_POLL_MS);
 
 // Reintento automático del análisis post-reunión (10-09-2026, pedido
 // explícito del usuario: "necesito que el análisis de las reuniones corra
@@ -37,20 +63,12 @@ setInterval(() => {
 // hoy toda reunión cae al fallback de Deepgram (el transcript nativo de
 // Recall quedó revertido), y si ese paso o el llamado a Claude fallan una
 // vez, nadie se entera hasta que un admin nota que quedó en "Capturada".
-setInterval(() => {
-  retryStuckAnalyses().catch((error) =>
-    console.error('[startup] error en el chequeo periódico de análisis pegados', error)
-  );
-}, RECALL_RETRY_POLL_MS);
+everyGuarded('reintento de análisis pegados', retryStuckAnalyses, RECALL_RETRY_POLL_MS);
 
 // Borra videos de reuniones con más de 30 días (ver videoRetention.ts) —
 // una vez al día alcanza sobra, no hace falta más seguido que eso.
 const VIDEO_RETENTION_POLL_MS = 24 * 60 * 60 * 1000;
-setInterval(() => {
-  deleteExpiredMeetingVideos().catch((error) =>
-    console.error('[startup] error en el borrado periódico de videos vencidos', error)
-  );
-}, VIDEO_RETENTION_POLL_MS);
+everyGuarded('borrado de videos vencidos', deleteExpiredMeetingVideos, VIDEO_RETENTION_POLL_MS);
 // Corre también una vez al arrancar — si el servidor estuvo caído varios
 // días, no hay que esperar 24h más para la primera limpieza.
 deleteExpiredMeetingVideos().catch((error) =>
@@ -66,11 +84,7 @@ deleteExpiredMeetingVideos().catch((error) =>
 // mucho antes de que expire, y corre también al arrancar por si el server
 // estuvo caído más de 6h.
 const CALENDAR_WATCH_RENEWAL_POLL_MS = 6 * 60 * 60 * 1000;
-setInterval(() => {
-  renewExpiringCalendarWatches().catch((error) =>
-    console.error('[startup] error en la renovación periódica de watches de Calendar', error)
-  );
-}, CALENDAR_WATCH_RENEWAL_POLL_MS);
+everyGuarded('renovación de watches de Calendar', renewExpiringCalendarWatches, CALENDAR_WATCH_RENEWAL_POLL_MS);
 renewExpiringCalendarWatches().catch((error) =>
   console.error('[startup] error en la renovación inicial de watches de Calendar', error)
 );
@@ -86,11 +100,7 @@ renewExpiringCalendarWatches().catch((error) =>
 // perdidos y cualquier sync que haya quedado atascado. Barato: sin cambios
 // reales, events.list con syncToken no trae nada.
 const CALENDAR_CATCHUP_SYNC_POLL_MS = 15 * 60 * 1000;
-setInterval(() => {
-  catchUpAllActiveChannels().catch((error) =>
-    console.error('[startup] error en la sincronización periódica de respaldo de Calendar', error)
-  );
-}, CALENDAR_CATCHUP_SYNC_POLL_MS);
+everyGuarded('sincronización de respaldo de Calendar', catchUpAllActiveChannels, CALENDAR_CATCHUP_SYNC_POLL_MS);
 catchUpAllActiveChannels().catch((error) =>
   console.error('[startup] error en la sincronización inicial de respaldo de Calendar', error)
 );
