@@ -337,11 +337,23 @@ export async function checkAndRetryFailedRecallBots(): Promise<void> {
 export async function checkAndFixStaleRecallBots(): Promise<void> {
   if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
 
+  // Bug real (14-09-2026): esta consulta no acotaba start_time (a propósito,
+  // ver el comentario de arriba sobre cubrir reuniones ya pasadas) — con el
+  // volumen actual eso significa pedirle a Recall el estado de CADA reunión
+  // "scheduled" con bot que exista, sin importar cuán lejos en el futuro esté,
+  // CADA 60 SEGUNDOS para siempre hasta que se capture. Recall mandó un
+  // aviso real de "80% del rate limit" en /api/v1/bot/{id} (300/min) — no
+  // hacía falta ningún cambio del lado de Recall, el problema era que
+  // acumulábamos cientos de reuniones futuras lejanas en el mismo chequeo por
+  // minuto. Basta con revisar una ventana angosta alrededor de "ahora" (±48h)
+  // — una reunión desalineada de acá a 3 semanas no es urgente de corregir
+  // todavía, se va a revisar igual cuando entre en esta ventana.
   const { rows } = await pool.query(
     `select id, meet_code, meeting_url, start_time, recall_bot_id
      from meetings
      where recall_bot_id is not null
-       and status = 'scheduled'`
+       and status = 'scheduled'
+       and start_time between now() - interval '48 hours' and now() + interval '48 hours'`
   );
 
   for (const meeting of rows) {
