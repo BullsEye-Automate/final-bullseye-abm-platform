@@ -25,6 +25,9 @@ interface SheetRow {
   // por nombre, así que viene vacío la mayoría de las filas.
   salesManager: string;
   idReunion: string;
+  // Correo del contacto — identificador exacto y estable que no depende de
+  // que la fecha de esta fila esté al día (ver matchByEmail más abajo).
+  correo: string;
 }
 
 interface MetasCache {
@@ -111,6 +114,7 @@ async function loadReunionesRows(forceRefresh = false): Promise<SheetRow[]> {
     pais: String(raw[col('País')] ?? '').trim(),
     salesManager: String(raw[col('Sales Manager')] ?? '').trim(),
     idReunion: String(raw[col('ID Reunión')] ?? '').trim(),
+    correo: String(raw[col('Correo')] ?? '').trim(),
   }));
 
   cache = { tabTitle, rows, fetchedAt: Date.now() };
@@ -393,6 +397,43 @@ function matchMeetingRowPorEmpresaYFechaMasCercana(
   return mejor ?? candidatos[0];
 }
 
+// Último recurso (12-09-2026, Crossnet/STF Group): a diferencia de todos los
+// matches de arriba (que dependen de la fecha registrada en el excel, o de
+// alguna relación de texto entre el nombre de la empresa y el dominio del
+// contacto), el correo del contacto es un identificador exacto que no
+// depende de ninguna de las dos — sirve incluso cuando la reunión se
+// reagendó y nadie actualizó la fecha en el excel ("STFGROUP" vs. dominio
+// "studiof.com.co", sin relación de texto entre sí, con la fecha del excel
+// desactualizada). El mismo contacto puede aparecer en más de una fila (fue
+// invitado a varias reuniones a través del tiempo) — se desambigua por la
+// fecha más cercana, mismo patrón que matchMeetingRowPorEmpresaYFechaMasCercana.
+function matchByEmail(
+  rows: SheetRow[],
+  contraparteEmail: string | null,
+  meetingStart: Date | null
+): SheetRow | null {
+  const emailNorm = (contraparteEmail ?? '').trim().toLowerCase();
+  if (!emailNorm) return null;
+
+  const candidatos = rows.filter((row) => row.correo.trim().toLowerCase() === emailNorm);
+  if (candidatos.length === 0) return null;
+  if (candidatos.length === 1) return candidatos[0];
+  if (!meetingStart) return candidatos[0];
+
+  let mejor: SheetRow | null = null;
+  let mejorDiff = Infinity;
+  for (const row of candidatos) {
+    const rowDate = parseSheetDate(row.fechaReunion);
+    if (!rowDate) continue;
+    const diff = Math.abs(rowDate.getTime() - meetingStart.getTime());
+    if (diff < mejorDiff) {
+      mejorDiff = diff;
+      mejor = row;
+    }
+  }
+  return mejor ?? candidatos[0];
+}
+
 // Pedido explícito del usuario (09-09-2026): matchear primero por fecha
 // (dato confiable — viene de Calendar, no de una extracción de dominio que
 // puede fallar como ya pasó con CCHC/Paula Rios) y usar la empresa solo
@@ -403,7 +444,7 @@ function matchMeetingRowPorEmpresaYFechaMasCercana(
 // asistentes) si ese día solo hay una reunión en el excel.
 function matchMeetingRow(
   rows: SheetRow[],
-  meeting: { empresa_contraparte: string | null; start_time: string | null }
+  meeting: { empresa_contraparte: string | null; start_time: string | null; contraparte_email?: string | null }
 ): SheetRow | null {
   if (meeting.start_time) {
     const meetingStart = new Date(meeting.start_time);
@@ -417,7 +458,10 @@ function matchMeetingRow(
 
   // Sin ningún candidato con esa fecha exacta (o sin start_time) — probable
   // typo de fecha en el excel, cae al matching viejo por empresa.
-  return matchMeetingRowPorEmpresaYFechaMasCercana(rows, meeting);
+  const porEmpresa = matchMeetingRowPorEmpresaYFechaMasCercana(rows, meeting);
+  if (porEmpresa) return porEmpresa;
+
+  return matchByEmail(rows, meeting.contraparte_email ?? null, meeting.start_time ? new Date(meeting.start_time) : null);
 }
 
 async function findOrCreateClient(name: string, externalId: string | null): Promise<string> {
@@ -456,7 +500,7 @@ async function findOrCreateClient(name: string, externalId: string | null): Prom
 // del título (el título no trae esos datos).
 export async function resolveMeetingClientAndContact(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select id, empresa_contraparte, start_time, client_id, meeting_title from meetings where id = $1`,
+    `select id, empresa_contraparte, contraparte_email, start_time, client_id, meeting_title from meetings where id = $1`,
     [meetingId]
   );
   const meeting = rows[0];
@@ -540,7 +584,7 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
 // no pisar la corrección manual del admin.
 export async function refreshMatchedRowFields(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select empresa_contraparte, start_time, metas_sheet_match_id from meetings where id = $1`,
+    `select empresa_contraparte, contraparte_email, start_time, metas_sheet_match_id from meetings where id = $1`,
     [meetingId]
   );
   const meeting = rows[0];

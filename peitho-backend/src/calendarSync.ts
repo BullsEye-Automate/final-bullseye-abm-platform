@@ -65,10 +65,14 @@ function extractContraparte(event: GoogleCalendarEvent, ejecutivoEmail: string) 
     (attendee) => attendee.email && attendee.email.toLowerCase() !== ejecutivoEmail.toLowerCase() && !attendee.resource
   );
   const contraparte = externalAttendees[0];
-  if (!contraparte?.email) return { contraparte: null, empresaContraparte: null };
+  if (!contraparte?.email) return { contraparte: null, contraparteEmail: null, empresaContraparte: null };
 
   return {
     contraparte: contraparte.displayName ?? contraparte.email,
+    // El correo real, aparte de `contraparte` (que prefiere el nombre para
+    // mostrar cuando Google lo trae) — necesario para matchear contra la
+    // columna "Correo" del excel de metas (ver matchByEmail en metasSheet.ts).
+    contraparteEmail: contraparte.email,
     empresaContraparte: contraparte.email.split('@')[1] ?? null,
   };
 }
@@ -158,10 +162,11 @@ function extractContraparteFromBotInvite(
     return true;
   });
   const contraparte = externalAttendees[0];
-  if (!contraparte?.email) return { contraparte: null, empresaContraparte: null };
+  if (!contraparte?.email) return { contraparte: null, contraparteEmail: null, empresaContraparte: null };
 
   return {
     contraparte: contraparte.displayName ?? contraparte.email,
+    contraparteEmail: contraparte.email,
     empresaContraparte: contraparte.email.split('@')[1] ?? null,
   };
 }
@@ -187,7 +192,7 @@ export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, bot
   const { rows: allClients } = await pool.query<{ id: string; name: string }>('select id, name from clients');
   const clientHint = matchClientByTitle(event.summary, allClients);
 
-  const { contraparte, empresaContraparte } = extractContraparteFromBotInvite(
+  const { contraparte, contraparteEmail, empresaContraparte } = extractContraparteFromBotInvite(
     event,
     botEmail,
     clientHint?.name ?? null
@@ -199,18 +204,19 @@ export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, bot
 
   console.log(`[bot-invite] evento ${event.id}: guardando en meetings (contraparte=${contraparte ?? '?'})...`);
   const { rows } = await pool.query(
-    `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id, meeting_title)
-     values ($1, $2, null, $3, $4, $5, $6, $7)
+    `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, contraparte_email, empresa_contraparte, start_time, recurring_event_id, meeting_title)
+     values ($1, $2, null, $3, $4, $5, $6, $7, $8)
      on conflict (google_event_id) do update set
        meeting_url = excluded.meeting_url,
        contraparte = excluded.contraparte,
+       contraparte_email = excluded.contraparte_email,
        empresa_contraparte = excluded.empresa_contraparte,
        start_time = excluded.start_time,
        recurring_event_id = excluded.recurring_event_id,
        meeting_title = excluded.meeting_title,
        updated_at = now()
      returning id`,
-    [event.id, meetingUrl, contraparte, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
+    [event.id, meetingUrl, contraparte, contraparteEmail, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
   );
   console.log(`[bot-invite] evento ${event.id}: guardado como reunión ${rows[0].id}, agendando bot...`);
 
@@ -263,7 +269,7 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
   const meetCode = extractMeetCode(event);
   if (!meetCode) return; // sin link de Meet, no es una reunión que Peitho deba capturar
 
-  const { contraparte, empresaContraparte } = extractContraparte(event, ejecutivoEmail);
+  const { contraparte, contraparteEmail, empresaContraparte } = extractContraparte(event, ejecutivoEmail);
   const startTime = event.start?.dateTime ?? event.start?.date ?? null;
   // Google marca cada ocurrencia expandida de una serie recurrente con el id
   // del evento "maestro" que la originó — null si el evento no es recurrente.
@@ -272,19 +278,20 @@ async function upsertMeetingFromEvent(event: GoogleCalendarEvent, ejecutivoEmail
   await cancelStaleRecallBotIfRescheduled(event.id, startTime);
 
   const { rows } = await pool.query(
-    `insert into meetings (google_event_id, meet_code, ejecutivo, contraparte, empresa_contraparte, start_time, recurring_event_id, meeting_title)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
+    `insert into meetings (google_event_id, meet_code, ejecutivo, contraparte, contraparte_email, empresa_contraparte, start_time, recurring_event_id, meeting_title)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      on conflict (google_event_id) do update set
        meet_code = excluded.meet_code,
        ejecutivo = excluded.ejecutivo,
        contraparte = excluded.contraparte,
+       contraparte_email = excluded.contraparte_email,
        empresa_contraparte = excluded.empresa_contraparte,
        start_time = excluded.start_time,
        recurring_event_id = excluded.recurring_event_id,
        meeting_title = excluded.meeting_title,
        updated_at = now()
      returning id`,
-    [event.id, meetCode, ejecutivoEmail, contraparte, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
+    [event.id, meetCode, ejecutivoEmail, contraparte, contraparteEmail, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
   );
 
   // Bug real (08-09-2026): una reunión con un prospecto externo real no
