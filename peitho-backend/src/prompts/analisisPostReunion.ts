@@ -19,6 +19,7 @@ INSTRUCCIONES DE ANÁLISIS:
 10. \`fit_empresa\` y \`fit_contacto\` son evaluaciones DISTINTAS a \`prediccion_exito\`: no miden si el deal va a avanzar, miden qué tan bien calza el prospecto contra el ICP (perfil de cliente ideal) real del cliente al que representa el ejecutivo — un prospecto puede calzar perfecto con el ICP y aun así no avanzar (mal timing, presupuesto), o calzar mal y aun así mostrar interés. Necesitan que el bloque "BASE DE CONOCIMIENTO DEL CLIENTE" incluya un ICP explícito (rubro/tamaño/perfil de cliente objetivo) para tener una base real de comparación:
    - Si HAY un ICP identificable en la base de conocimiento: \`fit_empresa\` compara el rubro, tamaño y señales de la empresa del prospecto (contexto de la reunión + lo que reveló la transcripción) contra ese ICP — 10 es un calce perfecto, 1 es claramente fuera de perfil. \`fit_contacto\` compara el cargo/rol del contacto (dado en el contexto, o lo que reveló la conversación) y su nivel de poder de decisión contra el perfil de comprador ideal del ICP, si lo especifica — si el ICP no especifica un perfil de comprador, usa criterio general B2B (alguien con poder de decisión o influencia real en la compra puntúa más alto que alguien sin ninguno).
    - Si NO hay ningún ICP identificable en la base de conocimiento (bloque vacío, o documentos que no describen un perfil de cliente): deja \`puntaje\` en null y \`justificacion\` explicando que falta el ICP del cliente en la base de conocimiento — nunca inventes o asumas un ICP genérico para poder dar una nota.
+   - Si SÍ hay un ICP identificable pero la comparación no aplica de forma directa (ej. la contraparte de esta reunión ya es cliente actual del ejecutivo, no un prospecto nuevo en evaluación) o la transcripción no da suficiente evidencia concreta para calibrar el fit con precisión: deja \`puntaje\` en null igual, pero la \`justificacion\` debe explicar la razón real (que no aplica o que falta evidencia), nunca decir ni dar a entender que falta el ICP si en realidad sí está cargado.
 
 ESQUEMA DE SALIDA (JSON):
 
@@ -33,12 +34,12 @@ ESQUEMA DE SALIDA (JSON):
     "justificacion": "<2-4 frases explicando el porqué, mencionando señales concretas de la conversación>"
   },
   "fit_empresa": {
-    "puntaje": <entero 1-10, o null si no hay ICP en la base de conocimiento>,
-    "justificacion": "<2-4 frases explicando el porqué contra el ICP, o explicando que falta el ICP>"
+    "puntaje": <entero 1-10, o null si no hay ICP o no aplica — ver instrucción 10>,
+    "justificacion": "<2-4 frases explicando el porqué contra el ICP, o la razón real de por qué quedó null>"
   },
   "fit_contacto": {
-    "puntaje": <entero 1-10, o null si no hay ICP en la base de conocimiento>,
-    "justificacion": "<2-4 frases explicando el porqué según el cargo/rol y lo que reveló la conversación, o explicando que falta el ICP>"
+    "puntaje": <entero 1-10, o null si no hay ICP o no aplica — ver instrucción 10>,
+    "justificacion": "<2-4 frases explicando el porqué según el cargo/rol y lo que reveló la conversación, o la razón real de por qué quedó null>"
   },
   "metricas_desempeno_ejecutivo": {
     "descubrimiento": {"puntaje": <1-5>, "comentario": "<qué tan bien entendió el dolor y contexto del cliente>"},

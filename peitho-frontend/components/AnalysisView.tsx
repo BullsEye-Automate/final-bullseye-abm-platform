@@ -152,9 +152,14 @@ export default function AnalysisView({
       {/* Fit Score (10-09-2026) — qué tan bien calza el prospecto contra el ICP
           real del cliente (base de conocimiento), no si el deal va a avanzar
           (eso es prediccion_exito, arriba). puntaje viene null con
-          justificación cuando el cliente no tiene ICP cargado todavía —
-          nunca se inventa un número, se muestra "Sin ICP cargado" en vez de
-          ocultar la tarjeta, para que quede visible que falta ese dato. */}
+          justificación cuando el cliente no tiene ICP cargado todavía, o
+          cuando Claude considera que el fit contra un ICP de prospección no
+          aplica de forma directa (ej. la contraparte ya es cliente actual,
+          no un prospecto nuevo) — nunca se inventa un número. Bug real
+          (14-09-2026): el badge decía siempre "Sin ICP cargado" para
+          cualquier puntaje null, aunque el ICP sí estuviera cargado y la
+          razón real (ya explicada en justificacion) fuera otra — quedaba
+          leyéndose como que faltaba subir el documento cuando no era así. */}
       {(analysis.fit_empresa || analysis.fit_contacto) && (
         <div className="grid md:grid-cols-2 gap-4">
           {analysis.fit_empresa && (
@@ -174,7 +179,7 @@ export default function AnalysisView({
                 </span>
               ) : (
                 <span className="inline-flex items-center text-sm font-semibold px-3 py-1 rounded-full bg-gray-100 text-gray-500">
-                  Sin ICP cargado
+                  Sin puntaje
                 </span>
               )}
               {analysis.fit_empresa.justificacion && (
@@ -199,7 +204,7 @@ export default function AnalysisView({
                 </span>
               ) : (
                 <span className="inline-flex items-center text-sm font-semibold px-3 py-1 rounded-full bg-gray-100 text-gray-500">
-                  Sin ICP cargado
+                  Sin puntaje
                 </span>
               )}
               {analysis.fit_contacto.justificacion && (
