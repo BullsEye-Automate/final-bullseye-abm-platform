@@ -60,10 +60,24 @@ function extractMeetCode(event: GoogleCalendarEvent): string | null {
   return null;
 }
 
+// Bug real (14-09-2026): a diferencia de extractContraparteFromBotInvite
+// (que sí excluye bullseye-abm.com completo), este flujo solo excluía el
+// correo exacto del ejecutivo dueño del calendario — un compañero de
+// BullsEye invitado a la misma reunión (ej. "amadriz@bullseye-abm.com" en
+// una reunión interna real) podía terminar seleccionado como "contraparte"
+// en vez del prospecto externo real, si aparecía antes en la lista de
+// invitados. No afectaba lo que ve el usuario porque esas reuniones ya
+// quedaban filtradas como internas en GET /meetings (empresa_contraparte
+// terminaba siendo bullseye-abm.com igual), pero el dato guardado era
+// incorrecto — mismo criterio que ya usa el flujo del bot, parejo ahora.
 function extractContraparte(event: GoogleCalendarEvent, ejecutivoEmail: string) {
-  const externalAttendees = (event.attendees ?? []).filter(
-    (attendee) => attendee.email && attendee.email.toLowerCase() !== ejecutivoEmail.toLowerCase() && !attendee.resource
-  );
+  const externalAttendees = (event.attendees ?? []).filter((attendee) => {
+    const email = attendee.email?.toLowerCase();
+    if (!email || attendee.resource) return false;
+    if (email === ejecutivoEmail.toLowerCase()) return false;
+    if (email.split('@')[1] === BULLSEYE_DOMAIN) return false;
+    return true;
+  });
   const contraparte = externalAttendees[0];
   if (!contraparte?.email) return { contraparte: null, contraparteEmail: null, empresaContraparte: null };
 
