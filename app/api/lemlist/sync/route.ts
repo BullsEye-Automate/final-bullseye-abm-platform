@@ -87,19 +87,21 @@ export async function POST(req: NextRequest) {
     // 1. Sincronizar leads
     const leads = await fetchAllLeads(camp.campaign_id, headers);
     if (leads.length > 0) {
-      const rows = leads.map((l: any) => ({
-        id:            l._id,
-        client_id,
-        campaign_id:   camp.campaign_id,
-        campaign_name: camp.campaign_name ?? null,
-      }));
-      const firstRow = rows[0];
-      console.log(`[sync] leads upsert sample row camp=${camp.campaign_id}:`, JSON.stringify(firstRow).slice(0, 300));
-      const { error } = await db
-        .from("lemlist_leads_synced")
-        .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
-      if (error) console.error(`[sync] leads upsert error camp=${camp.campaign_id}:`, error.message, error.code);
-      if (!error) totalLeads += rows.length;
+      console.log(`[sync] leads[0] raw camp=${camp.campaign_id}:`, JSON.stringify(leads[0]).slice(0, 400));
+      const rows = leads
+        .map((l: any) => {
+          const id = l._id ?? l.id ?? (l.email ? `${camp.campaign_id}:${l.email}` : null);
+          return { id, client_id, campaign_id: camp.campaign_id, campaign_name: camp.campaign_name ?? null };
+        })
+        .filter((r: any) => !!r.id);
+      if (rows.length === 0) { console.error(`[sync] leads sin id válido camp=${camp.campaign_id}`); }
+      else {
+        const { error } = await db
+          .from("lemlist_leads_synced")
+          .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
+        if (error) console.error(`[sync] leads upsert error camp=${camp.campaign_id}:`, error.message, error.code);
+        if (!error) totalLeads += rows.length;
+      }
     }
 
     // 2. Sincronizar actividades (de a 2 tipos con pausa)
@@ -111,19 +113,26 @@ export async function POST(req: NextRequest) {
         const acts = results[j];
         if (!acts.length) continue;
 
-        const rows = acts.map((a: any) => ({
-          id:               a._id,
+        const rows = acts
+          .map((a: any) => {
+            const email = (a.leadEmail ?? a.email ?? "").toLowerCase() || null;
+            const id = a._id ?? a.id ?? (email ? `${pair[j]}:${camp.campaign_id}:${email}` : null);
+            return {
+              id,
           client_id,
           campaign_id:      camp.campaign_id,
           campaign_name:    camp.campaign_name ?? null,
           type:             pair[j],
-          lead_email:       (a.leadEmail ?? a.email ?? "").toLowerCase() || null,
-          lead_first_name:  a.leadFirstName ?? a.firstName ?? null,
-          lead_last_name:   a.leadLastName  ?? a.lastName  ?? null,
-          lead_company_name: a.leadCompanyName ?? a.companyName ?? null,
-          created_at:       a.createdAt ?? a.date ?? null,
-        }));
+              lead_email:       email,
+              lead_first_name:  a.leadFirstName ?? a.firstName ?? null,
+              lead_last_name:   a.leadLastName  ?? a.lastName  ?? null,
+              lead_company_name: a.leadCompanyName ?? a.companyName ?? null,
+              created_at:       a.createdAt ?? a.date ?? null,
+            };
+          })
+          .filter((r: any) => !!r.id);
 
+        if (rows.length === 0) continue;
         const { error } = await db
           .from("lemlist_activities")
           .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
