@@ -407,16 +407,37 @@ function matchMeetingRowPorEmpresaYFechaMasCercana(
 // desactualizada). El mismo contacto puede aparecer en más de una fila (fue
 // invitado a varias reuniones a través del tiempo) — se desambigua por la
 // fecha más cercana, mismo patrón que matchMeetingRowPorEmpresaYFechaMasCercana.
+// Pregunta real del usuario antes de implementar esto (12-09-2026): ¿y si el
+// mismo contacto fue prospectado por DOS clientes distintos de BullsEye? La
+// fecha más cercana sola no alcanza para saber a cuál pertenece esta
+// reunión en ese caso — mismo riesgo que el resto del matching por
+// substring/sigla de arriba, así que aplica el mismo criterio conservador:
+// si las filas que comparten este correo pertenecen a más de un cliente
+// distinto, no se adivina por fecha. Primero se intenta acotar con
+// `knownClientName` (el cliente ya resuelto por otra vía — título del
+// evento, o el client_id que la reunión ya tenga asignado) y si tampoco
+// alcanza, se rinde (null) en vez de arriesgar asignar el cliente
+// equivocado.
 function matchByEmail(
   rows: SheetRow[],
   contraparteEmail: string | null,
-  meetingStart: Date | null
+  meetingStart: Date | null,
+  knownClientName: string | null
 ): SheetRow | null {
   const emailNorm = (contraparteEmail ?? '').trim().toLowerCase();
   if (!emailNorm) return null;
 
-  const candidatos = rows.filter((row) => row.correo.trim().toLowerCase() === emailNorm);
+  let candidatos = rows.filter((row) => row.correo.trim().toLowerCase() === emailNorm);
   if (candidatos.length === 0) return null;
+
+  const clientesDistintos = new Set(candidatos.map((row) => normalizeCompanyName(row.cliente)));
+  if (clientesDistintos.size > 1) {
+    const knownKey = normalizeCompanyName(knownClientName);
+    if (!knownKey) return null;
+    candidatos = candidatos.filter((row) => normalizeCompanyName(row.cliente) === knownKey);
+    if (candidatos.length === 0) return null;
+  }
+
   if (candidatos.length === 1) return candidatos[0];
   if (!meetingStart) return candidatos[0];
 
@@ -444,7 +465,8 @@ function matchByEmail(
 // asistentes) si ese día solo hay una reunión en el excel.
 function matchMeetingRow(
   rows: SheetRow[],
-  meeting: { empresa_contraparte: string | null; start_time: string | null; contraparte_email?: string | null }
+  meeting: { empresa_contraparte: string | null; start_time: string | null; contraparte_email?: string | null },
+  knownClientName: string | null = null
 ): SheetRow | null {
   if (meeting.start_time) {
     const meetingStart = new Date(meeting.start_time);
@@ -461,7 +483,12 @@ function matchMeetingRow(
   const porEmpresa = matchMeetingRowPorEmpresaYFechaMasCercana(rows, meeting);
   if (porEmpresa) return porEmpresa;
 
-  return matchByEmail(rows, meeting.contraparte_email ?? null, meeting.start_time ? new Date(meeting.start_time) : null);
+  return matchByEmail(
+    rows,
+    meeting.contraparte_email ?? null,
+    meeting.start_time ? new Date(meeting.start_time) : null,
+    knownClientName
+  );
 }
 
 async function findOrCreateClient(name: string, externalId: string | null): Promise<string> {
@@ -508,10 +535,11 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
 
   try {
     let clientId: string | null = null;
+    let titleMatch: { id: string; name: string } | null = null;
 
     if (meeting.meeting_title) {
       const { rows: clientRows } = await pool.query(`select id, name from clients`);
-      const titleMatch = matchClientByTitle(meeting.meeting_title, clientRows);
+      titleMatch = matchClientByTitle(meeting.meeting_title, clientRows);
       if (titleMatch) {
         clientId = titleMatch.id;
         console.log(
@@ -521,7 +549,11 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
     }
 
     const sheetRows = await loadReunionesRows();
-    const match = matchMeetingRow(sheetRows, meeting);
+    // titleMatch?.name se pasa como pista para desambiguar el fallback por
+    // correo (ver matchByEmail) si el mismo contacto aparece en el excel
+    // para más de un cliente — sin esto, ese caso se rendiría (null) en vez
+    // de arriesgar el cliente equivocado.
+    const match = matchMeetingRow(sheetRows, meeting, titleMatch?.name ?? null);
 
     if (!clientId && match?.cliente) {
       clientId = await findOrCreateClient(match.cliente, match.clienteId);
@@ -584,16 +616,23 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
 // no pisar la corrección manual del admin.
 export async function refreshMatchedRowFields(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select empresa_contraparte, contraparte_email, start_time, metas_sheet_match_id from meetings where id = $1`,
+    `select m.empresa_contraparte, m.contraparte_email, m.start_time, m.metas_sheet_match_id, c.name as cliente_nombre
+     from meetings m
+     left join clients c on c.id = m.client_id
+     where m.id = $1`,
     [meetingId]
   );
   const meeting = rows[0];
   if (!meeting) return;
 
   const sheetRows = await loadReunionesRows();
+  // c.name (el cliente YA asignado a esta reunión, manual o automático) se
+  // pasa como pista para el fallback por correo — si el mismo contacto
+  // aparece en el excel para más de un cliente, esto evita traer datos de
+  // la fila equivocada (ver matchByEmail).
   const row = meeting.metas_sheet_match_id
     ? sheetRows.find((r) => r.idReunion === meeting.metas_sheet_match_id) ?? null
-    : matchMeetingRow(sheetRows, meeting);
+    : matchMeetingRow(sheetRows, meeting, meeting.cliente_nombre ?? null);
   if (!row) return;
 
   await pool.query(
