@@ -1,17 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
-import { listAlloNumbers, searchAlloCalls } from "@/lib/allo";
+import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds, resolveConnected } from "@/lib/allo";
 import { toDateParam, callDateKey } from "@/lib/sdrAnalytics";
 import { parseCallScoreCard, SCORE_CARD_CATEGORIES } from "@/lib/callScoreCard";
 
 export const dynamic = "force-dynamic";
+// Ahora también pide, en paralelo, las llamadas "conectadas" (etapa
+// Conversación) de Allo vía su endpoint de analíticas — margen extra sobre
+// el default para rangos amplios con "todos los clientes".
+export const maxDuration = 60;
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 // Resumen de los análisis de llamadas con IA que genera Allo (ver
-// lib/callScoreCard.ts) — no todas las llamadas tienen este análisis
-// (solo ~5-6% en una muestra reciente), así que este reporte agrupa
-// únicamente las que sí lo tienen.
+// lib/callScoreCard.ts), solo entre las llamadas conectadas (confirmado con
+// BullsEye: no todas las llamadas tienen este análisis, y Allo puede
+// generarlo también para alguna llamada no conectada — este reporte exige
+// ambas condiciones).
 
 type ScoreCallSummary = {
   id: string;
@@ -91,13 +96,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ sdr_scores: [], all_sdrs: [], all_clientes: [] });
     }
 
-    const [callsByNumber, allNumbers] = await Promise.all([
+    const [callsByNumber, allNumbers, connectedCallIds] = await Promise.all([
       Promise.all(
         assignedNumbers.map((n) =>
           searchAlloCalls({ allo_number: n, date_from: dateFrom, date_to: dateTo, direction: "OUTBOUND" })
         )
       ),
       listAlloNumbers(),
+      fetchAlloConnectedCallIds({ allo_numbers: assignedNumbers, date_from: dateFrom, date_to: dateTo }),
     ]);
 
     const userMap = new Map<string, string>();
@@ -146,15 +152,20 @@ export async function GET(request: NextRequest) {
       .map(([sdr_id, sdr_nombre]) => ({ sdr_id, sdr_nombre }))
       .sort((a, b) => a.sdr_nombre.localeCompare(b.sdr_nombre));
 
-    // Agrupar por SDR solo las llamadas que sí tienen análisis de IA con
-    // score (parseCallScoreCard devuelve null si Allo no generó ese
-    // análisis para la llamada — la mayoría de las llamadas caen acá).
+    // Agrupar por SDR solo las llamadas conectadas (mismo criterio que el
+    // resto de Análisis SDR — ver lib/allo.ts) que además tienen análisis de
+    // IA con score (parseCallScoreCard devuelve null si Allo no generó ese
+    // análisis para la llamada). Allo puede generar un score completo para
+    // alguna llamada que no llegó a la etapa "Conversación" (ej. cortada muy
+    // temprano) — se descarta igual acá, para que "Llamadas Analizadas"
+    // nunca supere a "Llamadas Conectadas" del Ranking SDR.
     const bySdr: Record<
       string,
       { sdr_nombre: string; calls: ScoreCallSummary[]; sums: Record<string, number>; counts: Record<string, number> }
     > = {};
 
     for (const call of calls) {
+      if (!resolveConnected(call, connectedCallIds)) continue;
       const card = parseCallScoreCard(call.summary);
       if (!card) continue;
 
