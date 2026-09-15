@@ -10,6 +10,7 @@ import ManualContactForm from "@/components/ManualContactForm";
 import TentativeMatchReview from "@/components/TentativeMatchReview";
 import DeleteMeetingButton from "@/components/DeleteMeetingButton";
 import ResyncCalendarButton from "@/components/ResyncCalendarButton";
+import RetryBotButton from "@/components/RetryBotButton";
 import DetailTabs from "@/components/DetailTabs";
 import AnalysisView from "@/components/AnalysisView";
 import PreBriefView from "@/components/PreBriefView";
@@ -152,6 +153,7 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
             <ReanalyzeButton meetingId={meeting.id} updatedAt={meeting.updated_at} />
           )}
           {isAdmin && <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />}
+          {isAdmin && meeting.status !== "analyzed" && <RetryBotButton meetingId={meeting.id} />}
           {isAdmin && meeting.is_bot_invite && <ResyncCalendarButton meetingId={meeting.id} />}
           {isAdmin && <DeleteMeetingButton meetingId={meeting.id} />}
         </div>

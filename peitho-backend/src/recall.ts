@@ -258,7 +258,19 @@ async function getRecallBot(botId: string): Promise<any> {
   return res.json();
 }
 
-const MAX_RECALL_BOT_RETRIES = 2;
+// Bug real (15-09-2026, SeguriMaxima/Felipe Salgado): el bot original (creado
+// con margen de sobra, con el join_at correcto) SÍ intentó entrar a horario,
+// pero Google lo rechazó con sso_not_configured 3 VECES SEGUIDAS — un caso
+// más severo del rechazo intermitente ya documentado (07-09-2026), donde
+// hasta ahora un solo reintento alcanzaba. Con el tope viejo de 2 reintentos
+// (3 intentos en total), el tercero también falló y ya no quedaba
+// presupuesto para un cuarto — la reunión se quedó sin bot pese a que el
+// mecanismo automático funcionó exactamente como está diseñado, solo que la
+// mala suerte duró más intentos de los que el tope permitía. Subido a 5 —
+// cada reintento es barato (un join fallido no genera ninguna grabación que
+// cobrar) y la naturaleza intermitente del problema hace que más intentos
+// signifiquen más chances de que uno entre limpio.
+const MAX_RECALL_BOT_RETRIES = 5;
 
 // Confirmado real (07-09-2026, con dos reuniones reales de prospectos en
 // juego): el bot puede fallar al entrar con "sso_not_configured" aunque toda

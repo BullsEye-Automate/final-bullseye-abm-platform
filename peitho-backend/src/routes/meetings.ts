@@ -8,7 +8,7 @@ import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 import { generatePreMeetingBrief } from '../preMeetingBrief';
 import { resolveMeetingClientAndContact, refreshMatchedRowFields, resolveTentativeMatch } from '../metasSheet';
 import { resyncBotInviteMeeting } from '../calendarSync';
-import { scheduleRecallBotForMeeting, cancelRecallBot } from '../recall';
+import { scheduleRecallBotForMeeting, cancelRecallBot, createRecallBot } from '../recall';
 import { processRecallDone } from './webhooks';
 import { requireAuth, requireAdmin } from '../authMiddleware';
 import { getSupabaseAdminClient } from '../supabaseAdmin';
@@ -513,6 +513,58 @@ meetingsRouter.post('/meetings/:id/resolve-tentative-match', requireAuth, requir
   } catch (error) {
     console.error('Error resolviendo el match tentativo de la reunión', error);
     res.status(500).json({ error: 'Error guardando la elección' });
+  }
+});
+
+// Reintento manual admin-only de agendar/crear el bot con join inmediato —
+// pedido explícito del usuario (15-09-2026, reunión de SeguriMaxima/Felipe
+// Salgado): el bot automático agotó su presupuesto de reintentos (ver
+// MAX_RECALL_BOT_RETRIES en recall.ts) sin lograr entrar (Google rechazó el
+// join 3 veces seguidas con sso_not_configured, un rechazo intermitente ya
+// documentado). Reemplaza al workaround manual de antes (curl directo a la
+// API de Recall) por un botón real en la app — cancela el bot viejo si
+// existía (best-effort, no bloquea si ya no se puede cancelar) y crea uno
+// nuevo con join_at=ahora, reseteando el contador de reintentos para que el
+// mecanismo automático (checkAndRetryFailedRecallBots) también pueda
+// reintentarlo de nuevo si este también falla.
+meetingsRouter.post('/meetings/:id/retry-bot', requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { rows } = await pool.query(
+      `select meet_code, meeting_url, recall_bot_id from meetings where id = $1`,
+      [id]
+    );
+    const meeting = rows[0];
+    if (!meeting) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    const meetingUrl: string | null =
+      meeting.meeting_url ?? (meeting.meet_code ? `https://meet.google.com/${meeting.meet_code}` : null);
+    if (!meetingUrl) {
+      res.status(400).json({ error: 'Esta reunión no tiene un link de reunión reconocible' });
+      return;
+    }
+
+    if (meeting.recall_bot_id) {
+      await cancelRecallBot(meeting.recall_bot_id).catch((error) => {
+        // Best-effort: si el bot viejo ya despachó o Recall lo rechaza, no
+        // bloquea crear el reemplazo — mismo criterio que DELETE /meetings/:id.
+        console.error(`[retry-bot] no se pudo cancelar el bot viejo ${meeting.recall_bot_id} de la reunión ${id} (se ignora)`, error);
+      });
+    }
+
+    const newBotId = await createRecallBot(id, meetingUrl, new Date());
+    await pool.query(
+      `update meetings set recall_bot_id = $1, recall_bot_retries = 0, updated_at = now() where id = $2`,
+      [newBotId, id]
+    );
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error reintentando el bot manualmente', error);
+    res.status(500).json({ error: 'Error creando el bot' });
   }
 });
 
