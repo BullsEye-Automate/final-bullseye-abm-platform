@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
 import { Router } from 'express';
 import { Webhook } from 'svix';
 import { pool } from '../db';
@@ -134,10 +136,21 @@ export async function processRecallDone(botId: string, meetingId: string): Promi
   if (!audioRes.ok) {
     throw new Error(`Descarga del audio respondió ${audioRes.status}`);
   }
-  const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+  if (!audioRes.body) {
+    throw new Error('Recall no devolvió body en la descarga del audio');
+  }
 
   const audioPath = path.join(uploadsDir, `${meetingId}-${Date.now()}.mp3`);
-  fs.writeFileSync(audioPath, audioBuffer);
+  // Bug real (15-09-2026): esto cargaba el audio COMPLETO en memoria
+  // (Buffer.from(await audioRes.arrayBuffer())) antes de escribirlo a disco —
+  // con una reunión de ~1h ya es un buffer de decenas de MB, y con dos
+  // reuniones terminando cerca en el tiempo (ver audioJobLimiter.ts) alcanzaba
+  // para reventar la RAM del contenedor. Mismo patrón que ya se había
+  // encontrado y desactivado para el respaldo de video (ver el comentario en
+  // el handler del webhook más abajo) — acá se soluciona de raíz en vez de
+  // desactivarlo: streaming directo desde la descarga al archivo en disco,
+  // sin nunca tener el archivo completo en memoria a la vez.
+  await pipeline(Readable.fromWeb(audioRes.body as any), fs.createWriteStream(audioPath));
 
   // El transcript de Recall (nombre real de cada hablante, ver
   // postMeetingAnalysis.ts) reemplaza a Deepgram para el análisis — si por
