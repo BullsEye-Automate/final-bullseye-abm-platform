@@ -50,10 +50,13 @@ const COLUMNS: { key: SortKey; label: string }[] = [
 export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDetail[] }) {
   const [sortKey, setSortKey] = useState<SortKey>("sdr_nombre");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
-  // Orígenes ocultos del gráfico de torta (clic en la leyenda o en la
-  // tabla de resumen para ocultar/mostrar). No afecta la tabla de detalle
-  // de abajo, que siempre lista todas las reuniones.
+  // Orígenes ocultos del gráfico de torta (clic en la leyenda para
+  // ocultar/mostrar). No afecta la tabla de detalle de abajo.
   const [hiddenOrigenes, setHiddenOrigenes] = useState<Set<string>>(new Set());
+  // Origen seleccionado en la tabla de resumen (clic para filtrar la tabla
+  // de detalle a solo ese origen, agrupada por cliente) — clic de nuevo
+  // para quitar el filtro. Distinto de hiddenOrigenes: no afecta el gráfico.
+  const [filtroOrigen, setFiltroOrigen] = useState<string | null>(null);
 
   const pieData = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -90,13 +93,31 @@ export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDet
 
   const total = reuniones.length;
 
+  // Clic en una fila de la tabla de resumen: filtra el detalle de abajo a
+  // solo ese origen y lo agrupa por Cliente de una — clic de nuevo (mismo
+  // origen) quita el filtro.
+  const toggleFiltroOrigen = (name: string) => {
+    if (filtroOrigen === name) {
+      setFiltroOrigen(null);
+    } else {
+      setFiltroOrigen(name);
+      setSortKey("client_name");
+      setSortDir("asc");
+    }
+  };
+
+  const reunionesFiltradas = useMemo(
+    () => (filtroOrigen ? reuniones.filter((r) => r.origen === filtroOrigen) : reuniones),
+    [reuniones, filtroOrigen]
+  );
+
   const sortedReuniones = useMemo(() => {
-    return [...reuniones].sort((a, b) => {
+    return [...reunionesFiltradas].sort((a, b) => {
       const aVal = a[sortKey] || "";
       const bVal = b[sortKey] || "";
       return sortDir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
     });
-  }, [reuniones, sortKey, sortDir]);
+  }, [reunionesFiltradas, sortKey, sortDir]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -236,15 +257,19 @@ export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDet
             </thead>
             <tbody className="divide-y divide-gray-100">
               {pieData.map((d, idx) => {
-                const hidden = hiddenOrigenes.has(d.name);
+                const selected = filtroOrigen === d.name;
                 return (
                   <tr
                     key={d.name}
-                    onClick={() => toggleOrigen(d.name)}
-                    className={`cursor-pointer transition ${hidden ? "opacity-40" : ""} ${
-                      idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"
+                    onClick={() => toggleFiltroOrigen(d.name)}
+                    className={`cursor-pointer transition ${
+                      selected
+                        ? "bg-brand/10 hover:bg-brand/15"
+                        : idx % 2 === 0
+                        ? "bg-white hover:bg-gray-50"
+                        : "bg-gray-50 hover:bg-gray-100"
                     }`}
-                    title={hidden ? "Mostrar en el gráfico" : "Ocultar del gráfico"}
+                    title={selected ? "Quitar filtro (ver todas las reuniones abajo)" : "Ver el detalle de este origen, agrupado por cliente"}
                   >
                     <td className="px-3 py-2 font-medium text-gray-900">
                       <div className="flex items-center gap-2">
@@ -252,7 +277,7 @@ export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDet
                           className="w-2.5 h-2.5 rounded-sm shrink-0"
                           style={{ backgroundColor: colorByName.get(d.name) }}
                         />
-                        <span className={hidden ? "line-through" : ""}>{d.name}</span>
+                        <span className={selected ? "underline" : ""}>{d.name}</span>
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right text-gray-700">{d.value}</td>
@@ -272,6 +297,28 @@ export default function OrigenPieYDetalle({ reuniones }: { reuniones: MeetingDet
             </tfoot>
           </table>
         </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-xs text-ink-muted">
+          {filtroOrigen ? (
+            <>
+              Mostrando solo <span className="font-semibold text-gray-900">{filtroOrigen}</span> (
+              {sortedReuniones.length} reuniones), agrupado por Cliente — haz clic en el origen de nuevo para
+              quitar el filtro.
+            </>
+          ) : (
+            "Haz clic en un origen de la tabla de arriba para ver solo sus reuniones, agrupadas por cliente."
+          )}
+        </p>
+        {filtroOrigen && (
+          <button
+            onClick={() => setFiltroOrigen(null)}
+            className="text-xs text-brand hover:underline shrink-0"
+          >
+            Ver todas las reuniones
+          </button>
+        )}
       </div>
 
       <div className="overflow-auto max-h-[420px]">
