@@ -252,11 +252,13 @@ export async function fetchAlloConnectedCallIds(params: {
     const maxPages = 200; // 100/página — tope de seguridad, ver listAllHSCompanies en lib/hubspot.ts
 
     while (page <= maxPages) {
+      // Confirmado con soporte de Allo: las fechas van anidadas bajo "date"
+      // ({from, to}), no como date_from/date_to sueltos — ese era el motivo
+      // del 400 "request body could not be parsed" original.
       const d = await alloFetch("/v2/api/analytics/outbound", {
         method: "POST",
         body: JSON.stringify({
-          date_from: params.date_from,
-          date_to: params.date_to,
+          date: { from: params.date_from, to: params.date_to },
           allo_numbers,
           extend: "items",
           stage: "CONVERSATION",
