@@ -370,6 +370,7 @@ function LemlistTab({ currentClient, period }: { currentClient: { id: string; na
         <div className="card px-5 py-4">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-1">Enviados</div>
           <div className="text-3xl font-bold text-ink">{data.totalSent.toLocaleString()}</div>
+          <div className="text-xs text-ink-muted mt-0.5">total histórico</div>
         </div>
         <div className="card px-5 py-4">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted mb-1">Apertura</div>
