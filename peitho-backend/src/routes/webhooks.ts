@@ -6,6 +6,7 @@ import { pool } from '../db';
 import { getRecallRecordingUrl, getRecallTranscriptUrl, getRecallVideoUrl } from '../recall';
 import { analyzeMeetingAudio, buildTranscriptFromRecall, computeParticipantStats } from '../postMeetingAnalysis';
 import { getSupabaseAdminClient } from '../supabaseAdmin';
+import { runAudioJob } from '../audioJobLimiter';
 
 // Bucket privado de Supabase Storage para el respaldo de video de 30 días
 // (a diferencia de audio/transcript, que se usan para el análisis y no
@@ -251,9 +252,9 @@ export async function retryStuckAnalyses(): Promise<void> {
     );
     try {
       if (meeting.recall_bot_id) {
-        await processRecallDone(meeting.recall_bot_id, meeting.id);
+        await runAudioJob(`reintento reunión ${meeting.id}`, () => processRecallDone(meeting.recall_bot_id, meeting.id));
       } else {
-        await analyzeMeetingAudio(meeting.id);
+        await runAudioJob(`reintento reunión ${meeting.id}`, () => analyzeMeetingAudio(meeting.id));
       }
     } catch (error) {
       console.error(`[analysis] reintento automático falló para la reunión ${meeting.id}`, error);
@@ -353,7 +354,7 @@ webhooksRouter.post('/webhooks/recall', async (req, res) => {
       return;
     }
 
-    await processRecallDone(botId, meeting.id);
+    await runAudioJob(`webhook reunión ${meeting.id}`, () => processRecallDone(botId, meeting.id));
 
     // DESACTIVADO (08-09-2026): saveVideoBackup() cargaba el video entero en
     // memoria (Buffer.from(await videoRes.arrayBuffer())) antes de subirlo a

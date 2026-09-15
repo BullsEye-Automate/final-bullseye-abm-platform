@@ -9,6 +9,7 @@ import { generatePreMeetingBrief } from '../preMeetingBrief';
 import { resolveMeetingClientAndContact, refreshMatchedRowFields, resolveTentativeMatch } from '../metasSheet';
 import { resyncBotInviteMeeting } from '../calendarSync';
 import { scheduleRecallBotForMeeting, cancelRecallBot, createRecallBot } from '../recall';
+import { runAudioJob } from '../audioJobLimiter';
 import { processRecallDone } from './webhooks';
 import { requireAuth, requireAdmin } from '../authMiddleware';
 import { getSupabaseAdminClient } from '../supabaseAdmin';
@@ -348,7 +349,7 @@ meetingsRouter.post('/meetings/:id/audio', upload.single('audio'), async (req, r
     console.log(`[audio] guardado ${req.file.path} para la reunión ${id}`);
     res.json({ status: 'ok' });
 
-    analyzeMeetingAudio(id).catch((error) => {
+    runAudioJob(`audio subido reunión ${id}`, () => analyzeMeetingAudio(id)).catch((error) => {
       console.error(`[analysis] falló el análisis de la reunión ${id}`, error);
     });
   } catch (error) {
@@ -654,7 +655,7 @@ meetingsRouter.post('/meetings/:id/reprocess', requireAuth, requireAdmin, async 
     console.log(`[reprocess] reunión ${id}: reprocesamiento manual solicitado (status actual=${meeting.status})...`);
     res.json({ status: 'ok' });
 
-    processRecallDone(meeting.recall_bot_id, id).catch((error) => {
+    runAudioJob(`reprocesamiento manual reunión ${id}`, () => processRecallDone(meeting.recall_bot_id, id)).catch((error) => {
       console.error(`[reprocess] falló el reprocesamiento manual de la reunión ${id}`, error);
     });
   } catch (error) {
@@ -692,7 +693,7 @@ meetingsRouter.post('/meetings/:id/reanalyze', requireAuth, requireAdmin, async 
     console.log(`[reanalyze] reunión ${id}: recálculo manual solicitado (reusando transcript guardado)...`);
     res.json({ status: 'ok' });
 
-    analyzeMeetingAudio(id).catch((error) => {
+    runAudioJob(`reanálisis manual reunión ${id}`, () => analyzeMeetingAudio(id)).catch((error) => {
       console.error(`[reanalyze] falló el recálculo manual de la reunión ${id}`, error);
     });
   } catch (error) {
