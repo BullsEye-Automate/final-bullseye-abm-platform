@@ -413,6 +413,22 @@ export async function checkAndFixStaleRecallBots(): Promise<void> {
 // timings reales: la reunión ya tiene su fila en el excel de metas cuando se
 // agenda, o recién se agrega al excel después — nunca rompe nada llamarlo de
 // más, es idempotente (no-op si ya tiene recall_bot_id, o si nunca hace match).
+// Bug real (15-09-2026, SeguriMaxima/Felipe Salgado): esta reunión ya vivía
+// en Peitho desde antes (invitación al bot), pero recall_bot_id nunca se
+// llegó a setear — el intento original de agendar el bot falló en silencio
+// en algún momento (un error de red o de la API de Recall dentro del
+// try/catch de esta función solo queda logueado, sin ninguna alerta
+// visible — ver checkAndScheduleMissingRecallBots más abajo, agregado por
+// esto mismo). Para cuando alguien recargó la reunión (o el evento se volvió
+// a sincronizar), start_time YA HABÍA PASADO, y el chequeo de abajo se
+// negaba a agendar un bot para cualquier reunión "vieja" sin ningún margen —
+// quedó bloqueada para siempre pese a estar ocurriendo en ese momento. Con
+// este margen, una reunión que empezó hace poco (probablemente sigue en
+// curso) todavía puede recibir un bot — con join_at=ahora, no el horario
+// original, para que entre de inmediato en vez de esperar a una hora que ya
+// pasó.
+const RECALL_LATE_JOIN_GRACE_MS = 60 * 60 * 1000; // 60 min
+
 export async function scheduleRecallBotForMeeting(
   meetingId: string,
   options: { requireClientMatch?: boolean } = {}
@@ -444,10 +460,16 @@ export async function scheduleRecallBotForMeeting(
     }
 
     const startTime = new Date(meeting.start_time);
-    if (startTime.getTime() <= Date.now()) {
-      console.log(`[recall] reunión ${meetingId}: start_time ya pasó (${startTime.toISOString()}), no se agenda`);
-      return; // ya pasó, no tiene sentido agendar un bot
+    const msSinceStart = Date.now() - startTime.getTime();
+    if (msSinceStart > RECALL_LATE_JOIN_GRACE_MS) {
+      console.log(
+        `[recall] reunión ${meetingId}: start_time pasó hace más de ${RECALL_LATE_JOIN_GRACE_MS / 60000} min (${startTime.toISOString()}), no se agenda`
+      );
+      return; // pasó hace demasiado, ya terminó — no tiene sentido agendar un bot
     }
+    // Si ya empezó (pero dentro del margen de arriba), el bot entra AHORA, no
+    // al horario original — join_at en el pasado no tiene efecto en Recall.
+    const joinAt = msSinceStart > 0 ? new Date() : startTime;
 
     if (!meeting.client_id) {
       console.log(`[recall] reunión ${meetingId}: resolviendo cliente contra el excel de metas...`);
@@ -465,13 +487,46 @@ export async function scheduleRecallBotForMeeting(
     }
 
     console.log(`[recall] reunión ${meetingId}: creando bot en Recall (${meetingUrl})...`);
-    const botId = await createRecallBot(meetingId, meetingUrl, startTime);
+    const botId = await createRecallBot(meetingId, meetingUrl, joinAt);
 
     await pool.query(`update meetings set recall_bot_id = $1, updated_at = now() where id = $2`, [botId, meetingId]);
-    console.log(`[recall] bot agendado (${botId}) para la reunión ${meetingId} a las ${startTime.toISOString()}`);
+    console.log(`[recall] bot agendado (${botId}) para la reunión ${meetingId} a las ${joinAt.toISOString()}`);
   } catch (error) {
     // Nunca debe romper el sync de calendario ni la carga del listado/detalle
     // de reuniones — un bot que no se pudo agendar no debe bloquear el resto.
     console.error(`[recall] error agendando el bot para la reunión ${meetingId}`, error);
+  }
+}
+
+// Bug real (15-09-2026, SeguriMaxima/Felipe Salgado): scheduleRecallBotForMeeting
+// nunca reintenta sola si falla la primera vez (createRecallBot puede tirar
+// por un error de red o un 400 de Recall, y ese try/catch de arriba solo lo
+// loguea) — una reunión con link real y contraparte externa puede quedar SIN
+// bot para siempre, sin ninguna señal más visible que un log de Railway que
+// nadie revisa en el momento, hasta que alguien nota en plena llamada que el
+// bot nunca llegó. Mismo criterio que renewExpiringCalendarWatches +
+// catchUpAllActiveChannels en calendarWatchRenewal.ts (agendar proactivo +
+// red de seguridad incondicional que no depende de que el primer intento
+// haya funcionado): esto reintenta agendar el bot de cualquier reunión con
+// link de reunión real que todavía no tenga uno, dentro de una ventana
+// alrededor de start_time — cubre tanto una reunión que ya empezó (gracias
+// al margen de scheduleRecallBotForMeeting de arriba) como una agendada para
+// más tarde hoy o mañana.
+const BULLSEYE_DOMAIN = 'bullseye-abm.com';
+
+export async function checkAndScheduleMissingRecallBots(): Promise<void> {
+  if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
+
+  const { rows } = await pool.query<{ id: string; empresa_contraparte: string | null }>(
+    `select id, empresa_contraparte from meetings
+     where recall_bot_id is null
+       and (meeting_url is not null or meet_code is not null)
+       and start_time > now() - interval '55 minutes'
+       and start_time < now() + interval '24 hours'`
+  );
+
+  for (const meeting of rows) {
+    const isInternalMeeting = meeting.empresa_contraparte?.toLowerCase() === BULLSEYE_DOMAIN;
+    await scheduleRecallBotForMeeting(meeting.id, { requireClientMatch: isInternalMeeting });
   }
 }

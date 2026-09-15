@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { app } from './app';
 import { pool } from './db';
-import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots } from './recall';
+import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots, checkAndScheduleMissingRecallBots } from './recall';
 import { retryStuckAnalyses } from './routes/webhooks';
 import { deleteExpiredMeetingVideos } from './videoRetention';
 import { renewExpiringCalendarWatches, catchUpAllActiveChannels } from './calendarWatchRenewal';
@@ -55,6 +55,15 @@ everyGuarded('chequeo de bots de Recall fallidos', checkAndRetryFailedRecallBots
 // calendarSync.ts, o cualquier otro camino futuro que reagende sin pasar por
 // ahí) — ver el comentario en checkAndFixStaleRecallBots en recall.ts.
 everyGuarded('chequeo de bots de Recall desalineados', checkAndFixStaleRecallBots, RECALL_RETRY_POLL_MS);
+
+// Bug real (15-09-2026, SeguriMaxima/Felipe Salgado): una reunión con link
+// real y contraparte externa se quedó sin bot para siempre porque el intento
+// original de agendarlo falló en silencio (ver el comentario completo en
+// checkAndScheduleMissingRecallBots, recall.ts) — nadie se enteró hasta que
+// la reunión ya estaba en curso. Mismo intervalo que los chequeos de Recall
+// de arriba: reintenta agendar bot para cualquier reunión sin uno todavía,
+// dentro de una ventana alrededor de start_time.
+everyGuarded('chequeo de bots de Recall faltantes', checkAndScheduleMissingRecallBots, RECALL_RETRY_POLL_MS);
 
 // Reintento automático del análisis post-reunión (10-09-2026, pedido
 // explícito del usuario: "necesito que el análisis de las reuniones corra
