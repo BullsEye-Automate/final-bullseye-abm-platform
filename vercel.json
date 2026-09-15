@@ -23,6 +23,7 @@
     "app/api/analisis/sdr/route.ts": { "maxDuration": 60 },
     "app/api/analisis/paises/route.ts": { "maxDuration": 60 },
     "app/api/analisis/clientes/route.ts": { "maxDuration": 60 },
-    "app/api/clients/[id]/allo-calls/route.ts": { "maxDuration": 60 }
+    "app/api/clients/[id]/allo-calls/route.ts": { "maxDuration": 60 },
+    "app/api/analisis/scores/route.ts": { "maxDuration": 60 }
   }
 }
