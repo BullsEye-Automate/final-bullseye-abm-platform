@@ -134,14 +134,29 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
     const empresa = row["Empresa"]?.trim();
     if (!empresa) continue;
 
-    const clientId = await resolveClientId(row, clientByName);
     const fechaReunion = parseDate(row["Fecha de la reunión"]);
     // Preferir el ID Reunión real de la planilla (columna agregada vía Apps
     // Script); si una fila todavía no lo tiene, usar la clave compuesta.
     const reunionId = row["ID Reunión"]?.trim();
     const sheetRowKey = reunionId || buildMatchKey(empresa, row["Contacto"]?.trim() ?? "", fechaReunion);
 
-    // REGLA 1: Si no hay client_id resuelto → omitir completamente esta fila
+    // Se busca ANTES de resolver client_id (y no solo cuando resuelve) para
+    // poder recuperar el client_id ya guardado si esta fila pierde "ID
+    // Cliente"/"Cliente" en la planilla (ej. un Apps Script externo que
+    // reescribe la fila al procesar un "rescate" de reunión y borra esas
+    // columnas) — sin esto, una reunión ya sincronizada se saltaba entera
+    // (REGLA 1) apenas la planilla perdía el dato, y el nuevo estado
+    // ("Pendiente" del rescate) nunca llegaba a Supabase.
+    const { data: existing } = await supabase
+      .from("meetings")
+      .select("id, client_id, feedback_status")
+      .eq("sheet_row_key", sheetRowKey)
+      .maybeSingle();
+
+    const clientId = (await resolveClientId(row, clientByName)) || existing?.client_id || null;
+
+    // REGLA 1: Si no hay client_id resuelto (ni desde la planilla ni desde
+    // un registro ya existente) → omitir completamente esta fila
     if (!clientId) {
       skipped_sin_cliente++;
       if (preview) {
@@ -149,13 +164,6 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
       }
       continue;
     }
-
-    // Verificar si ya existe en BD
-    const { data: existing } = await supabase
-      .from("meetings")
-      .select("id, client_id, feedback_status")
-      .eq("sheet_row_key", sheetRowKey)
-      .maybeSingle();
 
     // REGLA 2: Si ya tiene feedback → mantener client_id actual, no tocar nada
     if (existing?.feedback_status === "con_feedback" && existing?.client_id) {
