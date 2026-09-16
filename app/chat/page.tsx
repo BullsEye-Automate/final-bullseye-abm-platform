@@ -260,6 +260,13 @@ export default function ChatPage() {
     try {
       const apiMessages = updated.map((m) => ({ role: m.role, content: m.content }));
 
+      // Detectar canal antes de llamar a la API para que el AI genere con el formato correcto
+      const lowerContent = userContent.toLowerCase();
+      let effectiveChannel = channel;
+      if (lowerContent.includes("linkedin")) effectiveChannel = "linkedin";
+      else if (lowerContent.includes("whatsapp")) effectiveChannel = "whatsapp";
+      else if (lowerContent.includes("email") || lowerContent.includes("correo")) effectiveChannel = "email";
+
       const res = await fetch("/api/agente-contenido", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -267,7 +274,7 @@ export default function ChatPage() {
           clientId,
           messages:         apiMessages,
           emailType,
-          channel,
+          channel:          effectiveChannel,
           segmentId:        segmentId || undefined,
           recipientName,
           recipientCompany,
@@ -281,12 +288,6 @@ export default function ChatPage() {
       });
 
       const data = await res.json();
-      // Detectar si el usuario pidió cambiar de canal en su mensaje
-      const lowerContent = userContent.toLowerCase();
-      let effectiveChannel = channel;
-      if (lowerContent.includes("linkedin")) effectiveChannel = "linkedin";
-      else if (lowerContent.includes("whatsapp")) effectiveChannel = "whatsapp";
-      else if (lowerContent.includes("email") || lowerContent.includes("correo")) effectiveChannel = "email";
       setMessages((prev) => [...prev, { role: "assistant", content: data.message ?? data.error ?? "Error al generar.", channel: effectiveChannel }]);
     } catch {
       setMessages((prev) => [...prev, { role: "assistant", content: "Error de conexión. Intenta de nuevo." }]);
