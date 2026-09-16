@@ -123,6 +123,8 @@ export const COUNTRY_NAME_ALIASES: Record<string, string> = {
   [normalizeCountryKey("CL")]: "Chile",
   [normalizeCountryKey("CO")]: "Colombia",
   [normalizeCountryKey("MX")]: "México",
+  [normalizeCountryKey("PE")]: "Perú",
+  [normalizeCountryKey("AR")]: "Argentina",
 };
 
 export function resolveCountryLabel(label: string): string {
