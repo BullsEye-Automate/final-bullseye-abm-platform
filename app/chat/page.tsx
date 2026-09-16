@@ -38,8 +38,67 @@ function parseEmail(text: string): { subject: string; body: string } | null {
   return null;
 }
 
-function EmailCard({ subject, body, showSubject = true }: { subject: string; body: string; showSubject?: boolean }) {
+function InboxPreview({ subject, body, channel }: { subject: string; body: string; channel: string }) {
+  if (channel === "email") return (
+    <div className="rounded-xl overflow-hidden text-left" style={{ fontFamily: "Arial, sans-serif", background: "#fff", border: "1px solid #e0ddd8" }}>
+      <div style={{ background: "#f6f5f0", borderBottom: "1px solid #e0ddd8", padding: "10px 16px", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 22, height: 22, borderRadius: 5, background: "linear-gradient(135deg,#4285f4,#34a853)", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700, flexShrink: 0 }}>G</div>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#1f1f1f" }}>Gmail</span>
+      </div>
+      <div style={{ padding: "20px 20px 24px", background: "#fff" }}>
+        {subject && <div style={{ fontSize: 18, fontWeight: 700, color: "#202124", marginBottom: 14, lineHeight: 1.3 }}>{subject}</div>}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid #e8eaed" }}>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#251762", display: "flex", alignItems: "center", justifyContent: "center", color: "#62E0D8", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>S</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#202124" }}>SDR BullsEye</div>
+            <div style={{ fontSize: 11, color: "#5f6368" }}>Para: contacto@empresa.cl</div>
+          </div>
+          <div style={{ fontSize: 11, color: "#5f6368", whiteSpace: "nowrap" }}>Hoy</div>
+        </div>
+        <div style={{ fontSize: 13, lineHeight: 1.65, color: "#202124", whiteSpace: "pre-line" }}>{body}</div>
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid #e8eaed", fontSize: 12, color: "#5f6368", lineHeight: 1.6 }}>
+          <strong style={{ color: "#202124" }}>Tu nombre</strong><br />SDR · BullsEye
+        </div>
+      </div>
+    </div>
+  );
+
+  if (channel === "linkedin") return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "#f3f2ef", border: "1px solid #e0dfdc" }}>
+      <div style={{ background: "#fff", borderBottom: "1px solid #e0dfdc", padding: "8px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 22, height: 22, borderRadius: 4, background: "#0a66c2", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 13, fontFamily: "serif", flexShrink: 0 }}>in</div>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(0,0,0,0.9)", fontFamily: "-apple-system,sans-serif" }}>Mensajes</span>
+      </div>
+      <div style={{ padding: "16px 14px", display: "flex", flexDirection: "column" as const, alignItems: "flex-end" }}>
+        <div style={{ background: "#0a66c2", color: "#fff", borderRadius: "16px 16px 4px 16px", padding: "10px 14px", fontSize: 13, lineHeight: 1.55, maxWidth: "88%", fontFamily: "-apple-system,sans-serif", whiteSpace: "pre-line" as const }}>{body}</div>
+        <div style={{ fontSize: 11, color: "rgba(0,0,0,0.45)", marginTop: 4, fontFamily: "-apple-system,sans-serif" }}>Enviado</div>
+      </div>
+    </div>
+  );
+
+  // whatsapp
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ background: "#111b21" }}>
+      <div style={{ background: "#202c33", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "8px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#2a3942", display: "flex", alignItems: "center", justifyContent: "center", color: "#8696a0", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>C</div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#e9edef", fontFamily: "-apple-system,sans-serif" }}>Contacto</div>
+          <div style={{ fontSize: 11, color: "#8696a0", fontFamily: "-apple-system,sans-serif" }}>en línea</div>
+        </div>
+      </div>
+      <div style={{ background: "#0b141a", padding: "14px 12px 20px", display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ background: "#005c4b", color: "#e9edef", borderRadius: "8px 0 8px 8px", padding: "8px 12px 22px", fontSize: 13.5, lineHeight: 1.55, maxWidth: "88%", fontFamily: "-apple-system,sans-serif", whiteSpace: "pre-line" as const, position: "relative" as const }}>
+          {body}
+          <span style={{ position: "absolute" as const, bottom: 5, right: 10, fontSize: 11, color: "rgba(233,237,239,0.6)" }}>✓✓</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmailCard({ subject, body, showSubject = true, channel = "email" }: { subject: string; body: string; showSubject?: boolean; channel?: string }) {
   const [copied, setCopied] = useState(false);
+  const [preview, setPreview] = useState(false);
 
   async function copy() {
     const text = showSubject && subject ? `Asunto: ${subject}\n\n${body}` : body;
@@ -47,6 +106,8 @@ function EmailCard({ subject, body, showSubject = true }: { subject: string; bod
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
+
+  const channelLabel = channel === "email" ? "Email" : channel === "linkedin" ? "LinkedIn" : "WhatsApp";
 
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: "#1a1040", border: "1px solid rgba(98,224,216,0.25)" }}>
@@ -59,17 +120,31 @@ function EmailCard({ subject, body, showSubject = true }: { subject: string; bod
       <div className="px-5 py-4">
         <div className="flex items-center justify-between mb-2">
           <p className="text-[10px] uppercase tracking-widest font-medium" style={{ color: "#62E0D8", opacity: 0.7 }}>Mensaje</p>
-          <button
-            onClick={copy}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium transition-opacity hover:opacity-70"
-            style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8" }}
-          >
-            {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
-            {copied ? "Copiado" : "Copiar"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPreview((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium transition-opacity hover:opacity-70"
+              style={{ background: preview ? "rgba(98,224,216,0.2)" : "rgba(255,255,255,0.07)", color: preview ? "#62E0D8" : "rgba(255,255,255,0.45)" }}
+            >
+              {preview ? "Ocultar" : `Ver como ${channelLabel}`}
+            </button>
+            <button
+              onClick={copy}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium transition-opacity hover:opacity-70"
+              style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8" }}
+            >
+              {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+              {copied ? "Copiado" : "Copiar"}
+            </button>
+          </div>
         </div>
         <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "rgba(255,255,255,0.82)" }}>{body}</p>
       </div>
+      {preview && (
+        <div className="px-4 pb-4">
+          <InboxPreview subject={subject} body={body} channel={channel} />
+        </div>
+      )}
     </div>
   );
 }
@@ -91,7 +166,7 @@ function Bubble({ msg, channel }: { msg: Message; channel: string }) {
             style={{ maxHeight: 220, objectFit: "contain", border: "1px solid rgba(255,255,255,0.1)" }} />
         )}
         {parsed ? (
-          <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={channel === "email"} />
+          <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={channel === "email"} channel={channel} />
         ) : (
           <div
             className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
