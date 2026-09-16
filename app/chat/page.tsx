@@ -64,14 +64,43 @@ function InboxPreview({ subject, body, channel }: { subject: string; body: strin
   );
 
   if (channel === "linkedin") return (
-    <div className="rounded-xl overflow-hidden" style={{ background: "#f3f2ef", border: "1px solid #e0dfdc" }}>
-      <div style={{ background: "#fff", borderBottom: "1px solid #e0dfdc", padding: "8px 14px", display: "flex", alignItems: "center", gap: 8 }}>
-        <div style={{ width: 22, height: 22, borderRadius: 4, background: "#0a66c2", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 13, fontFamily: "serif", flexShrink: 0 }}>in</div>
-        <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(0,0,0,0.9)", fontFamily: "-apple-system,sans-serif" }}>Mensajes</span>
+    <div className="rounded-xl overflow-hidden text-left" style={{ fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" }}>
+      {/* Cabecera del hilo */}
+      <div style={{ background: "#fff", borderBottom: "1px solid #e0ddd8", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "rgba(0,0,0,0.9)" }}>Contacto</div>
+          <div style={{ fontSize: 11, color: "rgba(0,0,0,0.55)", marginTop: 1 }}>Cargo · Empresa</div>
+        </div>
+        <span style={{ fontSize: 18, color: "rgba(0,0,0,0.45)", letterSpacing: 1 }}>···</span>
       </div>
-      <div style={{ padding: "16px 14px", display: "flex", flexDirection: "column" as const, alignItems: "flex-end" }}>
-        <div style={{ background: "#0a66c2", color: "#fff", borderRadius: "16px 16px 4px 16px", padding: "10px 14px", fontSize: 13, lineHeight: 1.55, maxWidth: "88%", fontFamily: "-apple-system,sans-serif", whiteSpace: "pre-line" as const }}>{body}</div>
-        <div style={{ fontSize: 11, color: "rgba(0,0,0,0.45)", marginTop: 4, fontFamily: "-apple-system,sans-serif" }}>Enviado</div>
+      {/* Zona de mensaje */}
+      <div style={{ background: "#f3f2ef", padding: "16px 14px" }}>
+        <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, padding: "14px 16px" }}>
+          {/* Remitente */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#251762", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke="#62E0D8" strokeWidth="2"/><circle cx="11" cy="11" r="3.8" stroke="#62E0D8" strokeWidth="2"/><circle cx="11" cy="11" r="1.5" fill="#62E0D8"/></svg>
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.9)", lineHeight: 1.3 }}>
+                Tu nombre <span style={{ fontWeight: 400, color: "rgba(0,0,0,0.5)" }}>· ahora</span>
+              </div>
+              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.55)", marginTop: 1 }}>SDR · BullsEye ABM</div>
+            </div>
+          </div>
+          {/* Cuerpo */}
+          <div style={{ fontSize: 13.5, lineHeight: 1.65, color: "rgba(0,0,0,0.85)", whiteSpace: "pre-line" as const }}>{body}</div>
+        </div>
+      </div>
+      {/* Reply */}
+      <div style={{ background: "#fff", borderTop: "1px solid #e0ddd8", padding: "10px 14px 12px" }}>
+        <div style={{ border: "1px solid rgba(0,0,0,0.25)", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "rgba(0,0,0,0.38)", marginBottom: 8 }}>Escribe un mensaje...</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12, color: "rgba(0,0,0,0.45)" }}>
+          <span style={{ fontSize: 16 }}>📎</span>
+          <span style={{ fontWeight: 700, fontSize: 12 }}>GIF</span>
+          <span style={{ fontSize: 16 }}>🙂</span>
+          <span style={{ marginLeft: "auto" }}>Pulsa Intro (Enter) para enviar</span>
+        </div>
       </div>
     </div>
   );
