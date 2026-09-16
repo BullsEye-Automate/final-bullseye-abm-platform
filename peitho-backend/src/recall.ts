@@ -360,6 +360,18 @@ export async function checkAndFixStaleRecallBots(): Promise<void> {
   // minuto. Basta con revisar una ventana angosta alrededor de "ahora" (±48h)
   // — una reunión desalineada de acá a 3 semanas no es urgente de corregir
   // todavía, se va a revisar igual cuando entre en esta ventana.
+  //
+  // Segundo bug real (15-09-2026): la ventana de ±48h seguía dejando pasar
+  // rate limits reales — confirmado con un bot real que recibió 429 sin parar
+  // durante más de un día seguido (desde ~44h antes de su propio start_time,
+  // que ya caía dentro de la ventana). El intervalo de 60s (compartido con
+  // checkAndRetryFailedRecallBots, que sí necesita esa frecuencia porque
+  // reintenta bots que están a punto de entrar) era demasiado seguido para
+  // esta función — a diferencia de un reintento de join que sí es urgente
+  // segundo a segundo, una reunión desalineada 40 horas en el futuro no
+  // necesita revisarse cada minuto; alcanza de sobra con cada 5 minutos (ver
+  // el intervalo propio en server.ts). Esto solo achica CUÁNTAS veces se
+  // llama a Recall en total, no achica la ventana de reuniones cubiertas.
   const { rows } = await pool.query(
     `select id, meet_code, meeting_url, start_time, recall_bot_id
      from meetings

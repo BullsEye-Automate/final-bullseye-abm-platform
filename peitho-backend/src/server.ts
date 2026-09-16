@@ -49,12 +49,19 @@ function everyGuarded(label: string, fn: () => Promise<void>, intervalMs: number
 const RECALL_RETRY_POLL_MS = 60_000;
 everyGuarded('chequeo de bots de Recall fallidos', checkAndRetryFailedRecallBots, RECALL_RETRY_POLL_MS);
 
-// Mismo intervalo, chequeo aparte: bots ya agendados cuyo join_at quedó
-// desalineado del start_time actual de la reunión (ej. reagendos que
-// ocurrieron antes del fix de cancelStaleRecallBotIfRescheduled en
-// calendarSync.ts, o cualquier otro camino futuro que reagende sin pasar por
-// ahí) — ver el comentario en checkAndFixStaleRecallBots en recall.ts.
-everyGuarded('chequeo de bots de Recall desalineados', checkAndFixStaleRecallBots, RECALL_RETRY_POLL_MS);
+// Bug real (15-09-2026): este chequeo revisaba una ventana de ±48h alrededor
+// de start_time cada 60s (mismo intervalo que los chequeos más urgentes de
+// arriba) — un bot para una reunión hasta 2 días en el futuro se consultaba
+// contra la API de Recall una vez por minuto durante días enteros. Con el
+// volumen actual de reuniones, eso alcanzó a saturar el rate limit de Recall
+// (confirmado con logs reales: un solo bot recibiendo 429 Rate limit
+// exceeded sin pausa por más de 24 horas seguidas), lo que además tapaba
+// otras señales de error reales en los logs. Realinear join_at no es tan
+// urgente como reintentar un bot que falló justo antes de que la reunión
+// empiece — no necesita revisarse cada minuto. Intervalo propio, más largo,
+// separado del de los chequeos urgentes de arriba.
+const STALE_BOT_CHECK_POLL_MS = 5 * 60_000;
+everyGuarded('chequeo de bots de Recall desalineados', checkAndFixStaleRecallBots, STALE_BOT_CHECK_POLL_MS);
 
 // Bug real (15-09-2026, SeguriMaxima/Felipe Salgado): una reunión con link
 // real y contraparte externa se quedó sin bot para siempre porque el intento
