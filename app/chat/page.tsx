@@ -63,47 +63,108 @@ function InboxPreview({ subject, body, channel }: { subject: string; body: strin
     </div>
   );
 
-  if (channel === "linkedin") return (
-    <div className="rounded-xl overflow-hidden text-left" style={{ fontFamily: "-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" }}>
-      {/* Cabecera del hilo */}
-      <div style={{ background: "#fff", borderBottom: "1px solid #e0ddd8", padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "rgba(0,0,0,0.9)" }}>Contacto</div>
-          <div style={{ fontSize: 11, color: "rgba(0,0,0,0.55)", marginTop: 1 }}>Cargo · Empresa</div>
-        </div>
-        <span style={{ fontSize: 18, color: "rgba(0,0,0,0.45)", letterSpacing: 1 }}>···</span>
-      </div>
-      {/* Zona de mensaje */}
-      <div style={{ background: "#f3f2ef", padding: "16px 14px" }}>
-        <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, padding: "14px 16px" }}>
-          {/* Remitente */}
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: "50%", background: "#251762", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke="#62E0D8" strokeWidth="2"/><circle cx="11" cy="11" r="3.8" stroke="#62E0D8" strokeWidth="2"/><circle cx="11" cy="11" r="1.5" fill="#62E0D8"/></svg>
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.9)", lineHeight: 1.3 }}>
-                Tu nombre <span style={{ fontWeight: 400, color: "rgba(0,0,0,0.5)" }}>· ahora</span>
+  if (channel === "linkedin") {
+    const ff = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+    return (
+      <div style={{ fontFamily: ff, background: "#f3f2ef", borderRadius: 8, overflow: "hidden" }}>
+        {/* Barra de nav LinkedIn */}
+        <div style={{ background: "#fff", borderBottom: "1px solid #e0ddd8", padding: "8px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontFamily: "Georgia,serif", fontWeight: 900, fontSize: 20, color: "#0a66c2", letterSpacing: -1 }}>in</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
+            {[["🏠","Inicio"],["👥","Mi red"],["💼","Empleos"],["💬","Mensajes"],["🔔","Notif."]].map(([icon, label], i) => (
+              <div key={i} style={{ display: "flex", flexDirection: "column" as const, alignItems: "center", padding: "2px 10px", fontSize: 10, color: i === 3 ? "rgba(0,0,0,0.9)" : "rgba(0,0,0,0.55)", borderBottom: i === 3 ? "2px solid rgba(0,0,0,0.9)" : "2px solid transparent", cursor: "pointer" }}>
+                <span style={{ fontSize: 16 }}>{icon}</span>{label}
               </div>
-              <div style={{ fontSize: 12, color: "rgba(0,0,0,0.55)", marginTop: 1 }}>SDR · BullsEye ABM</div>
+            ))}
+          </div>
+        </div>
+        {/* Ventana de mensajes */}
+        <div style={{ display: "flex", height: 420 }}>
+          {/* Panel izquierdo — buzón */}
+          <div style={{ width: 220, flexShrink: 0, borderRight: "1px solid #e0ddd8", background: "#fff", display: "flex", flexDirection: "column" as const }}>
+            <div style={{ padding: "12px 12px 8px", borderBottom: "1px solid #e0ddd8" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: 17, color: "rgba(0,0,0,0.9)" }}>Buzón</span>
+                <span style={{ color: "rgba(0,0,0,0.5)", fontSize: 16, cursor: "pointer" }}>···</span>
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {["Buzón","Temas ▾","No leídos"].map((p, i) => (
+                  <div key={i} style={{ padding: "3px 9px", borderRadius: 16, fontSize: 12, fontWeight: 600, border: "1px solid", borderColor: i === 0 ? "#057642" : "#c1c1c1", background: i === 0 ? "#057642" : "#fff", color: i === 0 ? "#fff" : "rgba(0,0,0,0.7)", cursor: "pointer", whiteSpace: "nowrap" as const }}>{p}</div>
+                ))}
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto" as const }}>
+              {/* Conversación activa */}
+              <div style={{ display: "flex", gap: 8, padding: "10px 12px", background: "#eef3f8", borderLeft: "3px solid #057642", borderBottom: "1px solid #f3f2ef", cursor: "pointer" }}>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#251762", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#62E0D8" strokeWidth="2.2"/><circle cx="12" cy="12" r="4.5" stroke="#62E0D8" strokeWidth="2.2"/><circle cx="12" cy="12" r="1.8" fill="#62E0D8"/></svg>
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(0,0,0,0.9)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>Contacto</span>
+                    <span style={{ fontSize: 11, color: "rgba(0,0,0,0.5)", flexShrink: 0 }}>Hoy</span>
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(0,0,0,0.75)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>Solicitar servicio</div>
+                  <div style={{ fontSize: 11, color: "rgba(0,0,0,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>Tú: {body.slice(0, 35)}…</div>
+                </div>
+              </div>
+              {/* Contactos decorativos */}
+              {[["S","#b0b3b8","Sebastián D.","11 nov"],["GF","#0a66c2","Ghislaine F.","13 ago"],["J","#b0b3b8","John Lee","3 jul"]].map(([init, bg, name, date]) => (
+                <div key={name} style={{ display: "flex", gap: 8, padding: "10px 12px", borderBottom: "1px solid #f3f2ef", cursor: "pointer" }}>
+                  <div style={{ width: 40, height: 40, borderRadius: "50%", background: bg, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 700, fontSize: 14, flexShrink: 0 }}>{init}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(0,0,0,0.9)" }}>{name}</span>
+                      <span style={{ fontSize: 11, color: "rgba(0,0,0,0.5)" }}>{date}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: "rgba(0,0,0,0.5)" }}>Solicitar servicio</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-          {/* Cuerpo */}
-          <div style={{ fontSize: 13.5, lineHeight: 1.65, color: "rgba(0,0,0,0.85)", whiteSpace: "pre-line" as const }}>{body}</div>
+          {/* Panel derecho — conversación */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column" as const, minWidth: 0 }}>
+            {/* Cabecera contacto */}
+            <div style={{ background: "#fff", borderBottom: "1px solid #e0ddd8", padding: "12px 14px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "rgba(0,0,0,0.9)" }}>Contacto</div>
+                <div style={{ fontSize: 11, color: "rgba(0,0,0,0.55)", marginTop: 2 }}>Cargo · Empresa</div>
+              </div>
+              <span style={{ color: "rgba(0,0,0,0.5)", fontSize: 18, cursor: "pointer" }}>···</span>
+            </div>
+            {/* Mensajes */}
+            <div style={{ flex: 1, overflowY: "auto" as const, background: "#f3f2ef", padding: "16px 14px" }}>
+              <div style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.08)", borderRadius: 8, padding: "14px 16px" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 10 }}>
+                  <div style={{ width: 38, height: 38, borderRadius: "50%", background: "#251762", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#62E0D8" strokeWidth="2.2"/><circle cx="12" cy="12" r="4.5" stroke="#62E0D8" strokeWidth="2.2"/><circle cx="12" cy="12" r="1.8" fill="#62E0D8"/></svg>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "rgba(0,0,0,0.9)", lineHeight: 1.3 }}>
+                      Tu nombre <span style={{ fontWeight: 400, color: "rgba(0,0,0,0.5)" }}>· ahora</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "rgba(0,0,0,0.55)", marginTop: 1 }}>SDR · BullsEye ABM</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.65, color: "rgba(0,0,0,0.85)", whiteSpace: "pre-line" as const }}>{body}</div>
+              </div>
+            </div>
+            {/* Reply */}
+            <div style={{ background: "#fff", borderTop: "1px solid #e0ddd8", padding: "10px 14px 12px" }}>
+              <div style={{ border: "1px solid rgba(0,0,0,0.25)", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "rgba(0,0,0,0.35)", marginBottom: 8 }}>Escribe un mensaje...</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12, color: "rgba(0,0,0,0.45)" }}>
+                <span style={{ fontSize: 16 }}>📎</span>
+                <span style={{ fontWeight: 700, fontSize: 12 }}>GIF</span>
+                <span style={{ fontSize: 16 }}>🙂</span>
+                <span style={{ marginLeft: "auto" }}>Pulsa Intro (Enter) para enviar</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      {/* Reply */}
-      <div style={{ background: "#fff", borderTop: "1px solid #e0ddd8", padding: "10px 14px 12px" }}>
-        <div style={{ border: "1px solid rgba(0,0,0,0.25)", borderRadius: 4, padding: "8px 10px", fontSize: 13, color: "rgba(0,0,0,0.38)", marginBottom: 8 }}>Escribe un mensaje...</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12, color: "rgba(0,0,0,0.45)" }}>
-          <span style={{ fontSize: 16 }}>📎</span>
-          <span style={{ fontWeight: 700, fontSize: 12 }}>GIF</span>
-          <span style={{ fontSize: 16 }}>🙂</span>
-          <span style={{ marginLeft: "auto" }}>Pulsa Intro (Enter) para enviar</span>
-        </div>
-      </div>
-    </div>
-  );
+    );
+  }
 
   // whatsapp
   return (
