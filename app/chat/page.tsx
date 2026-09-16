@@ -8,7 +8,7 @@ import {
 
 type EmailType = "info" | "referral" | "cold" | "meeting";
 type Channel   = "email" | "whatsapp" | "linkedin";
-type Message   = { role: "user" | "assistant"; content: string; imagePreview?: string };
+type Message   = { role: "user" | "assistant"; content: string; imagePreview?: string; channel?: Channel };
 
 const MSG_TYPE_LABELS: Record<EmailType, string> = {
   info:     "Más información",
@@ -151,6 +151,7 @@ function EmailCard({ subject, body, showSubject = true, channel = "email" }: { s
 
 function Bubble({ msg, channel }: { msg: Message; channel: string }) {
   const isUser = msg.role === "user";
+  const effectiveChannel = msg.channel ?? channel;
   const parsed = !isUser ? parseEmail(msg.content) : null;
 
   return (
@@ -166,7 +167,7 @@ function Bubble({ msg, channel }: { msg: Message; channel: string }) {
             style={{ maxHeight: 220, objectFit: "contain", border: "1px solid rgba(255,255,255,0.1)" }} />
         )}
         {parsed ? (
-          <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={channel === "email"} channel={channel} />
+          <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={effectiveChannel === "email"} channel={effectiveChannel} />
         ) : (
           <div
             className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
@@ -251,7 +252,13 @@ export default function ChatPage() {
       });
 
       const data = await res.json();
-      setMessages((prev) => [...prev, { role: "assistant", content: data.message ?? data.error ?? "Error al generar." }]);
+      // Detectar si el usuario pidió cambiar de canal en su mensaje
+      const lowerContent = userContent.toLowerCase();
+      let effectiveChannel = channel;
+      if (lowerContent.includes("linkedin")) effectiveChannel = "linkedin";
+      else if (lowerContent.includes("whatsapp")) effectiveChannel = "whatsapp";
+      else if (lowerContent.includes("email") || lowerContent.includes("correo")) effectiveChannel = "email";
+      setMessages((prev) => [...prev, { role: "assistant", content: data.message ?? data.error ?? "Error al generar.", channel: effectiveChannel }]);
     } catch {
       setMessages((prev) => [...prev, { role: "assistant", content: "Error de conexión. Intenta de nuevo." }]);
     } finally {
