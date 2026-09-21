@@ -5,11 +5,11 @@ import { resolveSdrKey, toDateParam } from "@/lib/sdrAnalytics";
 
 export const dynamic = "force-dynamic";
 
-// Reporte "Origen de Reuniones": a diferencia del Ranking SDR (que separa
-// Agendadas por fecha_agendamiento y Realizadas por fecha_reunion), este
-// reporte muestra el total de reuniones del período sin importar su estado
-// (Sí/No/Pendiente/Reagendar), filtrando por fecha_reunion — la misma fecha
-// que usa /api/meetings (el módulo de Reuniones).
+// Reporte "Origen de Reuniones": muestra el total de reuniones del período
+// sin importar su estado (Sí/No/Pendiente/Reagendar), filtrando por
+// fecha_agendamiento (cuándo se agendó la reunión, no cuándo ocurre) —
+// confirmado con BullsEye, mismo criterio que la columna "Reuniones
+// Agendadas" del Ranking SDR.
 
 type MeetingDetail = {
   id: string;
@@ -66,8 +66,8 @@ export async function GET(request: NextRequest) {
       let meetingsQuery = db
         .from("meetings")
         .select("id, sdr_nombre, responsable, fecha_reunion, fecha_agendamiento, realizado, contacto_nombre, empresa, client_id, origen")
-        .gte("fecha_reunion", dateFrom)
-        .lte("fecha_reunion", dateTo)
+        .gte("fecha_agendamiento", dateFrom)
+        .lte("fecha_agendamiento", dateTo)
         .order("id", { ascending: true })
         .range(offset, offset + MEETINGS_PAGE_SIZE - 1);
 
