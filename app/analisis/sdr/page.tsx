@@ -1194,7 +1194,7 @@ export default function AnalisisSdr() {
         </div>
 
         <p className="text-xs text-ink-muted">
-          Distribución por Origen de todas las reuniones del período (según su Fecha de reunión),
+          Distribución por Origen de todas las reuniones del período (según su Fecha de agendamiento),
           sin importar su estado — las categorías sin reuniones en el período no se muestran.
         </p>
 
