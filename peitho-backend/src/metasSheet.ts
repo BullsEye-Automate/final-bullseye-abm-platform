@@ -496,7 +496,33 @@ function matchMeetingRow(
     let candidatosPorFecha = rows.filter((row) => rowMatchesMeetingDate(row, meetingStart));
 
     if (candidatosPorFecha.length === 1) {
-      return { status: 'matched', row: candidatosPorFecha[0], candidates: [] };
+      // Bug real (22-09-2026, CChC/Lureye Chile y CChC/BRASS CHILE S.A):
+      // con exactamente 1 candidato para la fecha, esto lo aceptaba a
+      // ciegas sin comparar la empresa para nada — el chequeo de empresa
+      // solo corría cuando había 2+ candidatos el mismo día. El excel de
+      // CChC solo tenía cargada la fila de "Sodexo/Catalina Torres" para
+      // esa fecha en el momento en que se sincronizaron dos reuniones
+      // REALES y distintas (Lureye Chile, Brass Chile — probablemente sus
+      // filas del excel tienen otra fecha, typo de una hoja mantenida a
+      // mano) — ambas quedaron con contacto/empresa de Sodexo pegados
+      // encima, con contacto_match_status='auto' (confiado, no dudó).
+      // Ahora, si la reunión trae empresa_contraparte, se valida con el
+      // mismo desambiguarPorEmpresa (con todos sus fallbacks ya probados
+      // — TLD, fuzzy, sigla) aplicado a este único candidato: si no hay
+      // ninguna relación de texto entre el dominio real y la fila del
+      // excel, no se confía ciego en la coincidencia de fecha — cae a
+      // 'tentative' para revisión manual, igual que el caso de
+      // ambigüedad múltiple. Si empresa_contraparte viene vacío (ej. el
+      // caso ya documentado del Zoom sin asistentes), se mantiene el
+      // comportamiento viejo — no hay con qué comparar.
+      const soloCandidato = candidatosPorFecha[0];
+      if (meeting.empresa_contraparte) {
+        const empresaCoincide = desambiguarPorEmpresa([soloCandidato], meeting.empresa_contraparte);
+        if (!empresaCoincide) {
+          return { status: 'tentative', row: null, candidates: [soloCandidato] };
+        }
+      }
+      return { status: 'matched', row: soloCandidato, candidates: [] };
     }
 
     if (candidatosPorFecha.length > 1) {
