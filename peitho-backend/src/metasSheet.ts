@@ -598,11 +598,28 @@ async function findOrCreateClient(name: string, externalId: string | null): Prom
 // del título (el título no trae esos datos).
 export async function resolveMeetingClientAndContact(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select id, empresa_contraparte, contraparte_email, start_time, client_id, meeting_title from meetings where id = $1`,
+    `select id, empresa_contraparte, contraparte_email, start_time, client_id, meeting_title, contacto_match_status
+     from meetings where id = $1`,
     [meetingId]
   );
   const meeting = rows[0];
-  if (!meeting || meeting.client_id) return;
+  if (!meeting) return;
+  // Bug real (22-09-2026, Noemí Leiva/Intermodal Logistics): con el título
+  // del evento ya resolviendo el cliente (ej. "CChC"), client_id queda
+  // seteado desde la PRIMERA vez que esto corre — y si en ese primer intento
+  // el match de contacto quedó 'tentative' (2+ candidatos ese día, ninguno
+  // encontrado todavía porque la fila recién se había agregado al excel, o
+  // el caché de 5 min de loadReunionesRows() la tenía desactualizada), el
+  // guard de abajo (antes `if (!meeting || meeting.client_id) return`)
+  // bloqueaba TODO reintento futuro para siempre — el cliente ya no era
+  // null, así que la función nunca se volvía a ejecutar aunque la fila
+  // correcta apareciera después en el excel. La lista de candidatos quedaba
+  // congelada en detail page reload tras detail page reload. Ahora solo se
+  // aborta si el cliente ya está resuelto Y el contacto también (status
+  // 'auto' o 'manual' — un admin ya lo resolvió a mano, o ya matcheó
+  // limpio) — un status 'tentative' vuelve a intentar el match completo en
+  // cada carga del detalle, igual que si client_id nunca se hubiera seteado.
+  if (meeting.client_id && meeting.contacto_match_status !== 'tentative') return;
 
   try {
     let clientId: string | null = null;
