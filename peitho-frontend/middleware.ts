@@ -8,7 +8,12 @@ import { NextResponse, type NextRequest } from "next/server";
 // de la URL en vez de por sesión. Todo lo demás requiere sesión de
 // Supabase Auth del proyecto "peitho" (mismo patrón que
 // bullseye-abm-platform/middleware.ts).
-const PUBLIC_PAGE_PREFIXES = ["/login", "/research-compartido", "/analisis-compartido"];
+// "/privacidad" se sumó el 22-09-2026: Google exige una URL de política de
+// privacidad real para poder publicar la app de OAuth (pasar de "Prueba" a
+// "En producción" en Google Auth Platform → Público) — sin eso, el token de
+// cada cuenta conectada (ejecutivos y bot@peithob2b.com) sigue venciendo
+// solo a los 7 días.
+const PUBLIC_PAGE_PREFIXES = ["/login", "/research-compartido", "/analisis-compartido", "/privacidad"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
