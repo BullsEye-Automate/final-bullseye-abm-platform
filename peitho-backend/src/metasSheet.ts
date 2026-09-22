@@ -529,7 +529,25 @@ function matchMeetingRow(
       if (knownClientName) {
         const knownKey = normalizeCompanyName(knownClientName);
         const narrowed = candidatosPorFecha.filter((row) => normalizeCompanyName(row.cliente) === knownKey);
-        if (narrowed.length === 1) return { status: 'matched', row: narrowed[0], candidates: [] };
+        // Segundo lugar real (22-09-2026, mismo bug que el de un solo
+        // candidato por fecha): acotar por knownClientName (ej. "CChC")
+        // puede dejar 1 solo candidato SIN que eso signifique que es el
+        // correcto — el excel puede tener una sola fila de CChC para esta
+        // fecha (ej. Sodexo) mientras la reunión real es con otro prospecto
+        // de CChC ese mismo día (ej. Lureye Chile, Brass Chile — sus filas
+        // del excel están en otra fecha, typo de hoja a mano). Antes esto
+        // se aceptaba ciego apenas quedaba 1; ahora se valida igual que el
+        // caso de un solo candidato general.
+        if (narrowed.length === 1) {
+          const soloPorCliente = narrowed[0];
+          if (meeting.empresa_contraparte) {
+            const empresaCoincide = desambiguarPorEmpresa([soloPorCliente], meeting.empresa_contraparte);
+            if (!empresaCoincide) {
+              return { status: 'tentative', row: null, candidates: [soloPorCliente] };
+            }
+          }
+          return { status: 'matched', row: soloPorCliente, candidates: [] };
+        }
         if (narrowed.length > 1) candidatosPorFecha = narrowed;
       }
 
