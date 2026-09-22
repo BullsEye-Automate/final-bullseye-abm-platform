@@ -622,7 +622,32 @@ async function findOrCreateClient(name: string, externalId: string | null): Prom
 // cliente cuando el título no alcanzó, como para enriquecer contacto_*
 // /empresa_nombre/cliente_sales_manager incluso cuando el cliente ya vino
 // del título (el título no trae esos datos).
+// Bug real (22-09-2026, CChC/Lureye Chile): tanto GET /meetings (lista) como
+// GET /meetings/:id (detalle) disparan resolveMeetingClientAndContact en
+// segundo plano cada vez que client_id está vacío — sin ningún bloqueo entre
+// ellos. Si se abren casi al mismo tiempo (ej. lista y detalle de la misma
+// reunión), corrían dos resoluciones en paralelo para la misma fila, cada
+// una con su propia lectura/escritura independiente — la que terminara
+// último pisaba a la otra, a veces con el resultado correcto, a veces con
+// uno viejo, según quién ganara la carrera (confirmado real: una reunión
+// mostró el contacto correcto al abrirla y volvió al viejo poco después).
+// Este set en memoria asegura que como máximo una resolución corra a la vez
+// por reunión — el segundo disparador, si llega mientras el primero sigue en
+// curso, simplemente no hace nada (la primera resolución ya va a dejar la
+// fila en un estado consistente).
+const resolvingMeetingIds = new Set<string>();
+
 export async function resolveMeetingClientAndContact(meetingId: string): Promise<void> {
+  if (resolvingMeetingIds.has(meetingId)) return;
+  resolvingMeetingIds.add(meetingId);
+  try {
+    await resolveMeetingClientAndContactInner(meetingId);
+  } finally {
+    resolvingMeetingIds.delete(meetingId);
+  }
+}
+
+async function resolveMeetingClientAndContactInner(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
     `select id, empresa_contraparte, contraparte_email, start_time, client_id, meeting_title, contacto_match_status
      from meetings where id = $1`,
