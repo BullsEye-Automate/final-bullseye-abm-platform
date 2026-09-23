@@ -17,7 +17,11 @@ export interface MeetingListItem {
   // match en el excel todavía.
   empresa_nombre: string | null;
   start_time: string | null;
-  status: "scheduled" | "captured" | "analyzed";
+  // "no_show" (23-09-2026): Deepgram no detectó ninguna palabra en el audio
+  // — casi siempre porque el prospecto nunca llegó a la cita (confirmado
+  // real viendo la grabación en el dashboard de Recall). Estado final, no
+  // se reintenta solo (ver analyzeMeetingAudio en postMeetingAnalysis.ts).
+  status: "scheduled" | "captured" | "analyzed" | "no_show";
   // Fase E — para el filtro de cliente en la vista admin.
   client_id: string | null;
   cliente_bullseye: string | null;

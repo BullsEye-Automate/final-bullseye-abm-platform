@@ -9,6 +9,7 @@ const STATUS_LABEL: Record<MeetingListItem["status"], string> = {
   scheduled: "Agendada",
   captured: "Capturada",
   analyzed: "Analizada",
+  no_show: "No show",
 };
 
 // timeZone explícito — bug real (08-09-2026): sin esto, toLocaleString usa

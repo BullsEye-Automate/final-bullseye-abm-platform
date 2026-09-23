@@ -24,6 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
   scheduled: "Agendada",
   captured: "Capturada",
   analyzed: "Analizada",
+  no_show: "No show",
 };
 
 // timeZone explícito — ver el mismo fix en MeetingsTable.tsx (sin esto,
@@ -299,9 +300,11 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
       {!analysis && !meeting.transcript_text ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <p className="text-sm text-gray-500">
-            Todavía no hay análisis para esta reunión (estado actual:{" "}
-            {STATUS_LABEL[meeting.status] ?? meeting.status}). El análisis se genera automáticamente
-            cuando termina de grabarse la llamada.
+            {meeting.status === "no_show"
+              ? "No se detectó conversación en la grabación — probablemente el prospecto no llegó a la cita."
+              : `Todavía no hay análisis para esta reunión (estado actual: ${
+                  STATUS_LABEL[meeting.status] ?? meeting.status
+                }). El análisis se genera automáticamente cuando termina de grabarse la llamada.`}
           </p>
         </div>
       ) : (

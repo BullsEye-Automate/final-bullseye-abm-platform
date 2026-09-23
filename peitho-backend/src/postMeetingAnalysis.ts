@@ -270,7 +270,23 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
   }
 
   if (!transcript) {
-    throw new Error(`No se encontró transcripción para la reunión ${meetingId}`);
+    // Bug real (23-09-2026, confirmado con el usuario viendo la grabación en
+    // el dashboard de Recall — reunión de MAX Service/Jenny Contreras): un
+    // audio sin ninguna palabra detectable por Deepgram casi siempre es un
+    // no-show real (Recall lo confirma con "Call Ended — reason:
+    // timeout_exceeded_everyone_left", el prospecto nunca llegó y el
+    // ejecutivo se quedó solo unos minutos antes de cortar), no un fallo
+    // técnico que valga la pena reintentar. Antes esto tiraba error y la
+    // reunión quedaba pegada en status='captured' reintentando hasta agotar
+    // los 3 intentos (ver retryStuckAnalyses en routes/webhooks.ts), con
+    // apariencia de "rota" en vez de dejar claro que no hubo conversación.
+    // "Reprocesar grabación" (botón manual) sigue disponible por si alguna
+    // vez esta clasificación estuviera mal.
+    console.log(
+      `[analysis] reunión ${meetingId}: sin transcripción detectable — se marca como sin conversación (probable no-show)`
+    );
+    await pool.query(`update meetings set status = 'no_show', updated_at = now() where id = $1`, [meetingId]);
+    return;
   }
 
   const baseConocimiento = await getClientKnowledgeBaseContext(meeting.client_id);
