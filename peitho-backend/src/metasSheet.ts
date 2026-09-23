@@ -380,22 +380,60 @@ export function matchClientExecutiveName(
   return matches.length === 1 ? matches[0].id : null;
 }
 
-// Wrapper que trae el roster de la base — se usa en los 3 lugares donde se
-// escribe cliente_sales_manager (resolveMeetingClientAndContactInner,
-// resolveTentativeMatch, refreshMatchedRowFields), así ese mismo texto queda
-// vinculado a un ejecutivo del roster apenas se conoce, sin esperar a que el
-// usuario lo corrija a mano. Usa resolveClientGroupIds (mismo criterio que la
+// Deriva un nombre "adivinable" del local-part de un email corporativo (ej.
+// "raul.ameller@cchc.cl" -> "raul ameller") — se usa cuando el evento de
+// Calendar no trae un displayName real para el organizador, que pasa seguido
+// (Google no siempre lo resuelve). Números sueltos (ej. "jperez2") también se
+// quitan — no aportan al nombre y podrían romper el match por casualidad.
+function nameHintFromEmail(email: string | null | undefined): string | null {
+  const local = email?.split('@')[0];
+  if (!local) return null;
+  const cleaned = local
+    .replace(/[._+-]+/g, ' ')
+    .replace(/\d+/g, ' ')
+    .trim();
+  return cleaned || null;
+}
+
+// Wrapper que trae el roster de la base y prueba, en orden, las señales
+// disponibles para vincular una reunión a un ejecutivo del cliente — se usa
+// en los 3 lugares donde se escribe cliente_sales_manager
+// (resolveMeetingClientAndContactInner, resolveTentativeMatch,
+// refreshMatchedRowFields). Usa resolveClientGroupIds (mismo criterio que la
 // base de conocimiento) — un ejecutivo cargado para "CChC" también debe
 // poder vincularse a una reunión resuelta contra "CChC - Valle".
+//
+// Prioridad (23-09-2026, pedido explícito del usuario): quién ORGANIZÓ la
+// invitación en Calendar (organizerName/organizerEmail — normalmente el
+// ejecutivo comercial del cliente en persona, ver extractContraparteFromBotInvite
+// en calendarSync.ts) se prueba PRIMERO — es un dato que Google siempre trae
+// (con nombre real o al menos el email) para toda reunión de invitación al
+// bot, a diferencia de cliente_sales_manager (columna "Sales Manager" del
+// excel, casi siempre vacía — la razón original por la que se construyó este
+// roster). El texto del excel queda como respaldo, solo si el organizador no
+// matcheó a nadie.
 async function matchClientExecutiveId(
   clientId: string | null,
-  salesManagerText: string | null | undefined
+  signals: {
+    salesManagerText?: string | null;
+    organizerName?: string | null;
+    organizerEmail?: string | null;
+  }
 ): Promise<string | null> {
-  if (!clientId || !salesManagerText) return null;
+  if (!clientId) return null;
   const groupIds = await resolveClientGroupIds(clientId);
   const { rows } = await pool.query(`select id, name from client_executives where client_id = any($1)`, [groupIds]);
   if (rows.length === 0) return null;
-  return matchClientExecutiveName(rows, salesManagerText);
+
+  const organizerText = signals.organizerName || nameHintFromEmail(signals.organizerEmail);
+  if (organizerText) {
+    const match = matchClientExecutiveName(rows, organizerText);
+    if (match) return match;
+  }
+  if (signals.salesManagerText) {
+    return matchClientExecutiveName(rows, signals.salesManagerText);
+  }
+  return null;
 }
 
 // Se llama después de agregar un ejecutivo nuevo al roster de un cliente
@@ -411,14 +449,18 @@ export async function rematchClientExecutivesForClient(clientId: string): Promis
   if (executives.length === 0) return 0;
 
   const { rows: meetings } = await pool.query(
-    `select id, cliente_sales_manager from meetings
-     where client_id = any($1) and client_executive_id is null and cliente_sales_manager is not null`,
+    `select id, cliente_sales_manager, organizer_email, organizer_name from meetings
+     where client_id = any($1) and client_executive_id is null
+       and (cliente_sales_manager is not null or organizer_email is not null or organizer_name is not null)`,
     [groupIds]
   );
 
   let updated = 0;
   for (const meeting of meetings) {
-    const matchId = matchClientExecutiveName(executives, meeting.cliente_sales_manager);
+    const organizerText = meeting.organizer_name || nameHintFromEmail(meeting.organizer_email);
+    const matchId =
+      (organizerText && matchClientExecutiveName(executives, organizerText)) ||
+      matchClientExecutiveName(executives, meeting.cliente_sales_manager);
     if (matchId) {
       await pool.query(`update meetings set client_executive_id = $1, updated_at = now() where id = $2`, [
         matchId,
@@ -740,7 +782,8 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
 
 async function resolveMeetingClientAndContactInner(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select id, empresa_contraparte, contraparte_email, start_time, client_id, meeting_title, contacto_match_status
+    `select id, empresa_contraparte, contraparte_email, start_time, client_id, meeting_title, contacto_match_status,
+            organizer_email, organizer_name
      from meetings where id = $1`,
     [meetingId]
   );
@@ -819,7 +862,11 @@ async function resolveMeetingClientAndContactInner(meetingId: string): Promise<v
       return;
     }
 
-    const clientExecutiveId = await matchClientExecutiveId(clientId, row?.salesManager ?? null);
+    const clientExecutiveId = await matchClientExecutiveId(clientId, {
+      salesManagerText: row?.salesManager ?? null,
+      organizerName: meeting.organizer_name,
+      organizerEmail: meeting.organizer_email,
+    });
 
     await pool.query(
       `update meetings set
@@ -864,7 +911,7 @@ export async function resolveTentativeMatch(
   idReunion: string | null
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { rows } = await pool.query(
-    `select contacto_match_candidates, client_id from meetings where id = $1`,
+    `select contacto_match_candidates, client_id, organizer_email, organizer_name from meetings where id = $1`,
     [meetingId]
   );
   const meeting = rows[0];
@@ -883,7 +930,11 @@ export async function resolveTentativeMatch(
   if (!chosen) return { ok: false, error: 'El candidato elegido ya no está disponible — reintentá la re-sincronización' };
 
   const clientId = meeting.client_id ?? (await findOrCreateClient(chosen.cliente, chosen.clienteId));
-  const clientExecutiveId = await matchClientExecutiveId(clientId, chosen.salesManager);
+  const clientExecutiveId = await matchClientExecutiveId(clientId, {
+    salesManagerText: chosen.salesManager,
+    organizerName: meeting.organizer_name,
+    organizerEmail: meeting.organizer_email,
+  });
 
   await pool.query(
     `update meetings set
@@ -934,7 +985,8 @@ export async function resolveTentativeMatch(
 // no pisar la corrección manual del admin.
 export async function refreshMatchedRowFields(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select m.empresa_contraparte, m.contraparte_email, m.start_time, m.metas_sheet_match_id, m.client_id, c.name as cliente_nombre
+    `select m.empresa_contraparte, m.contraparte_email, m.start_time, m.metas_sheet_match_id, m.client_id, c.name as cliente_nombre,
+            m.organizer_email, m.organizer_name
      from meetings m
      left join clients c on c.id = m.client_id
      where m.id = $1`,
@@ -969,7 +1021,11 @@ export async function refreshMatchedRowFields(meetingId: string): Promise<void> 
   }
   if (!row) return;
 
-  const clientExecutiveId = await matchClientExecutiveId(meeting.client_id, row.salesManager);
+  const clientExecutiveId = await matchClientExecutiveId(meeting.client_id, {
+    salesManagerText: row.salesManager,
+    organizerName: meeting.organizer_name,
+    organizerEmail: meeting.organizer_email,
+  });
 
   await pool.query(
     `update meetings set

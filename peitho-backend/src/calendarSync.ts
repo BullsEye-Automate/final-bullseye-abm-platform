@@ -259,13 +259,20 @@ export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, bot
   const ejecutivo = resolveEjecutivoFromBotInvite(event);
   const startTime = event.start?.dateTime ?? event.start?.date ?? null;
   const recurringEventId = event.recurringEventId ?? null;
+  // Quien organizó la invitación — normalmente el ejecutivo comercial del
+  // cliente en persona (ver comentario de migración 034). Se guarda tal
+  // cual, sin filtrar por dominio acá — matchClientExecutiveId (metasSheet.ts)
+  // es quien decide si sirve como señal, una vez que se sabe a qué cliente
+  // pertenece la reunión.
+  const organizerEmail = event.organizer?.email ?? null;
+  const organizerName = event.organizer?.displayName ?? null;
 
   await cancelStaleRecallBotIfRescheduled(event.id, startTime);
 
   console.log(`[bot-invite] evento ${event.id}: guardando en meetings (ejecutivo=${ejecutivo ?? '(ninguno)'}, contraparte=${contraparte ?? '?'})...`);
   const { rows } = await pool.query(
-    `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, contraparte_email, empresa_contraparte, start_time, recurring_event_id, meeting_title)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `insert into meetings (google_event_id, meeting_url, ejecutivo, contraparte, contraparte_email, empresa_contraparte, start_time, recurring_event_id, meeting_title, organizer_email, organizer_name)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      on conflict (google_event_id) do update set
        meeting_url = excluded.meeting_url,
        ejecutivo = excluded.ejecutivo,
@@ -275,9 +282,23 @@ export async function upsertMeetingFromBotInvite(event: GoogleCalendarEvent, bot
        start_time = excluded.start_time,
        recurring_event_id = excluded.recurring_event_id,
        meeting_title = excluded.meeting_title,
+       organizer_email = excluded.organizer_email,
+       organizer_name = excluded.organizer_name,
        updated_at = now()
      returning id`,
-    [event.id, meetingUrl, ejecutivo, contraparte, contraparteEmail, empresaContraparte, startTime, recurringEventId, event.summary ?? null]
+    [
+      event.id,
+      meetingUrl,
+      ejecutivo,
+      contraparte,
+      contraparteEmail,
+      empresaContraparte,
+      startTime,
+      recurringEventId,
+      event.summary ?? null,
+      organizerEmail,
+      organizerName,
+    ]
   );
   console.log(`[bot-invite] evento ${event.id}: guardado como reunión ${rows[0].id}, agendando bot...`);
 
