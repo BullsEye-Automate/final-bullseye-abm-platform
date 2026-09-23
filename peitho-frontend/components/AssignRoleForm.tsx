@@ -22,7 +22,7 @@ export default function AssignRoleForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
-  const [resendError, setResendError] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<{ email: string; message: string } | null>(null);
 
   // Al hacer clic en "Editar rol" en la lista de abajo, UserManagement pasa
   // la fila elegida acá — el mismo formulario sirve para editar (el backend
@@ -70,7 +70,7 @@ export default function AssignRoleForm({
         return;
       }
       if (data.invited) setInvitedEmail(email.trim());
-      if (data.resendError) setResendError(email.trim());
+      if (data.resendError) setResendError({ email: email.trim(), message: String(data.resendError) });
       resetForm();
       onDoneEditing();
       router.refresh();
@@ -157,8 +157,9 @@ export default function AssignRoleForm({
       )}
       {resendError && (
         <p className="text-xs text-amber-600 w-full">
-          El rol quedó asignado, pero no se pudo mandar el correo de acceso a {resendError} — reenvíalo a mano
-          desde Supabase Studio → Authentication → Users.
+          El rol quedó asignado, pero no se pudo mandar el correo de acceso a {resendError.email} — motivo:{" "}
+          <span className="font-medium">{resendError.message}</span>. Si dice algo de límite/rate, esperá unos
+          minutos y volvé a intentar (o reenvíalo a mano desde Supabase Studio → Authentication → Users).
         </p>
       )}
       {role === "client" && (
