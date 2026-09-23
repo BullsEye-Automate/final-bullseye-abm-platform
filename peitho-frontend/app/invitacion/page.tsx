@@ -4,13 +4,24 @@ import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 // Página pública (ver PUBLIC_PAGE_PREFIXES en middleware.ts) — a la que
-// Supabase redirige el link del correo de invitación cuando un admin da de
-// alta a un usuario nuevo desde /admin/usuarios (23-09-2026). El link trae
-// los tokens de sesión en el fragmento de la URL (#access_token=...) — el
-// cliente de Supabase (createBrowserClient, detectSessionInUrl por default)
-// los detecta solo apenas carga la página y abre sesión; acá solo falta
-// pedirle al usuario que elija una contraseña para poder volver a entrar
-// después sin depender de un link nuevo cada vez.
+// Supabase redirige el link del correo de invitación/recuperación cuando un
+// admin da de alta o le devuelve el acceso a un usuario desde
+// /admin/usuarios (23-09-2026).
+//
+// Bug real encontrado probando esto con el usuario (confirmado leyendo el
+// código fuente de @supabase/auth-js, no adivinado): supabaseBrowser()
+// (createBrowserClient de @supabase/ssr) fuerza flowType:'pkce' SIEMPRE, sin
+// forma de desactivarlo. inviteUserByEmail()/resetPasswordForEmail() del
+// lado admin NUNCA usan PKCE (Supabase lo documenta explícito — el navegador
+// que dispara la invitación no es el mismo que la acepta) — mandan los
+// tokens directo en el fragmento de la URL (#access_token=...), el flujo
+// "implicit" de siempre. Cuando detectSessionInUrl de un cliente en modo
+// pkce se encuentra con una URL de tipo implicit, _getSessionFromURL() TIRA
+// AuthPKCEGrantCodeExchangeError('Not a valid PKCE flow url.') en vez de
+// procesarla — silencioso (no rompe la página), pero nunca abre sesión, así
+// que el timeout de abajo terminaba mostrando "link inválido" con un link
+// perfectamente válido. Fix: parsear el fragmento a mano acá y pasarle los
+// tokens directo a setSession() (esa función no mira flowType en absoluto).
 export default function InvitacionPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "invalid">("loading");
   const [invalidReason, setInvalidReason] = useState<string | null>(null);
@@ -21,19 +32,16 @@ export default function InvitacionPage() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    // Cuando el link de invitación ya fue consumido o venció, Supabase no
-    // manda tokens — redirige acá con el motivo en query params
+    // Cuando el link de invitación/recuperación ya fue consumido o venció,
+    // Supabase no manda tokens — redirige acá con el motivo en query params
     // (?error=access_denied&error_code=otp_expired&error_description=...).
-    // Se revisa esto de entrada, sin esperar el timeout de abajo, para poder
-    // mostrar la razón real en vez de un genérico "no es válido".
-    const params = new URLSearchParams(window.location.search);
-    const errorCode = params.get("error_code");
-    const errorDescription = params.get("error_description");
-    if (errorCode || params.get("error")) {
+    const searchParams = new URLSearchParams(window.location.search);
+    const errorCode = searchParams.get("error_code");
+    const errorDescription = searchParams.get("error_description");
+    if (errorCode || searchParams.get("error")) {
       setInvalidReason(
         errorCode === "otp_expired"
-          ? "El link ya fue usado o venció — a veces el filtro de seguridad del correo " +
-              "\"abre\" el link automático antes de que la persona lo haga a mano, dejándolo gastado."
+          ? "El link ya fue usado o venció."
           : errorDescription
             ? decodeURIComponent(errorDescription.replace(/\+/g, " "))
             : `Error: ${errorCode}`
@@ -42,29 +50,33 @@ export default function InvitacionPage() {
       return;
     }
 
-    const supabase = supabaseBrowser();
+    // Éxito: los tokens vienen en el FRAGMENTO (#access_token=...), no en
+    // query params — nunca llegan al servidor, solo se leen acá en el
+    // navegador.
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const accessToken = hashParams.get("access_token");
+    const refreshToken = hashParams.get("refresh_token");
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) setStatus("ready");
-    });
+    if (!accessToken || !refreshToken) {
+      setStatus("invalid");
+      return;
+    }
 
-    // Por si el evento ya disparó antes de montar el listener de arriba.
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setStatus("ready");
-    });
+    // Se limpia el hash de la URL apenas se leen los tokens — no hace falta
+    // dejarlos visibles/copiables en la barra de direcciones ni en el
+    // historial del navegador más tiempo del necesario.
+    window.history.replaceState(null, "", window.location.pathname);
 
-    // El link puede haber vencido o ya haberse usado — sin sesión después de
-    // unos segundos, es un link inválido, no un problema de timing.
-    const timeout = setTimeout(() => {
-      setStatus((current) => (current === "loading" ? "invalid" : current));
-    }, 4000);
-
-    return () => {
-      subscription.unsubscribe();
-      clearTimeout(timeout);
-    };
+    supabaseBrowser()
+      .auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+      .then(({ error: sessionError }) => {
+        if (sessionError) {
+          console.error("Error estableciendo la sesión desde /invitacion", sessionError);
+          setStatus("invalid");
+          return;
+        }
+        setStatus("ready");
+      });
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
