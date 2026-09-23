@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useClient } from "@/lib/clientContext";
-import { IconCalendar, IconChevronDown, IconX } from "@tabler/icons-react";
+import { IconCalendar, IconChevronDown, IconX, IconRefresh, IconLoader2 } from "@tabler/icons-react";
+import { toChileParts } from "@/lib/timezone";
 import MesEnCurso from "./components/MesEnCurso";
 import GraficoEvolucion from "./components/GraficoEvolucion";
 import GraficoPais from "./components/GraficoPais";
@@ -98,6 +99,15 @@ const PRESETS = [
   { key: "personalizado", label: "Personalizado" },
 ];
 
+// Días transcurridos del mes en curso en hora de Chile (día 1 = 1, día 23 =
+// 23, etc.), con un margen de +1 día para no depender de que el instante
+// "ahora" del servidor (UTC) y el día calendario de Chile coincidan
+// exactamente en el borde de medianoche — de sobra para acotar el sync a
+// "este mes" sin arriesgarse a dejar fuera el 1° del mes.
+function diasDesdeInicioDeMesChile(): number {
+  return toChileParts(new Date()).getUTCDate() + 1;
+}
+
 // ── Página principal ──────────────────────────────────────────────────────────
 export default function ReunionesPage() {
   const { currentClient, loading: clientLoading } = useClient();
@@ -107,6 +117,8 @@ export default function ReunionesPage() {
   const [hasta, setHasta] = useState("");
   const [preset, setPreset] = useState("mes");
   const [presetOpen, setPresetOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (clientLoading) return;
@@ -121,6 +133,30 @@ export default function ReunionesPage() {
     setMeetings(Array.isArray(data) ? data : []);
     setLoading(false);
   }, [currentClient?.id, clientLoading, desde, hasta]);
+
+  // Trae la última versión del Google Sheet, acotado a los días transcurridos
+  // del mes en curso (no los 40 días completos que usa el botón global de
+  // Análisis SDR) — responde más rápido para el caso de uso de esta página:
+  // revisar si "Mes en Curso" ya refleja los cambios recientes del Sheet.
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      const days = diasDesdeInicioDeMesChile();
+      const res = await fetch(`/api/meetings/sync?days=${days}`);
+      const data = await res.json();
+      if (data.error) {
+        setSyncMessage(`Error al actualizar: ${data.error}`);
+      } else {
+        setSyncMessage(`✓ Actualizado — ${data.synced ?? 0} reuniones sincronizadas`);
+        await load();
+      }
+    } catch (err) {
+      setSyncMessage(`Error al actualizar: ${(err as Error).message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -145,7 +181,7 @@ export default function ReunionesPage() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reuniones Agendadas</h1>
           <p className="text-sm text-gray-500 mt-1">
@@ -155,58 +191,77 @@ export default function ReunionesPage() {
           </p>
         </div>
 
-        {/* Filtro de fecha */}
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex items-start gap-3 flex-wrap">
+          <div className="flex flex-col items-end gap-1.5">
             <button
-              onClick={() => setPresetOpen((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 bg-white"
+              onClick={handleSync}
+              disabled={syncing}
+              title="Trae los últimos cambios del Google Sheet, acotado al mes en curso — más rápido que el sync completo"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 bg-white disabled:opacity-50"
             >
-              <IconCalendar size={14} className="text-gray-400" />
-              {presetLabel}
-              <IconChevronDown size={13} className="text-gray-400" />
+              {syncing ? (
+                <IconLoader2 size={14} className="animate-spin text-gray-400" />
+              ) : (
+                <IconRefresh size={14} className="text-gray-400" />
+              )}
+              Actualizar mes en curso
             </button>
-            {presetOpen && (
-              <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1 min-w-[180px]">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p.key}
-                    onClick={() => applyPreset(p.key)}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${
-                      preset === p.key ? "text-purple-700 font-medium" : "text-gray-700"
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
+            {syncMessage && <p className="text-xs text-gray-500 text-right">{syncMessage}</p>}
+          </div>
+
+          {/* Filtro de fecha */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => setPresetOpen((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 bg-white"
+              >
+                <IconCalendar size={14} className="text-gray-400" />
+                {presetLabel}
+                <IconChevronDown size={13} className="text-gray-400" />
+              </button>
+              {presetOpen && (
+                <div className="absolute top-full mt-1 right-0 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1 min-w-[180px]">
+                  {PRESETS.map((p) => (
+                    <button
+                      key={p.key}
+                      onClick={() => applyPreset(p.key)}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${
+                        preset === p.key ? "text-purple-700 font-medium" : "text-gray-700"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {preset === "personalizado" && (
+              <>
+                <input
+                  type="date"
+                  value={desde}
+                  onChange={(e) => setDesde(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none"
+                />
+                <span className="text-gray-400 text-sm">→</span>
+                <input
+                  type="date"
+                  value={hasta}
+                  onChange={(e) => setHasta(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none"
+                />
+              </>
+            )}
+            {preset !== "todo" && (
+              <button
+                onClick={() => applyPreset("todo")}
+                className="text-xs text-gray-400 hover:text-gray-600 underline"
+              >
+                Limpiar
+              </button>
             )}
           </div>
-          {preset === "personalizado" && (
-            <>
-              <input
-                type="date"
-                value={desde}
-                onChange={(e) => setDesde(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none"
-              />
-              <span className="text-gray-400 text-sm">→</span>
-              <input
-                type="date"
-                value={hasta}
-                onChange={(e) => setHasta(e.target.value)}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm outline-none"
-              />
-            </>
-          )}
-          {preset !== "todo" && (
-            <button
-              onClick={() => applyPreset("todo")}
-              className="text-xs text-gray-400 hover:text-gray-600 underline"
-            >
-              Limpiar
-            </button>
-          )}
         </div>
       </div>
 
