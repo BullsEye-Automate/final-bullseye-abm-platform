@@ -16,9 +16,10 @@ export default async function AdminUsuariosPage() {
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Administración de usuarios</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Asigna acceso a Peitho a un usuario ya creado en Supabase Auth (Supabase Studio → Authentication →
-          Users). Un rol "cliente" solo ve sus propias reuniones y su propia base de conocimiento; "admin" ve y
-          filtra todo.
+          Escribe el email y asigna un rol — si la persona todavía no tiene cuenta, se crea sola y le llega un
+          correo para que elija su contraseña (no hace falta entrar a Supabase). Un rol "cliente" solo ve sus
+          propias reuniones y su propia base de conocimiento (admin cliente, además, el panel de control); "admin"
+          ve y filtra todo.
         </p>
       </div>
 

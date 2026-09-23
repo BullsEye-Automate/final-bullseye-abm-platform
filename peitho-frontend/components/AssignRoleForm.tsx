@@ -13,6 +13,7 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
   const [clientSubRole, setClientSubRole] = useState<"admin" | "user">("admin");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -20,6 +21,7 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
 
     setSaving(true);
     setError(null);
+    setInvitedEmail(null);
     try {
       const res = await fetch("/api/admin/user-roles", {
         method: "POST",
@@ -31,11 +33,12 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
           clientSubRole: role === "client" ? clientSubRole : null,
         }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         setError(data.error ?? "No se pudo asignar el rol");
         return;
       }
+      if (data.invited) setInvitedEmail(email.trim());
       setEmail("");
       setClientId("");
       setClientSubRole("admin");
@@ -97,6 +100,11 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
         {saving ? "Asignando…" : "Asignar acceso"}
       </button>
       {error && <p className="text-xs text-red-600 w-full">{error}</p>}
+      {invitedEmail && (
+        <p className="text-xs text-green-600 w-full">
+          Le llegó un correo de invitación a {invitedEmail} para que elija su contraseña.
+        </p>
+      )}
       {role === "client" && (
         <p className="text-xs text-gray-400 w-full">
           ¿El cliente no aparece en la lista?{" "}

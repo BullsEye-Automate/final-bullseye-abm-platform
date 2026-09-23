@@ -13,7 +13,18 @@ import { NextResponse, type NextRequest } from "next/server";
 // "En producción" en Google Auth Platform → Público) — sin eso, el token de
 // cada cuenta conectada (ejecutivos y bot@peithob2b.com) sigue venciendo
 // solo a los 7 días.
-const PUBLIC_PAGE_PREFIXES = ["/login", "/research-compartido", "/analisis-compartido", "/privacidad"];
+// "/invitacion" se sumó el 23-09-2026: el link del correo de invitación de
+// Supabase trae los tokens de sesión en el FRAGMENTO de la URL (#access_token=...),
+// que nunca llega al servidor — este middleware no puede ver esa sesión
+// todavía, así que la página tiene que ser pública para que el cliente de
+// Supabase la procese en el navegador (ver app/invitacion/page.tsx).
+const PUBLIC_PAGE_PREFIXES = [
+  "/login",
+  "/research-compartido",
+  "/analisis-compartido",
+  "/privacidad",
+  "/invitacion",
+];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

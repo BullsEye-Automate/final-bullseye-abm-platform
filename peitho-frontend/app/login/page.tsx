@@ -83,7 +83,7 @@ function LoginForm() {
         </form>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          ¿No tienes cuenta? Pide a un admin que te la cree en Supabase (proyecto "peitho").
+          ¿No tienes cuenta? Pide a un administrador que te dé acceso desde Peitho.
         </p>
       </div>
     </div>

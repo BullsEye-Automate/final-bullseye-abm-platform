@@ -5,6 +5,14 @@ import { requireAuth, requireAdmin } from '../authMiddleware';
 
 export const adminRouter = Router();
 
+// URL del frontend a la que Supabase redirige el link del correo de
+// invitación (23-09-2026) — ahí vive /invitacion, la página pública que
+// captura la sesión del link y le pide al usuario nuevo que elija una
+// contraseña. Mismo dominio que DEFAULT_FRONTEND_ORIGINS en app.ts.
+function inviteRedirectUrl(): string {
+  return process.env.PEITHO_INVITE_REDIRECT_URL ?? 'https://app.peithob2b.com/invitacion';
+}
+
 // Lo consume el frontend para saber qué rol tiene el usuario logueado y
 // decidir qué mostrar (ej. el filtro de cliente en admin, o mandar a un
 // usuario "client" directo a su propia base de conocimiento).
@@ -39,9 +47,11 @@ adminRouter.get('/admin/user-roles', requireAuth, requireAdmin, async (_req, res
   }
 });
 
-// El usuario de Supabase Auth tiene que existir de antes (se crea a mano en
-// Supabase Studio → Authentication → Users — no hay signup público, mismo
-// patrón que bullseye-abm-platform). Esto solo le asigna un rol de Peitho.
+// Si el email ya existe en Supabase Auth, solo se le asigna el rol de
+// Peitho. Si no existe todavía, se crea acá mismo con una invitación
+// (23-09-2026, pedido explícito del usuario — antes había que crearlo a mano
+// en Supabase Studio primero) — Supabase le manda un correo con un link para
+// que el usuario nuevo elija su contraseña (ver /invitacion en el frontend).
 adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res) => {
   const { email, role, clientId, clientSubRole } = req.body ?? {};
 
@@ -79,12 +89,20 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
       if (data.users.length < 200) break;
     }
 
+    let invited = false;
     if (!authUser) {
-      res.status(404).json({
-        error:
-          'No existe un usuario de Supabase Auth con ese email — créalo primero en Supabase Studio → Authentication → Users',
+      const { data, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(normalizedEmail, {
+        redirectTo: inviteRedirectUrl(),
       });
-      return;
+      if (inviteError || !data?.user) {
+        console.error('Error invitando usuario nuevo a Supabase Auth', inviteError);
+        res.status(500).json({
+          error: `No se pudo crear el usuario (${inviteError?.message ?? 'error desconocido'})`,
+        });
+        return;
+      }
+      authUser = data.user;
+      invited = true;
     }
 
     await pool.query(
@@ -101,7 +119,7 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
       ]
     );
 
-    res.status(201).json({ status: 'ok' });
+    res.status(201).json({ status: 'ok', invited });
   } catch (error) {
     console.error('Error en POST /admin/user-roles', error);
     res.status(500).json({ error: 'Error asignando el rol' });
