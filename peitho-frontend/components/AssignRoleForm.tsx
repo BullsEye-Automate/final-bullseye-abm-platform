@@ -152,13 +152,13 @@ export default function AssignRoleForm({
       {error && <p className="text-xs text-red-600 w-full">{error}</p>}
       {invitedEmail && (
         <p className="text-xs text-green-600 w-full">
-          Le llegó un correo de invitación a {invitedEmail} para que elija su contraseña.
+          Le llegó un correo a {invitedEmail} para que pueda entrar a Peitho.
         </p>
       )}
       {resendError && (
         <p className="text-xs text-amber-600 w-full">
-          El rol quedó asignado, pero no se pudo reenviar el correo de invitación a {resendError} — reenvíalo a
-          mano desde Supabase Studio → Authentication → Users.
+          El rol quedó asignado, pero no se pudo mandar el correo de acceso a {resendError} — reenvíalo a mano
+          desde Supabase Studio → Authentication → Users.
         </p>
       )}
       {role === "client" && (

@@ -89,6 +89,16 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
       if (data.users.length < 200) break;
     }
 
+    // Para no reenviar un correo cada vez que se EDITA el rol de alguien que
+    // ya tenía acceso (23-09-2026) — el correo de bienvenida/recuperación
+    // solo tiene sentido quien recién recibe acceso, sea la primera vez o
+    // después de que se lo hayan revocado.
+    let hadAccessBefore = false;
+    if (authUser) {
+      const { rows } = await pool.query(`select 1 from peitho_user_roles where user_id = $1`, [authUser.id]);
+      hadAccessBefore = rows.length > 0;
+    }
+
     let invited = false;
     let resendError: string | null = null;
     if (!authUser) {
@@ -109,15 +119,33 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
       // pasa seguido si el filtro de seguridad del correo "abre" el link
       // automático antes que la persona) — se reintenta mandar una
       // invitación nueva en vez de dejarla asignada sin ningún link
-      // funcionando. Si Supabase igual rechaza el reenvío, no bloquea la
-      // asignación del rol — se avisa en la respuesta para reenviar a mano
-      // desde Supabase Studio.
+      // funcionando. Se reenvía siempre (no solo en un alta nueva) porque
+      // sin esto la persona sigue sin poder entrar. Si Supabase igual
+      // rechaza el reenvío, no bloquea la asignación del rol — se avisa en
+      // la respuesta para reenviar a mano desde Supabase Studio.
       const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(normalizedEmail, {
         redirectTo: inviteRedirectUrl(),
       });
       if (inviteError) {
         console.error('Error reenviando invitación a usuario sin confirmar', inviteError);
         resendError = inviteError.message;
+      } else {
+        invited = true;
+      }
+    } else if (!hadAccessBefore) {
+      // Ya tiene cuenta confirmada (con su propia contraseña de antes) y se
+      // le está dando acceso de nuevo — ej. se le había revocado y ahora se
+      // le vuelve a asignar. inviteUserByEmail() no sirve acá (Supabase lo
+      // rechaza porque el usuario ya existe confirmado); el equivalente
+      // correcto es un correo de recuperación de contraseña, que además
+      // sirve como aviso de "ya tenés acceso de nuevo, entrá por acá" — cae
+      // en la misma pantalla /invitacion.
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        redirectTo: inviteRedirectUrl(),
+      });
+      if (resetError) {
+        console.error('Error mandando correo de acceso a usuario existente', resetError);
+        resendError = resetError.message;
       } else {
         invited = true;
       }
