@@ -243,7 +243,11 @@ export default function MeetingsTable({
               <td className="px-4 py-3 whitespace-nowrap">{formatDate(meeting.start_time)}</td>
               <td className="px-4 py-3 whitespace-nowrap">
                 {meeting.ejecutivo ??
-                  (meeting.cliente_sales_manager ? `${meeting.cliente_sales_manager} (cliente)` : "—")}
+                  (meeting.client_executive_name
+                    ? `${meeting.client_executive_name} (cliente)`
+                    : meeting.cliente_sales_manager
+                      ? `${meeting.cliente_sales_manager} (cliente)`
+                      : "—")}
               </td>
               <td className="px-4 py-3 whitespace-nowrap">{meeting.contacto_nombre ?? meeting.contraparte ?? "—"}</td>
               <td className="px-4 py-3 whitespace-nowrap">

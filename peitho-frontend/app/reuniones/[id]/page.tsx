@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { fetchMeeting, fetchMe, fetchClients } from "@/lib/peithoBackend";
+import { fetchMeeting, fetchMe, fetchClients, fetchClientExecutives } from "@/lib/peithoBackend";
 import ResearchButton from "@/components/ResearchButton";
 import ReprocessButton from "@/components/ReprocessButton";
 import ReanalyzeButton from "@/components/ReanalyzeButton";
 import LinkedinUrlForm from "@/components/LinkedinUrlForm";
 import AssignClientForm from "@/components/AssignClientForm";
+import MeetingExecutiveSelect from "@/components/MeetingExecutiveSelect";
 import ManualContactForm from "@/components/ManualContactForm";
 import TentativeMatchReview from "@/components/TentativeMatchReview";
 import DeleteMeetingButton from "@/components/DeleteMeetingButton";
@@ -71,6 +72,11 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
   // GET /clients es admin-only en el backend — solo se pide si hace falta,
   // para no fallar con 403 en la carga de la página de un usuario "client".
   const clients = isAdmin ? await fetchClients() : [];
+  // Roster de ejecutivos (23-09-2026) — solo tiene sentido pedirlo si la
+  // reunión ya tiene un cliente resuelto (sin client_id no hay roster que
+  // ofrecer). Abierto a cualquier rol "client" de esta empresa, no solo
+  // admin — GET /clients/:id/executives ya lo permite (ver clients.ts).
+  const executives = meeting.client_id ? await fetchClientExecutives(meeting.client_id) : [];
 
   const analysis = meeting.analysis;
   const preBrief = meeting.pre_brief;
@@ -195,13 +201,22 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
               <p className="text-gray-700">{meeting.cliente_bullseye ?? "—"}</p>
             </div>
             <div>
-              <p className="text-xs font-medium text-gray-500">Sales Manager (cliente)</p>
-              <p className="text-gray-700">{meeting.cliente_sales_manager ?? "—"}</p>
+              <p className="text-xs font-medium text-gray-500">Ejecutivo (cliente)</p>
+              <p className="text-gray-700">
+                {meeting.client_executive_name ?? meeting.cliente_sales_manager ?? "—"}
+              </p>
             </div>
           </div>
           <p className="text-xs text-gray-400 pt-1">
             Datos tomados del excel de metas — si algo falta, es porque esta reunión no hizo match ahí todavía.
           </p>
+        {meeting.client_id && (
+          <MeetingExecutiveSelect
+            meetingId={meeting.id}
+            executives={executives}
+            initialExecutiveId={meeting.client_executive_id}
+          />
+        )}
         {isAdmin && <LinkedinUrlForm meetingId={meeting.id} initialUrl={meeting.contacto_linkedin_url} />}
         {isAdmin && (
           <AssignClientForm meetingId={meeting.id} clients={clients} initialClientId={meeting.client_id} />

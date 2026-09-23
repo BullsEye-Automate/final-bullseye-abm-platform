@@ -11,6 +11,7 @@ import {
 } from '../knowledgeBase';
 import { requireAuth, requireAdmin, requireFullClientAccess } from '../authMiddleware';
 import { syncClientesDesdeMaestra } from '../clientesMaestra';
+import { rematchClientExecutivesForClient } from '../metasSheet';
 
 export const clientsRouter = Router();
 
@@ -268,5 +269,97 @@ clientsRouter.delete('/clients/:id/documents/:documentId', requireAdmin, async (
   } catch (error) {
     console.error('Error borrando documento de la base de conocimiento', error);
     res.status(500).json({ error: 'Error borrando el documento' });
+  }
+});
+
+// Roster de ejecutivos por cliente (23-09-2026, migración 033, pedido
+// explícito del usuario) — reemplaza la dependencia de la columna "Sales
+// Manager" del excel de metas (texto libre, casi siempre vacía) como única
+// fuente de "quién de este cliente tomó la reunión". El matching automático
+// contra cliente_sales_manager vive en metasSheet.ts.
+//
+// Lectura: CUALQUIER usuario "client" (admin o usuario, ambos sub-roles)
+// necesita poder ver el roster de su propia empresa — lo usa el selector de
+// PUT /meetings/:id/executive para corregir una reunión, y eso está abierto
+// a cualquier "client" de esa empresa (no solo admin cliente). Incluye todo
+// el grupo de external_id, mismo criterio que los documentos.
+clientsRouter.get('/clients/:id/executives', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const groupIds = await resolveClientGroupIds(id);
+    if (req.peithoUser!.role === 'client' && !groupIds.includes(req.peithoUser!.clientId ?? '')) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
+
+    const { rows } = await pool.query(
+      `select id, name from client_executives where client_id = any($1) order by name asc`,
+      [groupIds]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Error en GET /clients/:id/executives', error);
+    res.status(500).json({ error: 'Error consultando los ejecutivos' });
+  }
+});
+
+// Alta/baja del roster: admin de BullsEye o "admin cliente" de esa MISMA
+// empresa (requireFullClientAccess ya filtra 'usuario cliente' afuera, pero
+// no valida que el :id sea el suyo — eso se chequea acá, mismo patrón que
+// GET de arriba).
+clientsRouter.post('/clients/:id/executives', requireFullClientAccess, async (req, res) => {
+  const { id } = req.params;
+  const { name } = req.body ?? {};
+
+  if (typeof name !== 'string' || !name.trim()) {
+    res.status(400).json({ error: 'Falta el nombre del ejecutivo' });
+    return;
+  }
+
+  try {
+    const groupIds = await resolveClientGroupIds(id);
+    if (req.peithoUser!.role === 'client' && !groupIds.includes(req.peithoUser!.clientId ?? '')) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
+
+    const { rows } = await pool.query(
+      `insert into client_executives (client_id, name) values ($1, $2) returning id, name`,
+      [id, name.trim()]
+    );
+
+    // Reuniones que ya tenían cliente_sales_manager pero se habían quedado
+    // sin vincular (porque este nombre todavía no existía en el roster)
+    // pueden matchear recién ahora.
+    const rematched = await rematchClientExecutivesForClient(id);
+
+    res.status(201).json({ ...rows[0], rematched });
+  } catch (error) {
+    console.error('Error en POST /clients/:id/executives', error);
+    res.status(500).json({ error: 'Error creando el ejecutivo' });
+  }
+});
+
+clientsRouter.delete('/clients/:id/executives/:executiveId', requireFullClientAccess, async (req, res) => {
+  const { id, executiveId } = req.params;
+  try {
+    const groupIds = await resolveClientGroupIds(id);
+    if (req.peithoUser!.role === 'client' && !groupIds.includes(req.peithoUser!.clientId ?? '')) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
+
+    const { rowCount } = await pool.query(
+      `delete from client_executives where id = $1 and client_id = any($2)`,
+      [executiveId, groupIds]
+    );
+    if (rowCount === 0) {
+      res.status(404).json({ error: 'Ejecutivo no encontrado' });
+      return;
+    }
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error en DELETE /clients/:id/executives/:executiveId', error);
+    res.status(500).json({ error: 'Error borrando el ejecutivo' });
   }
 });

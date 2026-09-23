@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { fetchClients, fetchClientDocuments, fetchMe } from "@/lib/peithoBackend";
+import { fetchClients, fetchClientDocuments, fetchClientExecutives, fetchMe } from "@/lib/peithoBackend";
 import KnowledgeBaseView from "@/components/KnowledgeBaseView";
+import ClientExecutivesManager from "@/components/ClientExecutivesManager";
 
 // Un usuario "client" puede VER (no subir/borrar) la base de conocimiento de
 // su propio cliente — aclaración explícita del usuario en la Fase E. El
@@ -31,14 +32,20 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
     );
   }
 
-  const [client, documents] = await Promise.all([
+  const [client, documents, executives] = await Promise.all([
     isAdmin
       ? fetchClients(true).then((clients) => clients.find((c) => c.id === params.id) ?? null)
       : Promise.resolve(me?.clientName ? { name: me.clientName, website_url: null } : null),
     fetchClientDocuments(params.id),
+    fetchClientExecutives(params.id),
   ]);
   if (!client) notFound();
   const clientName = client.name;
+  // Roster de ejecutivos (23-09-2026): admin de BullsEye o "admin cliente" de
+  // esta empresa pueden agregar/borrar — decisión explícita del usuario de
+  // dejar que el propio cliente gestione su equipo (distinto del criterio de
+  // los documentos de arriba, que siguen admin-only).
+  const canManageExecutives = isAdmin || me?.clientSubRole === "admin";
 
   return (
     <div className="space-y-6">
@@ -50,6 +57,8 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
         )}
         <h1 className="text-xl font-semibold text-gray-900 mt-2">{clientName}</h1>
       </div>
+
+      <ClientExecutivesManager clientId={params.id} executives={executives} canManage={canManageExecutives} />
 
       <KnowledgeBaseView
         clientId={params.id}

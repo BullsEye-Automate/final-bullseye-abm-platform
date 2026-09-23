@@ -13,6 +13,7 @@ import { runAudioJob } from '../audioJobLimiter';
 import { processRecallDone } from './webhooks';
 import { requireAuth, requireAdmin } from '../authMiddleware';
 import { getSupabaseAdminClient } from '../supabaseAdmin';
+import { resolveClientGroupIds } from '../knowledgeBase';
 
 const VIDEO_BUCKET = 'meeting-videos';
 // El link firmado es de un solo uso mental — se pide cada vez que el
@@ -85,14 +86,17 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
     const { rows } = await pool.query(
       scope === 'upcoming'
         ? `select m.id, m.ejecutivo, m.contraparte, m.contacto_nombre, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status, m.client_id,
+                  m.client_executive_id, ce.name as client_executive_name,
                   m.pre_brief_status, (m.recall_bot_id is not null) as has_bot, c.name as cliente_bullseye
            from meetings m
            left join clients c on c.id = m.client_id
+           left join client_executives ce on ce.id = m.client_executive_id
            where m.start_time >= now()
              and (m.meeting_url is not null or lower(m.empresa_contraparte) is distinct from $1)
              and m.recurring_event_id is null
            order by m.start_time asc`
         : `select m.id, m.ejecutivo, m.contraparte, m.contacto_nombre, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status, m.client_id,
+                  m.client_executive_id, ce.name as client_executive_name,
                   (m.analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
                   (m.analysis->'prediccion_exito'->>'puntaje')::int as prediccion_exito,
                   (m.analysis->'fit_empresa'->>'puntaje')::int as fit_empresa,
@@ -100,6 +104,7 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
                   c.name as cliente_bullseye
            from meetings m
            left join clients c on c.id = m.client_id
+           left join client_executives ce on ce.id = m.client_executive_id
            where m.start_time < now() and m.start_time >= now() - interval '90 days'
              and (m.meeting_url is not null or lower(m.empresa_contraparte) is distinct from $1)
              and m.recurring_event_id is null
@@ -224,12 +229,14 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
               m.contacto_match_status, m.contacto_match_candidates,
               m.participantes, m.research_share_token, m.analysis_share_token,
+              m.client_executive_id, ce.name as client_executive_name,
               (m.video_path is not null) as video_available,
               (m.recall_bot_id is not null) as recall_bot_available,
               (m.meeting_url is not null) as is_bot_invite,
               c.name as cliente_bullseye
        from meetings m
        left join clients c on c.id = m.client_id
+       left join client_executives ce on ce.id = m.client_executive_id
        where m.id = $1`,
       [id]
     );
@@ -485,6 +492,66 @@ meetingsRouter.put('/meetings/:id/contact-info', requireAuth, requireAdmin, asyn
   } catch (error) {
     console.error('Error guardando la info de contacto de la reunión', error);
     res.status(500).json({ error: 'Error guardando los cambios' });
+  }
+});
+
+// Corrige a qué ejecutivo del roster del cliente (client_executives,
+// migración 033) quedó vinculada una reunión — pedido explícito del usuario
+// (23-09-2026): a diferencia de /contact-info de arriba (admin-only, texto
+// libre), esto lo puede hacer CUALQUIER usuario "client" de esa MISMA
+// empresa (admin cliente o usuario cliente), no solo BullsEye — el caso de
+// uso es justamente que el propio ejecutivo (o alguien de su equipo) corrija
+// una reunión que quedó sin vincular o mal vinculada por el match automático
+// contra cliente_sales_manager (texto libre del excel, no siempre confiable
+// — ver matchClientExecutiveName en metasSheet.ts).
+meetingsRouter.put('/meetings/:id/executive', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { client_executive_id: clientExecutiveId } = req.body ?? {};
+
+  if (clientExecutiveId !== null && typeof clientExecutiveId !== 'string') {
+    res.status(400).json({ error: 'client_executive_id debe ser un string (uuid) o null' });
+    return;
+  }
+
+  try {
+    const { rows } = await pool.query(`select client_id from meetings where id = $1`, [id]);
+    const meeting = rows[0];
+    if (!meeting) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    const peithoUser = req.peithoUser!;
+    if (peithoUser.role === 'client' && meeting.client_id !== peithoUser.clientId) {
+      res.status(404).json({ error: 'Reunión no encontrada' });
+      return;
+    }
+
+    if (clientExecutiveId) {
+      // Grupo de external_id (mismo criterio que la base de conocimiento) —
+      // el roster que ve el usuario en el selector incluye ejecutivos
+      // cargados bajo cualquier variante regional del mismo cliente (ver
+      // GET /clients/:id/executives), no solo el client_id exacto de esta
+      // reunión puntual.
+      const groupIds = await resolveClientGroupIds(meeting.client_id);
+      const { rowCount } = await pool.query(
+        `select id from client_executives where id = $1 and client_id = any($2)`,
+        [clientExecutiveId, groupIds]
+      );
+      if (rowCount === 0) {
+        res.status(400).json({ error: 'El ejecutivo indicado no existe para este cliente' });
+        return;
+      }
+    }
+
+    await pool.query(`update meetings set client_executive_id = $1, updated_at = now() where id = $2`, [
+      clientExecutiveId,
+      id,
+    ]);
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('Error corrigiendo el ejecutivo de la reunión', error);
+    res.status(500).json({ error: 'Error guardando el ejecutivo' });
   }
 });
 

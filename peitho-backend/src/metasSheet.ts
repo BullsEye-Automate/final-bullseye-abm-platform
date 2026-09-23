@@ -8,6 +8,7 @@
 import { sheets_v4 } from 'googleapis';
 import { getSheetsClientByEmail } from './google';
 import { pool } from './db';
+import { resolveClientGroupIds } from './knowledgeBase';
 
 const REQUIRED_HEADERS = ['Contacto', 'Cargo', 'Industria', 'ID Reunión'];
 
@@ -355,6 +356,78 @@ function acronym(name: string): string {
     .filter(Boolean)
     .map((word) => word[0])
     .join('');
+}
+
+// Roster de ejecutivos por cliente (23-09-2026, migración 033) — vincula el
+// texto libre de cliente_sales_manager (columna "Sales Manager" del excel,
+// no siempre confiable) contra los ejecutivos que el propio cliente (o
+// BullsEye) cargó a mano para esa empresa. Mismo criterio conservador que
+// desambiguarPorEmpresa: solo se acepta si hay EXACTAMENTE un ejecutivo del
+// roster que calza — con 2+ candidatos posibles no hay forma de saber cuál
+// es sin adivinar, mejor dejarlo sin vincular para que alguien lo corrija a
+// mano (ver PUT /meetings/:id/executive en routes/meetings.ts).
+export function matchClientExecutiveName(
+  executives: Array<{ id: string; name: string }>,
+  salesManagerText: string | null | undefined
+): string | null {
+  const key = normalizeCompanyName(salesManagerText);
+  if (!key) return null;
+
+  const matches = executives.filter((exec) => {
+    const execKey = normalizeCompanyName(exec.name);
+    return execKey.length > 0 && (execKey === key || execKey.includes(key) || key.includes(execKey));
+  });
+  return matches.length === 1 ? matches[0].id : null;
+}
+
+// Wrapper que trae el roster de la base — se usa en los 3 lugares donde se
+// escribe cliente_sales_manager (resolveMeetingClientAndContactInner,
+// resolveTentativeMatch, refreshMatchedRowFields), así ese mismo texto queda
+// vinculado a un ejecutivo del roster apenas se conoce, sin esperar a que el
+// usuario lo corrija a mano. Usa resolveClientGroupIds (mismo criterio que la
+// base de conocimiento) — un ejecutivo cargado para "CChC" también debe
+// poder vincularse a una reunión resuelta contra "CChC - Valle".
+async function matchClientExecutiveId(
+  clientId: string | null,
+  salesManagerText: string | null | undefined
+): Promise<string | null> {
+  if (!clientId || !salesManagerText) return null;
+  const groupIds = await resolveClientGroupIds(clientId);
+  const { rows } = await pool.query(`select id, name from client_executives where client_id = any($1)`, [groupIds]);
+  if (rows.length === 0) return null;
+  return matchClientExecutiveName(rows, salesManagerText);
+}
+
+// Se llama después de agregar un ejecutivo nuevo al roster de un cliente
+// (POST /clients/:id/executives) — reuniones que ya tenían
+// cliente_sales_manager pero se habían quedado sin vincular (porque ese
+// nombre todavía no existía en el roster) pueden matchear recién ahora.
+// Nunca pisa un client_executive_id ya seteado (auto o corregido a mano).
+export async function rematchClientExecutivesForClient(clientId: string): Promise<number> {
+  const groupIds = await resolveClientGroupIds(clientId);
+  const { rows: executives } = await pool.query(`select id, name from client_executives where client_id = any($1)`, [
+    groupIds,
+  ]);
+  if (executives.length === 0) return 0;
+
+  const { rows: meetings } = await pool.query(
+    `select id, cliente_sales_manager from meetings
+     where client_id = any($1) and client_executive_id is null and cliente_sales_manager is not null`,
+    [groupIds]
+  );
+
+  let updated = 0;
+  for (const meeting of meetings) {
+    const matchId = matchClientExecutiveName(executives, meeting.cliente_sales_manager);
+    if (matchId) {
+      await pool.query(`update meetings set client_executive_id = $1, updated_at = now() where id = $2`, [
+        matchId,
+        meeting.id,
+      ]);
+      updated++;
+    }
+  }
+  return updated;
 }
 
 // Fallback (09-09-2026): matching viejo, por empresa primero y fecha más
@@ -746,6 +819,8 @@ async function resolveMeetingClientAndContactInner(meetingId: string): Promise<v
       return;
     }
 
+    const clientExecutiveId = await matchClientExecutiveId(clientId, row?.salesManager ?? null);
+
     await pool.query(
       `update meetings set
          client_id = coalesce($1, client_id),
@@ -755,6 +830,7 @@ async function resolveMeetingClientAndContactInner(meetingId: string): Promise<v
          metas_sheet_match_id = coalesce(nullif($5, ''), metas_sheet_match_id),
          empresa_nombre = coalesce(nullif($6, ''), empresa_nombre),
          cliente_sales_manager = coalesce(nullif($7, ''), cliente_sales_manager),
+         client_executive_id = coalesce(client_executive_id, $9),
          contacto_match_status = case when $5 is not null and $5 <> '' then 'auto' else contacto_match_status end,
          updated_at = now()
        where id = $8`,
@@ -767,6 +843,7 @@ async function resolveMeetingClientAndContactInner(meetingId: string): Promise<v
         row?.empresa ?? null,
         row?.salesManager ?? null,
         meetingId,
+        clientExecutiveId,
       ]
     );
     console.log(
@@ -806,6 +883,7 @@ export async function resolveTentativeMatch(
   if (!chosen) return { ok: false, error: 'El candidato elegido ya no está disponible — reintentá la re-sincronización' };
 
   const clientId = meeting.client_id ?? (await findOrCreateClient(chosen.cliente, chosen.clienteId));
+  const clientExecutiveId = await matchClientExecutiveId(clientId, chosen.salesManager);
 
   await pool.query(
     `update meetings set
@@ -816,11 +894,22 @@ export async function resolveTentativeMatch(
        metas_sheet_match_id = $5,
        empresa_nombre = coalesce(nullif($6, ''), empresa_nombre),
        cliente_sales_manager = coalesce(nullif($7, ''), cliente_sales_manager),
+       client_executive_id = coalesce(client_executive_id, $9),
        contacto_match_status = 'manual',
        contacto_match_candidates = null,
        updated_at = now()
      where id = $8`,
-    [clientId, chosen.contacto, chosen.cargo, chosen.industria, chosen.idReunion, chosen.empresa, chosen.salesManager, meetingId]
+    [
+      clientId,
+      chosen.contacto,
+      chosen.cargo,
+      chosen.industria,
+      chosen.idReunion,
+      chosen.empresa,
+      chosen.salesManager,
+      meetingId,
+      clientExecutiveId,
+    ]
   );
   return { ok: true };
 }
@@ -845,7 +934,7 @@ export async function resolveTentativeMatch(
 // no pisar la corrección manual del admin.
 export async function refreshMatchedRowFields(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select m.empresa_contraparte, m.contraparte_email, m.start_time, m.metas_sheet_match_id, c.name as cliente_nombre
+    `select m.empresa_contraparte, m.contraparte_email, m.start_time, m.metas_sheet_match_id, m.client_id, c.name as cliente_nombre
      from meetings m
      left join clients c on c.id = m.client_id
      where m.id = $1`,
@@ -880,6 +969,8 @@ export async function refreshMatchedRowFields(meetingId: string): Promise<void> 
   }
   if (!row) return;
 
+  const clientExecutiveId = await matchClientExecutiveId(meeting.client_id, row.salesManager);
+
   await pool.query(
     `update meetings set
        contacto_nombre = coalesce(nullif($1, ''), contacto_nombre),
@@ -888,9 +979,10 @@ export async function refreshMatchedRowFields(meetingId: string): Promise<void> 
        metas_sheet_match_id = coalesce(metas_sheet_match_id, nullif($4, '')),
        empresa_nombre = coalesce(nullif($5, ''), empresa_nombre),
        cliente_sales_manager = coalesce(nullif($6, ''), cliente_sales_manager),
+       client_executive_id = coalesce(client_executive_id, $8),
        contacto_match_status = 'auto',
        updated_at = now()
      where id = $7`,
-    [row.contacto, row.cargo, row.industria, row.idReunion, row.empresa, row.salesManager, meetingId]
+    [row.contacto, row.cargo, row.industria, row.idReunion, row.empresa, row.salesManager, meetingId, clientExecutiveId]
   );
 }

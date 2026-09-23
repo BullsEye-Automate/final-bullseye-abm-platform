@@ -27,6 +27,15 @@ export interface MeetingListItem {
   // invitación manual al bot no hay ningún BullsEye en la llamada, así que
   // `ejecutivo` queda null y este es el único dato de "quién la toma".
   cliente_sales_manager: string | null;
+  // Roster de ejecutivos por cliente (23-09-2026, migración 033) — vinculado
+  // automático por texto contra cliente_sales_manager (ver
+  // matchClientExecutiveName en el backend) o corregido a mano por
+  // cualquier usuario "client" de esa empresa (ver PUT /meetings/:id/executive).
+  // Cuando está seteado, reemplaza a cliente_sales_manager como fuente de
+  // "quién de este cliente tomó la reunión" — es más confiable porque viene
+  // de un roster mantenido a mano, no de una columna de texto libre del excel.
+  client_executive_id: string | null;
+  client_executive_name: string | null;
   // Solo vienen pobladas en scope=upcoming (mini-dashboard de "Reuniones
   // futuras") — el backend las omite en scope=past, quedan undefined ahí.
   pre_brief_status?: PreBriefStatus;
@@ -218,6 +227,12 @@ export interface KnowledgeBaseDocument {
   content_extracted: boolean;
 }
 
+// Roster de ejecutivos por cliente (23-09-2026, migración 033).
+export interface ClientExecutive {
+  id: string;
+  name: string;
+}
+
 // Fase E — sesión de Peitho del usuario logueado (distinto del rol de
 // Supabase Auth en sí, que solo dice "hay sesión o no"). clientId/clientName
 // vienen null para un admin.
@@ -366,6 +381,14 @@ export async function fetchClientDocuments(clientId: string): Promise<KnowledgeB
   const res = await backendFetch(`/clients/${clientId}/documents`);
   if (!res.ok) {
     throw new Error(`peitho-backend respondió ${res.status} en /clients/${clientId}/documents`);
+  }
+  return res.json();
+}
+
+export async function fetchClientExecutives(clientId: string): Promise<ClientExecutive[]> {
+  const res = await backendFetch(`/clients/${clientId}/executives`);
+  if (!res.ok) {
+    throw new Error(`peitho-backend respondió ${res.status} en /clients/${clientId}/executives`);
   }
   return res.json();
 }
