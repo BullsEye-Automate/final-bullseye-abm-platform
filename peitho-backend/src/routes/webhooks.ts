@@ -198,9 +198,29 @@ export async function processRecallDone(botId: string, meetingId: string): Promi
 
   console.log(`[webhooks/recall] audio guardado en ${audioPath} para la reunión ${meetingId}`);
 
-  analyzeMeetingAudio(meetingId).catch((error) => {
+  // Bug real (23-09-2026, confirmado con logs reales de la reunión de
+  // ST Computación): esto se disparaba fire-and-forget, SIN esperar a que
+  // terminara — processRecallDone() (esta función) resolvía de inmediato,
+  // liberando el cupo de runAudioJob() (audioJobLimiter.ts) ANTES de que
+  // Deepgram/Claude siquiera arrancaran. Todos los llamadores de
+  // processRecallDone ya la envuelven en runAudioJob (uno a la vez, global,
+  // para no reventar la RAM con audios simultáneos) — pero como esta parte
+  // quedaba afuera de ese "job", una ráfaga real de webhooks duplicados de
+  // Recall (confirmado real: 5 avisos "done" casi al mismo tiempo para el
+  // mismo bot) terminaba corriendo 5 analyzeMeetingAudio() EN PARALELO para
+  // la misma reunión — cada uno pisando el audio_path que el otro acababa de
+  // guardar, y varias llamadas a Deepgram/Claude a la vez compitiendo por la
+  // misma fila. Resultado real: "No se encontró transcripción" repetido
+  // hasta agotar los 3 reintentos, con una grabación real de por medio.
+  // Ahora se espera (await) — así el `runAudioJob` de quien llamó a esta
+  // función no libera su cupo hasta que el análisis realmente termine,
+  // serializando el pipeline completo (descarga + transcripción + Claude)
+  // de punta a punta, no solo la descarga.
+  try {
+    await analyzeMeetingAudio(meetingId);
+  } catch (error) {
     console.error(`[webhooks/recall] falló el análisis de la reunión ${meetingId}`, error);
-  });
+  }
 }
 
 const MAX_ANALYSIS_RETRIES = 3;
