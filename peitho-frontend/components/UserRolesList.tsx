@@ -4,7 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { UserRoleItem } from "@/lib/peithoBackend";
 
-export default function UserRolesList({ roles }: { roles: UserRoleItem[] }) {
+export default function UserRolesList({
+  roles,
+  onEdit,
+}: {
+  roles: UserRoleItem[];
+  onEdit: (role: UserRoleItem) => void;
+}) {
   const router = useRouter();
   const [revokingId, setRevokingId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
@@ -67,13 +73,21 @@ export default function UserRolesList({ roles }: { roles: UserRoleItem[] }) {
                       }`}
                 </p>
               </div>
-              <button
-                onClick={() => handleRevoke(role.user_id)}
-                disabled={revokingId === role.user_id}
-                className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50 shrink-0"
-              >
-                {revokingId === role.user_id ? "Revocando…" : "Revocar acceso"}
-              </button>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  onClick={() => onEdit(role)}
+                  className="text-xs text-gray-500 hover:text-gray-800"
+                >
+                  Editar rol
+                </button>
+                <button
+                  onClick={() => handleRevoke(role.user_id)}
+                  disabled={revokingId === role.user_id}
+                  className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
+                >
+                  {revokingId === role.user_id ? "Revocando…" : "Revocar acceso"}
+                </button>
+              </div>
             </li>
           ))}
         </ul>

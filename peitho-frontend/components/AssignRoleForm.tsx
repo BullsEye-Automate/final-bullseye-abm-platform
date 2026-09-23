@@ -1,11 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { ClientListItem } from "@/lib/peithoBackend";
+import type { ClientListItem, UserRoleItem } from "@/lib/peithoBackend";
 
-export default function AssignRoleForm({ clients }: { clients: ClientListItem[] }) {
+export default function AssignRoleForm({
+  clients,
+  editingUser,
+  onDoneEditing,
+}: {
+  clients: ClientListItem[];
+  editingUser: UserRoleItem | null;
+  onDoneEditing: () => void;
+}) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "client">("client");
@@ -15,6 +23,27 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
   const [error, setError] = useState<string | null>(null);
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
+
+  // Al hacer clic en "Editar rol" en la lista de abajo, UserManagement pasa
+  // la fila elegida acá — el mismo formulario sirve para editar (el backend
+  // hace upsert por email, no hace falta un endpoint separado).
+  useEffect(() => {
+    if (!editingUser) return;
+    setEmail(editingUser.email);
+    setRole(editingUser.role);
+    setClientId(editingUser.client_id ?? "");
+    setClientSubRole(editingUser.client_sub_role === "user" ? "user" : "admin");
+    setError(null);
+    setInvitedEmail(null);
+    setResendError(null);
+  }, [editingUser]);
+
+  function resetForm() {
+    setEmail("");
+    setRole("client");
+    setClientId("");
+    setClientSubRole("admin");
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,23 +71,41 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
       }
       if (data.invited) setInvitedEmail(email.trim());
       if (data.resendError) setResendError(email.trim());
-      setEmail("");
-      setClientId("");
-      setClientSubRole("admin");
+      resetForm();
+      onDoneEditing();
       router.refresh();
     } finally {
       setSaving(false);
     }
   }
 
+  function handleCancel() {
+    resetForm();
+    setError(null);
+    setInvitedEmail(null);
+    setResendError(null);
+    onDoneEditing();
+  }
+
   return (
     <form onSubmit={handleSubmit} className="flex flex-wrap gap-2 items-start">
+      {editingUser && (
+        <p className="text-xs text-gray-500 w-full">
+          Editando el rol de <span className="font-medium text-gray-700">{editingUser.email}</span> —{" "}
+          <button type="button" onClick={handleCancel} className="underline hover:text-gray-700">
+            cancelar
+          </button>
+        </p>
+      )}
       <input
         type="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
+        readOnly={!!editingUser}
         placeholder="email@ejemplo.com"
-        className="flex-1 min-w-[200px] text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2"
+        className={`flex-1 min-w-[200px] text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 ${
+          editingUser ? "bg-gray-50 text-gray-500" : ""
+        }`}
         style={{ ["--tw-ring-color" as string]: "#62E0D8" }}
       />
       <select
@@ -100,7 +147,7 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
         className="px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
         style={{ background: "#251762" }}
       >
-        {saving ? "Asignando…" : "Asignar acceso"}
+        {saving ? "Guardando…" : editingUser ? "Guardar cambios" : "Asignar acceso"}
       </button>
       {error && <p className="text-xs text-red-600 w-full">{error}</p>}
       {invitedEmail && (

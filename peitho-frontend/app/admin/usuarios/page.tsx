@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { fetchMe, fetchUserRoles, fetchClients } from "@/lib/peithoBackend";
-import AssignRoleForm from "@/components/AssignRoleForm";
-import UserRolesList from "@/components/UserRolesList";
+import UserManagement from "@/components/UserManagement";
 
 // Admin-only — el backend también lo exige (requireAdmin en /admin/user-roles),
 // esto es solo para no renderizar la página completa si alguien la teclea a mano.
@@ -23,15 +22,7 @@ export default async function AdminUsuariosPage() {
         </p>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
-        <h2 className="text-sm font-semibold text-gray-900">Asignar rol</h2>
-        <AssignRoleForm clients={clients} />
-      </div>
-
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-        <h2 className="text-sm font-semibold text-gray-900 mb-2">Usuarios con acceso ({roles.length})</h2>
-        <UserRolesList roles={roles} />
-      </div>
+      <UserManagement clients={clients} roles={roles} />
     </div>
   );
 }
