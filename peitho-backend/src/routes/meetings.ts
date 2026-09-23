@@ -220,7 +220,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status,
-              m.analysis, m.pre_brief, m.pre_brief_status, m.client_id, m.transcript_text, m.updated_at,
+              m.analysis, m.pre_brief, m.pre_brief_status, m.research_run_count, m.client_id, m.transcript_text, m.updated_at,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
               m.contacto_match_status, m.contacto_match_candidates,
               m.participantes, m.research_share_token, m.analysis_share_token,
@@ -707,21 +707,48 @@ meetingsRouter.post('/meetings/:id/reanalyze', requireAuth, requireAdmin, async 
 // un botón ("Iniciar research") desde el frontend, porque no todas las
 // reuniones agendadas son con un prospecto real y correrlo en todas gastaría
 // créditos de la API sin necesidad (requisito explícito del usuario).
-meetingsRouter.post('/meetings/:id/research', requireAuth, requireAdmin, async (req, res) => {
+//
+// Abierto a rol "cliente" (23-09-2026, pedido explícito del usuario — venta
+// de Peitho directo a los ejecutivos del cliente, no solo a BullsEye). Ya no
+// es admin-only, pero sigue con dos guardas: (a) mismo scoping por client_id
+// que el resto del detalle (404, no 403, para no revelar que la reunión
+// existe); (b) tope de 2 corridas por reunión SOLO para el rol "cliente" —
+// un admin de BullsEye puede seguir relanzando el research las veces que
+// necesite (ej. para corregir un resultado malo), pero un cliente externo
+// gastando créditos de la API sin límite es justo el riesgo que este límite
+// existe para evitar, ahora que se cobra por el acceso.
+meetingsRouter.post('/meetings/:id/research', requireAuth, async (req, res) => {
   const { id } = req.params;
+  const MAX_CLIENT_RESEARCH_RUNS = 2;
 
   try {
-    const { rowCount } = await pool.query(
-      `update meetings set pre_brief_status = 'running', updated_at = now() where id = $1`,
-      [id]
-    );
-
-    if (rowCount === 0) {
+    const { rows } = await pool.query(`select client_id, research_run_count from meetings where id = $1`, [id]);
+    const meeting = rows[0];
+    if (!meeting) {
       res.status(404).json({ error: 'Reunión no encontrada' });
       return;
     }
 
-    console.log(`[pre-brief] research iniciado para la reunión ${id}`);
+    const peithoUser = req.peithoUser!;
+    if (peithoUser.role === 'client') {
+      if (meeting.client_id !== peithoUser.clientId) {
+        res.status(404).json({ error: 'Reunión no encontrada' });
+        return;
+      }
+      if (meeting.research_run_count >= MAX_CLIENT_RESEARCH_RUNS) {
+        res.status(429).json({
+          error: `Ya se generó el research ${MAX_CLIENT_RESEARCH_RUNS} veces para esta reunión — contacta a BullsEye si necesitas relanzarlo de nuevo.`,
+        });
+        return;
+      }
+    }
+
+    await pool.query(
+      `update meetings set pre_brief_status = 'running', research_run_count = research_run_count + 1, updated_at = now() where id = $1`,
+      [id]
+    );
+
+    console.log(`[pre-brief] research iniciado para la reunión ${id} (rol=${peithoUser.role})`);
     res.json({ status: 'ok' });
 
     generatePreMeetingBrief(id).catch((error) => {

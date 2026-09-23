@@ -61,10 +61,12 @@ function PlaceholderTab({ description }: { description: string }) {
 export default async function MeetingDetailPage({ params }: { params: { id: string } }) {
   const [meeting, me] = await Promise.all([fetchMeeting(params.id), fetchMe()]);
   if (!meeting || !me) notFound();
-  // Iniciar research / pegar la URL de LinkedIn son acciones internas de
-  // BullsEye (gastan créditos de API, corrigen datos) — el backend ya las
-  // restringe a admin (Fase E); acá solo se ocultan para no mostrar botones
-  // que a un usuario "client" le van a fallar con 403.
+  // Pegar la URL de LinkedIn / corregir datos son acciones internas de
+  // BullsEye — el backend ya las restringe a admin (Fase E); acá solo se
+  // ocultan para no mostrar botones que a un usuario "client" le van a
+  // fallar con 403. "Iniciar research" es la excepción: desde el 23-09-2026
+  // también lo puede lanzar un rol "cliente" (con tope de 2 por reunión, ver
+  // ResearchButton), porque ahora Peitho se vende directo a sus ejecutivos.
   const isAdmin = me?.role === "admin";
   // GET /clients es admin-only en el backend — solo se pide si hace falta,
   // para no fallar con 403 en la carga de la página de un usuario "client".
@@ -152,7 +154,12 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
           {isAdmin && meeting.status === "analyzed" && meeting.transcript_text && (
             <ReanalyzeButton meetingId={meeting.id} updatedAt={meeting.updated_at} />
           )}
-          {isAdmin && <ResearchButton meetingId={meeting.id} initialStatus={meeting.pre_brief_status} />}
+          <ResearchButton
+            meetingId={meeting.id}
+            initialStatus={meeting.pre_brief_status}
+            researchRunCount={meeting.research_run_count}
+            isClient={!isAdmin}
+          />
           {isAdmin && meeting.status !== "analyzed" && <RetryBotButton meetingId={meeting.id} />}
           {isAdmin && meeting.is_bot_invite && <ResyncCalendarButton meetingId={meeting.id} />}
           {isAdmin && <DeleteMeetingButton meetingId={meeting.id} />}

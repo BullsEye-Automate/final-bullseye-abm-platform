@@ -22,7 +22,15 @@ export const app = express();
 // frontend. Allowlist explícita (nunca "*") porque estas rutas validan la
 // sesión de Supabase por Bearer token, no por cookie — CORS acá es defensa
 // en profundidad, no el mecanismo de auth.
-const DEFAULT_FRONTEND_ORIGINS = ['http://localhost:3002', 'https://peitho-rho.vercel.app'];
+// app.peithob2b.com se agregó el 23-09-2026 — migración del portal desde
+// peitho-rho.vercel.app a un subdominio propio (peithob2b.com ya era
+// nuestro, comprado para el Workspace del bot de Recall). Se deja la URL
+// vieja igual en la lista mientras dure la transición.
+const DEFAULT_FRONTEND_ORIGINS = [
+  'http://localhost:3002',
+  'https://peitho-rho.vercel.app',
+  'https://app.peithob2b.com',
+];
 const FRONTEND_ORIGINS = process.env.PEITHO_FRONTEND_ORIGINS
   ? process.env.PEITHO_FRONTEND_ORIGINS.split(',').map((origin) => origin.trim())
   : DEFAULT_FRONTEND_ORIGINS;

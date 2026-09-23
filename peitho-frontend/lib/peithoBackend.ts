@@ -126,6 +126,10 @@ export interface MeetingDetail extends MeetingListItem {
   analysis: MeetingAnalysis | null;
   pre_brief: PreBrief | null;
   pre_brief_status: PreBriefStatus;
+  // Cuántas veces se lanzó el research para esta reunión — solo importa para
+  // el rol "cliente" (tope de 2, ver POST /meetings/:id/research en el
+  // backend); un admin de BullsEye no tiene límite.
+  research_run_count: number;
   // Datos confirmados desde el excel de metas (no adivinados por IA) — pueden
   // venir null si todavía no hubo match contra esa planilla.
   contacto_nombre: string | null;
