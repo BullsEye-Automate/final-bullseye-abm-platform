@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db';
-import { requireAuth } from '../authMiddleware';
+import { requireAuth, requireFullClientAccess } from '../authMiddleware';
 import { INTERNAL_DOMAIN } from './meetings';
 
 export const panelRouter = Router();
@@ -13,7 +13,7 @@ export const panelRouter = Router();
 // probabilidad de conversión, segmentado por contacto_cargo/contacto_industria
 // (datos confirmados por el excel de metas, no adivinados). No es tasa de
 // conversión real — se etiqueta como "predicha" en el frontend a propósito.
-panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
+panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (req, res) => {
   const peithoUser = req.peithoUser!;
 
   // Umbral (escala 1-5 de prediccion_exito) para contar una reunión como
@@ -233,7 +233,7 @@ panelRouter.get('/panel/funnel', requireAuth, async (req, res) => {
 // primero, después ejecutivo) — pedido explícito del usuario (09-09-2026).
 // Sin filtrar por status: un ejecutivo con reuniones agendadas/capturadas
 // pero todavía ninguna analizada igual debería aparecer en el selector.
-panelRouter.get('/panel/ejecutivos', requireAuth, async (req, res) => {
+panelRouter.get('/panel/ejecutivos', requireAuth, requireFullClientAccess, async (req, res) => {
   const peithoUser = req.peithoUser!;
 
   let clientId: string | null = null;

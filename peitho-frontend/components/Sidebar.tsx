@@ -54,15 +54,15 @@ const ICONS = {
   ),
 };
 
-const NAV_ITEMS = [
-  { href: "/panel-de-control", label: "Panel de control", icon: ICONS.dashboard },
+const PANEL_NAV_ITEM = { href: "/panel-de-control", label: "Panel de control", icon: ICONS.dashboard };
+const NAV_ITEMS_BASE = [
   { href: "/reuniones/futuras", label: "Reuniones futuras", icon: ICONS.futuras },
   { href: "/reuniones/pasadas", label: "Reuniones pasadas", icon: ICONS.pasadas },
 ];
 
 // "Herramientas" — agrupadas aparte y con indentación, como en el mockup
 // (distinto de la navegación principal de arriba).
-const TOOLS_ITEMS = [{ href: "/base-de-conocimiento", label: "Base de conocimiento", icon: ICONS.kb }];
+const KB_NAV_ITEM = { href: "/base-de-conocimiento", label: "Base de conocimiento", icon: ICONS.kb };
 
 // Solo visible para admin — se agrega a TOOLS_ITEMS (no todos ven este
 // ítem, a diferencia del resto que ven todos los roles).
@@ -70,7 +70,11 @@ const ADMIN_NAV_ITEM = { href: "/admin/usuarios", label: "Administración", icon
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [me, setMe] = useState<{ email: string; role: "admin" | "client" } | null>(null);
+  const [me, setMe] = useState<{
+    email: string;
+    role: "admin" | "client";
+    clientSubRole: "admin" | "user" | null;
+  } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -90,7 +94,16 @@ export default function Sidebar() {
     window.location.href = "/login";
   }
 
-  const tools = [...TOOLS_ITEMS, ...(me?.role === "admin" ? [ADMIN_NAV_ITEM] : [])];
+  // "Usuario cliente" (role==='client' && clientSubRole==='user', ver
+  // migración 032) queda acotado a solo reuniones — sin panel de control ni
+  // base de conocimiento. Un admin de BullsEye o un "admin cliente" ven todo
+  // igual que antes.
+  const hasFullAccess = me?.role === "admin" || (me?.role === "client" && me.clientSubRole !== "user");
+  const navItems = hasFullAccess ? [PANEL_NAV_ITEM, ...NAV_ITEMS_BASE] : NAV_ITEMS_BASE;
+  const tools = [
+    ...(hasFullAccess ? [KB_NAV_ITEM] : []),
+    ...(me?.role === "admin" ? [ADMIN_NAV_ITEM] : []),
+  ];
 
   function NavLink({ href, label, icon, indent = false }: { href: string; label: string; icon: React.ReactNode; indent?: boolean }) {
     const active = pathname?.startsWith(href);
@@ -120,22 +133,26 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavLink key={item.href} {...item} />
         ))}
       </nav>
 
-      <div className="h-px bg-[#E3E0EC] my-3 mx-1" />
+      {tools.length > 0 && (
+        <>
+          <div className="h-px bg-[#E3E0EC] my-3 mx-1" />
 
-      <div className="flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#948DA8] px-2.5 pb-1.5">
-        <span>Herramientas</span>
-        {ICONS.chevron}
-      </div>
-      <nav className="flex flex-col gap-0.5">
-        {tools.map((item) => (
-          <NavLink key={item.href} {...item} indent />
-        ))}
-      </nav>
+          <div className="flex items-center justify-between text-[10.5px] font-semibold uppercase tracking-[0.08em] text-[#948DA8] px-2.5 pb-1.5">
+            <span>Herramientas</span>
+            {ICONS.chevron}
+          </div>
+          <nav className="flex flex-col gap-0.5">
+            {tools.map((item) => (
+              <NavLink key={item.href} {...item} indent />
+            ))}
+          </nav>
+        </>
+      )}
 
       <div className="flex-1" />
 

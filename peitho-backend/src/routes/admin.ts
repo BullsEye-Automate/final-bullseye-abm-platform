@@ -15,13 +15,19 @@ adminRouter.get('/me', requireAuth, async (req, res) => {
     const { rows } = await pool.query(`select name from clients where id = $1`, [user.clientId]);
     clientName = rows[0]?.name ?? null;
   }
-  res.json({ email: user.email, role: user.role, clientId: user.clientId, clientName });
+  res.json({
+    email: user.email,
+    role: user.role,
+    clientId: user.clientId,
+    clientName,
+    clientSubRole: user.clientSubRole,
+  });
 });
 
 adminRouter.get('/admin/user-roles', requireAuth, requireAdmin, async (_req, res) => {
   try {
     const { rows } = await pool.query(
-      `select r.user_id, r.email, r.role, r.client_id, c.name as client_name
+      `select r.user_id, r.email, r.role, r.client_id, r.client_sub_role, c.name as client_name
        from peitho_user_roles r
        left join clients c on c.id = r.client_id
        order by r.email asc`
@@ -37,7 +43,7 @@ adminRouter.get('/admin/user-roles', requireAuth, requireAdmin, async (_req, res
 // Supabase Studio → Authentication → Users — no hay signup público, mismo
 // patrón que bullseye-abm-platform). Esto solo le asigna un rol de Peitho.
 adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res) => {
-  const { email, role, clientId } = req.body ?? {};
+  const { email, role, clientId, clientSubRole } = req.body ?? {};
 
   if (typeof email !== 'string' || !email.trim()) {
     res.status(400).json({ error: 'Falta el email' });
@@ -49,6 +55,12 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
   }
   if (role === 'client' && typeof clientId !== 'string') {
     res.status(400).json({ error: 'Un usuario de tipo cliente necesita un cliente asociado' });
+    return;
+  }
+  // Sub-rol (23-09-2026, ver migración 032) — solo aplica/valida para
+  // role==='client'; para 'admin' siempre se guarda null.
+  if (role === 'client' && clientSubRole !== 'admin' && clientSubRole !== 'user') {
+    res.status(400).json({ error: 'Un usuario de tipo cliente necesita un sub-rol ("admin" o "user")' });
     return;
   }
 
@@ -76,10 +88,17 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
     }
 
     await pool.query(
-      `insert into peitho_user_roles (user_id, email, role, client_id)
-       values ($1, $2, $3, $4)
-       on conflict (user_id) do update set email = excluded.email, role = excluded.role, client_id = excluded.client_id`,
-      [authUser.id, authUser.email ?? normalizedEmail, role, role === 'client' ? clientId : null]
+      `insert into peitho_user_roles (user_id, email, role, client_id, client_sub_role)
+       values ($1, $2, $3, $4, $5)
+       on conflict (user_id) do update set email = excluded.email, role = excluded.role,
+         client_id = excluded.client_id, client_sub_role = excluded.client_sub_role`,
+      [
+        authUser.id,
+        authUser.email ?? normalizedEmail,
+        role,
+        role === 'client' ? clientId : null,
+        role === 'client' ? clientSubRole : null,
+      ]
     );
 
     res.status(201).json({ status: 'ok' });

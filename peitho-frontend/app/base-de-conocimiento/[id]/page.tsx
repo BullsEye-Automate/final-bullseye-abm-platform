@@ -19,6 +19,17 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
   const isAdmin = me?.role === "admin";
 
   if (!isAdmin && me?.clientId !== params.id) notFound();
+  // "Usuario cliente" (clientSubRole==='user', ver migración 032) no tiene
+  // acceso a la base de conocimiento — el backend devuelve 403 acá (no 404),
+  // así que se corta antes de llamar a fetchClientDocuments (que revienta
+  // con cualquier respuesta que no sea res.ok o 404).
+  if (!isAdmin && me?.clientSubRole === "user") {
+    return (
+      <p className="text-sm text-gray-500">
+        Tu cuenta no tiene acceso a esta sección — contacta al administrador de tu empresa.
+      </p>
+    );
+  }
 
   const [client, documents] = await Promise.all([
     isAdmin

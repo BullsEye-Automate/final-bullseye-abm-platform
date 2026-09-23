@@ -226,6 +226,11 @@ export interface PeithoSession {
   role: "admin" | "client";
   clientId: string | null;
   clientName: string | null;
+  // Solo relevante cuando role === 'client' (23-09-2026, ver migración 032)
+  // — 'admin' ve todo lo que un cliente puede ver hoy (reuniones, panel,
+  // base de conocimiento); 'user' queda acotado a reuniones. Siempre null
+  // para role === 'admin' (BullsEye).
+  clientSubRole: "admin" | "user" | null;
 }
 
 export interface UserRoleItem {
@@ -233,6 +238,7 @@ export interface UserRoleItem {
   email: string;
   role: "admin" | "client";
   client_id: string | null;
+  client_sub_role: "admin" | "user" | null;
   client_name: string | null;
 }
 

@@ -13,6 +13,16 @@ export default async function BaseDeConocimientoPage() {
     return <p className="text-sm text-gray-500">Tu cuenta todavía no tiene acceso a Peitho — contacta al administrador.</p>;
   }
   if (me.role === "client") {
+    // "Usuario cliente" (clientSubRole==='user', ver migración 032) no tiene
+    // acceso a la base de conocimiento — mismo criterio que
+    // requireFullClientAccess en el backend (que ya devuelve 404 acá).
+    if (me.clientSubRole === "user") {
+      return (
+        <p className="text-sm text-gray-500">
+          Tu cuenta no tiene acceso a esta sección — contacta al administrador de tu empresa.
+        </p>
+      );
+    }
     if (me.clientId) redirect(`/base-de-conocimiento/${me.clientId}`);
     return (
       <p className="text-sm text-gray-500">

@@ -9,7 +9,7 @@ import {
   KB_CATEGORY_KEYS,
   KbCategoryKey,
 } from '../knowledgeBase';
-import { requireAuth, requireAdmin } from '../authMiddleware';
+import { requireAuth, requireAdmin, requireFullClientAccess } from '../authMiddleware';
 import { syncClientesDesdeMaestra } from '../clientesMaestra';
 
 export const clientsRouter = Router();
@@ -181,13 +181,15 @@ clientsRouter.put('/clients/:id/website', requireAdmin, async (req, res) => {
   }
 });
 
-// Un usuario "client" puede VER (no subir/borrar) la base de conocimiento de
-// su propio cliente — aclaración explícita del usuario en la Fase E. Trae
+// Un usuario "client" con client_sub_role='admin' puede VER (no subir/borrar)
+// la base de conocimiento de su propio cliente — aclaración explícita del
+// usuario en la Fase E, acotada en la Fase de sub-roles (23-09-2026) a solo
+// "admin cliente" (un "usuario cliente" queda limitado a reuniones). Trae
 // documentos de TODO el grupo de external_id (resolveClientGroupIds) — así
 // un documento subido para "CChC" también aparece acá cuando se navega a
 // "CChC - Valle" (y viceversa), sin importar bajo cuál `clients.id`
 // específico quedó guardado el archivo.
-clientsRouter.get('/clients/:id/documents', async (req, res) => {
+clientsRouter.get('/clients/:id/documents', requireFullClientAccess, async (req, res) => {
   const { id } = req.params;
 
   try {

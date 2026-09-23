@@ -10,6 +10,7 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "client">("client");
   const [clientId, setClientId] = useState("");
+  const [clientSubRole, setClientSubRole] = useState<"admin" | "user">("admin");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,7 +24,12 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
       const res = await fetch("/api/admin/user-roles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, role, clientId: role === "client" ? clientId : null }),
+        body: JSON.stringify({
+          email,
+          role,
+          clientId: role === "client" ? clientId : null,
+          clientSubRole: role === "client" ? clientSubRole : null,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -32,6 +38,7 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
       }
       setEmail("");
       setClientId("");
+      setClientSubRole("admin");
       router.refresh();
     } finally {
       setSaving(false);
@@ -68,6 +75,17 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
               {client.name}
             </option>
           ))}
+        </select>
+      )}
+      {role === "client" && (
+        <select
+          value={clientSubRole}
+          onChange={(e) => setClientSubRole(e.target.value as "admin" | "user")}
+          className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white"
+          title="Admin cliente ve todo (panel, base de conocimiento y reuniones). Usuario cliente solo ve reuniones."
+        >
+          <option value="admin">Admin cliente (ve todo)</option>
+          <option value="user">Usuario cliente (solo reuniones)</option>
         </select>
       )}
       <button

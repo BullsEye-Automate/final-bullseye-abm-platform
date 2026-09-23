@@ -11,6 +11,11 @@ export interface PeithoUser {
   email: string;
   role: 'admin' | 'client';
   clientId: string | null;
+  // Solo relevante cuando role === 'client' (23-09-2026, ver migración 032)
+  // — 'admin' ve todo lo que un cliente puede ver hoy (reuniones, panel,
+  // base de conocimiento); 'user' queda acotado a reuniones. Siempre null
+  // para role === 'admin' (BullsEye).
+  clientSubRole: 'admin' | 'user' | null;
 }
 
 declare global {
@@ -42,9 +47,10 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
 
-    const { rows } = await pool.query(`select role, client_id from peitho_user_roles where user_id = $1`, [
-      data.user.id,
-    ]);
+    const { rows } = await pool.query(
+      `select role, client_id, client_sub_role from peitho_user_roles where user_id = $1`,
+      [data.user.id]
+    );
     const roleRow = rows[0];
     if (!roleRow) {
       res
@@ -58,6 +64,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       email: data.user.email ?? '',
       role: roleRow.role,
       clientId: roleRow.client_id,
+      clientSubRole: roleRow.client_sub_role,
     };
     next();
   } catch (error) {
@@ -72,4 +79,22 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
     return;
   }
   next();
+}
+
+// Secciones que un rol "client" con client_sub_role='user' NO puede ver
+// (panel de control, base de conocimiento) — un admin de BullsEye siempre
+// pasa; un "client" pasa solo si su client_sub_role es 'admin' (o null,
+// para cuentas viejas de antes de la migración 032, aunque el backfill ya
+// las dejó en 'admin').
+export function requireFullClientAccess(req: Request, res: Response, next: NextFunction) {
+  const user = req.peithoUser;
+  if (user?.role === 'admin') {
+    next();
+    return;
+  }
+  if (user?.role === 'client' && user.clientSubRole !== 'user') {
+    next();
+    return;
+  }
+  res.status(403).json({ error: 'Tu cuenta no tiene acceso a esta sección — contacta al administrador de tu empresa' });
 }

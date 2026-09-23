@@ -11,6 +11,16 @@ export default async function PanelDeControlPage() {
   if (!me) {
     return <p className="text-sm text-gray-500">Tu cuenta todavía no tiene acceso a Peitho — contacta al administrador.</p>;
   }
+  // "Usuario cliente" (role==='client' && clientSubRole==='user', ver
+  // migración 032) no tiene acceso al panel de control — mismo criterio que
+  // requireFullClientAccess en el backend.
+  if (me.role === "client" && me.clientSubRole === "user") {
+    return (
+      <p className="text-sm text-gray-500">
+        Tu cuenta no tiene acceso a esta sección — contacta al administrador de tu empresa.
+      </p>
+    );
+  }
   const isAdmin = me.role === "admin";
   const clients = isAdmin ? await fetchClients() : [];
 

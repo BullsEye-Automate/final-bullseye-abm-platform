@@ -60,7 +60,11 @@ export default function UserRolesList({ roles }: { roles: UserRoleItem[] }) {
               <div>
                 <p className="text-sm font-medium text-gray-900">{role.email}</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {role.role === "admin" ? "Admin" : `Cliente · ${role.client_name ?? "sin cliente"}`}
+                  {role.role === "admin"
+                    ? "Admin"
+                    : `Cliente · ${role.client_name ?? "sin cliente"} · ${
+                        role.client_sub_role === "user" ? "usuario (solo reuniones)" : "admin (ve todo)"
+                      }`}
                 </p>
               </div>
               <button
