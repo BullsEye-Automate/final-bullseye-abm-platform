@@ -14,6 +14,7 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
+  const [resendError, setResendError] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,6 +23,7 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
     setSaving(true);
     setError(null);
     setInvitedEmail(null);
+    setResendError(null);
     try {
       const res = await fetch("/api/admin/user-roles", {
         method: "POST",
@@ -39,6 +41,7 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
         return;
       }
       if (data.invited) setInvitedEmail(email.trim());
+      if (data.resendError) setResendError(email.trim());
       setEmail("");
       setClientId("");
       setClientSubRole("admin");
@@ -103,6 +106,12 @@ export default function AssignRoleForm({ clients }: { clients: ClientListItem[] 
       {invitedEmail && (
         <p className="text-xs text-green-600 w-full">
           Le llegó un correo de invitación a {invitedEmail} para que elija su contraseña.
+        </p>
+      )}
+      {resendError && (
+        <p className="text-xs text-amber-600 w-full">
+          El rol quedó asignado, pero no se pudo reenviar el correo de invitación a {resendError} — reenvíalo a
+          mano desde Supabase Studio → Authentication → Users.
         </p>
       )}
       {role === "client" && (

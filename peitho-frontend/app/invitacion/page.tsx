@@ -13,6 +13,7 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 // después sin depender de un link nuevo cada vez.
 export default function InvitacionPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "invalid">("loading");
+  const [invalidReason, setInvalidReason] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
   const [saving, setSaving] = useState(false);
@@ -20,6 +21,27 @@ export default function InvitacionPage() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
+    // Cuando el link de invitación ya fue consumido o venció, Supabase no
+    // manda tokens — redirige acá con el motivo en query params
+    // (?error=access_denied&error_code=otp_expired&error_description=...).
+    // Se revisa esto de entrada, sin esperar el timeout de abajo, para poder
+    // mostrar la razón real en vez de un genérico "no es válido".
+    const params = new URLSearchParams(window.location.search);
+    const errorCode = params.get("error_code");
+    const errorDescription = params.get("error_description");
+    if (errorCode || params.get("error")) {
+      setInvalidReason(
+        errorCode === "otp_expired"
+          ? "El link ya fue usado o venció — a veces el filtro de seguridad del correo " +
+              "\"abre\" el link automático antes de que la persona lo haga a mano, dejándolo gastado."
+          : errorDescription
+            ? decodeURIComponent(errorDescription.replace(/\+/g, " "))
+            : `Error: ${errorCode}`
+      );
+      setStatus("invalid");
+      return;
+    }
+
     const supabase = supabaseBrowser();
 
     const {
@@ -85,8 +107,8 @@ export default function InvitacionPage() {
 
           {status === "invalid" && (
             <p className="text-sm text-gray-500 text-center">
-              Este link no es válido o ya venció. Pide a un administrador que te reenvíe la invitación desde
-              Peitho.
+              {invalidReason ?? "Este link no es válido o ya venció."} Pide a un administrador que te reenvíe la
+              invitación desde Peitho.
             </p>
           )}
 

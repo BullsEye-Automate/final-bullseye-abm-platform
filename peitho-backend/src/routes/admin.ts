@@ -81,7 +81,7 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
     // Esta versión de supabase-js no tiene un lookup directo por email en
     // auth.admin — se pagina listUsers() y se busca a mano (equipo chico, no
     // hay miles de usuarios de Peitho).
-    let authUser: { id: string; email?: string } | null = null;
+    let authUser: { id: string; email?: string; email_confirmed_at?: string } | null = null;
     for (let page = 1; page <= 20 && !authUser; page++) {
       const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 200 });
       if (error) throw new Error(error.message);
@@ -90,6 +90,7 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
     }
 
     let invited = false;
+    let resendError: string | null = null;
     if (!authUser) {
       const { data, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(normalizedEmail, {
         redirectTo: inviteRedirectUrl(),
@@ -103,6 +104,23 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
       }
       authUser = data.user;
       invited = true;
+    } else if (!authUser.email_confirmed_at) {
+      // Nunca aceptó una invitación anterior (ej. el link se gastó solo —
+      // pasa seguido si el filtro de seguridad del correo "abre" el link
+      // automático antes que la persona) — se reintenta mandar una
+      // invitación nueva en vez de dejarla asignada sin ningún link
+      // funcionando. Si Supabase igual rechaza el reenvío, no bloquea la
+      // asignación del rol — se avisa en la respuesta para reenviar a mano
+      // desde Supabase Studio.
+      const { error: inviteError } = await supabase.auth.admin.inviteUserByEmail(normalizedEmail, {
+        redirectTo: inviteRedirectUrl(),
+      });
+      if (inviteError) {
+        console.error('Error reenviando invitación a usuario sin confirmar', inviteError);
+        resendError = inviteError.message;
+      } else {
+        invited = true;
+      }
     }
 
     await pool.query(
@@ -119,7 +137,7 @@ adminRouter.post('/admin/user-roles', requireAuth, requireAdmin, async (req, res
       ]
     );
 
-    res.status(201).json({ status: 'ok', invited });
+    res.status(201).json({ status: 'ok', invited, resendError });
   } catch (error) {
     console.error('Error en POST /admin/user-roles', error);
     res.status(500).json({ error: 'Error asignando el rol' });
