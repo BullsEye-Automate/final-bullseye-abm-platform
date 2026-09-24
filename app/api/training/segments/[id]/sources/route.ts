@@ -34,6 +34,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         .replace(/<script[\s\S]*?<\/script>/gi, "")
         .replace(/<style[\s\S]*?<\/style>/gi, "")
         .replace(/<[^>]+>/g, " ")
+        .replace(/\\u[0-9a-fA-F]{4}/g, " ")   // elimina secuencias Unicode escapadas
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "") // elimina caracteres de control
         .replace(/\s{3,}/g, "\n")
         .trim()
         .slice(0, 8000); // max 8k chars por fuente
