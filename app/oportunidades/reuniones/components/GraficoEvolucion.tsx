@@ -260,7 +260,7 @@ export default function GraficoEvolucion({
                             {m.contacto_cargo && <span className="text-xs text-gray-500 ml-1">({m.contacto_cargo})</span>}
                           </td>
                           <td className="px-6 py-3 text-gray-600">
-                            {m.fecha_reunion ? new Date(m.fecha_reunion).toLocaleDateString("es-MX") : "—"}
+                            {m.fecha_reunion ? new Date(m.fecha_reunion + "T12:00:00").toLocaleDateString("es-MX") : "—"}
                           </td>
                           <td className="px-6 py-3 text-gray-600">{m.sdr_nombre || "—"}</td>
                           <td className="px-6 py-3 text-gray-600">{m.pais || "—"}</td>

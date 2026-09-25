@@ -238,7 +238,7 @@ export default function GraficoOrigen({ meetings }: { meetings: Meeting[] }) {
                           <td className="px-6 py-4 text-sm text-gray-700">{m.contacto_nombre || "—"}</td>
                           <td className="px-6 py-4 text-sm text-gray-600">{m.contacto_cargo || "—"}</td>
                           <td className="px-6 py-4 text-sm text-gray-700">
-                            {m.fecha_reunion ? new Date(m.fecha_reunion).toLocaleDateString("es-MX") : "—"}
+                            {m.fecha_reunion ? new Date(m.fecha_reunion + "T12:00:00").toLocaleDateString("es-MX") : "—"}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-600">{m.sdr_nombre || "—"}</td>
                           <td className="px-6 py-4 text-sm">
