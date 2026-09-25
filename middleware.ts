@@ -31,6 +31,8 @@ const PUBLIC_API_PREFIXES = [
   "/api/test-debug", // endpoint de diagnóstico
   "/api/admin/debug-ai-usage", // endpoint de debug para auditar ai_usage_log
   "/api/agente-contenido",    // agente de contenido SDR — accesible desde /chat sin sesión
+  "/api/clients",             // lista de clientes — requerida por /chat sin sesión
+  "/api/training/segments",   // segmentos de estilo — requeridos por /chat sin sesión
 ];
 
 function isPublicPath(pathname: string, method: string): boolean {
