@@ -118,6 +118,7 @@ export default function ReunionesPage() {
   const [preset, setPreset] = useState("mes");
   const [presetOpen, setPresetOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [fullSyncing, setFullSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -134,27 +135,35 @@ export default function ReunionesPage() {
     setLoading(false);
   }, [currentClient?.id, clientLoading, desde, hasta]);
 
-  // Trae la última versión del Google Sheet, acotado a los días transcurridos
-  // del mes en curso (no los 40 días completos que usa el botón global de
-  // Análisis SDR) — responde más rápido para el caso de uso de esta página:
-  // revisar si "Mes en Curso" ya refleja los cambios recientes del Sheet.
-  const handleSync = async () => {
-    setSyncing(true);
+  // Trae la última versión del Google Sheet. Por defecto acotado a los días
+  // transcurridos del mes en curso (no los 40 días completos que usa el
+  // botón global de Análisis SDR) — responde más rápido para el caso de uso
+  // de esta página: revisar si "Mes en Curso" ya refleja los cambios
+  // recientes del Sheet. `full=true` (botón "Sincronización completa")
+  // sincroniza toda la planilla y además limpia reuniones "fantasma" —
+  // filas que se eliminaron del Sheet (ej. un duplicado) pero quedaron
+  // congeladas en Pendiente/Reagendar en Supabase, porque el sync nunca
+  // borra lo que ya no está en el origen salvo en una pasada completa.
+  const handleSync = async (full = false) => {
+    if (full) setFullSyncing(true);
+    else setSyncing(true);
     setSyncMessage(null);
     try {
-      const days = diasDesdeInicioDeMesChile();
-      const res = await fetch(`/api/meetings/sync?days=${days}`);
+      const url = full ? "/api/meetings/sync?full=1" : `/api/meetings/sync?days=${diasDesdeInicioDeMesChile()}`;
+      const res = await fetch(url);
       const data = await res.json();
       if (data.error) {
         setSyncMessage(`Error al actualizar: ${data.error}`);
       } else {
-        setSyncMessage(`✓ Actualizado — ${data.synced ?? 0} reuniones sincronizadas`);
+        const fantasmas = data.orphans_deleted ? ` · ${data.orphans_deleted} reunión(es) fantasma eliminada(s)` : "";
+        setSyncMessage(`✓ Actualizado — ${data.synced ?? 0} reuniones sincronizadas${fantasmas}`);
         await load();
       }
     } catch (err) {
       setSyncMessage(`Error al actualizar: ${(err as Error).message}`);
     } finally {
-      setSyncing(false);
+      if (full) setFullSyncing(false);
+      else setSyncing(false);
     }
   };
 
@@ -193,19 +202,34 @@ export default function ReunionesPage() {
 
         <div className="flex items-start gap-3 flex-wrap">
           <div className="flex flex-col items-end gap-1.5">
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              title="Trae los últimos cambios del Google Sheet, acotado al mes en curso — más rápido que el sync completo"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 bg-white disabled:opacity-50"
-            >
-              {syncing ? (
-                <IconLoader2 size={14} className="animate-spin text-gray-400" />
-              ) : (
-                <IconRefresh size={14} className="text-gray-400" />
-              )}
-              Actualizar mes en curso
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleSync(false)}
+                disabled={syncing || fullSyncing}
+                title="Trae los últimos cambios del Google Sheet, acotado al mes en curso — más rápido que el sync completo"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 bg-white disabled:opacity-50"
+              >
+                {syncing ? (
+                  <IconLoader2 size={14} className="animate-spin text-gray-400" />
+                ) : (
+                  <IconRefresh size={14} className="text-gray-400" />
+                )}
+                Actualizar mes en curso
+              </button>
+              <button
+                onClick={() => handleSync(true)}
+                disabled={syncing || fullSyncing}
+                title="Sincroniza TODA la planilla (más lento) y limpia reuniones que ya no existen en el Sheet (ej. duplicados eliminados)"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm border border-gray-200 hover:bg-gray-50 bg-white disabled:opacity-50 text-gray-500"
+              >
+                {fullSyncing ? (
+                  <IconLoader2 size={14} className="animate-spin text-gray-400" />
+                ) : (
+                  <IconRefresh size={14} className="text-gray-400" />
+                )}
+                Sincronización completa
+              </button>
+            </div>
             {syncMessage && <p className="text-xs text-gray-500 text-right">{syncMessage}</p>}
           </div>
 
