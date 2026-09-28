@@ -340,6 +340,11 @@ export default function ChatPage() {
     if (!meetingDate || emailType !== "meeting") return;
     const d = new Date(meetingDate);
     if (isNaN(d.getTime())) return;
+    const dow = d.getDay(); // 0=Dom, 6=Sáb
+    if (dow === 0 || dow === 6) {
+      setHolidayWarning(dow === 6 ? "Sábado" : "Domingo");
+      return;
+    }
     const year = d.getFullYear();
     const dateKey = meetingDate.slice(0, 10); // YYYY-MM-DD
     fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${meetingCountry}`)
@@ -631,7 +636,10 @@ export default function ChatPage() {
                     {holidayWarning && (
                       <div className="flex items-center gap-1.5 mt-2 px-3 py-2 rounded-lg text-xs font-medium"
                         style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
-                        ⚠️ Esta fecha es feriado: <strong>{holidayWarning}</strong>
+                        ⚠️ {holidayWarning === "Sábado" || holidayWarning === "Domingo"
+                          ? <>Esta fecha cae en <strong>{holidayWarning}</strong> — no se agendan reuniones los fines de semana</>
+                          : <>Esta fecha es feriado: <strong>{holidayWarning}</strong></>
+                        }
                       </div>
                     )}
                   </div>
