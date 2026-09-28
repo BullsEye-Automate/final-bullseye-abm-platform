@@ -28,6 +28,7 @@ type RecipientInfo = {
   channel?: string;
   referrerName?: string;
   meetingDate?: string;
+  meetingCountry?: string;
   contextNotes?: string;
   segmentStyleGuide?: string;
 };
@@ -60,7 +61,7 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, re
     recipient.title       ? `- Cargo: ${recipient.title}`                         : "",
     typeLabel             ? `- Tipo de mensaje: ${typeLabel}`                     : "",
     recipient.referrerName? `- Derivado por: ${recipient.referrerName}`           : "",
-    recipient.meetingDate ? `- Reunión agendada para: ${formatMeetingDate(recipient.meetingDate)}`   : "",
+    recipient.meetingDate ? `- Reunión agendada para: ${formatMeetingDate(recipient.meetingDate)}${recipient.meetingCountry ? ` (${recipient.meetingCountry})` : ""}` : "",
     recipient.contextNotes? `- Contexto adicional: ${recipient.contextNotes}`     : "",
   ].filter(Boolean).join("\n");
 
@@ -100,7 +101,7 @@ export async function POST(req: NextRequest) {
   const {
     clientId, messages, emailType, channel, segmentId,
     recipientName, recipientCompany, recipientTitle,
-    referrerName, meetingDate, contextNotes, save, image,
+    referrerName, meetingDate, meetingCountry, contextNotes, save, image,
   } = body;
 
   if (!clientId || !messages?.length) {
@@ -138,6 +139,7 @@ export async function POST(req: NextRequest) {
     channel:           channel ?? "email",
     referrerName,
     meetingDate,
+    meetingCountry,
     contextNotes,
     segmentStyleGuide,
   });
