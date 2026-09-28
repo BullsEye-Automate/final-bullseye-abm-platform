@@ -32,6 +32,16 @@ type RecipientInfo = {
   segmentStyleGuide?: string;
 };
 
+function formatMeetingDate(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  return d.toLocaleString("es-CL", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+    hour: "2-digit", minute: "2-digit", timeZone: "America/Santiago",
+  });
+}
+
 function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, recipient: RecipientInfo): string {
   const contextBlock = ctx.aiContext.length
     ? ctx.aiContext.map((t, i) => `--- Documento ${i + 1} ---\n${t}`).join("\n\n")
@@ -50,7 +60,7 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, re
     recipient.title       ? `- Cargo: ${recipient.title}`                         : "",
     typeLabel             ? `- Tipo de mensaje: ${typeLabel}`                     : "",
     recipient.referrerName? `- Derivado por: ${recipient.referrerName}`           : "",
-    recipient.meetingDate ? `- Reunión agendada para: ${recipient.meetingDate}`   : "",
+    recipient.meetingDate ? `- Reunión agendada para: ${formatMeetingDate(recipient.meetingDate)}`   : "",
     recipient.contextNotes? `- Contexto adicional: ${recipient.contextNotes}`     : "",
   ].filter(Boolean).join("\n");
 
