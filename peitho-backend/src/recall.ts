@@ -453,7 +453,39 @@ export async function checkAndFixStaleRecallBots(): Promise<void> {
 // pasó.
 const RECALL_LATE_JOIN_GRACE_MS = 60 * 60 * 1000; // 60 min
 
+// Bug real (24-09-2026, reunión de Umine/Red Megacentro — confirmado con el
+// usuario viendo DOS bots "Peitho" reales entrar a la misma videollamada,
+// pero un solo recall_bot_id guardado en la fila): esta función chequea
+// "¿ya tiene recall_bot_id?" al principio y recién lo GUARDA varias líneas
+// después de crear el bot en Recall — en el medio hay un `await` real
+// (resolveMeetingClientAndContact, llamada a Google Sheets) que puede tardar
+// segundo(s). Como scheduleRecallBotForMeeting se llama todo el tiempo sin
+// ningún control (cada carga de "Reuniones futuras", cada detalle de
+// reunión, el chequeo periódico de bots faltantes, el sync de Calendar), una
+// segunda llamada para la MISMA reunión que entra en esa ventana ve
+// recall_bot_id todavía null y crea OTRO bot en Recall — el primero que
+// termine gana la fila (`update ... recall_bot_id = $1`), el otro bot queda
+// huérfano en Recall sin ningún registro nuestro, pero igual entra a la
+// llamada real. Mismo patrón exacto ya encontrado y arreglado antes en
+// resolveMeetingClientAndContact (metasSheet.ts) — mismo fix: un lock en
+// memoria por reunión, para que una segunda llamada mientras la primera
+// sigue en curso sea un no-op en vez de una carrera.
+const schedulingMeetingIds = new Set<string>();
+
 export async function scheduleRecallBotForMeeting(
+  meetingId: string,
+  options: { requireClientMatch?: boolean } = {}
+): Promise<void> {
+  if (schedulingMeetingIds.has(meetingId)) return;
+  schedulingMeetingIds.add(meetingId);
+  try {
+    await scheduleRecallBotForMeetingInner(meetingId, options);
+  } finally {
+    schedulingMeetingIds.delete(meetingId);
+  }
+}
+
+async function scheduleRecallBotForMeetingInner(
   meetingId: string,
   options: { requireClientMatch?: boolean } = {}
 ): Promise<void> {
