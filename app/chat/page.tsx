@@ -30,62 +30,27 @@ type Segment = {
   style_rules: string | null; style_avoid: string | null; style_email_length: string | null;
 };
 
-// Feriados fijos chilenos (MM-DD) y móviles calculados por año
-function getChileanHolidays(year: number): Set<string> {
-  const fixed = [
-    "01-01","05-01","05-21","06-29","07-16",
-    "08-15","09-18","09-19","10-12","10-31",
-    "11-01","12-08","12-25",
-  ];
-  const dates = new Set(fixed.map((d) => `${year}-${d}`));
-
-  // Semana Santa (Viernes y Sábado Santo) — algoritmo de Gauss
-  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
-  const d2 = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d2 - g + 15) % 30;
-  const i = Math.floor(c / 4), k = c % 4;
-  const l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const month = Math.floor((h + l - 7 * m + 114) / 31);
-  const day   = ((h + l - 7 * m + 114) % 31) + 1;
-  const easter = new Date(year, month - 1, day);
-  const friday = new Date(easter); friday.setDate(easter.getDate() - 2);
-  const saturday = new Date(easter); saturday.setDate(easter.getDate() - 1);
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  dates.add(fmt(friday));
-  dates.add(fmt(saturday));
-
-  return dates;
-}
-
-const HOLIDAY_NAMES: Record<string, string> = {
-  "01-01": "Año Nuevo",
-  "05-01": "Día del Trabajo",
-  "05-21": "Glorias Navales",
-  "06-29": "San Pedro y San Pablo",
-  "07-16": "Virgen del Carmen",
-  "08-15": "Asunción de la Virgen",
-  "09-18": "Independencia Nacional",
-  "09-19": "Glorias del Ejército",
-  "10-12": "Encuentro de Dos Mundos",
-  "10-31": "Iglesias Evangélicas",
-  "11-01": "Todos los Santos",
-  "12-08": "Inmaculada Concepción",
-  "12-25": "Navidad",
-};
-
-function getHolidayWarning(dateStr: string): string | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return null;
-  const year = d.getFullYear();
-  const mmdd = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const yyyy_mmdd = `${year}-${mmdd}`;
-  const holidays = getChileanHolidays(year);
-  if (!holidays.has(yyyy_mmdd)) return null;
-  return HOLIDAY_NAMES[mmdd] ?? "Feriado en Chile";
-}
+const LATAM_COUNTRIES: { code: string; name: string }[] = [
+  { code: "AR", name: "Argentina" },
+  { code: "BO", name: "Bolivia" },
+  { code: "BR", name: "Brasil" },
+  { code: "CL", name: "Chile" },
+  { code: "CO", name: "Colombia" },
+  { code: "CR", name: "Costa Rica" },
+  { code: "CU", name: "Cuba" },
+  { code: "DO", name: "República Dominicana" },
+  { code: "EC", name: "Ecuador" },
+  { code: "SV", name: "El Salvador" },
+  { code: "GT", name: "Guatemala" },
+  { code: "HN", name: "Honduras" },
+  { code: "MX", name: "México" },
+  { code: "NI", name: "Nicaragua" },
+  { code: "PA", name: "Panamá" },
+  { code: "PY", name: "Paraguay" },
+  { code: "PE", name: "Perú" },
+  { code: "UY", name: "Uruguay" },
+  { code: "VE", name: "Venezuela" },
+];
 
 function parseEmail(text: string): { subject: string; body: string } | null {
   try {
@@ -346,6 +311,8 @@ export default function ChatPage() {
   const [recipientTitle, setTitle]          = useState("");
   const [referrerName, setReferrer]         = useState("");
   const [meetingDate, setMeetingDate]       = useState("");
+  const [meetingCountry, setMeetingCountry] = useState("CL");
+  const [holidayWarning, setHolidayWarning] = useState<string | null>(null);
   const [contextNotes, setNotes]            = useState("");
   const [messages, setMessages]             = useState<Message[]>([]);
   const [input, setInput]                   = useState("");
@@ -367,6 +334,22 @@ export default function ChatPage() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    setHolidayWarning(null);
+    if (!meetingDate || emailType !== "meeting") return;
+    const d = new Date(meetingDate);
+    if (isNaN(d.getTime())) return;
+    const year = d.getFullYear();
+    const dateKey = meetingDate.slice(0, 10); // YYYY-MM-DD
+    fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/${meetingCountry}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((holidays: { date: string; localName: string }[]) => {
+        const match = holidays.find((h) => h.date === dateKey);
+        setHolidayWarning(match ? match.localName : null);
+      })
+      .catch(() => {});
+  }, [meetingDate, meetingCountry, emailType]);
 
   async function send(userContent: string, isFirst = false, image?: { base64: string; mediaType: string; preview: string } | null) {
     setLoading(true);
@@ -399,6 +382,7 @@ export default function ChatPage() {
           recipientTitle,
           referrerName:     emailType === "referral" ? referrerName : undefined,
           meetingDate:      emailType === "meeting"  ? meetingDate  : undefined,
+          meetingCountry:   emailType === "meeting"  ? meetingCountry : undefined,
           contextNotes,
           save:             isFirst,
           image:            image ? { base64: image.base64, mediaType: image.mediaType } : undefined,
@@ -626,17 +610,31 @@ export default function ChatPage() {
 
               {/* Fecha de reunión */}
               {emailType === "meeting" && (
-                <div>
-                  <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Fecha y hora de la reunión</label>
-                  <input type="datetime-local" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)}
-                    className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
-                    style={{ background: "#f4f2fb", border: `1px solid ${getHolidayWarning(meetingDate) ? "#f59e0b" : "#e2e0f0"}`, color: meetingDate ? "#1a1535" : "#b0acd4" }} />
-                  {getHolidayWarning(meetingDate) && (
-                    <div className="flex items-center gap-1.5 mt-2 px-3 py-2 rounded-lg text-xs font-medium"
-                      style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
-                      ⚠️ Esta fecha es feriado en Chile: <strong>{getHolidayWarning(meetingDate)}</strong>
-                    </div>
-                  )}
+                <div className="space-y-3">
+                  {/* País */}
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>País del destinatario</label>
+                    <select value={meetingCountry} onChange={(e) => setMeetingCountry(e.target.value)}
+                      className="w-full rounded-xl px-4 py-2.5 text-sm outline-none appearance-none"
+                      style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }}>
+                      {LATAM_COUNTRIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Fecha */}
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Fecha y hora de la reunión</label>
+                    <input type="datetime-local" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)}
+                      className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
+                      style={{ background: "#f4f2fb", border: `1px solid ${holidayWarning ? "#f59e0b" : "#e2e0f0"}`, color: meetingDate ? "#1a1535" : "#b0acd4" }} />
+                    {holidayWarning && (
+                      <div className="flex items-center gap-1.5 mt-2 px-3 py-2 rounded-lg text-xs font-medium"
+                        style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
+                        ⚠️ Esta fecha es feriado: <strong>{holidayWarning}</strong>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
