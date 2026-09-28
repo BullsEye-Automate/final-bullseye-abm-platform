@@ -637,7 +637,7 @@ export default function ChatPage() {
                       <div className="flex items-center gap-1.5 mt-2 px-3 py-2 rounded-lg text-xs font-medium"
                         style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
                         ⚠️ {holidayWarning === "Sábado" || holidayWarning === "Domingo"
-                          ? <>Esta fecha cae en <strong>{holidayWarning}</strong> — no se agendan reuniones los fines de semana</>
+                          ? <>Esta fecha cae en <strong>{holidayWarning}</strong></>
                           : <>Esta fecha es feriado: <strong>{holidayWarning}</strong></>
                         }
                       </div>
