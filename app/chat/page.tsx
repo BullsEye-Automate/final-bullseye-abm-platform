@@ -30,6 +30,63 @@ type Segment = {
   style_rules: string | null; style_avoid: string | null; style_email_length: string | null;
 };
 
+// Feriados fijos chilenos (MM-DD) y móviles calculados por año
+function getChileanHolidays(year: number): Set<string> {
+  const fixed = [
+    "01-01","05-01","05-21","06-29","07-16",
+    "08-15","09-18","09-19","10-12","10-31",
+    "11-01","12-08","12-25",
+  ];
+  const dates = new Set(fixed.map((d) => `${year}-${d}`));
+
+  // Semana Santa (Viernes y Sábado Santo) — algoritmo de Gauss
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+  const d2 = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d2 - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day   = ((h + l - 7 * m + 114) % 31) + 1;
+  const easter = new Date(year, month - 1, day);
+  const friday = new Date(easter); friday.setDate(easter.getDate() - 2);
+  const saturday = new Date(easter); saturday.setDate(easter.getDate() - 1);
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  dates.add(fmt(friday));
+  dates.add(fmt(saturday));
+
+  return dates;
+}
+
+const HOLIDAY_NAMES: Record<string, string> = {
+  "01-01": "Año Nuevo",
+  "05-01": "Día del Trabajo",
+  "05-21": "Glorias Navales",
+  "06-29": "San Pedro y San Pablo",
+  "07-16": "Virgen del Carmen",
+  "08-15": "Asunción de la Virgen",
+  "09-18": "Independencia Nacional",
+  "09-19": "Glorias del Ejército",
+  "10-12": "Encuentro de Dos Mundos",
+  "10-31": "Iglesias Evangélicas",
+  "11-01": "Todos los Santos",
+  "12-08": "Inmaculada Concepción",
+  "12-25": "Navidad",
+};
+
+function getHolidayWarning(dateStr: string): string | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const year = d.getFullYear();
+  const mmdd = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const yyyy_mmdd = `${year}-${mmdd}`;
+  const holidays = getChileanHolidays(year);
+  if (!holidays.has(yyyy_mmdd)) return null;
+  return HOLIDAY_NAMES[mmdd] ?? "Feriado en Chile";
+}
+
 function parseEmail(text: string): { subject: string; body: string } | null {
   try {
     const match = text.match(/\{[\s\S]*\}/);
@@ -573,7 +630,13 @@ export default function ChatPage() {
                   <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Fecha y hora de la reunión</label>
                   <input type="datetime-local" value={meetingDate} onChange={(e) => setMeetingDate(e.target.value)}
                     className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
-                    style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: meetingDate ? "#1a1535" : "#b0acd4" }} />
+                    style={{ background: "#f4f2fb", border: `1px solid ${getHolidayWarning(meetingDate) ? "#f59e0b" : "#e2e0f0"}`, color: meetingDate ? "#1a1535" : "#b0acd4" }} />
+                  {getHolidayWarning(meetingDate) && (
+                    <div className="flex items-center gap-1.5 mt-2 px-3 py-2 rounded-lg text-xs font-medium"
+                      style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
+                      ⚠️ Esta fecha es feriado en Chile: <strong>{getHolidayWarning(meetingDate)}</strong>
+                    </div>
+                  )}
                 </div>
               )}
 
