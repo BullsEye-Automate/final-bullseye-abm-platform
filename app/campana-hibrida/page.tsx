@@ -30,25 +30,23 @@ type SavedCampaign = {
 
 const REQUIRED_COLS = ["empresa", "sitio_web", "linkedin_url", "nombre", "apellido", "cargo", "email"];
 
-// Mapeo difuso de columnas CSV a campos internos
+// Mapeo de columnas CSV a campos internos — solo aliases exactos (sin partial matching)
 const COL_MAP: Record<string, string[]> = {
-  empresa:      ["empresa", "company", "compania", "organizacion", "organization", "account", "cuenta", "nombre_empresa", "company_name", "razon_social"],
-  sitio_web:    ["sitio_web", "website", "web", "url", "site", "pagina_web", "pagina", "domain", "dominio"],
-  linkedin_url: ["linkedin_url", "linkedin", "linkedin_profile", "perfil_linkedin", "li_url", "li"],
-  nombre:       ["nombre", "first_name", "firstname", "nombre_contacto", "name", "given_name"],
-  apellido:     ["apellido", "last_name", "lastname", "surname", "apellidos", "family_name"],
+  empresa:      ["empresa", "company", "compania", "organizacion", "organization", "account", "cuenta", "company_name", "razon_social", "nombre_empresa"],
+  sitio_web:    ["sitio_web", "website", "web", "site", "pagina_web", "pagina", "domain", "dominio", "url"],
+  linkedin_url: ["linkedin_url", "linkedin", "linkedin_profile", "perfil_linkedin", "li_url"],
+  nombre:       ["nombre", "first_name", "firstname", "nombre_contacto", "given_name", "first"],
+  apellido:     ["apellido", "last_name", "lastname", "surname", "apellidos", "family_name", "last"],
   cargo:        ["cargo", "title", "job_title", "puesto", "rol", "role", "position", "posicion", "titulo"],
-  email:        ["email", "correo", "e_mail", "mail", "email_address", "correo_electronico"],
+  email:        ["email", "correo", "mail", "email_address", "correo_electronico"],
 };
 
 function resolveHeader(raw: string): string {
-  const h = raw.trim().toLowerCase().replace(/[\s\-]+/g, "_").replace(/[^a-z0-9_]/g, "");
+  const h = raw.trim().toLowerCase().replace(/[\s\-\.]+/g, "_").replace(/[^a-z0-9_]/g, "");
   for (const [field, aliases] of Object.entries(COL_MAP)) {
     if (aliases.includes(h)) return field;
-    // coincidencia parcial: el header contiene el alias o viceversa
-    if (aliases.some(a => h.includes(a) || a.includes(h))) return field;
   }
-  return h; // devolver tal cual si no se reconoce
+  return h;
 }
 
 // Parser CSV que respeta campos entre comillas con comas internas
