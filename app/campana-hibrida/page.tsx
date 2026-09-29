@@ -51,15 +51,34 @@ function resolveHeader(raw: string): string {
   return h; // devolver tal cual si no se reconoce
 }
 
+// Parser CSV que respeta campos entre comillas con comas internas
+function splitCSVLine(line: string, delim: string): string[] {
+  const vals: string[] = [];
+  let cur = "";
+  let inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuote && line[i + 1] === '"') { cur += '"'; i++; } // "" escapado
+      else inQuote = !inQuote;
+    } else if (ch === delim && !inQuote) {
+      vals.push(cur.trim()); cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  vals.push(cur.trim());
+  return vals;
+}
+
 function parseCSV(text: string): ContactRow[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
-  // Detectar delimitador dominante
   const firstLine = lines[0];
-  const delim = (firstLine.split(";").length >= firstLine.split(",").length) ? ";" : ",";
-  const headers = firstLine.split(delim).map(resolveHeader);
+  const delim = (firstLine.split(";").length > firstLine.split(",").length) ? ";" : ",";
+  const headers = splitCSVLine(firstLine, delim).map(resolveHeader);
   return lines.slice(1).filter(l => l.trim()).map(line => {
-    const vals = line.split(delim).map(v => v.trim().replace(/^"|"$/g, ""));
+    const vals = splitCSVLine(line, delim);
     const obj: any = {};
     headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
     return {
