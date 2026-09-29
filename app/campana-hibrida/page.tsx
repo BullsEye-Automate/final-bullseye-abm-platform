@@ -82,8 +82,9 @@ export default function CampanaHibridaPage() {
   const [campaignId, setCampaignId]   = useState("");
   const [campaignName, setCampaignName] = useState("");
   const [loadingCamps, setLoadingCamps] = useState(false);
-  const [icpLoaded, setIcpLoaded]     = useState(false);
-  const [icpSummary, setIcpSummary]   = useState("");
+  const [icpLoaded, setIcpLoaded]       = useState(false);
+  const [icpSummary, setIcpSummary]     = useState("");
+  const [sourcesCount, setSourcesCount] = useState<number | null>(null);
 
   // Upload
   const fileRef = useRef<HTMLInputElement>(null);
@@ -104,10 +105,27 @@ export default function CampanaHibridaPage() {
     if (!clientId || clientId === "__all__") return;
     setIcpLoaded(false);
     setIcpSummary("");
+    setSourcesCount(null);
     setCampaigns([]);
     setCampaignId("");
 
     setLoadingCamps(true);
+    // Contar fuentes de conocimiento del cliente
+    fetch(`/api/training/segments?client_id=${clientId}`)
+      .then(r => r.json())
+      .then(async d => {
+        const segs = d.segments ?? [];
+        if (!segs.length) { setSourcesCount(0); return; }
+        const counts = await Promise.all(segs.map((s: any) =>
+          fetch(`/api/training/segments/${s.id}/sources`)
+            .then(r => r.json())
+            .then(d2 => (d2.sources ?? []).length)
+            .catch(() => 0)
+        ));
+        setSourcesCount(counts.reduce((a: number, b: number) => a + b, 0));
+      })
+      .catch(() => setSourcesCount(0));
+
     fetch(`/api/lemlist/campaigns?client_id=${clientId}`)
       .then(r => r.json())
       .then(d => { setCampaigns(d.campaigns ?? []); })
@@ -242,6 +260,11 @@ export default function CampanaHibridaPage() {
                   ? icpSummary
                   : <span className="text-amber-500">{icpSummary || "Cargando…"}</span>}
               </div>
+              {sourcesCount !== null && sourcesCount > 0 && (
+                <div className="text-xs text-[#62E0D8] mt-1">
+                  + {sourcesCount} fuente{sourcesCount !== 1 ? "s" : ""} de conocimiento cargada{sourcesCount !== 1 ? "s" : ""}
+                </div>
+              )}
             </div>
           </div>
 

@@ -34,8 +34,8 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Obtener contexto del cliente desde icp_config (notes) + model_training_config
-  const [{ data: icpData }, { data: tc }] = await Promise.all([
+  // Obtener contexto del cliente: icp_config + model_training_config + segment_sources
+  const [{ data: icpData }, { data: tc }, { data: segments }] = await Promise.all([
     db.from("icp_config")
       .select("notes")
       .eq("client_id", client_id)
@@ -47,7 +47,28 @@ export async function POST(req: NextRequest) {
       .select("business_description, value_props, talking_points, target_buyer_persona")
       .eq("client_id", client_id)
       .maybeSingle(),
+    db.from("training_segments")
+      .select("id")
+      .eq("client_id", client_id),
   ]);
+
+  // Cargar fuentes de conocimiento de todos los segmentos del cliente
+  let sourcesContent = "";
+  if (segments && segments.length > 0) {
+    const segmentIds = segments.map((s: any) => s.id);
+    const { data: sources } = await db
+      .from("segment_sources")
+      .select("content, title, source_type")
+      .in("segment_id", segmentIds)
+      .not("content", "is", null)
+      .order("created_at", { ascending: true });
+    if (sources && sources.length > 0) {
+      sourcesContent = sources
+        .map((s: any) => `[${s.title ?? s.source_type}]\n${(s.content ?? "").slice(0, 3000)}`)
+        .join("\n\n---\n\n")
+        .slice(0, 15000); // límite total para no exceder contexto
+    }
+  }
 
   const propuestaDeValor = [
     icpData?.notes,
@@ -56,8 +77,12 @@ export async function POST(req: NextRequest) {
     tc?.talking_points       && `Puntos clave: ${tc.talking_points}`,
   ].filter(Boolean).join("\n\n");
 
-  if (!propuestaDeValor)
-    return NextResponse.json({ error: "No hay contexto de cliente configurado. Ve a Sistema → ICP y agrega notas." }, { status: 400 });
+  // El contexto completo incluye fuentes de conocimiento
+  const contextoCliente = [propuestaDeValor, sourcesContent && `\n\nFuentes de conocimiento del cliente:\n${sourcesContent}`]
+    .filter(Boolean).join("\n\n");
+
+  if (!contextoCliente)
+    return NextResponse.json({ error: "No hay contexto de cliente configurado. Ve a Sistema → ICP o Entrenar modelo." }, { status: 400 });
 
   const descripcionServicio = tc?.business_description ?? "";
   const clienteIdeal = tc?.target_buyer_persona ?? "";
@@ -89,9 +114,8 @@ Empresa: ${empresa}
 Sitio web: ${sitio_web || "no disponible"}
 LinkedIn: ${linkedin_url || "no disponible"}
 
-Propuesta de valor del cliente que hace el outreach:
-${propuestaDeValor}
-${descripcionServicio ? `\nServicio: ${descripcionServicio}` : ""}
+Contexto del cliente que hace el outreach:
+${contextoCliente.slice(0, 4000)}
 
 Busca información pública reciente sobre:
 - Situación actual de la empresa (expansión, reestructuración, nuevos productos, ajuste presupuestario, etc.)
@@ -116,7 +140,7 @@ La SenalEmpresa debe:
 - Explicar brevemente qué está ocurriendo en la empresa
 - Señalar el contexto que rodea esa situación
 - Apuntar a la tensión o desafío que podría generar
-- Tener relación directa con esta propuesta de valor: ${propuestaDeValor}
+- Tener relación directa con el contexto del cliente
 
 Formato: 1-2 oraciones directas, sin sujeto explícito ("Están expandiendo..." no "La empresa está expandiendo...").
 Ejemplo: "Están expandiendo operaciones a nuevos mercados de LATAM, lo que probablemente está generando presión por escalar procesos y tecnología sin aumentar complejidad operacional en la misma proporción."
@@ -168,8 +192,9 @@ Empresa: ${contact.empresa}
 Señal de la empresa: ${senal}
 Cargo del contacto: ${contact.cargo}
 
-Propuesta de valor: ${propuestaDeValor}
-${clienteIdeal ? `Cliente ideal: ${clienteIdeal}` : ""}
+Contexto del cliente:
+${contextoCliente.slice(0, 6000)}
+${clienteIdeal ? `\nBuyer persona objetivo: ${clienteIdeal}` : ""}
 
 La HipótesisDolor debe:
 - Partir de la señal específica de la empresa (no del cargo en abstracto)
