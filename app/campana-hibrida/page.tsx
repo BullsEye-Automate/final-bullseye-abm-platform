@@ -71,7 +71,9 @@ function StepHeader({ n, title, active, done }: { n: number; title: string; acti
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function CampanaHibridaPage() {
-  const { clientId, clientName } = useClient();
+  const { currentClient } = useClient();
+  const clientId   = currentClient?.id   ?? null;
+  const clientName = currentClient?.name ?? null;
 
   const [step, setStep] = useState<Step>("config");
 
