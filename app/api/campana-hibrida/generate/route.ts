@@ -34,30 +34,30 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Obtener contexto del cliente desde model_training_config y client_ai_context
-  const [{ data: tc }, { data: icpCtx }] = await Promise.all([
+  // Obtener contexto del cliente desde icp_config (notes) + model_training_config
+  const [{ data: icpData }, { data: tc }] = await Promise.all([
+    db.from("icp_config")
+      .select("notes")
+      .eq("client_id", client_id)
+      .eq("is_active", true)
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     db.from("model_training_config")
       .select("business_description, value_props, talking_points, target_buyer_persona")
       .eq("client_id", client_id)
       .maybeSingle(),
-    db.from("client_ai_context")
-      .select("content")
-      .eq("client_id", client_id)
-      .eq("file_type", "icp")
-      .order("uploaded_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
   ]);
 
   const propuestaDeValor = [
-    tc?.value_props         && `Propuesta de valor: ${tc.value_props}`,
-    tc?.business_description && `Descripción: ${tc.business_description}`,
-    tc?.talking_points      && `Puntos clave: ${tc.talking_points}`,
-    icpCtx?.content,
+    icpData?.notes,
+    tc?.value_props          && `Propuesta de valor: ${tc.value_props}`,
+    tc?.business_description && `Descripción del negocio: ${tc.business_description}`,
+    tc?.talking_points       && `Puntos clave: ${tc.talking_points}`,
   ].filter(Boolean).join("\n\n");
 
   if (!propuestaDeValor)
-    return NextResponse.json({ error: "No hay contexto de cliente configurado (model_training_config vacío)" }, { status: 400 });
+    return NextResponse.json({ error: "No hay contexto de cliente configurado. Ve a Sistema → ICP y agrega notas." }, { status: 400 });
 
   const descripcionServicio = tc?.business_description ?? "";
   const clienteIdeal = tc?.target_buyer_persona ?? "";
