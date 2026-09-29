@@ -30,21 +30,45 @@ type SavedCampaign = {
 
 const REQUIRED_COLS = ["empresa", "sitio_web", "linkedin_url", "nombre", "apellido", "cargo", "email"];
 
+// Mapeo difuso de columnas CSV a campos internos
+const COL_MAP: Record<string, string[]> = {
+  empresa:      ["empresa", "company", "compania", "organizacion", "organization", "account", "cuenta", "nombre_empresa", "company_name", "razon_social"],
+  sitio_web:    ["sitio_web", "website", "web", "url", "site", "pagina_web", "pagina", "domain", "dominio"],
+  linkedin_url: ["linkedin_url", "linkedin", "linkedin_profile", "perfil_linkedin", "li_url", "li"],
+  nombre:       ["nombre", "first_name", "firstname", "nombre_contacto", "name", "given_name"],
+  apellido:     ["apellido", "last_name", "lastname", "surname", "apellidos", "family_name"],
+  cargo:        ["cargo", "title", "job_title", "puesto", "rol", "role", "position", "posicion", "titulo"],
+  email:        ["email", "correo", "e_mail", "mail", "email_address", "correo_electronico"],
+};
+
+function resolveHeader(raw: string): string {
+  const h = raw.trim().toLowerCase().replace(/[\s\-]+/g, "_").replace(/[^a-z0-9_]/g, "");
+  for (const [field, aliases] of Object.entries(COL_MAP)) {
+    if (aliases.includes(h)) return field;
+    // coincidencia parcial: el header contiene el alias o viceversa
+    if (aliases.some(a => h.includes(a) || a.includes(h))) return field;
+  }
+  return h; // devolver tal cual si no se reconoce
+}
+
 function parseCSV(text: string): ContactRow[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
-  const headers = lines[0].split(/[,;]/).map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
+  // Detectar delimitador dominante
+  const firstLine = lines[0];
+  const delim = (firstLine.split(";").length >= firstLine.split(",").length) ? ";" : ",";
+  const headers = firstLine.split(delim).map(resolveHeader);
   return lines.slice(1).filter(l => l.trim()).map(line => {
-    const vals = line.split(/[,;]/).map(v => v.trim().replace(/^"|"$/g, ""));
+    const vals = line.split(delim).map(v => v.trim().replace(/^"|"$/g, ""));
     const obj: any = {};
     headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
     return {
       empresa:      obj.empresa      ?? "",
-      sitio_web:    obj.sitio_web    ?? obj.website ?? "",
-      linkedin_url: obj.linkedin_url ?? obj.linkedin ?? "",
-      nombre:       obj.nombre       ?? obj.first_name ?? "",
-      apellido:     obj.apellido     ?? obj.last_name  ?? "",
-      cargo:        obj.cargo        ?? obj.title      ?? "",
+      sitio_web:    obj.sitio_web    ?? "",
+      linkedin_url: obj.linkedin_url ?? "",
+      nombre:       obj.nombre       ?? "",
+      apellido:     obj.apellido     ?? "",
+      cargo:        obj.cargo        ?? "",
       email:        obj.email        ?? "",
     } as ContactRow;
   }).filter(r => r.email && r.empresa);
