@@ -34,22 +34,33 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Obtener ICP del cliente
-  const { data: icpData } = await db
-    .from("icp_config")
-    .select("propuesta_de_valor, cliente_ideal, descripcion_servicio, tono, idioma")
-    .eq("client_id", client_id)
-    .eq("is_active", true)
-    .order("version", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Obtener contexto del cliente desde model_training_config y client_ai_context
+  const [{ data: tc }, { data: icpCtx }] = await Promise.all([
+    db.from("model_training_config")
+      .select("business_description, value_props, talking_points, target_buyer_persona")
+      .eq("client_id", client_id)
+      .maybeSingle(),
+    db.from("client_ai_context")
+      .select("content")
+      .eq("client_id", client_id)
+      .eq("file_type", "icp")
+      .order("uploaded_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
-  if (!icpData)
-    return NextResponse.json({ error: "No hay ICP configurado para este cliente" }, { status: 400 });
+  const propuestaDeValor = [
+    tc?.value_props         && `Propuesta de valor: ${tc.value_props}`,
+    tc?.business_description && `Descripción: ${tc.business_description}`,
+    tc?.talking_points      && `Puntos clave: ${tc.talking_points}`,
+    icpCtx?.content,
+  ].filter(Boolean).join("\n\n");
 
-  const propuestaDeValor = icpData.propuesta_de_valor ?? "";
-  const descripcionServicio = icpData.descripcion_servicio ?? "";
-  const clienteIdeal = icpData.cliente_ideal ?? "";
+  if (!propuestaDeValor)
+    return NextResponse.json({ error: "No hay contexto de cliente configurado (model_training_config vacío)" }, { status: 400 });
+
+  const descripcionServicio = tc?.business_description ?? "";
+  const clienteIdeal = tc?.target_buyer_persona ?? "";
 
   const model = await getClientModel(db, client_id);
 
