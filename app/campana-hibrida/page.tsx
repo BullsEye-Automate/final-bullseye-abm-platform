@@ -392,7 +392,7 @@ export default function CampanaHibridaPage() {
     setMatrix(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value, status: "ok" } : r));
   }, []);
 
-  const configReady = campaignName.trim().length > 0 && icpLoaded && campaignId;
+  const configReady = campaignName.trim().length > 0 && !!campaignId;
   const uploadReady = contacts.length > 0;
 
   // ── Sin cliente seleccionado ──
