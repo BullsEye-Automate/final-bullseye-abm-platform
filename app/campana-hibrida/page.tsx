@@ -113,20 +113,20 @@ export default function CampanaHibridaPage() {
       .then(d => { setCampaigns(d.campaigns ?? []); })
       .finally(() => setLoadingCamps(false));
 
-    fetch(`/api/training/config?client_id=${clientId}`)
+    fetch(`/api/icp?client_id=${clientId}`)
       .then(r => r.json())
       .then(d => {
-        const pv = d.config?.value_props ?? d.config?.business_description ?? "";
-        if (pv) {
-          setIcpSummary(pv.slice(0, 120) + (pv.length > 120 ? "…" : ""));
+        const notes = d.icp?.notes ?? "";
+        if (notes) {
+          setIcpSummary(notes.slice(0, 150) + (notes.length > 150 ? "…" : ""));
           setIcpLoaded(true);
         } else {
-          setIcpSummary("Sin contexto configurado para este cliente — ve a Entrenar modelo");
+          setIcpSummary("Sin notas en el ICP — agrega contexto en Sistema → ICP");
           setIcpLoaded(false);
         }
       })
       .catch(() => {
-        setIcpSummary("Error al cargar contexto del cliente");
+        setIcpSummary("Error al cargar ICP");
         setIcpLoaded(false);
       });
   }, [clientId]);
