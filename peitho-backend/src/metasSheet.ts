@@ -29,6 +29,14 @@ interface SheetRow {
   // Correo del contacto — identificador exacto y estable que no depende de
   // que la fecha de esta fila esté al día (ver matchByEmail más abajo).
   correo: string;
+  // Columna nueva (29-09-2026, pedido explícito del usuario): pedido a los
+  // SDR para que dejen el perfil de LinkedIn del contacto al agendar la
+  // reunión — algunos contactos no aparecen con suficiente data en el
+  // research automático (web_search) ni se encuentra su perfil solo con
+  // nombre+empresa. Con esto ya no hace falta que un admin lo pegue a mano
+  // (ver PUT /meetings/:id/contacto-linkedin) salvo que el research siga sin
+  // encontrar el perfil correcto pese a tener esta URL.
+  linkedinUrl: string;
 }
 
 interface MetasCache {
@@ -116,6 +124,7 @@ async function loadReunionesRows(forceRefresh = false): Promise<SheetRow[]> {
     salesManager: String(raw[col('Sales Manager')] ?? '').trim(),
     idReunion: String(raw[col('ID Reunión')] ?? '').trim(),
     correo: String(raw[col('Correo')] ?? '').trim(),
+    linkedinUrl: String(raw[col('URL Linkedin')] ?? '').trim(),
   }));
 
   cache = { tabTitle, rows, fetchedAt: Date.now() };
@@ -232,6 +241,22 @@ export function fuzzyCompanyKey(name: string): string {
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Misma validación que ya usa PUT /meetings/:id/contacto-linkedin (pegado a
+// mano) — la columna del excel la llena un SDR a mano también, así que puede
+// venir con un texto cualquiera pegado mal. Mejor ignorarlo (loguear y seguir
+// sin el dato) que guardar un link roto que el research después intenta abrir.
+function sanitizeLinkedinUrl(raw: string, meetingId: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (!/^https?:\/\/([\w-]+\.)*linkedin\.com\//i.test(trimmed)) {
+    console.warn(
+      `[metas-sheet] reunión ${meetingId}: "URL Linkedin" del excel no parece un link de linkedin.com ("${trimmed}"), se ignora`
+    );
+    return null;
+  }
+  return trimmed;
 }
 
 // Matching de cliente por título del evento (11-09-2026), pedido explícito
@@ -705,6 +730,7 @@ export interface ContactMatchCandidate {
   industria: string;
   fechaReunion: string;
   salesManager: string;
+  linkedinUrl: string;
 }
 
 function toCandidateSummary(row: SheetRow): ContactMatchCandidate {
@@ -718,6 +744,7 @@ function toCandidateSummary(row: SheetRow): ContactMatchCandidate {
     industria: row.industria,
     fechaReunion: row.fechaReunion,
     salesManager: row.salesManager,
+    linkedinUrl: row.linkedinUrl,
   };
 }
 
@@ -868,6 +895,14 @@ async function resolveMeetingClientAndContactInner(meetingId: string): Promise<v
       organizerEmail: meeting.organizer_email,
     });
 
+    // coalesce(contacto_linkedin_url, ...) a propósito, al revés que
+    // contacto_nombre/cargo/industria de arriba (esos SIEMPRE se refrescan
+    // desde el excel en cada sync): acá lo que ya esté guardado gana —
+    // pegado a mano por un admin (PUT /meetings/:id/contacto-linkedin,
+    // cuando el research no encontró el perfil solo) o traído del excel en
+    // un sync anterior — así un re-sync nunca pisa una corrección manual.
+    const linkedinUrl = row ? sanitizeLinkedinUrl(row.linkedinUrl, meetingId) : null;
+
     await pool.query(
       `update meetings set
          client_id = coalesce($1, client_id),
@@ -878,6 +913,7 @@ async function resolveMeetingClientAndContactInner(meetingId: string): Promise<v
          empresa_nombre = coalesce(nullif($6, ''), empresa_nombre),
          cliente_sales_manager = coalesce(nullif($7, ''), cliente_sales_manager),
          client_executive_id = coalesce(client_executive_id, $9),
+         contacto_linkedin_url = coalesce(contacto_linkedin_url, $10),
          contacto_match_status = case when $5 is not null and $5 <> '' then 'auto' else contacto_match_status end,
          updated_at = now()
        where id = $8`,
@@ -891,6 +927,7 @@ async function resolveMeetingClientAndContactInner(meetingId: string): Promise<v
         row?.salesManager ?? null,
         meetingId,
         clientExecutiveId,
+        linkedinUrl,
       ]
     );
     console.log(
@@ -936,6 +973,8 @@ export async function resolveTentativeMatch(
     organizerEmail: meeting.organizer_email,
   });
 
+  const linkedinUrl = sanitizeLinkedinUrl(chosen.linkedinUrl ?? '', meetingId);
+
   await pool.query(
     `update meetings set
        client_id = $1,
@@ -946,6 +985,7 @@ export async function resolveTentativeMatch(
        empresa_nombre = coalesce(nullif($6, ''), empresa_nombre),
        cliente_sales_manager = coalesce(nullif($7, ''), cliente_sales_manager),
        client_executive_id = coalesce(client_executive_id, $9),
+       contacto_linkedin_url = coalesce(contacto_linkedin_url, $10),
        contacto_match_status = 'manual',
        contacto_match_candidates = null,
        updated_at = now()
@@ -960,6 +1000,7 @@ export async function resolveTentativeMatch(
       chosen.salesManager,
       meetingId,
       clientExecutiveId,
+      linkedinUrl,
     ]
   );
   return { ok: true };
