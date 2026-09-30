@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { UserRoleItem } from "@/lib/peithoBackend";
+import SearchableSelect from "@/components/SearchableSelect";
 
 export default function UserRolesList({
   roles,
@@ -41,21 +42,21 @@ export default function UserRolesList({
     return role.client_name === filter;
   });
 
+  const filterOptions = [
+    { value: "", label: "Todos los clientes" },
+    { value: "__admin__", label: "Solo admins" },
+    ...clientNames.map((name) => ({ value: name, label: name })),
+  ];
+
   return (
     <div className="space-y-3">
-      <select
+      <SearchableSelect
+        options={filterOptions}
         value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white"
-      >
-        <option value="">Todos los clientes</option>
-        <option value="__admin__">Solo admins</option>
-        {clientNames.map((name) => (
-          <option key={name} value={name}>
-            {name}
-          </option>
-        ))}
-      </select>
+        onChange={setFilter}
+        className="w-56"
+        placeholder="Buscar cliente..."
+      />
 
       {filteredRoles.length === 0 ? (
         <p className="text-sm text-gray-500">Ningún usuario coincide con este filtro.</p>

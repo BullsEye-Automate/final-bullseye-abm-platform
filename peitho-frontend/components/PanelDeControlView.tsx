@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ClientListItem, FunnelData } from "@/lib/peithoBackend";
+import SearchableSelect from "@/components/SearchableSelect";
 
 // Paso 6 — Panel de control. A diferencia de ReunionesFuturasView/
 // ReunionesPasadasView (que filtran en el navegador sobre una lista ya
@@ -379,18 +380,16 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
           ))}
         </select>
         {isAdmin && (
-          <select
+          <SearchableSelect
+            options={[
+              { value: "", label: "Todos los clientes" },
+              ...clients.map((c) => ({ value: c.id, label: c.name })),
+            ]}
             value={clientId}
-            onChange={(e) => setClientId(e.target.value)}
-            className="text-sm border border-gray-100 rounded-[11px] px-3 py-2 bg-white outline-none focus:border-[#62E0D8]"
-          >
-            <option value="">Todos los clientes</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            onChange={setClientId}
+            className="w-56"
+            placeholder="Buscar cliente..."
+          />
         )}
         {/* Cascada: para admin, solo tiene sentido elegir ejecutivo después de
             elegir cliente (ver comentario del useEffect de arriba) — se oculta
