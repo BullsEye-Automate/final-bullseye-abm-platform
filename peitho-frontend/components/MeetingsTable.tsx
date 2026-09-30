@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ClientListItem, MeetingListItem } from "@/lib/peithoBackend";
 import InlineClientSelect from "@/components/InlineClientSelect";
+import ScoreBadge from "@/components/ScoreBadge";
 
 const STATUS_LABEL: Record<MeetingListItem["status"], string> = {
   scheduled: "Agendada",
@@ -55,21 +56,7 @@ function EmpresaCell({
   );
 }
 
-function PuntajeBadge({ puntaje }: { puntaje: number | null | undefined }) {
-  if (puntaje == null) return <span className="text-gray-300">—</span>;
-  const [bg, color] =
-    puntaje >= 8 ? ["#E6F6EE", "#1F8A5C"] : puntaje >= 5 ? ["#FBF1DF", "#B4740E"] : ["#FBE7E4", "#C0392B"];
-  return (
-    <span
-      className="text-xs font-bold px-2.5 py-0.5 rounded-lg"
-      style={{ background: bg, color }}
-    >
-      {puntaje}/10
-    </span>
-  );
-}
-
-// Escala distinta a PuntajeBadge (1-5, no 1-10 — prediccion_exito.puntaje mide
+// Escala distinta a ScoreBadge (1-5, no 1-10 — prediccion_exito.puntaje mide
 // probabilidad de cierre del deal, no desempeño del vendedor). Mismos
 // umbrales proporcionales (>=80% verde, >=50% amarillo, resto rojo).
 function PrediccionBadge({ puntaje }: { puntaje: number | null | undefined }) {
@@ -279,13 +266,13 @@ export default function MeetingsTable({
               {showPuntaje && (
                 <>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <PuntajeBadge puntaje={meeting.fit_empresa} />
+                    <ScoreBadge puntaje={meeting.fit_empresa} />
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <PuntajeBadge puntaje={meeting.fit_contacto} />
+                    <ScoreBadge puntaje={meeting.fit_contacto} />
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <PuntajeBadge puntaje={meeting.puntaje} />
+                    <ScoreBadge puntaje={meeting.puntaje} />
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <PrediccionBadge puntaje={meeting.prediccion_exito} />
