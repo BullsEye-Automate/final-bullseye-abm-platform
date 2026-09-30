@@ -73,7 +73,9 @@ function PrediccionBadge({ puntaje }: { puntaje: number | null | undefined }) {
   );
 }
 
-type SortField = "start_time" | "puntaje" | "prediccion_exito";
+// Pedido explícito del usuario (09-10-2026): además de Desempeño/Predicción,
+// ahora también se puede ordenar por los 3 Fit Score.
+type SortField = "start_time" | "puntaje" | "prediccion_exito" | "fit_empresa" | "fit_contacto" | "fit_rol_contacto";
 
 // start_time es un string ISO (no un número) — se convierte a timestamp acá
 // para poder reusar el mismo comparador genérico que ya usaban puntaje/
@@ -86,8 +88,8 @@ function sortValue(meeting: MeetingListItem, field: SortField): number {
   return meeting[field] ?? -1;
 }
 
-// Flecha de orden reusada por ambas columnas ordenables — misma UI que antes,
-// solo parametrizada por qué campo controla.
+// Flecha de orden reusada por todas las columnas ordenables — misma UI que
+// antes, solo parametrizada por qué campo controla.
 function SortArrow({ active, dir }: { active: boolean; dir: "asc" | "desc" | null }) {
   return (
     <svg
@@ -110,11 +112,12 @@ function SortArrow({ active, dir }: { active: boolean; dir: "asc" | "desc" | nul
 // `detailBasePath` habilita el click-through a la página de detalle (ej.
 // "/reuniones/pasadas") — se omite en páginas que todavía no tienen detalle
 // (Módulo 1, pendiente).
-// `showPuntaje` agrega las columnas ordenables "Desempeño" (desempeno_vendedor,
-// 1-10) y "Predicción de éxito" (prediccion_exito, 1-5) — solo tiene sentido
-// en "Reuniones pasadas" (en futuras nunca hay análisis todavía). El nombre
-// del prop quedó igual para no tocar los dos lugares que ya lo pasan
-// (ReunionesPasadasView.tsx) — ahora controla ambas columnas juntas, no solo la vieja "Puntaje".
+// `showPuntaje` agrega las columnas ordenables "Cargo", "Fit empresa/contacto/rol",
+// "Desempeño" (desempeno_vendedor, 1-10) y "Predicción de éxito" (prediccion_exito,
+// 1-5) — solo tiene sentido en "Reuniones pasadas" (en futuras nunca hay
+// análisis todavía). El nombre del prop quedó igual para no tocar los dos
+// lugares que ya lo pasan (ReunionesPasadasView.tsx) — ahora controla todas
+// esas columnas juntas, no solo la vieja "Puntaje".
 export default function MeetingsTable({
   meetings,
   detailBasePath,
@@ -151,9 +154,9 @@ export default function MeetingsTable({
     if (sortField !== field) {
       setSortField(field);
       // Fecha: primer clic muestra la más próxima primero ("de más reciente
-      // a más lejano", pedido explícito del usuario) — al revés de
-      // puntaje/predicción, donde el primer clic muestra el puntaje más
-      // alto primero (más intuitivo para esas dos columnas).
+      // a más lejano", pedido explícito del usuario) — al revés del resto de
+      // las columnas ordenables, donde el primer clic muestra el valor más
+      // alto primero (más intuitivo para un puntaje).
       setSortDir(field === "start_time" ? "asc" : "desc");
       return;
     }
@@ -169,9 +172,28 @@ export default function MeetingsTable({
     });
   }
 
+  function SortableHeader({ field, label }: { field: SortField; label: string }) {
+    return (
+      <button onClick={() => toggleSort(field)} className="flex items-center gap-1 hover:text-gray-700">
+        {label}
+        <SortArrow active={sortField === field} dir={sortDir} />
+      </button>
+    );
+  }
+
   if (meetings.length === 0) {
     return <p className="text-sm text-gray-500">No hay reuniones para mostrar todavía.</p>;
   }
+
+  // Empresa (09-10-2026, pedido explícito del usuario) es ahora la primera
+  // columna y queda fija (`sticky left-0`) al desplazar la tabla hacia la
+  // derecha — hay varias columnas nuevas (Cargo, Fit rol) y la tabla ya no
+  // entra completa en pantalla, así que sin esto se perdía de vista a qué
+  // empresa correspondía cada fila al scrollear. `group`/`group-hover` en la
+  // fila para que la celda fija adopte el mismo hover que el resto de la
+  // fila (un td con bg propio no hereda el hover:bg-gray-50 del <tr>).
+  const stickyCellClass =
+    "sticky left-0 z-10 bg-white group-hover:bg-gray-50 shadow-[4px_0_8px_-6px_rgba(0,0,0,0.12)]";
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -179,40 +201,30 @@ export default function MeetingsTable({
       <table className="min-w-full text-sm">
         <thead>
           <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+            <th className={`px-4 py-3 font-medium whitespace-nowrap ${stickyCellClass}`}>Empresa</th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">
-              <button
-                onClick={() => toggleSort("start_time")}
-                className="flex items-center gap-1 hover:text-gray-700"
-              >
-                Fecha
-                <SortArrow active={sortField === "start_time"} dir={sortDir} />
-              </button>
+              <SortableHeader field="start_time" label="Fecha" />
             </th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">Ejecutivo</th>
             <th className="px-4 py-3 font-medium whitespace-nowrap">Contraparte</th>
-            <th className="px-4 py-3 font-medium whitespace-nowrap">Empresa</th>
+            {showPuntaje && <th className="px-4 py-3 font-medium whitespace-nowrap">Cargo</th>}
             {showClientColumn && <th className="px-4 py-3 font-medium whitespace-nowrap">Cliente</th>}
             {showPuntaje && (
               <>
-                <th className="px-4 py-3 font-medium whitespace-nowrap">Fit empresa</th>
-                <th className="px-4 py-3 font-medium whitespace-nowrap">Fit contacto</th>
                 <th className="px-4 py-3 font-medium whitespace-nowrap">
-                  <button
-                    onClick={() => toggleSort("puntaje")}
-                    className="flex items-center gap-1 hover:text-gray-700"
-                  >
-                    Desempeño
-                    <SortArrow active={sortField === "puntaje"} dir={sortDir} />
-                  </button>
+                  <SortableHeader field="fit_empresa" label="Fit empresa" />
                 </th>
                 <th className="px-4 py-3 font-medium whitespace-nowrap">
-                  <button
-                    onClick={() => toggleSort("prediccion_exito")}
-                    className="flex items-center gap-1 hover:text-gray-700"
-                  >
-                    Predicción de éxito
-                    <SortArrow active={sortField === "prediccion_exito"} dir={sortDir} />
-                  </button>
+                  <SortableHeader field="fit_contacto" label="Fit cargo" />
+                </th>
+                <th className="px-4 py-3 font-medium whitespace-nowrap">
+                  <SortableHeader field="fit_rol_contacto" label="Fit rol" />
+                </th>
+                <th className="px-4 py-3 font-medium whitespace-nowrap">
+                  <SortableHeader field="puntaje" label="Desempeño" />
+                </th>
+                <th className="px-4 py-3 font-medium whitespace-nowrap">
+                  <SortableHeader field="prediccion_exito" label="Predicción de éxito" />
                 </th>
               </>
             )}
@@ -224,10 +236,13 @@ export default function MeetingsTable({
             <tr
               key={meeting.id}
               onClick={detailBasePath ? () => router.push(`${detailBasePath}/${meeting.id}`) : undefined}
-              className={`border-b border-gray-50 last:border-0 hover:bg-gray-50 ${
+              className={`group border-b border-gray-50 last:border-0 hover:bg-gray-50 ${
                 detailBasePath ? "cursor-pointer" : ""
               }`}
             >
+              <td className={`px-4 py-3 whitespace-nowrap font-medium text-gray-900 ${stickyCellClass}`}>
+                <EmpresaCell nombre={meeting.empresa_nombre} dominio={meeting.empresa_contraparte} />
+              </td>
               <td className="px-4 py-3 whitespace-nowrap">{formatDate(meeting.start_time)}</td>
               <td className="px-4 py-3 whitespace-nowrap">
                 {
@@ -251,9 +266,9 @@ export default function MeetingsTable({
                 }
               </td>
               <td className="px-4 py-3 whitespace-nowrap">{meeting.contacto_nombre ?? meeting.contraparte ?? "—"}</td>
-              <td className="px-4 py-3 whitespace-nowrap">
-                <EmpresaCell nombre={meeting.empresa_nombre} dominio={meeting.empresa_contraparte} />
-              </td>
+              {showPuntaje && (
+                <td className="px-4 py-3 whitespace-nowrap text-gray-500">{meeting.contacto_cargo ?? "—"}</td>
+              )}
               {showClientColumn && (
                 <td className="px-4 py-3 whitespace-nowrap">
                   {clients ? (
@@ -270,6 +285,9 @@ export default function MeetingsTable({
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <ScoreBadge puntaje={meeting.fit_contacto} />
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <ScoreBadge puntaje={meeting.fit_rol_contacto} />
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     <ScoreBadge puntaje={meeting.puntaje} />

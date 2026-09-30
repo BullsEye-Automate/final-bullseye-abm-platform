@@ -10,6 +10,10 @@ export interface MeetingListItem {
   // correo si Google no le asoció un nombre a ese asistente). Null si la
   // reunión no hizo match en el excel todavía.
   contacto_nombre: string | null;
+  // Solo viene poblado en scope=past ("Reuniones pasadas") — pedido
+  // explícito del usuario (09-10-2026) para ver el cargo del contacto sin
+  // entrar al detalle de cada reunión.
+  contacto_cargo?: string | null;
   empresa_contraparte: string | null;
   // Nombre real de la empresa según el excel de metas (ej. "CodersLab") — a
   // diferencia de empresa_contraparte (el dominio, ej. "coderslab.io", que se
@@ -52,9 +56,15 @@ export interface MeetingListItem {
   puntaje?: number | null;
   prediccion_exito?: number | null;
   // Fit Score (10-09-2026) — igual que puntaje/prediccion_exito, solo vienen
-  // pobladas en scope=past, extraídas de analysis.fit_empresa/fit_contacto.
+  // pobladas en scope=past, extraídas de analysis.fit_empresa/
+  // fit_cargo_contacto (fit_contacto es el nombre viejo, leído con coalesce
+  // del lado del backend para reuniones analizadas antes del 09-10-2026).
   fit_empresa?: number | null;
   fit_contacto?: number | null;
+  // fit_rol_contacto (09-10-2026) — sin equivalente viejo, null para
+  // cualquier reunión analizada antes de este cambio (correcto, no hay ese
+  // dato para esas).
+  fit_rol_contacto?: number | null;
 }
 
 // Forma del JSON que genera el prompt de análisis post-reunión (ver

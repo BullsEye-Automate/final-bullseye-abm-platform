@@ -95,16 +95,18 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
              and (m.meeting_url is not null or lower(m.empresa_contraparte) is distinct from $1)
              and m.recurring_event_id is null
            order by m.start_time asc`
-        : `select m.id, m.ejecutivo, m.contraparte, m.contacto_nombre, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status, m.client_id,
+        : `select m.id, m.ejecutivo, m.contraparte, m.contacto_nombre, m.contacto_cargo, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status, m.client_id,
                   m.client_executive_id, ce.name as client_executive_name,
                   (m.analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
                   (m.analysis->'prediccion_exito'->>'puntaje')::int as prediccion_exito,
                   (m.analysis->'fit_empresa'->>'puntaje')::int as fit_empresa,
-                  -- fit_cargo_contacto reemplazó a fit_contacto (09-10-2026, ver
-                  -- analisisPostReunion.ts) — coalesce con el campo viejo para
-                  -- que reuniones analizadas antes del cambio sigan mostrando su
-                  -- puntaje acá en vez de quedar en blanco.
+                  -- fit_cargo_contacto/fit_rol_contacto reemplazaron a
+                  -- fit_contacto (09-10-2026, ver analisisPostReunion.ts) —
+                  -- coalesce con el campo viejo en cargo (no en rol, que es
+                  -- un dato nuevo sin equivalente previo) para que reuniones
+                  -- analizadas antes del cambio sigan mostrando su puntaje.
                   coalesce((m.analysis->'fit_cargo_contacto'->>'puntaje')::int, (m.analysis->'fit_contacto'->>'puntaje')::int) as fit_contacto,
+                  (m.analysis->'fit_rol_contacto'->>'puntaje')::int as fit_rol_contacto,
                   c.name as cliente_bullseye
            from meetings m
            left join clients c on c.id = m.client_id
