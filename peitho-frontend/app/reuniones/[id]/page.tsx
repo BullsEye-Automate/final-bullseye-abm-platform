@@ -297,14 +297,25 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
         </div>
       )}
 
-      {!analysis && !meeting.transcript_text ? (
+      {meeting.status === "no_show" ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <p className="text-sm text-gray-500">
-            {meeting.status === "no_show"
-              ? "No se detectó conversación en la grabación — probablemente el prospecto no llegó a la cita."
-              : `Todavía no hay análisis para esta reunión (estado actual: ${
-                  STATUS_LABEL[meeting.status] ?? meeting.status
-                }). El análisis se genera automáticamente cuando termina de grabarse la llamada.`}
+            {
+              // Motivo real de Claude (reunión detectada como no válida pese a
+              // tener grabación/transcripción — ver reunion_valida en
+              // postMeetingAnalysis.ts) si existe; si no, es el caso más común
+              // de transcripción vacía (probable no-show real del prospecto).
+              analysis?.reunion_valida?.motivo ??
+                "No se detectó conversación en la grabación — probablemente el prospecto no llegó a la cita."
+            }
+          </p>
+        </div>
+      ) : !analysis && !meeting.transcript_text ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <p className="text-sm text-gray-500">
+            {`Todavía no hay análisis para esta reunión (estado actual: ${
+              STATUS_LABEL[meeting.status] ?? meeting.status
+            }). El análisis se genera automáticamente cuando termina de grabarse la llamada.`}
           </p>
         </div>
       ) : (

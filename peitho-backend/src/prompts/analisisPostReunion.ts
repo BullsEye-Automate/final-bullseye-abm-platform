@@ -20,10 +20,15 @@ INSTRUCCIONES DE ANÁLISIS:
    - Si HAY un ICP identificable en la base de conocimiento: \`fit_empresa\` compara el rubro, tamaño y señales de la empresa del prospecto (contexto de la reunión + lo que reveló la transcripción) contra ese ICP — 10 es un calce perfecto, 1 es claramente fuera de perfil. \`fit_contacto\` compara el cargo/rol del contacto (dado en el contexto, o lo que reveló la conversación) y su nivel de poder de decisión contra el perfil de comprador ideal del ICP, si lo especifica — si el ICP no especifica un perfil de comprador, usa criterio general B2B (alguien con poder de decisión o influencia real en la compra puntúa más alto que alguien sin ninguno).
    - Si NO hay ningún ICP identificable en la base de conocimiento (bloque vacío, o documentos que no describen un perfil de cliente): deja \`puntaje\` en null y \`justificacion\` explicando que falta el ICP del cliente en la base de conocimiento — nunca inventes o asumas un ICP genérico para poder dar una nota.
    - Si SÍ hay un ICP identificable pero la comparación no aplica de forma directa (ej. la contraparte de esta reunión ya es cliente actual del ejecutivo, no un prospecto nuevo en evaluación) o la transcripción no da suficiente evidencia concreta para calibrar el fit con precisión: deja \`puntaje\` en null igual, pero la \`justificacion\` debe explicar la razón real (que no aplica o que falta evidencia), nunca decir ni dar a entender que falta el ICP si en realidad sí está cargado.
+11. ANTES de evaluar cualquier otro campo, revisá \`reunion_valida\`: marcá \`es_reunion_con_prospecto\` en \`false\` SOLO si la transcripción claramente NO corresponde a una reunión comercial con la/las contraparte(s) indicadas arriba — ej. es una coordinación interna entre miembros del propio equipo comercial (sin ninguna de las contrapartes participando), una llamada a un número o persona equivocada, o la contraparte nunca llegó a intervenir en absoluto pese a que sí hay audio real de otra cosa. Esto es distinto de una reunión mala, corta o que no avanzó el deal — si la contraparte SÍ participó en la conversación, aunque haya sido breve o no comercial, \`es_reunion_con_prospecto\` debe ser \`true\`. Si queda en \`false\`, igual completá el resto del esquema con tu mejor esfuerzo (no lo dejes vacío), pero el sistema que lee esta respuesta va a ignorar los puntajes en ese caso.
 
 ESQUEMA DE SALIDA (JSON):
 
 {
+  "reunion_valida": {
+    "es_reunion_con_prospecto": <true | false — ver instrucción 11>,
+    "motivo": "<si es false, 1-2 frases explicando por qué esta grabación no corresponde a una reunión real con la contraparte esperada; null si es true>"
+  },
   "participantes": {
     "ejecutivos": ["<nombre1>", "<nombre2>"],
     "contrapartes": ["<nombre1>", "<nombre2>"]

@@ -305,6 +305,36 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
     contactoIndustria: meeting.contacto_industria,
   });
 
+  // Bug real (30-09-2026, Grupo Suppla/John Becerra): una grabación real (no
+  // vacía, así que no caía en la rama de arriba) resultó ser una
+  // coordinación interna del equipo comercial, no la reunión con el
+  // prospecto — Claude lo detectó bien en su propio análisis ("esta
+  // transcripción no corresponde a una reunión de ventas con el prospecto")
+  // pero igual se guardaba con nota mínima (1/10, 1/5) en vez de dejar claro
+  // que no hubo reunión real, pedido explícito del usuario. `reunion_valida`
+  // (ver el prompt, instrucción 11) es la señal que Claude ya calcula para
+  // esto — si viene en false, se guarda SOLO ese campo (sin los puntajes,
+  // que vienen igual completados "por las dudas" según el prompt) para que
+  // las columnas puntaje/prediccion_exito/fit_empresa/fit_contacto
+  // (extraídas de analysis->'...'->>'puntaje' en routes/meetings.ts) den
+  // null en vez de una nota real, y se marca no_show — mismo estado que ya
+  // existía para transcripción vacía, mismo criterio: no es un error técnico
+  // que valga la pena reintentar, es que esta grabación no fue la reunión.
+  const reunionValida = (analysis as { reunion_valida?: { es_reunion_con_prospecto?: boolean; motivo?: string | null } })
+    ?.reunion_valida;
+  if (reunionValida?.es_reunion_con_prospecto === false) {
+    console.log(
+      `[analysis] reunión ${meetingId}: la transcripción no corresponde a una reunión real con la contraparte (${
+        reunionValida.motivo ?? 'sin motivo detallado'
+      }) — se marca como no_show sin calificar`
+    );
+    await pool.query(
+      `update meetings set analysis = $1, transcript_text = $2, status = 'no_show', updated_at = now() where id = $3`,
+      [{ reunion_valida: reunionValida }, transcript, meetingId]
+    );
+    return;
+  }
+
   // Bug real (08-09-2026, reunión de Noventiq): cuando el transcript de
   // Recall falla y se cae a Deepgram, `transcript` queda armado en memoria
   // (arriba) y se usa para el prompt de Claude, pero nunca se guardaba de

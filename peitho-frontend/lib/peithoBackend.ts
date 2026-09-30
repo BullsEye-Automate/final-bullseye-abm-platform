@@ -62,6 +62,15 @@ export interface MeetingListItem {
 // opcionales acá porque viene de una columna jsonb sin esquema forzado en la
 // base — más vale renderizar de menos que reventar la página si algo falta.
 export interface MeetingAnalysis {
+  // Presente cuando Claude detecta que la grabación no corresponde a una
+  // reunión real con la contraparte (coordinación interna, número
+  // equivocado, la contraparte nunca participó) — en ese caso es el ÚNICO
+  // campo guardado (ver postMeetingAnalysis.ts), el resto de la interfaz
+  // queda vacía a propósito.
+  reunion_valida?: {
+    es_reunion_con_prospecto?: boolean;
+    motivo?: string | null;
+  };
   apuntes_clave?: {
     resumen_general?: string;
     contexto_cliente?: string[];
