@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ClientListItem, FunnelData } from "@/lib/peithoBackend";
 import SearchableSelect from "@/components/SearchableSelect";
+import PanelDrilldownModal, { type PanelRowMetric } from "@/components/PanelDrilldownModal";
 
 // Paso 6 — Panel de control. A diferencia de ReunionesFuturasView/
 // ReunionesPasadasView (que filtran en el navegador sobre una lista ya
@@ -43,19 +44,54 @@ function pct(n: number, d: number): string {
   return `${Math.round((n / d) * 100)}%`;
 }
 
-function StatCard({ value, label, sub }: { value: string; label: string; sub?: string }) {
-  return (
-    <div className="bg-white rounded-[14px] border border-gray-100 shadow-sm px-[18px] py-4 flex flex-col gap-1">
+// `onClick` (30-09-2026, pedido explícito del usuario) abre
+// PanelDrilldownModal con el detalle fila por fila detrás del número — solo
+// las tarjetas que tienen una métrica de análisis real detrás (fit
+// empresa/contacto, desempeño) lo reciben, no las que son tasas derivadas
+// (asistencia, % predicción alta) sin una tabla 1:1 de reuniones que
+// mostrar con esas columnas.
+function StatCard({
+  value,
+  label,
+  sub,
+  onClick,
+}: {
+  value: string;
+  label: string;
+  sub?: string;
+  onClick?: () => void;
+}) {
+  const content = (
+    <>
       <div className="text-[22px] font-bold" style={{ color: "#1C1530" }}>
         {value}
       </div>
       <div className="text-xs text-gray-500">{label}</div>
       {sub && <div className="text-[11px] text-gray-400">{sub}</div>}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        onClick={onClick}
+        className="bg-white rounded-[14px] border border-gray-100 shadow-sm px-[18px] py-4 flex flex-col gap-1 text-left hover:shadow-md hover:border-[#62E0D8] transition-shadow"
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div className="bg-white rounded-[14px] border border-gray-100 shadow-sm px-[18px] py-4 flex flex-col gap-1">
+      {content}
     </div>
   );
 }
 
-function FunnelChart({ funnel }: { funnel: FunnelData["funnel"] }) {
+// `onAgendadasClick` (30-09-2026, pedido explícito del usuario) — solo la
+// primera etapa ("Reuniones agendadas") abre el detalle; las demás son
+// subconjuntos derivados de ella (realizadas/analizadas/predicción alta) sin
+// pedido explícito de detalle propio.
+function FunnelChart({ funnel, onAgendadasClick }: { funnel: FunnelData["funnel"]; onAgendadasClick?: () => void }) {
   const max = funnel[0]?.count || 1;
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -65,10 +101,17 @@ function FunnelChart({ funnel }: { funnel: FunnelData["funnel"] }) {
         {funnel.map((stage, i) => {
           const prev = i > 0 ? funnel[i - 1].count : null;
           const widthPct = Math.max((stage.count / max) * 100, stage.count > 0 ? 3 : 0);
+          const clickable = stage.key === "agendadas" && !!onAgendadasClick;
           return (
-            <div key={stage.key}>
+            <div
+              key={stage.key}
+              className={clickable ? "cursor-pointer group" : undefined}
+              onClick={clickable ? onAgendadasClick : undefined}
+            >
               <div className="flex items-baseline justify-between text-xs text-gray-500 mb-1">
-                <span className="font-medium text-gray-700">{stage.label}</span>
+                <span className={`font-medium text-gray-700 ${clickable ? "group-hover:underline" : ""}`}>
+                  {stage.label}
+                </span>
                 <span>
                   <span className="font-semibold text-gray-900">{stage.count}</span>
                   {" · "}
@@ -285,6 +328,7 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
   const [data, setData] = useState<FunnelData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [drilldown, setDrilldown] = useState<PanelRowMetric | null>(null);
 
   // Filtro cascada (09-09-2026, pedido explícito del usuario): la lista de
   // ejecutivos se refetchea cada vez que cambia el cliente elegido, y el
@@ -335,6 +379,18 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
       active = false;
     };
   }, [from, to, threshold, clientId, ejecutivo, isAdmin]);
+
+  // Mismo filtro que ya se usa para pedir /api/panel/funnel — sin threshold
+  // (no aplica a ninguna de las 4 tablas de detalle). Memoizado por su texto
+  // (no por referencia de objeto) para que PanelDrilldownModal solo vuelva a
+  // pedir el detalle cuando el filtro realmente cambió.
+  const drilldownParams = useMemo(() => {
+    const params = new URLSearchParams({ from, to });
+    if (isAdmin && clientId) params.set("client_id", clientId);
+    if (ejecutivo) params.set("ejecutivo", ejecutivo);
+    return params;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from, to, clientId, ejecutivo, isAdmin]);
 
   const kpis = useMemo(() => {
     if (!data) return null;
@@ -426,7 +482,12 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
               label="% con predicción alta"
               sub="de las reuniones ya analizadas"
             />
-            <StatCard value={kpis!.desempeno === "—" ? "—" : `${kpis!.desempeno}/10`} label="Desempeño del vendedor" sub="promedio del período" />
+            <StatCard
+              value={kpis!.desempeno === "—" ? "—" : `${kpis!.desempeno}/10`}
+              label="Desempeño del vendedor"
+              sub="promedio del período"
+              onClick={() => setDrilldown("desempeno_vendedor")}
+            />
           </div>
 
           {/* Fit Score (10-09-2026) — promedio de qué tan bien calzan los
@@ -440,15 +501,17 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
               value={kpis!.fitEmpresa === "—" ? "—" : `${kpis!.fitEmpresa}/10`}
               label="Fit Score empresa (promedio)"
               sub="qué tan alineados con el ICP"
+              onClick={() => setDrilldown("fit_empresa")}
             />
             <StatCard
               value={kpis!.fitContacto === "—" ? "—" : `${kpis!.fitContacto}/10`}
               label="Fit Score contacto (promedio)"
               sub="qué tan alineados con el ICP"
+              onClick={() => setDrilldown("fit_contacto")}
             />
           </div>
 
-          <FunnelChart funnel={data.funnel} />
+          <FunnelChart funnel={data.funnel} onAgendadasClick={() => setDrilldown("agendadas")} />
 
           <PrediccionDistribution distribucion={data.distribucion_prediccion} />
 
@@ -467,6 +530,10 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
           </p>
         </>
       ) : null}
+
+      {drilldown && (
+        <PanelDrilldownModal metric={drilldown} baseParams={drilldownParams} onClose={() => setDrilldown(null)} />
+      )}
     </div>
   );
 }

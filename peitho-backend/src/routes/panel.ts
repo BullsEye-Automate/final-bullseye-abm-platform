@@ -229,6 +229,115 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
   }
 });
 
+// Detalle fila por fila detrás de una tarjeta/etapa del panel — pedido
+// explícito del usuario: poder hacer clic en "Fit Score contacto", "Fit
+// Score empresa", "Desempeño del vendedor" o "Reuniones agendadas" y ver
+// cuáles son exactamente las reuniones detrás de ese número. Usa el MISMO
+// criterio de filtro (fechas/cliente/ejecutivo) que GET /panel/funnel para
+// que las filas sean el detalle exacto de lo que ya se ve en la tarjeta —
+// duplicado a propósito en vez de compartir código con esa ruta, para no
+// arriesgar romper el endpoint agregado ya en producción.
+const PANEL_ROW_METRICS = ['agendadas', 'fit_empresa', 'fit_contacto', 'desempeno_vendedor'] as const;
+type PanelRowMetric = (typeof PANEL_ROW_METRICS)[number];
+
+const PANEL_ROW_COLUMNS: Record<PanelRowMetric, string> = {
+  // "si se realizó o no" — mismo criterio que la etapa "Reuniones realizadas"
+  // del funnel (status in captured/analyzed); no_show y scheduled cuentan
+  // como no realizada.
+  agendadas: `
+    coalesce(contacto_nombre, contraparte) as contacto,
+    coalesce(empresa_nombre, empresa_contraparte) as empresa,
+    contacto_cargo as cargo,
+    status,
+    (status in ('captured','analyzed')) as realizada`,
+  fit_contacto: `
+    coalesce(contacto_nombre, contraparte) as contacto,
+    coalesce(empresa_nombre, empresa_contraparte) as empresa,
+    contacto_cargo as cargo,
+    (analysis->'fit_contacto'->>'puntaje')::int as puntaje,
+    analysis->'fit_contacto'->>'justificacion' as razon`,
+  fit_empresa: `
+    coalesce(empresa_nombre, empresa_contraparte) as empresa,
+    coalesce(contacto_nombre, contraparte) as contacto,
+    (analysis->'fit_empresa'->>'puntaje')::int as puntaje,
+    analysis->'fit_empresa'->>'justificacion' as razon`,
+  desempeno_vendedor: `
+    ejecutivo,
+    coalesce(empresa_nombre, empresa_contraparte) as empresa,
+    coalesce(contacto_nombre, contraparte) as contacto,
+    (analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
+    analysis->'desempeno_vendedor'->>'resumen' as resumen`,
+};
+
+panelRouter.get('/panel/funnel/rows', requireAuth, requireFullClientAccess, async (req, res) => {
+  const peithoUser = req.peithoUser!;
+  const metric = req.query.metric;
+  if (typeof metric !== 'string' || !(PANEL_ROW_METRICS as readonly string[]).includes(metric)) {
+    res.status(400).json({ error: `metric debe ser uno de: ${PANEL_ROW_METRICS.join(', ')}` });
+    return;
+  }
+
+  let clientId: string | null = null;
+  if (peithoUser.role === 'client') {
+    clientId = peithoUser.clientId;
+  } else if (typeof req.query.client_id === 'string' && req.query.client_id) {
+    clientId = req.query.client_id;
+  }
+
+  let ejecutivo: string | null = null;
+  if (typeof req.query.ejecutivo === 'string' && req.query.ejecutivo) {
+    ejecutivo = req.query.ejecutivo;
+  }
+
+  const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : null;
+  const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : null;
+  if ((from && Number.isNaN(Date.parse(from))) || (to && Number.isNaN(Date.parse(to)))) {
+    res.status(400).json({ error: 'Rango de fechas inválido' });
+    return;
+  }
+
+  const conditions: string[] = [
+    'recurring_event_id is null',
+    '(meeting_url is not null or lower(empresa_contraparte) is distinct from $1)',
+  ];
+  const params: unknown[] = [INTERNAL_DOMAIN];
+  if (from) {
+    params.push(from);
+    conditions.push(`start_time >= $${params.length}`);
+  }
+  if (to) {
+    params.push(to);
+    conditions.push(`start_time <= $${params.length}`);
+  }
+  if (clientId) {
+    params.push(clientId);
+    conditions.push(`client_id = $${params.length}`);
+  }
+  if (ejecutivo) {
+    params.push(ejecutivo);
+    conditions.push(`ejecutivo = $${params.length}`);
+  }
+  // Las 3 métricas de análisis (fit_*/desempeño) solo existen para reuniones
+  // ya analizadas — "agendadas" es la única que cubre todos los estados
+  // (mismo criterio que la etapa homónima del funnel, sin filtro de status).
+  if (metric !== 'agendadas') conditions.push(`status = 'analyzed'`);
+  const whereClause = conditions.join(' and ');
+
+  try {
+    const { rows } = await pool.query(
+      `select ${PANEL_ROW_COLUMNS[metric as PanelRowMetric]}
+       from meetings
+       where ${whereClause}
+       order by start_time desc`,
+      params
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Error en GET /panel/funnel/rows', error);
+    res.status(500).json({ error: 'Error consultando el detalle' });
+  }
+});
+
 // Lista de ejecutivos disponibles para el selector cascada (elegir cliente
 // primero, después ejecutivo) — pedido explícito del usuario (09-09-2026).
 // Sin filtrar por status: un ejecutivo con reuniones agendadas/capturadas
