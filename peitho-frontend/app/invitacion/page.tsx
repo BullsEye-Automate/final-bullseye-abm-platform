@@ -22,6 +22,26 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 // que el timeout de abajo terminaba mostrando "link inválido" con un link
 // perfectamente válido. Fix: parsear el fragmento a mano acá y pasarle los
 // tokens directo a setSession() (esa función no mira flowType en absoluto).
+// Bug real (30-09-2026, cliente de Crossnet): el link SÍ era válido — los
+// logs de Supabase confirmaron /verify + Login exitosos — pero esta página
+// igual mostró "link inválido" y el motivo real quedó invisible (solo
+// console.error en SU navegador, imposible de pedirle a un cliente externo
+// no técnico). Esto manda un resumen del motivo al backend (best-effort, sin
+// esperar la respuesta ni bloquear la UI) para que quede en los logs de
+// Railway — nunca manda los tokens en sí, solo de qué tipo fue la falla.
+function reportInvitacionFallida(reason: string, detail?: string, hadHash?: boolean) {
+  try {
+    fetch("/api/public/invitacion-diagnostico", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason, detail, hadHash, userAgent: navigator.userAgent }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // nunca debe romper la página por esto
+  }
+}
+
 export default function InvitacionPage() {
   const [status, setStatus] = useState<"loading" | "ready" | "invalid">("loading");
   const [invalidReason, setInvalidReason] = useState<string | null>(null);
@@ -39,26 +59,36 @@ export default function InvitacionPage() {
     const errorCode = searchParams.get("error_code");
     const errorDescription = searchParams.get("error_description");
     if (errorCode || searchParams.get("error")) {
-      setInvalidReason(
+      const reason =
         errorCode === "otp_expired"
           ? "El link ya fue usado o venció."
           : errorDescription
             ? decodeURIComponent(errorDescription.replace(/\+/g, " "))
-            : `Error: ${errorCode}`
-      );
+            : `Error: ${errorCode}`;
+      setInvalidReason(reason);
       setStatus("invalid");
+      reportInvitacionFallida("query_error", `${errorCode ?? ""} ${errorDescription ?? ""}`.trim(), false);
       return;
     }
 
     // Éxito: los tokens vienen en el FRAGMENTO (#access_token=...), no en
     // query params — nunca llegan al servidor, solo se leen acá en el
     // navegador.
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const rawHash = window.location.hash.replace(/^#/, "");
+    const hashParams = new URLSearchParams(rawHash);
     const accessToken = hashParams.get("access_token");
     const refreshToken = hashParams.get("refresh_token");
 
     if (!accessToken || !refreshToken) {
       setStatus("invalid");
+      // Bug real (30-09-2026): esto fue justo lo que pasó con un cliente de
+      // Crossnet — Supabase confirmó en sus logs que el link fue válido
+      // (/verify + Login exitosos), pero esta página igual no encontró
+      // tokens en el fragmento. Hipótesis más probable: el navegador
+      // integrado de la app de correo (Gmail/Outlook) no preservó el
+      // fragmento al abrir el link. `hadHash` deja registrado si el
+      // fragmento llegó vacío del todo o con otra cosa adentro.
+      reportInvitacionFallida("no_tokens_in_hash", rawHash ? "hash presente sin access_token/refresh_token" : "hash vacío", !!rawHash);
       return;
     }
 
@@ -72,7 +102,9 @@ export default function InvitacionPage() {
       .then(({ error: sessionError }) => {
         if (sessionError) {
           console.error("Error estableciendo la sesión desde /invitacion", sessionError);
+          setInvalidReason(sessionError.message);
           setStatus("invalid");
+          reportInvitacionFallida("set_session_error", sessionError.message, true);
           return;
         }
         setStatus("ready");

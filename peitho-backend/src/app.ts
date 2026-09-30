@@ -9,6 +9,7 @@ import { webhooksRouter } from './routes/webhooks';
 import { panelRouter } from './routes/panel';
 import { publicResearchRouter } from './routes/publicResearch';
 import { publicAnalysisRouter } from './routes/publicAnalysis';
+import { publicDiagnosticsRouter } from './routes/publicDiagnostics';
 
 export const app = express();
 
@@ -69,3 +70,4 @@ app.use(webhooksRouter);
 app.use(panelRouter);
 app.use(publicResearchRouter);
 app.use(publicAnalysisRouter);
+app.use(publicDiagnosticsRouter);

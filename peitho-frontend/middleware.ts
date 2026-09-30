@@ -18,12 +18,19 @@ import { NextResponse, type NextRequest } from "next/server";
 // que nunca llega al servidor — este middleware no puede ver esa sesión
 // todavía, así que la página tiene que ser pública para que el cliente de
 // Supabase la procese en el navegador (ver app/invitacion/page.tsx).
+// "/api/public" se sumó el 30-09-2026: /invitacion necesita poder avisarle
+// al backend (vía fetch del navegador a una ruta proxy) cuando el link falla
+// — sin esto, una página pública intentando llamar a un /api/... propio
+// rebotaba en un 302 a /login (sin sesión todavía), así que el POST nunca
+// llegaba a procesarse. Cualquier ruta proxy que una página pública
+// necesite llamar desde el navegador va bajo este prefijo.
 const PUBLIC_PAGE_PREFIXES = [
   "/login",
   "/research-compartido",
   "/analisis-compartido",
   "/privacidad",
   "/invitacion",
+  "/api/public",
 ];
 
 export async function middleware(req: NextRequest) {
