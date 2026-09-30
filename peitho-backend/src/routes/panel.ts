@@ -261,8 +261,15 @@ const PANEL_ROW_COLUMNS: Record<PanelRowMetric, string> = {
     coalesce(contacto_nombre, contraparte) as contacto,
     (analysis->'fit_empresa'->>'puntaje')::int as puntaje,
     analysis->'fit_empresa'->>'justificacion' as razon`,
+  // Bug real (09-10-2026): esto mostraba `ejecutivo` tal cual — quien de
+  // BullsEye sincronizó el evento (ej. la SDR), no el ejecutivo real del
+  // cliente que llevó la reunión, casi siempre en blanco para invitaciones
+  // al bot. Misma prioridad ya arreglada en MeetingsTable (fuera de este
+  // panel): el ejecutivo del roster del cliente (`ce.name`, resuelto contra
+  // el excel de metas u organizador del Calendar) gana, y `ejecutivo` crudo
+  // queda solo como último fallback.
   desempeno_vendedor: `
-    ejecutivo,
+    coalesce(ce.name, cliente_sales_manager, ejecutivo) as ejecutivo,
     coalesce(empresa_nombre, empresa_contraparte) as empresa,
     coalesce(contacto_nombre, contraparte) as contacto,
     (analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
@@ -311,7 +318,9 @@ panelRouter.get('/panel/funnel/rows', requireAuth, requireFullClientAccess, asyn
   }
   if (clientId) {
     params.push(clientId);
-    conditions.push(`client_id = $${params.length}`);
+    // Calificado (meetings.client_id): client_executives también tiene una
+    // columna client_id — sin calificar, el join de abajo la vuelve ambigua.
+    conditions.push(`meetings.client_id = $${params.length}`);
   }
   if (ejecutivo) {
     params.push(ejecutivo);
@@ -327,6 +336,7 @@ panelRouter.get('/panel/funnel/rows', requireAuth, requireFullClientAccess, asyn
     const { rows } = await pool.query(
       `select ${PANEL_ROW_COLUMNS[metric as PanelRowMetric]}
        from meetings
+       left join client_executives ce on ce.id = meetings.client_executive_id
        where ${whereClause}
        order by start_time desc`,
       params
