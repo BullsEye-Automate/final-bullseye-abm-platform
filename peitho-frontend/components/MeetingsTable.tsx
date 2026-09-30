@@ -257,11 +257,10 @@ export default function MeetingsTable({
                   // mostraba ambos por separado (el email crudo en el
                   // encabezado, el ejecutivo del cliente en la ficha) — acá
                   // se prioriza el del cliente, igual que adentro.
-                  meeting.client_executive_name
-                    ? `${meeting.client_executive_name} (cliente)`
-                    : meeting.cliente_sales_manager
-                      ? `${meeting.cliente_sales_manager} (cliente)`
-                      : (meeting.ejecutivo ?? "—")
+                  meeting.client_executive_name ??
+                    meeting.cliente_sales_manager ??
+                    meeting.ejecutivo ??
+                    "—"
                 }
               </td>
               <td className="px-4 py-3 whitespace-nowrap">{meeting.contacto_nombre ?? meeting.contraparte ?? "—"}</td>
