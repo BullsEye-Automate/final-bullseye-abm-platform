@@ -207,6 +207,12 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
                 {meeting.client_executive_name ?? meeting.cliente_sales_manager ?? "—"}
               </p>
             </div>
+            {isAdmin && (
+              <div>
+                <p className="text-xs font-medium text-gray-500">ID de reunión (Recall)</p>
+                <p className="text-gray-700 font-mono text-xs">{meeting.recall_bot_id ?? "—"}</p>
+              </div>
+            )}
           </div>
           <p className="text-xs text-gray-400 pt-1">
             Datos tomados del excel de metas — si algo falta, es porque esta reunión no hizo match ahí todavía.

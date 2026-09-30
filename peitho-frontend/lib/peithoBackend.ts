@@ -199,6 +199,10 @@ export interface MeetingDetail extends MeetingListItem {
   // peitho-backend/src/routes/webhooks.ts) y quedó pegada en status='scheduled'
   // pese a que Recall ya terminó de grabar.
   recall_bot_available?: boolean;
+  // ID real del bot en Recall.ai — pedido explícito del usuario (30-09-2026)
+  // para poder buscar el bot/video de esta reunión directo en el dashboard
+  // de Recall sin tener que pedirlo por SQL cada vez.
+  recall_bot_id?: string | null;
   // true si la reunión vino de una invitación manual al bot (Fase H,
   // disparador b) — habilita el botón "Volver a sincronizar desde Calendar"
   // (solo aplica a este flujo, no al calendario normal de un ejecutivo).

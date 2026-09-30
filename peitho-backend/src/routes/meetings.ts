@@ -232,6 +232,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
               m.client_executive_id, ce.name as client_executive_name,
               (m.video_path is not null) as video_available,
               (m.recall_bot_id is not null) as recall_bot_available,
+              m.recall_bot_id,
               (m.meeting_url is not null) as is_bot_invite,
               c.name as cliente_bullseye
        from meetings m
