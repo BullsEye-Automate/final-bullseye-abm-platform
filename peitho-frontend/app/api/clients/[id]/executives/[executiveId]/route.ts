@@ -15,3 +15,20 @@ export async function DELETE(_req: Request, { params }: { params: { id: string; 
   const data = await res.json();
   return NextResponse.json(data, { status: res.status });
 }
+
+// Proxy server-side hacia PUT /clients/:id/executives/:executiveId — corrige
+// el nombre sin perder el vínculo con las reuniones ya asociadas.
+export async function PUT(req: Request, { params }: { params: { id: string; executiveId: string } }) {
+  const token = await getAccessToken();
+  const body = await req.json();
+  const res = await fetch(`${backendUrl()}/clients/${params.id}/executives/${params.executiveId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  return NextResponse.json(data, { status: res.status });
+}

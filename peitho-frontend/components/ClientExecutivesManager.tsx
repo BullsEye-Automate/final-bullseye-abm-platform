@@ -28,6 +28,14 @@ export default function ClientExecutivesManager({
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Editar en vez de borrar+crear (pedido explícito del usuario, 30-09-2026:
+  // un nombre mal cargado en Crossnet, "Santiago" en vez de "Sebastian
+  // Cantor") — borrar perdía el vínculo con las reuniones ya asociadas a ese
+  // ejecutivo, renombrar lo corrige en todas de una (ver comentario del
+  // backend, PUT /clients/:id/executives/:executiveId).
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -59,6 +67,39 @@ export default function ClientExecutivesManager({
       router.refresh();
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  function startEdit(exec: ClientExecutive) {
+    setEditingId(exec.id);
+    setEditingName(exec.name);
+    setError(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditingName("");
+  }
+
+  async function handleSaveEdit(executiveId: string) {
+    if (!editingName.trim()) return;
+    setSavingEdit(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/executives/${executiveId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editingName.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "No se pudo editar el ejecutivo");
+        return;
+      }
+      cancelEdit();
+      router.refresh();
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -98,20 +139,49 @@ export default function ClientExecutivesManager({
         <p className="text-sm text-gray-500">Todavía no hay ejecutivos cargados para este cliente.</p>
       ) : (
         <ul className="divide-y divide-gray-50">
-          {executives.map((exec) => (
-            <li key={exec.id} className="py-2.5 flex items-center justify-between gap-4">
-              <p className="text-sm text-gray-900">{exec.name}</p>
-              {canManage && (
+          {executives.map((exec) =>
+            editingId === exec.id ? (
+              <li key={exec.id} className="py-2.5 flex items-center gap-2">
+                <input
+                  type="text"
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  autoFocus
+                  className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2"
+                  style={{ ["--tw-ring-color" as string]: "#62E0D8" }}
+                />
                 <button
-                  onClick={() => handleDelete(exec.id)}
-                  disabled={deletingId === exec.id}
-                  className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50 shrink-0"
+                  onClick={() => handleSaveEdit(exec.id)}
+                  disabled={savingEdit || !editingName.trim()}
+                  className="text-xs font-medium disabled:opacity-50 shrink-0"
+                  style={{ color: "#251762" }}
                 >
-                  {deletingId === exec.id ? "Borrando…" : "Borrar"}
+                  {savingEdit ? "Guardando…" : "Guardar"}
                 </button>
-              )}
-            </li>
-          ))}
+                <button onClick={cancelEdit} className="text-xs text-gray-500 shrink-0">
+                  Cancelar
+                </button>
+              </li>
+            ) : (
+              <li key={exec.id} className="py-2.5 flex items-center justify-between gap-4">
+                <p className="text-sm text-gray-900">{exec.name}</p>
+                {canManage && (
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button onClick={() => startEdit(exec)} className="text-xs hover:underline" style={{ color: "#251762" }}>
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => handleDelete(exec.id)}
+                      disabled={deletingId === exec.id}
+                      className="text-xs text-red-600 hover:text-red-800 disabled:opacity-50"
+                    >
+                      {deletingId === exec.id ? "Borrando…" : "Borrar"}
+                    </button>
+                  </div>
+                )}
+              </li>
+            )
+          )}
         </ul>
       )}
     </div>

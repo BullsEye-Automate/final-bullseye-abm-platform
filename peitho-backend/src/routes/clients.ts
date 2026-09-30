@@ -340,6 +340,46 @@ clientsRouter.post('/clients/:id/executives', requireFullClientAccess, async (re
   }
 });
 
+// Pedido explícito del usuario (30-09-2026, Crossnet): un nombre cargado mal
+// en el roster ("Santiago" en vez de "Sebastian Cantor") no tenía forma de
+// corregirse salvo borrar y crear de nuevo — eso hacía perder el vínculo con
+// las reuniones ya asociadas (client_executive_id apunta al id del
+// ejecutivo, no a una copia de su nombre; un borrado deja esas reuniones con
+// client_executive_id huérfano, ver ON DELETE de la migración 033). Renombrar
+// en vez de borrar+crear corrige el nombre en TODAS las reuniones ya
+// vinculadas de una — el join en GET /meetings ya lee el nombre actual de
+// client_executives, no una copia guardada en la reunión.
+clientsRouter.put('/clients/:id/executives/:executiveId', requireFullClientAccess, async (req, res) => {
+  const { id, executiveId } = req.params;
+  const { name } = req.body ?? {};
+
+  if (typeof name !== 'string' || !name.trim()) {
+    res.status(400).json({ error: 'Falta el nombre del ejecutivo' });
+    return;
+  }
+
+  try {
+    const groupIds = await resolveClientGroupIds(id);
+    if (req.peithoUser!.role === 'client' && !groupIds.includes(req.peithoUser!.clientId ?? '')) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
+
+    const { rows } = await pool.query(
+      `update client_executives set name = $1 where id = $2 and client_id = any($3) returning id, name`,
+      [name.trim(), executiveId, groupIds]
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Ejecutivo no encontrado' });
+      return;
+    }
+    res.json(rows[0]);
+  } catch (error) {
+    console.error('Error en PUT /clients/:id/executives/:executiveId', error);
+    res.status(500).json({ error: 'Error editando el ejecutivo' });
+  }
+});
+
 clientsRouter.delete('/clients/:id/executives/:executiveId', requireFullClientAccess, async (req, res) => {
   const { id, executiveId } = req.params;
   try {

@@ -243,12 +243,26 @@ export default function MeetingsTable({
             >
               <td className="px-4 py-3 whitespace-nowrap">{formatDate(meeting.start_time)}</td>
               <td className="px-4 py-3 whitespace-nowrap">
-                {meeting.ejecutivo ??
-                  (meeting.client_executive_name
+                {
+                  // Bug real (30-09-2026, Autogermana/Crossnet): esta columna
+                  // mezclaba dos cosas distintas — `ejecutivo` (quien de
+                  // BullsEye sincronizó el evento, ej. la SDR que agenda la
+                  // cita) y `client_executive_name`/`cliente_sales_manager`
+                  // (el ejecutivo REAL del cliente que atiende la reunión,
+                  // resuelto contra el roster). En el flujo de invitación al
+                  // bot, casi siempre hay un BullsEye no-opcional en el
+                  // evento (la SDR) aunque el roster ya haya resuelto bien al
+                  // ejecutivo del cliente — `ejecutivo` no null tapaba
+                  // siempre al dato más útil. El detalle de la reunión ya
+                  // mostraba ambos por separado (el email crudo en el
+                  // encabezado, el ejecutivo del cliente en la ficha) — acá
+                  // se prioriza el del cliente, igual que adentro.
+                  meeting.client_executive_name
                     ? `${meeting.client_executive_name} (cliente)`
                     : meeting.cliente_sales_manager
                       ? `${meeting.cliente_sales_manager} (cliente)`
-                      : "—")}
+                      : (meeting.ejecutivo ?? "—")
+                }
               </td>
               <td className="px-4 py-3 whitespace-nowrap">{meeting.contacto_nombre ?? meeting.contraparte ?? "—"}</td>
               <td className="px-4 py-3 whitespace-nowrap">
