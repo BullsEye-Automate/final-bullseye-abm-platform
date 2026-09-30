@@ -29,6 +29,25 @@ calendarRouter.post('/calendar/watch', async (req, res) => {
   }
 });
 
+// Estado de sincronización de cada cuenta de Google conectada (un ejecutivo
+// o el bot) — pedido explícito del usuario después del incidente de
+// bot@peithob2b.com (invalid_grant, invisible hasta que faltó una reunión
+// real). Se llena desde catchUpAllActiveChannels (cada 15 min, ver
+// calendarWatchRenewal.ts) — last_sync_error no null es la señal de alerta.
+calendarRouter.get('/admin/calendar/status', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `select google_account_email, calendar_watch_enabled, last_sync_ok_at, last_sync_error, last_sync_error_at
+       from google_credentials
+       order by google_account_email asc`
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error('Error en GET /admin/calendar/status', error);
+    res.status(500).json({ error: 'Error consultando el estado de las cuentas de Google' });
+  }
+});
+
 // Bug real (08-10-2026, reunión de Callegari Automotriz/OTIC CChC): una
 // invitación al bot que llegó por un link de Teams con formato válido
 // igual no apareció nunca en Peitho — el usuario no pudo forzar un

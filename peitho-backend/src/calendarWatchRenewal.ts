@@ -170,10 +170,27 @@ export async function catchUpAllActiveChannels(): Promise<void> {
   for (const row of rows) {
     try {
       await syncChannelChanges(row.channel_id);
+      // Bug real (08/09-10-2026, bot@peithob2b.com): antes esto solo se
+      // logueaba en consola — un refresh_token inválido (ej. invalid_grant
+      // al habilitar el SSO de terceros para la cuenta) hacía fallar ESTE
+      // catch en cada corrida, cada 15 min, sin que nadie se enterara hasta
+      // que una reunión real no apareció en la app. Guardar el estado en la
+      // propia base hace que sea visible desde la app (ver GET
+      // /admin/calendar/status), no solo desde los logs de Railway.
+      await pool.query(
+        `update google_credentials set last_sync_ok_at = now(), last_sync_error = null, last_sync_error_at = null
+         where google_account_email = $1`,
+        [row.google_account_email]
+      );
     } catch (error) {
       console.error(
         `[calendar-watch-renewal] error en la sincronización de respaldo del canal ${row.channel_id} (${row.google_account_email})`,
         error
+      );
+      const message = error instanceof Error ? error.message : String(error);
+      await pool.query(
+        `update google_credentials set last_sync_error = $1, last_sync_error_at = now() where google_account_email = $2`,
+        [message.slice(0, 500), row.google_account_email]
       );
     }
   }

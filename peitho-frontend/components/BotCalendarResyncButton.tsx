@@ -1,6 +1,81 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+interface GoogleAccountStatus {
+  google_account_email: string;
+  calendar_watch_enabled: boolean;
+  last_sync_ok_at: string | null;
+  last_sync_error: string | null;
+  last_sync_error_at: string | null;
+}
+
+function formatDate(value: string | null): string {
+  if (!value) return "nunca";
+  return new Date(value).toLocaleString("es-CL", { dateStyle: "medium", timeStyle: "short", timeZone: "America/Santiago" });
+}
+
+// Estado de sincronización de cada cuenta de Google conectada (pedido
+// explícito del usuario, 09-10-2026, después de perder días sin saber que
+// bot@peithob2b.com tenía el token roto — invalid_grant, invisible hasta que
+// una reunión real no apareció). Se llena solo cada 15 min desde
+// catchUpAllActiveChannels (ver calendarWatchRenewal.ts) — un
+// last_sync_error no nulo es la alerta a mirar.
+function GoogleAccountsStatus() {
+  const [accounts, setAccounts] = useState<GoogleAccountStatus[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/admin/calendar/status", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? "Error");
+        return res.json();
+      })
+      .then((json: GoogleAccountStatus[]) => {
+        if (active) setAccounts(json);
+      })
+      .catch(() => {
+        if (active) setError("No se pudo cargar el estado de las cuentas.");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (error) return <p className="text-xs text-red-600">{error}</p>;
+  if (!accounts) return <p className="text-xs text-gray-400">Cargando estado de cuentas…</p>;
+  if (accounts.length === 0) return null;
+
+  return (
+    <div className="pt-2 space-y-2">
+      <p className="text-xs font-medium text-gray-500">Cuentas de Google conectadas</p>
+      <ul className="space-y-1.5">
+        {accounts.map((a) => (
+          <li key={a.google_account_email} className="text-xs flex items-start gap-2">
+            {a.last_sync_error ? (
+              <span className="shrink-0 text-red-600 font-semibold">⚠</span>
+            ) : (
+              <span className="shrink-0" style={{ color: "#1F8A5C" }}>
+                ●
+              </span>
+            )}
+            <span>
+              <span className="text-gray-700 font-medium">{a.google_account_email}</span>{" "}
+              {a.last_sync_error ? (
+                <span className="text-red-600">
+                  — con error desde {formatDate(a.last_sync_error_at)}: {a.last_sync_error}
+                </span>
+              ) : (
+                <span className="text-gray-400">— última sincronización ok: {formatDate(a.last_sync_ok_at)}</span>
+              )}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 // Pedido explícito del usuario (08-10-2026, reunión de Callegari
 // Automotriz/OTIC CChC): una invitación al bot con un link de reunión válido
@@ -56,6 +131,8 @@ export default function BotCalendarResyncButton() {
         </p>
       )}
       {status === "error" && <p className="text-xs text-red-600">{error}</p>}
+
+      <GoogleAccountsStatus />
     </div>
   );
 }
