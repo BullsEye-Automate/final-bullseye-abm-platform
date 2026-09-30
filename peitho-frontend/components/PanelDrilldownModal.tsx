@@ -8,7 +8,7 @@ import ScoreBadge from "@/components/ScoreBadge";
 // contacto", "Fit Score empresa", "Desempeño del vendedor" o "Reuniones
 // agendadas" y ver cuáles son exactamente las reuniones detrás de ese
 // número, en vez de solo el promedio/conteo agregado.
-export type PanelRowMetric = "agendadas" | "fit_empresa" | "fit_contacto" | "desempeno_vendedor";
+export type PanelRowMetric = "agendadas" | "fit_empresa" | "fit_cargo_contacto" | "fit_rol_contacto" | "desempeno_vendedor";
 
 interface AgendadaRow {
   contacto: string | null;
@@ -18,6 +18,9 @@ interface AgendadaRow {
   realizada: boolean;
 }
 
+// Misma forma para fit_cargo_contacto y fit_rol_contacto — el backend ya
+// devuelve las mismas columnas (contacto/empresa/cargo/puntaje/razon) para
+// ambos, solo cambia qué campo de `analysis` lee (ver panel.ts).
 interface FitContactoRow {
   contacto: string | null;
   empresa: string | null;
@@ -44,13 +47,14 @@ interface DesempenoRow {
 const METRIC_TITLES: Record<PanelRowMetric, string> = {
   agendadas: "Reuniones agendadas",
   fit_empresa: "Fit Score empresa — detalle",
-  fit_contacto: "Fit Score contacto — detalle",
+  fit_cargo_contacto: "Fit cargo contacto — detalle",
+  fit_rol_contacto: "Fit rol contacto — detalle",
   desempeno_vendedor: "Desempeño del vendedor — detalle",
 };
 
 // Metrics con una columna de puntaje ordenable — "agendadas" no tiene
 // puntaje (solo "¿se realizó?"), así que no aplica orden acá.
-const SCORED_METRICS: PanelRowMetric[] = ["fit_empresa", "fit_contacto", "desempeno_vendedor"];
+const SCORED_METRICS: PanelRowMetric[] = ["fit_empresa", "fit_cargo_contacto", "fit_rol_contacto", "desempeno_vendedor"];
 
 function SortArrow({ dir }: { dir: "asc" | "desc" }) {
   return (
@@ -174,7 +178,7 @@ export default function PanelDrilldownModal({
                       <th className="py-3 px-6 font-medium">¿Se realizó?</th>
                     </>
                   )}
-                  {metric === "fit_contacto" && (
+                  {(metric === "fit_cargo_contacto" || metric === "fit_rol_contacto") && (
                     <>
                       <th className="py-3 px-6 font-medium">Contacto</th>
                       <th className="py-3 px-3 font-medium">Empresa</th>
@@ -238,7 +242,7 @@ export default function PanelDrilldownModal({
                       </td>
                     </tr>
                   ))}
-                {metric === "fit_contacto" &&
+                {(metric === "fit_cargo_contacto" || metric === "fit_rol_contacto") &&
                   (sortedRows as FitContactoRow[]).map((row, i) => (
                     <tr key={i} className="border-b border-gray-50 last:border-0 align-top hover:bg-gray-50/60">
                       <td className="py-3 px-6 font-medium text-gray-900">{row.contacto ?? "—"}</td>

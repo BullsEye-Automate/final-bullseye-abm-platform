@@ -103,7 +103,14 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
          count(*) filter (where status = 'analyzed' and jsonb_array_length(coalesce(analysis->'compromisos', '[]'::jsonb)) > 0) as con_compromisos,
          avg((analysis->'desempeno_vendedor'->>'puntaje')::numeric) filter (where status = 'analyzed') as desempeno_vendedor_promedio,
          avg((analysis->'fit_empresa'->>'puntaje')::numeric) filter (where status = 'analyzed') as fit_empresa_promedio,
-         avg((analysis->'fit_contacto'->>'puntaje')::numeric) filter (where status = 'analyzed') as fit_contacto_promedio
+         -- fit_cargo_contacto/fit_rol_contacto reemplazaron a fit_contacto
+         -- (09-10-2026, pedido explícito del usuario — separar "el cargo
+         -- califica para el ICP" de "esta persona mostró poder de decisión
+         -- real en la llamada"). coalesce con el campo viejo en el promedio
+         -- de cargo para no perder el histórico ya analizado; rol no tiene
+         -- equivalente viejo, es un dato nuevo.
+         avg(coalesce((analysis->'fit_cargo_contacto'->>'puntaje')::numeric, (analysis->'fit_contacto'->>'puntaje')::numeric)) filter (where status = 'analyzed') as fit_cargo_contacto_promedio,
+         avg((analysis->'fit_rol_contacto'->>'puntaje')::numeric) filter (where status = 'analyzed') as fit_rol_contacto_promedio
        from meetings
        where ${whereClause}`,
       params
@@ -217,7 +224,8 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
       desempeno_vendedor_promedio:
         f.desempeno_vendedor_promedio != null ? Number(f.desempeno_vendedor_promedio) : null,
       fit_empresa_promedio: f.fit_empresa_promedio != null ? Number(f.fit_empresa_promedio) : null,
-      fit_contacto_promedio: f.fit_contacto_promedio != null ? Number(f.fit_contacto_promedio) : null,
+      fit_cargo_contacto_promedio: f.fit_cargo_contacto_promedio != null ? Number(f.fit_cargo_contacto_promedio) : null,
+      fit_rol_contacto_promedio: f.fit_rol_contacto_promedio != null ? Number(f.fit_rol_contacto_promedio) : null,
       por_cargo: mapSegment(porCargoRows),
       por_industria: mapSegment(porIndustriaRows),
       distribucion_prediccion: distribucionPrediccion,
@@ -237,7 +245,7 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
 // que las filas sean el detalle exacto de lo que ya se ve en la tarjeta —
 // duplicado a propósito en vez de compartir código con esa ruta, para no
 // arriesgar romper el endpoint agregado ya en producción.
-const PANEL_ROW_METRICS = ['agendadas', 'fit_empresa', 'fit_contacto', 'desempeno_vendedor'] as const;
+const PANEL_ROW_METRICS = ['agendadas', 'fit_empresa', 'fit_cargo_contacto', 'fit_rol_contacto', 'desempeno_vendedor'] as const;
 type PanelRowMetric = (typeof PANEL_ROW_METRICS)[number];
 
 const PANEL_ROW_COLUMNS: Record<PanelRowMetric, string> = {
@@ -250,12 +258,24 @@ const PANEL_ROW_COLUMNS: Record<PanelRowMetric, string> = {
     contacto_cargo as cargo,
     status,
     (status in ('captured','analyzed')) as realizada`,
-  fit_contacto: `
+  // fit_cargo_contacto/fit_rol_contacto reemplazaron a fit_contacto
+  // (09-10-2026, pedido explícito del usuario) — separar "el cargo en
+  // abstracto califica para el ICP" de "esta persona mostró poder de
+  // decisión real en la llamada". coalesce con el campo viejo en cargo
+  // (no en rol, que es un dato nuevo sin equivalente previo) para no
+  // perder el histórico ya analizado.
+  fit_cargo_contacto: `
     coalesce(contacto_nombre, contraparte) as contacto,
     coalesce(empresa_nombre, empresa_contraparte) as empresa,
     contacto_cargo as cargo,
-    (analysis->'fit_contacto'->>'puntaje')::int as puntaje,
-    analysis->'fit_contacto'->>'justificacion' as razon`,
+    coalesce((analysis->'fit_cargo_contacto'->>'puntaje')::int, (analysis->'fit_contacto'->>'puntaje')::int) as puntaje,
+    coalesce(analysis->'fit_cargo_contacto'->>'justificacion', analysis->'fit_contacto'->>'justificacion') as razon`,
+  fit_rol_contacto: `
+    coalesce(contacto_nombre, contraparte) as contacto,
+    coalesce(empresa_nombre, empresa_contraparte) as empresa,
+    contacto_cargo as cargo,
+    (analysis->'fit_rol_contacto'->>'puntaje')::int as puntaje,
+    analysis->'fit_rol_contacto'->>'justificacion' as razon`,
   fit_empresa: `
     coalesce(empresa_nombre, empresa_contraparte) as empresa,
     coalesce(contacto_nombre, contraparte) as contacto,

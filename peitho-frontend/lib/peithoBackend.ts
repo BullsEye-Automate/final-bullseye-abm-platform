@@ -91,6 +91,21 @@ export interface MeetingAnalysis {
     puntaje?: number | null;
     justificacion?: string;
   };
+  // fit_cargo_contacto/fit_rol_contacto (09-10-2026, pedido explícito del
+  // usuario) reemplazaron a fit_contacto — separar "el cargo en abstracto
+  // califica para el ICP" (fit_cargo_contacto) de "esta persona mostró
+  // poder de decisión real en la llamada" (fit_rol_contacto, puede ser
+  // otra persona presente en la reunión). fit_contacto se mantiene tipado
+  // para leer reuniones ya analizadas antes del cambio (ver AnalysisView).
+  fit_cargo_contacto?: {
+    puntaje?: number | null;
+    justificacion?: string;
+  };
+  fit_rol_contacto?: {
+    puntaje?: number | null;
+    justificacion?: string;
+  };
+  /** @deprecated reemplazado por fit_cargo_contacto (09-10-2026) — se mantiene solo para reuniones analizadas antes del cambio. */
   fit_contacto?: {
     puntaje?: number | null;
     justificacion?: string;
@@ -325,11 +340,13 @@ export interface FunnelData {
   // aparte. Ver comentario en peitho-backend/src/routes/panel.ts.
   con_compromisos: number;
   desempeno_vendedor_promedio: number | null;
-  // Fit Score (10-09-2026) — promedio de fit_empresa/fit_contacto (1-10)
-  // entre las reuniones analizadas del rango filtrado. Null si ninguna
-  // reunión del rango tiene el campo (ej. ningún cliente con ICP cargado).
+  // Fit Score (10-09-2026) — promedio de fit_empresa/fit_cargo_contacto/
+  // fit_rol_contacto (1-10) entre las reuniones analizadas del rango
+  // filtrado. Null si ninguna reunión del rango tiene el campo (ej. ningún
+  // cliente con ICP cargado).
   fit_empresa_promedio: number | null;
-  fit_contacto_promedio: number | null;
+  fit_cargo_contacto_promedio: number | null;
+  fit_rol_contacto_promedio: number | null;
   por_cargo: FunnelSegment[];
   por_industria: FunnelSegment[];
   distribucion_prediccion: PrediccionBucket[];

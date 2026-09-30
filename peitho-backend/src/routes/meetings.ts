@@ -100,7 +100,11 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
                   (m.analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
                   (m.analysis->'prediccion_exito'->>'puntaje')::int as prediccion_exito,
                   (m.analysis->'fit_empresa'->>'puntaje')::int as fit_empresa,
-                  (m.analysis->'fit_contacto'->>'puntaje')::int as fit_contacto,
+                  -- fit_cargo_contacto reemplazó a fit_contacto (09-10-2026, ver
+                  -- analisisPostReunion.ts) — coalesce con el campo viejo para
+                  -- que reuniones analizadas antes del cambio sigan mostrando su
+                  -- puntaje acá en vez de quedar en blanco.
+                  coalesce((m.analysis->'fit_cargo_contacto'->>'puntaje')::int, (m.analysis->'fit_contacto'->>'puntaje')::int) as fit_contacto,
                   c.name as cliente_bullseye
            from meetings m
            left join clients c on c.id = m.client_id

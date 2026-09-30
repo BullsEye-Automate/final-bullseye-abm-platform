@@ -160,8 +160,18 @@ export default function AnalysisView({
           cualquier puntaje null, aunque el ICP sí estuviera cargado y la
           razón real (ya explicada en justificacion) fuera otra — quedaba
           leyéndose como que faltaba subir el documento cuando no era así. */}
-      {(analysis.fit_empresa || analysis.fit_contacto) && (
-        <div className="grid md:grid-cols-2 gap-4">
+      {
+        // fit_cargo_contacto/fit_rol_contacto reemplazaron a fit_contacto
+        // (09-10-2026, pedido explícito del usuario) — el fallback a
+        // analysis.fit_contacto es solo para reuniones analizadas ANTES del
+        // cambio, que solo tienen el campo viejo.
+      }
+      {(() => {
+        const fitCargoContacto = analysis.fit_cargo_contacto ?? analysis.fit_contacto;
+        const fitRolContacto = analysis.fit_rol_contacto;
+        if (!analysis.fit_empresa && !fitCargoContacto && !fitRolContacto) return null;
+        return (
+      <div className="grid md:grid-cols-3 gap-4">
           {analysis.fit_empresa && (
             <CardShell className="p-5">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-3">
@@ -187,33 +197,65 @@ export default function AnalysisView({
               )}
             </CardShell>
           )}
-          {analysis.fit_contacto && (
+          {fitCargoContacto && (
             <CardShell className="p-5">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-3">
-                Fit Score — contacto
+              <p
+                className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-3 cursor-help"
+                title="Mide solo el cargo del contacto contra el ICP del cliente, sin mirar qué tan activo estuvo en esta llamada puntual."
+              >
+                Fit cargo — contacto
               </p>
-              {analysis.fit_contacto.puntaje != null ? (
+              {fitCargoContacto.puntaje != null ? (
                 <span
                   className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full"
                   style={{
-                    background: scoreColors(analysis.fit_contacto.puntaje, 10).bg,
-                    color: scoreColors(analysis.fit_contacto.puntaje, 10).fg,
+                    background: scoreColors(fitCargoContacto.puntaje, 10).bg,
+                    color: scoreColors(fitCargoContacto.puntaje, 10).fg,
                   }}
                 >
-                  {analysis.fit_contacto.puntaje}/10
+                  {fitCargoContacto.puntaje}/10
                 </span>
               ) : (
                 <span className="inline-flex items-center text-sm font-semibold px-3 py-1 rounded-full bg-gray-100 text-gray-500">
                   Sin puntaje
                 </span>
               )}
-              {analysis.fit_contacto.justificacion && (
-                <p className="text-sm text-gray-600 mt-3 leading-relaxed">{analysis.fit_contacto.justificacion}</p>
+              {fitCargoContacto.justificacion && (
+                <p className="text-sm text-gray-600 mt-3 leading-relaxed">{fitCargoContacto.justificacion}</p>
               )}
             </CardShell>
           )}
-        </div>
-      )}
+          {fitRolContacto && (
+            <CardShell className="p-5">
+              <p
+                className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-3 cursor-help"
+                title="Basado en lo que mostró esta conversación real, no solo el cargo — puede diferir del Fit cargo si en la práctica esa persona (u otra presente en la llamada) no tuvo o sí tuvo el poder de decisión esperado para este cargo. Sirve para ir aprendiendo si los cargos que el ICP asume como fit realmente actúan como decisores."
+              >
+                Fit rol — contacto ⓘ
+              </p>
+              {fitRolContacto.puntaje != null ? (
+                <span
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1 rounded-full"
+                  style={{
+                    background: scoreColors(fitRolContacto.puntaje, 10).bg,
+                    color: scoreColors(fitRolContacto.puntaje, 10).fg,
+                  }}
+                >
+                  {fitRolContacto.puntaje}/10
+                </span>
+              ) : (
+                <span className="inline-flex items-center text-sm font-semibold px-3 py-1 rounded-full bg-gray-100 text-gray-500">
+                  Sin puntaje
+                </span>
+              )}
+              {fitRolContacto.justificacion && (
+                <p className="text-sm text-gray-600 mt-3 leading-relaxed">{fitRolContacto.justificacion}</p>
+              )}
+            </CardShell>
+          )}
+      </div>
+        );
+      })()}
 
       {analysis.apuntes_clave?.resumen_general && (
         <CardShell className="p-5">

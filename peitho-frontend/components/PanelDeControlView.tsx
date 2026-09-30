@@ -401,7 +401,8 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
       altaPrediccionRate: pct(altaPrediccion, analizadas),
       desempeno: data.desempeno_vendedor_promedio != null ? data.desempeno_vendedor_promedio.toFixed(1) : "—",
       fitEmpresa: data.fit_empresa_promedio != null ? data.fit_empresa_promedio.toFixed(1) : "—",
-      fitContacto: data.fit_contacto_promedio != null ? data.fit_contacto_promedio.toFixed(1) : "—",
+      fitCargoContacto: data.fit_cargo_contacto_promedio != null ? data.fit_cargo_contacto_promedio.toFixed(1) : "—",
+      fitRolContacto: data.fit_rol_contacto_promedio != null ? data.fit_rol_contacto_promedio.toFixed(1) : "—",
     };
   }, [data]);
 
@@ -495,8 +496,13 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
               (base de conocimiento). Separado del grid de 4 KPIs de arriba
               (no es del mismo tipo: mide fit, no actividad/desempeño), y
               puede venir "—" si ningún cliente del filtro tiene ICP cargado
-              todavía — no es un bug, es la falta de ese dato. */}
-          <div className="grid grid-cols-2 gap-3.5">
+              todavía — no es un bug, es la falta de ese dato.
+              Fit cargo/rol contacto (09-10-2026, pedido explícito del
+              usuario) separan "el cargo en abstracto califica para el ICP"
+              de "esta persona mostró poder de decisión real en la
+              llamada" — ver AnalysisView para el detalle completo de esta
+              distinción. */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
             <StatCard
               value={kpis!.fitEmpresa === "—" ? "—" : `${kpis!.fitEmpresa}/10`}
               label="Fit Score empresa (promedio)"
@@ -504,10 +510,16 @@ export default function PanelDeControlView({ isAdmin, clients }: { isAdmin: bool
               onClick={() => setDrilldown("fit_empresa")}
             />
             <StatCard
-              value={kpis!.fitContacto === "—" ? "—" : `${kpis!.fitContacto}/10`}
-              label="Fit Score contacto (promedio)"
-              sub="qué tan alineados con el ICP"
-              onClick={() => setDrilldown("fit_contacto")}
+              value={kpis!.fitCargoContacto === "—" ? "—" : `${kpis!.fitCargoContacto}/10`}
+              label="Fit cargo contacto (promedio)"
+              sub="solo por el cargo, contra el ICP"
+              onClick={() => setDrilldown("fit_cargo_contacto")}
+            />
+            <StatCard
+              value={kpis!.fitRolContacto === "—" ? "—" : `${kpis!.fitRolContacto}/10`}
+              label="Fit rol contacto (promedio)"
+              sub="según poder de decisión real en la llamada"
+              onClick={() => setDrilldown("fit_rol_contacto")}
             />
           </div>
 
