@@ -35,11 +35,16 @@ type RecipientInfo = {
 
 function formatMeetingDate(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
-  const d = new Date(raw);
-  if (isNaN(d.getTime())) return raw;
-  return d.toLocaleString("es-CL", {
+  // El input datetime-local llega sin zona horaria (ej. "2026-10-05T16:30").
+  // Parsearlo con new Date() lo interpreta como UTC y convierte a la TZ del servidor.
+  // Para preservar la hora exacta que ingresó el usuario, parseamos los componentes manualmente.
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return raw;
+  const [, y, mo, d, h, mi] = match;
+  const dt = new Date(+y, +mo - 1, +d, +h, +mi);
+  return dt.toLocaleString("es-CL", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
-    hour: "2-digit", minute: "2-digit", timeZone: "America/Santiago",
+    hour: "2-digit", minute: "2-digit",
   });
 }
 
