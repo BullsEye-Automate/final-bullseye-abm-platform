@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     db.from("model_training_config")
       .select("style_tone, style_rules, style_avoid, style_email_length")
       .eq("client_id", client_id).maybeSingle(),
-    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg, icp_industry_id").eq("client_id", client_id)
+    db.from("training_segments").select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg, icp_industry_id, context_mode").eq("client_id", client_id)
       .order("created_at", { ascending: true }),
     db.from("message_examples").select("*").eq("client_id", client_id).is("segment_id", null)
       .order("created_at", { ascending: false }).limit(5),
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       db.from("message_examples").select("*").eq("segment_id", segmentId)
         .order("created_at", { ascending: false }).limit(5),
       db.from("training_segments")
-        .select("message_focus, style_tone, style_rules, style_avoid, style_email_length")
+        .select("message_focus, style_tone, style_rules, style_avoid, style_email_length, context_mode")
         .eq("id", segmentId).maybeSingle(),
     ]);
 
@@ -119,6 +119,7 @@ export async function POST(req: NextRequest) {
         jobTitle:     e.job_title    ?? "",
       })),
       messageFocus: segStyle?.message_focus ?? undefined,
+      contextMode: ((segStyle as any)?.context_mode ?? "all") as "all" | "icp_only" | "segment_only",
       styleGuide: hasSegmentStyle ? {
         tone:        segStyle?.style_tone         ?? "",
         rules:       segStyle?.style_rules        ?? "",
