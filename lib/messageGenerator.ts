@@ -52,6 +52,7 @@ export type SegmentContext = {
   examples?: FewShotExample[];
   messageFocus?: string;  // qué ángulo/objetivo deben tener los mensajes
   styleGuide?: StyleGuide; // guía de estilo propia del segmento (sobreescribe la global)
+  contextMode?: "all" | "icp_only" | "segment_only"; // qué contexto incluir al generar
 };
 
 export type ContactMessageInput = {
@@ -122,7 +123,8 @@ function buildSystemPrompt(
 ): string {
   const parts: string[] = [BASE_SYSTEM_PROMPT];
 
-  if (segmentCtx?.sources?.trim()) {
+  const includeSources = (segmentCtx?.contextMode ?? "all") !== "icp_only";
+  if (includeSources && segmentCtx?.sources?.trim()) {
     const sourcesText = segmentCtx.sources.length > MAX_SOURCES_CHARS
       ? segmentCtx.sources.slice(0, MAX_SOURCES_CHARS) + "\n[... contenido truncado por límite de contexto]"
       : segmentCtx.sources;
@@ -396,10 +398,12 @@ export async function generateContactMessages(
       },
     };
 
-    const sequencePrompt = `${langInstruction}
+    const contextMode = segmentContext?.contextMode ?? "all";
+    const includeIcp     = contextMode !== "segment_only";
+    const includeSources = contextMode !== "icp_only";
 
-Contexto del ICP:
-${icpContext ?? "No disponible"}${deepResearchContext}
+    const sequencePrompt = `${langInstruction}
+${includeIcp ? `\nContexto del ICP:\n${icpContext ?? "No disponible"}` : ""}${deepResearchContext}
 
 Datos del contacto:
 ${contactInfo || "No disponibles"}
@@ -492,10 +496,11 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
     },
   };
 
-  const userPrompt = `${langInstruction}
+  const contextModeSimple = segmentContext?.contextMode ?? "all";
+  const includeIcpSimple  = contextModeSimple !== "segment_only";
 
-Contexto del ICP:
-${icpContext ?? "No disponible"}${deepResearchContext}
+  const userPrompt = `${langInstruction}
+${includeIcpSimple ? `\nContexto del ICP:\n${icpContext ?? "No disponible"}` : ""}${deepResearchContext}
 
 Datos del contacto:
 ${contactInfo || "No disponibles"}

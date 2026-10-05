@@ -79,6 +79,8 @@ type Segment = {
   style_email_length: string | null;
   // ICP de industria específico para este segmento
   icp_industry_id:    string | null;
+  // Qué contexto usar al generar mensajes
+  context_mode:       "all" | "icp_only" | "segment_only" | null;
 };
 
 type IcpIndustry = {
@@ -926,6 +928,45 @@ function SegmentsTab({ clientId }: { clientId: string }) {
                   {!seg.message_focus && !seg.style_tone && !seg.style_rules && !seg.style_avoid && !seg.style_email_length && (
                     <p className="text-xs text-ink-muted italic">Sin guía de estilo configurada. La IA usará la guía global del cliente.</p>
                   )}
+
+                  {/* Selector de contexto de generación */}
+                  <div className="border-t border-[#F0EEF8] pt-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted mb-2">Contexto al generar mensajes</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {([
+                        { value: "all",          label: "Todo",           desc: "Propuesta de valor + fuentes del segmento" },
+                        { value: "icp_only",     label: "Solo ICP",       desc: "Solo propuesta de valor, sin fuentes" },
+                        { value: "segment_only", label: "Solo segmento",  desc: "Solo fuentes de conocimiento, sin propuesta de valor" },
+                      ] as const).map(opt => {
+                        const active = (seg.context_mode ?? "all") === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            title={opt.desc}
+                            onClick={async () => {
+                              await fetch(`/api/training/segments/${seg.id}`, {
+                                method: "PATCH",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ context_mode: opt.value }),
+                              });
+                              setSegments(prev => prev.map(s => s.id === seg.id ? { ...s, context_mode: opt.value } : s));
+                            }}
+                            className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${active
+                              ? "border-[#62E0D8] bg-[#62E0D8]/10 text-[#62E0D8] font-semibold"
+                              : "border-[#E5E2F0] text-ink-muted hover:bg-gray-50"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-ink-muted mt-1.5">
+                      {(seg.context_mode ?? "all") === "all"          && "Usa propuesta de valor del cliente más las fuentes de este segmento."}
+                      {seg.context_mode === "icp_only"     && "Ignora las fuentes del segmento. Solo usa la propuesta de valor del cliente."}
+                      {seg.context_mode === "segment_only" && "Ignora la propuesta de valor. Solo usa las fuentes de conocimiento de este segmento."}
+                    </p>
+                  </div>
                 </div>
               )}
 
