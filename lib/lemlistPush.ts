@@ -153,9 +153,10 @@ export async function pushContactsToLemlist(
             .join("\n\n");
 
           segmentContext = {
-            id:       routing.segmentId,
-            name:     routing.segmentName ?? "",
-            sources:  sourcesText,
+            id:           routing.segmentId,
+            name:         routing.segmentName ?? "",
+            sources:      sourcesText,
+            messageFocus: matchedSegment?.routing_hint || undefined,
             examples: (segExamples ?? []).map((e) => ({
               emailSubject: e.email_subject,
               emailBody:    e.email_body,

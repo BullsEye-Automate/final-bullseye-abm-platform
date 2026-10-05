@@ -135,11 +135,11 @@ function buildSystemPrompt(
     parts.push(`\n## FOCO DE LOS MENSAJES PARA ESTE SEGMENTO`);
     parts.push(`Todos los mensajes deben girar en torno a este objetivo:\n${segmentCtx.messageFocus}`);
     parts.push(
-      `\nRESTRICCIÓN DE INDUSTRIA: El foco anterior define la industria y contexto de este segmento. ` +
-      `Puedes usar libremente la información general del cliente (propuesta de valor, capacidades, casos de éxito genéricos). ` +
-      `Sin embargo, cuando hagas referencias específicas de industria (datos, problemas, terminología, empresas de ejemplo), ` +
-      `limítate ESTRICTAMENTE al contexto descrito en el foco. ` +
-      `Si en el contexto disponible hay información de otras industrias, IGNÓRALA completamente al escribir este mensaje.`
+      `\nPRIORIDAD DEL FOCO: El foco anterior es la instrucción principal que dirige este mensaje. ` +
+      `La propuesta de valor del cliente es contexto de fondo — úsala solo en la medida en que el foco lo permita o exija. ` +
+      `Si el foco indica basarse exclusivamente en las fuentes de conocimiento, hazlo así y no incorpores la propuesta de valor. ` +
+      `Si el foco integra ambas, combínalas respetando el ángulo y objetivo que el foco define. ` +
+      `Cuando hagas referencias específicas de industria (datos, terminología, empresas), limítate al contexto del foco y las fuentes del segmento.`
     );
   }
 
