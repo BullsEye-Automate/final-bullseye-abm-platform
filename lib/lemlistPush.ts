@@ -48,7 +48,7 @@ export async function pushContactsToLemlist(
       .eq("client_id", params.client_id)
       .maybeSingle(),
     db.from("training_segments")
-      .select("id, name, routing_hint, email_count, linkedin_msg_count, include_connect_msg")
+      .select("id, name, routing_hint, message_focus, style_tone, style_rules, style_avoid, style_email_length, email_count, linkedin_msg_count, include_connect_msg")
       .eq("client_id", params.client_id)
       .order("created_at", { ascending: true }),
   ]);
@@ -156,7 +156,13 @@ export async function pushContactsToLemlist(
             id:           routing.segmentId,
             name:         routing.segmentName ?? "",
             sources:      sourcesText,
-            messageFocus: matchedSegment?.routing_hint || undefined,
+            messageFocus: (matchedSegment as any)?.message_focus || undefined,
+            styleGuide: (matchedSegment as any)?.style_tone || (matchedSegment as any)?.style_rules ? {
+              tone:        (matchedSegment as any).style_tone        ?? "",
+              rules:       (matchedSegment as any).style_rules       ?? "",
+              avoid:       (matchedSegment as any).style_avoid       ?? "",
+              emailLength: (matchedSegment as any).style_email_length ?? "corto",
+            } : undefined,
             examples: (segExamples ?? []).map((e) => ({
               emailSubject: e.email_subject,
               emailBody:    e.email_body,
