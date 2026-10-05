@@ -397,8 +397,8 @@ export async function generateContactMessages(
     };
 
     const icpBlock = segmentContext?.messageFocus
-      ? "" // el foco indica que las fuentes del segmento son el contexto principal; omitir propuesta de valor
-      : `Contexto del ICP:\n${icpContext ?? "No disponible"}\n`;
+      ? `Contexto del cliente (referencia de fondo — el FOCO DEL SEGMENTO en el sistema tiene prioridad absoluta sobre este bloque):\n${icpContext ?? "No disponible"}`
+      : `Contexto del ICP:\n${icpContext ?? "No disponible"}`;
 
     const sequencePrompt = `${langInstruction}
 
@@ -496,8 +496,8 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
   };
 
   const icpBlockSimple = segmentContext?.messageFocus
-    ? ""
-    : `Contexto del ICP:\n${icpContext ?? "No disponible"}\n`;
+    ? `Contexto del cliente (referencia de fondo — el FOCO DEL SEGMENTO en el sistema tiene prioridad absoluta sobre este bloque):\n${icpContext ?? "No disponible"}`
+    : `Contexto del ICP:\n${icpContext ?? "No disponible"}`;
 
   const userPrompt = `${langInstruction}
 
