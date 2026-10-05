@@ -238,6 +238,8 @@ export default function CampanaHibridaPage() {
   const [icpLoaded, setIcpLoaded]       = useState(false);
   const [icpSummary, setIcpSummary]     = useState("");
   const [sourcesCount, setSourcesCount] = useState<number | null>(null);
+  const [segments, setSegments]         = useState<{ id: string; name: string; source_count: number }[]>([]);
+  const [segmentId, setSegmentId]       = useState<string>("__all__");
 
   // Upload
   const fileRef                         = useRef<HTMLInputElement>(null);
@@ -279,14 +281,16 @@ export default function CampanaHibridaPage() {
       .then(r => r.json())
       .then(async d => {
         const segs = d.segments ?? [];
-        if (!segs.length) { setSourcesCount(0); return; }
+        if (!segs.length) { setSourcesCount(0); setSegments([]); return; }
         const counts = await Promise.all(segs.map((s: any) =>
           fetch(`/api/training/segments/${s.id}/sources`)
             .then(r => r.json()).then(d2 => (d2.sources ?? []).length).catch(() => 0)
         ));
-        setSourcesCount(counts.reduce((a: number, b: number) => a + b, 0));
+        const total = counts.reduce((a: number, b: number) => a + b, 0);
+        setSourcesCount(total);
+        setSegments(segs.map((s: any, i: number) => ({ id: s.id, name: s.name, source_count: counts[i] })));
       })
-      .catch(() => setSourcesCount(0));
+      .catch(() => { setSourcesCount(0); setSegments([]); });
 
     fetch(`/api/lemlist/campaigns?client_id=${clientId}`)
       .then(r => r.json())
@@ -383,7 +387,7 @@ export default function CampanaHibridaPage() {
       const res = await fetch("/api/campana-hibrida/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: clientId, contacts }),
+        body: JSON.stringify({ client_id: clientId, contacts, segment_id: segmentId !== "__all__" ? segmentId : undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Error generando matriz");
@@ -506,6 +510,35 @@ export default function CampanaHibridaPage() {
               )}
             </div>
           </div>
+
+          {/* Segmento de conocimiento */}
+          {segments.length > 0 && (
+            <div>
+              <label className="block text-xs font-semibold text-ink-muted uppercase tracking-wide mb-1.5">
+                Segmento de conocimiento
+              </label>
+              <div className="relative">
+                <select
+                  value={segmentId}
+                  onChange={e => setSegmentId(e.target.value)}
+                  className="input w-full appearance-none pr-8"
+                >
+                  <option value="__all__">Todos los segmentos (contexto completo del cliente)</option>
+                  {segments.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.source_count > 0 ? ` — ${s.source_count} fuente${s.source_count !== 1 ? "s" : ""}` : ""}
+                    </option>
+                  ))}
+                </select>
+                <IconChevronDown size={16} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
+              </div>
+              {segmentId !== "__all__" && (
+                <div className="text-xs text-[#62E0D8] mt-1.5">
+                  Solo se usarán las fuentes de este segmento — se omite la propuesta de valor general.
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Campaña Lemlist */}
           <div>

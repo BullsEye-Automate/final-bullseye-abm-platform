@@ -28,34 +28,43 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "Body inválido" }, { status: 400 });
 
-  const { client_id, contacts }: { client_id: string; contacts: ContactRow[] } = body;
+  const { client_id, contacts, segment_id }: { client_id: string; contacts: ContactRow[]; segment_id?: string } = body;
   if (!client_id || !contacts?.length)
     return NextResponse.json({ error: "Se requieren client_id y contacts" }, { status: 400 });
 
   const db = supabaseAdmin();
 
-  // Obtener contexto del cliente: icp_config + model_training_config + segment_sources
-  const [{ data: icpData }, { data: tc }, { data: segments }] = await Promise.all([
-    db.from("icp_config")
-      .select("notes")
-      .eq("client_id", client_id)
-      .eq("is_active", true)
-      .order("version", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    db.from("model_training_config")
-      .select("business_description, value_props, talking_points, target_buyer_persona")
-      .eq("client_id", client_id)
-      .maybeSingle(),
+  // Si hay segmento específico, usarlo solo — sin propuesta de valor general
+  const soloSegmento = !!segment_id;
+
+  const [{ data: icpData }, { data: tc }, segmentRows] = await Promise.all([
+    soloSegmento
+      ? Promise.resolve({ data: null })
+      : db.from("icp_config")
+          .select("notes")
+          .eq("client_id", client_id)
+          .eq("is_active", true)
+          .order("version", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+    soloSegmento
+      ? Promise.resolve({ data: null })
+      : db.from("model_training_config")
+          .select("business_description, value_props, talking_points, target_buyer_persona")
+          .eq("client_id", client_id)
+          .maybeSingle(),
     db.from("training_segments")
       .select("id")
       .eq("client_id", client_id),
   ]);
 
-  // Cargar fuentes de conocimiento de todos los segmentos del cliente
+  // Cargar fuentes: si hay segment_id específico, solo ese; si no, todos los segmentos del cliente
   let sourcesContent = "";
-  if (segments && segments.length > 0) {
-    const segmentIds = segments.map((s: any) => s.id);
+  const segmentIds = soloSegmento
+    ? [segment_id!]
+    : (segmentRows.data ?? []).map((s: any) => s.id);
+
+  if (segmentIds.length > 0) {
     const { data: sources } = await db
       .from("segment_sources")
       .select("content, title, source_type")
@@ -66,26 +75,36 @@ export async function POST(req: NextRequest) {
       sourcesContent = sources
         .map((s: any) => `[${s.title ?? s.source_type}]\n${(s.content ?? "").slice(0, 3000)}`)
         .join("\n\n---\n\n")
-        .slice(0, 15000); // límite total para no exceder contexto
+        .slice(0, 15000);
     }
   }
 
-  const propuestaDeValor = [
-    icpData?.notes,
-    tc?.value_props          && `Propuesta de valor: ${tc.value_props}`,
-    tc?.business_description && `Descripción del negocio: ${tc.business_description}`,
-    tc?.talking_points       && `Puntos clave: ${tc.talking_points}`,
-  ].filter(Boolean).join("\n\n");
+  let contextoCliente: string;
+  let descripcionServicio = "";
+  let clienteIdeal = "";
 
-  // El contexto completo incluye fuentes de conocimiento
-  const contextoCliente = [propuestaDeValor, sourcesContent && `\n\nFuentes de conocimiento del cliente:\n${sourcesContent}`]
-    .filter(Boolean).join("\n\n");
+  if (soloSegmento) {
+    // Modo segmento específico: solo fuentes, sin propuesta de valor general
+    if (!sourcesContent)
+      return NextResponse.json({ error: "El segmento seleccionado no tiene fuentes de conocimiento con contenido." }, { status: 400 });
+    contextoCliente = `Fuentes de conocimiento del segmento:\n\n${sourcesContent}`;
+  } else {
+    const propuestaDeValor = [
+      icpData?.notes,
+      tc?.value_props          && `Propuesta de valor: ${tc.value_props}`,
+      tc?.business_description && `Descripción del negocio: ${tc.business_description}`,
+      tc?.talking_points       && `Puntos clave: ${tc.talking_points}`,
+    ].filter(Boolean).join("\n\n");
 
-  if (!contextoCliente)
-    return NextResponse.json({ error: "No hay contexto de cliente configurado. Ve a Sistema → ICP o Entrenar modelo." }, { status: 400 });
+    contextoCliente = [propuestaDeValor, sourcesContent && `\n\nFuentes de conocimiento del cliente:\n${sourcesContent}`]
+      .filter(Boolean).join("\n\n");
 
-  const descripcionServicio = tc?.business_description ?? "";
-  const clienteIdeal = tc?.target_buyer_persona ?? "";
+    if (!contextoCliente)
+      return NextResponse.json({ error: "No hay contexto de cliente configurado. Ve a Sistema → ICP o Entrenar modelo." }, { status: 400 });
+
+    descripcionServicio = tc?.business_description ?? "";
+    clienteIdeal = tc?.target_buyer_persona ?? "";
+  }
 
   const model = await getClientModel(db, client_id);
 
