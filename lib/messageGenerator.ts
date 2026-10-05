@@ -396,10 +396,13 @@ export async function generateContactMessages(
       },
     };
 
+    const icpBlock = segmentContext?.messageFocus
+      ? `Contexto del cliente (referencia de fondo — el FOCO DEL SEGMENTO en el sistema tiene prioridad absoluta sobre este bloque):\n${icpContext ?? "No disponible"}`
+      : `Contexto del ICP:\n${icpContext ?? "No disponible"}`;
+
     const sequencePrompt = `${langInstruction}
 
-Contexto del ICP:
-${icpContext ?? "No disponible"}${deepResearchContext}
+${icpBlock}${deepResearchContext}
 
 Datos del contacto:
 ${contactInfo || "No disponibles"}
@@ -492,10 +495,13 @@ Usa la herramienta generate_messages para entregar la secuencia estructurada.`;
     },
   };
 
+  const icpBlockSimple = segmentContext?.messageFocus
+    ? `Contexto del cliente (referencia de fondo — el FOCO DEL SEGMENTO en el sistema tiene prioridad absoluta sobre este bloque):\n${icpContext ?? "No disponible"}`
+    : `Contexto del ICP:\n${icpContext ?? "No disponible"}`;
+
   const userPrompt = `${langInstruction}
 
-Contexto del ICP:
-${icpContext ?? "No disponible"}${deepResearchContext}
+${icpBlockSimple}${deepResearchContext}
 
 Datos del contacto:
 ${contactInfo || "No disponibles"}
