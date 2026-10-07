@@ -439,6 +439,8 @@ export default function SubirCampanaPage() {
   const [segmentsLoading, setSegmentsLoading] = useState(false);
   const [clientModel, setClientModel]   = useState<string | null>(null);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string>("");
+  const [lemlistCampaigns, setLemlistCampaigns] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
   const [deepResearchSet, setDeepResearchSet] = useState<Set<number>>(new Set());
   const [localEdits, setLocalEdits] = useState<Record<number, Partial<GeneratedContact>>>({});
@@ -471,7 +473,7 @@ export default function SubirCampanaPage() {
       .catch(() => setClientModel(null));
   }, [currentClient?.id]);
 
-  // ── Cargar segmentos del cliente (se ejecuta al montar y cuando cambia el cliente) ──
+  // ── Cargar segmentos y campañas del cliente ──
   useEffect(() => {
     if (!currentClient?.id) return;
     setSegmentsLoading(true);
@@ -479,12 +481,20 @@ export default function SubirCampanaPage() {
       const MAX_ATTEMPTS = 4;
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
         try {
-          const r = await fetch(`/api/training/segments?client_id=${currentClient.id}`);
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          const { segments: segs } = await r.json();
+          const [segRes, campRes] = await Promise.all([
+            fetch(`/api/training/segments?client_id=${currentClient.id}`),
+            fetch(`/api/lemlist/campaigns?client_id=${currentClient.id}`),
+          ]);
+          if (!segRes.ok) throw new Error(`HTTP ${segRes.status}`);
+          const { segments: segs } = await segRes.json();
           const mapped = (segs ?? []).map((s: { id: string; name: string }) => ({ id: s.id, name: s.name }));
           setSegments(mapped);
           setSelectedSegmentId((prev) => prev || mapped[0]?.id || "");
+          if (campRes.ok) {
+            const campData = await campRes.json();
+            const camps = campData.campaigns ?? campData ?? [];
+            setLemlistCampaigns(camps);
+          }
           break;
         } catch {
           if (attempt < MAX_ATTEMPTS - 1) await new Promise((res) => setTimeout(res, 800 * (attempt + 1)));
@@ -649,7 +659,7 @@ export default function SubirCampanaPage() {
     const res = await fetch("/api/lemlist/csv-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: currentClient.id, contacts: toSend }),
+      body: JSON.stringify({ client_id: currentClient.id, contacts: toSend, campaign_id: selectedCampaignId || undefined }),
     });
     const d = await res.json();
     setPushResult(d);
@@ -1084,26 +1094,44 @@ export default function SubirCampanaPage() {
           </div>
 
           {!isGenerating && (
-            <div className="flex items-center justify-between pt-2">
-              {/* Botón de nueva carga cuando la generación en contexto ya terminó */}
-              {generation.stage === "done" && isActiveGeneration ? (
-                <button
-                  onClick={reset}
-                  className="text-sm border border-[#E5E2F0] px-4 py-2 rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5"
-                >
-                  <IconX size={13} /> Nueva carga
-                </button>
-              ) : (
-                <div />
+            <div className="space-y-3 pt-2">
+              {/* Selector de campaña Lemlist */}
+              {lemlistCampaigns.length > 0 && (
+                <div className="flex items-center gap-3 p-3 rounded-xl border border-[#E5E2F0] bg-gray-50/50">
+                  <IconSend size={14} className="text-ink-muted shrink-0" />
+                  <label className="text-sm text-ink-muted shrink-0">Campaña destino:</label>
+                  <select
+                    value={selectedCampaignId}
+                    onChange={(e) => setSelectedCampaignId(e.target.value)}
+                    className="flex-1 text-sm border border-[#E5E2F0] rounded-lg px-3 py-1.5 outline-none focus:border-[#62E0D8] bg-white"
+                  >
+                    <option value="">Campaña principal del cliente</option>
+                    {lemlistCampaigns.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
               )}
-              <button
-                onClick={handlePush}
-                disabled={selectedIndexes.size === 0}
-                className="btn-primary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <IconSend size={14} />
-                Enviar {selectedIndexes.size} a Lemlist
-              </button>
+              <div className="flex items-center justify-between">
+                {generation.stage === "done" && isActiveGeneration ? (
+                  <button
+                    onClick={reset}
+                    className="text-sm border border-[#E5E2F0] px-4 py-2 rounded-lg hover:bg-gray-50 transition flex items-center gap-1.5"
+                  >
+                    <IconX size={13} /> Nueva carga
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <button
+                  onClick={handlePush}
+                  disabled={selectedIndexes.size === 0}
+                  className="btn-primary flex items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <IconSend size={14} />
+                  Enviar {selectedIndexes.size} a Lemlist
+                </button>
+              </div>
             </div>
           )}
         </div>

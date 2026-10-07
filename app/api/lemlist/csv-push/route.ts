@@ -26,14 +26,14 @@ type ContactToPush = {
 };
 
 export async function POST(req: NextRequest) {
-  let body: { client_id: string; contacts: ContactToPush[] };
+  let body: { client_id: string; contacts: ContactToPush[]; campaign_id?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Body inválido" }, { status: 400 });
   }
 
-  const { client_id, contacts } = body;
+  const { client_id, contacts, campaign_id: overrideCampaignId } = body;
   if (!client_id || !contacts?.length) {
     return NextResponse.json({ error: "Se requiere client_id y contacts" }, { status: 400 });
   }
@@ -41,18 +41,21 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
   const apiKey = await getLemlistApiKey(db, client_id);
   if (!apiKey) return NextResponse.json({ error: "LEMLIST_API_KEY no configurado" }, { status: 500 });
-  const { data: config } = await db
-    .from("client_configs")
-    .select("lemlist_campaign_id")
-    .eq("client_id", client_id)
-    .maybeSingle();
 
-  if (!config?.lemlist_campaign_id) {
-    return NextResponse.json({ error: "No hay campaña configurada para este cliente" }, { status: 400 });
+  let campaignId = overrideCampaignId ?? null;
+  if (!campaignId) {
+    const { data: config } = await db
+      .from("client_configs")
+      .select("lemlist_campaign_id")
+      .eq("client_id", client_id)
+      .maybeSingle();
+    if (!config?.lemlist_campaign_id) {
+      return NextResponse.json({ error: "No hay campaña configurada para este cliente" }, { status: 400 });
+    }
+    campaignId = config.lemlist_campaign_id;
   }
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
-  const campaignId  = config.lemlist_campaign_id;
 
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
