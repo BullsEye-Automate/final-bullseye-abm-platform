@@ -662,7 +662,7 @@ export default function SubirCampanaPage() {
       body: JSON.stringify({ client_id: currentClient.id, contacts: toSend, campaign_id: selectedCampaignId || undefined }),
     });
     const d = await res.json();
-    setPushResult(d);
+    setPushResult({ pushed: d.pushed ?? 0, skipped: d.skipped ?? 0, errors: d.errors ?? (d.error ? [{ email: "-", error: d.error }] : []) });
     // Marcar el grupo como enviado en Supabase
     if (generation.groupId) {
       fetch(`/api/message-groups/${generation.groupId}`, {
