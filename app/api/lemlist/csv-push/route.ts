@@ -49,10 +49,20 @@ export async function POST(req: NextRequest) {
       .select("lemlist_campaign_id")
       .eq("client_id", client_id)
       .maybeSingle();
-    if (!config?.lemlist_campaign_id) {
-      return NextResponse.json({ error: "No hay campaña configurada para este cliente" }, { status: 400 });
-    }
-    campaignId = config.lemlist_campaign_id;
+    campaignId = config?.lemlist_campaign_id ?? null;
+  }
+  if (!campaignId) {
+    // Fallback: primera campaña asociada al cliente en client_lemlist_campaigns
+    const { data: assoc } = await db
+      .from("client_lemlist_campaigns")
+      .select("campaign_id")
+      .eq("client_id", client_id)
+      .limit(1)
+      .maybeSingle();
+    campaignId = assoc?.campaign_id ?? null;
+  }
+  if (!campaignId) {
+    return NextResponse.json({ error: "No hay campaña configurada para este cliente" }, { status: 400 });
   }
 
   const credentials = Buffer.from(`:${apiKey}`).toString("base64");
