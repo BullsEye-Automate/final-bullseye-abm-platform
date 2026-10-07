@@ -158,31 +158,10 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
     let aborted = false;
 
     for (let i = 0; i < parsed.length; i++) {
-      if (aborted) {
-        updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
-        if (groupId) persistContact(groupId, i, updated[i]);
-        continue;
-      }
-
-      if (i > 0) {
-        await new Promise<void>((resolve) => {
-          const t = setTimeout(resolve, 3000);
-          const check = setInterval(() => {
-            if (abortControllerRef.current?.signal.aborted) {
-              clearTimeout(t); clearInterval(check); resolve();
-            }
-          }, 100);
-          abortControllerRef.current?.signal.addEventListener("abort", () => {
-            clearTimeout(t); clearInterval(check); resolve();
-          }, { once: true });
-        });
-      }
-
-      if (abortControllerRef.current?.signal.aborted) {
+      // Verificar abort/cancelación antes de cada contacto (sin timer — el fetch mismo demora ~15s)
+      if (aborted || abortControllerRef.current?.signal.aborted) {
         aborted = true;
         updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
-        const snap = [...updated];
-        setState((prev) => ({ ...prev, contacts: snap, genProgress: i + 1 }));
         if (groupId) persistContact(groupId, i, updated[i]);
         continue;
       }
