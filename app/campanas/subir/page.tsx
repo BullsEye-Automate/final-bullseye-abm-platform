@@ -457,6 +457,11 @@ export default function SubirCampanaPage() {
   const genProgress = isActiveGeneration ? generation.genProgress : 0;
   const genErrors = isActiveGeneration ? generation.genErrors : 0;
 
+  // Contactos pendientes: no cancelados y sin mensaje generado
+  const pendingCount = isActiveGeneration && !isGenerating
+    ? contacts.filter((c) => !c.cancelled && !c.emailSubject && !c.connectMessage).length
+    : 0;
+
   // Seleccionar automáticamente los contactos exitosos cuando termina la generación
   useEffect(() => {
     if (isActiveGeneration && !isGenerating && contacts.length > 0 && selectedIndexes.size === 0) {
@@ -1010,6 +1015,29 @@ export default function SubirCampanaPage() {
                   style={{ width: `${generation.contacts.length > 0 ? (genProgress / generation.contacts.length) * 100 : 0}%`, background: "#62E0D8" }}
                 />
               </div>
+            </div>
+          )}
+
+          {/* Banner de pendientes — cuando la generación se detuvo y quedaron contactos sin generar */}
+          {!isGenerating && pendingCount > 0 && (
+            <div className="card px-5 py-4 flex items-center justify-between border border-amber-200 bg-amber-50/60">
+              <div className="flex items-center gap-2">
+                <IconAlertCircle size={16} className="text-amber-500 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-ink">
+                    {pendingCount} contacto{pendingCount !== 1 ? "s" : ""} sin generar
+                  </p>
+                  <p className="text-xs text-ink-muted">La generación se interrumpió antes de completarse.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => generation.resumePending()}
+                className="flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg transition shrink-0"
+                style={{ background: "#251762", color: "white" }}
+              >
+                <IconRefresh size={14} />
+                Continuar pendientes
+              </button>
             </div>
           )}
 
