@@ -56,11 +56,12 @@ type GenerationState = {
   cancelAll: () => void;
   resetGeneration: () => void;
   updateContact: (index: number, fields: Partial<GeneratedContact>) => void;
+  resumePending: () => void;
 };
 
 // ─── Estado inicial ────────────────────────────────────────────────────────────
 
-const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "cancelContact" | "cancelAll" | "resetGeneration" | "updateContact"> = {
+const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "cancelContact" | "cancelAll" | "resetGeneration" | "updateContact" | "resumePending"> = {
   isGenerating: false,
   stage: "idle",
   contacts: [],
@@ -83,6 +84,8 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
   const abortControllerRef = useRef<AbortController | null>(null);
   const skippedRef = useRef<Set<number>>(new Set());
   const groupIdRef = useRef<string | null>(null);
+  const stateRef = useRef(state);
+  stateRef.current = state; // siempre apunta al estado actual
 
   // Guarda un contacto generado en el grupo persistente (fire-and-forget)
   function persistContact(groupId: string, index: number, contact: GeneratedContact) {
@@ -256,6 +259,107 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
     setState(INITIAL_STATE);
   }, []);
 
+  // Retomar generación para contactos que quedaron sin generar (error no-cancelado o sin emailSubject/connectMessage)
+  const resumePending = useCallback(async () => {
+    if (isRunningRef.current) return;
+
+    const snapshot = stateRef.current;
+    if (!snapshot || !snapshot.clientId) return;
+
+    const { contacts, clientId, segmentId, deepResearchSet, groupId } = snapshot;
+
+    // Índices pendientes: tienen error (no cancelados) o nunca se generaron
+    const pendingIndexes = contacts
+      .map((c, i) => ({ c, i }))
+      .filter(({ c }) => !c.cancelled && !c.emailSubject && !c.connectMessage)
+      .map(({ i }) => i);
+
+    if (pendingIndexes.length === 0) return;
+
+    isRunningRef.current = true;
+    abortControllerRef.current = null;
+    skippedRef.current = new Set();
+
+    setState((prev) => ({
+      ...prev,
+      isGenerating: true,
+      stage: "generating",
+      genErrors: 0,
+    }));
+
+    const updated = [...contacts];
+    let errCount = 0;
+    let aborted = false;
+
+    for (const i of pendingIndexes) {
+      if (aborted || abortControllerRef.current?.signal.aborted) {
+        aborted = true;
+        updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
+        if (groupId) persistContact(groupId, i, updated[i]);
+        const snap = [...updated];
+        setState((prev) => ({ ...prev, contacts: snap }));
+        continue;
+      }
+
+      if (skippedRef.current.has(i)) {
+        updated[i] = { ...updated[i], cancelled: true, error: "Cancelado" };
+        const snap = [...updated];
+        setState((prev) => ({ ...prev, contacts: snap }));
+        if (groupId) persistContact(groupId, i, updated[i]);
+        continue;
+      }
+
+      // Limpiar error anterior para mostrar spinner
+      updated[i] = { ...updated[i], error: undefined, cancelled: undefined };
+      setState((prev) => ({ ...prev, contacts: [...updated] }));
+
+      const ac = new AbortController();
+      abortControllerRef.current = ac;
+
+      let success = false;
+      let lastError = "";
+
+      for (let attempt = 0; attempt <= 2 && !success && !aborted; attempt++) {
+        try {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
+          const res = await fetch("/api/lemlist/csv-generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              client_id:         clientId,
+              contacts:          [updated[i]],
+              segment_id:        segmentId || undefined,
+              use_deep_research: deepResearchSet.has(i),
+            }),
+            signal: ac.signal,
+          });
+          if (res.ok) {
+            const { results } = await res.json();
+            if (results?.[0]) updated[i] = { ...updated[i], ...results[0] };
+            success = true;
+          } else {
+            lastError = `Error ${res.status}`;
+          }
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name === "AbortError") { aborted = true; break; }
+          lastError = "Error de red";
+        }
+      }
+
+      if (!success && !aborted) {
+        errCount++;
+        updated[i] = { ...updated[i], error: lastError };
+      }
+
+      if (groupId) persistContact(groupId, i, updated[i]);
+      setState((prev) => ({ ...prev, contacts: [...updated], genErrors: errCount }));
+    }
+
+    abortControllerRef.current = null;
+    isRunningRef.current = false;
+    setState((prev) => ({ ...prev, isGenerating: false, stage: "done" }));
+  }, []);
+
   const updateContact = useCallback((index: number, fields: Partial<GeneratedContact>) => {
     setState((prev) => {
       const next = [...prev.contacts];
@@ -275,6 +379,7 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
     cancelAll,
     resetGeneration,
     updateContact,
+    resumePending,
   };
 
   return (
