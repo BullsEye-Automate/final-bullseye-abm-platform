@@ -27,19 +27,19 @@ export async function GET(req: NextRequest) {
   const raw = await res.json();
   const campaigns: any[] = Array.isArray(raw) ? raw : (raw.campaigns ?? raw.data ?? []);
 
-  // Filtrar campañas asociadas al cliente
-  const { data: assoc } = await db
-    .from("client_lemlist_campaigns")
-    .select("campaign_id")
-    .eq("client_id", clientId);
+  // Recopilar IDs de campaña asociados al cliente desde ambas fuentes
+  const [{ data: assoc }, { data: config }] = await Promise.all([
+    db.from("client_lemlist_campaigns").select("campaign_id").eq("client_id", clientId),
+    db.from("client_configs").select("lemlist_campaign_id, lemlist_staging_campaign_id").eq("client_id", clientId).maybeSingle(),
+  ]);
 
-  // Si hay asociaciones registradas, filtrar solo esas; si no hay ninguna, devolver todas
-  // (compatibilidad con clientes que aún no tienen la tabla poblada)
-  const allowedIds = assoc && assoc.length > 0
-    ? new Set(assoc.map((a) => a.campaign_id))
-    : null;
+  const allowedIds = new Set<string>();
+  (assoc ?? []).forEach((a) => a.campaign_id && allowedIds.add(a.campaign_id));
+  if (config?.lemlist_campaign_id)         allowedIds.add(config.lemlist_campaign_id);
+  if (config?.lemlist_staging_campaign_id) allowedIds.add(config.lemlist_staging_campaign_id);
 
-  const filtered = allowedIds
+  // Si no hay ninguna configurada, devolver todas (compatibilidad)
+  const filtered = allowedIds.size > 0
     ? campaigns.filter((c: any) => allowedIds.has(c._id ?? c.id))
     : campaigns;
 
