@@ -27,8 +27,24 @@ export async function GET(req: NextRequest) {
   const raw = await res.json();
   const campaigns: any[] = Array.isArray(raw) ? raw : (raw.campaigns ?? raw.data ?? []);
 
+  // Filtrar campañas asociadas al cliente
+  const { data: assoc } = await db
+    .from("client_lemlist_campaigns")
+    .select("campaign_id")
+    .eq("client_id", clientId);
+
+  // Si hay asociaciones registradas, filtrar solo esas; si no hay ninguna, devolver todas
+  // (compatibilidad con clientes que aún no tienen la tabla poblada)
+  const allowedIds = assoc && assoc.length > 0
+    ? new Set(assoc.map((a) => a.campaign_id))
+    : null;
+
+  const filtered = allowedIds
+    ? campaigns.filter((c: any) => allowedIds.has(c._id ?? c.id))
+    : campaigns;
+
   return NextResponse.json({
-    campaigns: campaigns.map((c: any) => ({
+    campaigns: filtered.map((c: any) => ({
       id: c._id ?? c.id,
       name: c.name,
       status: c.status ?? null,
