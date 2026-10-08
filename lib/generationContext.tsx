@@ -59,11 +59,12 @@ type GenerationState = {
   resetGeneration: () => void;
   updateContact: (index: number, fields: Partial<GeneratedContact>) => void;
   resumePending: () => void;
+  resumeGroup: (groupId: string, clientId: string, segmentId: string) => Promise<void>;
 };
 
 // ─── Estado inicial ────────────────────────────────────────────────────────────
 
-const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "setSelectedCampaignId" | "cancelContact" | "cancelAll" | "resetGeneration" | "updateContact" | "resumePending"> = {
+const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "setSelectedCampaignId" | "cancelContact" | "cancelAll" | "resetGeneration" | "updateContact" | "resumePending" | "resumeGroup"> = {
   isGenerating: false,
   stage: "idle",
   contacts: [],
@@ -90,17 +91,17 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
   const stateRef = useRef(state);
   stateRef.current = state; // siempre apunta al estado actual
 
-  // Guarda un contacto generado en el grupo persistente (fire-and-forget)
-  function persistContact(groupId: string, index: number, contact: GeneratedContact) {
+  // Guarda un contacto en el grupo persistente (fire-and-forget)
+  function persistContact(groupId: string, index: number, contact: GeneratedContact, statusOverride?: string) {
     fetch(`/api/message-groups/${groupId}/contacts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contact_index:    index,
+        contact_index: index,
         ...contact,
-        status: contact.cancelled ? "cancelled" : contact.error ? "error" : "generated",
+        status: statusOverride ?? (contact.cancelled ? "cancelled" : contact.error ? "error" : "generated"),
       }),
-    }).catch(() => { /* silencioso — no interrumpe la generación */ });
+    }).catch(() => { /* silencioso */ });
   }
 
   const startGeneration = useCallback(async ({
@@ -144,6 +145,8 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
         const grp = await res.json();
         groupId = grp.id;
         groupIdRef.current = groupId;
+        // Pre-poblar todos los contactos como "pending" para poder reanudar si se interrumpe
+        parsed.forEach((contact, i) => persistContact(groupId!, i, { ...contact }, "pending"));
       }
     } catch { /* si falla la creación del grupo, la generación continúa igual */ }
 
@@ -260,6 +263,58 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
     skippedRef.current = new Set();
     groupIdRef.current = null;
     setState(INITIAL_STATE);
+  }, []);
+
+  // Cargar un grupo guardado desde la DB y preparar para reanudar los pendientes
+  const resumeGroup = useCallback(async (groupId: string, clientId: string, segmentId: string) => {
+    if (isRunningRef.current) return;
+
+    const res = await fetch(`/api/message-groups/${groupId}/contacts`);
+    if (!res.ok) return;
+    const rows: any[] = await res.json();
+
+    // Mapear filas de DB al formato GeneratedContact
+    const contacts: GeneratedContact[] = rows.map((row) => ({
+      firstName:        row.first_name    ?? "",
+      lastName:         row.last_name     ?? "",
+      email:            row.email         ?? "",
+      phone:            row.phone         ?? undefined,
+      jobTitle:         row.job_title     ?? undefined,
+      companyName:      row.company_name  ?? undefined,
+      linkedinUrl:      row.linkedin_url  ?? undefined,
+      industry:         row.industry      ?? undefined,
+      companySize:      row.company_size  ?? undefined,
+      emailSubject:     row.email_subject   ?? undefined,
+      emailBody:        row.email_body      ?? undefined,
+      emailSubject2:    row.email_subject_2 ?? undefined,
+      emailBody2:       row.email_body_2    ?? undefined,
+      emailSubject3:    row.email_subject_3 ?? undefined,
+      emailBody3:       row.email_body_3    ?? undefined,
+      connectMessage:   row.connect_message ?? undefined,
+      icebreaker:       row.icebreaker      ?? undefined,
+      linkedinMsg2:     row.linkedin_msg_2  ?? undefined,
+      segmentName:      row.segment_name    ?? undefined,
+      deepResearchUsed: row.deep_research_used ?? undefined,
+      icpWarning:       row.icp_warning      ?? undefined,
+      error:     row.status === "error"     ? (row.error_message ?? "Error previo") : undefined,
+      cancelled: row.status === "cancelled" ? true : undefined,
+    }));
+
+    const generatedCount = contacts.filter((c) => c.emailSubject || c.connectMessage).length;
+
+    groupIdRef.current = groupId;
+    setState({
+      isGenerating:      false,
+      stage:             "done",
+      contacts,
+      genProgress:       generatedCount,
+      genErrors:         rows.filter((r) => r.status === "error").length,
+      clientId,
+      segmentId,
+      deepResearchSet:   new Set(),
+      groupId,
+      selectedCampaignId: "",
+    });
   }, []);
 
   // Retomar generación para contactos que quedaron sin generar (error no-cancelado o sin emailSubject/connectMessage)
@@ -388,6 +443,7 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
     resetGeneration,
     updateContact,
     resumePending,
+    resumeGroup,
   };
 
   return (
