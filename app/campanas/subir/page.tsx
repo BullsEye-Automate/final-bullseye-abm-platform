@@ -440,7 +440,6 @@ export default function SubirCampanaPage() {
   const [clientModel, setClientModel]   = useState<string | null>(null);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string>("");
   const [lemlistCampaigns, setLemlistCampaigns] = useState<{ id: string; name: string }[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
   const [selectedIndexes, setSelectedIndexes] = useState<Set<number>>(new Set());
   const [deepResearchSet, setDeepResearchSet] = useState<Set<number>>(new Set());
   const [localEdits, setLocalEdits] = useState<Record<number, Partial<GeneratedContact>>>({});
@@ -457,15 +456,22 @@ export default function SubirCampanaPage() {
   const genProgress = isActiveGeneration ? generation.genProgress : 0;
   const genErrors = isActiveGeneration ? generation.genErrors : 0;
 
-  // Contactos pendientes: no cancelados y sin mensaje generado
-  const pendingCount = isActiveGeneration && !isGenerating
-    ? contacts.filter((c) => !c.cancelled && !c.emailSubject && !c.connectMessage).length
-    : 0;
+  // Contactos sin mensaje: no cancelados y sin emailSubject ni connectMessage
+  // Visible tanto si la generación terminó como si está corriendo (para detectar contactos que el loop se saltó)
+  const pendingContacts = isActiveGeneration
+    ? contacts.filter((c) => !c.cancelled && !c.emailSubject && !c.connectMessage)
+    : [];
+  const pendingCount = pendingContacts.length;
 
-  // Seleccionar automáticamente los contactos exitosos cuando termina la generación
+  // Seleccionar automáticamente los contactos con mensajes generados cuando termina la generación
   useEffect(() => {
     if (isActiveGeneration && !isGenerating && contacts.length > 0 && selectedIndexes.size === 0) {
-      setSelectedIndexes(new Set(contacts.map((c, i) => (!c.error ? i : -1)).filter((i) => i >= 0)));
+      // Solo seleccionar los que tienen emailSubject o connectMessage (mensaje generado correctamente)
+      setSelectedIndexes(new Set(
+        contacts
+          .map((c, i) => ((c.emailSubject || c.connectMessage) && !c.cancelled ? i : -1))
+          .filter((i) => i >= 0)
+      ));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGenerating, isActiveGeneration]);
@@ -664,7 +670,7 @@ export default function SubirCampanaPage() {
     const res = await fetch("/api/lemlist/csv-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: currentClient.id, contacts: toSend, campaign_id: selectedCampaignId || undefined }),
+      body: JSON.stringify({ client_id: currentClient.id, contacts: toSend, campaign_id: generation.selectedCampaignId || undefined }),
     });
     const d = await res.json();
     setPushResult({ pushed: d.pushed ?? 0, skipped: d.skipped ?? 0, errors: d.errors ?? (d.error ? [{ email: "-", error: d.error }] : []) });
@@ -1018,7 +1024,7 @@ export default function SubirCampanaPage() {
             </div>
           )}
 
-          {/* Banner de pendientes — cuando la generación se detuvo y quedaron contactos sin generar */}
+          {/* Banner de pendientes — cuando quedaron contactos sin generar (generación terminada o detenida) */}
           {!isGenerating && pendingCount > 0 && (
             <div className="card px-5 py-4 flex items-center justify-between border border-amber-200 bg-amber-50/60">
               <div className="flex items-center gap-2">
@@ -1129,8 +1135,8 @@ export default function SubirCampanaPage() {
                   <IconSend size={14} className="text-ink-muted shrink-0" />
                   <label className="text-sm text-ink-muted shrink-0">Campaña destino:</label>
                   <select
-                    value={selectedCampaignId}
-                    onChange={(e) => setSelectedCampaignId(e.target.value)}
+                    value={generation.selectedCampaignId}
+                    onChange={(e) => generation.setSelectedCampaignId(e.target.value)}
                     className="flex-1 text-sm border border-[#E5E2F0] rounded-lg px-3 py-1.5 outline-none focus:border-[#62E0D8] bg-white"
                   >
                     <option value="">Campaña principal del cliente</option>

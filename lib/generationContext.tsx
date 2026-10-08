@@ -44,6 +44,7 @@ type GenerationState = {
   deepResearchSet: Set<number>;
   stage: GenerationStage;
   groupId: string | null;
+  selectedCampaignId: string; // persiste al navegar
   startGeneration: (params: {
     clientId: string;
     parsed: ParsedContact[];
@@ -52,6 +53,7 @@ type GenerationState = {
     segmentName?: string;
     clientName?: string;
   }) => void;
+  setSelectedCampaignId: (id: string) => void;
   cancelContact: (index: number) => void;
   cancelAll: () => void;
   resetGeneration: () => void;
@@ -61,7 +63,7 @@ type GenerationState = {
 
 // ─── Estado inicial ────────────────────────────────────────────────────────────
 
-const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "cancelContact" | "cancelAll" | "resetGeneration" | "updateContact" | "resumePending"> = {
+const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "setSelectedCampaignId" | "cancelContact" | "cancelAll" | "resetGeneration" | "updateContact" | "resumePending"> = {
   isGenerating: false,
   stage: "idle",
   contacts: [],
@@ -71,6 +73,7 @@ const INITIAL_STATE: Omit<GenerationState, "startGeneration" | "cancelContact" |
   segmentId: "",
   deepResearchSet: new Set(),
   groupId: null,
+  selectedCampaignId: "",
 };
 
 // ─── Contexto ─────────────────────────────────────────────────────────────────
@@ -360,6 +363,10 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
     setState((prev) => ({ ...prev, isGenerating: false, stage: "done" }));
   }, []);
 
+  const setSelectedCampaignId = useCallback((id: string) => {
+    setState((prev) => ({ ...prev, selectedCampaignId: id }));
+  }, []);
+
   const updateContact = useCallback((index: number, fields: Partial<GeneratedContact>) => {
     setState((prev) => {
       const next = [...prev.contacts];
@@ -375,6 +382,7 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
   const value: GenerationState = {
     ...state,
     startGeneration,
+    setSelectedCampaignId,
     cancelContact,
     cancelAll,
     resetGeneration,
