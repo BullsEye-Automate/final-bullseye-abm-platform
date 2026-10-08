@@ -434,6 +434,8 @@ export default function SubirCampanaPage() {
   const [stage, setStage]           = useState<Stage>("idle");
   const [parsed, setParsed]         = useState<ParsedContact[]>([]);
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number; errors: any[] } | null>(null);
+  const [failedContacts, setFailedContacts] = useState<GeneratedContact[]>([]);
+  const [retrying, setRetrying] = useState(false);
   const [fileError, setFileError]   = useState<string | null>(null);
   const [segments, setSegments]         = useState<SegmentOption[]>([]);
   const [segmentsLoading, setSegmentsLoading] = useState(false);
@@ -667,13 +669,26 @@ export default function SubirCampanaPage() {
     if (!currentClient?.id) return;
     setStage("pushing");
     const toSend = displayContacts.filter((_, i) => selectedIndexes.has(i));
+    const campaignId = generation.selectedCampaignId || undefined;
     const res = await fetch("/api/lemlist/csv-push", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: currentClient.id, contacts: toSend, campaign_id: generation.selectedCampaignId || undefined }),
+      body: JSON.stringify({ client_id: currentClient.id, contacts: toSend, campaign_id: campaignId }),
     });
     const d = await res.json();
-    setPushResult({ pushed: d.pushed ?? 0, skipped: d.skipped ?? 0, errors: d.errors ?? (d.error ? [{ email: "-", error: d.error }] : []) });
+    const errors = d.errors ?? (d.error ? [{ email: "-", error: d.error }] : []);
+    setPushResult({ pushed: d.pushed ?? 0, skipped: d.skipped ?? 0, errors });
+
+    // Guardar contactos fallidos para poder reintentar (antes de resetear el contexto)
+    if (errors.length > 0) {
+      const failedIds = new Set(errors.map((e: any) => e.email));
+      setFailedContacts(toSend.filter((c) => failedIds.has(c.email) || failedIds.has(c.linkedinUrl)));
+      // Guardar campaign_id para el reintento
+      generation.setSelectedCampaignId(campaignId ?? "");
+    } else {
+      setFailedContacts([]);
+    }
+
     // Marcar el grupo como enviado en Supabase
     if (generation.groupId) {
       fetch(`/api/message-groups/${generation.groupId}`, {
@@ -685,6 +700,28 @@ export default function SubirCampanaPage() {
     // Limpiar contexto de generación para que el indicador del sidebar desaparezca
     generation.resetGeneration();
     setStage("done");
+  }
+
+  async function handleRetryFailed() {
+    if (!currentClient?.id || failedContacts.length === 0) return;
+    setRetrying(true);
+    const campaignId = generation.selectedCampaignId || undefined;
+    const res = await fetch("/api/lemlist/csv-push", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: currentClient.id, contacts: failedContacts, campaign_id: campaignId }),
+    });
+    const d = await res.json();
+    const errors = d.errors ?? (d.error ? [{ email: "-", error: d.error }] : []);
+    const newFailed = errors.length > 0
+      ? failedContacts.filter((c) => errors.some((e: any) => e.email === c.email || e.email === c.linkedinUrl))
+      : [];
+    setPushResult((prev) => prev
+      ? { pushed: (prev.pushed ?? 0) + (d.pushed ?? 0), skipped: prev.skipped, errors }
+      : { pushed: d.pushed ?? 0, skipped: 0, errors }
+    );
+    setFailedContacts(newFailed);
+    setRetrying(false);
   }
 
   function toggleSelect(i: number) {
@@ -1198,8 +1235,22 @@ export default function SubirCampanaPage() {
           </div>
 
           {pushResult.errors.length > 0 && (
-            <div className="card border-l-4 border-red-300 px-5 py-4 space-y-1">
-              <p className="text-sm font-semibold text-red-600">{pushResult.errors.length} errores:</p>
+            <div className="card border-l-4 border-red-300 px-5 py-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-red-600">{pushResult.errors.length} errores al enviar a Lemlist:</p>
+                {failedContacts.length > 0 && (
+                  <button
+                    onClick={handleRetryFailed}
+                    disabled={retrying}
+                    className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                    style={{ background: "#251762", color: "white" }}
+                  >
+                    {retrying
+                      ? <><IconLoader2 size={12} className="animate-spin" /> Reintentando…</>
+                      : <><IconRefresh size={12} /> Reintentar {failedContacts.length} fallidos</>}
+                  </button>
+                )}
+              </div>
               {pushResult.errors.map((e, i) => (
                 <p key={i} className="text-xs text-red-500">{e.email}: {e.error}</p>
               ))}
