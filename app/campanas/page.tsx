@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useClient } from "@/lib/clientContext";
+import { useGeneration } from "@/lib/generationContext";
 import {
   IconMail,
   IconBrandLinkedin,
@@ -61,6 +63,7 @@ type ShareContact = {
 type MessageGroup = {
   id: string;
   name: string;
+  segment_id: string | null;
   segment_name: string | null;
   use_deep_research: boolean;
   status: "generating" | "ready" | "sent";
@@ -693,6 +696,8 @@ const FILTER_LABELS: Record<FilterState, string> = {
 
 export default function CampanasPage() {
   const { currentClient } = useClient();
+  const router     = useRouter();
+  const generation = useGeneration();
 
   const [campaign, setCampaign]     = useState<Campaign | null>(null);
   const [stats, setStats]           = useState<CampaignStats | null>(null);
@@ -701,6 +706,7 @@ export default function CampanasPage() {
   const [tab, setTab]               = useState<"todas" | "campaign" | "pending" | "groups">("todas");
   const [groups, setGroups]         = useState<MessageGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
+  const [resumingGroupId, setResumingGroupId] = useState<string | null>(null);
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
   const [sharingGroupId, setSharingGroupId]   = useState<string | null>(null);
   const [copiedGroupId, setCopiedGroupId]     = useState<string | null>(null);
@@ -773,6 +779,14 @@ export default function CampanasPage() {
     if (tab === "groups") loadGroups();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, currentClient?.id]);
+
+  async function handleResumeGroup(g: MessageGroup) {
+    if (!currentClient?.id) return;
+    setResumingGroupId(g.id);
+    await generation.resumeGroup(g.id, currentClient.id, g.segment_id ?? "");
+    setResumingGroupId(null);
+    router.push("/campanas/subir");
+  }
 
   async function deleteGroup(id: string) {
     if (!confirm("¿Eliminar este grupo de mensajes?")) return;
@@ -1440,6 +1454,21 @@ export default function CampanasPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0 mt-0.5">
+                          {/* Botón continuar — aparece cuando quedan contactos pendientes (pending o error) */}
+                          {g.total_contacts > g.generated_count && g.status !== "sent" && (
+                            <button
+                              onClick={() => handleResumeGroup(g)}
+                              disabled={resumingGroupId === g.id}
+                              title={`Continuar: ${g.total_contacts - g.generated_count} pendientes`}
+                              className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg transition disabled:opacity-50"
+                              style={{ background: "rgba(98,224,216,0.12)", color: "#0fa89a" }}
+                            >
+                              {resumingGroupId === g.id
+                                ? <IconLoader2 size={13} className="animate-spin" />
+                                : <IconPlayerPlay size={13} />}
+                              {resumingGroupId === g.id ? "Cargando…" : `Continuar (${g.total_contacts - g.generated_count})`}
+                            </button>
+                          )}
                           <button
                             onClick={() => shareGroup(g)}
                             disabled={sharingGroupId === g.id}
