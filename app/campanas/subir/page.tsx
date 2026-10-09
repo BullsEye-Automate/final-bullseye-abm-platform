@@ -54,6 +54,7 @@ type GeneratedContact = ParsedContact & {
   icpWarning?: boolean;
   error?: string;
   cancelled?: boolean;
+  pushed?: boolean;
 };
 
 type Stage = "idle" | "parsed" | "segment" | "preview" | "pushing" | "done";
@@ -436,6 +437,7 @@ export default function SubirCampanaPage() {
   const [pushResult, setPushResult] = useState<{ pushed: number; skipped: number; errors: any[] } | null>(null);
   const [failedContacts, setFailedContacts] = useState<GeneratedContact[]>([]);
   const [retrying, setRetrying] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
   const [fileError, setFileError]   = useState<string | null>(null);
   const [segments, setSegments]         = useState<SegmentOption[]>([]);
   const [segmentsLoading, setSegmentsLoading] = useState(false);
@@ -471,7 +473,7 @@ export default function SubirCampanaPage() {
       // Solo seleccionar los que tienen emailSubject o connectMessage (mensaje generado correctamente)
       setSelectedIndexes(new Set(
         contacts
-          .map((c, i) => ((c.emailSubject || c.connectMessage) && !c.cancelled ? i : -1))
+          .map((c, i) => ((c.emailSubject || c.connectMessage) && !c.cancelled && !c.pushed ? i : -1))
           .filter((i) => i >= 0)
       ));
     }
@@ -664,40 +666,97 @@ export default function SubirCampanaPage() {
     localEdits[i] ? { ...c, ...localEdits[i] } : c
   );
 
-  // ── Push a Lemlist (solo los seleccionados) ──
+  // ── Push a Lemlist en lotes de 50 para evitar timeout de Vercel ──
   async function handlePush() {
     if (!currentClient?.id) return;
     setStage("pushing");
-    const toSend = displayContacts.filter((_, i) => selectedIndexes.has(i));
-    const campaignId = generation.selectedCampaignId || undefined;
-    const res = await fetch("/api/lemlist/csv-push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ client_id: currentClient.id, contacts: toSend, campaign_id: campaignId }),
-    });
-    const d = await res.json();
-    const errors = d.errors ?? (d.error ? [{ email: "-", error: d.error }] : []);
-    setPushResult({ pushed: d.pushed ?? 0, skipped: d.skipped ?? 0, errors });
+    setBatchProgress(null);
 
-    // Guardar contactos fallidos para poder reintentar (antes de resetear el contexto)
-    if (errors.length > 0) {
-      const failedIds = new Set(errors.map((e: any) => e.email));
-      setFailedContacts(toSend.filter((c) => failedIds.has(c.email) || failedIds.has(c.linkedinUrl)));
-      // Guardar campaign_id para el reintento
+    const toSendWithIdx = displayContacts
+      .map((c, i) => ({ c, i }))
+      .filter(({ i }) => selectedIndexes.has(i));
+
+    const campaignId = generation.selectedCampaignId || undefined;
+    const BATCH_SIZE = 50;
+    const batches: { c: GeneratedContact; i: number }[][] = [];
+    for (let b = 0; b < toSendWithIdx.length; b += BATCH_SIZE) {
+      batches.push(toSendWithIdx.slice(b, b + BATCH_SIZE));
+    }
+
+    let totalPushed = 0;
+    let totalSkipped = 0;
+    let allErrors: any[] = [];
+    const failedList: GeneratedContact[] = [];
+
+    for (let b = 0; b < batches.length; b++) {
+      setBatchProgress({ current: b + 1, total: batches.length });
+      const batch = batches[b];
+      try {
+        const res = await fetch("/api/lemlist/csv-push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            client_id:   currentClient.id,
+            contacts:    batch.map(({ c }) => c),
+            campaign_id: campaignId,
+          }),
+        });
+        const d = await res.json();
+        const errors: any[] = d.errors ?? (d.error ? [{ email: "-", error: d.error }] : []);
+        totalPushed  += d.pushed  ?? 0;
+        totalSkipped += d.skipped ?? 0;
+        allErrors = [...allErrors, ...errors];
+
+        // Marcar contactos enviados correctamente como "sent" en la DB
+        if (generation.groupId) {
+          const failedEmails = new Set(errors.map((e: any) => e.email));
+          for (const { c, i } of batch) {
+            const wasSent = !failedEmails.has(c.email) && !failedEmails.has(c.linkedinUrl);
+            if (wasSent) {
+              fetch(`/api/message-groups/${generation.groupId}/contacts`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ contact_index: i, ...c, status: "sent" }),
+              }).catch(() => {});
+            }
+          }
+        }
+
+        // Acumular fallidos para reintento
+        if (errors.length > 0) {
+          const failedEmails = new Set(errors.map((e: any) => e.email));
+          failedList.push(
+            ...batch
+              .filter(({ c }) => failedEmails.has(c.email) || failedEmails.has(c.linkedinUrl))
+              .map(({ c }) => c)
+          );
+        }
+      } catch {
+        // Error de red: todo el lote falla
+        allErrors.push(...batch.map(({ c }) => ({ email: c.email, error: "Error de red" })));
+        failedList.push(...batch.map(({ c }) => c));
+      }
+    }
+
+    setBatchProgress(null);
+    setPushResult({ pushed: totalPushed, skipped: totalSkipped, errors: allErrors });
+
+    if (failedList.length > 0) {
+      setFailedContacts(failedList);
       generation.setSelectedCampaignId(campaignId ?? "");
     } else {
       setFailedContacts([]);
     }
 
-    // Marcar el grupo como enviado en Supabase
+    // El grupo queda como "sent" si no hubo errores, o "ready" si quedan fallidos
     if (generation.groupId) {
       fetch(`/api/message-groups/${generation.groupId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "sent" }),
+        body: JSON.stringify({ status: failedList.length === 0 ? "sent" : "ready" }),
       }).catch(() => {});
     }
-    // Limpiar contexto de generación para que el indicador del sidebar desaparezca
+
     generation.resetGeneration();
     setStage("done");
   }
@@ -1213,6 +1272,11 @@ export default function SubirCampanaPage() {
         <div className="card px-6 py-10 flex flex-col items-center gap-4">
           <IconLoader2 size={32} className="animate-spin" style={{ color: "#62E0D8" }} />
           <p className="font-semibold text-ink">Enviando contactos a Lemlist…</p>
+          {batchProgress && batchProgress.total > 1 && (
+            <p className="text-sm text-ink-muted">
+              Lote {batchProgress.current} de {batchProgress.total} — enviando en grupos de 50
+            </p>
+          )}
         </div>
       )}
 
