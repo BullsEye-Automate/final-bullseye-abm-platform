@@ -70,14 +70,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   if (counts) {
     const generated = counts.filter((c) => c.status === "generated").length;
+    const sent      = counts.filter((c) => c.status === "sent").length;
     const errors    = counts.filter((c) => c.status === "error").length;
+    const cancelled = counts.filter((c) => c.status === "cancelled").length;
     const total     = counts.length;
-    const allDone   = generated + errors + counts.filter((c) => c.status === "cancelled").length === total;
+    const allDone   = generated + sent + errors + cancelled === total;
+    const allSent   = allDone && generated === 0 && sent > 0;
 
     await db.from("message_groups").update({
-      generated_count: generated,
+      generated_count: generated + sent, // total generados (incl. enviados)
+      sent_count:      sent,
       error_count:     errors,
-      status:          allDone ? "ready" : "generating",
+      status:          allDone ? (allSent ? "sent" : "ready") : "generating",
       updated_at:      new Date().toISOString(),
     }).eq("id", params.id);
   }

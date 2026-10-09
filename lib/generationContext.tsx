@@ -30,6 +30,7 @@ export type GeneratedContact = ParsedContact & {
   deepResearchUsed?: boolean;
   error?: string;
   cancelled?: boolean;
+  pushed?: boolean; // ya fue enviado a Lemlist
 };
 
 type GenerationStage = "idle" | "generating" | "done";
@@ -298,6 +299,7 @@ export function GenerationProvider({ children }: { children: React.ReactNode }) 
       icpWarning:       row.icp_warning      ?? undefined,
       error:     row.status === "error"     ? (row.error_message ?? "Error previo") : undefined,
       cancelled: row.status === "cancelled" ? true : undefined,
+      pushed:    row.status === "sent"      ? true : undefined,
     }));
 
     const generatedCount = contacts.filter((c) => c.emailSubject || c.connectMessage).length;
