@@ -168,7 +168,16 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
 
     const peithoUser = req.peithoUser!;
     if (peithoUser.role === 'client') {
-      result = result.filter((row) => row.client_id === peithoUser.clientId);
+      // Pedido explícito del usuario (13-10-2026, CChC): variantes
+      // regionales de un mismo cliente real (CChC/CChC - Valle, mismo
+      // external_id — ver resolveClientGroupIds) deben verse como una sola
+      // cosa para quien tiene acceso de "client" — antes un admin/sales
+      // manager de CChC solo veía las reuniones de esa fila puntual, nunca
+      // las de CChC - Valle, aunque sean el mismo cliente real repartido en
+      // 2 filas solo para que metasSheet.ts pueda distinguir cada variante
+      // al matchear (eso sigue igual, no se toca).
+      const groupIds = await resolveClientGroupIds(peithoUser.clientId ?? '');
+      result = result.filter((row) => !!row.client_id && groupIds.includes(row.client_id));
     } else if (req.query.client_id === 'sin_cliente') {
       // Filtro admin-only para encontrar reuniones que nunca hicieron match
       // con el excel de metas (o donde el match se equivocó) y así poder
@@ -285,11 +294,15 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
       });
 
     // Un usuario "client" solo puede ver el detalle de reuniones de su propio
-    // client_id — se responde 404 (no 403) para no revelar que la reunión
-    // existe pero es de otro cliente.
-    if (req.peithoUser!.role === 'client' && meeting.client_id !== req.peithoUser!.clientId) {
-      res.status(404).json({ error: 'Reunión no encontrada' });
-      return;
+    // grupo de cliente (variantes regionales con el mismo external_id, ej.
+    // CChC/CChC - Valle — ver resolveClientGroupIds) — se responde 404 (no
+    // 403) para no revelar que la reunión existe pero es de otro cliente.
+    if (req.peithoUser!.role === 'client') {
+      const groupIds = await resolveClientGroupIds(req.peithoUser!.clientId ?? '');
+      if (!meeting.client_id || !groupIds.includes(meeting.client_id)) {
+        res.status(404).json({ error: 'Reunión no encontrada' });
+        return;
+      }
     }
 
     res.json(meeting);
@@ -313,9 +326,12 @@ meetingsRouter.get('/meetings/:id/video', requireAuth, async (req, res) => {
       res.status(404).json({ error: 'Reunión no encontrada' });
       return;
     }
-    if (req.peithoUser!.role === 'client' && meeting.client_id !== req.peithoUser!.clientId) {
-      res.status(404).json({ error: 'Reunión no encontrada' });
-      return;
+    if (req.peithoUser!.role === 'client') {
+      const groupIds = await resolveClientGroupIds(req.peithoUser!.clientId ?? '');
+      if (!meeting.client_id || !groupIds.includes(meeting.client_id)) {
+        res.status(404).json({ error: 'Reunión no encontrada' });
+        return;
+      }
     }
     if (!meeting.video_path) {
       res.status(404).json({ error: 'Esta reunión no tiene video disponible (venció el respaldo de 30 días, o nunca se guardó)' });
@@ -529,9 +545,12 @@ meetingsRouter.put('/meetings/:id/executive', requireAuth, async (req, res) => {
     }
 
     const peithoUser = req.peithoUser!;
-    if (peithoUser.role === 'client' && meeting.client_id !== peithoUser.clientId) {
-      res.status(404).json({ error: 'Reunión no encontrada' });
-      return;
+    if (peithoUser.role === 'client') {
+      const groupIds = await resolveClientGroupIds(peithoUser.clientId ?? '');
+      if (!meeting.client_id || !groupIds.includes(meeting.client_id)) {
+        res.status(404).json({ error: 'Reunión no encontrada' });
+        return;
+      }
     }
 
     if (clientExecutiveId) {
@@ -805,7 +824,8 @@ meetingsRouter.post('/meetings/:id/research', requireAuth, async (req, res) => {
 
     const peithoUser = req.peithoUser!;
     if (peithoUser.role === 'client') {
-      if (meeting.client_id !== peithoUser.clientId) {
+      const groupIds = await resolveClientGroupIds(peithoUser.clientId ?? '');
+      if (!meeting.client_id || !groupIds.includes(meeting.client_id)) {
         res.status(404).json({ error: 'Reunión no encontrada' });
         return;
       }

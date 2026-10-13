@@ -342,7 +342,11 @@ export interface FunnelData {
     from: string | null;
     to: string | null;
     threshold: number;
-    client_id: string | null;
+    // client_ids (13-10-2026) — antes un solo client_id; ahora puede traer
+    // varios cuando el filtro es un rol "client" cuyo cliente comparte
+    // external_id con otra variante regional (ver resolveClientGroupIds en
+    // el backend, ej. CChC/CChC - Valle).
+    client_ids: string[] | null;
     ejecutivo: string | null;
   };
   funnel: FunnelStage[];

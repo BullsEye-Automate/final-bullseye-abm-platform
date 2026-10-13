@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool } from '../db';
 import { requireAuth, requireFullClientAccess } from '../authMiddleware';
 import { INTERNAL_DOMAIN } from './meetings';
+import { resolveClientGroupIds } from '../knowledgeBase';
 
 export const panelRouter = Router();
 
@@ -25,11 +26,17 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
     if (!Number.isNaN(parsed)) threshold = Math.min(5, Math.max(1, parsed));
   }
 
-  let clientId: string | null = null;
+  let clientIds: string[] | null = null;
   if (peithoUser.role === 'client') {
-    clientId = peithoUser.clientId;
+    // Pedido explícito del usuario (13-10-2026, CChC): variantes regionales
+    // de un mismo cliente real (mismo external_id, ej. CChC/CChC - Valle —
+    // ver resolveClientGroupIds) deben verse juntas para quien tiene acceso
+    // de "client" — a diferencia del selector del admin más abajo, que elige
+    // una variante puntual a propósito (la lista ya las muestra por
+    // separado).
+    clientIds = await resolveClientGroupIds(peithoUser.clientId ?? '');
   } else if (typeof req.query.client_id === 'string' && req.query.client_id) {
-    clientId = req.query.client_id;
+    clientIds = [req.query.client_id];
   }
 
   // Filtro cascada (09-09-2026, pedido explícito del usuario): el frontend
@@ -70,9 +77,9 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
     baseParams.push(to);
     baseConditions.push(`start_time <= $${baseParams.length}`);
   }
-  if (clientId) {
-    baseParams.push(clientId);
-    baseConditions.push(`client_id = $${baseParams.length}`);
+  if (clientIds) {
+    baseParams.push(clientIds);
+    baseConditions.push(`client_id = any($${baseParams.length}::uuid[])`);
   }
   const baseWhereClause = baseConditions.join(' and ');
 
@@ -218,7 +225,7 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
     }));
 
     res.json({
-      meta: { from, to, threshold, client_id: clientId, ejecutivo },
+      meta: { from, to, threshold, client_ids: clientIds, ejecutivo },
       funnel,
       con_compromisos: Number(f.con_compromisos),
       desempeno_vendedor_promedio:
@@ -304,11 +311,17 @@ panelRouter.get('/panel/funnel/rows', requireAuth, requireFullClientAccess, asyn
     return;
   }
 
-  let clientId: string | null = null;
+  let clientIds: string[] | null = null;
   if (peithoUser.role === 'client') {
-    clientId = peithoUser.clientId;
+    // Pedido explícito del usuario (13-10-2026, CChC): variantes regionales
+    // de un mismo cliente real (mismo external_id, ej. CChC/CChC - Valle —
+    // ver resolveClientGroupIds) deben verse juntas para quien tiene acceso
+    // de "client" — a diferencia del selector del admin más abajo, que elige
+    // una variante puntual a propósito (la lista ya las muestra por
+    // separado).
+    clientIds = await resolveClientGroupIds(peithoUser.clientId ?? '');
   } else if (typeof req.query.client_id === 'string' && req.query.client_id) {
-    clientId = req.query.client_id;
+    clientIds = [req.query.client_id];
   }
 
   let ejecutivo: string | null = null;
@@ -336,11 +349,11 @@ panelRouter.get('/panel/funnel/rows', requireAuth, requireFullClientAccess, asyn
     params.push(to);
     conditions.push(`start_time <= $${params.length}`);
   }
-  if (clientId) {
-    params.push(clientId);
+  if (clientIds) {
+    params.push(clientIds);
     // Calificado (meetings.client_id): client_executives también tiene una
     // columna client_id — sin calificar, el join de abajo la vuelve ambigua.
-    conditions.push(`meetings.client_id = $${params.length}`);
+    conditions.push(`meetings.client_id = any($${params.length}::uuid[])`);
   }
   if (ejecutivo) {
     params.push(ejecutivo);
@@ -375,11 +388,17 @@ panelRouter.get('/panel/funnel/rows', requireAuth, requireFullClientAccess, asyn
 panelRouter.get('/panel/ejecutivos', requireAuth, requireFullClientAccess, async (req, res) => {
   const peithoUser = req.peithoUser!;
 
-  let clientId: string | null = null;
+  let clientIds: string[] | null = null;
   if (peithoUser.role === 'client') {
-    clientId = peithoUser.clientId;
+    // Pedido explícito del usuario (13-10-2026, CChC): variantes regionales
+    // de un mismo cliente real (mismo external_id, ej. CChC/CChC - Valle —
+    // ver resolveClientGroupIds) deben verse juntas para quien tiene acceso
+    // de "client" — a diferencia del selector del admin más abajo, que elige
+    // una variante puntual a propósito (la lista ya las muestra por
+    // separado).
+    clientIds = await resolveClientGroupIds(peithoUser.clientId ?? '');
   } else if (typeof req.query.client_id === 'string' && req.query.client_id) {
-    clientId = req.query.client_id;
+    clientIds = [req.query.client_id];
   }
 
   const conditions: string[] = [
@@ -388,9 +407,9 @@ panelRouter.get('/panel/ejecutivos', requireAuth, requireFullClientAccess, async
     'ejecutivo is not null',
   ];
   const params: unknown[] = [INTERNAL_DOMAIN];
-  if (clientId) {
-    params.push(clientId);
-    conditions.push(`client_id = $${params.length}`);
+  if (clientIds) {
+    params.push(clientIds);
+    conditions.push(`client_id = any($${params.length}::uuid[])`);
   }
 
   try {
