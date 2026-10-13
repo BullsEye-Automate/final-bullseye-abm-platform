@@ -243,7 +243,8 @@ export async function getRecallVideoUrl(botId: string): Promise<string> {
 
 // Devuelve el bot completo tal cual lo entrega Recall (status_changes
 // incluido) — usado por checkAndRetryFailedRecallBots para ver en qué quedó
-// un bot después de su intento de unirse.
+// un bot después de su intento de unirse, y por checkStuckMeetingsWithoutRecording
+// para lo mismo pero sobre reuniones que ni siquiera llegaron a 'captured'.
 async function getRecallBot(botId: string): Promise<any> {
   const { apiKey, region } = getRecallConfig();
 
@@ -584,5 +585,60 @@ export async function checkAndScheduleMissingRecallBots(): Promise<void> {
   for (const meeting of rows) {
     const isInternalMeeting = meeting.empresa_contraparte?.toLowerCase() === BULLSEYE_DOMAIN;
     await scheduleRecallBotForMeeting(meeting.id, { requireClientMatch: isInternalMeeting });
+  }
+}
+
+// Bug real (13-10-2026, reunión de Eduardo Castellanos/Bancóldex, Crossnet):
+// el bot de Recall nunca fue admitido de la sala de espera (reason:
+// timeout_exceeded_waiting_room) — no generó NINGUNA grabación. A diferencia
+// del caso ya cubierto (audio sí descargado, Deepgram no detecta ninguna
+// palabra → no_show, ver postMeetingAnalysis.ts), acá `processRecallDone`
+// nunca llega a correr nada: tira apenas entra, en la primera línea
+// (`getRecallRecordingUrl`, no hay `media_shortcuts.audio_mixed` que bajar),
+// así que la reunión se queda en status='scheduled' (ni siquiera 'captured')
+// para siempre — ni retryStuckAnalyses la toca (solo mira status='captured'),
+// ni ningún otro chequeo periódico. El usuario señaló que ella sí tiene
+// cómo saber la verdad: el dashboard de Recall (bot nunca grabó nada) y el
+// excel de metas (columna "Realizado" ya decía "Reagendar" para esta fila).
+// Esto cubre el lado de Recall: reuniones con bot agendado hace rato, sin
+// análisis, cuyo bot en Recall ya terminó ('done'/'fatal' en status_changes)
+// sin haber generado ninguna grabación utilizable — se marcan 'no_show'
+// directo, sin intentar descargar nada (no hay nada que descargar). El
+// cruce con la columna "Realizado" del excel de metas queda para una
+// segunda vuelta (necesita primero acordar con el usuario qué valores de esa
+// columna de texto libre deberían disparar esto, para no adivinar).
+export async function checkStuckMeetingsWithoutRecording(): Promise<void> {
+  if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
+
+  // 2 horas de margen: de sobra para que Recall termine de procesar una
+  // grabación real y el webhook/análisis normal la agarre solo — esto es
+  // solo para reuniones donde eso nunca va a pasar porque no hay nada que
+  // procesar.
+  const { rows } = await pool.query<{ id: string; recall_bot_id: string }>(
+    `select id, recall_bot_id from meetings
+     where recall_bot_id is not null
+       and status in ('scheduled', 'captured')
+       and start_time < now() - interval '2 hours'`
+  );
+
+  for (const meeting of rows) {
+    try {
+      const bot = await getRecallBot(meeting.recall_bot_id);
+      const lastStatus = bot?.status_changes?.[bot.status_changes.length - 1];
+      // Todavía en curso (ej. 'joining_call', 'in_call_recording') — no es
+      // un caso estancado de verdad, solo no llegó su turno de procesarse
+      // todavía. Nunca tocar nada que no sea claramente terminal.
+      if (lastStatus?.code !== 'done' && lastStatus?.code !== 'fatal') continue;
+
+      const hasRecording = !!bot?.recordings?.[0]?.media_shortcuts?.audio_mixed?.data?.download_url;
+      if (hasRecording) continue; // sí grabó algo — que lo agarre el flujo normal (reintento de webhook, etc.)
+
+      console.log(
+        `[recall] reunión ${meeting.id}: bot ${meeting.recall_bot_id} terminó (${lastStatus.code}) sin ninguna grabación utilizable — se marca como no_show`
+      );
+      await pool.query(`update meetings set status = 'no_show', updated_at = now() where id = $1`, [meeting.id]);
+    } catch (error) {
+      console.error(`[recall] error revisando si la reunión ${meeting.id} quedó sin grabación`, error);
+    }
   }
 }

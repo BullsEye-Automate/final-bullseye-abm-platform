@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { app } from './app';
 import { pool } from './db';
-import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots, checkAndScheduleMissingRecallBots } from './recall';
+import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots, checkAndScheduleMissingRecallBots, checkStuckMeetingsWithoutRecording } from './recall';
 import { retryStuckAnalyses } from './routes/webhooks';
 import { deleteExpiredMeetingVideos } from './videoRetention';
 import { renewExpiringCalendarWatches, catchUpAllActiveChannels } from './calendarWatchRenewal';
@@ -71,6 +71,20 @@ everyGuarded('chequeo de bots de Recall desalineados', checkAndFixStaleRecallBot
 // de arriba: reintenta agendar bot para cualquier reunión sin uno todavía,
 // dentro de una ventana alrededor de start_time.
 everyGuarded('chequeo de bots de Recall faltantes', checkAndScheduleMissingRecallBots, RECALL_RETRY_POLL_MS);
+
+// Bug real (13-10-2026, reunión de Eduardo Castellanos/Bancóldex, Crossnet):
+// un bot nunca admitido de la sala de espera no genera ninguna grabación —
+// processRecallDone tira en su primera línea (no hay audio que bajar) y la
+// reunión se queda en status='scheduled' para siempre, sin que ningún otro
+// chequeo periódico la toque (retryStuckAnalyses solo mira 'captured'). Ver
+// el comentario completo en checkStuckMeetingsWithoutRecording (recall.ts).
+// Mismo intervalo que los otros chequeos de Recall — barato, solo consulta
+// reuniones con bot agendado, sin análisis, hace más de 2h de su start_time.
+everyGuarded(
+  'chequeo de reuniones sin grabación utilizable',
+  checkStuckMeetingsWithoutRecording,
+  RECALL_RETRY_POLL_MS
+);
 
 // Reintento automático del análisis post-reunión (10-09-2026, pedido
 // explícito del usuario: "necesito que el análisis de las reuniones corra
