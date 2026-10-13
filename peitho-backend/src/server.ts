@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { app } from './app';
 import { pool } from './db';
-import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots, checkAndScheduleMissingRecallBots, checkStuckMeetingsWithoutRecording } from './recall';
+import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots, checkAndScheduleMissingRecallBots, checkStuckMeetingsWithoutRecording, checkStuckMeetingsAgainstMetasSheet } from './recall';
 import { retryStuckAnalyses } from './routes/webhooks';
 import { deleteExpiredMeetingVideos } from './videoRetention';
 import { renewExpiringCalendarWatches, catchUpAllActiveChannels } from './calendarWatchRenewal';
@@ -84,6 +84,20 @@ everyGuarded(
   'chequeo de reuniones sin grabación utilizable',
   checkStuckMeetingsWithoutRecording,
   RECALL_RETRY_POLL_MS
+);
+
+// Segunda señal para lo mismo de arriba, pero mirando la columna
+// "Realizado" del excel de metas en vez del bot de Recall — cubre también
+// reuniones que ni siquiera llegaron a tener un bot asignado, y las
+// resuelve más rápido cuando el equipo ya anotó a mano que no pasaron. Ver
+// el comentario completo en checkStuckMeetingsAgainstMetasSheet (recall.ts).
+// Intervalo propio, más largo: depende de una planilla que el equipo
+// actualiza a mano, no tiene sentido revisarla cada 60s.
+const METAS_SHEET_STUCK_CHECK_POLL_MS = 15 * 60_000;
+everyGuarded(
+  'chequeo de reuniones pegadas contra el excel de metas',
+  checkStuckMeetingsAgainstMetasSheet,
+  METAS_SHEET_STUCK_CHECK_POLL_MS
 );
 
 // Reintento automático del análisis post-reunión (10-09-2026, pedido

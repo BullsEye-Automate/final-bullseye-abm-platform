@@ -37,6 +37,13 @@ interface SheetRow {
   // (ver PUT /meetings/:id/contacto-linkedin) salvo que el research siga sin
   // encontrar el perfil correcto pese a tener esta URL.
   linkedinUrl: string;
+  // Columna "Realizado" (13-10-2026, pedido explícito del usuario) — el
+  // equipo la llena a mano con uno de 4 valores fijos (dropdown de Sheets,
+  // no texto libre): "Pendiente" | "Si" | "No" | "Reagendar". Señal humana
+  // de si la reunión pasó de verdad, independiente de lo que haya grabado
+  // (o no) el bot — usada por checkStuckMeetingsAgainstMetasSheet
+  // (recall.ts) para reuniones que quedaron pegadas sin análisis.
+  realizado: string;
 }
 
 interface MetasCache {
@@ -125,6 +132,7 @@ async function loadReunionesRows(forceRefresh = false): Promise<SheetRow[]> {
     idReunion: String(raw[col('ID Reunión')] ?? '').trim(),
     correo: String(raw[col('Correo')] ?? '').trim(),
     linkedinUrl: String(raw[col('URL Linkedin')] ?? '').trim(),
+    realizado: String(raw[col('Realizado')] ?? '').trim(),
   }));
 
   cache = { tabTitle, rows, fetchedAt: Date.now() };
@@ -1082,4 +1090,17 @@ export async function refreshMatchedRowFields(meetingId: string): Promise<void> 
      where id = $7`,
     [row.contacto, row.cargo, row.industria, row.idReunion, row.empresa, row.salesManager, meetingId, clientExecutiveId]
   );
+}
+
+// Usada por checkStuckMeetingsAgainstMetasSheet (recall.ts, 13-10-2026,
+// pedido explícito del usuario) — reuniones pegadas sin análisis pueden
+// resolverse mirando qué anotó el equipo a mano en la columna "Realizado"
+// del excel de metas para esa fila, sin depender de que el bot de Recall
+// haya grabado algo. Reusa el mismo match ya guardado (metas_sheet_match_id)
+// en vez de volver a correr el matching difuso — más simple y más confiable
+// (la fila ya quedó confirmada como la correcta en su momento).
+export async function getRealizadoForMatchId(metasSheetMatchId: string): Promise<string | null> {
+  const rows = await loadReunionesRows();
+  const row = rows.find((r) => r.idReunion === metasSheetMatchId);
+  return row?.realizado ?? null;
 }

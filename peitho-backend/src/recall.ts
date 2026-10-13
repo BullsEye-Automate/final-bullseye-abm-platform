@@ -24,7 +24,7 @@
 import fs from 'fs';
 import path from 'path';
 import { pool } from './db';
-import { resolveMeetingClientAndContact } from './metasSheet';
+import { resolveMeetingClientAndContact, getRealizadoForMatchId } from './metasSheet';
 
 // Imagen que muestra el bot como su "cámara" mientras graba (logo de Peitho,
 // 1280x720 JPEG generado a partir de logo-peitho-transparent.png en
@@ -604,9 +604,8 @@ export async function checkAndScheduleMissingRecallBots(): Promise<void> {
 // análisis, cuyo bot en Recall ya terminó ('done'/'fatal' en status_changes)
 // sin haber generado ninguna grabación utilizable — se marcan 'no_show'
 // directo, sin intentar descargar nada (no hay nada que descargar). El
-// cruce con la columna "Realizado" del excel de metas queda para una
-// segunda vuelta (necesita primero acordar con el usuario qué valores de esa
-// columna de texto libre deberían disparar esto, para no adivinar).
+// cruce con la columna "Realizado" del excel de metas vive aparte, ver
+// checkStuckMeetingsAgainstMetasSheet más abajo.
 export async function checkStuckMeetingsWithoutRecording(): Promise<void> {
   if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
 
@@ -639,6 +638,44 @@ export async function checkStuckMeetingsWithoutRecording(): Promise<void> {
       await pool.query(`update meetings set status = 'no_show', updated_at = now() where id = $1`, [meeting.id]);
     } catch (error) {
       console.error(`[recall] error revisando si la reunión ${meeting.id} quedó sin grabación`, error);
+    }
+  }
+}
+
+// Segunda señal para reuniones pegadas sin análisis (13-10-2026, pedido
+// explícito del usuario, reunión de Eduardo Castellanos/Bancóldex): el
+// equipo de BullsEye a veces ya sabe que una reunión no pasó (se reagendó,
+// el prospecto canceló) y lo anota en la columna "Realizado" del excel de
+// metas mucho antes de que el chequeo de arriba (que depende del bot de
+// Recall) pueda confirmarlo — o para reuniones que ni siquiera llegaron a
+// tener un bot asignado. La columna es un dropdown de 4 valores fijos (no
+// texto libre, confirmado con el usuario): "Pendiente" | "Si" | "No" |
+// "Reagendar" — "No" y "Reagendar" son las dos que significan "esta
+// reunión, tal como estaba agendada, no pasó". 24h de margen (vs. las 2h
+// del chequeo de Recall) porque esta columna la actualiza el equipo a mano,
+// no un sistema — no tiene sentido revisarla apenas pasa la hora de la
+// reunión.
+const REALIZADO_VALUES_SIGNIFICAN_NO_SHOW = ['no', 'reagendar'];
+
+export async function checkStuckMeetingsAgainstMetasSheet(): Promise<void> {
+  const { rows } = await pool.query<{ id: string; metas_sheet_match_id: string }>(
+    `select id, metas_sheet_match_id from meetings
+     where metas_sheet_match_id is not null
+       and status in ('scheduled', 'captured')
+       and start_time < now() - interval '24 hours'`
+  );
+
+  for (const meeting of rows) {
+    try {
+      const realizado = await getRealizadoForMatchId(meeting.metas_sheet_match_id);
+      if (!realizado || !REALIZADO_VALUES_SIGNIFICAN_NO_SHOW.includes(realizado.trim().toLowerCase())) continue;
+
+      console.log(
+        `[recall] reunión ${meeting.id}: el excel de metas dice "Realizado = ${realizado}" — se marca como no_show`
+      );
+      await pool.query(`update meetings set status = 'no_show', updated_at = now() where id = $1`, [meeting.id]);
+    } catch (error) {
+      console.error(`[recall] error revisando el excel de metas para la reunión ${meeting.id}`, error);
     }
   }
 }
