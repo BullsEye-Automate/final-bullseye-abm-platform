@@ -6,12 +6,20 @@ import type { ClientListItem, MeetingListItem } from "@/lib/peithoBackend";
 import InlineClientSelect from "@/components/InlineClientSelect";
 import ScoreBadge from "@/components/ScoreBadge";
 
-const STATUS_LABEL: Record<MeetingListItem["status"], string> = {
+export const STATUS_LABEL: Record<MeetingListItem["status"], string> = {
   scheduled: "Agendada",
   captured: "Capturada",
   analyzed: "Analizada",
   no_show: "No show",
 };
+
+// Misma prioridad que la celda "Ejecutivo" de la tabla (ver comentario abajo)
+// — se exporta para que el filtro de "Ejecutivo" en ReunionesPasadasView use
+// exactamente el mismo valor que se ve en la columna, en vez de reimplementar
+// la prioridad por separado y arriesgar que queden desincronizados.
+export function resolveEjecutivoNombre(meeting: MeetingListItem): string | null {
+  return meeting.client_executive_name ?? meeting.cliente_sales_manager ?? meeting.ejecutivo ?? null;
+}
 
 // timeZone explícito — bug real (08-09-2026): sin esto, toLocaleString usa
 // la zona del entorno donde corre el Server Component (Vercel = UTC), no la
@@ -259,10 +267,7 @@ export default function MeetingsTable({
                   // mostraba ambos por separado (el email crudo en el
                   // encabezado, el ejecutivo del cliente en la ficha) — acá
                   // se prioriza el del cliente, igual que adentro.
-                  meeting.client_executive_name ??
-                    meeting.cliente_sales_manager ??
-                    meeting.ejecutivo ??
-                    "—"
+                  resolveEjecutivoNombre(meeting) ?? "—"
                 }
               </td>
               <td className="px-4 py-3 whitespace-nowrap">{meeting.contacto_nombre ?? meeting.contraparte ?? "—"}</td>

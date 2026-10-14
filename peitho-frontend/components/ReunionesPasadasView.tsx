@@ -2,7 +2,10 @@
 
 import { useMemo, useState } from "react";
 import type { ClientListItem, MeetingListItem } from "@/lib/peithoBackend";
-import MeetingsTable from "@/components/MeetingsTable";
+import MeetingsTable, { STATUS_LABEL, resolveEjecutivoNombre } from "@/components/MeetingsTable";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
+
+const SIN_EJECUTIVO = "__sin_ejecutivo__";
 
 // Filtro de rango de fechas + buscador (empresa o nombre del prospecto) sobre
 // "Reuniones pasadas" — igual que en Reuniones futuras, filtra en el
@@ -24,6 +27,31 @@ export default function ReunionesPasadasView({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [ejecutivoFilter, setEjecutivoFilter] = useState<string[]>([]);
+
+  const statusOptions = useMemo(
+    () => (Object.keys(STATUS_LABEL) as MeetingListItem["status"][]).map((value) => ({ value, label: STATUS_LABEL[value] })),
+    []
+  );
+
+  // Pedido explícito del usuario (14-10-2026): poder filtrar por ejecutivo
+  // propio, y que las reuniones sin ejecutivo asignado también aparezcan
+  // como una opción filtrable (no quedan ocultas ni mezcladas con "todos").
+  const ejecutivoOptions = useMemo(() => {
+    const nombres = new Set<string>();
+    let hasSinEjecutivo = false;
+    for (const m of meetings) {
+      const nombre = resolveEjecutivoNombre(m);
+      if (nombre) nombres.add(nombre);
+      else hasSinEjecutivo = true;
+    }
+    const opciones = Array.from(nombres)
+      .sort((a, b) => a.localeCompare(b, "es"))
+      .map((nombre) => ({ value: nombre, label: nombre }));
+    if (hasSinEjecutivo) opciones.push({ value: SIN_EJECUTIVO, label: "Sin ejecutivo asignado" });
+    return opciones;
+  }, [meetings]);
 
   const filtered = useMemo(() => {
     const fromDate = from ? new Date(`${from}T00:00:00`) : null;
@@ -41,9 +69,14 @@ export default function ReunionesPasadasView({
         const haystack = `${m.contraparte ?? ""} ${m.empresa_contraparte ?? ""} ${m.cliente_bullseye ?? ""}`.toLowerCase();
         if (!haystack.includes(needle)) return false;
       }
+      if (statusFilter.length > 0 && !statusFilter.includes(m.status)) return false;
+      if (ejecutivoFilter.length > 0) {
+        const nombre = resolveEjecutivoNombre(m) ?? SIN_EJECUTIVO;
+        if (!ejecutivoFilter.includes(nombre)) return false;
+      }
       return true;
     });
-  }, [meetings, from, to, search]);
+  }, [meetings, from, to, search, statusFilter, ejecutivoFilter]);
 
   return (
     <div className="space-y-5">
@@ -83,19 +116,29 @@ export default function ReunionesPasadasView({
             onChange={(e) => setTo(e.target.value)}
             className="border border-gray-100 rounded-[11px] px-3 py-2.5 bg-white outline-none focus:border-[#62E0D8]"
           />
-          {(from || to || search) && (
-            <button
-              onClick={() => {
-                setFrom("");
-                setTo("");
-                setSearch("");
-              }}
-              className="text-xs text-gray-400 hover:text-gray-600 px-2"
-            >
-              Limpiar
-            </button>
-          )}
         </div>
+        <MultiSelectFilter label="Estado" options={statusOptions} selected={statusFilter} onChange={setStatusFilter} />
+        <MultiSelectFilter
+          label="Ejecutivo"
+          options={ejecutivoOptions}
+          selected={ejecutivoFilter}
+          onChange={setEjecutivoFilter}
+          searchable
+        />
+        {(from || to || search || statusFilter.length > 0 || ejecutivoFilter.length > 0) && (
+          <button
+            onClick={() => {
+              setFrom("");
+              setTo("");
+              setSearch("");
+              setStatusFilter([]);
+              setEjecutivoFilter([]);
+            }}
+            className="text-xs text-gray-400 hover:text-gray-600 px-2"
+          >
+            Limpiar
+          </button>
+        )}
       </div>
 
       <MeetingsTable
