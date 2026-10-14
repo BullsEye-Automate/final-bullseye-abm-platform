@@ -79,7 +79,11 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
   }
   if (clientIds) {
     baseParams.push(clientIds);
-    baseConditions.push(`client_id = any($${baseParams.length}::uuid[])`);
+    // Calificado (meetings.client_id): se agrega un join con client_executives
+    // más abajo (para resolver el ejecutivo real del cliente, no el SDR de
+    // BullsEye que sincronizó el evento) y esa tabla también tiene su propia
+    // columna client_id — sin calificar, queda ambigua.
+    baseConditions.push(`meetings.client_id = any($${baseParams.length}::uuid[])`);
   }
   const baseWhereClause = baseConditions.join(' and ');
 
@@ -87,7 +91,14 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
   const params = [...baseParams];
   if (ejecutivo) {
     params.push(ejecutivo);
-    conditions.push(`ejecutivo = $${params.length}`);
+    // Bug real (14-10-2026): filtraba por `ejecutivo` crudo (el SDR de
+    // BullsEye que sincronizó el evento, casi siempre en blanco para
+    // invitaciones al bot) — el selector de abajo (GET /panel/ejecutivos)
+    // ahora devuelve el ejecutivo REAL del cliente (mismo criterio que
+    // MeetingsTable/desempeno_vendedor: roster > sales manager del excel >
+    // ejecutivo crudo como último fallback), así que el filtro tiene que
+    // comparar contra ese mismo valor resuelto o nunca va a matchear nada.
+    conditions.push(`coalesce(ce.name, cliente_sales_manager, ejecutivo) = $${params.length}`);
   }
   const whereClause = conditions.join(' and ');
 
@@ -119,6 +130,7 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
          avg(coalesce((analysis->'fit_cargo_contacto'->>'puntaje')::numeric, (analysis->'fit_contacto'->>'puntaje')::numeric)) filter (where status = 'analyzed') as fit_cargo_contacto_promedio,
          avg((analysis->'fit_rol_contacto'->>'puntaje')::numeric) filter (where status = 'analyzed') as fit_rol_contacto_promedio
        from meetings
+       left join client_executives ce on ce.id = meetings.client_executive_id
        where ${whereClause}`,
       params
     );
@@ -147,6 +159,7 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
              count(*) filter (where (analysis->'prediccion_exito'->>'puntaje')::int >= $${thresholdIdx}) as alta_prediccion,
              avg((analysis->'prediccion_exito'->>'puntaje')::numeric) as puntaje_promedio
       from meetings
+      left join client_executives ce on ce.id = meetings.client_executive_id
       where status = 'analyzed' and ${whereClause}
       group by coalesce(${column}, 'Sin dato')
       having count(*) >= 3
@@ -162,6 +175,7 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
     const distribucionQuery = `
       select (analysis->'prediccion_exito'->>'puntaje')::int as puntaje, count(*) as total
       from meetings
+      left join client_executives ce on ce.id = meetings.client_executive_id
       where status = 'analyzed' and (analysis->'prediccion_exito'->>'puntaje') is not null and ${whereClause}
       group by (analysis->'prediccion_exito'->>'puntaje')::int
     `;
@@ -172,14 +186,22 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
     // todos los ejecutivos, no el desempeño de uno solo. Mismo mínimo de
     // muestra (3 reuniones) que los otros segmentos, por la misma razón: no
     // mostrar a alguien como "el mejor" basado en una sola reunión.
+    // Bug real (14-10-2026): agrupaba por `ejecutivo` crudo — el SDR de
+    // BullsEye que sincronizó el evento en el calendario, no el ejecutivo
+    // real del cliente que llevó la reunión (casi siempre en blanco para
+    // invitaciones al bot). Mismo criterio ya usado en MeetingsTable y en la
+    // fila de detalle de "desempeno_vendedor": roster del cliente (`ce.name`)
+    // gana, después el "Sales Manager" del excel de metas, y el ejecutivo
+    // crudo queda solo como último fallback.
     const porEjecutivoQuery = `
-      select ejecutivo as label,
+      select coalesce(ce.name, cliente_sales_manager, ejecutivo) as label,
              count(*) as total,
              avg((analysis->'desempeno_vendedor'->>'puntaje')::numeric) as desempeno_promedio,
              avg((analysis->'prediccion_exito'->>'puntaje')::numeric) as prediccion_promedio
       from meetings
-      where status = 'analyzed' and ejecutivo is not null and ${baseWhereClause}
-      group by ejecutivo
+      left join client_executives ce on ce.id = meetings.client_executive_id
+      where status = 'analyzed' and coalesce(ce.name, cliente_sales_manager, ejecutivo) is not null and ${baseWhereClause}
+      group by coalesce(ce.name, cliente_sales_manager, ejecutivo)
       having count(*) >= 3
       order by avg((analysis->'desempeno_vendedor'->>'puntaje')::numeric) desc nulls last
     `;
@@ -357,7 +379,9 @@ panelRouter.get('/panel/funnel/rows', requireAuth, requireFullClientAccess, asyn
   }
   if (ejecutivo) {
     params.push(ejecutivo);
-    conditions.push(`ejecutivo = $${params.length}`);
+    // Mismo valor resuelto que devuelve GET /panel/ejecutivos y que filtra
+    // GET /panel/funnel — no el `ejecutivo` crudo (SDR de BullsEye).
+    conditions.push(`coalesce(ce.name, cliente_sales_manager, ejecutivo) = $${params.length}`);
   }
   // Las 3 métricas de análisis (fit_*/desempeño) solo existen para reuniones
   // ya analizadas — "agendadas" es la única que cubre todos los estados
@@ -401,20 +425,33 @@ panelRouter.get('/panel/ejecutivos', requireAuth, requireFullClientAccess, async
     clientIds = [req.query.client_id];
   }
 
+  // Bug real (14-10-2026, reportado por un "admin cliente" de CChC): este
+  // selector mostraba `ejecutivo` crudo — el SDR de BullsEye que sincronizó
+  // el evento en el calendario (ej. "inavarro@bullseye-abm.com"), nunca el
+  // ejecutivo comercial real del cliente, que es lo que tiene sentido elegir
+  // acá para ver SU desempeño en reuniones. Mismo criterio de prioridad ya
+  // usado en MeetingsTable y en el resto de este panel: roster del cliente
+  // (`ce.name`) gana, después el "Sales Manager" del excel de metas, y el
+  // ejecutivo crudo queda solo como último fallback (reuniones internas de
+  // BullsEye sin cliente asociado, donde no hay otro dato de quién la tomó).
   const conditions: string[] = [
     'recurring_event_id is null',
     '(meeting_url is not null or lower(empresa_contraparte) is distinct from $1)',
-    'ejecutivo is not null',
+    'coalesce(ce.name, cliente_sales_manager, ejecutivo) is not null',
   ];
   const params: unknown[] = [INTERNAL_DOMAIN];
   if (clientIds) {
     params.push(clientIds);
-    conditions.push(`client_id = any($${params.length}::uuid[])`);
+    conditions.push(`meetings.client_id = any($${params.length}::uuid[])`);
   }
 
   try {
     const { rows } = await pool.query(
-      `select distinct ejecutivo from meetings where ${conditions.join(' and ')} order by ejecutivo asc`,
+      `select distinct coalesce(ce.name, cliente_sales_manager, ejecutivo) as ejecutivo
+       from meetings
+       left join client_executives ce on ce.id = meetings.client_executive_id
+       where ${conditions.join(' and ')}
+       order by ejecutivo asc`,
       params
     );
     res.json(rows.map((row) => row.ejecutivo as string));
