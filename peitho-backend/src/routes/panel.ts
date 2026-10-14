@@ -91,14 +91,21 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
   const params = [...baseParams];
   if (ejecutivo) {
     params.push(ejecutivo);
-    // Bug real (14-10-2026): filtraba por `ejecutivo` crudo (el SDR de
-    // BullsEye que sincronizó el evento, casi siempre en blanco para
-    // invitaciones al bot) — el selector de abajo (GET /panel/ejecutivos)
-    // ahora devuelve el ejecutivo REAL del cliente (mismo criterio que
-    // MeetingsTable/desempeno_vendedor: roster > sales manager del excel >
-    // ejecutivo crudo como último fallback), así que el filtro tiene que
-    // comparar contra ese mismo valor resuelto o nunca va a matchear nada.
-    conditions.push(`coalesce(ce.name, cliente_sales_manager, ejecutivo) = $${params.length}`);
+    // Pedido explícito del usuario (14-10-2026): el filtro/ranking de este
+    // panel debe usar SOLO los ejecutivos configurados en el roster del
+    // cliente (`client_executives`, administrado desde la Base de
+    // conocimiento) — nada de caer a `cliente_sales_manager`/`ejecutivo`
+    // crudos. Esos 2 fallbacks (agregados 14-10-2026 para sacar los SDR de
+    // BullsEye del selector) seguían filtrando texto libre sin normalizar del
+    // excel de metas, que generaba duplicados del mismo ejecutivo con
+    // distinta mayúscula/acento ("Manuel Briones" vs "manuel briones") cada
+    // vez que el matching automático (matchClientExecutiveName en
+    // metasSheet.ts) no pudo resolver esa reunión contra el roster. Un
+    // ejecutivo sin roster asociado simplemente no aparece en este filtro ni
+    // en el ranking de abajo — correcto: no es un ejecutivo "real" todavía,
+    // hay que vincular la reunión a mano (PUT /meetings/:id/executive) o
+    // corregir el roster para que el próximo rematch la resuelva.
+    conditions.push(`ce.name = $${params.length}`);
   }
   const whereClause = conditions.join(' and ');
 
@@ -186,22 +193,20 @@ panelRouter.get('/panel/funnel', requireAuth, requireFullClientAccess, async (re
     // todos los ejecutivos, no el desempeño de uno solo. Mismo mínimo de
     // muestra (3 reuniones) que los otros segmentos, por la misma razón: no
     // mostrar a alguien como "el mejor" basado en una sola reunión.
-    // Bug real (14-10-2026): agrupaba por `ejecutivo` crudo — el SDR de
-    // BullsEye que sincronizó el evento en el calendario, no el ejecutivo
-    // real del cliente que llevó la reunión (casi siempre en blanco para
-    // invitaciones al bot). Mismo criterio ya usado en MeetingsTable y en la
-    // fila de detalle de "desempeno_vendedor": roster del cliente (`ce.name`)
-    // gana, después el "Sales Manager" del excel de metas, y el ejecutivo
-    // crudo queda solo como último fallback.
+    // Pedido explícito del usuario (14-10-2026): solo ejecutivos del roster
+    // (`client_executives`, ver comentario del filtro `ejecutivo` más arriba)
+    // — sin fallback a `cliente_sales_manager`/`ejecutivo` crudos, que
+    // producían duplicados del mismo ejecutivo (distinta mayúscula/acento) y
+    // dejaban colar SDR de BullsEye cuando ninguno de los dos matcheaba.
     const porEjecutivoQuery = `
-      select coalesce(ce.name, cliente_sales_manager, ejecutivo) as label,
+      select ce.name as label,
              count(*) as total,
              avg((analysis->'desempeno_vendedor'->>'puntaje')::numeric) as desempeno_promedio,
              avg((analysis->'prediccion_exito'->>'puntaje')::numeric) as prediccion_promedio
       from meetings
       left join client_executives ce on ce.id = meetings.client_executive_id
-      where status = 'analyzed' and coalesce(ce.name, cliente_sales_manager, ejecutivo) is not null and ${baseWhereClause}
-      group by coalesce(ce.name, cliente_sales_manager, ejecutivo)
+      where status = 'analyzed' and ce.name is not null and ${baseWhereClause}
+      group by ce.name
       having count(*) >= 3
       order by avg((analysis->'desempeno_vendedor'->>'puntaje')::numeric) desc nulls last
     `;
@@ -310,15 +315,15 @@ const PANEL_ROW_COLUMNS: Record<PanelRowMetric, string> = {
     coalesce(contacto_nombre, contraparte) as contacto,
     (analysis->'fit_empresa'->>'puntaje')::int as puntaje,
     analysis->'fit_empresa'->>'justificacion' as razon`,
-  // Bug real (09-10-2026): esto mostraba `ejecutivo` tal cual — quien de
-  // BullsEye sincronizó el evento (ej. la SDR), no el ejecutivo real del
-  // cliente que llevó la reunión, casi siempre en blanco para invitaciones
-  // al bot. Misma prioridad ya arreglada en MeetingsTable (fuera de este
-  // panel): el ejecutivo del roster del cliente (`ce.name`, resuelto contra
-  // el excel de metas u organizador del Calendar) gana, y `ejecutivo` crudo
-  // queda solo como último fallback.
+  // Pedido explícito del usuario (14-10-2026): solo el ejecutivo del roster
+  // (`client_executives`, ver comentario del filtro `ejecutivo` en GET
+  // /panel/funnel) — sin fallback a `cliente_sales_manager`/`ejecutivo`
+  // crudos (duplicaban al mismo ejecutivo con distinta mayúscula/acento y
+  // dejaban colar SDR de BullsEye). Una reunión sin match contra el roster
+  // queda con "Ejecutivo" vacío acá — correcto, todavía no está vinculada a
+  // nadie real del equipo del cliente.
   desempeno_vendedor: `
-    coalesce(ce.name, cliente_sales_manager, ejecutivo) as ejecutivo,
+    ce.name as ejecutivo,
     coalesce(empresa_nombre, empresa_contraparte) as empresa,
     coalesce(contacto_nombre, contraparte) as contacto,
     (analysis->'desempeno_vendedor'->>'puntaje')::int as puntaje,
@@ -379,9 +384,9 @@ panelRouter.get('/panel/funnel/rows', requireAuth, requireFullClientAccess, asyn
   }
   if (ejecutivo) {
     params.push(ejecutivo);
-    // Mismo valor resuelto que devuelve GET /panel/ejecutivos y que filtra
-    // GET /panel/funnel — no el `ejecutivo` crudo (SDR de BullsEye).
-    conditions.push(`coalesce(ce.name, cliente_sales_manager, ejecutivo) = $${params.length}`);
+    // Mismo criterio que GET /panel/funnel — solo ejecutivos del roster
+    // (`ce.name`), sin fallback a `cliente_sales_manager`/`ejecutivo` crudos.
+    conditions.push(`ce.name = $${params.length}`);
   }
   // Las 3 métricas de análisis (fit_*/desempeño) solo existen para reuniones
   // ya analizadas — "agendadas" es la única que cubre todos los estados
@@ -407,8 +412,8 @@ panelRouter.get('/panel/funnel/rows', requireAuth, requireFullClientAccess, asyn
 
 // Lista de ejecutivos disponibles para el selector cascada (elegir cliente
 // primero, después ejecutivo) — pedido explícito del usuario (09-09-2026).
-// Sin filtrar por status: un ejecutivo con reuniones agendadas/capturadas
-// pero todavía ninguna analizada igual debería aparecer en el selector.
+// Lista directo del roster (client_executives, ver comentario abajo) — un
+// ejecutivo recién agregado sin reuniones todavía igual aparece acá.
 panelRouter.get('/panel/ejecutivos', requireAuth, requireFullClientAccess, async (req, res) => {
   const peithoUser = req.peithoUser!;
 
@@ -425,36 +430,30 @@ panelRouter.get('/panel/ejecutivos', requireAuth, requireFullClientAccess, async
     clientIds = [req.query.client_id];
   }
 
-  // Bug real (14-10-2026, reportado por un "admin cliente" de CChC): este
-  // selector mostraba `ejecutivo` crudo — el SDR de BullsEye que sincronizó
-  // el evento en el calendario (ej. "inavarro@bullseye-abm.com"), nunca el
-  // ejecutivo comercial real del cliente, que es lo que tiene sentido elegir
-  // acá para ver SU desempeño en reuniones. Mismo criterio de prioridad ya
-  // usado en MeetingsTable y en el resto de este panel: roster del cliente
-  // (`ce.name`) gana, después el "Sales Manager" del excel de metas, y el
-  // ejecutivo crudo queda solo como último fallback (reuniones internas de
-  // BullsEye sin cliente asociado, donde no hay otro dato de quién la tomó).
-  const conditions: string[] = [
-    'recurring_event_id is null',
-    '(meeting_url is not null or lower(empresa_contraparte) is distinct from $1)',
-    'coalesce(ce.name, cliente_sales_manager, ejecutivo) is not null',
-  ];
-  const params: unknown[] = [INTERNAL_DOMAIN];
-  if (clientIds) {
-    params.push(clientIds);
-    conditions.push(`meetings.client_id = any($${params.length}::uuid[])`);
+  // Pedido explícito del usuario (14-10-2026): este selector venía de
+  // `meetings` (con fallback a `cliente_sales_manager`/`ejecutivo` crudos
+  // para sacar a los SDR de BullsEye, arreglado antes el mismo día) — pero
+  // ese texto libre del excel de metas, sin normalizar, seguía generando
+  // duplicados del mismo ejecutivo con distinta mayúscula/acento ("Manuel
+  // Briones" vs "manuel briones") cada vez que el matching automático
+  // (matchClientExecutiveName en metasSheet.ts) no lograba resolver esa
+  // reunión puntual contra el roster. La fuente de verdad real de "quiénes
+  // son los ejecutivos de este cliente" es el roster que se administra en la
+  // Base de conocimiento (`client_executives`) — se lista directo de ahí, sin
+  // pasar por `meetings` en absoluto. Sin cliente elegido (admin, antes de la
+  // cascada) no hay roster que listar — el frontend igual mantiene oculto el
+  // selector hasta ese momento (ver PanelDeControlView.tsx).
+  if (!clientIds) {
+    res.json([]);
+    return;
   }
 
   try {
     const { rows } = await pool.query(
-      `select distinct coalesce(ce.name, cliente_sales_manager, ejecutivo) as ejecutivo
-       from meetings
-       left join client_executives ce on ce.id = meetings.client_executive_id
-       where ${conditions.join(' and ')}
-       order by ejecutivo asc`,
-      params
+      `select distinct name from client_executives where client_id = any($1) order by name asc`,
+      [clientIds]
     );
-    res.json(rows.map((row) => row.ejecutivo as string));
+    res.json(rows.map((row) => row.name as string));
   } catch (error) {
     console.error('Error en GET /panel/ejecutivos', error);
     res.status(500).json({ error: 'Error listando ejecutivos' });
