@@ -36,6 +36,8 @@ export default function ClientExecutivesManager({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [rematching, setRematching] = useState(false);
+  const [rematchMessage, setRematchMessage] = useState<string | null>(null);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -103,15 +105,56 @@ export default function ClientExecutivesManager({
     }
   }
 
+  // Pedido explícito del usuario (14-10-2026): el matching automático solo
+  // corre solo al agregar un ejecutivo nuevo — una reunión vieja que nunca
+  // matcheó (el roster se completó después) se queda sin ejecutivo asignado
+  // para siempre si nadie lo reintenta. Este botón corre lo mismo a mano,
+  // cuando se quiera (ej. después de corregir/completar el roster).
+  async function handleRematch() {
+    setRematching(true);
+    setRematchMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/clients/${clientId}/executives/rematch`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "No se pudo revincular las reuniones");
+        return;
+      }
+      setRematchMessage(
+        data.rematched > 0
+          ? `${data.rematched} ${data.rematched === 1 ? "reunión se vinculó" : "reuniones se vincularon"} a un ejecutivo del roster.`
+          : "No se encontró ninguna reunión nueva para vincular."
+      );
+      router.refresh();
+    } finally {
+      setRematching(false);
+    }
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
-      <div>
-        <h2 className="text-sm font-semibold text-gray-900">Ejecutivos</h2>
-        <p className="text-xs text-gray-500 mt-1">
-          Equipo de este cliente que toma reuniones — cada reunión se vincula automático cuando el excel de metas
-          trae un nombre que calza, o se corrige a mano desde el detalle de la reunión.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-900">Ejecutivos</h2>
+          <p className="text-xs text-gray-500 mt-1">
+            Equipo de este cliente que toma reuniones — cada reunión se vincula automático cuando el excel de metas
+            trae un nombre que calza, o se corrige a mano desde el detalle de la reunión.
+          </p>
+        </div>
+        {canManage && executives.length > 0 && (
+          <button
+            onClick={handleRematch}
+            disabled={rematching}
+            className="text-xs font-medium hover:underline disabled:opacity-50 shrink-0 whitespace-nowrap"
+            style={{ color: "#251762" }}
+            title="Reintenta vincular reuniones viejas que nunca matchearon contra este roster"
+          >
+            {rematching ? "Revinculando…" : "Revincular reuniones"}
+          </button>
+        )}
       </div>
+      {rematchMessage && <p className="text-xs text-gray-500">{rematchMessage}</p>}
 
       {canManage && (
         <form onSubmit={handleAdd} className="flex gap-2">

@@ -385,6 +385,31 @@ clientsRouter.post('/clients/:id/executives', requireFullClientAccess, async (re
   }
 });
 
+// Pedido explícito del usuario (14-10-2026): rematchClientExecutivesForClient
+// solo se disparaba automático al agregar un ejecutivo nuevo al roster — pero
+// el Panel de control y el filtro de "Ejecutivo" ahora dependen enteramente
+// del roster (ver panel.ts, 14-10-2026), así que una reunión vieja que nunca
+// matcheó (ej. el roster se cargó recién, después de que esa reunión ya
+// existiera) se queda sin ejecutivo atribuido para siempre si nadie corre
+// esto de nuevo. Se expone como botón propio ("Revincular reuniones") para
+// poder reintentarlo en cualquier momento, no solo al agregar un nombre.
+// Nunca pisa un client_executive_id ya seteado (ver rematchClientExecutivesForClient).
+clientsRouter.post('/clients/:id/executives/rematch', requireFullClientAccess, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const groupIds = await resolveClientGroupIds(id);
+    if (req.peithoUser!.role === 'client' && !groupIds.includes(req.peithoUser!.clientId ?? '')) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
+    const rematched = await rematchClientExecutivesForClient(id);
+    res.json({ rematched });
+  } catch (error) {
+    console.error('Error en POST /clients/:id/executives/rematch', error);
+    res.status(500).json({ error: 'Error revinculando las reuniones' });
+  }
+});
+
 // Pedido explícito del usuario (30-09-2026, Crossnet): un nombre cargado mal
 // en el roster ("Santiago" en vez de "Sebastian Cantor") no tenía forma de
 // corregirse salvo borrar y crear de nuevo — eso hacía perder el vínculo con

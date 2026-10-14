@@ -1,4 +1,4 @@
-import { fetchMeetings, fetchClients, fetchMe } from "@/lib/peithoBackend";
+import { fetchMeetings, fetchClients, fetchClientExecutives, fetchMe } from "@/lib/peithoBackend";
 import ReunionesPasadasView from "@/components/ReunionesPasadasView";
 import ClientFilter from "@/components/ClientFilter";
 
@@ -17,10 +17,19 @@ export default async function ReunionesPasadasPage({
   }
   const isAdmin = me.role === "admin";
   const clientId = isAdmin ? searchParams.client_id : undefined;
+  // Pedido explícito del usuario (14-10-2026): el filtro de "Ejecutivo" debe
+  // mostrar solo el roster real del cliente (client_executives, administrado
+  // en la Base de conocimiento) — un solo cliente conocido en este momento
+  // (el propio de un rol "client", o el que el admin ya eligió en el filtro
+  // de arriba). Sin un cliente único (admin viendo todos los clientes
+  // mezclados) no hay un roster puntual que pedir — ReunionesPasadasView cae
+  // al criterio viejo (mejor esfuerzo) solo en ese caso.
+  const executivesClientId = isAdmin ? clientId : me.clientId ?? undefined;
 
-  const [meetings, clients] = await Promise.all([
+  const [meetings, clients, executives] = await Promise.all([
     fetchMeetings("past", clientId),
     isAdmin ? fetchClients() : Promise.resolve([]),
+    executivesClientId ? fetchClientExecutives(executivesClientId) : Promise.resolve([]),
   ]);
 
   return (
@@ -37,6 +46,7 @@ export default async function ReunionesPasadasPage({
         detailBasePath="/reuniones"
         showClientColumn={isAdmin}
         clients={isAdmin ? clients : undefined}
+        executives={executives}
       />
     </div>
   );

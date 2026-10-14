@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { ClientListItem, MeetingListItem } from "@/lib/peithoBackend";
+import type { ClientExecutive, ClientListItem, MeetingListItem } from "@/lib/peithoBackend";
 import MeetingsTable, { STATUS_LABEL, resolveEjecutivoNombre } from "@/components/MeetingsTable";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
 
@@ -16,6 +16,7 @@ export default function ReunionesPasadasView({
   detailBasePath,
   showClientColumn,
   clients,
+  executives,
 }: {
   meetings: MeetingListItem[];
   detailBasePath: string;
@@ -23,6 +24,15 @@ export default function ReunionesPasadasView({
   // Solo la trae el admin — habilita la edición inline del cliente en la
   // tabla (ver MeetingsTable/InlineClientSelect).
   clients?: ClientListItem[];
+  // Pedido explícito del usuario (14-10-2026, mismo bug que el filtro del
+  // Panel de control): roster real del cliente (client_executives), no texto
+  // libre de meetings — evita duplicados del mismo ejecutivo con distinta
+  // mayúscula/acento y que se cuele un SDR de BullsEye. Solo llega cuando hay
+  // un cliente único conocido (rol "client", o admin con un cliente ya
+  // elegido en el filtro de arriba) — ver reuniones/pasadas/page.tsx. Sin
+  // esto (admin viendo todos los clientes mezclados, sin un roster puntual
+  // que pedir), cae al criterio viejo (mejor esfuerzo).
+  executives?: ClientExecutive[];
 }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -35,10 +45,24 @@ export default function ReunionesPasadasView({
     []
   );
 
+  // Roster real disponible (executives no vacío) → se usa ESE como fuente de
+  // verdad de las opciones y del filtro, en vez de derivar de las reuniones.
+  const useRosterOnly = !!executives && executives.length > 0;
+
   // Pedido explícito del usuario (14-10-2026): poder filtrar por ejecutivo
   // propio, y que las reuniones sin ejecutivo asignado también aparezcan
   // como una opción filtrable (no quedan ocultas ni mezcladas con "todos").
   const ejecutivoOptions = useMemo(() => {
+    if (useRosterOnly) {
+      const nombres = new Set(executives!.map((e) => e.name));
+      const hasSinEjecutivo = meetings.some((m) => !m.client_executive_name);
+      const opciones = Array.from(nombres)
+        .sort((a, b) => a.localeCompare(b, "es"))
+        .map((nombre) => ({ value: nombre, label: nombre }));
+      if (hasSinEjecutivo) opciones.push({ value: SIN_EJECUTIVO, label: "Sin ejecutivo asignado" });
+      return opciones;
+    }
+
     const nombres = new Set<string>();
     let hasSinEjecutivo = false;
     for (const m of meetings) {
@@ -51,7 +75,7 @@ export default function ReunionesPasadasView({
       .map((nombre) => ({ value: nombre, label: nombre }));
     if (hasSinEjecutivo) opciones.push({ value: SIN_EJECUTIVO, label: "Sin ejecutivo asignado" });
     return opciones;
-  }, [meetings]);
+  }, [meetings, executives, useRosterOnly]);
 
   const filtered = useMemo(() => {
     const fromDate = from ? new Date(`${from}T00:00:00`) : null;
@@ -71,12 +95,12 @@ export default function ReunionesPasadasView({
       }
       if (statusFilter.length > 0 && !statusFilter.includes(m.status)) return false;
       if (ejecutivoFilter.length > 0) {
-        const nombre = resolveEjecutivoNombre(m) ?? SIN_EJECUTIVO;
+        const nombre = (useRosterOnly ? m.client_executive_name : resolveEjecutivoNombre(m)) ?? SIN_EJECUTIVO;
         if (!ejecutivoFilter.includes(nombre)) return false;
       }
       return true;
     });
-  }, [meetings, from, to, search, statusFilter, ejecutivoFilter]);
+  }, [meetings, from, to, search, statusFilter, ejecutivoFilter, useRosterOnly]);
 
   return (
     <div className="space-y-5">
