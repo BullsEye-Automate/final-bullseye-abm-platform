@@ -47,6 +47,13 @@ const ICONS = {
       <line x1="21" y1="12" x2="9" y2="12" />
     </svg>
   ),
+  key: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+      <path d="M21 2l-9.6 9.6" />
+      <circle cx="7.5" cy="16.5" r="4.5" />
+      <path d="M15.5 7.5l3 3M18 5l3 3" />
+    </svg>
+  ),
   chevron: (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
       <polyline points="6 9 12 15 18 9" />
@@ -171,6 +178,14 @@ export default function Sidebar() {
             </div>
           </div>
         </div>
+        <Link
+          href="/cambiar-password"
+          className="flex items-center gap-[11px] px-2.5 py-2 rounded-[9px] text-[13.5px] transition hover:bg-[#FAFAFD]"
+          style={{ color: "#948DA8" }}
+        >
+          {ICONS.key}
+          Cambiar contraseña
+        </Link>
         <button
           onClick={handleLogout}
           className="flex items-center gap-[11px] px-2.5 py-2 rounded-[9px] text-[13.5px] transition hover:bg-[#FAFAFD]"
