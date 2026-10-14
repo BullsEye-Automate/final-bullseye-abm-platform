@@ -283,3 +283,18 @@ on conflict (user_id) do update set role = 'admin', client_id = null;
 ```
 
 Después de eso, desde `/admin/usuarios` en la app ya se pueden asignar el resto de los roles (admin o cliente) a cualquier usuario que ya exista en Supabase Auth.
+
+---
+
+## Alta masiva de usuarios + cambio de contraseña self-service (14-10-2026)
+
+El flujo de invitación/recuperación por link (`/invitacion`, Supabase magic link) falló más de una vez en producción (el link "vence" al abrirlo desde el navegador integrado de una app de correo — confirmado con logs de Supabase que el intercambio del token en el servidor SÍ se completó, así que el problema es del lado del navegador/cliente de correo, no de Supabase). Con la alta de 11 usuarios de CChC de una sola vez, no conviene depender de ese link para cada persona.
+
+**Workflow recomendado para altas masivas** (usado para Erick/Crossnet y para CChC):
+1. Crear el usuario directo en **Supabase Studio → Authentication → Users → Add user**, con una contraseña temporal fijada ahí mismo (no "send invite").
+2. Asignar su rol en `/admin/usuarios` de Peitho (role, client, y `client_sub_role` si es cliente). Ojo: esto SIGUE disparando en segundo plano un correo de recuperación (`admin.ts`, rama `!hadAccessBefore`) — es inofensivo y se puede ignorar ya que la persona ya tiene una contraseña temporal funcional entregada a mano.
+3. Entregarle la contraseña temporal a la persona por un canal directo (no por correo con link).
+
+**Página nueva: `/cambiar-password`** (`peitho-frontend/app/cambiar-password/page.tsx`) — cualquier usuario ya logueado (con sesión activa, sin importar cómo se haya logueado) puede poner su propia contraseña ahí con `supabase.auth.updateUser({ password })`, que no depende de ningún link ni de cómo se estableció la sesión. Acceso agregado al `Sidebar`, junto a "Cerrar sesión".
+
+**Pendiente, no decidido aún:** reemplazar el flujo de invitación completo por un login basado en código OTP (en vez de magic link) para que deje de depender del navegador que abra el link. Propuesto, no confirmado por el usuario.
