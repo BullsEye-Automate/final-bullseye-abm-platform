@@ -73,7 +73,7 @@ export default function CambiarPasswordPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Confirmála</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Confirmar contraseña</label>
               <input
                 type="password"
                 required
