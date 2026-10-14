@@ -14,12 +14,22 @@ import WebsiteUrlForm from "@/components/WebsiteUrlForm";
 export default function KnowledgeBaseView({
   clientId,
   documents,
-  readOnly,
+  canUpload,
+  canDelete,
+  canEditWebsite,
   websiteUrl,
 }: {
   clientId: string;
   documents: KnowledgeBaseDocument[];
-  readOnly: boolean;
+  // Subir documentos nuevos (14-10-2026, pedido explícito del usuario): ya no
+  // es admin-only, un "admin cliente" también puede.
+  canUpload: boolean;
+  // Borrar sigue siendo admin-only de BullsEye — no pedido, se deja como
+  // estaba.
+  canDelete: boolean;
+  // La URL del sitio (y el fetch de su contenido) sigue siendo admin-only de
+  // BullsEye — tampoco se pidió abrir esto.
+  canEditWebsite: boolean;
   websiteUrl?: string | null;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -76,13 +86,13 @@ export default function KnowledgeBaseView({
       </aside>
 
       <div className="flex-1 min-w-0 space-y-6">
-        {!readOnly && (
+        {canEditWebsite && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <WebsiteUrlForm clientId={clientId} initialUrl={websiteUrl ?? null} />
           </div>
         )}
 
-        {!readOnly && (
+        {canUpload && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
             <h2 className="text-sm font-semibold text-gray-900">Subir documento</h2>
             <p className="text-xs text-gray-500">
@@ -97,7 +107,7 @@ export default function KnowledgeBaseView({
           <h2 className="text-sm font-semibold text-gray-900 mb-2">
             {selected === null ? "Todo el material" : KB_CATEGORIES.find((c) => c.key === selected)?.label} ({filtered.length})
           </h2>
-          <DocumentList clientId={clientId} documents={filtered} readOnly={readOnly} showCategory={selected === null} />
+          <DocumentList clientId={clientId} documents={filtered} canDelete={canDelete} showCategory={selected === null} />
         </div>
       </div>
     </div>

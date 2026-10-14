@@ -43,9 +43,15 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
   const clientName = client.name;
   // Roster de ejecutivos (23-09-2026): admin de BullsEye o "admin cliente" de
   // esta empresa pueden agregar/borrar — decisión explícita del usuario de
-  // dejar que el propio cliente gestione su equipo (distinto del criterio de
-  // los documentos de arriba, que siguen admin-only).
+  // dejar que el propio cliente gestione su equipo.
   const canManageExecutives = isAdmin || me?.clientSubRole === "admin";
+  // Pedido explícito del usuario (14-10-2026): antes solo el admin de
+  // BullsEye podía subir documentos (Fase E decía que un "client" solo podía
+  // VER) — ahora un "admin cliente" también puede agregar documentos y
+  // descargar los ya subidos para revisarlos. Borrar sigue siendo admin-only
+  // de BullsEye a propósito (no pedido, y borrar sin confirmar es más
+  // delicado que subir/descargar) — ver canDelete en KnowledgeBaseView.
+  const canUploadDocuments = isAdmin || me?.clientSubRole === "admin";
 
   return (
     <div className="space-y-6">
@@ -63,7 +69,9 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
       <KnowledgeBaseView
         clientId={params.id}
         documents={documents}
-        readOnly={!isAdmin}
+        canUpload={canUploadDocuments}
+        canDelete={isAdmin}
+        canEditWebsite={isAdmin}
         websiteUrl={client.website_url}
       />
     </div>

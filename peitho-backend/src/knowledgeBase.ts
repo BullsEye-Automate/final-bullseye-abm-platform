@@ -239,6 +239,36 @@ export async function fetchAndStoreWebsiteContent(
   }
 }
 
+// URL firmada temporal para descargar el archivo original — mismo patrón que
+// el video de respaldo de una reunión (GET /meetings/:id/video): el bucket es
+// privado, no se puede linkear directo. `allowedClientIds` es el grupo
+// completo de external_id (resolveClientGroupIds) y no un solo clientId,
+// porque GET /clients/:id/documents ya lista documentos de todo el grupo —
+// si acá se filtrara por un solo id, un documento subido para "CChC - Valle"
+// no se podría descargar viéndolo desde la página de "CChC" (y viceversa).
+const DOCUMENT_SIGNED_URL_TTL_SECONDS = 60 * 5;
+
+export async function getKnowledgeBaseDocumentDownloadUrl(
+  documentId: string,
+  allowedClientIds: string[]
+): Promise<{ fileName: string; url: string } | null> {
+  const { rows } = await pool.query(
+    `select file_name, storage_path from knowledge_base_documents where id = $1 and client_id = any($2)`,
+    [documentId, allowedClientIds]
+  );
+  const doc = rows[0];
+  if (!doc) return null;
+
+  const supabase = getSupabaseAdminClient();
+  const { data, error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .createSignedUrl(doc.storage_path, DOCUMENT_SIGNED_URL_TTL_SECONDS, { download: doc.file_name });
+  if (error || !data?.signedUrl) {
+    throw new Error(error?.message ?? 'Supabase Storage no devolvió una URL firmada');
+  }
+  return { fileName: doc.file_name, url: data.signedUrl };
+}
+
 export async function deleteKnowledgeBaseDocument(clientId: string, documentId: string): Promise<boolean> {
   const { rows } = await pool.query(
     `select storage_path from knowledge_base_documents where id = $1 and client_id = $2`,

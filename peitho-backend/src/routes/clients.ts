@@ -4,6 +4,7 @@ import { pool } from '../db';
 import {
   uploadKnowledgeBaseDocument,
   deleteKnowledgeBaseDocument,
+  getKnowledgeBaseDocumentDownloadUrl,
   fetchAndStoreWebsiteContent,
   resolveClientGroupIds,
   KB_CATEGORY_KEYS,
@@ -215,12 +216,56 @@ clientsRouter.get('/clients/:id/documents', requireFullClientAccess, async (req,
   }
 });
 
-clientsRouter.post('/clients/:id/documents', requireAdmin, uploadSingleFile, async (req, res) => {
+// Pedido explícito del usuario (14-10-2026): antes solo el admin de BullsEye
+// podía subir documentos — un "admin cliente" solo podía ver/borrar... en
+// realidad ni borrar, ver nomás (ver DELETE más abajo, que sigue admin-only).
+// Ahora un "admin cliente" (client_sub_role='admin') también puede agregar
+// documentos a la base de conocimiento de su propia empresa — mismo criterio
+// de acceso que GET /clients/:id/documents (requireFullClientAccess), más el
+// chequeo de grupo de abajo para que no pueda subir documentos a un cliente
+// que no es el suyo.
+// Pedido explícito del usuario (14-10-2026): poder descargar los documentos
+// ya subidos para revisarlos — no existía ningún link de descarga todavía
+// (ni para el admin de BullsEye). Mismo criterio de acceso que el listado
+// (requireFullClientAccess) y mismo patrón de URL firmada temporal que el
+// video de respaldo de una reunión (GET /meetings/:id/video) — el bucket es
+// privado, no se puede linkear directo.
+clientsRouter.get('/clients/:id/documents/:documentId/download', requireFullClientAccess, async (req, res) => {
+  const { id, documentId } = req.params;
+
+  try {
+    const groupIds = await resolveClientGroupIds(id);
+    if (req.peithoUser!.role === 'client' && !groupIds.includes(req.peithoUser!.clientId ?? '')) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
+
+    const result = await getKnowledgeBaseDocumentDownloadUrl(documentId, groupIds);
+    if (!result) {
+      res.status(404).json({ error: 'Documento no encontrado' });
+      return;
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Error en GET /clients/:id/documents/:documentId/download', error);
+    res.status(500).json({ error: 'Error generando el link de descarga' });
+  }
+});
+
+clientsRouter.post('/clients/:id/documents', requireFullClientAccess, uploadSingleFile, async (req, res) => {
   const { id } = req.params;
 
   if (!req.file) {
     res.status(400).json({ error: 'Falta el archivo (campo "file")' });
     return;
+  }
+
+  if (req.peithoUser!.role === 'client') {
+    const groupIds = await resolveClientGroupIds(id);
+    if (!groupIds.includes(req.peithoUser!.clientId ?? '')) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
   }
 
   // Fase F — categoría opcional (multer entrega los campos de texto del
