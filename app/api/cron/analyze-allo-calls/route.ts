@@ -135,6 +135,8 @@ export async function GET(req: NextRequest) {
             model,
             signals: result.senales,
             mentioned_companies: result.empresas_mencionadas,
+            mentioned_technologies: result.tecnologias_mencionadas,
+            industry: result.industria_prospecto || null,
             top_relevance: relevance,
             recommended_action: result.accion_sugerida,
             follow_up_date: result.fecha_seguimiento || null,
