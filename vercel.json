@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/sync-meetings",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/analyze-allo-calls",
+      "schedule": "0 */4 * * *"
     }
   ],
   "framework": "nextjs",

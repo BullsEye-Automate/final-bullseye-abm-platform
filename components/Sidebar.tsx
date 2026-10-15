@@ -28,6 +28,7 @@ import {
   IconUserSearch,
   IconLogout,
   IconCalendarEvent,
+  IconBulb,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -58,6 +59,7 @@ const SECTIONS: Section[] = [
     label: "SDR",
     items: [
       { href: "/sdr/calientes", label: "Contactos calientes", icon: IconFlame },
+      { href: "/sdr/senales",   label: "Señales comerciales", icon: IconBulb },
       { href: "/telefonos",     label: "Teléfonos",           icon: IconPhone },
       { href: "/llamadas",      label: "Llamadas",            icon: IconHeadset },
       { href: "/respuestas",    label: "Respuestas",          icon: IconMessage2 },
