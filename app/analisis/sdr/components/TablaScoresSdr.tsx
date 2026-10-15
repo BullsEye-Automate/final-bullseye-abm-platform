@@ -116,7 +116,7 @@ export default function TablaScoresSdr({ data, onCellClick }: TablaScoresSdrProp
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
           <tr>
-            <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50">
+            <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50 sticky left-0 z-20 border-r border-gray-200">
               <button onClick={() => toggleSort("sdr_nombre")} className="flex items-center">
                 SDR
                 <SortIcon column="sdr_nombre" />
@@ -153,8 +153,14 @@ export default function TablaScoresSdr({ data, onCellClick }: TablaScoresSdrProp
         </thead>
         <tbody className="divide-y divide-gray-100">
           {sortedData.map((row, idx) => (
-            <tr key={row.sdr_id} className={idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"}>
-              <td className="px-4 py-3 font-medium text-gray-900">{row.sdr_nombre}</td>
+            <tr key={row.sdr_id} className={`group ${idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"}`}>
+              <td
+                className={`px-4 py-3 font-medium text-gray-900 sticky left-0 z-[1] border-r border-gray-200 ${
+                  idx % 2 === 0 ? "bg-white group-hover:bg-gray-50" : "bg-gray-50 group-hover:bg-gray-100"
+                }`}
+              >
+                {row.sdr_nombre}
+              </td>
               <td className="px-4 py-3 text-right text-gray-700">{row.llamadas_analizadas}</td>
               <td
                 className="px-4 py-3 text-right text-gray-900 font-semibold cursor-pointer hover:underline"
@@ -178,7 +184,7 @@ export default function TablaScoresSdr({ data, onCellClick }: TablaScoresSdrProp
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold sticky bottom-0">
-            <td className="px-4 py-3 text-gray-900">Promedio</td>
+            <td className="px-4 py-3 text-gray-900 sticky left-0 z-10 bg-gray-50 border-r border-gray-200">Promedio</td>
             <td className="px-4 py-3 text-right text-gray-900">{promedios.llamadasAnalizadas}</td>
             <td className="px-4 py-3 text-right text-gray-900" style={colorStyle(promedios.puntajeTotal, 100)}>
               {fmt(promedios.puntajeTotal)}/100

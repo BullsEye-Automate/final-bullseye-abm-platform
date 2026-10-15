@@ -74,7 +74,17 @@ async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 5): 
 // Además se mantiene un Map en memoria como primera capa, para deduplicar
 // sin ni siquiera ir a Supabase cuando dos llamadas idénticas coinciden
 // dentro de la misma invocación.
-const ALLO_CACHE_TTL_MS = 90_000;
+//
+// Filtrar por SDR/país no cambia esta consulta (son los mismos números y
+// mismo rango de fechas — ese filtro se aplica después, en memoria, sobre
+// las llamadas ya traídas), así que debería ser un cache hit igual de
+// rápido que la vista sin filtrar — salvo que hayan pasado más de
+// ALLO_CACHE_TTL_MS desde la carga inicial. Un usuario real tarda más de
+// 90 segundos en abrir un multi-select y tildar varios SDR, así que ese TTL
+// se quedaba corto para ese flujo. Se sube a 5 minutos: de sobra para el
+// uso normal de los filtros sin dejar el dashboard desactualizado por
+// mucho tiempo (hay botón "Actualizar" para forzar un refresco).
+const ALLO_CACHE_TTL_MS = 5 * 60_000;
 const alloCache = new Map<string, { expiresAt: number; promise: Promise<any> }>();
 
 async function readAlloCacheRow(cacheKey: string): Promise<any | undefined> {
