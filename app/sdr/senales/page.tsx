@@ -1,18 +1,18 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { useClient } from "@/lib/clientContext";
+import { useEffect, useState, useMemo } from "react";
 import {
   IconBulb,
   IconLoader2,
   IconAlertCircle,
   IconRefresh,
-  IconBuilding,
   IconCalendarEvent,
   IconCheck,
   IconPhoneCall,
   IconFilter,
   IconX,
+  IconSearch,
+  IconUsers,
 } from "@tabler/icons-react";
 
 // ─── Tipos ──────────────────────────────────────────────────────────────────
@@ -27,51 +27,44 @@ type CallSignalCategory =
   | "cambio_organizacional"
   | "rechazo_definitivo";
 
-type CallSignal = {
+type Relevancia = "alta" | "media" | "baja";
+
+type CompanySignal = {
+  id: string;
   categoria: CallSignalCategory;
   evidencia: string;
-  tipo_senal: "restriccion_temporal" | "oportunidad_futura" | "proceso_compra" | "rechazo_definitivo" | "informacion_contextual";
+  tipo_senal: string;
   periodo: string;
   certeza: "explicito" | "inferido" | "insuficiente";
-  relevancia: "alta" | "media" | "baja";
+  relevancia: Relevancia;
   relevancia_motivo: string;
-};
-
-type MentionedCompany = {
-  nombre: string;
-  contexto: string;
-  tipo: "competidor" | "referido" | "proveedor_actual" | "otro";
-};
-
-type MentionedTechnology = {
-  nombre: string;
-  contexto: string;
-};
-
-type SignalRow = {
-  id: string;
-  client_id: string;
-  allo_call_id: string;
-  contact_number: string | null;
-  contact_name: string | null;
-  contact_company: string | null;
-  contact_job_title: string | null;
-  industry: string | null;
   call_date: string | null;
-  call_duration: number | null;
-  signals: CallSignal[];
-  mentioned_companies: MentionedCompany[];
-  mentioned_technologies: MentionedTechnology[];
-  top_relevance: "alta" | "media" | "baja" | null;
-  recommended_action: string | null;
-  follow_up_date: string | null;
-  crm_summary: string | null;
+  client_id: string;
+  client_name: string;
   reviewed: boolean;
+};
+
+type Vendor = { nombre: string; tipo: string };
+type Contact = { name: string | null; job_title: string | null; contact_number: string | null };
+type ClientInvolved = { client_id: string; client_name: string };
+
+type CompanyGroup = {
+  company_key: string;
+  company_name: string;
+  industry: string | null;
+  top_relevance: Relevancia;
+  call_count: number;
+  pending_count: number;
+  technologies: string[];
+  vendors: Vendor[];
+  contacts: Contact[];
+  clients_involved: ClientInvolved[];
+  signals: CompanySignal[];
 };
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-const RELEVANCE_META: Record<string, { label: string; bg: string; border: string; text: string }> = {
+const RELEVANCE_META: Record<Relevancia, { label: string; bg: string; border: string; text: string }> = {
   alta: { label: "Alta", bg: "#fef2f2", border: "#fca5a5", text: "#dc2626" },
   media: { label: "Media", bg: "#fffbeb", border: "#fcd34d", text: "#d97706" },
   baja: { label: "Baja", bg: "#f9fafb", border: "#d1d5db", text: "#6b7280" },
@@ -90,7 +83,7 @@ const CATEGORY_LABELS: Record<CallSignalCategory, string> = {
 
 const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABELS) as [CallSignalCategory, string][];
 
-const TIPO_SENAL_LABEL: Record<CallSignal["tipo_senal"], string> = {
+const TIPO_SENAL_LABEL: Record<string, string> = {
   restriccion_temporal: "Restricción temporal",
   oportunidad_futura: "Oportunidad futura",
   proceso_compra: "Proceso de compra",
@@ -98,32 +91,14 @@ const TIPO_SENAL_LABEL: Record<CallSignal["tipo_senal"], string> = {
   informacion_contextual: "Información contextual",
 };
 
-const ACCION_LABEL: Record<string, string> = {
-  seguimiento_fecha: "Seguimiento a fecha confirmada",
-  seguimiento_condicionado: "Seguimiento condicionado",
-  investigacion_adicional: "Investigación adicional de la cuenta",
-  cambio_interlocutor: "Cambio de interlocutor",
-  descalificacion: "Descalificación comercial",
-  ninguna_accion: "Sin acción",
-};
-
-const MENTIONED_TIPO_LABEL: Record<MentionedCompany["tipo"], string> = {
+const VENDOR_TIPO_LABEL: Record<string, string> = {
   competidor: "Competidor",
-  referido: "Referido",
   proveedor_actual: "Proveedor actual",
-  otro: "Otro",
 };
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("es-CL", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDuration(seconds: number | null): string {
-  if (!seconds) return "—";
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  return new Date(iso).toLocaleDateString("es-CL", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function toggleInSet<T>(set: Set<T>, value: T): Set<T> {
@@ -135,72 +110,85 @@ function toggleInSet<T>(set: Set<T>, value: T): Set<T> {
 // ─── Página ─────────────────────────────────────────────────────────────────
 
 export default function SenalesComercialesPage() {
-  const { currentClient } = useClient();
-  const [signals, setSignals] = useState<SignalRow[]>([]);
+  const [companies, setCompanies] = useState<CompanyGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [onlyUnreviewed, setOnlyUnreviewed] = useState(true);
+  const [search, setSearch] = useState("");
+  const [onlyPending, setOnlyPending] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<Set<CallSignalCategory>>(new Set());
   const [industryFilter, setIndustryFilter] = useState<Set<string>>(new Set());
+  const [techFilter, setTechFilter] = useState<Set<string>>(new Set());
+  const [vendorFilter, setVendorFilter] = useState<Set<string>>(new Set());
 
-  const load = useCallback((clientId: string) => {
+  function load() {
     setLoading(true);
     setError(null);
-    fetch(`/api/clients/${clientId}/call-signals?reviewed=${onlyUnreviewed ? "false" : "all"}`, { cache: "no-store" })
+    fetch("/api/sdr/company-signals", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
-        if (d.error) { setError(d.error); setSignals([]); return; }
-        setSignals(d.signals ?? []);
+        if (d.error) { setError(d.error); setCompanies([]); return; }
+        setCompanies(d.companies ?? []);
       })
       .catch((e) => setError(e.message ?? "Error de red"))
       .finally(() => setLoading(false));
-  }, [onlyUnreviewed]);
-
-  useEffect(() => {
-    if (currentClient?.id) load(currentClient.id);
-  }, [currentClient?.id, load]);
-
-  async function markReviewed(signalId: string) {
-    setSignals((prev) => prev.map((s) => (s.id === signalId ? { ...s, reviewed: true } : s)));
-    await fetch(`/api/clients/${currentClient?.id}/call-signals`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ signal_id: signalId, reviewed: true }),
-    }).catch(() => {});
-    if (onlyUnreviewed) setSignals((prev) => prev.filter((s) => s.id !== signalId));
   }
 
-  // Industrias presentes en los datos cargados — el filtro de industria es
-  // dinámico (no un enum fijo como categoría) porque Claude la infiere en
-  // texto libre corto.
-  const industriesPresent = useMemo(() => {
-    const set = new Set<string>();
-    for (const s of signals) if (s.industry) set.add(s.industry);
-    return Array.from(set).sort();
-  }, [signals]);
+  useEffect(() => { load(); }, []);
 
-  const categoriesPresent = useMemo(() => {
-    const set = new Set<CallSignalCategory>();
-    for (const s of signals) for (const sig of s.signals) set.add(sig.categoria);
-    return set;
-  }, [signals]);
+  async function markCompanyReviewed(company: CompanyGroup) {
+    const ids = Array.from(new Set(company.signals.map((s) => s.id)));
+    setCompanies((prev) =>
+      prev.map((c) => (c.company_key === company.company_key ? { ...c, pending_count: 0, signals: c.signals.map((s) => ({ ...s, reviewed: true })) } : c))
+    );
+    await fetch("/api/sdr/company-signals", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ signal_ids: ids, reviewed: true }),
+    }).catch(() => {});
+  }
 
-  const filteredSignals = useMemo(() => {
-    return signals.filter((s) => {
-      if (categoryFilter.size > 0 && !s.signals.some((sig) => categoryFilter.has(sig.categoria))) return false;
-      if (industryFilter.size > 0 && (!s.industry || !industryFilter.has(s.industry))) return false;
+  const facets = useMemo(() => {
+    const categories = new Set<CallSignalCategory>();
+    const industries = new Set<string>();
+    const techs = new Set<string>();
+    const vendors = new Set<string>();
+    for (const c of companies) {
+      if (c.industry) industries.add(c.industry);
+      for (const t of c.technologies) techs.add(t);
+      for (const v of c.vendors) vendors.add(v.nombre);
+      for (const s of c.signals) categories.add(s.categoria);
+    }
+    return {
+      categories,
+      industries: Array.from(industries).sort(),
+      techs: Array.from(techs).sort(),
+      vendors: Array.from(vendors).sort(),
+    };
+  }, [companies]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return companies.filter((c) => {
+      if (q && !c.company_name.toLowerCase().includes(q)) return false;
+      if (onlyPending && c.pending_count === 0) return false;
+      if (categoryFilter.size > 0 && !c.signals.some((s) => categoryFilter.has(s.categoria))) return false;
+      if (industryFilter.size > 0 && (!c.industry || !industryFilter.has(c.industry))) return false;
+      if (techFilter.size > 0 && !c.technologies.some((t) => techFilter.has(t))) return false;
+      if (vendorFilter.size > 0 && !c.vendors.some((v) => vendorFilter.has(v.nombre))) return false;
       return true;
     });
-  }, [signals, categoryFilter, industryFilter]);
+  }, [companies, search, onlyPending, categoryFilter, industryFilter, techFilter, vendorFilter]);
 
-  const hasActiveFilters = categoryFilter.size > 0 || industryFilter.size > 0;
+  const hasActiveFilters =
+    categoryFilter.size > 0 || industryFilter.size > 0 || techFilter.size > 0 || vendorFilter.size > 0 || onlyPending || search.trim() !== "";
 
-  if (!currentClient) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-ink-muted">Selecciona un cliente en el sidebar para ver sus señales comerciales.</p>
-      </div>
-    );
+  function clearFilters() {
+    setSearch("");
+    setOnlyPending(false);
+    setCategoryFilter(new Set());
+    setIndustryFilter(new Set());
+    setTechFilter(new Set());
+    setVendorFilter(new Set());
   }
 
   return (
@@ -212,44 +200,41 @@ export default function SenalesComercialesPage() {
             <IconBulb size={22} style={{ color: "#62E0D8" }} /> Señales comerciales
           </h1>
           <p className="text-sm text-ink-muted mt-0.5">
-            Detectadas por IA a partir de las llamadas de Allo realmente conectadas — ciclos de presupuesto, procesos de compra, rechazos, tecnologías y empresas mencionadas.
+            Base de empresas con señales de valor detectadas por IA en llamadas de Allo — tecnología que usan, proveedores actuales, fechas de presupuesto. Agrupado por empresa, de todos los clientes, para reusar la señal con quien le calce.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex gap-1 p-1 rounded-lg bg-[#F4F2FB]">
-            <button
-              onClick={() => setOnlyUnreviewed(true)}
-              className="text-xs px-3 py-1.5 rounded-md transition"
-              style={onlyUnreviewed ? { background: "white", color: "#251762", fontWeight: 600 } : { color: "#6B6884" }}
-            >
-              No revisadas
-            </button>
-            <button
-              onClick={() => setOnlyUnreviewed(false)}
-              className="text-xs px-3 py-1.5 rounded-md transition"
-              style={!onlyUnreviewed ? { background: "white", color: "#251762", fontWeight: 600 } : { color: "#6B6884" }}
-            >
-              Todas
-            </button>
-          </div>
-          <button
-            onClick={() => currentClient?.id && load(currentClient.id)}
-            disabled={loading}
-            className="btn-secondary"
-            title="Refrescar"
-          >
-            {loading ? <IconLoader2 size={15} className="animate-spin" /> : <IconRefresh size={15} />}
-          </button>
-        </div>
+        <button onClick={load} disabled={loading} className="btn-secondary shrink-0" title="Refrescar">
+          {loading ? <IconLoader2 size={15} className="animate-spin" /> : <IconRefresh size={15} />}
+        </button>
       </header>
 
-      {!loading && signals.length > 0 && (
-        <div className="card p-3 space-y-2">
+      {!loading && companies.length > 0 && (
+        <div className="card p-3 space-y-2.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar empresa…"
+                className="w-full pl-9 pr-3 py-1.5 text-sm border border-[#E5E2F0] rounded-lg outline-none focus:border-[#62E0D8] bg-white"
+              />
+            </div>
+            <button
+              onClick={() => setOnlyPending((v) => !v)}
+              className="text-xs px-2.5 py-1.5 rounded-full border transition"
+              style={onlyPending ? { background: "#251762", color: "white", borderColor: "#251762" } : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }}
+            >
+              Solo con pendientes
+            </button>
+          </div>
+
           <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted">
-            <IconFilter size={13} /> Filtrar por tipo de señal
+            <IconFilter size={13} /> Tipo de señal
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {CATEGORY_OPTIONS.filter(([value]) => categoriesPresent.has(value)).map(([value, label]) => {
+            {CATEGORY_OPTIONS.filter(([value]) => facets.categories.has(value)).map(([value, label]) => {
               const active = categoryFilter.has(value);
               return (
                 <button
@@ -264,13 +249,13 @@ export default function SenalesComercialesPage() {
             })}
           </div>
 
-          {industriesPresent.length > 0 && (
+          {facets.industries.length > 0 && (
             <>
               <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted pt-1">
-                <IconFilter size={13} /> Filtrar por industria del prospecto
+                <IconFilter size={13} /> Industria
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {industriesPresent.map((ind) => {
+                {facets.industries.map((ind) => {
                   const active = industryFilter.has(ind);
                   return (
                     <button
@@ -287,11 +272,54 @@ export default function SenalesComercialesPage() {
             </>
           )}
 
+          {facets.techs.length > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted pt-1">
+                <IconFilter size={13} /> Tecnología que usan
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {facets.techs.map((t) => {
+                  const active = techFilter.has(t);
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => setTechFilter((prev) => toggleInSet(prev, t))}
+                      className="text-xs px-2.5 py-1 rounded-full border transition"
+                      style={active ? { background: "#6D28D9", color: "white", borderColor: "#6D28D9" } : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {facets.vendors.length > 0 && (
+            <>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-ink-muted pt-1">
+                <IconFilter size={13} /> Proveedor / competidor mencionado
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {facets.vendors.map((v) => {
+                  const active = vendorFilter.has(v);
+                  return (
+                    <button
+                      key={v}
+                      onClick={() => setVendorFilter((prev) => toggleInSet(prev, v))}
+                      className="text-xs px-2.5 py-1 rounded-full border transition"
+                      style={active ? { background: "#1D4ED8", color: "white", borderColor: "#1D4ED8" } : { background: "white", color: "#6B6884", borderColor: "#E5E2F0" }}
+                    >
+                      {v}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
           {hasActiveFilters && (
-            <button
-              onClick={() => { setCategoryFilter(new Set()); setIndustryFilter(new Set()); }}
-              className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink pt-1"
-            >
+            <button onClick={clearFilters} className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink pt-1">
               <IconX size={12} /> Limpiar filtros
             </button>
           )}
@@ -311,121 +339,109 @@ export default function SenalesComercialesPage() {
         </div>
       )}
 
-      {!loading && !error && signals.length === 0 && (
+      {!loading && !error && companies.length === 0 && (
         <div className="card text-center py-12 text-ink-muted text-sm">
-          {onlyUnreviewed
-            ? "No hay señales pendientes de revisar para este cliente."
-            : "Todavía no hay señales analizadas para este cliente — se generan automáticamente a partir de las llamadas conectadas de Allo."}
+          Todavía no hay empresas con señales analizadas — se generan automáticamente a partir de las llamadas conectadas de Allo de todos los clientes.
         </div>
       )}
 
-      {!loading && signals.length > 0 && filteredSignals.length === 0 && (
+      {!loading && companies.length > 0 && filtered.length === 0 && (
         <div className="card text-center py-12 text-ink-muted text-sm">Sin resultados para estos filtros.</div>
       )}
 
       <div className="space-y-3">
-        {filteredSignals.map((s) => {
-          const relevance = RELEVANCE_META[s.top_relevance ?? "baja"];
+        {filtered.map((c) => {
+          const relevance = RELEVANCE_META[c.top_relevance];
           return (
-            <div key={s.id} className="card p-4 space-y-3">
+            <div key={c.company_key} className="card p-4 space-y-3">
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-ink">{s.contact_name || "Contacto sin identificar"}</span>
-                    {s.contact_company && (
-                      <span className="text-sm text-ink-muted flex items-center gap-1">
-                        <IconBuilding size={13} /> {s.contact_company}
-                      </span>
-                    )}
-                    {s.industry && (
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-[#F1EEF7] text-[#251762]">{s.industry}</span>
-                    )}
+                    <span className="font-semibold text-ink text-base">{c.company_name}</span>
+                    {c.industry && <span className="text-xs px-2 py-0.5 rounded-full bg-[#F1EEF7] text-[#251762]">{c.industry}</span>}
                     <span
                       className="text-xs font-semibold px-2 py-0.5 rounded-full border"
                       style={{ background: relevance.bg, borderColor: relevance.border, color: relevance.text }}
                     >
                       Relevancia {relevance.label}
                     </span>
+                    {c.pending_count > 0 && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#92400E]">
+                        {c.pending_count} sin revisar
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-ink-muted flex-wrap">
-                    {s.contact_job_title && <span>{s.contact_job_title}</span>}
+                    <span>{c.call_count} llamada{c.call_count !== 1 ? "s" : ""}</span>
                     <span className="flex items-center gap-1">
-                      <IconPhoneCall size={12} /> {formatDate(s.call_date)} · {formatDuration(s.call_duration)}
+                      <IconUsers size={12} /> Descubierta vía: {c.clients_involved.map((cl) => cl.client_name).join(", ")}
                     </span>
                   </div>
                 </div>
-                {!s.reviewed && (
+                {c.pending_count > 0 && (
                   <button
-                    onClick={() => markReviewed(s.id)}
+                    onClick={() => markCompanyReviewed(c)}
                     className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-[#E5E2F0] hover:bg-gray-50 transition shrink-0"
                   >
-                    <IconCheck size={13} /> Marcar revisada
+                    <IconCheck size={13} /> Marcar todas revisadas
                   </button>
                 )}
               </div>
 
-              {s.signals.length > 0 && (
-                <div className="space-y-2">
-                  {s.signals.map((sig, i) => (
-                    <div key={i} className="bg-[#F9F8FC] rounded-lg px-3 py-2">
-                      <div className="flex items-center gap-1.5 flex-wrap text-xs mb-1">
-                        <span className="font-semibold text-ink">{CATEGORY_LABELS[sig.categoria] ?? sig.categoria}</span>
-                        <span className="px-1.5 py-0.5 rounded bg-white border border-[#E5E2F0] text-ink-muted">
-                          {TIPO_SENAL_LABEL[sig.tipo_senal]}
+              {c.technologies.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs text-ink-muted">Tecnología que usan:</span>
+                  {c.technologies.map((t, i) => (
+                    <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-[#F5F3FF] text-[#6D28D9]">{t}</span>
+                  ))}
+                </div>
+              )}
+
+              {c.vendors.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs text-ink-muted">Proveedores / competidores:</span>
+                  {c.vendors.map((v, i) => (
+                    <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#1D4ED8]">
+                      {v.nombre} · {VENDOR_TIPO_LABEL[v.tipo] ?? v.tipo}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {c.contacts.length > 0 && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs text-ink-muted">Contactos conocidos:</span>
+                  {c.contacts.map((ct, i) => (
+                    <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-[#F9F8FC] text-ink-muted border border-[#E5E2F0]">
+                      {ct.name || "Sin nombre"}{ct.job_title ? ` · ${ct.job_title}` : ""}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {c.signals.map((sig, i) => (
+                  <div key={`${sig.id}-${i}`} className="bg-[#F9F8FC] rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs mb-1">
+                      <span className="font-semibold text-ink">{CATEGORY_LABELS[sig.categoria] ?? sig.categoria}</span>
+                      <span className="px-1.5 py-0.5 rounded bg-white border border-[#E5E2F0] text-ink-muted">
+                        {TIPO_SENAL_LABEL[sig.tipo_senal] ?? sig.tipo_senal}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-white border border-[#E5E2F0] text-ink-muted capitalize">{sig.certeza}</span>
+                      {sig.periodo && (
+                        <span className="px-1.5 py-0.5 rounded bg-white border border-[#E5E2F0] text-ink-muted flex items-center gap-1">
+                          <IconCalendarEvent size={11} /> {sig.periodo}
                         </span>
-                        <span className="px-1.5 py-0.5 rounded bg-white border border-[#E5E2F0] text-ink-muted capitalize">
-                          {sig.certeza}
-                        </span>
-                        {sig.periodo && (
-                          <span className="px-1.5 py-0.5 rounded bg-white border border-[#E5E2F0] text-ink-muted flex items-center gap-1">
-                            <IconCalendarEvent size={11} /> {sig.periodo}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-ink italic">"{sig.evidencia}"</p>
-                      <p className="text-xs text-ink-subtle mt-0.5">{sig.relevancia_motivo}</p>
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
-
-              {s.mentioned_companies.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-xs text-ink-muted">Empresas mencionadas:</span>
-                  {s.mentioned_companies.map((c, i) => (
-                    <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#1D4ED8]" title={c.contexto}>
-                      {c.nombre} · {MENTIONED_TIPO_LABEL[c.tipo]}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {s.mentioned_technologies.length > 0 && (
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-xs text-ink-muted">Tecnologías mencionadas:</span>
-                  {s.mentioned_technologies.map((t, i) => (
-                    <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-[#F5F3FF] text-[#6D28D9]" title={t.contexto}>
-                      {t.nombre}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex items-center justify-between gap-3 flex-wrap pt-2 border-t border-[#F1EEF7]">
-                <div className="text-xs">
-                  <span className="font-semibold text-ink-muted">Acción sugerida: </span>
-                  <span className="text-ink">{ACCION_LABEL[s.recommended_action ?? ""] ?? s.recommended_action}</span>
-                  {s.follow_up_date && (
-                    <span className="text-ink-muted"> · seguimiento {new Date(s.follow_up_date).toLocaleDateString("es-CL")}</span>
-                  )}
-                </div>
+                    <p className="text-sm text-ink italic">"{sig.evidencia}"</p>
+                    <p className="text-xs text-ink-subtle mt-0.5">{sig.relevancia_motivo}</p>
+                    <div className="flex items-center gap-1 text-[11px] text-ink-subtle mt-1">
+                      <IconPhoneCall size={10} /> {formatDate(sig.call_date)} · {sig.client_name}
+                    </div>
+                  </div>
+                ))}
               </div>
-
-              {s.crm_summary && (
-                <div className="bg-[#EDF9F8] rounded-lg px-3 py-2 text-sm text-[#0F6E56]">
-                  {s.crm_summary}
-                </div>
-              )}
             </div>
           );
         })}
