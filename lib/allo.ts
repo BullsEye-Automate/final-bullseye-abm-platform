@@ -1,3 +1,5 @@
+import { supabaseAdmin } from "./supabase";
+
 const ALLO_API = "https://api.withallo.com";
 
 function alloHeaders() {
@@ -57,34 +59,82 @@ async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 5): 
 }
 
 // Los reportes de Análisis SDR (Ranking SDR, Ranking País, Score de
-// Llamadas IA, Origen de Reuniones, etc.) viven en la misma página y, con
-// "todos los clientes" + el mismo período (el default al cargar), terminan
-// pidiéndole a Allo exactamente las mismas páginas de exactamente los
-// mismos números — cada reporte duplicando el trabajo de los demás. Sumado
-// a que Allo limita a 5 req/s (ver throttleAllo) y un solo reporte con
-// "todos los clientes" ya dispara una llamada por cada número (~25+) más la
-// paginación de /analytics/outbound, el resultado sin caché eran varios
-// minutos por carga. Se cachea la respuesta (y la promesa en vuelo, para
-// deduplicar llamadas idénticas disparadas en paralelo por distintos
-// reportes) por un rato corto: alcanza para que los reportes de una misma
-// carga de página compartan los datos, sin dejar el dashboard desactualizado
-// por mucho tiempo.
+// Llamadas IA, Salud Telefónica, Análisis Clientes) viven en rutas de API
+// separadas — cada una su propia función serverless — y con "todos los
+// clientes" + el mismo período (el default al cargar) terminan pidiéndole a
+// Allo exactamente las mismas páginas de exactamente los mismos números:
+// cada reporte duplica el trabajo de los demás. Sumado a que Allo limita a
+// 5 req/s (ver throttleAllo) y un solo reporte con "todos los clientes" ya
+// dispara una llamada por cada número (~25+) más la paginación de
+// /analytics/outbound, el resultado sin caché eran varios minutos por
+// carga. Se cachea la respuesta en la tabla allo_response_cache de Supabase
+// (ver supabase/allo_response_cache_migration.sql) — a diferencia de un
+// Map en memoria, esa caché SÍ se comparte entre las distintas funciones
+// serverless de cada reporte, que es justamente el caso que más pesa acá.
+// Además se mantiene un Map en memoria como primera capa, para deduplicar
+// sin ni siquiera ir a Supabase cuando dos llamadas idénticas coinciden
+// dentro de la misma invocación.
 const ALLO_CACHE_TTL_MS = 90_000;
 const alloCache = new Map<string, { expiresAt: number; promise: Promise<any> }>();
+
+async function readAlloCacheRow(cacheKey: string): Promise<any | undefined> {
+  try {
+    const { data } = await supabaseAdmin()
+      .from("allo_response_cache")
+      .select("response, expires_at")
+      .eq("cache_key", cacheKey)
+      .maybeSingle();
+    if (data && new Date(data.expires_at).getTime() > Date.now()) return data.response;
+  } catch (err) {
+    // No debe tumbar el reporte si la tabla de caché no existe (migración
+    // no aplicada todavía) o Supabase falla puntualmente — se sigue de
+    // largo y se consulta a Allo directo.
+    console.error("Lectura de allo_response_cache falló, se sigue sin caché compartida:", err);
+  }
+  return undefined;
+}
+
+function writeAlloCacheRow(cacheKey: string, response: any, expiresAt: number) {
+  // Fire-and-forget: el caller ya tiene su respuesta, no hace falta
+  // esperar a que la escritura de caché termine.
+  try {
+    supabaseAdmin()
+      .from("allo_response_cache")
+      .upsert({ cache_key: cacheKey, response, expires_at: new Date(expiresAt).toISOString() }, { onConflict: "cache_key" })
+      .then(({ error }) => {
+        if (error) console.error("No se pudo guardar en allo_response_cache:", error.message);
+      });
+    // Limpieza oportunista de filas vencidas (baja frecuencia, no bloqueante).
+    if (Math.random() < 0.05) {
+      supabaseAdmin()
+        .from("allo_response_cache")
+        .delete()
+        .lt("expires_at", new Date().toISOString())
+        .then(() => {});
+    }
+  } catch (err) {
+    console.error("No se pudo escribir en allo_response_cache:", err);
+  }
+}
 
 async function alloFetch(path: string, init?: RequestInit) {
   const cacheKey = `${init?.method ?? "GET"} ${path} ${init?.body ?? ""}`;
   const now = Date.now();
-  const cached = alloCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.promise;
+  const inMemory = alloCache.get(cacheKey);
+  if (inMemory && inMemory.expiresAt > now) return inMemory.promise;
 
   const promise = (async () => {
+    const shared = await readAlloCacheRow(cacheKey);
+    if (shared !== undefined) return shared;
+
     const res = await alloFetchRaw(path, init);
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`Allo API error (${res.status}): ${summarizeAlloError(text)}`);
     }
-    return res.json();
+    const json = await res.json();
+    writeAlloCacheRow(cacheKey, json, now + ALLO_CACHE_TTL_MS);
+    return json;
   })();
 
   alloCache.set(cacheKey, { expiresAt: now + ALLO_CACHE_TTL_MS, promise });
