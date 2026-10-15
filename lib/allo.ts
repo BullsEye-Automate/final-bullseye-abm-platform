@@ -12,11 +12,20 @@ function alloHeaders() {
   };
 }
 
-// Allo permite 5 requests/segundo. El dashboard puede disparar muchas
-// llamadas seguidas (una por número asignado, más paginación) — sobre todo
-// al agregar "todos los clientes" — así que se serializan con un pequeño
-// espaciado y se reintenta automáticamente ante un 429.
-const MIN_INTERVAL_MS = 220; // ~4.5 req/s, con margen bajo el límite de 5/s
+// Allo permite 5 requests/segundo — GLOBAL para todo el workspace, no por
+// conexión. Este límite se respeta acá con un espaciado mínimo entre
+// llamadas, pero ese contador (lastRequestAt) solo vive en la memoria de
+// ESTA instancia de función serverless: Análisis SDR carga varios reportes
+// en paralelo (Ranking SDR, Ranking País, Score de Llamadas IA, Origen de
+// Reuniones), cada uno su propia ruta API = su propia función = su propio
+// contador. Si cada una se acerca a los 5 req/s de forma independiente, la
+// suma real contra Allo fácilmente supera el límite y dispara una cascada
+// de 429 (cada reintento espera lo que Allo indique) — probablemente la
+// causa principal de que una carga completa tome varios minutos. Se deja
+// margen de sobra (bien por debajo de 5 req/s por función) para que varias
+// rutas puedan correr al mismo tiempo sin gatillar esa cascada, y más
+// reintentos por si aun así ocurre algún 429 puntual.
+const MIN_INTERVAL_MS = 350; // ~2.9 req/s por función, deja margen para rutas en paralelo
 let lastRequestAt = 0;
 
 async function throttleAllo() {
@@ -26,7 +35,7 @@ async function throttleAllo() {
   if (nextSlot > now) await new Promise((r) => setTimeout(r, nextSlot - now));
 }
 
-async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 3): Promise<Response> {
+async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 5): Promise<Response> {
   await throttleAllo();
   const res = await fetch(`${ALLO_API}${path}`, {
     ...init,
@@ -47,13 +56,41 @@ async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 3): 
   return res;
 }
 
+// Los reportes de Análisis SDR (Ranking SDR, Ranking País, Score de
+// Llamadas IA, Origen de Reuniones, etc.) viven en la misma página y, con
+// "todos los clientes" + el mismo período (el default al cargar), terminan
+// pidiéndole a Allo exactamente las mismas páginas de exactamente los
+// mismos números — cada reporte duplicando el trabajo de los demás. Sumado
+// a que Allo limita a 5 req/s (ver throttleAllo) y un solo reporte con
+// "todos los clientes" ya dispara una llamada por cada número (~25+) más la
+// paginación de /analytics/outbound, el resultado sin caché eran varios
+// minutos por carga. Se cachea la respuesta (y la promesa en vuelo, para
+// deduplicar llamadas idénticas disparadas en paralelo por distintos
+// reportes) por un rato corto: alcanza para que los reportes de una misma
+// carga de página compartan los datos, sin dejar el dashboard desactualizado
+// por mucho tiempo.
+const ALLO_CACHE_TTL_MS = 90_000;
+const alloCache = new Map<string, { expiresAt: number; promise: Promise<any> }>();
+
 async function alloFetch(path: string, init?: RequestInit) {
-  const res = await alloFetchRaw(path, init);
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Allo API error (${res.status}): ${summarizeAlloError(text)}`);
-  }
-  return res.json();
+  const cacheKey = `${init?.method ?? "GET"} ${path} ${init?.body ?? ""}`;
+  const now = Date.now();
+  const cached = alloCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.promise;
+
+  const promise = (async () => {
+    const res = await alloFetchRaw(path, init);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Allo API error (${res.status}): ${summarizeAlloError(text)}`);
+    }
+    return res.json();
+  })();
+
+  alloCache.set(cacheKey, { expiresAt: now + ALLO_CACHE_TTL_MS, promise });
+  // Si falla, no dejar el error cacheado — el próximo intento debe reintentar de verdad.
+  promise.catch(() => alloCache.delete(cacheKey));
+  return promise;
 }
 
 // El body de error de Allo normalmente es JSON, pero cuando Cloudflare
