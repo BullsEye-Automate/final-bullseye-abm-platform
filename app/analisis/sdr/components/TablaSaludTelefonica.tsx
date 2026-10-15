@@ -137,9 +137,19 @@ export default function TablaSaludTelefonica({ data }: { data: NumeroSalud[] }) 
 
   const rowClass = (row: NumeroSalud, idx: number) => {
     const highlight = rowHighlight(row);
-    if (highlight === "alerta") return "bg-red-50 hover:bg-red-100";
-    if (highlight === "advertencia") return "bg-amber-50 hover:bg-amber-100";
-    return idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100";
+    if (highlight === "alerta") return "group bg-red-50 hover:bg-red-100";
+    if (highlight === "advertencia") return "group bg-amber-50 hover:bg-amber-100";
+    return idx % 2 === 0 ? "group bg-white hover:bg-gray-50" : "group bg-gray-50 hover:bg-gray-100";
+  };
+
+  // Mismo criterio que rowClass, pero con group-hover: la primera columna
+  // queda fija (sticky) al scrollear horizontalmente, por lo que necesita
+  // su propio fondo opaco en vez de heredar el :hover directo de la fila.
+  const stickyColClass = (row: NumeroSalud, idx: number) => {
+    const highlight = rowHighlight(row);
+    if (highlight === "alerta") return "bg-red-50 group-hover:bg-red-100";
+    if (highlight === "advertencia") return "bg-amber-50 group-hover:bg-amber-100";
+    return idx % 2 === 0 ? "bg-white group-hover:bg-gray-50" : "bg-gray-50 group-hover:bg-gray-100";
   };
 
   const table = (
@@ -148,7 +158,7 @@ export default function TablaSaludTelefonica({ data }: { data: NumeroSalud[] }) 
         <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
           <tr>
             <th
-              className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50"
+              className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50 sticky left-0 z-20 border-r border-gray-200"
               title="Número de Allo y su nombre asignado."
             >
               <button onClick={() => toggleSort("numero_nombre")} className="flex items-center">
@@ -175,7 +185,9 @@ export default function TablaSaludTelefonica({ data }: { data: NumeroSalud[] }) 
             const highlight = rowHighlight(row);
             return (
               <tr key={row.numero} className={rowClass(row, idx)}>
-                <td className="px-4 py-3 font-medium text-gray-900">
+                <td
+                  className={`px-4 py-3 font-medium text-gray-900 sticky left-0 z-[1] border-r border-gray-200 ${stickyColClass(row, idx)}`}
+                >
                   <div className="flex items-center gap-1.5">
                     {highlight === "alerta" && (
                       <IconAlertTriangle size={14} className="text-red-500 shrink-0" />
@@ -213,7 +225,7 @@ export default function TablaSaludTelefonica({ data }: { data: NumeroSalud[] }) 
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold sticky bottom-0">
-            <td className="px-4 py-3 text-gray-900">Total</td>
+            <td className="px-4 py-3 text-gray-900 sticky left-0 z-10 bg-gray-50 border-r border-gray-200">Total</td>
             <td className="px-4 py-3 text-right text-gray-900">—</td>
             <td className="px-4 py-3 text-right text-gray-900">—</td>
             <td className="px-4 py-3 text-right text-gray-900">{totals.llamadas}</td>

@@ -156,7 +156,7 @@ export default function TablaRankingClientes({ data }: TablaRankingClientesProps
         <thead className="bg-gray-50 border-b border-gray-200 sticky top-0 z-10">
           <tr>
             <th
-              className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50"
+              className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 bg-gray-50 sticky left-0 z-20 border-r border-gray-200"
               title="Cliente al que pertenece el número de Allo de la llamada, o la reunión."
             >
               <button onClick={() => toggleSort("cliente_nombre")} className="flex items-center">
@@ -180,8 +180,14 @@ export default function TablaRankingClientes({ data }: TablaRankingClientesProps
         </thead>
         <tbody className="divide-y divide-gray-100">
           {sortedData.map((cliente, idx) => (
-            <tr key={cliente.cliente_id} className={idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"}>
-              <td className="px-4 py-3 font-medium text-gray-900">{cliente.cliente_nombre}</td>
+            <tr key={cliente.cliente_id} className={`group ${idx % 2 === 0 ? "bg-white hover:bg-gray-50" : "bg-gray-50 hover:bg-gray-100"}`}>
+              <td
+                className={`px-4 py-3 font-medium text-gray-900 sticky left-0 z-[1] border-r border-gray-200 ${
+                  idx % 2 === 0 ? "bg-white group-hover:bg-gray-50" : "bg-gray-50 group-hover:bg-gray-100"
+                }`}
+              >
+                {cliente.cliente_nombre}
+              </td>
               {COLUMNS.map((col) => (
                 <td key={col.key} className="px-4 py-3 text-right text-gray-700">
                   {PERCENT_KEYS.has(col.key) ? `${(cliente[col.key] as number).toFixed(1)}%` : cliente[col.key]}
@@ -192,7 +198,7 @@ export default function TablaRankingClientes({ data }: TablaRankingClientesProps
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold sticky bottom-0">
-            <td className="px-4 py-3 text-gray-900">Total</td>
+            <td className="px-4 py-3 text-gray-900 sticky left-0 z-10 bg-gray-50 border-r border-gray-200">Total</td>
             {COLUMNS.map((col) => (
               <td key={col.key} className="px-4 py-3 text-right text-gray-900">
                 {PERCENT_KEYS.has(col.key) ? `${totals[col.key].toFixed(1)}%` : totals[col.key]}
