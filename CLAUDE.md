@@ -178,6 +178,19 @@ _(Sección para registrar aprendizajes negativos — no recrear estas rutas)_
 - En **Configuración → Cliente** hay una sección "Allo" con un desplegable buscable (fetch en vivo a `/api/allo/numbers`) para asignar/quitar números al cliente seleccionado (`/api/clients/[id]/allo-numbers`).
 - Pendiente (próximo paso): usar estos números asignados para filtrar la reportería de Allo (actividades, tasa de conexión sin voicemail, reuniones agendadas, agrupación por tags) en el dashboard de SDR.
 
+### Módulo Células SDR (`/analisis/celulas-sdr`)
+
+Centro de mando del equipo SDR (14 vistas: Dirección / Operación / Análisis), réplica del prototipo `Dashboard-SDR-BullsEye.html` con datos reales. Todos los usuarios ven toda la información.
+
+- **Metas:** pestaña "Asignación" de la planilla de metas (`GOOGLE_SHEETS_MEETINGS_ID`), meta interna por SDR × cliente × mes. La meta del cliente = suma de las metas de sus SDR. Solo lectura (no se editan en la app). Parser en `lib/celulasSdr/sheets.ts`; apodos de columnas ("Nico N", "Cote", "Angeles", "Lore"…) en `PERSON_NICKNAMES`.
+- **Células:** pestaña "Maestra IA", columnas O y P (primer nombre = líder, siguientes = integrantes). Los líderes tienen meta propia que **no** suma a su célula (grupo "Líderes").
+- **Reuniones:** tabla `meetings` (API Reuniones). Todas las de cualquier origen, atribuidas a "Responsable de la reunión". Realizado: Si = realizada, No = no-show, Reagendar = reprogramada (rescate), Pendiente = agendada por realizarse. Agendadas por fecha de agendamiento; realizadas/no-show/reprogramadas por fecha de reunión. Oportunidad = realizada con Propuesta/Oportunidad en los valores elegidos en Configurar (por defecto "Si").
+- **Llamadas, contactados y puntaje:** Allo (`/api/celulas-sdr/allo?month=`), contactado = etapa "Conversación" del embudo de Allo; puntaje = "Score de Desempeño SDR" del summary (`lib/callScoreCard.ts`). País de llamadas = prefijo telefónico del número de Allo; país de reuniones = columna País.
+- **Email / WhatsApp / LinkedIn:** HubSpot, sin cliente (con filtro de cliente o país se muestran solo llamadas). "Otras" y "empresas/contactos trabajados": pendientes de conexión.
+- **Días hábiles:** lunes a viernes menos feriados de Chile (`lib/celulasSdr/calendar.ts`, agregar los de cada año nuevo).
+- **Configurar:** global en la tabla `sdr_cells_config` (migración `supabase/20261016_sdr_cells_config.sql`), editable por cualquier usuario con sesión.
+- Cálculo (agg / derive / forecast / alertas) en el navegador: `lib/celulasSdr/engine.ts`. Allo y HubSpot se cachean por mes en `allo_response_cache`.
+
 ---
 
 ## Estructura de carpetas
