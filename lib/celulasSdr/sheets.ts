@@ -191,16 +191,16 @@ export function parseAssignment(
 
   // Si un mes aparece dos veces, gana el último bloque de la hoja.
   const byMonth = new Map<string, RawGoal[]>();
-  const unknownCols = new Set<string>();
   blocks.forEach((b, i) => {
     const month = `${years[i]}-${String(b.monthIdx).padStart(2, "0")}`;
     const sdrCols: { idx: number; person: string }[] = [];
     b.header.forEach((h, idx) => {
       if (idx === 0 || !h) return;
       if (NON_SDR_HEADER.test(norm(h))) return;
+      // Columnas que no calzan con ninguna persona de la Maestra (ej. "SD1",
+      // "Julieta") se omiten (confirmado con BullsEye).
       const res = resolve(h);
-      if (!res.known) unknownCols.add(`${b.label}: "${h}"`);
-      sdrCols.push({ idx, person: res.name });
+      if (res.known) sdrCols.push({ idx, person: res.name });
     });
     const out: RawGoal[] = [];
     for (const r of b.rows) {
@@ -214,12 +214,6 @@ export function parseAssignment(
     }
     byMonth.set(month, out);
   });
-  if (unknownCols.size) {
-    warnings.push({
-      source: "Asignación",
-      message: `Columnas de SDR que no calzan con la Maestra (se usan con el nombre tal cual): ${[...unknownCols].join(", ")}.`,
-    });
-  }
   return [...byMonth.values()].flat();
 }
 
