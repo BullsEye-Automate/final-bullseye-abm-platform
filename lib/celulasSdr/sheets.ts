@@ -136,12 +136,60 @@ export type RawGoal = { month: string; person: string; client: string; goal: num
 // filas "Meta", "Agendadas", "Realizadas" y "Cumplimiento" cierran el
 // bloque. Columnas como "Meta interna", "Meta Cliente", "Ideal" o "#SDR"
 // se ignoran: la meta del cliente es la suma de las metas de sus SDR.
+// Formato actual de "Asignación" (desde oct-2026): una sola tabla con
+// encabezado "Mes | Cliente | N° mes | <SDR> … | Total meta interna | Meta
+// cliente | …" y una fila por mes × cliente. Los SDR vienen con nombre de
+// pila o "Apodo (Nombre)", ej. "Cote (María José)". La planilla no trae año:
+// se asume el año del período consultado (fallbackYear). Devuelve null si la
+// hoja no tiene este formato (se usa el formato anterior por bloques).
+function parseAssignmentTable(
+  rows: string[][],
+  resolve: (raw: string) => { name: string; known: boolean },
+  fallbackYear: number
+): RawGoal[] | null {
+  const hIdx = rows.findIndex((r) => norm(r[0] ?? "") === "mes" && norm(r[1] ?? "") === "cliente");
+  if (hIdx === -1) return null;
+  const header = rows[hIdx];
+  const sdrCols: { idx: number; person: string }[] = [];
+  header.forEach((h, idx) => {
+    if (idx < 2 || !h) return;
+    const n = norm(h);
+    if (/^n.? ?mes$/.test(n) || NON_SDR_HEADER.test(n) || /^(diferencia|alerta)/.test(n)) return;
+    // "Cote (María José)": se prueba el texto completo, luego lo de fuera y
+    // lo de dentro del paréntesis. Las columnas que no calzan con la Maestra
+    // se omiten (confirmado con BullsEye).
+    const outer = h.replace(/\(.*?\)/g, "").trim();
+    const inner = (h.match(/\((.*?)\)/) ?? [])[1]?.trim() ?? "";
+    const res = [h, outer, inner].filter(Boolean).map(resolve).find((x) => x.known);
+    if (res) sdrCols.push({ idx, person: res.name });
+  });
+  const out: RawGoal[] = [];
+  for (const r of rows.slice(hIdx + 1)) {
+    const monthIdx = MONTHS[norm(r[0] ?? "").split(" ")[0]];
+    const client = (r[1] ?? "").replace(/\(.*?\)/g, "").trim(); // "CCCH (2da fila)" → "CCCH"
+    if (!monthIdx || !client) continue;
+    const yearM = (r[0] ?? "").match(/\d{4}/);
+    const month = `${yearM ? yearM[0] : fallbackYear}-${String(monthIdx).padStart(2, "0")}`;
+    for (const { idx, person } of sdrCols) {
+      const raw = (r[idx] ?? "").replace(",", ".").trim();
+      if (!/^\d+(\.\d+)?$/.test(raw)) continue;
+      const goal = Number(raw);
+      if (goal > 0) out.push({ month, person, client, goal });
+    }
+  }
+  return out;
+}
+
 export function parseAssignment(
   rows: string[][],
   resolve: (raw: string) => { name: string; known: boolean },
   warnings: DataWarning[],
   fallbackYear: number
 ): RawGoal[] {
+  const table = parseAssignmentTable(rows, resolve, fallbackYear);
+  if (table) return table;
+
+  // Formato anterior: un bloque por mes.
   type Block = { monthIdx: number; year: number | null; header: string[]; rows: string[][]; label: string };
   const blocks: Block[] = [];
   let pending: { monthIdx: number; year: number | null; label: string } | null = null;
