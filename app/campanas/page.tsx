@@ -707,6 +707,7 @@ export default function CampanasPage() {
   const [groups, setGroups]         = useState<MessageGroup[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(false);
   const [resumingGroupId, setResumingGroupId] = useState<string | null>(null);
+  const [resumingPushGroupId, setResumingPushGroupId] = useState<string | null>(null);
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
   const [sharingGroupId, setSharingGroupId]   = useState<string | null>(null);
   const [copiedGroupId, setCopiedGroupId]     = useState<string | null>(null);
@@ -785,6 +786,14 @@ export default function CampanasPage() {
     setResumingGroupId(g.id);
     await generation.resumeGroup(g.id, currentClient.id, g.segment_id ?? "");
     setResumingGroupId(null);
+    router.push("/campanas/subir");
+  }
+
+  async function handleResumeGroupPush(g: MessageGroup) {
+    if (!currentClient?.id) return;
+    setResumingPushGroupId(g.id);
+    await generation.resumeGroup(g.id, currentClient.id, g.segment_id ?? "");
+    setResumingPushGroupId(null);
     router.push("/campanas/subir");
   }
 
@@ -1454,12 +1463,12 @@ export default function CampanasPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1 shrink-0 mt-0.5">
-                          {/* Botón continuar — aparece cuando quedan contactos pendientes (pending o error) */}
+                          {/* Botón continuar generación — quedan contactos sin generar */}
                           {g.total_contacts > g.generated_count && g.status !== "sent" && (
                             <button
                               onClick={() => handleResumeGroup(g)}
                               disabled={resumingGroupId === g.id}
-                              title={`Continuar: ${g.total_contacts - g.generated_count} pendientes`}
+                              title={`Continuar generación: ${g.total_contacts - g.generated_count} pendientes`}
                               className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg transition disabled:opacity-50"
                               style={{ background: "rgba(98,224,216,0.12)", color: "#0fa89a" }}
                             >
@@ -1467,6 +1476,21 @@ export default function CampanasPage() {
                                 ? <IconLoader2 size={13} className="animate-spin" />
                                 : <IconPlayerPlay size={13} />}
                               {resumingGroupId === g.id ? "Cargando…" : `Continuar (${g.total_contacts - g.generated_count})`}
+                            </button>
+                          )}
+                          {/* Botón continuar envío — hay mensajes generados pero no enviados a Lemlist */}
+                          {g.generated_count > g.sent_count && g.status !== "generating" && (
+                            <button
+                              onClick={() => handleResumeGroupPush(g)}
+                              disabled={resumingPushGroupId === g.id}
+                              title={`Continuar envío: ${g.generated_count - g.sent_count} pendientes`}
+                              className="flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg transition disabled:opacity-50"
+                              style={{ background: "rgba(59,130,246,0.1)", color: "#1d4ed8" }}
+                            >
+                              {resumingPushGroupId === g.id
+                                ? <IconLoader2 size={13} className="animate-spin" />
+                                : <IconSend size={13} />}
+                              {resumingPushGroupId === g.id ? "Cargando…" : `Enviar (${g.generated_count - g.sent_count})`}
                             </button>
                           )}
                           <button
