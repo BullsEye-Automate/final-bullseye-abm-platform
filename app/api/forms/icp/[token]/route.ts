@@ -1,21 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { tokenToClientId } from "@/lib/form-token";
-import {
-  deserializeIcpForm,
-  serializeSectionForm,
-  EMPTY_FORM,
-  type IndustrySectionKey,
-} from "@/lib/icp-form";
-
-const INDUSTRY_SECTIONS: IndustrySectionKey[] = [
-  "target_company",
-  "fit_signals",
-  "buyer_persona",
-  "value_prop",
-  "outreach",
-  "reference_clients",
-];
+import { getClientIndustry, saveIcpContent } from "@/lib/icpStore";
 
 export const dynamic = "force-dynamic";
 
@@ -109,63 +95,13 @@ export async function POST(
 
   if (!client) return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
 
-  // Modo industria: guardar cada sección por separado en icp_industry_sections
-  if (body.industry_id) {
-    const { data: industry } = await db
-      .from("icp_industries")
-      .select("id")
-      .eq("id", body.industry_id)
-      .eq("client_id", clientId)
-      .single();
-
-    if (!industry) {
-      return NextResponse.json({ error: "Industria no encontrada" }, { status: 404 });
-    }
-
-    const form = deserializeIcpForm(body.content);
-    const now  = new Date().toISOString();
-
-    const upserts = INDUSTRY_SECTIONS.map((sectionKey) => ({
-      industry_id: body.industry_id,
-      section_key: sectionKey,
-      content:     serializeSectionForm(sectionKey, form),
-      copied_from_industry_id: null,
-      updated_at:  now,
-    }));
-
-    const { error: upsertErr } = await db
-      .from("icp_industry_sections")
-      .upsert(upserts, { onConflict: "industry_id,section_key" });
-
-    if (upsertErr) {
-      return NextResponse.json({ error: upsertErr.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ ok: true });
+  // Modo industria: valida que la industria sea del cliente antes de guardar
+  if (body.industry_id && !(await getClientIndustry(db, clientId, body.industry_id))) {
+    return NextResponse.json({ error: "Industria no encontrada" }, { status: 404 });
   }
 
-  // Modo general: actualiza si ya existe, crea si no
-  const { data: existing } = await db
-    .from("client_ai_context")
-    .select("id")
-    .eq("client_id", clientId)
-    .eq("file_type", "icp")
-    .limit(1)
-    .maybeSingle();
-
-  if (existing) {
-    await db
-      .from("client_ai_context")
-      .update({ content: body.content, uploaded_at: new Date().toISOString() })
-      .eq("id", existing.id);
-  } else {
-    await db.from("client_ai_context").insert({
-      client_id:  clientId,
-      file_type:  "icp",
-      file_name:  "ICP",
-      content:    body.content,
-    });
-  }
+  const { error: saveErr } = await saveIcpContent(db, clientId, body.industry_id ?? null, body.content);
+  if (saveErr) return NextResponse.json({ error: saveErr }, { status: 500 });
 
   return NextResponse.json({ ok: true });
 }

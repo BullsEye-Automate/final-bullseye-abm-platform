@@ -47,7 +47,7 @@ function LoginForm() {
             <span style={{ color: "#251762" }}>Bulls</span>
             <span style={{ color: "#62E0D8" }}>Eye</span>
           </div>
-          <p className="text-sm text-gray-500 mt-1">Ingresa con tu cuenta de equipo</p>
+          <p className="text-sm text-gray-500 mt-1">Ingresa con tu cuenta</p>
         </div>
 
         <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
@@ -60,7 +60,7 @@ function LoginForm() {
               value={email}
               onChange={e => setEmail(e.target.value)}
               className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm outline-none focus:border-[#62E0D8]"
-              placeholder="tu@bullseye-abm.com"
+              placeholder="tu@empresa.com"
             />
           </div>
           <div>
@@ -88,7 +88,7 @@ function LoginForm() {
         </form>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          ¿No tienes cuenta? Pide a un admin que te la cree en Supabase.
+          ¿No tienes cuenta? Pídela a tu contacto en BullsEye.
         </p>
       </div>
     </div>

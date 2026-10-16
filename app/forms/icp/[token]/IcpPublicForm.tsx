@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   IcpFormData,
   EMPTY_FORM,
@@ -19,19 +19,26 @@ import {
 } from "@/lib/icp-form";
 
 type Props = {
-  token: string;
+  token?: string;
   clientName: string;
   initialContent: string | null;
   industryId?: string;
   industryName?: string;
+  // Modo embebido (portal de clientes): sin header/banner/footer propios y
+  // con un submit custom. onSubmitContent devuelve un mensaje de error o null.
+  embedded?: {
+    onSubmitContent: (content: string) => Promise<string | null>;
+    submitLabel: string;
+    beforeSubmit?: ReactNode;
+  };
 };
 
-export default function IcpPublicForm({ token, clientName, initialContent, industryId, industryName }: Props) {
+export default function IcpPublicForm({ token, clientName, initialContent, industryId, industryName, embedded }: Props) {
   const [form,    setForm]    = useState<IcpFormData>(
     initialContent ? deserializeIcpForm(initialContent) : EMPTY_FORM
   );
   const [saving,  setSaving]  = useState(false);
-  const [saved,   setSaved]   = useState(!!initialContent);
+  const [saved,   setSaved]   = useState(!embedded && !!initialContent);
   const [error,   setError]   = useState<string | null>(null);
 
   function setField(key: keyof IcpFormData, value: string | string[]) {
@@ -52,6 +59,13 @@ export default function IcpPublicForm({ token, clientName, initialContent, indus
     if (!content.trim()) return;
     setSaving(true);
     setError(null);
+    if (embedded) {
+      const err = await embedded.onSubmitContent(content);
+      setSaving(false);
+      if (err) setError(err);
+      else setSaved(true);
+      return;
+    }
     const r = await fetch(`/api/forms/icp/${token}`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
@@ -72,7 +86,8 @@ export default function IcpPublicForm({ token, clientName, initialContent, indus
   );
 
   return (
-    <div style={{ fontFamily: "'Outfit', sans-serif", background: "#F7F8FC", minHeight: "100vh" }}>
+    <div style={{ fontFamily: "'Outfit', sans-serif", background: embedded ? "transparent" : "#F7F8FC", minHeight: embedded ? undefined : "100vh" }}>
+      {!embedded && <>
       {/* ── Header ── */}
       <header style={{ background: "#fff", borderBottom: "1px solid #EEF0F7", padding: "20px 40px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -114,10 +129,11 @@ export default function IcpPublicForm({ token, clientName, initialContent, indus
           </div>
         )}
       </div>
+      </>}
 
       {/* ── Formulario ── */}
-      <div style={{ maxWidth: 820, margin: "0 auto", padding: "36px 40px 80px" }}>
-        {error && (
+      <div style={{ maxWidth: 820, margin: "0 auto", padding: embedded ? "0 0 40px" : "36px 40px 80px" }}>
+        {!embedded && error && (
           <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", padding: "12px 16px", borderRadius: 10, fontSize: 13, marginBottom: 24 }}>
             {error}
           </div>
@@ -245,6 +261,14 @@ export default function IcpPublicForm({ token, clientName, initialContent, indus
           </div>
         </PSection>
 
+        {embedded?.beforeSubmit}
+
+        {embedded && error && (
+          <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", padding: "12px 16px", borderRadius: 10, fontSize: 13, marginTop: 24 }}>
+            {error}
+          </div>
+        )}
+
         {/* ── Botón enviar ── */}
         <div style={{ marginTop: 32, display: "flex", justifyContent: "center" }}>
           <button
@@ -267,11 +291,11 @@ export default function IcpPublicForm({ token, clientName, initialContent, indus
               transition: "all 0.15s",
             }}
           >
-            {saving ? "Guardando…" : saved ? "✓ Actualizar ICP" : "Enviar a BullsEye"}
+            {saving ? "Guardando…" : embedded ? embedded.submitLabel : saved ? "✓ Actualizar ICP" : "Enviar a BullsEye"}
           </button>
         </div>
 
-        {saved && (
+        {saved && !embedded && (
           <p style={{ textAlign: "center", marginTop: 16, fontSize: 13, color: "#8B90AA" }}>
             El equipo BullsEye recibirá tu ICP y comenzará la prospección.
             Puedes volver a este link en cualquier momento para actualizar la información.
@@ -280,10 +304,10 @@ export default function IcpPublicForm({ token, clientName, initialContent, indus
       </div>
 
       {/* ── Footer ── */}
-      <footer style={{ borderTop: "1px solid #EEF0F7", padding: "16px 40px", display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8B90AA" }}>
+      {!embedded && <footer style={{ borderTop: "1px solid #EEF0F7", padding: "16px 40px", display: "flex", justifyContent: "space-between", fontSize: 11, color: "#8B90AA" }}>
         <span>Bulls<span style={{ color: "#62E0D8" }}>Eye</span> — Documento confidencial · No compartir sin autorización</span>
         <span>bullseye-abm.com</span>
-      </footer>
+      </footer>}
     </div>
   );
 }

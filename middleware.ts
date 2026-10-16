@@ -31,7 +31,6 @@ const PUBLIC_API_PREFIXES = [
   "/api/test-debug", // endpoint de diagnóstico
   "/api/admin/debug-ai-usage", // endpoint de debug para auditar ai_usage_log
   "/api/agente-contenido",    // agente de contenido SDR — accesible desde /chat sin sesión
-  "/api/clients",             // lista de clientes — requerida por /chat sin sesión
   "/api/training/segments",   // segmentos de estilo — requeridos por /chat sin sesión
 ];
 
@@ -51,6 +50,12 @@ function isPublicPath(pathname: string, method: string): boolean {
   // compartido) es público; /api/resultados-compartidos (generar el link)
   // requiere sesión.
   if (/^\/api\/resultados-compartidos\/[^/]+/.test(pathname)) {
+    return true;
+  }
+  // Solo la lista de clientes (GET exacto) es pública porque la usa /chat
+  // sin sesión. Las subrutas /api/clients/[id]/* (config con API keys de
+  // Lemlist, contexto IA, borrar cliente…) requieren sesión.
+  if (pathname === "/api/clients" && method === "GET") {
     return true;
   }
   // /api/feedback-config solo se expone en lectura (lo consume la página
@@ -108,7 +113,34 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Usuarios del portal de clientes (app_metadata.role = "client", solo
+  // editable con service role): quedan confinados a /portal y /api/portal.
+  // Las APIs del portal además validan el client_id contra client_users
+  // (lib/portalAuth.ts) — esto es solo la primera barrera.
+  const isPortalPath = isPortalRoute(pathname);
+  if (user.app_metadata?.role === "client") {
+    if (isPortalPath) return response;
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Sin acceso" }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL("/portal", req.url));
+  }
+
+  // El equipo interno no usa el portal: lo gestiona desde /solicitudes-clientes
+  if (isPortalPath && !pathname.startsWith("/api/")) {
+    return NextResponse.redirect(new URL("/solicitudes-clientes", req.url));
+  }
+
   return response;
+}
+
+function isPortalRoute(pathname: string): boolean {
+  return (
+    pathname === "/portal" ||
+    pathname.startsWith("/portal/") ||
+    pathname === "/api/portal" ||
+    pathname.startsWith("/api/portal/")
+  );
 }
 
 export const config = {

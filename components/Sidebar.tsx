@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, useEffect } from "react";
 import {
+  IconInbox,
   IconLayoutDashboard,
   IconBuildingFactory2,
   IconUsers,
@@ -45,7 +46,8 @@ const SECTIONS: Section[] = [
       { href: "/dashboard",       label: "Dashboard",       icon: IconLayoutDashboard },
       { href: "/empresas",        label: "Empresas",        icon: IconBuildingFactory2 },
       { href: "/contactos",       label: "Contactos",       icon: IconUsers },
-      { href: "/busqueda-manual", label: "Búsqueda manual", icon: IconUserSearch }
+      { href: "/busqueda-manual", label: "Búsqueda manual", icon: IconUserSearch },
+      { href: "/solicitudes-clientes", label: "Solicitudes clientes", icon: IconInbox }
     ]
   },
   {
