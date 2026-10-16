@@ -469,8 +469,9 @@ export default function SubirCampanaPage() {
 
   // Seleccionar automáticamente los contactos con mensajes generados cuando termina la generación
   useEffect(() => {
-    if (isActiveGeneration && !isGenerating && contacts.length > 0 && selectedIndexes.size === 0) {
-      // Solo seleccionar los que tienen emailSubject o connectMessage (mensaje generado correctamente)
+    // Al terminar cualquier generación (inicial o reanudada), seleccionar todos los contactos
+    // con mensaje generado que no estén ya seleccionados ni hayan sido enviados.
+    if (isActiveGeneration && !isGenerating && contacts.length > 0) {
       setSelectedIndexes(new Set(
         contacts
           .map((c, i) => ((c.emailSubject || c.connectMessage) && !c.cancelled && !c.pushed ? i : -1))
