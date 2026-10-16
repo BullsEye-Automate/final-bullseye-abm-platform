@@ -28,7 +28,8 @@
 - **Estilos:** Tailwind CSS + Outfit (Google Fonts)
 - **Lenguaje:** TypeScript
 
-**Producción:** https://bullseye-abm-platform-eq6f.vercel.app
+**Producción:** https://portal.bullseye-abm.com (equipo y clientes entran por aquí).
+El dominio anterior `https://bullseye-abm-platform-eq6f.vercel.app` sigue funcionando para las APIs (webhooks de Clay/HubSpot, crons); sus páginas redirigen al dominio nuevo cuando `APP_CANONICAL_HOST` está seteada (`middleware.ts`).
 
 ---
 
@@ -39,6 +40,7 @@
 - Variables y funciones en **inglés** (estándar de código)
 - Commits en español, descriptivos
 - Nunca hardcodear credenciales — siempre usar `.env.local` o variables Vercel
+- **Toda tabla nueva debe activar RLS** en su migración (`alter table ... enable row level security;`). La app consulta con service role desde el servidor; la anon key es pública y solo se usa para el login. Ver `supabase/enable_rls_all_tables_migration.sql`.
 - Propiedades HubSpot usan prefijo `bullseye_` (no `wecad_`)
 - IDs de Clay usan `bullseye_company_id` y `bullseye_contact_id`
 
@@ -57,6 +59,8 @@ CLAY_WEBHOOK_SECRET=bullseye-clay-2026
 NEXT_PUBLIC_SUPABASE_URL=https://ihxjjbbwldrdjhlvzkix.supabase.co   -- requerido por el login (Supabase Auth)
 NEXT_PUBLIC_SUPABASE_ANON_KEY=                                      -- ⚠️ verificar que esté seteada en Vercel
 ALLO_API_KEY=                                                       -- ⚠️ pendiente: generar en Allo → Settings → API y setear en Vercel
+APP_CANONICAL_HOST=portal.bullseye-abm.com                          -- redirige las páginas del dominio vercel.app al subdominio
+NEXT_PUBLIC_APP_URL=https://portal.bullseye-abm.com                 -- URL pública (webhooks de Clay en onboarding, llamadas internas)
 ```
 
 ---

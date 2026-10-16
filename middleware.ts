@@ -66,8 +66,20 @@ function isPublicPath(pathname: string, method: string): boolean {
   return false;
 }
 
+// Dominio de producción anterior. Cuando APP_CANONICAL_HOST está seteada
+// (ej. portal.bullseye-abm.com), las PÁGINAS que se abran en este host se
+// redirigen al dominio nuevo. Las rutas /api/* NO se redirigen: los webhooks
+// de Clay/HubSpot y los crons pueden seguir apuntando al dominio viejo.
+const LEGACY_HOSTS = ["bullseye-abm-platform-eq6f.vercel.app"];
+
 export async function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
+
+  const canonicalHost = process.env.APP_CANONICAL_HOST;
+  const host = req.headers.get("host");
+  if (canonicalHost && host && LEGACY_HOSTS.includes(host) && !pathname.startsWith("/api/")) {
+    return NextResponse.redirect(`https://${canonicalHost}${pathname}${search}`, 308);
+  }
 
   if (isPublicPath(pathname, req.method)) {
     return NextResponse.next();

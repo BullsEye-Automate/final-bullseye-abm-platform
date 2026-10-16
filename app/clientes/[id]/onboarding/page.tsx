@@ -39,7 +39,8 @@ type VerifyStatus = "idle" | "loading" | "ok" | "error";
 
 const STEP_LABELS = ["Datos básicos", "ICP", "HubSpot", "Clay", "Lemlist", "Activación"];
 
-const PROD_URL = "https://bullseye-abm-platform-eq6f.vercel.app";
+// URL pública de la app para los webhooks que se configuran en Clay
+const PROD_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://bullseye-abm-platform-eq6f.vercel.app";
 
 const COMPANIES_BODY = `{
   "company_table_data": "<chip: Company Table Data>",
