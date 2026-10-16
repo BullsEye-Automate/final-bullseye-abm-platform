@@ -181,6 +181,14 @@ export default function AnalisisSdr() {
   const [scoresCustomTo, setScoresCustomTo] = useState<string>("");
   const [scoresSdrFilter, setScoresSdrFilter] = useState<string[]>([]);
   const [scoresClienteFilter, setScoresClienteFilter] = useState<string[]>([]);
+  // BullsEye está probando un segundo template de análisis en Allo
+  // ("Propuesta Tatty") en algunos números, en paralelo al general — este
+  // filtro permite comparar el desempeño de cada uno por separado en vez de
+  // que se mezclen en el mismo promedio (ver detectCallScoreTemplate en
+  // lib/callScoreCard.ts).
+  const [scoresPlantillaFilter, setScoresPlantillaFilter] = useState<"todas" | "general" | "propuesta_tatty">(
+    "todas"
+  );
   const [scoresLoading, setScoresLoading] = useState(false);
   const [scoresData, setScoresData] = useState<ScoresApiResponse | null>(null);
   const [scoresError, setScoresError] = useState<string | null>(null);
@@ -445,6 +453,7 @@ export default function AnalisisSdr() {
         client_id: currentClient?.id || "__all__",
         ...(scoresSdrFilter.length > 0 && { sdr_ids: scoresSdrFilter.join(",") }),
         ...(scoresClienteFilter.length > 0 && { cliente_ids: scoresClienteFilter.join(",") }),
+        ...(scoresPlantillaFilter !== "todas" && { plantilla: scoresPlantillaFilter }),
         ...(scoresRangeKey === "custom" && {
           custom_from: scoresCustomFrom,
           custom_to: scoresCustomTo,
@@ -688,7 +697,15 @@ export default function AnalisisSdr() {
       runQueued(loadScores);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentClient?.id, scoresRangeKey, scoresSdrFilter, scoresClienteFilter, scoresCustomFrom, scoresCustomTo]);
+  }, [
+    currentClient?.id,
+    scoresRangeKey,
+    scoresSdrFilter,
+    scoresClienteFilter,
+    scoresPlantillaFilter,
+    scoresCustomFrom,
+    scoresCustomTo,
+  ]);
 
   // No depende de Allo (solo consulta `meetings` en Supabase), así que no
   // necesita pasar por runQueued/alloQueueRef.
@@ -1101,12 +1118,29 @@ export default function AnalisisSdr() {
               onChange={setScoresClienteFilter}
             />
           </div>
+
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-ink-muted font-medium" title="Template de análisis de IA configurado en Allo para el número de cada llamada.">
+              Plantilla
+            </label>
+            <select
+              value={scoresPlantillaFilter}
+              onChange={(e) => setScoresPlantillaFilter(e.target.value as typeof scoresPlantillaFilter)}
+              className="input py-1.5 text-sm"
+            >
+              <option value="todas">Todas</option>
+              <option value="general">General</option>
+              <option value="propuesta_tatty">Propuesta Tatty</option>
+            </select>
+          </div>
         </div>
 
         <p className="text-xs text-ink-muted">
           Promedios del análisis de llamadas con IA que genera Allo (Puntaje Total y desglose por
           ítem) — solo se incluyen llamadas que tienen ese análisis. Haz clic en cualquier nota
-          para ver las llamadas que la componen.
+          para ver las llamadas que la componen. El filtro "Plantilla" separa las llamadas
+          analizadas con el template de prueba "Propuesta Tatty" de las del template general, para
+          no mezclar sus promedios.
         </p>
 
         {scoresError && (

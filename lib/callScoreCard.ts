@@ -79,6 +79,22 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// BullsEye está probando un segundo template de análisis en Allo
+// ("Propuesta Tatty") en un subconjunto de números, en paralelo al general
+// ("Venta Consultiva BullsEye - General Cote"). Allo no expone en el
+// listado de llamadas qué template se usó para generar cada `summary`, así
+// que se detecta por una marca de texto exclusiva de Propuesta Tatty: esa
+// plantilla siempre antepone "TIPO DE LLAMADA: [A/B/C] - ..." al resto del
+// análisis, línea que el template general nunca genera. Si BullsEye agrega
+// más templates de prueba a futuro, esto debe extenderse con una marca
+// igual de exclusiva por cada uno.
+export type CallScoreTemplate = "general" | "propuesta_tatty";
+
+export function detectCallScoreTemplate(summary: string | null | undefined): CallScoreTemplate {
+  if (summary && /TIPO DE LLAMADA:/i.test(summary)) return "propuesta_tatty";
+  return "general";
+}
+
 export function parseCallScoreCard(summary: string | null | undefined): CallScoreCard | null {
   if (!summary) return null;
 
