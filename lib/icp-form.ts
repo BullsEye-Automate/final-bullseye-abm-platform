@@ -289,3 +289,55 @@ export function parseFormJson(json: Record<string, unknown>): IcpFormData {
     ticket_acv:             str("clientes_referencia", "Ticket / ACV y ciclo de venta"),
   };
 }
+
+// ── Etiquetas por campo (comparación de propuestas del portal) ─────────
+export const ICP_FIELD_LABELS: Record<keyof IcpFormData, string> = {
+  nombre_empresa: "Nombre de la empresa",
+  nombre_contacto: "Nombre del contacto",
+  cargo: "Cargo",
+  email: "Email de contacto",
+  descripcion_negocio: "Descripción del negocio",
+  industrias_objetivo: "Industrias objetivo",
+  industrias_excluidas: "Industrias excluidas",
+  tamano_empresa: "Tamaño de empresa",
+  facturacion: "Facturación anual",
+  geografias: "Geografías prioritarias",
+  modelo_empresa: "Modelo de empresa",
+  etapa_empresa: "Etapa de la empresa",
+  senales_positivas: "Señales positivas de fit",
+  senales_negativas: "Señales negativas",
+  tech_stack: "Tech stack",
+  eventos_disparadores: "Eventos disparadores",
+  cargos_decisores: "Cargos decisores",
+  cargos_influenciadores: "Cargos influenciadores",
+  cargos_evitar: "Cargos a evitar",
+  departamentos: "Departamentos objetivo",
+  seniority: "Seniority mínimo",
+  perfil_psicografico: "Perfil psicográfico",
+  propuesta_valor: "Propuesta de valor",
+  problemas: "Problemas que resuelve",
+  resultados: "Resultados que entrega",
+  competidores: "Competidores",
+  diferenciadores: "Diferenciadores",
+  tono: "Tono de comunicación",
+  idioma: "Idioma del outreach",
+  cta_primer_contacto: "CTA del primer contacto",
+  canales: "Canales preferidos",
+  mensajes_exitosos: "Mensajes que han funcionado",
+  objeciones: "Objeciones frecuentes",
+  mejores_clientes: "Mejores clientes",
+  peores_clientes: "Peores clientes",
+  ticket_acv: "Ticket / ACV y ciclo",
+};
+
+export type IcpFieldDiff = { key: keyof IcpFormData; label: string; before: string; after: string };
+
+// Lista solo los campos que cambiaron entre dos ICP serializados
+export function diffIcpContent(before: string, after: string): IcpFieldDiff[] {
+  const a = deserializeIcpForm(before || "");
+  const b = deserializeIcpForm(after || "");
+  const asText = (v: string | string[]) => (Array.isArray(v) ? v.join(", ") : v).trim();
+  return (Object.keys(ICP_FIELD_LABELS) as (keyof IcpFormData)[])
+    .map((key) => ({ key, label: ICP_FIELD_LABELS[key], before: asText(a[key]), after: asText(b[key]) }))
+    .filter((d) => d.before !== d.after);
+}

@@ -28,7 +28,8 @@
 - **Estilos:** Tailwind CSS + Outfit (Google Fonts)
 - **Lenguaje:** TypeScript
 
-**Producción:** https://bullseye-abm-platform-eq6f.vercel.app
+**Producción:** https://portal.bullseye-abm.com (equipo y clientes entran por aquí).
+El dominio anterior `https://bullseye-abm-platform-eq6f.vercel.app` sigue funcionando para las APIs (webhooks de Clay/HubSpot, crons); sus páginas redirigen al dominio nuevo cuando `APP_CANONICAL_HOST` está seteada (`middleware.ts`).
 
 ---
 
@@ -39,6 +40,7 @@
 - Variables y funciones en **inglés** (estándar de código)
 - Commits en español, descriptivos
 - Nunca hardcodear credenciales — siempre usar `.env.local` o variables Vercel
+- **Toda tabla nueva debe activar RLS** en su migración (`alter table ... enable row level security;`). La app consulta con service role desde el servidor; la anon key es pública y solo se usa para el login. Ver `supabase/enable_rls_all_tables_migration.sql`.
 - Propiedades HubSpot usan prefijo `bullseye_` (no `wecad_`)
 - IDs de Clay usan `bullseye_company_id` y `bullseye_contact_id`
 
@@ -57,6 +59,8 @@ CLAY_WEBHOOK_SECRET=bullseye-clay-2026
 NEXT_PUBLIC_SUPABASE_URL=https://ihxjjbbwldrdjhlvzkix.supabase.co   -- requerido por el login (Supabase Auth)
 NEXT_PUBLIC_SUPABASE_ANON_KEY=                                      -- ⚠️ verificar que esté seteada en Vercel
 ALLO_API_KEY=                                                       -- ⚠️ pendiente: generar en Allo → Settings → API y setear en Vercel
+APP_CANONICAL_HOST=portal.bullseye-abm.com                          -- redirige las páginas del dominio vercel.app al subdominio
+NEXT_PUBLIC_APP_URL=https://portal.bullseye-abm.com                 -- URL pública (webhooks de Clay en onboarding, llamadas internas)
 ```
 
 ---
@@ -71,6 +75,8 @@ Todas las rutas internas (todo excepto los links mágicos de abajo) requieren se
   - `/feedback-cliente/[token]`, `/encuesta/[token]`, `/forms/icp/[token]`, `/review/empresas/[token]`, `/revision/[token]` — links que se comparten con clientes externos.
   - `/api/cron/*` (Vercel Cron, valida `CRON_SECRET`) y los webhooks entrantes de Clay (`x-webhook-secret`).
 - Antes de agregar una ruta nueva a esa lista blanca, confirmar que valida un token o secreto propio — si no, queda expuesta sin sesión.
+- `/api/clients` solo es público como `GET` exacto (lo usa `/chat`). Las subrutas `/api/clients/[id]/*` (config con API keys de Lemlist, contexto IA, borrar cliente…) requieren sesión.
+- **Usuarios cliente** (portal): tienen `app_metadata.role = "client"` y el middleware los confina a `/portal` y `/api/portal`. Ver sección "Portal de clientes".
 
 ---
 
@@ -190,6 +196,24 @@ Centro de mando del equipo SDR (14 vistas: Dirección / Operación / Análisis),
 - **Días hábiles:** lunes a viernes menos feriados de Chile (`lib/celulasSdr/calendar.ts`, agregar los de cada año nuevo).
 - **Configurar:** global en la tabla `sdr_cells_config` (migración `supabase/20261016_sdr_cells_config.sql`), editable por cualquier usuario con sesión.
 - Cálculo (agg / derive / forecast / alertas) en el navegador: `lib/celulasSdr/engine.ts`. Allo y HubSpot se cachean por mes en `allo_response_cache`.
+
+---
+
+## Portal de clientes (`/portal`)
+
+Vista para que los clientes de BullsEye entren con su propio login. Fases: (1) accesos + ICP ✅, (2) wishlist de empresas, (3) recomendaciones por señales de llamadas, (4) reportería (se integra con el módulo de Ingri).
+
+- **Accesos:** varios usuarios por cliente, sin límite. Se crean desde **Solicitudes clientes → Accesos al portal** (`/solicitudes-clientes`) con contraseña temporal que se muestra una sola vez; el cliente la cambia en `/portal/cuenta`. Tabla `client_users` (migración `supabase/client_portal_migration.sql`) + `app_metadata.role = "client"` en Supabase Auth. Desactivar = `ban_duration` en Auth + `is_active = false`.
+- **Autorización:** las APIs `/api/portal/*` toman el `client_id` SIEMPRE de `client_users` vía `requirePortalUser()` (`lib/portalAuth.ts`), nunca de la request. En `/portal` no se monta `ClientProvider` (descargaría la lista de todos los clientes).
+- **ICP y buyer persona:** el cliente NO edita directo. `/portal/icp` reutiliza `IcpPublicForm` (modo `embedded`) y crea una propuesta en `icp_change_requests` (una pendiente por cliente + industria; reenviar la reemplaza). BullsEye aprueba o rechaza en `/solicitudes-clientes` viendo el diff por campo contra el ICP vigente; aprobar escribe con `saveIcpContent()` (`lib/icpStore.ts`). El link público `/forms/icp/[token]` (onboarding) sigue guardando directo.
+- **Wishlist (próxima fase) — definiciones acordadas:**
+  - Fuentes de búsqueda: **base de Lemlist usando la API key de cada cliente** (`client_configs.lemlist_api_key`, así las empresas quedan en la cuenta del cliente) + **empresas de HubSpot de BullsEye** (+20.000) sincronizadas a Supabase. Filtrar por **todas las propiedades que estén rellenadas** (si está rellenada es confiable), incluido el módulo **"Tecnologías"** de HubSpot.
+  - Al cliente solo se le muestran datos firmográficos de HubSpot, nunca para qué otro cliente se prospectó ni notas/resultados de llamadas de otra cuenta.
+  - Dos modos: filtros manuales y recomendación IA vs. ICP del cliente (% de fit + razón).
+  - Al agregar a la wishlist: la empresa va **directo a Lemlist** (lista de empresas en la cuenta del cliente) para buscar y enriquecer contactos ahí. **No pasa por Clay.**
+  - Las empresas ya pedidas (o excluidas / ya en `companies` del cliente) no vuelven a aparecer en búsquedas de ese cliente — dedupe por dominio.
+  - Las solicitudes caen en `/solicitudes-clientes` (pestaña "Empresas solicitadas"); las alertas se configuran después.
+  - Bonus señales de llamadas: solo con llamadas del MISMO cliente (confidencialidad).
 
 ---
 
