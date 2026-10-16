@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { resolveRange, isValidRangeKey, type RangeKey } from "@/lib/dashboardRanges";
 import { listAlloNumbers, searchAlloCalls, fetchAlloConnectedCallIds, resolveConnected } from "@/lib/allo";
 import { toDateParam, callDateKey } from "@/lib/sdrAnalytics";
-import { parseCallScoreCard, SCORE_CARD_CATEGORIES } from "@/lib/callScoreCard";
+import { parseCallScoreCard, detectCallScoreTemplate, SCORE_CARD_CATEGORIES, type CallScoreTemplate } from "@/lib/callScoreCard";
 
 export const dynamic = "force-dynamic";
 // Ahora también pide, en paralelo, las llamadas "conectadas" (etapa
@@ -29,6 +29,7 @@ type ScoreCallSummary = {
   desglose: Record<string, number | null>;
   has_recording: boolean;
   summary: string; // texto completo (Markdown) generado por Allo, para el detalle
+  plantilla: CallScoreTemplate;
 };
 
 type SdrScoreMetrics = {
@@ -49,6 +50,13 @@ export async function GET(request: NextRequest) {
     const selectedClienteIds = clienteIdsParam
       ? clienteIdsParam.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
+    // "todas" (default) | "general" | "propuesta_tatty" — ver
+    // detectCallScoreTemplate en lib/callScoreCard.ts. Permite comparar el
+    // template en prueba ("Propuesta Tatty") contra el general sin que se
+    // mezclen en el mismo promedio.
+    const plantillaParam = request.nextUrl.searchParams.get("plantilla");
+    const selectedPlantilla: CallScoreTemplate | "todas" =
+      plantillaParam === "general" || plantillaParam === "propuesta_tatty" ? plantillaParam : "todas";
     const rangeKeyRaw = request.nextUrl.searchParams.get("rangeKey") || "this_month";
     const customFromParam = request.nextUrl.searchParams.get("custom_from");
     const customToParam = request.nextUrl.searchParams.get("custom_to");
@@ -168,6 +176,8 @@ export async function GET(request: NextRequest) {
       if (!resolveConnected(call, connectedCallIds)) continue;
       const card = parseCallScoreCard(call.summary);
       if (!card) continue;
+      const plantilla = detectCallScoreTemplate(call.summary);
+      if (selectedPlantilla !== "todas" && plantilla !== selectedPlantilla) continue;
 
       const sdrId = call.user?.id || "unknown";
       const sdrNombre = userMap.get(sdrId) || call.user?.name || sdrId;
@@ -204,6 +214,7 @@ export async function GET(request: NextRequest) {
         desglose,
         has_recording: !!call.recording_url,
         summary: call.summary || "",
+        plantilla,
       });
     }
 

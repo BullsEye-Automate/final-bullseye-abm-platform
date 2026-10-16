@@ -15,6 +15,7 @@ export interface ScoreCallSummary {
   desglose: Record<string, number | null>;
   has_recording: boolean;
   summary: string;
+  plantilla?: "general" | "propuesta_tatty";
 }
 
 export interface SdrScoreMetrics {
