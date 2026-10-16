@@ -354,6 +354,42 @@ export async function fetchHSActivityCountsByCreator(
   return byUserId;
 }
 
+// Igual que fetchHSActivityCountsByCreator, pero separado por día (horario
+// de Chile) — lo usa el módulo Células SDR para las tendencias diarias y
+// semanales de Correo / WhatsApp / LinkedIn. key del Map =
+// `${hs_created_by_user_id}|YYYY-MM-DD`.
+export async function fetchHSActivityCountsByCreatorDaily(
+  dateFromMs: number,
+  dateToMs: number
+): Promise<Map<string, HSActivityCounts>> {
+  const out = new Map<string, HSActivityCounts>();
+  const dayOf = (ts: string | undefined) => {
+    const ms = ts ? (/^\d+$/.test(ts) ? Number(ts) : Date.parse(ts)) : NaN;
+    if (!isFinite(ms)) return null;
+    return new Date(ms - 4 * 3600000).toISOString().slice(0, 10); // UTC-4 (Chile), ver lib/timezone.ts
+  };
+  const bump = (userId: string | undefined, ts: string | undefined, field: keyof HSActivityCounts) => {
+    const day = dayOf(ts);
+    if (!userId || !day) return;
+    const key = `${userId}|${day}`;
+    const cur = out.get(key) || { email: 0, linkedin: 0, whatsapp: 0 };
+    cur[field]++;
+    out.set(key, cur);
+  };
+
+  const [emails, comms] = await Promise.all([
+    searchHSEngagementsByCreator("emails", dateFromMs, dateToMs, []),
+    searchHSEngagementsByCreator("communications", dateFromMs, dateToMs, ["hs_communication_channel_type"]),
+  ]);
+  for (const e of emails) bump(e.hs_created_by_user_id, e.hs_timestamp, "email");
+  for (const c of comms) {
+    const channel = (c.hs_communication_channel_type || "").toUpperCase();
+    if (channel.includes("LINKEDIN")) bump(c.hs_created_by_user_id, c.hs_timestamp, "linkedin");
+    else if (channel.includes("WHATS")) bump(c.hs_created_by_user_id, c.hs_timestamp, "whatsapp");
+  }
+  return out;
+}
+
 // ── Engagement Score ───────────────────────────────────────────────────────────
 export function computeEngagementScore(opts: {
   emailSent?:           boolean;

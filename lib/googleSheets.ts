@@ -33,3 +33,20 @@ export async function getSheetRows(
     return obj;
   });
 }
+
+// Lectura "cruda" (matriz de celdas tal cual, sin asumir que la primera fila
+// es un encabezado). La necesitan pestañas con estructura de matriz como
+// "Asignación" (un bloque por mes, con su propio encabezado de SDR) o
+// columnas sueltas de la pestaña "Maestra IA" (líderes de célula en O:P).
+export async function getSheetValues(spreadsheetId: string, range: string): Promise<string[][]> {
+  const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!credentialsJson) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON no configurado");
+
+  const auth = new google.auth.GoogleAuth({
+    credentials: JSON.parse(credentialsJson),
+    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
+  });
+  const sheets = google.sheets({ version: "v4", auth });
+  const response = await sheets.spreadsheets.values.get({ spreadsheetId, range });
+  return ((response.data.values ?? []) as unknown[][]).map((row) => row.map((c) => String(c ?? "").trim()));
+}
