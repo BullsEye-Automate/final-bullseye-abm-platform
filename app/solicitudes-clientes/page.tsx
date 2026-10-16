@@ -1,18 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { IconCheck, IconX, IconLoader2, IconAlertTriangle, IconCopy, IconUserPlus } from "@tabler/icons-react";
+import { IconCheck, IconX, IconLoader2, IconAlertTriangle, IconCopy, IconUserPlus, IconRefresh, IconExternalLink } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 
 // Módulo interno del portal de clientes:
 //  - Propuestas de ICP enviadas desde /portal/icp (aprobar / rechazar)
+//  - Empresas solicitadas (wishlist de cada cliente)
 //  - Accesos al portal (usuarios por cliente)
-// Próximo paso: pestaña "Empresas solicitadas" con la wishlist de cada cliente.
+//  - Base HubSpot (sincronización del pool que usa la wishlist + diagnóstico Lemlist)
 
-type Tab = "icp" | "accesos";
+type Tab = "empresas" | "icp" | "accesos" | "base";
 
 export default function SolicitudesClientesPage() {
-  const [tab, setTab] = useState<Tab>("icp");
+  const [tab, setTab] = useState<Tab>("empresas");
   const { currentClient } = useClient();
   const clientId = currentClient && currentClient.id !== ALL_CLIENTS.id ? currentClient.id : null;
 
@@ -25,8 +26,10 @@ export default function SolicitudesClientesPage() {
 
       <div className="flex gap-1 border-b border-gray-200 mb-6">
         {([
+          ["empresas", "Empresas solicitadas"],
           ["icp", "Propuestas de ICP"],
           ["accesos", "Accesos al portal"],
+          ["base", "Base HubSpot"],
         ] as [Tab, string][]).map(([key, label]) => (
           <button
             key={key}
@@ -36,10 +39,12 @@ export default function SolicitudesClientesPage() {
             {label}
           </button>
         ))}
-        <span className="px-4 py-2 text-sm text-gray-300" title="Próximamente">Empresas solicitadas · pronto</span>
       </div>
 
-      {tab === "icp" ? <IcpRequestsTab clientId={clientId} /> : <AccessTab clientId={clientId} clientName={currentClient?.name ?? null} />}
+      {tab === "empresas" && <WishlistRequestsTab clientId={clientId} />}
+      {tab === "icp" && <IcpRequestsTab clientId={clientId} />}
+      {tab === "accesos" && <AccessTab clientId={clientId} clientName={currentClient?.name ?? null} />}
+      {tab === "base" && <PoolTab clientId={clientId} clientName={currentClient?.name ?? null} />}
     </div>
   );
 }
@@ -323,6 +328,278 @@ function AccessTab({ clientId, clientName }: { clientId: string | null; clientNa
             ))}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// ── Empresas solicitadas (wishlist) ──────────────────────────────────────
+
+type WishlistRequest = {
+  id: string;
+  client_name: string;
+  company_name: string;
+  domain: string | null;
+  linkedin_url: string | null;
+  source: "hubspot" | "lemlist";
+  mode: "manual" | "ai";
+  fit_score: number | null;
+  fit_reason: string | null;
+  snapshot: { facts?: { label: string; value: string }[] };
+  status: "new" | "in_lemlist" | "in_progress" | "contacts_found" | "discarded";
+  lemlist_status: string | null;
+  internal_note: string | null;
+  requested_by_email: string | null;
+  created_at: string;
+};
+
+const WISHLIST_STATUSES: { value: WishlistRequest["status"]; label: string }[] = [
+  { value: "new", label: "Nueva" },
+  { value: "in_lemlist", label: "En Lemlist" },
+  { value: "in_progress", label: "En prospección" },
+  { value: "contacts_found", label: "Contactos encontrados" },
+  { value: "discarded", label: "Descartada" },
+];
+
+function WishlistRequestsTab({ clientId }: { clientId: string | null }) {
+  const [status, setStatus] = useState<string>("new");
+  const [items, setItems] = useState<WishlistRequest[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setItems(null);
+    const qs = new URLSearchParams({ status });
+    if (clientId) qs.set("client_id", clientId);
+    const r = await fetch(`/api/portal-admin/wishlist?${qs}`, { cache: "no-store" });
+    const j = await r.json();
+    if (!r.ok) return setError(j.error ?? "Error al cargar");
+    setError(null);
+    setItems(j.items);
+  }, [status, clientId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function update(id: string, patch: { status?: string; internal_note?: string }) {
+    const r = await fetch(`/api/portal-admin/wishlist/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!r.ok) setError((await r.json().catch(() => ({}))).error ?? "Error al actualizar");
+    else if (patch.status) load();
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2 mb-4 text-sm">
+        {[{ value: "new", label: "Nuevas" }, ...WISHLIST_STATUSES.slice(1), { value: "all", label: "Todas" }].map((s) => (
+          <button
+            key={s.value}
+            onClick={() => setStatus(s.value)}
+            className={`px-3 py-1.5 rounded-full ${status === s.value ? "bg-[#251762] text-white" : "bg-gray-100 text-gray-600"}`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{error}</div>}
+      {!items && !error && <IconLoader2 className="animate-spin text-gray-400" />}
+      {items?.length === 0 && <div className="text-sm text-gray-400">No hay empresas en este estado.</div>}
+      {items && items.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-gray-500 border-b border-gray-100">
+              <tr>
+                {!clientId && <th className="p-3">Cliente</th>}
+                <th className="p-3">Empresa</th>
+                <th className="p-3">Fit</th>
+                <th className="p-3">Solicitada</th>
+                <th className="p-3">Estado</th>
+                <th className="p-3">Nota interna</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((i) => (
+                <tr key={i.id} className="border-b border-gray-50 last:border-0 align-top">
+                  {!clientId && <td className="p-3 whitespace-nowrap">{i.client_name}</td>}
+                  <td className="p-3 min-w-[220px]">
+                    <div className="font-medium" style={{ color: "#251762" }}>{i.company_name}</div>
+                    <div className="text-xs text-gray-500 flex flex-wrap gap-x-2">
+                      {i.domain && (
+                        <a href={`https://${i.domain}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 hover:text-[#251762]">
+                          {i.domain} <IconExternalLink size={10} />
+                        </a>
+                      )}
+                      {i.linkedin_url && <a href={i.linkedin_url} target="_blank" rel="noreferrer" className="hover:text-[#251762]">LinkedIn</a>}
+                      <span>{i.source === "hubspot" ? "Base BullsEye" : "Base Lemlist"}{i.mode === "ai" ? " · IA" : ""}</span>
+                    </div>
+                    {i.snapshot?.facts?.length ? (
+                      <div className="text-xs text-gray-500 mt-1 line-clamp-2">
+                        {i.snapshot.facts.slice(0, 3).map((f) => `${f.label}: ${f.value}`).join(" · ")}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td className="p-3 max-w-xs">
+                    {i.fit_score != null ? <div className="font-semibold">{i.fit_score}%</div> : "—"}
+                    {i.fit_reason && <div className="text-xs text-gray-500 line-clamp-3">{i.fit_reason}</div>}
+                  </td>
+                  <td className="p-3 text-xs text-gray-500 whitespace-nowrap">
+                    {fmt(i.created_at)}
+                    <div>{i.requested_by_email}</div>
+                  </td>
+                  <td className="p-3">
+                    <select
+                      value={i.status}
+                      onChange={(e) => update(i.id, { status: e.target.value })}
+                      className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white"
+                    >
+                      {WISHLIST_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                    </select>
+                    {i.lemlist_status === "pendiente" && <div className="text-[10px] text-gray-400 mt-1">Lemlist: envío pendiente</div>}
+                  </td>
+                  <td className="p-3 min-w-[200px]">
+                    <textarea
+                      defaultValue={i.internal_note ?? ""}
+                      onBlur={(e) => e.target.value !== (i.internal_note ?? "") && update(i.id, { internal_note: e.target.value })}
+                      rows={2}
+                      placeholder="Solo la ve el equipo"
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs"
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Base HubSpot + diagnóstico Lemlist ───────────────────────────────────
+
+type PoolState = {
+  status: "idle" | "running" | "done" | "error";
+  synced_count: number;
+  started_at: string | null;
+  finished_at: string | null;
+  last_error: string | null;
+  total_in_pool: number;
+};
+
+function PoolTab({ clientId, clientName }: { clientId: string | null; clientName: string | null }) {
+  const [state, setState] = useState<PoolState | null>(null);
+  const [props, setProps] = useState<{ name: string; label: string; filled_count: number }[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [check, setCheck] = useState<unknown>(null);
+  const [checking, setChecking] = useState(false);
+
+  const load = useCallback(async () => {
+    const r = await fetch("/api/portal-admin/hubspot-pool", { cache: "no-store" });
+    const j = await r.json();
+    if (r.ok) {
+      setState(j.state);
+      setProps(j.properties);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Sincroniza por tramos hasta terminar (cada llamada ~2.000 empresas)
+  async function sync() {
+    setSyncing(true);
+    setError(null);
+    let restart = true;
+    for (let i = 0; i < 40; i++) {
+      const r = await fetch("/api/portal-admin/hubspot-pool", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restart }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setError(j.error ?? "Error sincronizando");
+        break;
+      }
+      restart = false;
+      setProgress(j.synced_count);
+      if (j.done) break;
+    }
+    setSyncing(false);
+    setProgress(null);
+    load();
+  }
+
+  async function runCheck() {
+    if (!clientId) return;
+    setChecking(true);
+    const r = await fetch(`/api/portal-admin/lemlist-check?client_id=${clientId}`, { cache: "no-store" });
+    setCheck(await r.json().catch(() => ({ error: "Respuesta inválida" })));
+    setChecking(false);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-medium" style={{ color: "#251762" }}>Base de empresas HubSpot</div>
+            <div className="text-sm text-gray-500">
+              {state ? `${state.total_in_pool.toLocaleString("es-CL")} empresas disponibles para la wishlist` : "Cargando…"}
+              {state?.finished_at ? ` · última sincronización ${fmt(state.finished_at)}` : ""}
+            </div>
+          </div>
+          <button
+            onClick={sync}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm text-white disabled:opacity-60"
+            style={{ background: "#251762" }}
+          >
+            {syncing ? <IconLoader2 size={15} className="animate-spin" /> : <IconRefresh size={15} />}
+            {syncing ? `Sincronizando… ${progress != null ? progress.toLocaleString("es-CL") : ""}` : "Sincronizar ahora"}
+          </button>
+        </div>
+        {(error || state?.last_error) && (
+          <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mt-4">{error ?? state?.last_error}</div>
+        )}
+        <p className="text-xs text-gray-400 mt-3">
+          Solo se copian datos de la empresa (grupo &quot;Información de la empresa&quot; + Tecnologías). Nunca owner, etapa, negocios, notas ni propiedades bullseye_*.
+        </p>
+        {props.length > 0 && (
+          <details className="mt-3 text-sm">
+            <summary className="cursor-pointer text-gray-600">Propiedades filtrables ({props.length})</summary>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {props.map((p) => (
+                <span key={p.name} className="text-xs bg-gray-100 rounded-full px-2.5 py-1 text-gray-600">
+                  {p.label} · {p.filled_count.toLocaleString("es-CL")}
+                </span>
+              ))}
+            </div>
+          </details>
+        )}
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-medium" style={{ color: "#251762" }}>Base de Lemlist del cliente</div>
+            <div className="text-sm text-gray-500">
+              Usa la API key de Lemlist del cliente (Config. cliente). Prueba los filtros y la búsqueda de empresas.
+            </div>
+          </div>
+          <button
+            onClick={runCheck}
+            disabled={!clientId || checking}
+            className="px-4 py-2 rounded-xl text-sm border border-gray-200 disabled:opacity-50"
+          >
+            {checking ? "Probando…" : clientId ? `Probar con ${clientName}` : "Selecciona un cliente"}
+          </button>
+        </div>
+        {check !== null && (
+          <pre className="mt-4 bg-gray-50 rounded-xl p-3 text-xs overflow-x-auto max-h-80">{JSON.stringify(check, null, 2)}</pre>
+        )}
       </div>
     </div>
   );

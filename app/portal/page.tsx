@@ -8,11 +8,11 @@ export default async function PortalHomePage() {
   const user = await getPortalUser();
   if (!user) return null; // el layout ya muestra el mensaje de sin acceso
 
-  const { count: pendingIcp } = await supabaseAdmin()
-    .from("icp_change_requests")
-    .select("id", { count: "exact", head: true })
-    .eq("client_id", user.clientId)
-    .eq("status", "pending");
+  const db = supabaseAdmin();
+  const [{ count: pendingIcp }, { count: wishlistCount }] = await Promise.all([
+    db.from("icp_change_requests").select("id", { count: "exact", head: true }).eq("client_id", user.clientId).eq("status", "pending"),
+    db.from("client_wishlist").select("id", { count: "exact", head: true }).eq("client_id", user.clientId),
+  ]);
 
   const firstName = user.fullName?.split(" ")[0];
 
@@ -22,7 +22,7 @@ export default async function PortalHomePage() {
         Hola{firstName ? `, ${firstName}` : ""} 👋
       </h1>
       <p className="text-sm text-gray-500 mt-1 mb-8">
-        Este es el portal de {user.clientName} en BullsEye. Desde aquí puedes revisar tu ICP y, muy pronto, armar tu wishlist de empresas.
+        Este es el portal de {user.clientName} en BullsEye. Desde aquí puedes revisar tu ICP y armar tu wishlist de empresas.
       </p>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -33,9 +33,10 @@ export default async function PortalHomePage() {
           badge={pendingIcp ? `${pendingIcp} propuesta${pendingIcp > 1 ? "s" : ""} en revisión` : undefined}
         />
         <Card
+          href="/portal/wishlist"
           title="Wishlist de empresas"
           body="Busca empresas con filtros o recomendaciones IA según tu ICP y agrégalas a tu wishlist."
-          soon
+          badge={wishlistCount ? `${wishlistCount} empresa${wishlistCount > 1 ? "s" : ""} en tu wishlist` : undefined}
         />
         <Card title="Reportes" body="Resultados de la prospección: actividad, reuniones y oportunidades." soon />
       </div>
