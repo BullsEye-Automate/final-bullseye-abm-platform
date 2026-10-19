@@ -32,7 +32,9 @@ export const POOL_PROPERTIES: Record<string, "filter" | "card"> = {
   numberofemployees: "filter",
   annualrevenue: "filter",
   web_technologies: "filter",
-  country: "filter",
+  // País de la empresa: se usa la propiedad propia de BullsEye "País"
+  // (pais_g, ~95% de cobertura) y no la estándar "Country/Region" (~11%)
+  pais_g: "filter",
   state: "filter",
   city: "filter",
   founded_year: "filter",
