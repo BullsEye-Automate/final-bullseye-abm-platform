@@ -268,3 +268,10 @@ export async function addCompaniesToList(apiKey: string, listId: string, company
     body: JSON.stringify({ companyIds }),
   });
 }
+
+export async function removeCompaniesFromList(apiKey: string, listId: string, companyIds: string[]): Promise<Result<unknown>> {
+  return call(apiKey, `/companies/lists/${encodeURIComponent(listId)}/entities?action=remove`, {
+    method: "POST",
+    body: JSON.stringify({ companyIds }),
+  });
+}

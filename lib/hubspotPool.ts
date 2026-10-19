@@ -340,18 +340,22 @@ export async function searchPool(
     query?: string | null;
     excludeDomains: string[];
     excludeNames: string[];
+    excludeKeywords?: string[];
     limit: number;
     offset: number;
   }
 ): Promise<{ companies: PoolCompany[]; total: number }> {
-  const { data, error } = await db.rpc("search_hubspot_pool", {
+  const args: Record<string, unknown> = {
     p_filters: opts.filters,
     p_query: opts.query?.trim() || null,
     p_exclude_domains: opts.excludeDomains,
     p_exclude_names: opts.excludeNames,
     p_limit: opts.limit,
     p_offset: opts.offset,
-  });
+  };
+  // Parámetro de la v2 de la función (client_portal_v3_migration.sql)
+  if (opts.excludeKeywords?.length) args.p_exclude_keywords = opts.excludeKeywords;
+  const { data, error } = await db.rpc("search_hubspot_pool", args);
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as (PoolCompany & { total_count: number })[];
   return {
