@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
 import { getClientOwnLemlistKey } from "@/lib/lemlistDatabase";
 import { icpToUnifiedFilters, scoreCompanies } from "@/lib/wishlistFit";
-import { cardSummary, getClientExclusions, getClientIcpText } from "@/lib/wishlist";
+import { cardSummary, getClientExclusions, getClientIcpText, type CompanyCard } from "@/lib/wishlist";
 import {
   buildFilterCatalog,
   parseCursor,
@@ -18,13 +18,20 @@ export const maxDuration = 60;
 
 const MANUAL_PAGE = 24;
 const AI_PAGE = 20;
+// Modo IA: solo se muestran empresas con buen fit. Se buscan hasta
+// AI_MAX_ROUNDS tandas (cada una puntuada) hasta juntar AI_TARGET empresas.
+const AI_MIN_FIT = 60;
+const AI_MAX_ROUNDS = 2;
+const AI_TARGET = 10;
 
 // POST — { mode: "manual" | "ai", filters?, cursor? }
 // Una sola búsqueda sobre la base HubSpot de BullsEye y, cuando se agota, la
 // base de Lemlist del cliente. Se excluyen siempre las empresas ya pedidas,
 // las de su lista de exclusión y las que ya están en su pipeline.
+// manual: sin fit automático; el cliente lo pide por empresa (/score).
 // ai: si no vienen filtros, la IA los genera desde el ICP y los devuelve para
-//     que las páginas siguientes reutilicen los mismos (sin volver a generarlos).
+//     que las páginas siguientes reutilicen los mismos. Todo se puntúa y solo
+//     se devuelven empresas con fit >= AI_MIN_FIT, ordenadas de mayor a menor.
 export async function POST(req: NextRequest) {
   const { user, response } = await requirePortalUser();
   if (!user) return response;
@@ -54,39 +61,51 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const pageSize = mode === "ai" ? AI_PAGE : MANUAL_PAGE;
-    const result = await runUnifiedSearch(db, {
-      filters,
-      cursor,
-      pageSize,
-      exclusions,
-      lemlistKey,
-      catalog: taxonomy,
-      lenient: mode === "ai",
-    });
+    const base = { filters, pageSize: mode === "ai" ? AI_PAGE : MANUAL_PAGE, exclusions, lemlistKey, catalog: taxonomy, lenient: mode === "ai" };
 
-    let cards = result.cards;
-    if (mode === "ai" && cards.length) {
+    // Búsqueda con filtros: sin fit automático (el cliente lo pide por empresa)
+    if (mode === "manual") {
+      const result = await runUnifiedSearch(db, { ...base, cursor });
+      return NextResponse.json({
+        cards: result.cards.map(toPublicCard),
+        cursor: result.next,
+        has_more: result.next.phase !== "done",
+        needs_filters: result.needsFilters,
+      });
+    }
+
+    // Recomendadas por IA: se puntúa todo y se devuelven solo las de buen fit
+    let next = cursor;
+    let needsFilters = false;
+    let lowFitHidden = 0;
+    let cards: (CompanyCard & { fit_score: number; fit_reason: string })[] = [];
+    for (let round = 0; round < AI_MAX_ROUNDS && next.phase !== "done" && cards.length < AI_TARGET; round++) {
+      const result = await runUnifiedSearch(db, { ...base, cursor: next });
+      next = result.next;
+      needsFilters = needsFilters || result.needsFilters;
+      if (!result.cards.length) continue;
       const scores = await scoreCompanies(db, {
         clientId: user.clientId,
         icpText,
         source: "unified",
-        candidates: cards.map((c) => ({ key: `${c.source}:${c.key}`, name: c.name, summary: cardSummary(c) })),
+        candidates: result.cards.map((c) => ({ key: `${c.source}:${c.key}`, name: c.name, summary: cardSummary(c) })),
       });
-      cards = cards
-        .map((c) => {
-          const s = scores.get(`${c.source}:${c.key}`);
-          return { ...c, fit_score: s?.fit_score ?? null, fit_reason: s?.fit_reason ?? null };
-        })
-        .sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+      for (const c of result.cards) {
+        const sc = scores.get(`${c.source}:${c.key}`);
+        if (sc && sc.fit_score >= AI_MIN_FIT) cards.push({ ...c, fit_score: sc.fit_score, fit_reason: sc.fit_reason });
+        else lowFitHidden++;
+      }
     }
+    cards = cards.sort((a, b) => b.fit_score - a.fit_score);
 
     return NextResponse.json({
       cards: cards.map(toPublicCard),
-      cursor: result.next,
-      has_more: result.next.phase !== "done",
-      needs_filters: result.needsFilters,
-      applied_filters: mode === "ai" ? filters : undefined,
+      cursor: next,
+      has_more: next.phase !== "done",
+      needs_filters: needsFilters,
+      applied_filters: filters,
+      low_fit_hidden: lowFitHidden,
+      min_fit: AI_MIN_FIT,
     });
   } catch (err) {
     console.error("portal wishlist search:", err);

@@ -16,6 +16,8 @@ import {
   IconChevronDown,
   IconUpload,
   IconBuildingPlus,
+  IconEyeOff,
+  IconArrowBackUp,
 } from "@tabler/icons-react";
 import {
   FILTER_GROUPS,
@@ -59,7 +61,7 @@ const STATUS_LABEL: Record<WishlistItem["status"], { text: string; cls: string }
   discarded: { text: "Descartada", cls: "bg-gray-100 text-gray-500" },
 };
 
-type Tab = "ai" | "search" | "wishlist" | "worked" | "exclusions";
+type Tab = "ai" | "search" | "wishlist" | "worked" | "omitted" | "exclusions";
 
 // Clave para no repetir una empresa que aparece en las dos bases
 const dedupeKey = (c: { name: string; domain: string | null }) => c.domain ?? c.name.trim().toLowerCase();
@@ -89,6 +91,7 @@ export default function PortalWishlistPage() {
     { key: "search", label: "Buscar empresas", icon: <IconSearch size={16} /> },
     { key: "wishlist", label: `Mi wishlist${wishlist.length ? ` (${wishlist.length})` : ""}`, icon: <IconHeart size={16} /> },
     { key: "worked", label: "Empresas trabajadas", icon: <IconBriefcase size={16} /> },
+    { key: "omitted", label: "Empresas omitidas", icon: <IconEyeOff size={16} /> },
     { key: "exclusions", label: "Lista de exclusión", icon: <IconBan size={16} /> },
   ];
 
@@ -122,6 +125,7 @@ export default function PortalWishlistPage() {
       {tab === "search" && catalog && <SearchTab catalog={catalog} onAdded={loadWishlist} />}
       {tab === "wishlist" && <WishlistTab items={wishlist} onChange={loadWishlist} />}
       {tab === "worked" && <WorkedTab />}
+      {tab === "omitted" && <OmittedTab />}
       {tab === "exclusions" && <ExclusionsTab />}
     </div>
   );
@@ -137,6 +141,7 @@ function useCompanySearch(mode: "manual" | "ai") {
   const [error, setError] = useState<string | null>(null);
   const [needsFilters, setNeedsFilters] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<UnifiedFilters | null>(null);
+  const [lowFitHidden, setLowFitHidden] = useState(0);
   const seen = useRef(new Set<string>());
 
   async function run(filters: UnifiedFilters, reset: boolean) {
@@ -146,6 +151,7 @@ function useCompanySearch(mode: "manual" | "ai") {
       seen.current = new Set();
       setCards([]);
       setNeedsFilters(false);
+      setLowFitHidden(0);
     }
     const r = await fetch("/api/portal/wishlist/search", {
       method: "POST",
@@ -169,11 +175,12 @@ function useCompanySearch(mode: "manual" | "ai") {
     setHasMore(!!j.has_more);
     setNeedsFilters(!!j.needs_filters);
     if (j.applied_filters) setAppliedFilters(j.applied_filters);
+    if (typeof j.low_fit_hidden === "number") setLowFitHidden((n) => n + j.low_fit_hidden);
     return fresh;
   }
 
   const removeCard = (ref: string) => setCards((c) => c.filter((x) => x.ref !== ref));
-  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, run, removeCard };
+  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, lowFitHidden, run, removeCard };
 }
 
 // ── Recomendadas por IA ──────────────────────────────────────────────────
@@ -181,6 +188,7 @@ function useCompanySearch(mode: "manual" | "ai") {
 function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) {
   const s = useCompanySearch("ai");
   const [started, setStarted] = useState(false);
+  const [sort, setSort] = useState<SortMode>("fit");
 
   const start = () => {
     setStarted(true);
@@ -203,11 +211,20 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
         </div>
       )}
       {s.appliedFilters && <AppliedFilters filters={s.appliedFilters} catalog={catalog} />}
+      {s.cards.length > 0 && (
+        <ResultsToolbar sort={sort} onSort={setSort}>
+          {s.lowFitHidden > 0 && (
+            <span className="text-xs text-gray-500">Solo te mostramos empresas con fit de 60% o más ({s.lowFitHidden} descartadas por bajo fit).</span>
+          )}
+        </ResultsToolbar>
+      )}
       {s.error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{s.error}</div>}
-      <CardGrid cards={s.cards} mode="ai" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
+      <CardGrid cards={sortCards(s.cards, sort)} mode="ai" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
       {s.loading && <Analyzing />}
       {started && !s.loading && s.cards.length === 0 && !s.error && (
-        <div className="text-sm text-gray-500 mt-4">No encontramos nuevas empresas para recomendarte.</div>
+        <div className="text-sm text-gray-500 mt-4">
+          No encontramos nuevas empresas con buen fit{s.hasMore ? " en esta tanda. Prueba “Ver más recomendaciones”." : "."}
+        </div>
       )}
       {started && !s.loading && s.hasMore && (
         <div className="mt-6 text-center">
@@ -254,32 +271,57 @@ function SearchTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void
   const [searched, setSearched] = useState(false);
   const s = useCompanySearch("manual");
 
-  // Calcula el fit de los resultados recién mostrados
-  async function scoreCards(list: Card[]) {
+  const [sort, setSort] = useState<SortMode>("relevance");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [scoring, setScoring] = useState<Set<string>>(new Set());
+
+  // Calcula el fit solo de las empresas que el cliente pide (de a una o seleccionadas)
+  async function revealFit(refs: string[]) {
+    const list = s.cards.filter((c) => refs.includes(c.ref) && c.fit_score === undefined);
     if (!list.length) return;
-    const r = await fetch("/api/portal/wishlist/score", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cards: list.map(({ ref, name, domain, facts }) => ({ ref, name, domain, facts })) }),
-    });
-    const j = r.ok ? await r.json().catch(() => ({})) : {};
-    const scores = ((j as { scores?: Record<string, { fit_score: number; fit_reason: string }> }).scores ?? {});
-    const refs = new Set(list.map((c) => c.ref));
-    s.setCards((prev) =>
-      prev.map((c) =>
-        scores[c.ref]
-          ? { ...c, fit_score: scores[c.ref].fit_score, fit_reason: scores[c.ref].fit_reason }
-          : refs.has(c.ref) && c.fit_score === undefined
-            ? { ...c, fit_score: null }
-            : c
-      )
-    );
+    setScoring((prev) => new Set([...Array.from(prev), ...list.map((c) => c.ref)]));
+    for (let i = 0; i < list.length; i += 24) {
+      const chunk = list.slice(i, i + 24);
+      const r = await fetch("/api/portal/wishlist/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cards: chunk.map(({ ref, name, domain, facts }) => ({ ref, name, domain, facts })) }),
+      });
+      const j = r.ok ? await r.json().catch(() => ({})) : {};
+      const scores = ((j as { scores?: Record<string, { fit_score: number; fit_reason: string }> }).scores ?? {});
+      const refsDone = new Set(chunk.map((c) => c.ref));
+      s.setCards((prev) =>
+        prev.map((c) =>
+          scores[c.ref]
+            ? { ...c, fit_score: scores[c.ref].fit_score, fit_reason: scores[c.ref].fit_reason }
+            : refsDone.has(c.ref) && c.fit_score === undefined
+              ? { ...c, fit_score: null }
+              : c
+        )
+      );
+      setScoring((prev) => {
+        const n = new Set(prev);
+        chunk.forEach((c) => n.delete(c.ref));
+        return n;
+      });
+    }
+    setSelected(new Set());
   }
+
+  const toggleSelect = (ref: string) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(ref)) n.delete(ref);
+      else n.add(ref);
+      return n;
+    });
+  const pendingRefs = s.cards.filter((c) => c.fit_score === undefined).map((c) => c.ref);
+  const allPendingSelected = pendingRefs.length > 0 && pendingRefs.every((r) => selected.has(r));
 
   async function search(reset: boolean) {
     setSearched(true);
-    const fresh = await s.run(filters, reset);
-    scoreCards(fresh);
+    if (reset) setSelected(new Set());
+    await s.run(filters, reset);
   }
 
   const activeCount = Object.values(filters).filter((v) => (Array.isArray(v) ? v.length : !!v)).length;
@@ -315,8 +357,37 @@ function SearchTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void
             Elige los filtros a la izquierda y presiona <strong>Buscar empresas</strong>.
           </div>
         )}
+        {s.cards.length > 0 && (
+          <ResultsToolbar sort={sort} onSort={setSort}>
+            {pendingRefs.length > 0 && (
+              <>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={allPendingSelected}
+                    onChange={() => setSelected(allPendingSelected ? new Set() : new Set(pendingRefs))}
+                  />
+                  Seleccionar todas
+                </label>
+                <button
+                  onClick={() => revealFit(Array.from(selected))}
+                  disabled={!selected.size}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs text-white disabled:opacity-40"
+                  style={{ background: "#251762" }}
+                >
+                  <IconSparkles size={13} /> Calcular fit{selected.size ? ` (${selected.size})` : ""}
+                </button>
+              </>
+            )}
+          </ResultsToolbar>
+        )}
         {s.error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{s.error}</div>}
-        <CardGrid cards={s.cards} mode="manual" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
+        <CardGrid
+          cards={sortCards(s.cards, sort)}
+          mode="manual"
+          onAdded={(ref) => { s.removeCard(ref); setSelected((p) => { const n = new Set(p); n.delete(ref); return n; }); onAdded(); }}
+          fitControls={{ selected, scoring, onToggle: toggleSelect, onReveal: (ref) => revealFit([ref]) }}
+        />
         {s.loading && <IconLoader2 className="animate-spin text-gray-400 mx-auto mt-6" />}
         {searched && !s.loading && s.cards.length === 0 && !s.error && (
           <div className="text-sm text-gray-500 bg-white rounded-2xl border border-gray-100 p-6">
@@ -539,7 +610,39 @@ function ManualRequest({ onAdded }: { onAdded: () => void }) {
   );
 }
 
+// ── Orden de resultados ──────────────────────────────────────────────────
+
+type SortMode = "relevance" | "fit";
+
+// "Mayor fit": de mayor a menor; las que aún no tienen fit van al final
+function sortCards(cards: Card[], sort: SortMode): Card[] {
+  if (sort === "relevance") return cards;
+  return [...cards].sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+}
+
+function ResultsToolbar({ sort, onSort, children }: { sort: SortMode; onSort: (s: SortMode) => void; children?: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3">{children}</div>
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        Ordenar por
+        <select value={sort} onChange={(e) => onSort(e.target.value as SortMode)} className="border border-gray-200 rounded-lg px-2 py-1 bg-white text-xs">
+          <option value="relevance">Relevancia</option>
+          <option value="fit">Mayor fit</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
 // ── Tarjetas de empresa ──────────────────────────────────────────────────
+
+type FitControls = {
+  selected: Set<string>;
+  scoring: Set<string>;
+  onToggle: (ref: string) => void;
+  onReveal: (ref: string) => void;
+};
 
 function fitStyle(score: number) {
   if (score >= 80) return { bg: "rgba(34,197,94,0.12)", fg: "#15803d", label: "Fit alto" };
@@ -548,18 +651,19 @@ function fitStyle(score: number) {
   return { bg: "rgba(239,68,68,0.10)", fg: "#b91c1c", label: "Bajo fit" };
 }
 
-function CardGrid({ cards, mode, onAdded }: { cards: Card[]; mode: "manual" | "ai"; onAdded: (ref: string) => void }) {
+function CardGrid({ cards, mode, onAdded, fitControls }: { cards: Card[]; mode: "manual" | "ai"; onAdded: (ref: string) => void; fitControls?: FitControls }) {
   if (!cards.length) return null;
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {cards.map((c) => <CompanyCard key={c.ref} card={c} mode={mode} onAdded={onAdded} />)}
+      {cards.map((c) => <CompanyCard key={c.ref} card={c} mode={mode} onAdded={onAdded} fitControls={fitControls} />)}
     </div>
   );
 }
 
-function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai"; onAdded: (ref: string) => void }) {
+function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "manual" | "ai"; onAdded: (ref: string) => void; fitControls?: FitControls }) {
   const [adding, setAdding] = useState(false);
-  const [done, setDone] = useState(false);
+  const [omitting, setOmitting] = useState(false);
+  const [done, setDone] = useState<"added" | "omitted" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -574,9 +678,30 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai
     const j = await r.json().catch(() => ({}));
     setAdding(false);
     if (!r.ok) return setError(j.error ?? "No se pudo agregar");
-    setDone(true);
+    setDone("added");
     // La tarjeta desaparece de los resultados después de confirmar
     setTimeout(() => onAdded(card.ref), 700);
+  }
+
+  // Omitir: no vuelve a aparecer (se puede restaurar en "Empresas omitidas")
+  async function omit() {
+    setOmitting(true);
+    setError(null);
+    const r = await fetch("/api/portal/omitted", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ref: card.ref,
+        card: { name: card.name, domain: card.domain, linkedin_url: card.linkedin_url, facts: card.facts },
+        fit_score: card.fit_score ?? undefined,
+        fit_reason: card.fit_reason ?? undefined,
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setOmitting(false);
+    if (!r.ok) return setError(j.error ?? "No se pudo omitir");
+    setDone("omitted");
+    setTimeout(() => onAdded(card.ref), 400);
   }
 
   const facts = expanded ? card.facts : card.facts.slice(0, 4);
@@ -585,7 +710,17 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col">
       <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="min-w-0">
+        <div className="min-w-0 flex gap-2">
+          {fitControls && card.fit_score === undefined && !fitControls.scoring.has(card.ref) && (
+            <input
+              type="checkbox"
+              className="mt-1 shrink-0"
+              title="Seleccionar para calcular fit"
+              checked={fitControls.selected.has(card.ref)}
+              onChange={() => fitControls.onToggle(card.ref)}
+            />
+          )}
+          <div className="min-w-0">
           <h3 className="font-semibold text-[15px] truncate" style={{ color: "#251762" }}>{card.name}</h3>
           <div className="flex flex-wrap gap-x-2 text-xs text-gray-500">
             {card.domain && (
@@ -595,15 +730,25 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai
             )}
             {card.linkedin_url && <a href={card.linkedin_url} target="_blank" rel="noreferrer" className="hover:text-[#251762]">LinkedIn</a>}
           </div>
+          </div>
         </div>
         {fit ? (
           <div className="text-right shrink-0 rounded-xl px-2.5 py-1" style={{ background: fit.bg, color: fit.fg }}>
             <div className="text-lg font-bold leading-tight">{card.fit_score}%</div>
             <div className="text-[10px] font-medium">{fit.label}</div>
           </div>
+        ) : card.fit_score === undefined && fitControls && !fitControls.scoring.has(card.ref) ? (
+          <button
+            onClick={() => fitControls.onReveal(card.ref)}
+            className="shrink-0 flex items-center gap-1 text-[11px] font-medium rounded-lg px-2 py-1 border border-[#62E0D8] text-[#0f766e] hover:bg-[rgba(98,224,216,0.12)]"
+          >
+            <IconSparkles size={12} /> Ver fit
+          </button>
         ) : card.fit_score === undefined ? (
           <div className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0"><IconLoader2 size={12} className="animate-spin" /> fit…</div>
-        ) : null}
+        ) : (
+          <div className="text-[10px] text-gray-400 shrink-0 max-w-[90px] text-right">Sin datos para evaluar</div>
+        )}
       </div>
 
       {card.fit_reason && <p className="text-[13px] text-gray-700 leading-relaxed mb-3">{card.fit_reason}</p>}
@@ -624,14 +769,24 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai
 
       <div className="mt-auto">
         {error && <div className="text-xs text-red-600 mb-2">{error}</div>}
-        <button
-          onClick={add}
-          disabled={adding || done}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-70"
-          style={{ background: done ? "#16a34a" : "#251762" }}
-        >
-          {done ? <><IconCheck size={15} /> Agregada</> : adding ? <IconLoader2 size={15} className="animate-spin" /> : <><IconPlus size={15} /> Agregar a wishlist</>}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={add}
+            disabled={adding || omitting || !!done}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-70"
+            style={{ background: done === "added" ? "#16a34a" : "#251762" }}
+          >
+            {done === "added" ? <><IconCheck size={15} /> Agregada</> : adding ? <IconLoader2 size={15} className="animate-spin" /> : <><IconPlus size={15} /> Agregar a wishlist</>}
+          </button>
+          <button
+            onClick={omit}
+            disabled={adding || omitting || !!done}
+            title="No me interesa: no volverá a aparecer"
+            className="flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+          >
+            {done === "omitted" ? "Omitida" : omitting ? <IconLoader2 size={15} className="animate-spin" /> : <><IconEyeOff size={15} /> Omitir</>}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -745,6 +900,81 @@ function WorkedTab() {
               {shown.length > 500 && <div className="p-3 text-xs text-gray-400">Mostrando 500 de {shown.length.toLocaleString("es-CL")}. Usa el buscador.</div>}
             </div>
           )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Empresas omitidas ────────────────────────────────────────────────────
+
+type OmittedItem = { id: string; company_name: string; domain: string | null; linkedin_url: string | null; fit_score: number | null; fit_reason: string | null; omitted_by_email: string | null; created_at: string };
+
+function OmittedTab() {
+  const [items, setItems] = useState<OmittedItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    fetch("/api/portal/omitted", { cache: "no-store" })
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) setError(j.error ?? "Error al cargar");
+        else setItems(j.items);
+      })
+      .catch(() => setError("Error al cargar"));
+  }, []);
+
+  async function restore(id: string) {
+    const r = await fetch(`/api/portal/omitted/${id}`, { method: "DELETE" });
+    if (r.ok) setItems((list) => (list ?? []).filter((i) => i.id !== id));
+  }
+
+  const shown = (items ?? []).filter((i) => !q || i.company_name.toLowerCase().includes(q.toLowerCase()) || (i.domain ?? "").includes(q.toLowerCase()));
+
+  return (
+    <div>
+      <p className="text-sm text-gray-500 mb-4">
+        Empresas que marcaste como “Omitir” en los resultados. No vuelven a aparecer en búsquedas ni recomendaciones.
+        Si cambias de opinión, restáuralas.
+      </p>
+      {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{error}</div>}
+      {!items && !error && <IconLoader2 className="animate-spin text-gray-400" />}
+      {items && items.length === 0 && <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">No has omitido empresas.</div>}
+      {items && items.length > 0 && (
+        <>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar entre ${items.length.toLocaleString("es-CL")} empresas…`} className="w-full sm:w-80 border border-gray-200 rounded-xl px-3 py-2 text-sm mb-3 bg-white" />
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-gray-500 border-b border-gray-100">
+                <tr><th className="p-3">Empresa</th><th className="p-3">Fit</th><th className="p-3">Omitida</th><th className="p-3"></th></tr>
+              </thead>
+              <tbody>
+                {shown.slice(0, 500).map((i) => (
+                  <tr key={i.id} className="border-b border-gray-50 last:border-0 align-top">
+                    <td className="p-3">
+                      <div className="font-medium" style={{ color: "#251762" }}>{i.company_name}</div>
+                      {i.domain && <div className="text-xs text-gray-500">{i.domain}</div>}
+                    </td>
+                    <td className="p-3 max-w-xs">
+                      {i.fit_score != null ? <div className="font-semibold">{i.fit_score}%</div> : "—"}
+                      {i.fit_reason && <div className="text-xs text-gray-500 line-clamp-2">{i.fit_reason}</div>}
+                    </td>
+                    <td className="p-3 text-xs text-gray-500 whitespace-nowrap">
+                      {new Date(i.created_at).toLocaleDateString("es-CL")}
+                      {i.omitted_by_email ? <div>{i.omitted_by_email}</div> : null}
+                    </td>
+                    <td className="p-3 text-right">
+                      <button onClick={() => restore(i.id)} className="inline-flex items-center gap-1 text-xs text-[#251762] hover:underline">
+                        <IconArrowBackUp size={14} /> Restaurar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {shown.length > 500 && <div className="p-3 text-xs text-gray-400">Mostrando 500 de {shown.length.toLocaleString("es-CL")}. Usa el buscador.</div>}
+          </div>
         </>
       )}
     </div>
