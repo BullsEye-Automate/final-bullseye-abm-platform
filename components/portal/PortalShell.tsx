@@ -16,7 +16,7 @@ type NavItem = { href: string; label: string; icon: typeof IconHome; soon?: bool
 const NAV: NavItem[] = [
   { href: "/portal",          label: "Inicio",                 icon: IconHome },
   { href: "/portal/icp",      label: "ICP y buyer persona",    icon: IconTargetArrow },
-  { href: "/portal/wishlist", label: "Wishlist de empresas",   icon: IconBuildingStore, soon: true },
+  { href: "/portal/wishlist", label: "Wishlist de empresas",   icon: IconBuildingStore },
   { href: "/portal/reportes", label: "Reportes",               icon: IconReportAnalytics, soon: true },
 ];
 

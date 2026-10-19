@@ -201,19 +201,21 @@ Centro de mando del equipo SDR (14 vistas: Dirección / Operación / Análisis),
 
 ## Portal de clientes (`/portal`)
 
-Vista para que los clientes de BullsEye entren con su propio login. Fases: (1) accesos + ICP ✅, (2) wishlist de empresas, (3) recomendaciones por señales de llamadas, (4) reportería (se integra con el módulo de Ingri).
+Vista para que los clientes de BullsEye entren con su propio login. Fases: (1) accesos + ICP ✅, (2) wishlist de empresas ✅ (falta envío a Lemlist), (3) recomendaciones por señales de llamadas, (4) reportería (se integra con el módulo de Ingri).
 
 - **Accesos:** varios usuarios por cliente, sin límite. Se crean desde **Solicitudes clientes → Accesos al portal** (`/solicitudes-clientes`) con contraseña temporal que se muestra una sola vez; el cliente la cambia en `/portal/cuenta`. Tabla `client_users` (migración `supabase/client_portal_migration.sql`) + `app_metadata.role = "client"` en Supabase Auth. Desactivar = `ban_duration` en Auth + `is_active = false`.
 - **Autorización:** las APIs `/api/portal/*` toman el `client_id` SIEMPRE de `client_users` vía `requirePortalUser()` (`lib/portalAuth.ts`), nunca de la request. En `/portal` no se monta `ClientProvider` (descargaría la lista de todos los clientes).
 - **ICP y buyer persona:** el cliente NO edita directo. `/portal/icp` reutiliza `IcpPublicForm` (modo `embedded`) y crea una propuesta en `icp_change_requests` (una pendiente por cliente + industria; reenviar la reemplaza). BullsEye aprueba o rechaza en `/solicitudes-clientes` viendo el diff por campo contra el ICP vigente; aprobar escribe con `saveIcpContent()` (`lib/icpStore.ts`). El link público `/forms/icp/[token]` (onboarding) sigue guardando directo.
-- **Wishlist (próxima fase) — definiciones acordadas:**
-  - Fuentes de búsqueda: **base de Lemlist usando la API key de cada cliente** (`client_configs.lemlist_api_key`, así las empresas quedan en la cuenta del cliente) + **empresas de HubSpot de BullsEye** (+20.000) sincronizadas a Supabase. Filtrar por **todas las propiedades que estén rellenadas** (si está rellenada es confiable), incluido el módulo **"Tecnologías"** de HubSpot.
-  - Al cliente solo se le muestran datos firmográficos de HubSpot, nunca para qué otro cliente se prospectó ni notas/resultados de llamadas de otra cuenta.
-  - Dos modos: filtros manuales y recomendación IA vs. ICP del cliente (% de fit + razón).
-  - Al agregar a la wishlist: la empresa va **directo a Lemlist** (lista de empresas en la cuenta del cliente) para buscar y enriquecer contactos ahí. **No pasa por Clay.**
-  - Las empresas ya pedidas (o excluidas / ya en `companies` del cliente) no vuelven a aparecer en búsquedas de ese cliente — dedupe por dominio.
-  - Las solicitudes caen en `/solicitudes-clientes` (pestaña "Empresas solicitadas"); las alertas se configuran después.
-  - Bonus señales de llamadas: solo con llamadas del MISMO cliente (confidencialidad).
+- **Wishlist (`/portal/wishlist`, fase 2)** — migración `supabase/client_wishlist_migration.sql`:
+  - **Fuentes:** (1) **Base BullsEye** = empresas de HubSpot copiadas a `hubspot_company_pool` (sync por tramos desde **Solicitudes clientes → Base HubSpot**, `lib/hubspotPool.ts`); (2) **Base Lemlist** con la API key **propia** del cliente (`client_configs.lemlist_api_key`, sin fallback a la key de BullsEye — `lib/lemlistDatabase.ts`).
+  - **Qué se copia de HubSpot:** todas las propiedades rellenadas del grupo `companyinformation` + `web_technologies` ("Tecnologías"). Nunca `hs_*` (salvo linkedin/country code), `bullseye_*`, owner, lifecycle, `type`, negocios ni notas: el pool lo ven todos los clientes. Valores numéricos como número; multi-select (`a;b;c`) como array.
+  - **Búsqueda:** RPC `search_hubspot_pool(filters, query, exclude_domains, exclude_names, limit, offset)` — SQL estático, solo service role. Filtros `in` / `range` / `contains` / `exists`.
+  - **Dos modos:** manual (filtros del cliente; el fit se calcula después vía `/api/portal/wishlist/score`) e IA (Claude traduce el ICP a filtros de la fuente, trae candidatos y los devuelve puntuados; si quedan <10 resultados relaja filtros). Lógica IA en `lib/wishlistFit.ts`.
+  - **Fit:** 0–100 + razón en español, cacheado en `company_fit_scores` por (cliente, fuente, empresa, hash del ICP). Cambiar el ICP invalida el caché.
+  - **Exclusión:** no vuelven a aparecer las empresas de `client_wishlist`, `excluded_companies` y `companies` del cliente (por dominio normalizado y nombre) — `getClientExclusions()` en `lib/wishlist.ts`.
+  - **Al agregar:** fila en `client_wishlist` (status `new`) → aparece en **Solicitudes clientes → Empresas solicitadas**, donde prospección cambia el estado (new / in_lemlist / in_progress / contacts_found / discarded) y deja notas internas. El cliente puede quitarla solo mientras está `new`. Alertas: pendientes.
+  - **Lemlist — estado de endpoints:** confirmados `GET /database/filters?usage=api&mode=companies` y `POST /database/people` (body `{filters:[{filterId,in,out}], search, page, size}`). `POST /database/companies` está **inferido** por simetría: verificarlo con el botón "Probar con <cliente>" de Base HubSpot (muestra filtros, respuesta y nombres de campos). **Pendiente:** endpoint para guardar la empresa en la cuenta Lemlist del cliente — mientras tanto `lemlist_status = 'pendiente'` y prospección la pasa a mano. No pasa por Clay.
+  - Bonus pendiente (fase 3): recomendaciones por señales de llamadas, solo con llamadas del MISMO cliente.
 
 ---
 
