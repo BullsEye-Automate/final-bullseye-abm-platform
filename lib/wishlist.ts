@@ -71,7 +71,7 @@ export type CompanyCard = {
 };
 
 const PRIORITY_PROPS = [
-  "industry", "numberofemployees", "annualrevenue", "country", "city", "state",
+  "industry", "numberofemployees", "annualrevenue", "pais_g", "city", "state",
   "web_technologies", "description", "founded_year", "linkedin_company_page",
 ];
 
