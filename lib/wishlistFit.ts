@@ -263,7 +263,11 @@ export async function icpToLemlistFilters(
       (d.values?.length ? `, valores: ${d.values.slice(0, MAX_OPTIONS_IN_PROMPT).join(" | ")}` : ", texto libre")
     )
     .join("\n");
-  const raw = await runFilterTool(db, clientId, LEMLIST_FILTER_TOOL, "portal_wishlist_icp_filters_lemlist", icpText, catalog);
+  const hint =
+    "Notas para Lemlist: usa semanticSearch con UNA frase en inglés que describa la empresa ideal (ej. \"B2B SaaS for logistics teams\"). " +
+    "Para filtros select copia valores exactos de la lista. Para autocomplete (ej. país) usa nombres en inglés (\"Chile\", \"Mexico\", \"Brazil\"). " +
+    "Incluye siempre al menos un filtro.\n";
+  const raw = await runFilterTool(db, clientId, LEMLIST_FILTER_TOOL, "portal_wishlist_icp_filters_lemlist", icpText, hint + catalog);
 
   const byId = new Map(defs.map((d) => [d.filterId, d]));
   const filters: LemlistFilter[] = [];

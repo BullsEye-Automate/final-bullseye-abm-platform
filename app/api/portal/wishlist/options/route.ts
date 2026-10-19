@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
 import { isFilterableProperty, listPoolProperties } from "@/lib/hubspotPool";
-import { getClientOwnLemlistKey, getLemlistCompanyFilters } from "@/lib/lemlistDatabase";
+import { getClientOwnLemlistKey, getLemlistCompanyFilters, lemlistFilterLabel } from "@/lib/lemlistDatabase";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,13 @@ export async function GET() {
   if (lemlistKey) {
     const r = await getLemlistCompanyFilters(lemlistKey);
     lemlist = r.ok
-      ? { available: true, filters: r.data }
+      ? {
+          available: true,
+          // keywordInCompany se usa vía el buscador de texto; el resto como filtros
+          filters: r.data
+            .filter((f) => f.filterId !== "keywordInCompany")
+            .map((f) => ({ ...f, description: lemlistFilterLabel(f) })),
+        }
       : { available: false, reason: `No pudimos conectar con Lemlist (${r.status || "sin respuesta"}).` };
   }
 
