@@ -348,6 +348,7 @@ type WishlistRequest = {
   snapshot: { facts?: { label: string; value: string }[] };
   status: "new" | "in_lemlist" | "in_progress" | "contacts_found" | "discarded";
   lemlist_status: string | null;
+  lemlist_error: string | null;
   internal_note: string | null;
   requested_by_email: string | null;
   created_at: string;
@@ -379,14 +380,14 @@ function WishlistRequestsTab({ clientId }: { clientId: string | null }) {
 
   useEffect(() => { load(); }, [load]);
 
-  async function update(id: string, patch: { status?: string; internal_note?: string }) {
+  async function update(id: string, patch: { status?: string; internal_note?: string; action?: string }) {
     const r = await fetch(`/api/portal-admin/wishlist/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
     if (!r.ok) setError((await r.json().catch(() => ({}))).error ?? "Error al actualizar");
-    else if (patch.status) load();
+    else if (patch.status || patch.action) load();
   }
 
   return (
@@ -455,7 +456,7 @@ function WishlistRequestsTab({ clientId }: { clientId: string | null }) {
                     >
                       {WISHLIST_STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                     </select>
-                    {i.lemlist_status === "pendiente" && <div className="text-[10px] text-gray-400 mt-1">Lemlist: envío pendiente</div>}
+                    <LemlistBadge item={i} onRetry={() => update(i.id, { action: "push_lemlist" })} />
                   </td>
                   <td className="p-3 min-w-[200px]">
                     <textarea
@@ -601,6 +602,21 @@ function PoolTab({ clientId, clientName }: { clientId: string | null; clientName
           <pre className="mt-4 bg-gray-50 rounded-xl p-3 text-xs overflow-x-auto max-h-80">{JSON.stringify(check, null, 2)}</pre>
         )}
       </div>
+    </div>
+  );
+}
+
+function LemlistBadge({ item, onRetry }: { item: WishlistRequest; onRetry: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const retry = async () => { setBusy(true); await onRetry(); setBusy(false); };
+  if (item.lemlist_status === "ok") return <div className="text-[10px] text-green-700 mt-1">✓ En Lemlist (Wishlist BullsEye)</div>;
+  const label =
+    item.lemlist_status === "sin_key" ? "Lemlist: cliente sin API key" :
+    item.lemlist_status === "error" ? "Lemlist: error al enviar" : "Lemlist: envío pendiente";
+  return (
+    <div className="text-[10px] mt-1">
+      <span className={item.lemlist_status === "error" ? "text-red-600" : "text-gray-400"} title={item.lemlist_error ?? undefined}>{label}</span>
+      <button onClick={retry} disabled={busy} className="ml-2 text-[#251762] underline disabled:opacity-50">{busy ? "Enviando…" : "Reintentar"}</button>
     </div>
   );
 }

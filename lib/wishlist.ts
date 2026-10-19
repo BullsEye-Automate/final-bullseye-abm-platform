@@ -119,12 +119,40 @@ export function lemlistCompanyToCard(c: LemlistCompany): CompanyCard {
   const facts = [
     ["Industria", c.industry],
     ["Tamaño", c.size],
+    ["Facturación", c.revenue],
     ["Ubicación", c.location],
+    ["Tecnologías", c.technologies.length ? c.technologies.slice(0, 12).join(", ") + (c.technologies.length > 12 ? "…" : "") : null],
+    ["Mercado", c.market],
+    ["Tipo", c.company_type],
+    ["Fundada", c.founded],
     ["Descripción", c.description],
   ]
     .filter(([, v]) => v)
     .map(([label, value]) => ({ label: label as string, value: (value as string).slice(0, 400) }));
   return { source: "lemlist", key: c.id, name: c.name, domain: c.domain, linkedin_url: c.linkedin_url, facts };
+}
+
+// Datos para crear la empresa en el CRM de Lemlist del cliente
+export type LemlistCompanyFields = { industry?: string | null; location?: string | null; size?: string | null; description?: string | null };
+
+export function poolCompanyLemlistFields(c: PoolCompany, props: PoolProperty[]): LemlistCompanyFields {
+  const p = pickAllowed(c.properties);
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : typeof v === "number" ? String(v) : null);
+  const industryRaw = str(p.industry);
+  const industry = industryRaw
+    ? props.find((x) => x.name === "industry")?.options.find((o) => o.value === industryRaw)?.label ?? industryRaw
+    : null;
+  return {
+    industry,
+    location: [str(p.city), str(p.state), str(p.pais_g)].filter(Boolean).join(", ") || null,
+    size: str(p.numberofemployees),
+    description: str(p.description),
+  };
+}
+
+export function cardLemlistFields(card: CompanyCard): LemlistCompanyFields {
+  const get = (label: string) => card.facts.find((f) => f.label === label)?.value ?? null;
+  return { industry: get("Industria"), location: get("Ubicación"), size: get("Tamaño"), description: get("Descripción") };
 }
 
 // Texto compacto de la empresa para el prompt de fit

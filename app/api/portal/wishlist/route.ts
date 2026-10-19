@@ -3,7 +3,15 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
 import { listPoolProperties, normalizeDomain } from "@/lib/hubspotPool";
 import { icpHash } from "@/lib/wishlistFit";
-import { getClientIcpText, poolCompanyToCard, type CompanyCard } from "@/lib/wishlist";
+import {
+  cardLemlistFields,
+  getClientIcpText,
+  poolCompanyLemlistFields,
+  poolCompanyToCard,
+  type CompanyCard,
+  type LemlistCompanyFields,
+} from "@/lib/wishlist";
+import { pushWishlistItemToLemlist } from "@/lib/wishlistLemlist";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +31,8 @@ export async function GET() {
 // POST — { source, key, mode, card? } agrega una empresa a la wishlist.
 // HubSpot: los datos y el fit se toman del servidor (pool + caché de fit).
 // Lemlist: se guarda la tarjeta que vio el cliente (sanitizada).
-// La empresa queda en estado "new" y aparece en /solicitudes-clientes.
+// La empresa queda en estado "new", aparece en /solicitudes-clientes y se
+// envía de inmediato a la cuenta Lemlist del cliente (lista "Wishlist BullsEye").
 export async function POST(req: NextRequest) {
   const { user, response } = await requirePortalUser();
   if (!user) return response;
@@ -36,13 +45,17 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
   let card: CompanyCard | null = null;
+  let lemlistFields: LemlistCompanyFields = {};
 
   if (source === "hubspot") {
     const [{ data: row }, props] = await Promise.all([
       db.from("hubspot_company_pool").select("hs_id, name, domain, properties").eq("hs_id", key).maybeSingle(),
       listPoolProperties(db),
     ]);
-    if (row) card = poolCompanyToCard(row, props);
+    if (row) {
+      card = poolCompanyToCard(row, props);
+      lemlistFields = poolCompanyLemlistFields(row, props);
+    }
   } else {
     const c = body?.card ?? {};
     if (typeof c.name === "string" && c.name.trim()) {
@@ -62,6 +75,7 @@ export async function POST(req: NextRequest) {
     }
   }
   if (!card) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
+  if (source === "lemlist") lemlistFields = cardLemlistFields(card);
 
   // Fit ya calculado para el ICP vigente (si el cliente lo vio puntuado)
   const icpText = await getClientIcpText(db, user.clientId);
@@ -88,10 +102,8 @@ export async function POST(req: NextRequest) {
       mode,
       fit_score: fit?.fit_score ?? null,
       fit_reason: fit?.fit_reason ?? null,
-      snapshot: { facts: card.facts },
+      snapshot: { facts: card.facts, lemlist_fields: lemlistFields },
       status: "new",
-      // Envío a Lemlist: pendiente hasta confirmar el endpoint de empresas
-      // de Lemlist (ver CLAUDE.md → Portal de clientes → Wishlist)
       lemlist_status: "pendiente",
       requested_by: user.portalUserId,
       requested_by_email: user.email,
@@ -103,5 +115,8 @@ export async function POST(req: NextRequest) {
     if (error.code === "23505") return NextResponse.json({ error: "Esta empresa ya está en tu wishlist" }, { status: 409 });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, id: data.id });
+  // Envío a Lemlist: si falla, la empresa igual queda en la wishlist y
+  // prospección ve el error (y puede reintentar) en /solicitudes-clientes
+  const push = await pushWishlistItemToLemlist(db, data.id).catch((err) => ({ ok: false, error: String(err) }));
+  return NextResponse.json({ ok: true, id: data.id, lemlist: push.ok ? "ok" : "pendiente" });
 }
