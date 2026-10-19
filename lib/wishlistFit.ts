@@ -3,7 +3,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { anthropic, getClientModel } from "./claude";
 import { logAiUsage } from "./aiUsageLogger";
-import type { PoolFilter, PoolProperty } from "./hubspotPool";
+import { isFilterableProperty, type PoolFilter, type PoolProperty } from "./hubspotPool";
 import type { LemlistFilter, LemlistFilterDef } from "./lemlistDatabase";
 
 // IA de la wishlist del portal:
@@ -199,7 +199,7 @@ export async function icpToPoolFilters(
   icpText: string,
   properties: PoolProperty[]
 ): Promise<PoolFilter[]> {
-  const usable = properties.filter((p) => p.type === "number" || p.options.length > 0);
+  const usable = properties.filter((p) => isFilterableProperty(p.name) && (p.type === "number" || p.options.length > 0));
   const catalog = usable
     .map((p) =>
       p.type === "number"

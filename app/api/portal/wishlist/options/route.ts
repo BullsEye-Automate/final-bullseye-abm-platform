@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
-import { listPoolProperties } from "@/lib/hubspotPool";
+import { isFilterableProperty, listPoolProperties } from "@/lib/hubspotPool";
 import { getClientOwnLemlistKey, getLemlistCompanyFilters } from "@/lib/lemlistDatabase";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +36,7 @@ export async function GET() {
       total: poolSize ?? 0,
       // Solo propiedades útiles para filtrar: listas con opciones o números
       properties: properties
-        .filter((p) => p.type === "number" || p.options.length > 0 || p.name === "web_technologies")
+        .filter((p) => isFilterableProperty(p.name) && (p.type === "number" || p.options.length > 0))
         .map((p) => ({ name: p.name, label: p.label, type: p.type, options: p.options, filled_count: p.filled_count })),
     },
     lemlist,
