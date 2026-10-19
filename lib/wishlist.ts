@@ -204,3 +204,36 @@ export function cardSummary(card: CompanyCard): string {
     .filter(Boolean)
     .join("\n");
 }
+
+// Empresas que el fit detectó como clientes actuales/pasados (según el ICP):
+// se agregan a la lista de exclusión del cliente (visible y editable en el
+// portal) y a la interna de BullsEye, para que no vuelvan a aparecer.
+export async function excludeDetectedClients(
+  db: SupabaseClient,
+  clientId: string,
+  companies: { name: string; domain: string | null }[]
+): Promise<void> {
+  if (!companies.length) return;
+  const reason = "Ya es cliente (detectado en el ICP)";
+  for (const c of companies) {
+    const { error } = await db.from("client_exclusions").insert({
+      client_id: clientId,
+      kind: "company",
+      company_name: c.name,
+      domain: c.domain,
+      reason,
+      created_by_email: "Detectado automáticamente",
+    });
+    // 23505 = ya estaba en la lista
+    if (error && error.code !== "23505") console.error("excludeDetectedClients:", error.message);
+    const { data: internal } = await db
+      .from("excluded_companies")
+      .select("id")
+      .eq("client_id", clientId)
+      .ilike("company_name", c.name)
+      .limit(1);
+    if (!internal?.length) {
+      await db.from("excluded_companies").insert({ client_id: clientId, company_name: c.name, company_website: c.domain });
+    }
+  }
+}

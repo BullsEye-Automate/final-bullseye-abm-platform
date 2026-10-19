@@ -14,10 +14,25 @@ import type { UnifiedFilterKey, UnifiedFilters } from "./unifiedFilterDefs";
 //     unificados del portal, para el modo "Recomendadas por IA".
 
 export type FitCandidate = { key: string; name: string; summary: string };
-export type FitResult = { fit_score: number; fit_reason: string };
+// existing_client = la empresa ya es cliente (actual o pasado) del cliente de
+// BullsEye según su ICP: no es prospecto y se agrega a su lista de exclusión.
+export type FitResult = { fit_score: number; fit_reason: string; existing_client?: boolean };
+
+// Subir la versión cuando cambie el criterio de puntaje: invalida el caché
+// (el hash del ICP incluye la versión)
+const FIT_PROMPT_VERSION = "v2-clientes-actuales";
 
 export function icpHash(icpText: string): string {
-  return crypto.createHash("sha256").update(icpText.trim()).digest("hex").slice(0, 16);
+  return crypto.createHash("sha256").update(`${FIT_PROMPT_VERSION}\n${icpText.trim()}`).digest("hex").slice(0, 16);
+}
+
+// En el caché (company_fit_scores) el flag se guarda como prefijo de la razón
+// para no necesitar otra columna
+const EXISTING_CLIENT_TAG = "[CLIENTE_ACTUAL] ";
+function decodeCached(fit_score: number, fit_reason: string): FitResult {
+  return fit_reason.startsWith(EXISTING_CLIENT_TAG)
+    ? { fit_score, fit_reason: fit_reason.slice(EXISTING_CLIENT_TAG.length), existing_client: true }
+    : { fit_score, fit_reason };
 }
 
 // Lotes chicos en paralelo: cada uno responde más rápido (el ICP va cacheado),
@@ -31,6 +46,7 @@ Para cada empresa estima qué tan buen fit es con ese ICP:
 - Considera industria, tamaño, geografía, modelo de negocio, tecnologías, señales positivas y descalificadores del ICP.
 - Si falta información, no inventes: baja la certeza y dilo en la razón.
 - fit_reason: 1–2 oraciones en español, concretas, citando los datos de la empresa que justifican el puntaje (ej. "SaaS B2B de 120 empleados en Chile, usa HubSpot; calza con industria y tamaño objetivo").
+- MUY IMPORTANTE: si la empresa aparece en el ICP como cliente actual o pasado del cliente (por ejemplo en "Mejores clientes actuales o pasados", "Peores clientes" o en cualquier mención de sus clientes), NO es un prospecto: marca existing_client = true, fit_score = 0 y en fit_reason di que ya es (o fue) cliente. Compara por nombre de forma flexible (siglas, razón social, "Grupo X", filiales).
 Devuelve un resultado por cada empresa usando su key exacta.`;
 
 const SCORE_TOOL: Anthropic.Tool = {
@@ -47,8 +63,9 @@ const SCORE_TOOL: Anthropic.Tool = {
             key: { type: "string" },
             fit_score: { type: "integer", minimum: 0, maximum: 100 },
             fit_reason: { type: "string" },
+            existing_client: { type: "boolean", description: "true si el ICP la menciona como cliente actual o pasado" },
           },
-          required: ["key", "fit_score", "fit_reason"],
+          required: ["key", "fit_score", "fit_reason", "existing_client"],
         },
       },
     },
@@ -71,7 +88,7 @@ export async function scoreCompanies(
     .eq("source", opts.source)
     .eq("icp_hash", hash)
     .in("source_key", opts.candidates.map((c) => c.key));
-  for (const c of cached ?? []) out.set(c.source_key, { fit_score: c.fit_score, fit_reason: c.fit_reason });
+  for (const c of cached ?? []) out.set(c.source_key, decodeCached(c.fit_score, c.fit_reason));
 
   const pending = opts.candidates.filter((c) => !out.has(c.key));
   if (!pending.length) return out;
@@ -113,17 +130,21 @@ export async function scoreCompanies(
       });
 
       const block = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-      const results = ((block?.input as { results?: { key: string; fit_score: number; fit_reason: string }[] })?.results ?? [])
+      const results = ((block?.input as { results?: { key: string; fit_score: number; fit_reason: string; existing_client?: boolean }[] })?.results ?? [])
         .filter((r) => batch.some((c) => c.key === r.key));
-      const rows = results.map((r) => ({
-        client_id: opts.clientId,
-        source: opts.source,
-        source_key: r.key,
-        icp_hash: hash,
-        fit_score: Math.max(0, Math.min(100, Math.round(Number(r.fit_score) || 0))),
-        fit_reason: String(r.fit_reason ?? "").slice(0, 600),
-      }));
-      for (const r of rows) out.set(r.source_key, { fit_score: r.fit_score, fit_reason: r.fit_reason });
+      const rows = results.map((r) => {
+        const existing = r.existing_client === true;
+        const reason = String(r.fit_reason ?? "").slice(0, 580);
+        return {
+          client_id: opts.clientId,
+          source: opts.source,
+          source_key: r.key,
+          icp_hash: hash,
+          fit_score: existing ? 0 : Math.max(0, Math.min(100, Math.round(Number(r.fit_score) || 0))),
+          fit_reason: existing ? EXISTING_CLIENT_TAG + reason : reason,
+        };
+      });
+      for (const r of rows) out.set(r.source_key, decodeCached(r.fit_score, r.fit_reason));
       if (rows.length) await db.from("company_fit_scores").upsert(rows, { onConflict: "client_id,source,source_key,icp_hash" });
     })
   );
