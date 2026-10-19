@@ -237,3 +237,22 @@ export async function excludeDetectedClients(
     }
   }
 }
+
+// Estado de una recomendación IA guardada (client_recommendations) cuando el
+// cliente la agrega, la omite o la restaura. Si no era recomendación, no hace nada.
+export async function markRecommendation(
+  db: SupabaseClient,
+  clientId: string,
+  source: string,
+  sourceRef: string | null,
+  status: "pending" | "added" | "omitted"
+): Promise<void> {
+  if (!sourceRef || (source !== "hubspot" && source !== "lemlist")) return;
+  const { error } = await db
+    .from("client_recommendations")
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq("client_id", clientId)
+    .eq("source", source)
+    .eq("source_ref", sourceRef);
+  if (error) console.error("markRecommendation:", error.message);
+}

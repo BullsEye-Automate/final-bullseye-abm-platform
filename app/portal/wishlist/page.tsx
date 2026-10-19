@@ -134,41 +134,35 @@ export default function PortalWishlistPage() {
 
 // ── Hook de búsqueda paginada ────────────────────────────────────────────
 
-function useCompanySearch(mode: "manual" | "ai") {
+// Búsqueda con filtros (paginada, sin fit automático)
+function useCompanySearch() {
   const [cards, setCards] = useState<Card[]>([]);
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needsFilters, setNeedsFilters] = useState(false);
-  const [appliedFilters, setAppliedFilters] = useState<UnifiedFilters | null>(null);
-  const [lowFitHidden, setLowFitHidden] = useState(0);
-  const [existingHidden, setExistingHidden] = useState(0);
   const seen = useRef(new Set<string>());
-  const lastResponse = useRef<{ cursor: Cursor | null; hasMore: boolean; filters: UnifiedFilters | null }>({ cursor: null, hasMore: false, filters: null });
 
-  async function run(filters: UnifiedFilters, reset: boolean, cursorOverride?: Cursor | null) {
+  async function run(filters: UnifiedFilters, reset: boolean) {
     setLoading(true);
     setError(null);
     if (reset) {
       seen.current = new Set();
       setCards([]);
       setNeedsFilters(false);
-      setLowFitHidden(0);
-      setExistingHidden(0);
     }
     const r = await fetch("/api/portal/wishlist/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, filters, cursor: reset ? null : cursorOverride ?? cursor }),
+      body: JSON.stringify({ filters, cursor: reset ? null : cursor }),
     });
     const j = await r.json().catch(() => null);
     setLoading(false);
     if (!r.ok || !j) {
       // Sin JSON = la función no alcanzó a responder (timeout / caída)
       setError(j?.error ?? "La búsqueda tardó más de lo esperado. Intenta nuevamente en unos segundos.");
-      lastResponse.current = { ...lastResponse.current, hasMore: false };
-      return [] as Card[];
+      return;
     }
     const fresh = (j.cards as Card[]).filter((c) => {
       const k = dedupeKey(c);
@@ -180,101 +174,188 @@ function useCompanySearch(mode: "manual" | "ai") {
     setCursor(j.cursor);
     setHasMore(!!j.has_more);
     setNeedsFilters(!!j.needs_filters);
-    if (j.applied_filters) setAppliedFilters(j.applied_filters);
-    if (typeof j.low_fit_hidden === "number") setLowFitHidden((n) => n + j.low_fit_hidden);
-    if (typeof j.existing_clients_hidden === "number") setExistingHidden((n) => n + j.existing_clients_hidden);
-    lastResponse.current = { cursor: j.cursor, hasMore: !!j.has_more, filters: j.applied_filters ?? null };
-    return fresh;
   }
 
   const removeCard = (ref: string) => setCards((c) => c.filter((x) => x.ref !== ref));
-  // Modo IA: pide tandas seguidas (una por llamada) hasta juntar `target`
-  // empresas nuevas con buen fit o hasta `maxRounds` tandas
-  async function runUntil(filters: UnifiedFilters, reset: boolean, target = 10, maxRounds = 4) {
-    let got = (await run(filters, reset)).length;
-    let rounds = 1;
-    setRound(1);
-    while (got < target && rounds < maxRounds && lastResponse.current.hasMore) {
-      rounds++;
-      setRound(rounds);
-      const { cursor: c, filters: f } = lastResponse.current;
-      const fresh = await run(f ?? filters, false, c);
-      if (!fresh.length && !lastResponse.current.cursor) break;
-      got += fresh.length;
-    }
-    setRound(0);
-  }
-  const [round, setRound] = useState(0);
-
-  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, lowFitHidden, existingHidden, round, run, runUntil, removeCard };
+  return { cards, setCards, hasMore, loading, error, needsFilters, run, removeCard };
 }
 
 // ── Recomendadas por IA ──────────────────────────────────────────────────
+// Las recomendaciones quedan guardadas en el servidor hasta que el cliente las
+// agrega u omite: al volver siguen ahí y no se vuelven a pagar. "Generar"
+// pide tandas (una por llamada) hasta juntar la cantidad elegida; cada tanda
+// sigue donde quedó la anterior.
+
+const AI_TARGETS = [10, 25, 50, 100, 200];
 
 function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) {
-  const s = useCompanySearch("ai");
-  const [started, setStarted] = useState(false);
+  const [cards, setCards] = useState<Card[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [appliedFilters, setAppliedFilters] = useState<UnifiedFilters | null>(null);
+  const [exhausted, setExhausted] = useState(false);
+  const [target, setTarget] = useState(25);
+  const [progress, setProgress] = useState<{ got: number; target: number; round: number; scanned: number } | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lowFitHidden, setLowFitHidden] = useState(0);
+  const [existingHidden, setExistingHidden] = useState(0);
   const [sort, setSort] = useState<SortMode>("fit");
+  const stopRef = useRef(false);
 
-  const start = () => {
-    setStarted(true);
-    s.runUntil({}, true);
-  };
+  const load = useCallback(async () => {
+    const r = await fetch("/api/portal/wishlist/recommendations");
+    const j = await r.json().catch(() => null);
+    setLoaded(true);
+    if (!r.ok || !j) return setError(j?.error ?? "No pudimos cargar tus recomendaciones");
+    if (j.icp_missing) return setError("Tu ICP todavía no está cargado. Complétalo en “ICP y buyer persona”.");
+    setCards(j.items ?? []);
+    setAppliedFilters(j.applied_filters ?? null);
+    setExhausted(!!j.exhausted);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function generate(reset: boolean) {
+    stopRef.current = false;
+    setStopping(false);
+    setError(null);
+    if (reset) setExhausted(false);
+    // Tope de tandas: en promedio ~1 de cada 3–6 empresas pasa el 60% de fit
+    const maxRounds = Math.ceil(target / 5) + 2;
+    let got = 0;
+    let scanned = 0;
+    let emptyStreak = 0;
+    let failures = 0;
+    let first = reset;
+    setProgress({ got: 0, target, round: 0, scanned: 0 });
+    for (let round = 1; round <= maxRounds && got < target && !stopRef.current; round++) {
+      setProgress({ got, target, round, scanned });
+      const r = await fetch("/api/portal/wishlist/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reset: first }),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j) {
+        // Una tanda fallida (timeout) no pierde lo ya guardado: se reintenta una vez
+        failures++;
+        if (failures >= 2) {
+          setError(j?.error ?? "La búsqueda se interrumpió. Lo encontrado quedó guardado; puedes seguir generando.");
+          break;
+        }
+        continue;
+      }
+      first = false;
+      failures = 0;
+      if (j.applied_filters) setAppliedFilters(j.applied_filters);
+      setLowFitHidden((n) => n + (j.low_fit_hidden ?? 0));
+      setExistingHidden((n) => n + (j.existing_clients_hidden ?? 0));
+      scanned += j.scanned ?? 0;
+      const fresh = (j.cards ?? []) as Card[];
+      setCards((prev) => {
+        const keys = new Set(prev.map(dedupeKey));
+        return [...prev, ...fresh.filter((c) => !keys.has(dedupeKey(c)))];
+      });
+      got += fresh.length;
+      setProgress({ got, target, round, scanned });
+      if (j.exhausted) {
+        setExhausted(true);
+        break;
+      }
+      emptyStreak = fresh.length ? 0 : emptyStreak + 1;
+      if (emptyStreak >= 4) break;
+    }
+    setProgress(null);
+    setStopping(false);
+  }
+
+  const generating = !!progress;
+  const removeCard = (ref: string) => setCards((c) => c.filter((x) => x.ref !== ref));
+
+  if (!loaded) return <IconLoader2 className="animate-spin text-gray-400 mx-auto mt-6" />;
 
   return (
     <div>
-      {!started && (
-        <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
-          <IconSparkles className="mx-auto mb-3" size={28} style={{ color: "#62E0D8" }} />
-          <h2 className="font-semibold mb-1" style={{ color: "#251762" }}>Recomendaciones según tu ICP</h2>
-          <p className="text-sm text-gray-500 mb-5 max-w-md mx-auto">
-            Analizamos tu perfil de cliente ideal y te mostramos las empresas con mejor fit, con su porcentaje y la razón.
-            Nunca incluimos empresas de tu lista de exclusión ni las que ya estamos trabajando.
-          </p>
-          <button onClick={start} className="px-5 py-2.5 rounded-xl text-white text-sm font-medium" style={{ background: "#251762" }}>
-            Generar recomendaciones
-          </button>
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="font-semibold flex items-center gap-2" style={{ color: "#251762" }}>
+              <IconSparkles size={18} style={{ color: "#62E0D8" }} /> Recomendaciones según tu ICP
+            </h2>
+            <p className="text-xs text-gray-500 mt-1 max-w-xl">
+              {cards.length
+                ? `Tienes ${cards.length} recomendaciones por revisar. Quedan guardadas hasta que las agregues u omitas.`
+                : "Analizamos tu perfil de cliente ideal y te mostramos solo empresas con fit de 60% o más, con la razón."}{" "}
+              Nunca incluimos empresas de tu lista de exclusión ni las que ya estamos trabajando.
+            </p>
+          </div>
+          {!generating && !exhausted && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-600 flex items-center gap-1.5">
+                Buscar
+                <select value={target} onChange={(e) => setTarget(Number(e.target.value))} className="border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-sm">
+                  {AI_TARGETS.map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                {cards.length ? "más" : "empresas"}
+              </label>
+              <button onClick={() => generate(false)} className="px-4 py-2 rounded-xl text-white text-sm font-medium" style={{ background: "#251762" }}>
+                {cards.length ? "Generar más" : "Generar recomendaciones"}
+              </button>
+            </div>
+          )}
+          {!generating && exhausted && (
+            <div className="text-right">
+              <div className="text-xs text-gray-500 mb-1.5">Ya revisamos todas las empresas que calzan con los criterios de tu ICP.</div>
+              <button onClick={() => generate(true)} className="px-4 py-2 rounded-xl text-sm border border-gray-200 bg-white">
+                Buscar con nuevos criterios
+              </button>
+            </div>
+          )}
         </div>
-      )}
-      {s.appliedFilters && <AppliedFilters filters={s.appliedFilters} catalog={catalog} />}
-      {s.cards.length > 0 && (
+        {!generating && target >= 100 && !exhausted && (
+          <p className="text-[11px] text-gray-400 mt-3">
+            Para {target} empresas la búsqueda puede tomar varios minutos. Mantén esta pestaña abierta; puedes detenerla cuando quieras y lo encontrado queda guardado.
+          </p>
+        )}
+        {progress && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between text-xs text-gray-600 mb-1.5">
+              <span className="flex items-center gap-1.5">
+                <IconLoader2 className="animate-spin" size={14} />
+                {progress.got} de {progress.target} empresas con buen fit · tanda {progress.round}
+                {progress.scanned ? ` · ${progress.scanned} analizadas` : ""}
+              </span>
+              <button
+                onClick={() => { stopRef.current = true; setStopping(true); }}
+                disabled={stopping}
+                className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 disabled:opacity-50"
+              >
+                {stopping ? "Deteniendo…" : "Detener"}
+              </button>
+            </div>
+            <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+              <div className="h-full rounded-full transition-all" style={{ width: `${Math.min(100, (progress.got / progress.target) * 100)}%`, background: "#62E0D8" }} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {appliedFilters && <AppliedFilters filters={appliedFilters} catalog={catalog} />}
+      {cards.length > 0 && (
         <ResultsToolbar sort={sort} onSort={setSort}>
-          {(s.lowFitHidden > 0 || s.existingHidden > 0) && (
+          {(lowFitHidden > 0 || existingHidden > 0) && (
             <span className="text-xs text-gray-500">
-              Solo te mostramos empresas con fit de 60% o más
-              {s.lowFitHidden > 0 ? ` (${s.lowFitHidden} descartadas por bajo fit)` : ""}
-              {s.existingHidden > 0 ? `. ${s.existingHidden} ya son tus clientes según tu ICP: las pasamos a tu Lista de exclusión.` : "."}
+              {lowFitHidden > 0 ? `${lowFitHidden} descartadas por fit menor a 60%.` : ""}
+              {existingHidden > 0 ? ` ${existingHidden} ya son tus clientes según tu ICP: las pasamos a tu Lista de exclusión.` : ""}
             </span>
           )}
         </ResultsToolbar>
       )}
-      {s.error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{s.error}</div>}
-      <CardGrid cards={sortCards(s.cards, sort)} mode="ai" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
-      {(s.loading || s.round > 0) && <Analyzing round={s.round} />}
-      {started && !s.loading && s.round === 0 && s.cards.length === 0 && !s.error && (
-        <div className="text-sm text-gray-500 mt-4">
-          No encontramos nuevas empresas con buen fit{s.hasMore ? " en esta tanda. Prueba “Ver más recomendaciones”." : "."}
-        </div>
+      {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{error}</div>}
+      <CardGrid cards={sortCards(cards, sort)} mode="ai" onAdded={(ref) => { removeCard(ref); onAdded(); }} />
+      {!generating && cards.length === 0 && (lowFitHidden > 0 || exhausted) && !error && (
+        <div className="text-sm text-gray-500 mt-4">No encontramos nuevas empresas con buen fit en esta búsqueda.</div>
       )}
-      {started && !s.loading && s.round === 0 && s.hasMore && (
-        <div className="mt-6 text-center">
-          <button onClick={() => s.runUntil(s.appliedFilters ?? {}, false)} className="px-4 py-2 rounded-xl text-sm border border-gray-200 bg-white">
-            Ver más recomendaciones
-          </button>
-        </div>
-      )}
-      {started && !s.loading && <ManualRequest onAdded={onAdded} />}
-    </div>
-  );
-}
-
-function Analyzing({ round }: { round: number }) {
-  return (
-    <div className="flex items-center gap-2 text-sm text-gray-500 mt-6">
-      <IconLoader2 className="animate-spin" size={18} />
-      {round > 1
-        ? `Buscando más empresas con buen fit… (tanda ${round})`
-        : "Analizando empresas contra tu ICP… (puede tomar unos segundos)"}
+      {!generating && <ManualRequest onAdded={onAdded} />}
     </div>
   );
 }
@@ -302,7 +383,7 @@ function AppliedFilters({ filters, catalog }: { filters: UnifiedFilters; catalog
 function SearchTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) {
   const [filters, setFilters] = useState<UnifiedFilters>({});
   const [searched, setSearched] = useState(false);
-  const s = useCompanySearch("manual");
+  const s = useCompanySearch();
 
   const [sort, setSort] = useState<SortMode>("relevance");
   const [selected, setSelected] = useState<Set<string>>(new Set());

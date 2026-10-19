@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
 import { getClientOwnLemlistKey, removeCompaniesFromList } from "@/lib/lemlistDatabase";
+import { markRecommendation } from "@/lib/wishlist";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     .eq("id", params.id)
     .eq("client_id", user.clientId)
     .in("status", ["new", "in_lemlist"])
-    .select("snapshot");
+    .select("snapshot, source, source_ref");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data?.length) {
     return NextResponse.json({ error: "No se puede quitar: BullsEye ya está trabajando esta empresa" }, { status: 409 });
@@ -30,5 +31,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     const key = await getClientOwnLemlistKey(db, user.clientId);
     if (key) await removeCompaniesFromList(key, snap.lemlist_list_id, [snap.lemlist_company_id]).catch(() => null);
   }
+  // Si venía de las recomendaciones IA, vuelve a quedar pendiente ahí
+  await markRecommendation(db, user.clientId, data[0].source, data[0].source_ref, "pending");
   return NextResponse.json({ ok: true });
 }
