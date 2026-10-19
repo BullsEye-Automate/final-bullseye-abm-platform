@@ -18,11 +18,10 @@ export const maxDuration = 60;
 
 const MANUAL_PAGE = 24;
 const AI_PAGE = 20;
-// Modo IA: solo se muestran empresas con buen fit. Se buscan hasta
-// AI_MAX_ROUNDS tandas (cada una puntuada) hasta juntar AI_TARGET empresas.
+// Modo IA: solo se muestran empresas con buen fit. Cada llamada procesa UNA
+// tanda (búsqueda + fit) para no pasar el límite de 60 s de Vercel; el
+// navegador pide más tandas solo hasta juntar suficientes empresas buenas.
 const AI_MIN_FIT = 60;
-const AI_MAX_ROUNDS = 2;
-const AI_TARGET = 10;
 
 // POST — { mode: "manual" | "ai", filters?, cursor? }
 // Una sola búsqueda sobre la base HubSpot de BullsEye y, cuando se agota, la
@@ -79,7 +78,7 @@ export async function POST(req: NextRequest) {
     let needsFilters = false;
     let lowFitHidden = 0;
     let cards: (CompanyCard & { fit_score: number; fit_reason: string })[] = [];
-    for (let round = 0; round < AI_MAX_ROUNDS && next.phase !== "done" && cards.length < AI_TARGET; round++) {
+    for (let round = 0; round < 1 && next.phase !== "done"; round++) {
       const result = await runUnifiedSearch(db, { ...base, cursor: next });
       next = result.next;
       needsFilters = needsFilters || result.needsFilters;
