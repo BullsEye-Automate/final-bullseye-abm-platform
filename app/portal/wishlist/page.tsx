@@ -16,6 +16,8 @@ import {
   IconChevronDown,
   IconUpload,
   IconBuildingPlus,
+  IconEyeOff,
+  IconArrowBackUp,
 } from "@tabler/icons-react";
 import {
   FILTER_GROUPS,
@@ -59,7 +61,7 @@ const STATUS_LABEL: Record<WishlistItem["status"], { text: string; cls: string }
   discarded: { text: "Descartada", cls: "bg-gray-100 text-gray-500" },
 };
 
-type Tab = "ai" | "search" | "wishlist" | "worked" | "exclusions";
+type Tab = "ai" | "search" | "wishlist" | "worked" | "omitted" | "exclusions";
 
 // Clave para no repetir una empresa que aparece en las dos bases
 const dedupeKey = (c: { name: string; domain: string | null }) => c.domain ?? c.name.trim().toLowerCase();
@@ -89,6 +91,7 @@ export default function PortalWishlistPage() {
     { key: "search", label: "Buscar empresas", icon: <IconSearch size={16} /> },
     { key: "wishlist", label: `Mi wishlist${wishlist.length ? ` (${wishlist.length})` : ""}`, icon: <IconHeart size={16} /> },
     { key: "worked", label: "Empresas trabajadas", icon: <IconBriefcase size={16} /> },
+    { key: "omitted", label: "Empresas omitidas", icon: <IconEyeOff size={16} /> },
     { key: "exclusions", label: "Lista de exclusión", icon: <IconBan size={16} /> },
   ];
 
@@ -122,6 +125,7 @@ export default function PortalWishlistPage() {
       {tab === "search" && catalog && <SearchTab catalog={catalog} onAdded={loadWishlist} />}
       {tab === "wishlist" && <WishlistTab items={wishlist} onChange={loadWishlist} />}
       {tab === "worked" && <WorkedTab />}
+      {tab === "omitted" && <OmittedTab />}
       {tab === "exclusions" && <ExclusionsTab />}
     </div>
   );
@@ -559,7 +563,8 @@ function CardGrid({ cards, mode, onAdded }: { cards: Card[]; mode: "manual" | "a
 
 function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai"; onAdded: (ref: string) => void }) {
   const [adding, setAdding] = useState(false);
-  const [done, setDone] = useState(false);
+  const [omitting, setOmitting] = useState(false);
+  const [done, setDone] = useState<"added" | "omitted" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -574,9 +579,30 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai
     const j = await r.json().catch(() => ({}));
     setAdding(false);
     if (!r.ok) return setError(j.error ?? "No se pudo agregar");
-    setDone(true);
+    setDone("added");
     // La tarjeta desaparece de los resultados después de confirmar
     setTimeout(() => onAdded(card.ref), 700);
+  }
+
+  // Omitir: no vuelve a aparecer (se puede restaurar en "Empresas omitidas")
+  async function omit() {
+    setOmitting(true);
+    setError(null);
+    const r = await fetch("/api/portal/omitted", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ref: card.ref,
+        card: { name: card.name, domain: card.domain, linkedin_url: card.linkedin_url, facts: card.facts },
+        fit_score: card.fit_score ?? undefined,
+        fit_reason: card.fit_reason ?? undefined,
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setOmitting(false);
+    if (!r.ok) return setError(j.error ?? "No se pudo omitir");
+    setDone("omitted");
+    setTimeout(() => onAdded(card.ref), 400);
   }
 
   const facts = expanded ? card.facts : card.facts.slice(0, 4);
@@ -624,14 +650,24 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai
 
       <div className="mt-auto">
         {error && <div className="text-xs text-red-600 mb-2">{error}</div>}
-        <button
-          onClick={add}
-          disabled={adding || done}
-          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-70"
-          style={{ background: done ? "#16a34a" : "#251762" }}
-        >
-          {done ? <><IconCheck size={15} /> Agregada</> : adding ? <IconLoader2 size={15} className="animate-spin" /> : <><IconPlus size={15} /> Agregar a wishlist</>}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={add}
+            disabled={adding || omitting || !!done}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-70"
+            style={{ background: done === "added" ? "#16a34a" : "#251762" }}
+          >
+            {done === "added" ? <><IconCheck size={15} /> Agregada</> : adding ? <IconLoader2 size={15} className="animate-spin" /> : <><IconPlus size={15} /> Agregar a wishlist</>}
+          </button>
+          <button
+            onClick={omit}
+            disabled={adding || omitting || !!done}
+            title="No me interesa: no volverá a aparecer"
+            className="flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-60"
+          >
+            {done === "omitted" ? "Omitida" : omitting ? <IconLoader2 size={15} className="animate-spin" /> : <><IconEyeOff size={15} /> Omitir</>}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -745,6 +781,81 @@ function WorkedTab() {
               {shown.length > 500 && <div className="p-3 text-xs text-gray-400">Mostrando 500 de {shown.length.toLocaleString("es-CL")}. Usa el buscador.</div>}
             </div>
           )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Empresas omitidas ────────────────────────────────────────────────────
+
+type OmittedItem = { id: string; company_name: string; domain: string | null; linkedin_url: string | null; fit_score: number | null; fit_reason: string | null; omitted_by_email: string | null; created_at: string };
+
+function OmittedTab() {
+  const [items, setItems] = useState<OmittedItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    fetch("/api/portal/omitted", { cache: "no-store" })
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) setError(j.error ?? "Error al cargar");
+        else setItems(j.items);
+      })
+      .catch(() => setError("Error al cargar"));
+  }, []);
+
+  async function restore(id: string) {
+    const r = await fetch(`/api/portal/omitted/${id}`, { method: "DELETE" });
+    if (r.ok) setItems((list) => (list ?? []).filter((i) => i.id !== id));
+  }
+
+  const shown = (items ?? []).filter((i) => !q || i.company_name.toLowerCase().includes(q.toLowerCase()) || (i.domain ?? "").includes(q.toLowerCase()));
+
+  return (
+    <div>
+      <p className="text-sm text-gray-500 mb-4">
+        Empresas que marcaste como “Omitir” en los resultados. No vuelven a aparecer en búsquedas ni recomendaciones.
+        Si cambias de opinión, restáuralas.
+      </p>
+      {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{error}</div>}
+      {!items && !error && <IconLoader2 className="animate-spin text-gray-400" />}
+      {items && items.length === 0 && <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">No has omitido empresas.</div>}
+      {items && items.length > 0 && (
+        <>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar entre ${items.length.toLocaleString("es-CL")} empresas…`} className="w-full sm:w-80 border border-gray-200 rounded-xl px-3 py-2 text-sm mb-3 bg-white" />
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-gray-500 border-b border-gray-100">
+                <tr><th className="p-3">Empresa</th><th className="p-3">Fit</th><th className="p-3">Omitida</th><th className="p-3"></th></tr>
+              </thead>
+              <tbody>
+                {shown.slice(0, 500).map((i) => (
+                  <tr key={i.id} className="border-b border-gray-50 last:border-0 align-top">
+                    <td className="p-3">
+                      <div className="font-medium" style={{ color: "#251762" }}>{i.company_name}</div>
+                      {i.domain && <div className="text-xs text-gray-500">{i.domain}</div>}
+                    </td>
+                    <td className="p-3 max-w-xs">
+                      {i.fit_score != null ? <div className="font-semibold">{i.fit_score}%</div> : "—"}
+                      {i.fit_reason && <div className="text-xs text-gray-500 line-clamp-2">{i.fit_reason}</div>}
+                    </td>
+                    <td className="p-3 text-xs text-gray-500 whitespace-nowrap">
+                      {new Date(i.created_at).toLocaleDateString("es-CL")}
+                      {i.omitted_by_email ? <div>{i.omitted_by_email}</div> : null}
+                    </td>
+                    <td className="p-3 text-right">
+                      <button onClick={() => restore(i.id)} className="inline-flex items-center gap-1 text-xs text-[#251762] hover:underline">
+                        <IconArrowBackUp size={14} /> Restaurar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {shown.length > 500 && <div className="p-3 text-xs text-gray-400">Mostrando 500 de {shown.length.toLocaleString("es-CL")}. Usa el buscador.</div>}
+          </div>
         </>
       )}
     </div>

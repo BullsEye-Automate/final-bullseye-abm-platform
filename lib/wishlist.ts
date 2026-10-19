@@ -22,8 +22,8 @@ export const normName = (s: string) => s.trim().toLowerCase();
 export type ClientExclusions = { domains: string[]; names: string[]; keywords: string[] };
 
 // Empresas que NO deben volver a aparecerle al cliente: las de su wishlist,
-// las excluidas por BullsEye, las de su lista de exclusión del portal
-// (empresas y palabras clave) y las que ya están en su pipeline (companies).
+// las que omitió, las excluidas por BullsEye, las de su lista de exclusión
+// del portal (empresas y palabras clave) y las que ya están en su pipeline.
 export async function getClientExclusions(db: SupabaseClient, clientId: string): Promise<ClientExclusions> {
   const domains = new Set<string>();
   const names = new Set<string>();
@@ -34,11 +34,13 @@ export async function getClientExclusions(db: SupabaseClient, clientId: string):
     if (d) domains.add(d);
   };
 
-  const [wishlist, excluded, portalExcl] = await Promise.all([
+  const [wishlist, excluded, portalExcl, omitted] = await Promise.all([
     db.from("client_wishlist").select("company_name, domain").eq("client_id", clientId),
     db.from("excluded_companies").select("company_name, company_website").eq("client_id", clientId),
     db.from("client_exclusions").select("kind, company_name, domain, keyword").eq("client_id", clientId),
+    db.from("client_omitted_companies").select("company_name, domain").eq("client_id", clientId),
   ]);
+  for (const r of omitted.data ?? []) add(r.company_name, r.domain);
   for (const r of wishlist.data ?? []) add(r.company_name, r.domain);
   for (const r of excluded.data ?? []) add(r.company_name, r.company_website);
   for (const r of portalExcl.data ?? []) {
@@ -86,6 +88,32 @@ const PRIORITY_PROPS = [
   "web_technologies", "description", "founded_year", "linkedin_company_page",
 ];
 
+// Etiquetas en español para las propiedades del pool (HubSpot las trae en inglés)
+const PROPERTY_LABELS_ES: Record<string, string> = {
+  industry: "Industria",
+  hs_industry_group: "Grupo de industria",
+  numberofemployees: "Empleados",
+  annualrevenue: "Facturación",
+  web_technologies: "Tecnologías",
+  pais_g: "País",
+  state: "Región / estado",
+  city: "Ciudad",
+  founded_year: "Fundada",
+  description: "Descripción",
+  website: "Sitio web",
+  linkedin_company_page: "LinkedIn",
+  hs_linkedin_handle: "LinkedIn",
+};
+// No se muestran como dato (ya están como link en la tarjeta)
+const HIDDEN_FACTS = new Set(["website", "linkedin_company_page", "hs_linkedin_handle"]);
+
+function usd(n: number): string {
+  if (n >= 1e9) return `US$${(n / 1e9).toLocaleString("es-CL", { maximumFractionDigits: 1 })}B`;
+  if (n >= 1e6) return `US$${(n / 1e6).toLocaleString("es-CL", { maximumFractionDigits: 1 })}M`;
+  if (n >= 1e3) return `US$${(n / 1e3).toLocaleString("es-CL", { maximumFractionDigits: 0 })}K`;
+  return `US$${n}`;
+}
+
 function factValue(v: unknown): string {
   if (Array.isArray(v)) return v.slice(0, 12).join(", ") + (v.length > 12 ? "…" : "");
   if (typeof v === "number") return v.toLocaleString("es-CL");
@@ -98,7 +126,7 @@ export function poolCompanyToCard(c: PoolCompany, props: PoolProperty[]): Compan
     labels.get(prop)?.options.find((o) => o.value === value)?.label ?? value;
 
   const allowed = pickAllowed(c.properties);
-  const keys = Object.keys(allowed).filter((k) => labels.has(k));
+  const keys = Object.keys(allowed).filter((k) => labels.has(k) && !HIDDEN_FACTS.has(k));
   keys.sort((a, b) => {
     const ia = PRIORITY_PROPS.indexOf(a);
     const ib = PRIORITY_PROPS.indexOf(b);
@@ -107,12 +135,16 @@ export function poolCompanyToCard(c: PoolCompany, props: PoolProperty[]): Compan
 
   const facts = keys.map((k) => {
     const raw = allowed[k];
-    const value = Array.isArray(raw)
+    const value = k === "annualrevenue" && typeof raw === "number"
+      ? usd(raw)
+      : k === "founded_year" && typeof raw === "number"
+        ? String(raw)
+        : Array.isArray(raw)
       ? factValue(raw.map((v) => optionLabel(k, String(v))))
       : typeof raw === "string"
         ? optionLabel(k, raw)
         : factValue(raw);
-    return { label: labels.get(k)!.label, value: value.length > 400 ? `${value.slice(0, 400)}…` : value };
+    return { label: PROPERTY_LABELS_ES[k] ?? labels.get(k)!.label, value: value.length > 400 ? `${value.slice(0, 400)}…` : value };
   });
 
   const linkedin = allowed.linkedin_company_page;
