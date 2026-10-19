@@ -5,12 +5,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // acá NO se cae a la key global de BullsEye: lo acordado es que las búsquedas
 // y las empresas queden en la cuenta del cliente.
 //
-// Endpoints:
-//  - GET  /database/filters?usage=api&mode=companies   (confirmado)
-//  - POST /database/people  { filters, search, page, size }   (confirmado)
-//  - POST /database/companies  { filters, page, size }   (confirmado: existe;
-//    exige al menos un filtro — con filters: [] responde 400 "Parameter
-//    filters is invalid". El texto libre va como filtro keywordInCompany.)
+// Endpoints (OpenAPI oficial: github.com/l3mpire/mintlify → api-reference/openapi/v2.json):
+//  - GET  /database/filters?usage=api&mode=companies
+//  - POST /database/companies  { filters: [{ filterId, in: [], out: [] }], page, size }
+//    Exige al menos un filtro y cada filtro con `in` Y `out` (aunque vacío);
+//    si no, responde 400 "Parameter filters is invalid". El texto libre va
+//    como filtro keywordInCompany.
+//  - POST /companies                          crea/actualiza (upsert por dominio/LinkedIn) → cpn_xxx
+//  - GET/POST /companies/lists                listas de empresas (clt_xxx)
+//  - POST /companies/lists/{listId}/entities  { companyIds: ["cpn_xxx"] }
 //
 // Tipos de filtro de Lemlist: select (con values), autocomplete y text (texto
 // libre en `in`), slider (rango), static (toggle), elasticId (ids). Por ahora
@@ -83,8 +86,8 @@ export async function getLemlistCompanyFilters(apiKey: string): Promise<Result<L
   return { ok: true, data: defs };
 }
 
-// Empresa normalizada para el portal. `raw` guarda los campos útiles tal
-// como llegan (los nombres exactos de Lemlist se confirman en producción).
+// Empresa normalizada para el portal (campos según la respuesta documentada
+// de /database/companies)
 export type LemlistCompany = {
   id: string;
   name: string;
@@ -92,7 +95,12 @@ export type LemlistCompany = {
   linkedin_url: string | null;
   industry: string | null;
   size: string | null;
+  revenue: string | null;
   location: string | null;
+  technologies: string[];
+  company_type: string | null;
+  market: string | null;
+  founded: string | null;
   description: string | null;
 };
 
@@ -105,23 +113,35 @@ function pickStr(o: Record<string, unknown>, ...keys: string[]): string | null {
   return null;
 }
 
+export function cleanDomain(raw: string | null): string | null {
+  if (!raw) return null;
+  return raw.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0] || null;
+}
+
 function normalizeCompany(o: Record<string, unknown>): LemlistCompany | null {
-  const name = pickStr(o, "name", "companyName", "company_name");
+  const name = pickStr(o, "company_name", "name", "companyName");
   if (!name) return null;
-  const domainRaw = pickStr(o, "domain", "companyDomain", "website", "websiteUrl", "url");
-  const domain = domainRaw
-    ? domainRaw.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0] || null
-    : null;
-  const loc = [pickStr(o, "city", "hqCity"), pickStr(o, "country", "hqCountry", "location")].filter(Boolean).join(", ");
+  const domain = cleanDomain(pickStr(o, "company_domain", "domain", "company_website_url", "website"));
+  const industry = [pickStr(o, "company_industry", "industry"), pickStr(o, "company_subindustry")].filter(Boolean).join(" › ");
+  const employees = pickStr(o, "company_employee_count");
+  const sizeBucket = pickStr(o, "company_size", "size");
+  const techs = Array.isArray(o.techno_used_array) ? (o.techno_used_array as unknown[]).map(String).filter(Boolean) : [];
   return {
-    id: pickStr(o, "_id", "id", "companyId") ?? domain ?? name,
+    id: pickStr(o, "company_id", "_id", "id") ?? domain ?? name,
     name,
     domain,
-    linkedin_url: pickStr(o, "linkedinUrl", "linkedin_url", "linkedin"),
-    industry: pickStr(o, "industry", "industries", "sector"),
-    size: pickStr(o, "size", "headcount", "employeeCount", "employees", "staffCount", "sizeRange"),
-    location: loc || null,
-    description: pickStr(o, "description", "shortDescription", "tagline"),
+    linkedin_url: pickStr(o, "company_linkedin_url", "linkedinUrl"),
+    industry: industry || null,
+    size: [sizeBucket, employees ? `${employees} empleados` : null].filter(Boolean).join(" · ") || null,
+    revenue: pickStr(o, "revenue_bucket"),
+    location:
+      pickStr(o, "company_location") ??
+      ([pickStr(o, "company_headquarters_city"), pickStr(o, "company_headquarters_country")].filter(Boolean).join(", ") || null),
+    technologies: techs,
+    company_type: pickStr(o, "company_type"),
+    market: pickStr(o, "business_business_customer"),
+    founded: pickStr(o, "company_founded"),
+    description: pickStr(o, "company_description", "description"),
   };
 }
 
@@ -129,13 +149,16 @@ export async function searchLemlistCompanies(
   apiKey: string,
   body: { filters: LemlistFilter[]; search?: string; page: number; size: number }
 ): Promise<Result<{ companies: LemlistCompany[]; total: number | null; rawKeys: string[]; rawSample: unknown }>> {
-  const filters = body.filters.filter((f) => f.in?.length || f.out?.length);
+  // Lemlist exige `in` y `out` en cada filtro, aunque uno vaya vacío
+  const filters = body.filters
+    .filter((f) => f.in?.length || f.out?.length)
+    .map((f) => ({ filterId: f.filterId, in: f.in ?? [], out: f.out ?? [] }));
   // El texto libre se manda como filtro keywordInCompany (se suma al que ya haya)
   const search = body.search?.trim();
   if (search) {
     const existing = filters.find((f) => f.filterId === KEYWORD_FILTER_ID);
-    if (existing) existing.in = [...(existing.in ?? []), search];
-    else filters.push({ filterId: KEYWORD_FILTER_ID, in: [search] });
+    if (existing) existing.in = [...existing.in, search];
+    else filters.push({ filterId: KEYWORD_FILTER_ID, in: [search], out: [] });
   }
   if (!filters.length) {
     return { ok: false, status: 400, error: "Agrega al menos un filtro o una palabra clave para buscar en Lemlist." };
@@ -165,4 +188,61 @@ export async function searchLemlistCompanies(
       rawSample: results[0] ?? r.data,
     },
   };
+}
+
+// ── Escritura en la cuenta Lemlist del cliente ───────────────────────────
+
+export const WISHLIST_LIST_NAME = "Wishlist BullsEye";
+
+// Crea o actualiza la empresa en el CRM de Lemlist del cliente → id cpn_xxx.
+// Upsert por dominio / LinkedIn: si ya existía, no se duplica.
+export async function upsertLemlistCompany(
+  apiKey: string,
+  c: { name: string; domain?: string | null; linkedinUrl?: string | null; industry?: string | null; location?: string | null; size?: string | null; description?: string | null }
+): Promise<Result<{ companyId: string }>> {
+  if (!c.domain && !c.linkedinUrl) {
+    return { ok: false, status: 400, error: "La empresa no tiene dominio ni LinkedIn: Lemlist exige uno de los dos." };
+  }
+  const body: Record<string, string> = { name: c.name };
+  if (c.domain) body.domain = c.domain;
+  if (c.linkedinUrl) body.linkedinUrl = c.linkedinUrl;
+  if (c.industry) body.industry = c.industry.slice(0, 200);
+  if (c.location) body.location = c.location.slice(0, 200);
+  if (c.size) body.size = c.size.slice(0, 100);
+  if (c.description) body.description = c.description.slice(0, 2000);
+
+  // fillEmptyOnly: si la empresa ya estaba en su Lemlist, no pisamos lo que tienen
+  const r = await call<{ data?: { _id?: string } }>(apiKey, "/companies?updateStrategy=fillEmptyOnly", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) return r;
+  const id = r.data?.data?._id;
+  return id ? { ok: true, data: { companyId: id } } : { ok: false, status: 0, error: "Lemlist no devolvió el id de la empresa" };
+}
+
+// Busca la lista estática "Wishlist BullsEye" en la cuenta del cliente o la crea
+export async function ensureWishlistCompanyList(apiKey: string): Promise<Result<{ listId: string }>> {
+  const found = await call<{ _id: string; name: string; dynamic?: boolean }[]>(
+    apiKey,
+    `/companies/lists?search=${encodeURIComponent(WISHLIST_LIST_NAME)}`
+  );
+  if (!found.ok) return found;
+  const existing = (found.data ?? []).find((l) => l.name === WISHLIST_LIST_NAME && !l.dynamic);
+  if (existing) return { ok: true, data: { listId: existing._id } };
+
+  const created = await call<{ list?: { id?: string } }>(apiKey, "/companies/lists", {
+    method: "POST",
+    body: JSON.stringify({ name: WISHLIST_LIST_NAME }),
+  });
+  if (!created.ok) return created;
+  const id = created.data?.list?.id;
+  return id ? { ok: true, data: { listId: id } } : { ok: false, status: 0, error: "Lemlist no devolvió el id de la lista" };
+}
+
+export async function addCompaniesToList(apiKey: string, listId: string, companyIds: string[]): Promise<Result<unknown>> {
+  return call(apiKey, `/companies/lists/${encodeURIComponent(listId)}/entities`, {
+    method: "POST",
+    body: JSON.stringify({ companyIds }),
+  });
 }
