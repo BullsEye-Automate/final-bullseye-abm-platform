@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
 import { getClientOwnLemlistKey } from "@/lib/lemlistDatabase";
 import { icpToUnifiedFilters, scoreCompanies } from "@/lib/wishlistFit";
-import { cardSummary, getClientExclusions, getClientIcpText, type CompanyCard } from "@/lib/wishlist";
+import { cardSummary, excludeDetectedClients, getClientExclusions, getClientIcpText, type CompanyCard } from "@/lib/wishlist";
 import {
   buildFilterCatalog,
   parseCursor,
@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
     let next = cursor;
     let needsFilters = false;
     let lowFitHidden = 0;
+    let existingClientsHidden = 0;
     let cards: (CompanyCard & { fit_score: number; fit_reason: string })[] = [];
     for (let round = 0; round < 1 && next.phase !== "done"; round++) {
       const result = await runUnifiedSearch(db, { ...base, cursor: next });
@@ -89,11 +90,15 @@ export async function POST(req: NextRequest) {
         source: "unified",
         candidates: result.cards.map((c) => ({ key: `${c.source}:${c.key}`, name: c.name, summary: cardSummary(c) })),
       });
+      const detected: { name: string; domain: string | null }[] = [];
       for (const c of result.cards) {
         const sc = scores.get(`${c.source}:${c.key}`);
-        if (sc && sc.fit_score >= AI_MIN_FIT) cards.push({ ...c, fit_score: sc.fit_score, fit_reason: sc.fit_reason });
+        if (sc?.existing_client) detected.push({ name: c.name, domain: c.domain });
+        else if (sc && sc.fit_score >= AI_MIN_FIT) cards.push({ ...c, fit_score: sc.fit_score, fit_reason: sc.fit_reason });
         else lowFitHidden++;
       }
+      existingClientsHidden += detected.length;
+      await excludeDetectedClients(db, user.clientId, detected);
     }
     cards = cards.sort((a, b) => b.fit_score - a.fit_score);
 
@@ -104,6 +109,7 @@ export async function POST(req: NextRequest) {
       needs_filters: needsFilters,
       applied_filters: filters,
       low_fit_hidden: lowFitHidden,
+      existing_clients_hidden: existingClientsHidden,
       min_fit: AI_MIN_FIT,
     });
   } catch (err) {

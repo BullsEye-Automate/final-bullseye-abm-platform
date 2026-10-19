@@ -36,6 +36,7 @@ type Card = {
   facts: { label: string; value: string }[];
   fit_score?: number | null;
   fit_reason?: string | null;
+  existing_client?: boolean;
 };
 type Option = { value: string; label: string };
 type Catalog = { available: UnifiedFilterKey[]; options: Partial<Record<UnifiedFilterKey, Option[]>> };
@@ -142,6 +143,7 @@ function useCompanySearch(mode: "manual" | "ai") {
   const [needsFilters, setNeedsFilters] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<UnifiedFilters | null>(null);
   const [lowFitHidden, setLowFitHidden] = useState(0);
+  const [existingHidden, setExistingHidden] = useState(0);
   const seen = useRef(new Set<string>());
   const lastResponse = useRef<{ cursor: Cursor | null; hasMore: boolean; filters: UnifiedFilters | null }>({ cursor: null, hasMore: false, filters: null });
 
@@ -153,6 +155,7 @@ function useCompanySearch(mode: "manual" | "ai") {
       setCards([]);
       setNeedsFilters(false);
       setLowFitHidden(0);
+      setExistingHidden(0);
     }
     const r = await fetch("/api/portal/wishlist/search", {
       method: "POST",
@@ -179,6 +182,7 @@ function useCompanySearch(mode: "manual" | "ai") {
     setNeedsFilters(!!j.needs_filters);
     if (j.applied_filters) setAppliedFilters(j.applied_filters);
     if (typeof j.low_fit_hidden === "number") setLowFitHidden((n) => n + j.low_fit_hidden);
+    if (typeof j.existing_clients_hidden === "number") setExistingHidden((n) => n + j.existing_clients_hidden);
     lastResponse.current = { cursor: j.cursor, hasMore: !!j.has_more, filters: j.applied_filters ?? null };
     return fresh;
   }
@@ -202,7 +206,7 @@ function useCompanySearch(mode: "manual" | "ai") {
   }
   const [round, setRound] = useState(0);
 
-  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, lowFitHidden, round, run, runUntil, removeCard };
+  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, lowFitHidden, existingHidden, round, run, runUntil, removeCard };
 }
 
 // ── Recomendadas por IA ──────────────────────────────────────────────────
@@ -235,8 +239,12 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
       {s.appliedFilters && <AppliedFilters filters={s.appliedFilters} catalog={catalog} />}
       {s.cards.length > 0 && (
         <ResultsToolbar sort={sort} onSort={setSort}>
-          {s.lowFitHidden > 0 && (
-            <span className="text-xs text-gray-500">Solo te mostramos empresas con fit de 60% o más ({s.lowFitHidden} descartadas por bajo fit).</span>
+          {(s.lowFitHidden > 0 || s.existingHidden > 0) && (
+            <span className="text-xs text-gray-500">
+              Solo te mostramos empresas con fit de 60% o más
+              {s.lowFitHidden > 0 ? ` (${s.lowFitHidden} descartadas por bajo fit)` : ""}
+              {s.existingHidden > 0 ? `. ${s.existingHidden} ya son tus clientes según tu ICP: las pasamos a tu Lista de exclusión.` : "."}
+            </span>
           )}
         </ResultsToolbar>
       )}
@@ -313,12 +321,16 @@ function SearchTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void
         body: JSON.stringify({ cards: chunk.map(({ ref, name, domain, facts }) => ({ ref, name, domain, facts })) }),
       });
       const j = r.ok ? await r.json().catch(() => ({})) : {};
-      const scores = ((j as { scores?: Record<string, { fit_score: number; fit_reason: string }> }).scores ?? {});
+      const scores = ((j as { scores?: Record<string, { fit_score: number; fit_reason: string; existing_client?: boolean }> }).scores ?? {});
       const refsDone = new Set(chunk.map((c) => c.ref));
+      // Clientes actuales: el servidor ya los pasó a la lista de exclusión; se
+      // muestran un momento con el aviso y luego salen de los resultados
+      const existing = Object.entries(scores).filter(([, v]) => v.existing_client).map(([k]) => k);
+      if (existing.length) setTimeout(() => s.setCards((prev) => prev.filter((c) => !existing.includes(c.ref))), 4000);
       s.setCards((prev) =>
         prev.map((c) =>
           scores[c.ref]
-            ? { ...c, fit_score: scores[c.ref].fit_score, fit_reason: scores[c.ref].fit_reason }
+            ? { ...c, fit_score: scores[c.ref].fit_score, fit_reason: scores[c.ref].fit_reason, existing_client: !!scores[c.ref].existing_client }
             : refsDone.has(c.ref) && c.fit_score === undefined
               ? { ...c, fit_score: null }
               : c
@@ -776,6 +788,11 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
         )}
       </div>
 
+      {card.existing_client && (
+        <div className="text-xs rounded-lg bg-amber-50 text-amber-800 px-2.5 py-1.5 mb-2">
+          Ya es tu cliente según tu ICP: la pasamos a tu Lista de exclusión.
+        </div>
+      )}
       {card.fit_reason && <p className="text-[13px] text-gray-700 leading-relaxed mb-3">{card.fit_reason}</p>}
 
       <dl className="text-xs space-y-1 mb-3">

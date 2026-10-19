@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
 import { listPoolProperties } from "@/lib/hubspotPool";
 import { scoreCompanies } from "@/lib/wishlistFit";
-import { cardSummary, getClientIcpText, poolCompanyToCard, type CompanyCard } from "@/lib/wishlist";
+import { cardSummary, excludeDetectedClients, getClientIcpText, poolCompanyToCard, type CompanyCard } from "@/lib/wishlist";
 import { decodeRef } from "@/lib/unifiedSearch";
 
 export const dynamic = "force-dynamic";
@@ -69,10 +69,14 @@ export async function POST(req: NextRequest) {
       candidates: cards.map(({ card }) => ({ key: `${card.source}:${card.key}`, name: card.name, summary: cardSummary(card) })),
     });
     const out: Record<string, unknown> = {};
+    const detected: { name: string; domain: string | null }[] = [];
     for (const { ref, card } of cards) {
       const s = scores.get(`${card.source}:${card.key}`);
       if (s) out[ref] = s;
+      if (s?.existing_client) detected.push({ name: card.name, domain: card.domain });
     }
+    // Clientes actuales detectados → lista de exclusión (no vuelven a aparecer)
+    await excludeDetectedClients(db, user.clientId, detected);
     return NextResponse.json({ scores: out });
   } catch (err) {
     console.error("portal wishlist score:", err);
