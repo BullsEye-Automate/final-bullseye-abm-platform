@@ -19,26 +19,32 @@ export async function getClientIcpText(db: SupabaseClient, clientId: string): Pr
 
 export const normName = (s: string) => s.trim().toLowerCase();
 
+export type ClientExclusions = { domains: string[]; names: string[]; keywords: string[] };
+
 // Empresas que NO deben volver a aparecerle al cliente: las de su wishlist,
-// las excluidas por BullsEye y las que ya están en su pipeline (companies).
-export async function getClientExclusions(
-  db: SupabaseClient,
-  clientId: string
-): Promise<{ domains: string[]; names: string[] }> {
+// las excluidas por BullsEye, las de su lista de exclusión del portal
+// (empresas y palabras clave) y las que ya están en su pipeline (companies).
+export async function getClientExclusions(db: SupabaseClient, clientId: string): Promise<ClientExclusions> {
   const domains = new Set<string>();
   const names = new Set<string>();
+  const keywords = new Set<string>();
   const add = (name?: string | null, website?: string | null) => {
     if (name?.trim()) names.add(normName(name));
     const d = normalizeDomain(website ?? null);
     if (d) domains.add(d);
   };
 
-  const [wishlist, excluded] = await Promise.all([
+  const [wishlist, excluded, portalExcl] = await Promise.all([
     db.from("client_wishlist").select("company_name, domain").eq("client_id", clientId),
     db.from("excluded_companies").select("company_name, company_website").eq("client_id", clientId),
+    db.from("client_exclusions").select("kind, company_name, domain, keyword").eq("client_id", clientId),
   ]);
   for (const r of wishlist.data ?? []) add(r.company_name, r.domain);
   for (const r of excluded.data ?? []) add(r.company_name, r.company_website);
+  for (const r of portalExcl.data ?? []) {
+    if (r.kind === "keyword" && r.keyword?.trim()) keywords.add(normName(r.keyword));
+    else add(r.company_name, r.domain);
+  }
 
   // companies puede tener miles de filas por cliente: se pagina
   for (let from = 0; from < 50_000; from += 1000) {
@@ -51,11 +57,16 @@ export async function getClientExclusions(
     if (!data || data.length < 1000) break;
   }
 
-  return { domains: Array.from(domains), names: Array.from(names) };
+  return { domains: Array.from(domains), names: Array.from(names), keywords: Array.from(keywords) };
 }
 
-export function isExcluded(ex: { domains: string[]; names: string[] }, name: string, domain: string | null) {
-  return (domain && ex.domains.includes(domain)) || ex.names.includes(normName(name));
+export function isExcluded(ex: ClientExclusions, name: string, domain: string | null) {
+  const n = normName(name);
+  return (
+    (!!domain && ex.domains.includes(domain)) ||
+    ex.names.includes(n) ||
+    ex.keywords.some((k) => k && n.includes(k))
+  );
 }
 
 // Tarjeta que ve el cliente (y snapshot que se guarda al agregarla)

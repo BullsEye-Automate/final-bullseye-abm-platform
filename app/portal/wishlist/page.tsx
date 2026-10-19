@@ -1,26 +1,33 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconSparkles,
-  IconFilter,
+  IconSearch,
   IconHeart,
+  IconBriefcase,
+  IconBan,
   IconLoader2,
   IconPlus,
   IconX,
   IconExternalLink,
   IconCheck,
   IconTrash,
+  IconChevronDown,
+  IconUpload,
+  IconBuildingPlus,
 } from "@tabler/icons-react";
+import {
+  FILTER_GROUPS,
+  type UnifiedFilterDef,
+  type UnifiedFilterKey,
+  type UnifiedFilters,
+} from "@/lib/unifiedFilterDefs";
 
 // ── Tipos ────────────────────────────────────────────────────────────────
 
-type Source = "hubspot" | "lemlist";
-type Mode = "ai" | "manual";
-
 type Card = {
-  source: Source;
-  key: string;
+  ref: string;
   name: string;
   domain: string | null;
   linkedin_url: string | null;
@@ -28,23 +35,15 @@ type Card = {
   fit_score?: number | null;
   fit_reason?: string | null;
 };
-
-type PoolProp = { name: string; label: string; type: string; options: { value: string; label: string }[]; filled_count: number };
-type LemlistDef = { filterId: string; description: string; type: string; values?: string[] };
-type Options = {
-  hubspot: { available: boolean; reason?: string; total: number; properties: PoolProp[] };
-  lemlist: { available: boolean; reason?: string; filters?: LemlistDef[] };
-};
-
-// Filtro en edición (formato común para ambas fuentes)
-type DraftFilter = { id: string; field: string; values: string[]; min?: string; max?: string };
+type Option = { value: string; label: string };
+type Catalog = { available: UnifiedFilterKey[]; options: Partial<Record<UnifiedFilterKey, Option[]>> };
+type Cursor = { phase: string; hsOffset: number; lemPage: number };
 
 type WishlistItem = {
   id: string;
   company_name: string;
   domain: string | null;
-  source: Source;
-  mode: Mode;
+  mode: "manual" | "ai";
   fit_score: number | null;
   fit_reason: string | null;
   status: "new" | "in_lemlist" | "in_progress" | "contacts_found" | "discarded";
@@ -54,20 +53,23 @@ type WishlistItem = {
 
 const STATUS_LABEL: Record<WishlistItem["status"], { text: string; cls: string }> = {
   new: { text: "Recibida", cls: "bg-amber-50 text-amber-700" },
-  in_lemlist: { text: "En Lemlist", cls: "bg-blue-50 text-blue-700" },
+  in_lemlist: { text: "Recibida por prospección", cls: "bg-blue-50 text-blue-700" },
   in_progress: { text: "En prospección", cls: "bg-indigo-50 text-indigo-700" },
   contacts_found: { text: "Contactos encontrados", cls: "bg-green-50 text-green-700" },
   discarded: { text: "Descartada", cls: "bg-gray-100 text-gray-500" },
 };
 
-const SOURCE_LABEL: Record<Source, string> = { hubspot: "Base BullsEye", lemlist: "Base Lemlist" };
+type Tab = "ai" | "search" | "wishlist" | "worked" | "exclusions";
+
+// Clave para no repetir una empresa que aparece en las dos bases
+const dedupeKey = (c: { name: string; domain: string | null }) => c.domain ?? c.name.trim().toLowerCase();
 
 // ── Página ───────────────────────────────────────────────────────────────
 
 export default function PortalWishlistPage() {
-  const [tab, setTab] = useState<"ai" | "manual" | "wishlist">("ai");
-  const [options, setOptions] = useState<Options | null>(null);
-  const [source, setSource] = useState<Source>("hubspot");
+  const [tab, setTab] = useState<Tab>("ai");
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
 
   const loadWishlist = useCallback(async () => {
@@ -77,14 +79,18 @@ export default function PortalWishlistPage() {
 
   useEffect(() => {
     fetch("/api/portal/wishlist/options", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((o: Options) => {
-        setOptions(o);
-        if (!o.hubspot?.available && o.lemlist?.available) setSource("lemlist");
-      })
-      .catch(() => {});
+      .then(async (r) => (r.ok ? setCatalog(await r.json()) : setCatalogError("No pudimos cargar los filtros")))
+      .catch(() => setCatalogError("No pudimos cargar los filtros"));
     loadWishlist();
   }, [loadWishlist]);
+
+  const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
+    { key: "ai", label: "Recomendadas por IA", icon: <IconSparkles size={16} /> },
+    { key: "search", label: "Buscar empresas", icon: <IconSearch size={16} /> },
+    { key: "wishlist", label: `Mi wishlist${wishlist.length ? ` (${wishlist.length})` : ""}`, icon: <IconHeart size={16} /> },
+    { key: "worked", label: "Empresas trabajadas", icon: <IconBriefcase size={16} /> },
+    { key: "exclusions", label: "Lista de exclusión", icon: <IconBan size={16} /> },
+  ];
 
   return (
     <div>
@@ -94,88 +100,92 @@ export default function PortalWishlistPage() {
         Al agregarla a tu wishlist, el equipo de prospección de BullsEye la recibe de inmediato.
       </p>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 mb-6">
-        <div className="flex gap-1">
-          <TabButton active={tab === "ai"} onClick={() => setTab("ai")} icon={<IconSparkles size={16} />}>Recomendadas por IA</TabButton>
-          <TabButton active={tab === "manual"} onClick={() => setTab("manual")} icon={<IconFilter size={16} />}>Buscar con filtros</TabButton>
-          <TabButton active={tab === "wishlist"} onClick={() => setTab("wishlist")} icon={<IconHeart size={16} />}>
-            Mi wishlist{wishlist.length ? ` (${wishlist.length})` : ""}
-          </TabButton>
-        </div>
-        {tab !== "wishlist" && options && (
-          <div className="flex items-center gap-1 text-xs pb-2">
-            {(["hubspot", "lemlist"] as Source[]).map((s) => {
-              const avail = options[s]?.available;
-              return (
-                <button
-                  key={s}
-                  disabled={!avail}
-                  title={avail ? undefined : options[s]?.reason}
-                  onClick={() => setSource(s)}
-                  className={`px-3 py-1.5 rounded-full ${source === s ? "bg-[#251762] text-white" : "bg-gray-100 text-gray-600"} disabled:opacity-40 disabled:cursor-not-allowed`}
-                >
-                  {SOURCE_LABEL[s]}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      <div className="flex gap-1 border-b border-gray-200 mb-6 overflow-x-auto">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm border-b-2 -mb-px whitespace-nowrap ${tab === t.key ? "border-[#251762] text-[#251762] font-medium" : "border-transparent text-gray-500"}`}
+          >
+            {t.icon}
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {!options && tab !== "wishlist" && <IconLoader2 className="animate-spin text-gray-400" />}
-      {options && tab !== "wishlist" && !options[source]?.available && (
-        <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">{options[source]?.reason}</div>
+      {(tab === "ai" || tab === "search") && !catalog && !catalogError && (
+        <div className="flex items-center gap-2 text-sm text-gray-500"><IconLoader2 className="animate-spin" size={18} /> Preparando filtros…</div>
       )}
+      {(tab === "ai" || tab === "search") && catalogError && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl">{catalogError}</div>}
 
-      {options && options[source]?.available && tab === "ai" && (
-        <AiTab key={source} source={source} onAdded={loadWishlist} />
-      )}
-      {options && options[source]?.available && tab === "manual" && (
-        <ManualTab key={source} source={source} options={options} onAdded={loadWishlist} />
-      )}
+      {tab === "ai" && catalog && <AiTab catalog={catalog} onAdded={loadWishlist} />}
+      {tab === "search" && catalog && <SearchTab catalog={catalog} onAdded={loadWishlist} />}
       {tab === "wishlist" && <WishlistTab items={wishlist} onChange={loadWishlist} />}
+      {tab === "worked" && <WorkedTab />}
+      {tab === "exclusions" && <ExclusionsTab />}
     </div>
   );
 }
 
-function TabButton({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-1.5 px-4 py-2 text-sm border-b-2 -mb-px ${active ? "border-[#251762] text-[#251762] font-medium" : "border-transparent text-gray-500"}`}
-    >
-      {icon}
-      {children}
-    </button>
-  );
+// ── Hook de búsqueda paginada ────────────────────────────────────────────
+
+function useCompanySearch(mode: "manual" | "ai") {
+  const [cards, setCards] = useState<Card[]>([]);
+  const [cursor, setCursor] = useState<Cursor | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [needsFilters, setNeedsFilters] = useState(false);
+  const [appliedFilters, setAppliedFilters] = useState<UnifiedFilters | null>(null);
+  const seen = useRef(new Set<string>());
+
+  async function run(filters: UnifiedFilters, reset: boolean) {
+    setLoading(true);
+    setError(null);
+    if (reset) {
+      seen.current = new Set();
+      setCards([]);
+      setNeedsFilters(false);
+    }
+    const r = await fetch("/api/portal/wishlist/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode, filters, cursor: reset ? null : cursor }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setLoading(false);
+    if (!r.ok) {
+      setError(j.error ?? "No pudimos completar la búsqueda");
+      return [] as Card[];
+    }
+    const fresh = (j.cards as Card[]).filter((c) => {
+      const k = dedupeKey(c);
+      if (seen.current.has(k)) return false;
+      seen.current.add(k);
+      return true;
+    });
+    setCards((prev) => (reset ? fresh : [...prev, ...fresh]));
+    setCursor(j.cursor);
+    setHasMore(!!j.has_more);
+    setNeedsFilters(!!j.needs_filters);
+    if (j.applied_filters) setAppliedFilters(j.applied_filters);
+    return fresh;
+  }
+
+  const removeCard = (ref: string) => setCards((c) => c.filter((x) => x.ref !== ref));
+  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, run, removeCard };
 }
 
 // ── Recomendadas por IA ──────────────────────────────────────────────────
 
-function AiTab({ source, onAdded }: { source: Source; onAdded: () => void }) {
-  const [cards, setCards] = useState<Card[]>([]);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) {
+  const s = useCompanySearch("ai");
   const [started, setStarted] = useState(false);
 
-  async function run(nextPage: number) {
-    setLoading(true);
-    setError(null);
+  const start = () => {
     setStarted(true);
-    const r = await fetch("/api/portal/wishlist/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, mode: "ai", page: nextPage }),
-    });
-    const j = await r.json().catch(() => ({}));
-    setLoading(false);
-    if (!r.ok) return setError(j.error ?? "No pudimos generar recomendaciones");
-    setCards((prev) => (nextPage === 0 ? j.cards : [...prev, ...j.cards]));
-    setPage(nextPage);
-    setHasMore(!!j.has_more);
-  }
+    s.run({}, true);
+  };
 
   return (
     <div>
@@ -184,221 +194,347 @@ function AiTab({ source, onAdded }: { source: Source; onAdded: () => void }) {
           <IconSparkles className="mx-auto mb-3" size={28} style={{ color: "#62E0D8" }} />
           <h2 className="font-semibold mb-1" style={{ color: "#251762" }}>Recomendaciones según tu ICP</h2>
           <p className="text-sm text-gray-500 mb-5 max-w-md mx-auto">
-            Analizamos tu perfil de cliente ideal, buscamos en la {SOURCE_LABEL[source]} y te mostramos las empresas con mejor fit,
-            con su porcentaje y la razón.
+            Analizamos tu perfil de cliente ideal y te mostramos las empresas con mejor fit, con su porcentaje y la razón.
+            Nunca incluimos empresas de tu lista de exclusión ni las que ya estamos trabajando.
           </p>
-          <button onClick={() => run(0)} className="px-5 py-2.5 rounded-xl text-white text-sm font-medium" style={{ background: "#251762" }}>
+          <button onClick={start} className="px-5 py-2.5 rounded-xl text-white text-sm font-medium" style={{ background: "#251762" }}>
             Generar recomendaciones
           </button>
         </div>
       )}
-      {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{error}</div>}
-      <CardGrid cards={cards} mode="ai" onAdded={(key) => { setCards((c) => c.filter((x) => x.key !== key)); onAdded(); }} />
-      {loading && (
-        <div className="flex items-center gap-2 text-sm text-gray-500 mt-6">
-          <IconLoader2 className="animate-spin" size={18} /> Analizando empresas contra tu ICP… (puede tomar unos segundos)
-        </div>
+      {s.appliedFilters && <AppliedFilters filters={s.appliedFilters} catalog={catalog} />}
+      {s.error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{s.error}</div>}
+      <CardGrid cards={s.cards} mode="ai" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
+      {s.loading && <Analyzing />}
+      {started && !s.loading && s.cards.length === 0 && !s.error && (
+        <div className="text-sm text-gray-500 mt-4">No encontramos nuevas empresas para recomendarte.</div>
       )}
-      {started && !loading && cards.length === 0 && !error && (
-        <div className="text-sm text-gray-500 mt-4">No encontramos nuevas empresas para recomendarte en esta base.</div>
-      )}
-      {started && !loading && hasMore && (
+      {started && !s.loading && s.hasMore && (
         <div className="mt-6 text-center">
-          <button onClick={() => run(page + 1)} className="px-4 py-2 rounded-xl text-sm border border-gray-200 bg-white">Ver más recomendaciones</button>
+          <button onClick={() => s.run(s.appliedFilters ?? {}, false)} className="px-4 py-2 rounded-xl text-sm border border-gray-200 bg-white">
+            Ver más recomendaciones
+          </button>
         </div>
       )}
+      {started && !s.loading && <ManualRequest onAdded={onAdded} />}
     </div>
   );
 }
 
-// ── Buscar con filtros ───────────────────────────────────────────────────
+function Analyzing() {
+  return (
+    <div className="flex items-center gap-2 text-sm text-gray-500 mt-6">
+      <IconLoader2 className="animate-spin" size={18} /> Analizando empresas contra tu ICP… (puede tomar unos segundos)
+    </div>
+  );
+}
 
-type FieldDef = { id: string; label: string; kind: "multi" | "range" | "text"; options: { value: string; label: string }[] };
+function AppliedFilters({ filters, catalog }: { filters: UnifiedFilters; catalog: Catalog }) {
+  const defs = FILTER_GROUPS.flatMap((g) => g.filters);
+  const chips = defs.flatMap((d) => {
+    const v = filters[d.key];
+    const values = Array.isArray(v) ? v : typeof v === "string" && v ? [v] : [];
+    return values.map((val) => ({ label: d.label, value: catalog.options[d.key]?.find((o) => o.value === val)?.label ?? val }));
+  });
+  if (!chips.length) return null;
+  return (
+    <div className="mb-4 text-xs text-gray-500 flex flex-wrap items-center gap-1.5">
+      <span>Criterios usados según tu ICP:</span>
+      {chips.map((c, i) => (
+        <span key={i} className="rounded-full bg-gray-100 px-2.5 py-1 text-gray-700">{c.label}: {c.value}</span>
+      ))}
+    </div>
+  );
+}
 
-function ManualTab({ source, options, onAdded }: { source: Source; options: Options; onAdded: () => void }) {
-  const fields: FieldDef[] = useMemo(() => {
-    if (source === "hubspot") {
-      return options.hubspot.properties.map((p) => ({
-        id: p.name,
-        label: `${p.label} (${p.filled_count.toLocaleString("es-CL")})`,
-        kind: p.type === "number" ? "range" : "multi",
-        options: p.options,
-      }));
-    }
-    return (options.lemlist.filters ?? []).map((f) => ({
-      id: f.filterId,
-      label: f.description || f.filterId,
-      kind: f.values?.length ? "multi" : "text",
-      options: (f.values ?? []).map((v) => ({ value: v, label: v })),
-    }));
-  }, [source, options]);
+// ── Buscar empresas (filtros a la izquierda) ─────────────────────────────
 
-  const [filters, setFilters] = useState<DraftFilter[]>([]);
-  const [query, setQuery] = useState("");
-  const [cards, setCards] = useState<Card[]>([]);
-  const [total, setTotal] = useState<number | null>(null);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function SearchTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) {
+  const [filters, setFilters] = useState<UnifiedFilters>({});
+  const [searched, setSearched] = useState(false);
+  const s = useCompanySearch("manual");
 
-  function toApiFilters() {
-    return filters
-      .map((f) => {
-        const def = fields.find((d) => d.id === f.field);
-        if (!def) return null;
-        if (source === "lemlist") return { filterId: f.field, in: f.values };
-        if (def.kind === "range") return { property: f.field, op: "range", min: f.min ?? null, max: f.max ?? null };
-        return { property: f.field, op: "in", values: f.values };
-      })
-      .filter(Boolean);
-  }
-
-  // Calcula el fit de los resultados que se acaban de mostrar
+  // Calcula el fit de los resultados recién mostrados
   async function scoreCards(list: Card[]) {
-    const pending = list.filter((c) => c.fit_score === undefined);
-    if (!pending.length) return;
+    if (!list.length) return;
     const r = await fetch("/api/portal/wishlist/score", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, cards: pending }),
+      body: JSON.stringify({ cards: list.map(({ ref, name, domain, facts }) => ({ ref, name, domain, facts })) }),
     });
     const j = r.ok ? await r.json().catch(() => ({})) : {};
     const scores = ((j as { scores?: Record<string, { fit_score: number; fit_reason: string }> }).scores ?? {});
-    const pendingKeys = new Set(pending.map((c) => c.key));
-    // Las que no se pudieron puntuar quedan en null (sin indicador de carga)
-    setCards((prev) =>
+    const refs = new Set(list.map((c) => c.ref));
+    s.setCards((prev) =>
       prev.map((c) =>
-        scores[c.key]
-          ? { ...c, fit_score: scores[c.key].fit_score, fit_reason: scores[c.key].fit_reason }
-          : pendingKeys.has(c.key) && c.fit_score === undefined
+        scores[c.ref]
+          ? { ...c, fit_score: scores[c.ref].fit_score, fit_reason: scores[c.ref].fit_reason }
+          : refs.has(c.ref) && c.fit_score === undefined
             ? { ...c, fit_score: null }
             : c
       )
     );
   }
 
-  async function search(nextPage: number) {
-    setLoading(true);
-    setError(null);
-    const r = await fetch("/api/portal/wishlist/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, mode: "manual", filters: toApiFilters(), query, page: nextPage }),
-    });
-    const j = await r.json().catch(() => ({}));
-    setLoading(false);
-    if (!r.ok) return setError(j.error ?? "Error en la búsqueda");
-    const newCards: Card[] = j.cards;
-    setCards((prev) => (nextPage === 0 ? newCards : [...prev, ...newCards]));
-    setTotal(j.total ?? null);
-    setPage(nextPage);
-    setHasMore(!!j.has_more);
-    scoreCards(newCards);
+  async function search(reset: boolean) {
+    setSearched(true);
+    const fresh = await s.run(filters, reset);
+    scoreCards(fresh);
   }
 
-  const unused = fields.filter((f) => !filters.some((x) => x.field === f.id));
+  const activeCount = Object.values(filters).filter((v) => (Array.isArray(v) ? v.length : !!v)).length;
 
   return (
-    <div>
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-6 space-y-4">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && search(0)}
-          placeholder={source === "lemlist" ? "Palabra clave en nombre o descripción (ej: logística, fintech)" : "Nombre o dominio (opcional)"}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#62E0D8]"
-        />
-        {filters.map((f) => {
-          const def = fields.find((d) => d.id === f.field);
-          if (!def) return null;
-          const update = (patch: Partial<DraftFilter>) => setFilters((list) => list.map((x) => (x.id === f.id ? { ...x, ...patch } : x)));
-          return (
-            <div key={f.id} className="flex flex-wrap items-start gap-3 border border-gray-100 rounded-xl p-3">
-              <div className="text-sm font-medium text-gray-700 w-full sm:w-56 pt-1.5">{def.label}</div>
-              <div className="flex-1 min-w-[220px]">
-                {def.kind === "range" ? (
-                  <div className="flex items-center gap-2 text-sm">
-                    <input type="number" placeholder="Mín." value={f.min ?? ""} onChange={(e) => update({ min: e.target.value })} className="w-28 border border-gray-200 rounded-lg px-2 py-1.5" />
-                    <span className="text-gray-400">a</span>
-                    <input type="number" placeholder="Máx." value={f.max ?? ""} onChange={(e) => update({ max: e.target.value })} className="w-28 border border-gray-200 rounded-lg px-2 py-1.5" />
-                  </div>
-                ) : def.kind === "text" ? (
-                  <input
-                    placeholder={source === "lemlist" ? "Valores separados por coma (en inglés, ej: Chile, Mexico)" : "Valores separados por coma"}
-                    value={f.values.join(", ")}
-                    onChange={(e) => update({ values: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) })}
-                    className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                  />
-                ) : (
-                  <MultiSelect options={def.options} selected={f.values} onChange={(values) => update({ values })} />
-                )}
-              </div>
-              <button onClick={() => setFilters((list) => list.filter((x) => x.id !== f.id))} className="text-gray-400 hover:text-red-600 pt-1.5" title="Quitar filtro">
-                <IconX size={16} />
-              </button>
-            </div>
-          );
+    <div className="grid gap-6 lg:grid-cols-[300px_1fr]">
+      <aside className="space-y-3">
+        {FILTER_GROUPS.map((g) => {
+          const items = g.filters.filter((f) => catalog.available.includes(f.key));
+          if (!items.length) return null;
+          return <FilterGroup key={g.title} title={g.title} defs={items} catalog={catalog} filters={filters} setFilters={setFilters} />;
         })}
-        <div className="flex flex-wrap items-center gap-3">
-          <select
-            value=""
-            onChange={(e) => e.target.value && setFilters((l) => [...l, { id: crypto.randomUUID(), field: e.target.value, values: [] }])}
-            className="border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white"
-          >
-            <option value="">+ Agregar filtro…</option>
-            {unused.map((f) => (
-              <option key={f.id} value={f.id}>{f.label}</option>
-            ))}
-          </select>
+        <div className="flex gap-2 sticky bottom-0 bg-[#F7F8FC] py-2">
           <button
-            onClick={() => search(0)}
-            disabled={loading}
-            className="px-5 py-2 rounded-xl text-white text-sm font-medium disabled:opacity-50"
+            onClick={() => search(true)}
+            disabled={s.loading}
+            className="flex-1 py-2.5 rounded-xl text-white text-sm font-medium disabled:opacity-50"
             style={{ background: "#251762" }}
           >
-            {loading && page === 0 ? "Buscando…" : "Buscar"}
+            {s.loading && !s.cards.length ? "Buscando…" : "Buscar empresas"}
           </button>
-          {total != null && <span className="text-xs text-gray-500">{total.toLocaleString("es-CL")} empresas encontradas (sin las que ya pediste)</span>}
+          {activeCount > 0 && (
+            <button onClick={() => setFilters({})} className="px-3 py-2.5 rounded-xl text-sm border border-gray-200 bg-white text-gray-600">
+              Limpiar
+            </button>
+          )}
         </div>
-      </div>
+      </aside>
 
-      {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{error}</div>}
-      <CardGrid cards={cards} mode="manual" onAdded={(key) => { setCards((c) => c.filter((x) => x.key !== key)); onAdded(); }} />
-      {hasMore && !loading && (
-        <div className="mt-6 text-center">
-          <button onClick={() => search(page + 1)} className="px-4 py-2 rounded-xl text-sm border border-gray-200 bg-white">Ver más</button>
-        </div>
-      )}
-      {loading && page > 0 && <IconLoader2 className="animate-spin text-gray-400 mx-auto mt-6" />}
+      <section className="min-w-0">
+        {!searched && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center text-sm text-gray-500">
+            Elige los filtros a la izquierda y presiona <strong>Buscar empresas</strong>.
+          </div>
+        )}
+        {s.error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{s.error}</div>}
+        <CardGrid cards={s.cards} mode="manual" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
+        {s.loading && <IconLoader2 className="animate-spin text-gray-400 mx-auto mt-6" />}
+        {searched && !s.loading && s.cards.length === 0 && !s.error && (
+          <div className="text-sm text-gray-500 bg-white rounded-2xl border border-gray-100 p-6">
+            No encontramos empresas nuevas con esos filtros. Prueba ampliarlos o solicita una empresa puntual abajo.
+          </div>
+        )}
+        {searched && !s.loading && s.needsFilters && (
+          <div className="text-sm text-gray-500 mt-4">Agrega al menos un filtro para ver más empresas.</div>
+        )}
+        {s.hasMore && !s.loading && (
+          <div className="mt-6 text-center">
+            <button onClick={() => search(false)} className="px-4 py-2 rounded-xl text-sm border border-gray-200 bg-white">Ver más empresas</button>
+          </div>
+        )}
+        {searched && !s.loading && <ManualRequest onAdded={onAdded} />}
+      </section>
     </div>
   );
 }
 
-function MultiSelect({ options, selected, onChange }: { options: { value: string; label: string }[]; selected: string[]; onChange: (v: string[]) => void }) {
-  const [q, setQ] = useState("");
-  const shown = options.filter((o) => !selected.includes(o.value) && o.label.toLowerCase().includes(q.toLowerCase())).slice(0, 40);
+function FilterGroup({
+  title,
+  defs,
+  catalog,
+  filters,
+  setFilters,
+}: {
+  title: string;
+  defs: UnifiedFilterDef[];
+  catalog: Catalog;
+  filters: UnifiedFilters;
+  setFilters: React.Dispatch<React.SetStateAction<UnifiedFilters>>;
+}) {
+  const used = defs.filter((d) => {
+    const v = filters[d.key];
+    return Array.isArray(v) ? v.length > 0 : !!v;
+  }).length;
+  const [open, setOpen] = useState(title === "Información de la empresa" || title === "Ubicación" || title === "Tamaño y finanzas");
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold" style={{ color: "#251762" }}>
+        <span>{title}{used ? <span className="ml-2 text-[10px] rounded-full bg-[#251762] text-white px-1.5 py-0.5">{used}</span> : null}</span>
+        <IconChevronDown size={16} className={`transition ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 divide-y divide-gray-50">
+          {defs.map((d) => (
+            <FilterRow
+              key={d.key}
+              def={d}
+              options={catalog.options[d.key] ?? []}
+              value={filters[d.key]}
+              onChange={(v) => setFilters((f) => ({ ...f, [d.key]: v }))}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterRow({
+  def,
+  options,
+  value,
+  onChange,
+}: {
+  def: UnifiedFilterDef;
+  options: Option[];
+  value: string | string[] | undefined;
+  onChange: (v: string | string[]) => void;
+}) {
+  const list = Array.isArray(value) ? value : [];
+  const text = typeof value === "string" ? value : "";
+  const active = def.control === "text" || def.control === "longtext" ? !!text : list.length > 0;
+  const [open, setOpen] = useState(active);
   const labelOf = (v: string) => options.find((o) => o.value === v)?.label ?? v;
+
+  return (
+    <div className="px-4 py-2.5">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between text-[13px] text-gray-700">
+        <span className={active ? "font-medium text-[#251762]" : ""}>{def.label}</span>
+        {open ? <IconX size={14} className="text-gray-400" /> : <IconPlus size={14} className="text-gray-400" />}
+      </button>
+      {!open && list.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {list.map((v) => <span key={v} className="text-[11px] rounded-full bg-[#251762] text-white px-2 py-0.5">{labelOf(v)}</span>)}
+        </div>
+      )}
+      {open && (
+        <div className="mt-2">
+          {def.control === "text" && (
+            <input value={text} onChange={(e) => onChange(e.target.value)} placeholder={def.hint} className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#62E0D8]" />
+          )}
+          {def.control === "longtext" && (
+            <textarea value={text} onChange={(e) => onChange(e.target.value)} placeholder={def.hint} rows={3} className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#62E0D8]" />
+          )}
+          {def.control === "tags" && <TagInput values={list} onChange={onChange} placeholder={def.hint ?? "Escribe y presiona Enter"} />}
+          {def.control === "select" && <OptionPicker options={options} selected={list} onChange={onChange} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TagInput({ values, onChange, placeholder }: { values: string[]; onChange: (v: string[]) => void; placeholder: string }) {
+  const [draft, setDraft] = useState("");
+  const add = () => {
+    const parts = draft.split(",").map((p) => p.trim()).filter(Boolean);
+    if (parts.length) onChange(Array.from(new Set([...values, ...parts])));
+    setDraft("");
+  };
   return (
     <div>
-      {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {selected.map((v) => (
-            <span key={v} className="inline-flex items-center gap-1 text-xs rounded-full px-2.5 py-1 bg-[#251762] text-white">
-              {labelOf(v)}
-              <button onClick={() => onChange(selected.filter((x) => x !== v))}><IconX size={12} /></button>
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+        onBlur={add}
+        placeholder={placeholder}
+        className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm outline-none focus:border-[#62E0D8]"
+      />
+      {values.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {values.map((v) => (
+            <span key={v} className="inline-flex items-center gap-1 text-[11px] rounded-full bg-[#251762] text-white px-2 py-0.5">
+              {v}<button onClick={() => onChange(values.filter((x) => x !== v))}><IconX size={11} /></button>
             </span>
           ))}
         </div>
       )}
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar opción…" className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm mb-1.5" />
-      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+    </div>
+  );
+}
+
+function OptionPicker({ options, selected, onChange }: { options: Option[]; selected: string[]; onChange: (v: string[]) => void }) {
+  const [q, setQ] = useState("");
+  const shown = useMemo(
+    () => options.filter((o) => !selected.includes(o.value) && o.label.toLowerCase().includes(q.toLowerCase())).slice(0, 60),
+    [options, selected, q]
+  );
+  const labelOf = (v: string) => options.find((o) => o.value === v)?.label ?? v;
+  return (
+    <div>
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1.5">
+          {selected.map((v) => (
+            <span key={v} className="inline-flex items-center gap-1 text-[11px] rounded-full bg-[#251762] text-white px-2 py-0.5">
+              {labelOf(v)}<button onClick={() => onChange(selected.filter((x) => x !== v))}><IconX size={11} /></button>
+            </span>
+          ))}
+        </div>
+      )}
+      {options.length > 8 && (
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar…" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm mb-1.5 outline-none focus:border-[#62E0D8]" />
+      )}
+      <div className="max-h-44 overflow-y-auto flex flex-col">
         {shown.map((o) => (
-          <button key={o.value} onClick={() => onChange([...selected, o.value])} className="text-xs rounded-full px-2.5 py-1 bg-gray-100 text-gray-700 hover:bg-gray-200">
+          <button key={o.value} onClick={() => onChange([...selected, o.value])} className="text-left text-[12px] text-gray-700 px-2 py-1 rounded hover:bg-gray-50">
             {o.label}
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Solicitar una empresa que no apareció ────────────────────────────────
+
+function ManualRequest({ onAdded }: { onAdded: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", website: "", linkedin_url: "", comment: "" });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setMsg(null);
+    const r = await fetch("/api/portal/wishlist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ manual: form }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) return setMsg({ ok: false, text: j.error ?? "No se pudo enviar" });
+    setMsg({ ok: true, text: `“${form.name}” quedó en tu wishlist.` });
+    setForm({ name: "", website: "", linkedin_url: "", comment: "" });
+    onAdded();
+  }
+
+  return (
+    <div className="mt-8 bg-white rounded-2xl border border-dashed border-gray-200 p-5">
+      {!open ? (
+        <button onClick={() => setOpen(true)} className="flex items-center gap-2 text-sm text-[#251762]">
+          <IconBuildingPlus size={18} /> ¿No encuentras una empresa? <span className="underline">Solicítala aquí</span>
+        </button>
+      ) : (
+        <form onSubmit={submit} className="space-y-3">
+          <div className="text-sm font-medium" style={{ color: "#251762" }}>Solicitar una empresa</div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre de la empresa *" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            <input value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="Sitio web (ej: empresa.cl)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+            <input value={form.linkedin_url} onChange={(e) => setForm({ ...form, linkedin_url: e.target.value })} placeholder="LinkedIn de la empresa" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+          </div>
+          <textarea value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} rows={2} placeholder="Comentario para el equipo (opcional): por qué te interesa, a quién apuntar…" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
+          <div className="flex items-center gap-3">
+            <button disabled={busy} className="px-4 py-2 rounded-xl text-white text-sm disabled:opacity-50" style={{ background: "#251762" }}>
+              {busy ? "Enviando…" : "Agregar a mi wishlist"}
+            </button>
+            <button type="button" onClick={() => setOpen(false)} className="text-sm text-gray-500">Cancelar</button>
+            <span className="text-xs text-gray-400">Necesitamos el sitio web o el LinkedIn.</span>
+          </div>
+          {msg && <div className={`text-sm ${msg.ok ? "text-green-700" : "text-red-600"}`}>{msg.text}</div>}
+        </form>
+      )}
     </div>
   );
 }
@@ -412,16 +548,16 @@ function fitStyle(score: number) {
   return { bg: "rgba(239,68,68,0.10)", fg: "#b91c1c", label: "Bajo fit" };
 }
 
-function CardGrid({ cards, mode, onAdded }: { cards: Card[]; mode: Mode; onAdded: (key: string) => void }) {
+function CardGrid({ cards, mode, onAdded }: { cards: Card[]; mode: "manual" | "ai"; onAdded: (ref: string) => void }) {
   if (!cards.length) return null;
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {cards.map((c) => <CompanyCard key={`${c.source}:${c.key}`} card={c} mode={mode} onAdded={onAdded} />)}
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {cards.map((c) => <CompanyCard key={c.ref} card={c} mode={mode} onAdded={onAdded} />)}
     </div>
   );
 }
 
-function CompanyCard({ card, mode, onAdded }: { card: Card; mode: Mode; onAdded: (key: string) => void }) {
+function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai"; onAdded: (ref: string) => void }) {
   const [adding, setAdding] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -433,14 +569,14 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: Mode; onAdded:
     const r = await fetch("/api/portal/wishlist", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: card.source, key: card.key, mode, card: card.source === "lemlist" ? card : undefined }),
+      body: JSON.stringify({ ref: card.ref, mode, card: { name: card.name, domain: card.domain, linkedin_url: card.linkedin_url, facts: card.facts } }),
     });
     const j = await r.json().catch(() => ({}));
     setAdding(false);
     if (!r.ok) return setError(j.error ?? "No se pudo agregar");
     setDone(true);
     // La tarjeta desaparece de los resultados después de confirmar
-    setTimeout(() => onAdded(card.key), 700);
+    setTimeout(() => onAdded(card.ref), 700);
   }
 
   const facts = expanded ? card.facts : card.facts.slice(0, 4);
@@ -451,11 +587,14 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: Mode; onAdded:
       <div className="flex items-start justify-between gap-3 mb-2">
         <div className="min-w-0">
           <h3 className="font-semibold text-[15px] truncate" style={{ color: "#251762" }}>{card.name}</h3>
-          {card.domain && (
-            <a href={`https://${card.domain}`} target="_blank" rel="noreferrer" className="text-xs text-gray-500 hover:text-[#251762] inline-flex items-center gap-1">
-              {card.domain} <IconExternalLink size={11} />
-            </a>
-          )}
+          <div className="flex flex-wrap gap-x-2 text-xs text-gray-500">
+            {card.domain && (
+              <a href={`https://${card.domain}`} target="_blank" rel="noreferrer" className="hover:text-[#251762] inline-flex items-center gap-1">
+                {card.domain} <IconExternalLink size={11} />
+              </a>
+            )}
+            {card.linkedin_url && <a href={card.linkedin_url} target="_blank" rel="noreferrer" className="hover:text-[#251762]">LinkedIn</a>}
+          </div>
         </div>
         {fit ? (
           <div className="text-right shrink-0 rounded-xl px-2.5 py-1" style={{ background: fit.bg, color: fit.fg }}>
@@ -463,9 +602,7 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: Mode; onAdded:
             <div className="text-[10px] font-medium">{fit.label}</div>
           </div>
         ) : card.fit_score === undefined ? (
-          <div className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0">
-            <IconLoader2 size={12} className="animate-spin" /> fit…
-          </div>
+          <div className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0"><IconLoader2 size={12} className="animate-spin" /> fit…</div>
         ) : null}
       </div>
 
@@ -474,7 +611,7 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: Mode; onAdded:
       <dl className="text-xs space-y-1 mb-3">
         {facts.map((f) => (
           <div key={f.label} className="flex gap-2">
-            <dt className="text-gray-400 shrink-0 w-28 truncate">{f.label}</dt>
+            <dt className="text-gray-400 shrink-0 w-24 truncate">{f.label}</dt>
             <dd className="text-gray-700 line-clamp-2">{f.value}</dd>
           </div>
         ))}
@@ -512,27 +649,21 @@ function WishlistTab({ items, onChange }: { items: WishlistItem[]; onChange: () 
   }
 
   if (!items.length) {
-    return <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">Aún no agregas empresas. Usa las recomendaciones o la búsqueda con filtros.</div>;
+    return <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">Aún no agregas empresas. Usa las recomendaciones o la búsqueda.</div>;
   }
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="text-left text-xs text-gray-500 border-b border-gray-100">
-          <tr>
-            <th className="p-3">Empresa</th>
-            <th className="p-3">Fit</th>
-            <th className="p-3">Estado</th>
-            <th className="p-3">Agregada</th>
-            <th className="p-3"></th>
-          </tr>
+          <tr><th className="p-3">Empresa</th><th className="p-3">Fit</th><th className="p-3">Estado</th><th className="p-3">Agregada</th><th className="p-3"></th></tr>
         </thead>
         <tbody>
           {items.map((i) => (
             <tr key={i.id} className="border-b border-gray-50 last:border-0 align-top">
               <td className="p-3">
                 <div className="font-medium" style={{ color: "#251762" }}>{i.company_name}</div>
-                <div className="text-xs text-gray-500">{i.domain ?? "—"} · {SOURCE_LABEL[i.source]}{i.mode === "ai" ? " · IA" : ""}</div>
+                <div className="text-xs text-gray-500">{i.domain ?? "—"}{i.mode === "ai" ? " · recomendada por IA" : ""}</div>
               </td>
               <td className="p-3 max-w-xs">
                 {i.fit_score != null ? (
@@ -542,24 +673,255 @@ function WishlistTab({ items, onChange }: { items: WishlistItem[]; onChange: () 
                   </>
                 ) : "—"}
               </td>
-              <td className="p-3">
-                <span className={`text-xs rounded px-2 py-0.5 ${STATUS_LABEL[i.status].cls}`}>{STATUS_LABEL[i.status].text}</span>
-              </td>
+              <td className="p-3"><span className={`text-xs rounded px-2 py-0.5 ${STATUS_LABEL[i.status].cls}`}>{STATUS_LABEL[i.status].text}</span></td>
               <td className="p-3 text-xs text-gray-500 whitespace-nowrap">
                 {new Date(i.created_at).toLocaleDateString("es-CL")}
                 {i.requested_by_email ? <div>{i.requested_by_email}</div> : null}
               </td>
               <td className="p-3 text-right">
-                {i.status === "new" && (
-                  <button onClick={() => remove(i.id)} className="text-gray-400 hover:text-red-600" title="Quitar">
-                    <IconTrash size={16} />
-                  </button>
+                {(i.status === "new" || i.status === "in_lemlist") && (
+                  <button onClick={() => remove(i.id)} className="text-gray-400 hover:text-red-600" title="Quitar"><IconTrash size={16} /></button>
                 )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ── Empresas trabajadas ──────────────────────────────────────────────────
+
+type WorkedItem = { name: string; website: string | null; country: string | null; since: string | null; status: string };
+
+function WorkedTab() {
+  const [items, setItems] = useState<WorkedItem[] | null>(null);
+  const [q, setQ] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/portal/worked", { cache: "no-store" })
+      .then(async (r) => {
+        const j = await r.json();
+        if (!r.ok) setError(j.error ?? "Error al cargar");
+        else setItems(j.items);
+      })
+      .catch(() => setError("Error al cargar"));
+  }, []);
+
+  const shown = (items ?? []).filter((i) => !q || i.name.toLowerCase().includes(q.toLowerCase()) || (i.website ?? "").includes(q.toLowerCase()));
+
+  return (
+    <div>
+      <p className="text-sm text-gray-500 mb-4">Empresas que el equipo de BullsEye ya está prospectando para ustedes. No vuelven a aparecer en las búsquedas.</p>
+      {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{error}</div>}
+      {!items && !error && <IconLoader2 className="animate-spin text-gray-400" />}
+      {items && (
+        <>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar entre ${items.length.toLocaleString("es-CL")} empresas…`} className="w-full sm:w-80 border border-gray-200 rounded-xl px-3 py-2 text-sm mb-3 bg-white" />
+          {items.length === 0 ? (
+            <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">Todavía no hay empresas en prospección.</div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-gray-500 border-b border-gray-100">
+                  <tr><th className="p-3">Empresa</th><th className="p-3">País</th><th className="p-3">Estado</th><th className="p-3">Desde</th></tr>
+                </thead>
+                <tbody>
+                  {shown.slice(0, 500).map((i, idx) => (
+                    <tr key={idx} className="border-b border-gray-50 last:border-0">
+                      <td className="p-3">
+                        <div className="font-medium" style={{ color: "#251762" }}>{i.name}</div>
+                        {i.website && <div className="text-xs text-gray-500">{i.website}</div>}
+                      </td>
+                      <td className="p-3 text-xs text-gray-600">{i.country ?? "—"}</td>
+                      <td className="p-3 text-xs">{i.status}</td>
+                      <td className="p-3 text-xs text-gray-500">{i.since ? new Date(i.since).toLocaleDateString("es-CL") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {shown.length > 500 && <div className="p-3 text-xs text-gray-400">Mostrando 500 de {shown.length.toLocaleString("es-CL")}. Usa el buscador.</div>}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Lista de exclusión ───────────────────────────────────────────────────
+
+type ExclusionItem = { id: string; kind: "company" | "keyword"; company_name: string | null; domain: string | null; keyword: string | null; reason: string | null; created_by_email: string | null; created_at: string };
+
+const NAME_HEADERS = /^(empresa|empresas|nombre|razon social|razón social|company|company name|cliente|cuenta|account)$/i;
+const DOMAIN_HEADERS = /^(dominio|domain|web|website|sitio|sitio web|url|pagina web|página web)$/i;
+
+// Lee un Excel/CSV y devuelve [{ name, domain }] detectando las columnas
+async function parseExclusionFile(file: File): Promise<{ name: string | null; domain: string | null }[]> {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, blankrows: false }) as unknown[][];
+  if (!rows.length) return [];
+  const header = rows[0].map((h) => String(h ?? "").trim());
+  let nameCol = header.findIndex((h) => NAME_HEADERS.test(h));
+  let domainCol = header.findIndex((h) => DOMAIN_HEADERS.test(h));
+  const hasHeader = nameCol >= 0 || domainCol >= 0;
+  if (!hasHeader) {
+    // Sin encabezados: la primera columna es el nombre; si parece dominio, va como dominio
+    nameCol = 0;
+    domainCol = -1;
+  }
+  const looksLikeDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(v.replace(/^https?:\/\//, "").replace(/^www\./, ""));
+  return rows.slice(hasHeader ? 1 : 0).map((r) => {
+    const name = nameCol >= 0 ? String(r[nameCol] ?? "").trim() : "";
+    const domain = domainCol >= 0 ? String(r[domainCol] ?? "").trim() : "";
+    if (!domain && name && looksLikeDomain(name) && !name.includes(" ")) return { name: null, domain: name };
+    return { name: name || null, domain: domain || null };
+  }).filter((r) => r.name || r.domain);
+}
+
+function ExclusionsTab() {
+  const [items, setItems] = useState<ExclusionItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState("Ya es cliente");
+  const [keyword, setKeyword] = useState("");
+  const [company, setCompany] = useState({ name: "", domain: "" });
+  const [q, setQ] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const load = useCallback(async () => {
+    const r = await fetch("/api/portal/exclusions", { cache: "no-store" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return setError(j.error ?? "Error al cargar");
+    setItems(j.items);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function send(payload: { companies?: { name: string | null; domain: string | null }[]; keywords?: string[] }) {
+    setBusy(true);
+    setError(null);
+    setMsg(null);
+    const r = await fetch("/api/portal/exclusions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, reason }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) return setError(j.error ?? "No se pudo guardar");
+    setMsg(j.added ? `${j.added} elemento${j.added > 1 ? "s" : ""} agregado${j.added > 1 ? "s" : ""} a la lista.` : "No había elementos nuevos (ya estaban en la lista).");
+    load();
+  }
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const companies = await parseExclusionFile(file);
+      if (!companies.length) return setError("No encontramos empresas en el archivo. Usa una columna “Empresa” y/o “Dominio”.");
+      if (companies.length > 5000) return setError("El archivo tiene más de 5.000 filas. Divídelo en partes.");
+      await send({ companies });
+    } catch {
+      setError("No pudimos leer el archivo. Sube un Excel (.xlsx) o CSV.");
+    }
+  }
+
+  async function remove(id: string) {
+    const r = await fetch(`/api/portal/exclusions/${id}`, { method: "DELETE" });
+    if (r.ok) setItems((list) => (list ?? []).filter((i) => i.id !== id));
+  }
+
+  const shown = (items ?? []).filter((i) => {
+    if (!q) return true;
+    const t = `${i.company_name ?? ""} ${i.domain ?? ""} ${i.keyword ?? ""}`.toLowerCase();
+    return t.includes(q.toLowerCase());
+  });
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-gray-500 max-w-3xl">
+        Empresas que no quieres que prospectemos: tus clientes actuales, cuentas que ya trabaja otra persona, etc.
+        Nunca aparecerán en las búsquedas ni en las recomendaciones, y el equipo de BullsEye también las omite.
+      </p>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+        <label className="block text-sm">
+          <span className="text-xs text-gray-500">Motivo (se aplica a lo que agregues)</span>
+          <select value={reason} onChange={(e) => setReason(e.target.value)} className="mt-1 block border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white">
+            <option>Ya es cliente</option>
+            <option>La trabaja otra persona o proveedor</option>
+            <option>No es de interés</option>
+            <option>Otro</option>
+          </select>
+        </label>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="border border-gray-100 rounded-xl p-4">
+            <div className="text-sm font-medium mb-1" style={{ color: "#251762" }}>Subir Excel o CSV</div>
+            <p className="text-xs text-gray-500 mb-3">Una columna “Empresa” y/o “Dominio”. Máximo 5.000 filas.</p>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onFile} className="hidden" />
+            <button onClick={() => fileRef.current?.click()} disabled={busy} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-white disabled:opacity-50" style={{ background: "#251762" }}>
+              {busy ? <IconLoader2 size={15} className="animate-spin" /> : <IconUpload size={15} />} Elegir archivo
+            </button>
+          </div>
+
+          <form onSubmit={(e) => { e.preventDefault(); if (company.name || company.domain) { send({ companies: [{ name: company.name || null, domain: company.domain || null }] }); setCompany({ name: "", domain: "" }); } }} className="border border-gray-100 rounded-xl p-4 space-y-2">
+            <div className="text-sm font-medium" style={{ color: "#251762" }}>Agregar una empresa</div>
+            <input value={company.name} onChange={(e) => setCompany({ ...company, name: e.target.value })} placeholder="Nombre" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
+            <input value={company.domain} onChange={(e) => setCompany({ ...company, domain: e.target.value })} placeholder="Sitio web (opcional)" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
+            <button disabled={busy} className="px-3 py-1.5 rounded-lg text-sm border border-gray-200">Agregar</button>
+          </form>
+
+          <form onSubmit={(e) => { e.preventDefault(); if (keyword.trim()) { send({ keywords: keyword.split(",").map((k) => k.trim()).filter(Boolean) }); setKeyword(""); } }} className="border border-gray-100 rounded-xl p-4 space-y-2">
+            <div className="text-sm font-medium" style={{ color: "#251762" }}>Palabras clave</div>
+            <p className="text-xs text-gray-500">Excluye toda empresa cuyo nombre contenga la palabra (ej: “banco”, “municipalidad”).</p>
+            <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Separa varias con coma" className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
+            <button disabled={busy} className="px-3 py-1.5 rounded-lg text-sm border border-gray-200">Agregar</button>
+          </form>
+        </div>
+        {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
+        {msg && <div className="bg-green-50 text-green-700 text-sm px-4 py-3 rounded-xl">{msg}</div>}
+      </div>
+
+      {!items && !error && <IconLoader2 className="animate-spin text-gray-400" />}
+      {items && items.length > 0 && (
+        <div>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Buscar en ${items.length.toLocaleString("es-CL")} exclusiones…`} className="w-full sm:w-80 border border-gray-200 rounded-xl px-3 py-2 text-sm mb-3 bg-white" />
+          <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-gray-500 border-b border-gray-100">
+                <tr><th className="p-3">Excluye</th><th className="p-3">Motivo</th><th className="p-3">Agregado</th><th className="p-3"></th></tr>
+              </thead>
+              <tbody>
+                {shown.slice(0, 500).map((i) => (
+                  <tr key={i.id} className="border-b border-gray-50 last:border-0">
+                    <td className="p-3">
+                      {i.kind === "keyword" ? (
+                        <span>Nombre contiene <strong>“{i.keyword}”</strong></span>
+                      ) : (
+                        <>
+                          <div className="font-medium" style={{ color: "#251762" }}>{i.company_name ?? i.domain}</div>
+                          {i.company_name && i.domain && <div className="text-xs text-gray-500">{i.domain}</div>}
+                        </>
+                      )}
+                    </td>
+                    <td className="p-3 text-xs text-gray-600">{i.reason ?? "—"}</td>
+                    <td className="p-3 text-xs text-gray-500">{new Date(i.created_at).toLocaleDateString("es-CL")}{i.created_by_email ? ` · ${i.created_by_email}` : ""}</td>
+                    <td className="p-3 text-right"><button onClick={() => remove(i.id)} className="text-gray-400 hover:text-red-600" title="Quitar"><IconTrash size={16} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {shown.length > 500 && <div className="p-3 text-xs text-gray-400">Mostrando 500 de {shown.length.toLocaleString("es-CL")}. Usa el buscador.</div>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

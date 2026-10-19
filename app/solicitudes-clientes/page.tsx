@@ -341,11 +341,11 @@ type WishlistRequest = {
   company_name: string;
   domain: string | null;
   linkedin_url: string | null;
-  source: "hubspot" | "lemlist";
+  source: "hubspot" | "lemlist" | "manual";
   mode: "manual" | "ai";
   fit_score: number | null;
   fit_reason: string | null;
-  snapshot: { facts?: { label: string; value: string }[] };
+  snapshot: { facts?: { label: string; value: string }[]; client_comment?: string };
   status: "new" | "in_lemlist" | "in_progress" | "contacts_found" | "discarded";
   lemlist_status: string | null;
   lemlist_error: string | null;
@@ -432,7 +432,7 @@ function WishlistRequestsTab({ clientId }: { clientId: string | null }) {
                         </a>
                       )}
                       {i.linkedin_url && <a href={i.linkedin_url} target="_blank" rel="noreferrer" className="hover:text-[#251762]">LinkedIn</a>}
-                      <span>{i.source === "hubspot" ? "Base BullsEye" : "Base Lemlist"}{i.mode === "ai" ? " · IA" : ""}</span>
+                      <span>{i.source === "hubspot" ? "Base HubSpot" : i.source === "lemlist" ? "Base Lemlist" : "Solicitud manual del cliente"}{i.mode === "ai" ? " · IA" : ""}</span>
                     </div>
                     {i.snapshot?.facts?.length ? (
                       <div className="text-xs text-gray-500 mt-1 line-clamp-2">

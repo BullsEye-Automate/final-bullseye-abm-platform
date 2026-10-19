@@ -3,15 +3,15 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { anthropic, getClientModel } from "./claude";
 import { logAiUsage } from "./aiUsageLogger";
-import { isFilterableProperty, type PoolFilter, type PoolProperty } from "./hubspotPool";
-import type { LemlistFilter, LemlistFilterDef } from "./lemlistDatabase";
+import type { FilterCatalog } from "./unifiedSearch";
+import type { UnifiedFilterKey, UnifiedFilters } from "./unifiedFilterDefs";
 
 // IA de la wishlist del portal:
 //  1. scoreCompanies: % de fit (0–100) + razón de cada empresa contra el ICP
 //     del cliente. Se cachea en company_fit_scores por (cliente, fuente,
 //     empresa, hash del ICP) — si el ICP cambia, se recalcula.
-//  2. icpToPoolFilters / icpToLemlistFilters: traduce el ICP (texto libre) a
-//     filtros estructurados de cada fuente, para el modo "Recomendado por IA".
+//  2. icpToUnifiedFilters: traduce el ICP (texto libre) a los filtros
+//     unificados del portal, para el modo "Recomendadas por IA".
 
 export type FitCandidate = { key: string; name: string; summary: string };
 export type FitResult = { fit_score: number; fit_reason: string };
@@ -129,161 +129,81 @@ export async function scoreCompanies(
   return out;
 }
 
-// ── ICP → filtros ─────────────────────────────────────────────────────────
+// ── ICP → filtros unificados (modo "Recomendadas por IA") ───────────────
 
-const FILTERS_SYSTEM = `Eres analista de prospección B2B. Traduces el ICP de un cliente a filtros de búsqueda de empresas.
-Reglas:
-- Usa SOLO las propiedades/filtros y valores que se te entregan (copia los valores exactos).
-- Prefiere pocos filtros amplios y certeros (industria, geografía, tamaño) para no quedarte sin resultados.
-- No uses filtros para cosas que el ICP no menciona.`;
-
-const POOL_FILTER_TOOL: Anthropic.Tool = {
+const ICP_FILTERS_TOOL: Anthropic.Tool = {
   name: "set_filters",
-  description: "Define los filtros de búsqueda",
+  description: "Define los filtros de búsqueda de empresas",
   input_schema: {
     type: "object",
     properties: {
-      filters: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            property: { type: "string" },
-            op: { type: "string", enum: ["in", "range"] },
-            values: { type: "array", items: { type: "string" } },
-            min: { type: "number" },
-            max: { type: "number" },
-          },
-          required: ["property", "op"],
-        },
-      },
+      description: { type: "string", description: "Una frase EN INGLÉS que describa la empresa ideal (búsqueda semántica)" },
+      keyword: { type: "string" },
+      industries: { type: "array", items: { type: "string" } },
+      countries: { type: "array", items: { type: "string" } },
+      sizes: { type: "array", items: { type: "string" } },
+      revenues: { type: "array", items: { type: "string" } },
+      markets: { type: "array", items: { type: "string" } },
+      technologies: { type: "array", items: { type: "string" } },
     },
-    required: ["filters"],
   },
 };
 
 const MAX_OPTIONS_IN_PROMPT = 250;
 
-async function runFilterTool(
+export async function icpToUnifiedFilters(
   db: SupabaseClient,
   clientId: string,
-  tool: Anthropic.Tool,
-  functionName: string,
   icpText: string,
-  catalog: string
-): Promise<Record<string, unknown>[]> {
+  catalog: FilterCatalog
+): Promise<UnifiedFilters> {
+  const opt = (k: UnifiedFilterKey) => catalog.options[k] ?? [];
+  const has = (k: UnifiedFilterKey) => catalog.available.includes(k);
+  const list = (k: UnifiedFilterKey) => opt(k).slice(0, MAX_OPTIONS_IN_PROMPT).map((o) => o.value).join(" | ");
+  const lines = [
+    has("description") ? "- description: una frase en inglés que describa la empresa ideal (búsqueda semántica). Úsala siempre." : null,
+    has("industries") ? `- industries (valores exactos): ${list("industries")}` : null,
+    has("countries") ? `- countries (valores exactos): ${list("countries")}` : null,
+    has("sizes") ? `- sizes (tramos de empleados, valores exactos): ${list("sizes")}` : null,
+    has("revenues") ? `- revenues (facturación USD, valores exactos): ${list("revenues")}` : null,
+    has("markets") ? `- markets (valores exactos): ${list("markets")}` : null,
+    has("technologies") ? "- technologies: nombres de tecnologías/software que use la empresa ideal (solo si el ICP las menciona)" : null,
+    "- keyword: una palabra clave (solo si es muy específica del ICP)",
+  ].filter(Boolean).join("\n");
+
   const model = await getClientModel(db, clientId);
   const message = await anthropic().messages.create({
     model,
     max_tokens: 1500,
     temperature: 0,
-    system: [{ type: "text", text: FILTERS_SYSTEM }],
-    tools: [tool],
-    tool_choice: { type: "tool", name: tool.name },
-    messages: [{ role: "user", content: `<icp>\n${icpText}\n</icp>\n\n<filtros_disponibles>\n${catalog}\n</filtros_disponibles>` }],
+    system: [{ type: "text", text: `Eres analista de prospección B2B. Traduces el ICP de un cliente a filtros de búsqueda de empresas.
+Reglas:
+- Usa SOLO valores de las listas entregadas (cópialos exactos).
+- Prefiere pocos filtros amplios y certeros (industria, país, tamaño) para no quedarte sin resultados.
+- No uses filtros para cosas que el ICP no menciona.` }],
+    tools: [ICP_FILTERS_TOOL],
+    tool_choice: { type: "tool", name: ICP_FILTERS_TOOL.name },
+    messages: [{ role: "user", content: `<icp>\n${icpText}\n</icp>\n\n<filtros_disponibles>\n${lines}\n</filtros_disponibles>` }],
   });
-  void logAiUsage({
-    clientId,
-    functionName,
-    model,
-    inputTokens: message.usage.input_tokens,
-    outputTokens: message.usage.output_tokens,
-  });
+  void logAiUsage({ clientId, functionName: "portal_wishlist_icp_filters", model, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
+
   const block = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-  return ((block?.input as { filters?: Record<string, unknown>[] })?.filters ?? []) as Record<string, unknown>[];
-}
+  const raw = (block?.input ?? {}) as Record<string, unknown>;
 
-export async function icpToPoolFilters(
-  db: SupabaseClient,
-  clientId: string,
-  icpText: string,
-  properties: PoolProperty[]
-): Promise<PoolFilter[]> {
-  const usable = properties.filter((p) => isFilterableProperty(p.name) && (p.type === "number" || p.options.length > 0));
-  const catalog = usable
-    .map((p) =>
-      p.type === "number"
-        ? `- ${p.name} (${p.label}) — numérico, usar op "range"`
-        : `- ${p.name} (${p.label}) — op "in", valores: ${p.options.slice(0, MAX_OPTIONS_IN_PROMPT).map((o) => o.value).join(" | ")}`
-    )
-    .join("\n");
-  const raw = await runFilterTool(db, clientId, POOL_FILTER_TOOL, "portal_wishlist_icp_filters_hubspot", icpText, catalog);
-
-  // Validación: solo propiedades y valores que existen
-  const byName = new Map(usable.map((p) => [p.name, p]));
-  const filters: PoolFilter[] = [];
-  for (const f of raw) {
-    const prop = byName.get(String(f.property));
-    if (!prop) continue;
-    if (f.op === "range" && prop.type === "number") {
-      const min = typeof f.min === "number" ? f.min : null;
-      const max = typeof f.max === "number" ? f.max : null;
-      if (min != null || max != null) filters.push({ property: prop.name, op: "range", min, max });
-    } else if (f.op === "in" && Array.isArray(f.values)) {
-      const allowed = new Map(prop.options.map((o) => [o.value.toLowerCase(), o.value]));
-      const values = (f.values as unknown[]).map((v) => allowed.get(String(v).toLowerCase())).filter((v): v is string => !!v);
-      if (values.length) filters.push({ property: prop.name, op: "in", values });
-    }
+  // Validación: solo filtros disponibles y valores existentes
+  const out: UnifiedFilters = {};
+  const pickValues = (k: UnifiedFilterKey) => {
+    if (!has(k) || !Array.isArray(raw[k])) return;
+    const allowed = new Map(opt(k).map((o) => [o.value.toLowerCase(), o.value]));
+    const vals = (raw[k] as unknown[]).map((v) => allowed.get(String(v).toLowerCase())).filter((v): v is string => !!v);
+    if (vals.length) out[k] = Array.from(new Set(vals));
+  };
+  (["industries", "countries", "sizes", "revenues", "markets"] as UnifiedFilterKey[]).forEach(pickValues);
+  if (has("technologies") && Array.isArray(raw.technologies)) {
+    const t = (raw.technologies as unknown[]).map(String).map((x) => x.trim()).filter(Boolean).slice(0, 10);
+    if (t.length) out.technologies = t;
   }
-  return filters;
-}
-
-const LEMLIST_FILTER_TOOL: Anthropic.Tool = {
-  name: "set_filters",
-  description: "Define los filtros de búsqueda en la base de Lemlist",
-  input_schema: {
-    type: "object",
-    properties: {
-      filters: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            filterId: { type: "string" },
-            in: { type: "array", items: { type: "string" } },
-            out: { type: "array", items: { type: "string" } },
-          },
-          required: ["filterId"],
-        },
-      },
-    },
-    required: ["filters"],
-  },
-};
-
-export async function icpToLemlistFilters(
-  db: SupabaseClient,
-  clientId: string,
-  icpText: string,
-  defs: LemlistFilterDef[]
-): Promise<LemlistFilter[]> {
-  const catalog = defs
-    .map((d) =>
-      `- ${d.filterId} (${d.description}) — tipo ${d.type}` +
-      (d.values?.length ? `, valores: ${d.values.slice(0, MAX_OPTIONS_IN_PROMPT).join(" | ")}` : ", texto libre")
-    )
-    .join("\n");
-  const hint =
-    "Notas para Lemlist: usa semanticSearch con UNA frase en inglés que describa la empresa ideal (ej. \"B2B SaaS for logistics teams\"). " +
-    "Para filtros select copia valores exactos de la lista. Para autocomplete (ej. país) usa nombres en inglés (\"Chile\", \"Mexico\", \"Brazil\"). " +
-    "Incluye siempre al menos un filtro.\n";
-  const raw = await runFilterTool(db, clientId, LEMLIST_FILTER_TOOL, "portal_wishlist_icp_filters_lemlist", icpText, hint + catalog);
-
-  const byId = new Map(defs.map((d) => [d.filterId, d]));
-  const filters: LemlistFilter[] = [];
-  for (const f of raw) {
-    const def = byId.get(String(f.filterId));
-    if (!def) continue;
-    const clean = (list: unknown) => {
-      if (!Array.isArray(list)) return [];
-      const vals = list.map(String).filter(Boolean);
-      if (!def.values?.length) return vals;
-      const allowed = new Map(def.values.map((v) => [v.toLowerCase(), v]));
-      return vals.map((v) => allowed.get(v.toLowerCase())).filter((v): v is string => !!v);
-    };
-    const inVals = clean(f.in);
-    const outVals = clean(f.out);
-    if (inVals.length || outVals.length) filters.push({ filterId: def.filterId, in: inVals, out: outVals });
-  }
-  return filters;
+  if (has("description") && typeof raw.description === "string" && raw.description.trim()) out.description = raw.description.trim().slice(0, 300);
+  if (typeof raw.keyword === "string" && raw.keyword.trim()) out.keyword = raw.keyword.trim().slice(0, 60);
+  return out;
 }
