@@ -143,8 +143,9 @@ function useCompanySearch(mode: "manual" | "ai") {
   const [appliedFilters, setAppliedFilters] = useState<UnifiedFilters | null>(null);
   const [lowFitHidden, setLowFitHidden] = useState(0);
   const seen = useRef(new Set<string>());
+  const lastResponse = useRef<{ cursor: Cursor | null; hasMore: boolean; filters: UnifiedFilters | null }>({ cursor: null, hasMore: false, filters: null });
 
-  async function run(filters: UnifiedFilters, reset: boolean) {
+  async function run(filters: UnifiedFilters, reset: boolean, cursorOverride?: Cursor | null) {
     setLoading(true);
     setError(null);
     if (reset) {
@@ -156,12 +157,14 @@ function useCompanySearch(mode: "manual" | "ai") {
     const r = await fetch("/api/portal/wishlist/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode, filters, cursor: reset ? null : cursor }),
+      body: JSON.stringify({ mode, filters, cursor: reset ? null : cursorOverride ?? cursor }),
     });
-    const j = await r.json().catch(() => ({}));
+    const j = await r.json().catch(() => null);
     setLoading(false);
-    if (!r.ok) {
-      setError(j.error ?? "No pudimos completar la búsqueda");
+    if (!r.ok || !j) {
+      // Sin JSON = la función no alcanzó a responder (timeout / caída)
+      setError(j?.error ?? "La búsqueda tardó más de lo esperado. Intenta nuevamente en unos segundos.");
+      lastResponse.current = { ...lastResponse.current, hasMore: false };
       return [] as Card[];
     }
     const fresh = (j.cards as Card[]).filter((c) => {
@@ -176,11 +179,30 @@ function useCompanySearch(mode: "manual" | "ai") {
     setNeedsFilters(!!j.needs_filters);
     if (j.applied_filters) setAppliedFilters(j.applied_filters);
     if (typeof j.low_fit_hidden === "number") setLowFitHidden((n) => n + j.low_fit_hidden);
+    lastResponse.current = { cursor: j.cursor, hasMore: !!j.has_more, filters: j.applied_filters ?? null };
     return fresh;
   }
 
   const removeCard = (ref: string) => setCards((c) => c.filter((x) => x.ref !== ref));
-  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, lowFitHidden, run, removeCard };
+  // Modo IA: pide tandas seguidas (una por llamada) hasta juntar `target`
+  // empresas nuevas con buen fit o hasta `maxRounds` tandas
+  async function runUntil(filters: UnifiedFilters, reset: boolean, target = 10, maxRounds = 4) {
+    let got = (await run(filters, reset)).length;
+    let rounds = 1;
+    setRound(1);
+    while (got < target && rounds < maxRounds && lastResponse.current.hasMore) {
+      rounds++;
+      setRound(rounds);
+      const { cursor: c, filters: f } = lastResponse.current;
+      const fresh = await run(f ?? filters, false, c);
+      if (!fresh.length && !lastResponse.current.cursor) break;
+      got += fresh.length;
+    }
+    setRound(0);
+  }
+  const [round, setRound] = useState(0);
+
+  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, lowFitHidden, round, run, runUntil, removeCard };
 }
 
 // ── Recomendadas por IA ──────────────────────────────────────────────────
@@ -192,7 +214,7 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
 
   const start = () => {
     setStarted(true);
-    s.run({}, true);
+    s.runUntil({}, true);
   };
 
   return (
@@ -220,15 +242,15 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
       )}
       {s.error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{s.error}</div>}
       <CardGrid cards={sortCards(s.cards, sort)} mode="ai" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
-      {s.loading && <Analyzing />}
-      {started && !s.loading && s.cards.length === 0 && !s.error && (
+      {(s.loading || s.round > 0) && <Analyzing round={s.round} />}
+      {started && !s.loading && s.round === 0 && s.cards.length === 0 && !s.error && (
         <div className="text-sm text-gray-500 mt-4">
           No encontramos nuevas empresas con buen fit{s.hasMore ? " en esta tanda. Prueba “Ver más recomendaciones”." : "."}
         </div>
       )}
-      {started && !s.loading && s.hasMore && (
+      {started && !s.loading && s.round === 0 && s.hasMore && (
         <div className="mt-6 text-center">
-          <button onClick={() => s.run(s.appliedFilters ?? {}, false)} className="px-4 py-2 rounded-xl text-sm border border-gray-200 bg-white">
+          <button onClick={() => s.runUntil(s.appliedFilters ?? {}, false)} className="px-4 py-2 rounded-xl text-sm border border-gray-200 bg-white">
             Ver más recomendaciones
           </button>
         </div>
@@ -238,10 +260,13 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
   );
 }
 
-function Analyzing() {
+function Analyzing({ round }: { round: number }) {
   return (
     <div className="flex items-center gap-2 text-sm text-gray-500 mt-6">
-      <IconLoader2 className="animate-spin" size={18} /> Analizando empresas contra tu ICP… (puede tomar unos segundos)
+      <IconLoader2 className="animate-spin" size={18} />
+      {round > 1
+        ? `Buscando más empresas con buen fit… (tanda ${round})`
+        : "Analizando empresas contra tu ICP… (puede tomar unos segundos)"}
     </div>
   );
 }

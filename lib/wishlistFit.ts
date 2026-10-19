@@ -20,7 +20,9 @@ export function icpHash(icpText: string): string {
   return crypto.createHash("sha256").update(icpText.trim()).digest("hex").slice(0, 16);
 }
 
-const SCORE_BATCH = 15;
+// Lotes chicos en paralelo: cada uno responde más rápido (el ICP va cacheado),
+// así una tanda de la recomendación IA cabe holgada en el límite de 60 s
+const SCORE_BATCH = 8;
 
 const SCORE_SYSTEM = `Eres analista senior de prospección B2B en BullsEye, una agencia de prospección en Latinoamérica.
 Recibes el ICP (perfil de cliente ideal) de un cliente de BullsEye y una lista de empresas candidatas.
