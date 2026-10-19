@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
+import { markRecommendation } from "@/lib/wishlist";
 
 export const dynamic = "force-dynamic";
 
@@ -8,13 +9,16 @@ export const dynamic = "force-dynamic";
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const { user, response } = await requirePortalUser();
   if (!user) return response;
-  const { data, error } = await supabaseAdmin()
+  const db = supabaseAdmin();
+  const { data, error } = await db
     .from("client_omitted_companies")
     .delete()
     .eq("id", params.id)
     .eq("client_id", user.clientId)
-    .select("id");
+    .select("id, source, source_ref");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data?.length) return NextResponse.json({ error: "No encontrada" }, { status: 404 });
+  // Si era una recomendación IA, vuelve a quedar pendiente en "Recomendadas por IA"
+  await markRecommendation(db, user.clientId, data[0].source, data[0].source_ref, "pending");
   return NextResponse.json({ ok: true });
 }

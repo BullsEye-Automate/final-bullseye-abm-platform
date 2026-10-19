@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
 import { listPoolProperties, normalizeDomain } from "@/lib/hubspotPool";
-import { poolCompanyToCard, type CompanyCard } from "@/lib/wishlist";
+import { markRecommendation, poolCompanyToCard, type CompanyCard } from "@/lib/wishlist";
 import { decodeRef } from "@/lib/unifiedSearch";
 
 export const dynamic = "force-dynamic";
@@ -75,5 +75,6 @@ export async function POST(req: NextRequest) {
   });
   // Ya estaba omitida: se considera éxito
   if (error && error.code !== "23505") return NextResponse.json({ error: error.message }, { status: 500 });
+  await markRecommendation(db, user.clientId, id.source, id.key, "omitted");
   return NextResponse.json({ ok: true });
 }

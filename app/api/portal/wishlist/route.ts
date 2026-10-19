@@ -6,6 +6,7 @@ import { icpHash } from "@/lib/wishlistFit";
 import {
   cardLemlistFields,
   getClientIcpText,
+  markRecommendation,
   poolCompanyLemlistFields,
   poolCompanyToCard,
   type CompanyCard,
@@ -146,6 +147,8 @@ export async function POST(req: NextRequest) {
     if (error.code === "23505") return NextResponse.json({ error: "Esta empresa ya está en tu wishlist" }, { status: 409 });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  await markRecommendation(db, user.clientId, source, sourceRef, "added");
 
   // Envío a Lemlist: si falla, la empresa igual queda en la wishlist y
   // prospección ve el error (y puede reintentar) en /solicitudes-clientes
