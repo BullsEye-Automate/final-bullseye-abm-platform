@@ -306,7 +306,7 @@ function ManualTab({ source, options, onAdded }: { source: Source; options: Opti
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && search(0)}
-          placeholder="Nombre o dominio (opcional)"
+          placeholder={source === "lemlist" ? "Palabra clave en nombre o descripción (ej: logística, fintech)" : "Nombre o dominio (opcional)"}
           className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#62E0D8]"
         />
         {filters.map((f) => {
@@ -325,7 +325,7 @@ function ManualTab({ source, options, onAdded }: { source: Source; options: Opti
                   </div>
                 ) : def.kind === "text" ? (
                   <input
-                    placeholder="Valores separados por coma"
+                    placeholder={source === "lemlist" ? "Valores separados por coma (en inglés, ej: Chile, Mexico)" : "Valores separados por coma"}
                     value={f.values.join(", ")}
                     onChange={(e) => update({ values: e.target.value.split(",").map((v) => v.trim()).filter(Boolean) })}
                     className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm"

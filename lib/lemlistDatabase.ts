@@ -8,9 +8,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // Endpoints:
 //  - GET  /database/filters?usage=api&mode=companies   (confirmado)
 //  - POST /database/people  { filters, search, page, size }   (confirmado)
-//  - POST /database/companies  mismo body   (⚠️ inferido por simetría con
-//    /database/people — se valida en producción con el diagnóstico de
-//    /solicitudes-clientes; si falla, la fuente Lemlist muestra el error)
+//  - POST /database/companies  { filters, page, size }   (confirmado: existe;
+//    exige al menos un filtro — con filters: [] responde 400 "Parameter
+//    filters is invalid". El texto libre va como filtro keywordInCompany.)
+//
+// Tipos de filtro de Lemlist: select (con values), autocomplete y text (texto
+// libre en `in`), slider (rango), static (toggle), elasticId (ids). Por ahora
+// el portal usa solo select / autocomplete / text: el formato de slider y
+// static no está confirmado.
 
 const LEMLIST_API = "https://api.lemlist.com/api";
 
@@ -38,6 +43,16 @@ export type LemlistFilterDef = {
 
 export type LemlistFilter = { filterId: string; in?: string[]; out?: string[] };
 
+export const SUPPORTED_FILTER_TYPES = new Set(["select", "autocomplete", "text"]);
+// Filtro de texto libre sobre nombre + descripción de la empresa
+export const KEYWORD_FILTER_ID = "keywordInCompany";
+
+// "Company industry: Filter by…" → "Company industry"
+export function lemlistFilterLabel(def: { filterId: string; description: string }): string {
+  const head = def.description.split(":")[0]?.trim();
+  return head && head.length <= 60 ? head : def.filterId;
+}
+
 type Result<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
 async function call<T>(apiKey: string, path: string, init?: RequestInit): Promise<Result<T>> {
@@ -64,7 +79,7 @@ export async function getLemlistCompanyFilters(apiKey: string): Promise<Result<L
       values: Array.isArray(f.values) ? (f.values as unknown[]).map(String) : undefined,
       range: (f.range as LemlistFilterDef["range"]) ?? undefined,
     }))
-    .filter((f) => f.filterId && (!f.mode || f.mode.includes("companies")));
+    .filter((f) => f.filterId && (!f.mode || f.mode.includes("companies")) && SUPPORTED_FILTER_TYPES.has(f.type));
   return { ok: true, data: defs };
 }
 
@@ -113,13 +128,23 @@ function normalizeCompany(o: Record<string, unknown>): LemlistCompany | null {
 export async function searchLemlistCompanies(
   apiKey: string,
   body: { filters: LemlistFilter[]; search?: string; page: number; size: number }
-): Promise<Result<{ companies: LemlistCompany[]; total: number | null; rawKeys: string[] }>> {
+): Promise<Result<{ companies: LemlistCompany[]; total: number | null; rawKeys: string[]; rawSample: unknown }>> {
+  const filters = body.filters.filter((f) => f.in?.length || f.out?.length);
+  // El texto libre se manda como filtro keywordInCompany (se suma al que ya haya)
+  const search = body.search?.trim();
+  if (search) {
+    const existing = filters.find((f) => f.filterId === KEYWORD_FILTER_ID);
+    if (existing) existing.in = [...(existing.in ?? []), search];
+    else filters.push({ filterId: KEYWORD_FILTER_ID, in: [search] });
+  }
+  if (!filters.length) {
+    return { ok: false, status: 400, error: "Agrega al menos un filtro o una palabra clave para buscar en Lemlist." };
+  }
   const payload: Record<string, unknown> = {
-    filters: body.filters.filter((f) => f.in?.length || f.out?.length),
+    filters,
     page: body.page,
     size: Math.min(Math.max(body.size, 1), 100),
   };
-  if (body.search?.trim()) payload.search = body.search.trim();
 
   const r = await call<Record<string, unknown>>(apiKey, "/database/companies", {
     method: "POST",
@@ -136,6 +161,8 @@ export async function searchLemlistCompanies(
       total: typeof totalRaw === "number" ? totalRaw : null,
       // Nombres de campos que devuelve Lemlist (para ajustar normalizeCompany)
       rawKeys: results[0] ? Object.keys(results[0]) : Object.keys(r.data ?? {}),
+      // Primer resultado tal como llega (solo para el diagnóstico interno)
+      rawSample: results[0] ?? r.data,
     },
   };
 }

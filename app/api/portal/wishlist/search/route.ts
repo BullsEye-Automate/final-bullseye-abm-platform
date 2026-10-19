@@ -93,7 +93,11 @@ export async function POST(req: NextRequest) {
       }
       const pageSize = mode === "ai" ? AI_PAGE : MANUAL_PAGE;
       const r = await searchLemlistCompanies(apiKey, { filters, search: query, page: page + 1, size: pageSize });
-      if (!r.ok) return NextResponse.json({ error: `Lemlist respondió ${r.status}: ${r.error}` }, { status: 502 });
+      if (!r.ok) {
+        // Error propio (sin filtros) → mensaje tal cual; error de Lemlist → con su código
+        const own = r.status === 400 && !r.error.trim().startsWith("{");
+        return NextResponse.json({ error: own ? r.error : `Lemlist respondió ${r.status}: ${r.error}` }, { status: own ? 400 : 502 });
+      }
       cards = r.data.companies
         .map(lemlistCompanyToCard)
         .filter((c) => !isExcluded(exclusions, c.name, c.domain));
