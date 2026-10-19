@@ -141,6 +141,7 @@ function useCompanySearch(mode: "manual" | "ai") {
   const [error, setError] = useState<string | null>(null);
   const [needsFilters, setNeedsFilters] = useState(false);
   const [appliedFilters, setAppliedFilters] = useState<UnifiedFilters | null>(null);
+  const [lowFitHidden, setLowFitHidden] = useState(0);
   const seen = useRef(new Set<string>());
 
   async function run(filters: UnifiedFilters, reset: boolean) {
@@ -150,6 +151,7 @@ function useCompanySearch(mode: "manual" | "ai") {
       seen.current = new Set();
       setCards([]);
       setNeedsFilters(false);
+      setLowFitHidden(0);
     }
     const r = await fetch("/api/portal/wishlist/search", {
       method: "POST",
@@ -173,11 +175,12 @@ function useCompanySearch(mode: "manual" | "ai") {
     setHasMore(!!j.has_more);
     setNeedsFilters(!!j.needs_filters);
     if (j.applied_filters) setAppliedFilters(j.applied_filters);
+    if (typeof j.low_fit_hidden === "number") setLowFitHidden((n) => n + j.low_fit_hidden);
     return fresh;
   }
 
   const removeCard = (ref: string) => setCards((c) => c.filter((x) => x.ref !== ref));
-  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, run, removeCard };
+  return { cards, setCards, hasMore, loading, error, needsFilters, appliedFilters, lowFitHidden, run, removeCard };
 }
 
 // ── Recomendadas por IA ──────────────────────────────────────────────────
@@ -185,6 +188,7 @@ function useCompanySearch(mode: "manual" | "ai") {
 function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) {
   const s = useCompanySearch("ai");
   const [started, setStarted] = useState(false);
+  const [sort, setSort] = useState<SortMode>("fit");
 
   const start = () => {
     setStarted(true);
@@ -207,11 +211,20 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
         </div>
       )}
       {s.appliedFilters && <AppliedFilters filters={s.appliedFilters} catalog={catalog} />}
+      {s.cards.length > 0 && (
+        <ResultsToolbar sort={sort} onSort={setSort}>
+          {s.lowFitHidden > 0 && (
+            <span className="text-xs text-gray-500">Solo te mostramos empresas con fit de 60% o más ({s.lowFitHidden} descartadas por bajo fit).</span>
+          )}
+        </ResultsToolbar>
+      )}
       {s.error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{s.error}</div>}
-      <CardGrid cards={s.cards} mode="ai" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
+      <CardGrid cards={sortCards(s.cards, sort)} mode="ai" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
       {s.loading && <Analyzing />}
       {started && !s.loading && s.cards.length === 0 && !s.error && (
-        <div className="text-sm text-gray-500 mt-4">No encontramos nuevas empresas para recomendarte.</div>
+        <div className="text-sm text-gray-500 mt-4">
+          No encontramos nuevas empresas con buen fit{s.hasMore ? " en esta tanda. Prueba “Ver más recomendaciones”." : "."}
+        </div>
       )}
       {started && !s.loading && s.hasMore && (
         <div className="mt-6 text-center">
@@ -258,32 +271,57 @@ function SearchTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void
   const [searched, setSearched] = useState(false);
   const s = useCompanySearch("manual");
 
-  // Calcula el fit de los resultados recién mostrados
-  async function scoreCards(list: Card[]) {
+  const [sort, setSort] = useState<SortMode>("relevance");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [scoring, setScoring] = useState<Set<string>>(new Set());
+
+  // Calcula el fit solo de las empresas que el cliente pide (de a una o seleccionadas)
+  async function revealFit(refs: string[]) {
+    const list = s.cards.filter((c) => refs.includes(c.ref) && c.fit_score === undefined);
     if (!list.length) return;
-    const r = await fetch("/api/portal/wishlist/score", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cards: list.map(({ ref, name, domain, facts }) => ({ ref, name, domain, facts })) }),
-    });
-    const j = r.ok ? await r.json().catch(() => ({})) : {};
-    const scores = ((j as { scores?: Record<string, { fit_score: number; fit_reason: string }> }).scores ?? {});
-    const refs = new Set(list.map((c) => c.ref));
-    s.setCards((prev) =>
-      prev.map((c) =>
-        scores[c.ref]
-          ? { ...c, fit_score: scores[c.ref].fit_score, fit_reason: scores[c.ref].fit_reason }
-          : refs.has(c.ref) && c.fit_score === undefined
-            ? { ...c, fit_score: null }
-            : c
-      )
-    );
+    setScoring((prev) => new Set([...Array.from(prev), ...list.map((c) => c.ref)]));
+    for (let i = 0; i < list.length; i += 24) {
+      const chunk = list.slice(i, i + 24);
+      const r = await fetch("/api/portal/wishlist/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cards: chunk.map(({ ref, name, domain, facts }) => ({ ref, name, domain, facts })) }),
+      });
+      const j = r.ok ? await r.json().catch(() => ({})) : {};
+      const scores = ((j as { scores?: Record<string, { fit_score: number; fit_reason: string }> }).scores ?? {});
+      const refsDone = new Set(chunk.map((c) => c.ref));
+      s.setCards((prev) =>
+        prev.map((c) =>
+          scores[c.ref]
+            ? { ...c, fit_score: scores[c.ref].fit_score, fit_reason: scores[c.ref].fit_reason }
+            : refsDone.has(c.ref) && c.fit_score === undefined
+              ? { ...c, fit_score: null }
+              : c
+        )
+      );
+      setScoring((prev) => {
+        const n = new Set(prev);
+        chunk.forEach((c) => n.delete(c.ref));
+        return n;
+      });
+    }
+    setSelected(new Set());
   }
+
+  const toggleSelect = (ref: string) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(ref)) n.delete(ref);
+      else n.add(ref);
+      return n;
+    });
+  const pendingRefs = s.cards.filter((c) => c.fit_score === undefined).map((c) => c.ref);
+  const allPendingSelected = pendingRefs.length > 0 && pendingRefs.every((r) => selected.has(r));
 
   async function search(reset: boolean) {
     setSearched(true);
-    const fresh = await s.run(filters, reset);
-    scoreCards(fresh);
+    if (reset) setSelected(new Set());
+    await s.run(filters, reset);
   }
 
   const activeCount = Object.values(filters).filter((v) => (Array.isArray(v) ? v.length : !!v)).length;
@@ -319,8 +357,37 @@ function SearchTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void
             Elige los filtros a la izquierda y presiona <strong>Buscar empresas</strong>.
           </div>
         )}
+        {s.cards.length > 0 && (
+          <ResultsToolbar sort={sort} onSort={setSort}>
+            {pendingRefs.length > 0 && (
+              <>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={allPendingSelected}
+                    onChange={() => setSelected(allPendingSelected ? new Set() : new Set(pendingRefs))}
+                  />
+                  Seleccionar todas
+                </label>
+                <button
+                  onClick={() => revealFit(Array.from(selected))}
+                  disabled={!selected.size}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs text-white disabled:opacity-40"
+                  style={{ background: "#251762" }}
+                >
+                  <IconSparkles size={13} /> Calcular fit{selected.size ? ` (${selected.size})` : ""}
+                </button>
+              </>
+            )}
+          </ResultsToolbar>
+        )}
         {s.error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{s.error}</div>}
-        <CardGrid cards={s.cards} mode="manual" onAdded={(ref) => { s.removeCard(ref); onAdded(); }} />
+        <CardGrid
+          cards={sortCards(s.cards, sort)}
+          mode="manual"
+          onAdded={(ref) => { s.removeCard(ref); setSelected((p) => { const n = new Set(p); n.delete(ref); return n; }); onAdded(); }}
+          fitControls={{ selected, scoring, onToggle: toggleSelect, onReveal: (ref) => revealFit([ref]) }}
+        />
         {s.loading && <IconLoader2 className="animate-spin text-gray-400 mx-auto mt-6" />}
         {searched && !s.loading && s.cards.length === 0 && !s.error && (
           <div className="text-sm text-gray-500 bg-white rounded-2xl border border-gray-100 p-6">
@@ -543,7 +610,39 @@ function ManualRequest({ onAdded }: { onAdded: () => void }) {
   );
 }
 
+// ── Orden de resultados ──────────────────────────────────────────────────
+
+type SortMode = "relevance" | "fit";
+
+// "Mayor fit": de mayor a menor; las que aún no tienen fit van al final
+function sortCards(cards: Card[], sort: SortMode): Card[] {
+  if (sort === "relevance") return cards;
+  return [...cards].sort((a, b) => (b.fit_score ?? -1) - (a.fit_score ?? -1));
+}
+
+function ResultsToolbar({ sort, onSort, children }: { sort: SortMode; onSort: (s: SortMode) => void; children?: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3">{children}</div>
+      <label className="flex items-center gap-2 text-xs text-gray-600">
+        Ordenar por
+        <select value={sort} onChange={(e) => onSort(e.target.value as SortMode)} className="border border-gray-200 rounded-lg px-2 py-1 bg-white text-xs">
+          <option value="relevance">Relevancia</option>
+          <option value="fit">Mayor fit</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
 // ── Tarjetas de empresa ──────────────────────────────────────────────────
+
+type FitControls = {
+  selected: Set<string>;
+  scoring: Set<string>;
+  onToggle: (ref: string) => void;
+  onReveal: (ref: string) => void;
+};
 
 function fitStyle(score: number) {
   if (score >= 80) return { bg: "rgba(34,197,94,0.12)", fg: "#15803d", label: "Fit alto" };
@@ -552,16 +651,16 @@ function fitStyle(score: number) {
   return { bg: "rgba(239,68,68,0.10)", fg: "#b91c1c", label: "Bajo fit" };
 }
 
-function CardGrid({ cards, mode, onAdded }: { cards: Card[]; mode: "manual" | "ai"; onAdded: (ref: string) => void }) {
+function CardGrid({ cards, mode, onAdded, fitControls }: { cards: Card[]; mode: "manual" | "ai"; onAdded: (ref: string) => void; fitControls?: FitControls }) {
   if (!cards.length) return null;
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {cards.map((c) => <CompanyCard key={c.ref} card={c} mode={mode} onAdded={onAdded} />)}
+      {cards.map((c) => <CompanyCard key={c.ref} card={c} mode={mode} onAdded={onAdded} fitControls={fitControls} />)}
     </div>
   );
 }
 
-function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai"; onAdded: (ref: string) => void }) {
+function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "manual" | "ai"; onAdded: (ref: string) => void; fitControls?: FitControls }) {
   const [adding, setAdding] = useState(false);
   const [omitting, setOmitting] = useState(false);
   const [done, setDone] = useState<"added" | "omitted" | null>(null);
@@ -611,7 +710,17 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai
   return (
     <div className="bg-white rounded-2xl border border-gray-100 p-5 flex flex-col">
       <div className="flex items-start justify-between gap-3 mb-2">
-        <div className="min-w-0">
+        <div className="min-w-0 flex gap-2">
+          {fitControls && card.fit_score === undefined && !fitControls.scoring.has(card.ref) && (
+            <input
+              type="checkbox"
+              className="mt-1 shrink-0"
+              title="Seleccionar para calcular fit"
+              checked={fitControls.selected.has(card.ref)}
+              onChange={() => fitControls.onToggle(card.ref)}
+            />
+          )}
+          <div className="min-w-0">
           <h3 className="font-semibold text-[15px] truncate" style={{ color: "#251762" }}>{card.name}</h3>
           <div className="flex flex-wrap gap-x-2 text-xs text-gray-500">
             {card.domain && (
@@ -621,15 +730,25 @@ function CompanyCard({ card, mode, onAdded }: { card: Card; mode: "manual" | "ai
             )}
             {card.linkedin_url && <a href={card.linkedin_url} target="_blank" rel="noreferrer" className="hover:text-[#251762]">LinkedIn</a>}
           </div>
+          </div>
         </div>
         {fit ? (
           <div className="text-right shrink-0 rounded-xl px-2.5 py-1" style={{ background: fit.bg, color: fit.fg }}>
             <div className="text-lg font-bold leading-tight">{card.fit_score}%</div>
             <div className="text-[10px] font-medium">{fit.label}</div>
           </div>
+        ) : card.fit_score === undefined && fitControls && !fitControls.scoring.has(card.ref) ? (
+          <button
+            onClick={() => fitControls.onReveal(card.ref)}
+            className="shrink-0 flex items-center gap-1 text-[11px] font-medium rounded-lg px-2 py-1 border border-[#62E0D8] text-[#0f766e] hover:bg-[rgba(98,224,216,0.12)]"
+          >
+            <IconSparkles size={12} /> Ver fit
+          </button>
         ) : card.fit_score === undefined ? (
           <div className="text-[11px] text-gray-400 flex items-center gap-1 shrink-0"><IconLoader2 size={12} className="animate-spin" /> fit…</div>
-        ) : null}
+        ) : (
+          <div className="text-[10px] text-gray-400 shrink-0 max-w-[90px] text-right">Sin datos para evaluar</div>
+        )}
       </div>
 
       {card.fit_reason && <p className="text-[13px] text-gray-700 leading-relaxed mb-3">{card.fit_reason}</p>}
