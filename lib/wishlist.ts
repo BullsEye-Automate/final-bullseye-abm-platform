@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listClientIndustries, loadIcpContent } from "./icpStore";
-import { normalizeDomain, type PoolCompany, type PoolProperty } from "./hubspotPool";
+import { normalizeDomain, pickAllowed, type PoolCompany, type PoolProperty } from "./hubspotPool";
 import type { LemlistCompany } from "./lemlistDatabase";
 
 // Helpers compartidos de la wishlist del portal (búsqueda, IA y alta).
@@ -86,7 +86,8 @@ export function poolCompanyToCard(c: PoolCompany, props: PoolProperty[]): Compan
   const optionLabel = (prop: string, value: string) =>
     labels.get(prop)?.options.find((o) => o.value === value)?.label ?? value;
 
-  const keys = Object.keys(c.properties).filter((k) => k !== "name" && k !== "domain" && labels.has(k));
+  const allowed = pickAllowed(c.properties);
+  const keys = Object.keys(allowed).filter((k) => labels.has(k));
   keys.sort((a, b) => {
     const ia = PRIORITY_PROPS.indexOf(a);
     const ib = PRIORITY_PROPS.indexOf(b);
@@ -94,7 +95,7 @@ export function poolCompanyToCard(c: PoolCompany, props: PoolProperty[]): Compan
   });
 
   const facts = keys.map((k) => {
-    const raw = c.properties[k];
+    const raw = allowed[k];
     const value = Array.isArray(raw)
       ? factValue(raw.map((v) => optionLabel(k, String(v))))
       : typeof raw === "string"
@@ -103,7 +104,7 @@ export function poolCompanyToCard(c: PoolCompany, props: PoolProperty[]): Compan
     return { label: labels.get(k)!.label, value: value.length > 400 ? `${value.slice(0, 400)}…` : value };
   });
 
-  const linkedin = c.properties.linkedin_company_page;
+  const linkedin = allowed.linkedin_company_page;
   return {
     source: "hubspot",
     key: c.hs_id,

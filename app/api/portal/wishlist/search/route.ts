@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { requirePortalUser } from "@/lib/portalAuth";
-import { listPoolProperties, searchPool, type PoolFilter } from "@/lib/hubspotPool";
+import { isFilterableProperty, listPoolProperties, searchPool, type PoolFilter } from "@/lib/hubspotPool";
 import {
   getClientOwnLemlistKey,
   getLemlistCompanyFilters,
@@ -132,7 +132,9 @@ function sanitizePoolFilters(raw: unknown): PoolFilter[] {
   const out: PoolFilter[] = [];
   for (const f of raw.slice(0, 20) as Record<string, unknown>[]) {
     const property = typeof f?.property === "string" ? f.property.slice(0, 100) : "";
-    if (!property) continue;
+    // Solo propiedades de la lista permitida: filtrar por una propiedad
+    // interna (ej. "Wish List - <otro cliente>") permitiría inferir sus datos
+    if (!property || !isFilterableProperty(property)) continue;
     if (f.op === "in" && Array.isArray(f.values)) {
       const values = f.values.map(String).filter(Boolean).slice(0, 50);
       if (values.length) out.push({ property, op: "in", values });
