@@ -113,19 +113,40 @@ function pickStr(o: Record<string, unknown>, ...keys: string[]): string | null {
   return null;
 }
 
+// Hosts técnicos (CDN, hosting) que a veces vienen como "dominio" y no son
+// el sitio de la empresa: se descartan para no crear empresas con dominio basura
+const JUNK_DOMAIN_SUFFIXES = [
+  "cloudfront.net", "amazonaws.com", "herokuapp.com", "azurewebsites.net", "netlify.app",
+  "vercel.app", "github.io", "wixsite.com", "squarespace.com", "godaddysites.com",
+  "linkedin.com", "facebook.com", "instagram.com", "google.com", "sites.google.com",
+];
+
 export function cleanDomain(raw: string | null): string | null {
   if (!raw) return null;
-  return raw.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0] || null;
+  const d = raw.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").split(/[/?#]/)[0] || null;
+  if (!d || !d.includes(".")) return null;
+  return JUNK_DOMAIN_SUFFIXES.some((j) => d === j || d.endsWith(`.${j}`)) ? null : d;
+}
+
+// Lista de tecnologías: acepta strings u objetos ({ name }) y quita repetidos
+function techList(o: Record<string, unknown>): string[] {
+  const raw = [o.technologies, o.techno_used_array].find((v) => Array.isArray(v) && v.length) as unknown[] | undefined;
+  const names = (raw ?? [])
+    .map((t) => (typeof t === "string" ? t : (t as { name?: unknown })?.name))
+    .filter((t): t is string => typeof t === "string" && !!t.trim())
+    .map((t) => t.trim());
+  return Array.from(new Set(names));
 }
 
 function normalizeCompany(o: Record<string, unknown>): LemlistCompany | null {
   const name = pickStr(o, "company_name", "name", "companyName");
   if (!name) return null;
-  const domain = cleanDomain(pickStr(o, "company_domain", "domain", "company_website_url", "website"));
+  const domain =
+    cleanDomain(pickStr(o, "company_domain", "domain")) ?? cleanDomain(pickStr(o, "company_website_url", "website"));
   const industry = [pickStr(o, "company_industry", "industry"), pickStr(o, "company_subindustry")].filter(Boolean).join(" › ");
   const employees = pickStr(o, "company_employee_count");
   const sizeBucket = pickStr(o, "company_size", "size");
-  const techs = Array.isArray(o.techno_used_array) ? (o.techno_used_array as unknown[]).map(String).filter(Boolean) : [];
+  const techs = techList(o);
   return {
     id: pickStr(o, "company_id", "_id", "id") ?? domain ?? name,
     name,
@@ -134,9 +155,10 @@ function normalizeCompany(o: Record<string, unknown>): LemlistCompany | null {
     industry: industry || null,
     size: [sizeBucket, employees ? `${employees} empleados` : null].filter(Boolean).join(" · ") || null,
     revenue: pickStr(o, "revenue_bucket"),
+    // Sede (ciudad + país) primero: company_location a veces no calza con la sede
     location:
-      pickStr(o, "company_location") ??
-      ([pickStr(o, "company_headquarters_city"), pickStr(o, "company_headquarters_country")].filter(Boolean).join(", ") || null),
+      [pickStr(o, "company_headquarters_city"), pickStr(o, "company_headquarters_country")].filter(Boolean).join(", ") ||
+      pickStr(o, "company_location"),
     technologies: techs,
     company_type: pickStr(o, "company_type"),
     market: pickStr(o, "business_business_customer"),
