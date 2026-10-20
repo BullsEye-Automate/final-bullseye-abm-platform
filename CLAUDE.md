@@ -182,6 +182,7 @@ _(Sección para registrar aprendizajes negativos — no recrear estas rutas)_
 - API base: `https://api.withallo.com`. Auth: header `Authorization: $ALLO_API_KEY` **sin** prefijo `Bearer` (Allo devuelve 401 si se manda con `Bearer `). Cliente server-side en `lib/allo.ts`.
 - Tabla `client_allo_numbers`: mapea `client_id` → uno o más `allo_number` (E.164) con su `allo_number_name`. Un mismo número solo puede estar asignado a un cliente a la vez (índice único en `allo_number`) para que la reportería no se mezcle.
 - En **Configuración → Cliente** hay una sección "Allo" con un desplegable buscable (fetch en vivo a `/api/allo/numbers`) para asignar/quitar números al cliente seleccionado (`/api/clients/[id]/allo-numbers`).
+- **Señales comerciales (`/sdr/senales`) — EN PAUSA:** el cron `/api/cron/analyze-allo-calls` (cada 4 h) analiza con Claude cada llamada conectada de Allo y guarda en `allo_call_signals`. Está apagado para no consumir IA mientras no se use: no hace nada salvo que `ALLO_SIGNALS_ENABLED=true` en Vercel. Al reactivarlo, conviene activar prompt caching del `client_ai_context` (se manda completo en cada llamada).
 - Pendiente (próximo paso): usar estos números asignados para filtrar la reportería de Allo (actividades, tasa de conexión sin voicemail, reuniones agendadas, agrupación por tags) en el dashboard de SDR.
 
 ### Módulo Células SDR (`/analisis/celulas-sdr`)

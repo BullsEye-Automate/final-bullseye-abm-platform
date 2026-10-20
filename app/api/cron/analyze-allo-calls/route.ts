@@ -34,6 +34,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Módulo en pausa mientras no se use (consume IA en cada llamada conectada).
+  // Para reactivarlo: setear ALLO_SIGNALS_ENABLED=true en Vercel.
+  if (process.env.ALLO_SIGNALS_ENABLED !== "true") {
+    return NextResponse.json({ ok: true, paused: true });
+  }
+
   const db = supabaseAdmin();
   const now = new Date();
   const dateFrom = toDateParam(new Date(now.getTime() - LOOKBACK_DAYS * 86400000));
