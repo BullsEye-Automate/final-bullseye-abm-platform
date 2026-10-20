@@ -164,7 +164,10 @@ const MEDAL = ["🥇", "🥈", "🥉"];
 export function ViewRank() {
   const { M, f, P, Pp, ptype, S, setS, openSdr } = useCells();
   const rows = useMemo(() => {
-    const r = sdrRows(M, f, P, Pp);
+    // Solo SDR con "Status Responsable = Activo" en la pestaña Maestra
+    // (confirmado con BullsEye). El podio, los destacados y la tabla usan
+    // esta misma lista.
+    const r = sdrRows(M, f, P, Pp).filter((x) => x.s.active === true);
     [...r].sort((x, y) => (y.a.compl ?? -1) - (x.a.compl ?? -1)).forEach((x, i) => (x.rank = i + 1));
     return r;
   }, [M, f, P, Pp]);
@@ -228,7 +231,7 @@ export function ViewRank() {
           <GoalSeg />
         </div>
       ) : null}
-      <Sec t="Ranking individual" p={`Ordenado por ${(RCOLS.find((c) => c[0] === k) ?? ["", ""])[1].toLowerCase()}. Haz clic en un encabezado para cambiar el criterio`} />
+      <Sec t="Ranking individual" p={`Ordenado por ${(RCOLS.find((c) => c[0] === k) ?? ["", ""])[1].toLowerCase()}. Haz clic en un encabezado para cambiar el criterio. Solo SDR activos en la Maestra`} />
       <div className="cs-card">
         <div className="cs-tw">
           <table>
