@@ -129,19 +129,36 @@ function initialsOf(name: string) {
   return ((p[0]?.[0] ?? "") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
 }
 
+// Personas que no forman parte de la reportería de Células SDR (confirmado
+// con BullsEye): no aparecen en ninguna vista y sus metas, reuniones,
+// llamadas y actividades no suman a ningún total. Se compara contra la clave
+// normalizada (sin tildes, minúsculas), por nombre de pila para cubrir las
+// variantes de Allo / HubSpot / planilla.
+const EXCLUDED_PEOPLE = ["adolfo", "jose pablo"];
+export function isExcludedSdr(key: string): boolean {
+  return EXCLUDED_PEOPLE.some((x) => key === x || key.startsWith(`${x} `));
+}
+
 export function buildModel(
-  base: BaseResponse,
+  rawBase: BaseResponse,
   allo: Record<string, AlloMonthResponse>,
   hubspot: Record<string, HubspotMonthResponse>,
   cfg: CellsConfig
 ): Model {
+  const keep = (k: string) => !isExcludedSdr(k);
+  const base: BaseResponse = {
+    ...rawBase,
+    sdrs: rawBase.sdrs.filter((s) => keep(s.key)),
+    goals: rawBase.goals.filter((g) => keep(g.sdr)),
+    meetings: rawBase.meetings.filter((m) => keep(m.sdr)),
+  };
   const today = base.today;
   const months = base.months;
   const loadedAllo = months.filter((m) => allo[m]);
   const loadedHs = months.filter((m) => hubspot[m]);
-  const calls = loadedAllo.flatMap((m) => allo[m].calls);
-  const evals = loadedAllo.flatMap((m) => allo[m].evals);
-  const channels = loadedHs.flatMap((m) => hubspot[m].channels);
+  const calls = loadedAllo.flatMap((m) => allo[m].calls).filter((c) => keep(c.s));
+  const evals = loadedAllo.flatMap((m) => allo[m].evals).filter((e) => keep(e.s));
+  const channels = loadedHs.flatMap((m) => hubspot[m].channels).filter((h) => keep(h.s));
 
   // SDR: roster base + quienes solo aparecen en Allo (llamadas). Los
   // usuarios de HubSpot que no son SDR del roster no se agregan: solo suman
@@ -150,7 +167,7 @@ export function buildModel(
   let extra = 0;
   for (const m of loadedAllo) {
     for (const [key, name] of Object.entries(allo[m].sdrNames)) {
-      if (sdrMap.has(key)) continue;
+      if (sdrMap.has(key) || !keep(key)) continue;
       sdrMap.set(key, {
         key, name, short: name.split(" ")[0], initials: initialsOf(name), group: "none", leaderKey: null,
         active: null, color: EXTRA_PALETTE[extra++ % EXTRA_PALETTE.length],
