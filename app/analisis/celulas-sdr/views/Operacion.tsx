@@ -35,7 +35,7 @@ export function ViewAct() {
   }, [M, f, P, Pp]);
   const { a, b, td, rows } = d;
   const cfg = M.cfg;
-  const nS = P.bdays.length ? a.sdrDays / P.bdays.length : 0;
+  const nS = P.bdays.length ? a.callDays / P.bdays.length : 0;
   const cards: KCard[] = [
     { ic: "flag", l: "Meta diaria de llamadas", v: fmt(cfg.callGoal), sub: `Por SDR. Equipo filtrado: ${fmt(cfg.callGoal * nS)} al día` },
     { ic: "phone", l: "Llamadas realizadas", v: fmt(a.calls), of: fmt(a.callGoal), prog: a.callPct, dl: dPct(ptype, a.calls, b?.calls) },
@@ -65,7 +65,7 @@ export function ViewAct() {
           <div className="cs-kpi" key={l}>
             <div className="cs-kpi-h"><span className="cs-kic" style={{ background: `color-mix(in srgb, ${c} 13%, transparent)`, color: c }}><Ic n={i} s={15} /></span><span>{l}</span></div>
             <div className="cs-kv">{fmt(v)}</div>
-            <div className="cs-ksub">{ok(v) && !a.chUnavailable ? `${pct(div(v, a.acts))} del total. ` : ""}{ok(v) ? `${fmt(div(v, a.sdrDays), 1)} por SDR al día` : "No disponible con este filtro"}</div>
+            <div className="cs-ksub">{ok(v) && !a.chUnavailable ? `${pct(div(v, a.acts))} del total. ` : ""}{ok(v) ? `${fmt(div(v, a.callDays), 1)} por SDR al día` : "No disponible con este filtro"}</div>
             <div>{dPct(ptype, v, pv) || <span className="cs-dl n">Sin período anterior comparable</span>}</div>
           </div>
         ))}
@@ -152,9 +152,11 @@ function avgBuckets(M: Model, by: string, endD: string, fl: ReturnType<typeof ma
     : M.weeks.map((w) => ({ l: `Sem ${w.label}`, s: `Sem ${w.short}`, days: w.days.filter((x) => x <= endD), partial: addDays(w.mon, 4) > endD, tot: w.days.length }));
   return raw.filter((b) => b.days.length).map((b) => {
     const a = agg(M, { dates: new Set(b.days), bdays: b.days, fullGoal: false }, fl);
-    const dv = team ? a.nd : a.sdrDays;
-    const nS = a.nd ? a.sdrDays / a.nd : 0;
-    const v = { calls: div(a.calls, dv), emails: div(a.emails, dv), wa: div(a.wa, dv), li: div(a.li, dv), acts: div(a.acts, dv), contacted: div(a.contacted, dv), sched: div(a.sched, dv) };
+    const dv = team ? a.nd : a.callDays;
+    const nS = a.nd ? a.callDays / a.nd : 0;
+    // Promedios de actividad sin los líderes (no tienen meta diaria)
+    const ch = a.chUnavailable;
+    const v = { calls: div(a.callsQ, dv), emails: ch ? null : div(a.emailsQ, dv), wa: ch ? null : div(a.waQ, dv), li: ch ? null : div(a.liQ, dv), acts: div(a.actsQ, dv), contacted: div(a.contacted, team ? a.nd : a.sdrDays), sched: div(a.sched, team ? a.nd : a.sdrDays) };
     const gC = M.cfg.callGoal * (team ? nS : 1), gA = M.cfg.actGoal * (team ? nS : 1);
     return { ...b, a, v, nS, gC, gA, pC: div(v.calls, gC), pA: div(v.acts, gA) };
   });
@@ -168,7 +170,7 @@ export function ViewAvg() {
     const fl = makeFilter(M, f);
     const B = avgBuckets(M, S.avgBy, endD, fl, team);
     const cur = B[B.length - 1];
-    const sdrs = sdrList(M, f).filter((s) => !s.nodata);
+    const sdrs = sdrList(M, f).filter((s) => !s.nodata && s.group !== "leader"); // líderes: sin meta diaria
     const under = cur ? sdrs.filter((s) => {
       const x = agg(M, { dates: new Set(cur.days), bdays: cur.days, fullGoal: false }, sdrFilter(M, f, s.key));
       return ok(x.callsPerDay) && x.callsPerDay < M.cfg.callGoal;
@@ -177,9 +179,9 @@ export function ViewAvg() {
     const met = S.avgMet;
     const SR = sdrs.map((s) => {
       const sf = sdrFilter(M, f, s.key);
-      const vals = B.map((b) => { const x = agg(M, { dates: new Set(b.days), bdays: b.days, fullGoal: false }, sf); return div(met === "calls" ? x.calls : x.acts, x.sdrDays); });
+      const vals = B.map((b) => { const x = agg(M, { dates: new Set(b.days), bdays: b.days, fullGoal: false }, sf); return div(met === "calls" ? x.callsQ : x.actsQ, x.callDays); });
       const all = agg(M, { dates: new Set(allDays), bdays: allDays, fullGoal: false }, sf);
-      return { s, vals, avg: div(met === "calls" ? all.calls : all.acts, all.sdrDays) };
+      return { s, vals, avg: div(met === "calls" ? all.callsQ : all.actsQ, all.callDays) };
     });
     const ta = agg(M, { dates: new Set(allDays), bdays: allDays, fullGoal: false }, fl);
     return { B, cur, prv: B[B.length - 2], under, nAct: sdrs.length, SR, ta };
@@ -202,8 +204,8 @@ export function ViewAvg() {
     { ic: "alert", l: "SDR bajo la meta de llamadas", v: `${under.length}`, of: `${nAct}`, sem: under.length === 0 ? "g" : under.length <= nAct / 3 ? "y" : "r", sub: under.length ? under.map((s) => s.short).join(", ") : "Todo el equipo cumple" },
   ] : [];
   const gM = S.avgMet === "calls" ? cfg.callGoal : cfg.actGoal;
-  const tv = B.map((b) => div(S.avgMet === "calls" ? b.a.calls : b.a.acts, b.a.sdrDays));
-  const tavg = div(S.avgMet === "calls" ? ta.calls : ta.acts, ta.sdrDays);
+  const tv = B.map((b) => div(S.avgMet === "calls" ? b.a.callsQ : b.a.actsQ, b.a.callDays));
+  const tavg = div(S.avgMet === "calls" ? ta.callsQ : ta.actsQ, ta.callDays);
   const cell = (v: number | null) => {
     if (!ok(v)) return "—";
     const c = COLORS[sem(M, div(v, gM))];

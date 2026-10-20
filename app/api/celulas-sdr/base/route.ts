@@ -139,7 +139,9 @@ export async function GET(request: NextRequest) {
       const { data, error } = await db
         .from("meetings")
         .select("id, responsable, sdr_nombre, client_id, pais, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, origen")
-        .or(`and(fecha_reunion.gte.${from},fecha_reunion.lte.${to}),and(fecha_agendamiento.gte.${from},fecha_agendamiento.lte.${to})`)
+        // también las pendientes con reunión posterior a la ventana (siguen en
+        // agenda y cuentan como "Pendientes" del período en curso)
+        .or(`and(fecha_reunion.gte.${from},fecha_reunion.lte.${to}),and(fecha_agendamiento.gte.${from},fecha_agendamiento.lte.${to}),and(realizado.eq.Pendiente,fecha_reunion.gt.${to})`)
         .order("id", { ascending: true })
         .range(offset, offset + PAGE - 1);
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });

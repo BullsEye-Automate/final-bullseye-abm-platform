@@ -80,6 +80,10 @@ export type Agg = {
   emails: number | null; wa: number | null; li: number | null; other: number | null;
   sched: number; held: number; noshow: number; resch: number; pending: number; pastPending: number; opps: number;
   goal: number; sdrDays: number; nd: number;
+  // Actividad de quienes tienen meta diaria de llamadas/actividades (todos
+  // menos los líderes de célula, que no tienen meta diaria — confirmado con
+  // BullsEye). Las llamadas de los líderes sí suman a calls/emails/etc.
+  callDays: number; callsQ: number; emailsQ: number; waQ: number; liQ: number; actsQ: number | null;
   cl: Record<string, { calls: number; contacted: number; sched: number; held: number; noshow: number; resch: number; opps: number; goal: number; pending: number }>;
   qN: number; qSum: number; qcSum: number[]; qcN: number[]; qb: Record<QBand, number>;
   chUnavailable: boolean;
@@ -359,6 +363,8 @@ export function qBand(M: Model, v: number): QBand {
 }
 export const qColor = (b: QBand) => (b === "g" ? COLORS.g : b === "y" ? COLORS.y : COLORS.r);
 
+const isLeaderKey = (M: Model, s: string) => M.SD[s]?.group === "leader";
+
 export function agg(M: Model, P: Period, fl: FL): Agg {
   const cfg = M.cfg;
   const inD = P.dates;
@@ -367,6 +373,7 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
     calls: 0, contacted: 0, emails: 0, wa: 0, li: 0, other: null,
     sched: 0, held: 0, noshow: 0, resch: 0, pending: 0, pastPending: 0, opps: 0,
     goal: 0, sdrDays: 0, nd: P.bdays.length, cl: {},
+    callDays: 0, callsQ: 0, emailsQ: 0, waQ: 0, liQ: 0, actsQ: null,
     qN: 0, qSum: 0, qcSum: new Array(nC).fill(0), qcN: new Array(nC).fill(0), qb: { g: 0, y: 0, r: 0 },
     chUnavailable: fl.clientScoped,
   } as Agg;
@@ -379,6 +386,7 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
     if (!inD.has(a.d) || !fl.sdrOk(a.s) || !fl.cOk(a.c, a.k)) continue;
     r.calls += a.calls;
     r.contacted += a.contacted;
+    if (!isLeaderKey(M, a.s)) r.callsQ += a.calls;
     const c = cl(a.c);
     c.calls += a.calls;
     c.contacted += a.contacted;
@@ -389,21 +397,34 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
       r.emails! += h.email;
       r.wa! += h.wa;
       r.li! += h.li;
+      if (!isLeaderKey(M, h.s)) {
+        r.emailsQ += h.email;
+        r.waQ += h.wa;
+        r.liQ += h.li;
+      }
     }
   } else {
     r.emails = r.wa = r.li = null;
   }
 
   const oppSet = new Set(cfg.oppValues);
+  const sortedDates = [...inD].sort();
+  const pStart = sortedDates[0] ?? M.today, pEnd = sortedDates[sortedDates.length - 1] ?? M.today;
+  const periodIsCurrent = pEnd >= M.today;
   for (const m of M.meetings) {
     if (!fl.sdrOk(m.sdr) || !fl.cOk(m.client, m.country)) continue;
     if (m.sd && inD.has(m.sd)) {
       r.sched++;
       cl(m.client).sched++;
-      if (m.st === "pending") {
-        r.pending++;
-        cl(m.client).pending++;
-      }
+    }
+    // Pendientes = reuniones con Realizado "Pendiente" que siguen en agenda,
+    // sin importar cuándo se agendaron (una agendada en septiembre para el
+    // 20 de octubre es pendiente de octubre). Si el período incluye hoy, se
+    // cuentan todas las que vienen desde el inicio del período (también las
+    // de meses siguientes); en un período pasado, solo las de ese período.
+    if (m.st === "pending" && (m.md ? m.md >= pStart && (periodIsCurrent || m.md <= pEnd) : !!m.sd && inD.has(m.sd))) {
+      r.pending++;
+      cl(m.client).pending++;
     }
     if (m.md && inD.has(m.md)) {
       const c = cl(m.client);
@@ -464,6 +485,7 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
     return l;
   };
   const sdBy = new Map<string, number>();
+  const cdBy = new Map<string, number>();
   for (const d of P.bdays) {
     const m = monthOf(d);
     const wd = P.fullGoal ? nm[m] : businessDaysInMonth(m);
@@ -478,6 +500,12 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
       sdBy.set(m, sd);
     }
     r.sdrDays += sd;
+    let cd = cdBy.get(m);
+    if (cd === undefined) {
+      cd = activeIn(m).filter((s) => !isLeaderKey(M, s)).reduce((acc, s) => acc + fracFor(M, fl, s, m), 0);
+      cdBy.set(m, cd);
+    }
+    r.callDays += cd;
   }
   return derive(M, r);
 }
@@ -485,8 +513,9 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
 function derive(M: Model, r: Agg): Agg {
   const cfg = M.cfg;
   r.acts = r.chUnavailable ? null : r.calls + (r.emails ?? 0) + (r.wa ?? 0) + (r.li ?? 0);
-  r.callGoal = r.sdrDays * cfg.callGoal;
-  r.actGoal = r.sdrDays * cfg.actGoal;
+  r.actsQ = r.chUnavailable ? null : r.callsQ + r.emailsQ + r.waQ + r.liQ;
+  r.callGoal = r.callDays * cfg.callGoal;
+  r.actGoal = r.callDays * cfg.actGoal;
   r.compl = div(r.held, r.goal);
   r.due = r.held + r.noshow + r.resch;
   r.attend = div(r.held, r.held + r.noshow);
@@ -495,8 +524,8 @@ function derive(M: Model, r: Agg): Agg {
   r.conn = div(r.contacted, r.calls);
   r.c2m = div(r.sched, r.contacted);
   r.m2o = div(r.opps, r.held);
-  r.callPct = div(r.calls, r.callGoal);
-  r.actPct = div(r.acts, r.actGoal);
+  r.callPct = div(r.callsQ, r.callGoal);
+  r.actPct = div(r.actsQ, r.actGoal);
   r.schedGoal = r.goal / cfg.attendTarget;
   r.oppGoal = r.goal * cfg.oppTarget;
   r.contGoal = r.callGoal * cfg.connectTarget;
@@ -509,8 +538,8 @@ function derive(M: Model, r: Agg): Agg {
     }
   }
   r.wcompl = ws ? wv / ws : null;
-  r.callsPerDay = div(r.calls, r.sdrDays);
-  r.actsPerDay = div(r.acts, r.sdrDays);
+  r.callsPerDay = div(r.callsQ, r.callDays);
+  r.actsPerDay = div(r.actsQ, r.callDays);
   r.mtgPerDay = div(r.sched, r.sdrDays);
   r.heldPerDay = div(r.held, r.sdrDays);
   r.cp100 = div(r.contacted * 100, r.calls);
@@ -578,7 +607,7 @@ export function trendDays(M: Model, P: Period): string[] {
 }
 export function callStreak(M: Model, s: string, end: string): number {
   const x = M.SD[s];
-  if (!x || x.nodata || !M.alloMonths.has(monthOf(end))) return 0;
+  if (!x || x.nodata || x.group === "leader" || !M.alloMonths.has(monthOf(end))) return 0;
   // Solo cuenta días desde la primera llamada cargada del SDR: un SDR sin
   // ninguna llamada en Allo no tiene "racha", tiene su propia alerta.
   const first = M.days.findIndex((d) => (M.callsBySdrDay.get(`${s}|${d}`) ?? 0) > 0);
@@ -675,7 +704,7 @@ export function buildAlerts(M: Model, f: Filters, P: Period): Alert[] {
     }
     if (ok(a.nsRate) && a.held + a.noshow >= 4 && a.nsRate > cfg.noshowMax) out.push({ lvl: "r", score: 80 + (a.nsRate - cfg.noshowMax) * 200, cat: "No-show", sdr: s.key, text: `**${s.name}** tiene **${pct(a.nsRate)}** de no-show (límite ${pct(cfg.noshowMax)}): ${a.noshow} reuniones perdidas.`, hint: "Revisar confirmación 24 h antes y calidad del agendamiento." });
     if (hasAllo && ok(a.conn) && a.calls > 0 && a.conn < cfg.connectMin) out.push({ lvl: "r", score: 70 + (cfg.connectMin - a.conn) * 300, cat: "Conexión", sdr: s.key, text: `**${s.name}** tiene baja tasa de conexión: **${pct(a.conn, 1)}** (mínimo ${pct(cfg.connectMin)}).`, hint: "Revisar horarios de llamada y calidad de la base." });
-    if (hasAllo && a.calls === 0 && a.sdrDays > 0) out.push({ lvl: "r", score: 74, cat: "Actividad", sdr: s.key, text: `**${s.name}** no registra llamadas en Allo en el período.`, hint: "Si sí está llamando, revisar que su usuario de Allo calce con su nombre en la planilla." });
+    if (hasAllo && a.calls === 0 && a.callDays > 0) out.push({ lvl: "r", score: 74, cat: "Actividad", sdr: s.key, text: `**${s.name}** no registra llamadas en Allo en el período.`, hint: "Si sí está llamando, revisar que su usuario de Allo calce con su nombre en la planilla." });
     else if (hasAllo && ok(a.callPct) && a.callPct < 0.9) out.push({ lvl: "r", score: 72 + (0.9 - a.callPct) * 100, cat: "Actividad", sdr: s.key, text: `**${s.name}** promedia **${fmt(a.callsPerDay)}** llamadas diarias vs meta de ${cfg.callGoal}${st >= 2 ? `, con ${st} días seguidos bajo meta` : ""}.`, hint: `${pct(a.callPct)} de la meta de llamadas del período.` });
     else if (hasAllo && st >= 3) out.push({ lvl: "y", score: 60 + st, cat: "Actividad", sdr: s.key, text: `**${s.name}** lleva **${st} días** seguidos bajo la meta de ${cfg.callGoal} llamadas.`, hint: "Caída reciente de actividad." });
     if (ok(a.m2o) && a.held >= 3 && ok(team.m2o) && a.m2o >= team.m2o * 1.25) out.push({ lvl: "g", score: 40 + a.m2o * 50, cat: "Conversión", sdr: s.key, text: `**${s.name}** tiene alta conversión reunión → oportunidad: **${pct(a.m2o)}** vs ${pct(team.m2o)} del equipo.`, hint: "Buena práctica para replicar en el equipo." });
