@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   ResponsiveContainer, ComposedChart, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell,
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
@@ -425,6 +425,7 @@ export function ViewAlerts() {
   const cfg = M.cfg;
   return (
     <>
+      <MailAlertsCard />
       <div className="cs-counts">
         {([["r", c.r, "🔴 Críticas", COLORS.r], ["y", c.y, "🟡 Seguimiento", COLORS.y], ["g", c.g, "🟢 Positivas", COLORS.g], ["all", al.length, "Todas", COLORS.primary]] as const).map(([k, n, l, col]) => (
           <div key={k} className="cs-cnt cs-lk" style={{ ["--c" as any]: col, outline: fl === k ? `2px solid ${col}` : undefined }} onClick={() => setS({ alertF: k })}>
@@ -446,6 +447,43 @@ export function ViewAlerts() {
       </div>
       <p className="cs-note">Umbrales actuales: verde ≥ {pct(cfg.green)}, amarillo ≥ {pct(cfg.yellow)}, no-show máximo {pct(cfg.noshowMax)}, conexión mínima {pct(cfg.connectMin)}, meta diaria {cfg.callGoal} llamadas. Cámbialos en Configurar.</p>
     </>
+  );
+}
+
+// Correo diario a las líderes: vista previa y envío de prueba (solo a la
+// casilla de prueba — ver lib/celulasSdr/server/alertsMail.ts).
+function MailAlertsCard() {
+  const { M } = useCells();
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const sendTest = async (key: string) => {
+    setBusy(key);
+    setMsg(null);
+    try {
+      const res = await fetch(`/api/celulas-sdr/alerts-preview?leader=${encodeURIComponent(key)}`, { method: "POST" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || "Error");
+      const r = (j.results ?? [])[0];
+      setMsg(r ? (r.status === "sent" ? `Prueba enviada a ${r.to.join(", ")}.` : `No se envió: ${r.error}`) : "No hubo nada que enviar.");
+    } catch (e) {
+      setMsg(`No se pudo enviar: ${(e as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <div className="cs-card" style={{ marginBottom: 16 }}>
+      <CardH t={<><Ic n="mail" s={16} /> Correo diario a las líderes</>} p="Lunes a viernes 8:30 (hora Chile): llamadas de ayer, agenda de hoy, no-show, rescates, registros por actualizar, cumplimiento del mes y calidad de su célula." />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {M.leaders.map((l) => (
+          <span key={l.key} style={{ display: "inline-flex", gap: 6 }}>
+            <a className="cs-btn" href={`/api/celulas-sdr/alerts-preview?leader=${encodeURIComponent(l.key)}`} target="_blank" rel="noreferrer">Ver correo de {l.short}</a>
+            <button className="cs-btn" disabled={!!busy} onClick={() => sendTest(l.key)}>{busy === l.key ? "Enviando…" : "Enviarme prueba"}</button>
+          </span>
+        ))}
+      </div>
+      {msg ? <p className="cs-note">{msg}</p> : null}
+    </div>
   );
 }
 
