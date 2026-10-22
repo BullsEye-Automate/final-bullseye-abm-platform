@@ -198,6 +198,8 @@ Centro de mando del equipo SDR (14 vistas: Dirección / Operación / Análisis),
 - **Excluidos de la reportería:** Adolfo Madriz y José Pablo Alvarez (`EXCLUDED_PEOPLE` en `lib/celulasSdr/engine.ts`): no aparecen y no suman metas, reuniones ni actividad.
 - **Días hábiles:** lunes a viernes menos feriados de Chile (`lib/celulasSdr/calendar.ts`, agregar los de cada año nuevo).
 - **Configurar:** global en la tabla `sdr_cells_config` (migración `supabase/20261016_sdr_cells_config.sql`), editable por cualquier usuario con sesión.
+- **Correo diario a las líderes** (`/api/cron/celulas-sdr-alerts`, lunes a viernes 11:30 UTC ≈ 8:30 Chile): cada líder recibe su célula (llamadas de ayer, agenda de hoy, no-show, rescates, registros por actualizar, cumplimiento del mes, calidad). Destinatarios en `lib/celulasSdr/server/alertsMail.ts` (Nicolle → nnazar@, Vanessa → vabarzua@, copia ihincapie@). Envío por Gmail con la cuenta de servicio (`GOOGLE_SERVICE_ACCOUNT_JSON`) y delegación de dominio (alcance `gmail.send`, ver `lib/gmail.ts`). `CELULAS_ALERTS_MODE=live` activa el envío real; sin esa variable todo va solo a ihincapie@ (modo prueba). Remitente: `CELULAS_ALERTS_FROM`. Vista previa y "Enviarme prueba" en Alertas de gestión (`/api/celulas-sdr/alerts-preview`).
+- Datos de servidor reutilizables en `lib/celulasSdr/server/` (base, allo, hubspot, config, digest); las rutas `/api/celulas-sdr/*` son envoltorios finos.
 - Cálculo (agg / derive / forecast / alertas) en el navegador: `lib/celulasSdr/engine.ts`. Allo y HubSpot se cachean por mes en `allo_response_cache`.
 
 ---

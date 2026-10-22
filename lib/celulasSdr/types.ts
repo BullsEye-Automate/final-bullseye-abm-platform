@@ -58,6 +58,7 @@ export type Meeting = {
   st: MeetingStatus;
   opp: string;              // valor normalizado de "Propuesta/Oportunidad" ("" si vacío)
   origin: string;
+  company: string;          // empresa prospecto (sin datos de contacto)
 };
 
 // Llamadas salientes de Allo agregadas por día × SDR × cliente × país.

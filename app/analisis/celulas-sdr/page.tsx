@@ -129,6 +129,12 @@ export default function CelulasSdrPage() {
 
   useEffect(() => { load(baseMonth); }, [baseMonth, load]);
 
+  // Link del correo diario de alertas: ?leader=<clave> abre filtrado por esa célula.
+  useEffect(() => {
+    const leader = new URLSearchParams(window.location.search).get("leader");
+    if (leader) setF((x) => ({ ...x, leader, sdr: "" }));
+  }, []);
+
   const M = useMemo(() => (base ? buildModel(base, allo, hubspot, cfg) : null), [base, allo, hubspot, cfg]);
 
   // Si el período elegido sale de la ventana cargada (mes elegido y los 2
