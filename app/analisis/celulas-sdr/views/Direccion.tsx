@@ -158,7 +158,7 @@ export function Funnel({ stages, convs, labels, mx, extra }: { stages: [string, 
 }
 
 // ─── Ranking de SDR ─────────────────────────────────────────────────────────
-const RCOLS: [string, string, string?][] = [["name", "SDR", "l"], ["leader", "Líder", "l"], ["goal", "Meta"], ["sched", "Agendadas"], ["held", "Realizadas"], ["compl", "Cumplimiento"], ["qScore", "Puntaje llamadas"], ["noshow", "No-show"], ["calls", "Llamadas"], ["contacted", "Conectados"], ["conn", "Conexión"], ["opps", "Oportunidades"], ["m2o", "Reunión → opp"]];
+const RCOLS: [string, string, string?][] = [["name", "SDR", "l"], ["leader", "Líder", "l"], ["goal", "Meta"], ["sched", "Agendadas"], ["held", "Realizadas"], ["pending", "Pendientes"], ["resch", "Reagendar"], ["compl", "Cumplimiento"], ["qScore", "Puntaje llamadas"], ["noshow", "No-show"], ["calls", "Llamadas"], ["contacted", "Conectados"], ["conn", "Conexión"], ["opps", "Oportunidades"], ["m2o", "Reunión → opp"]];
 const MEDAL = ["🥇", "🥈", "🥉"];
 
 export function ViewRank() {
@@ -256,6 +256,8 @@ export function ViewRank() {
                     <td>{fmt(a.goal, 1)}</td>
                     <td>{fmt(a.sched)}</td>
                     <td><b>{fmt(a.held)}</b></td>
+                    <td>{fmt(a.pending)}</td>
+                    <td className={a.resch ? "cs-yt" : ""}>{fmt(a.resch)}</td>
                     <td><Pill v={a.compl} /><Mini v={a.compl} /></td>
                     <td><QChip v={a.qScore} withNum /></td>
                     <td className={ok(a.nsRate) && a.nsRate > M.cfg.noshowMax ? "cs-rt" : ""}>{fmt(a.noshow)} <small className="cs-muted">({pct(a.nsRate)})</small></td>
