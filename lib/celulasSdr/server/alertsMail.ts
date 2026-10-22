@@ -5,10 +5,11 @@
 // - "live": a cada líder, con copia a CC_ALWAYS;
 // - cualquier otro valor o vacío (por defecto): modo prueba, TODOS los
 //   correos van solo a TEST_RECIPIENT. Así se revisan antes de activarlos.
-// Remitente: CELULAS_ALERTS_FROM (casilla de bullseye-abm.com) o, si no está,
-// ihincapie@bullseye-abm.com. Requiere delegación de dominio de Gmail (ver
-// lib/gmail.ts).
-import { sendGmail } from "@/lib/gmail";
+// Envío por Resend (RESEND_API_KEY, ver lib/mailer.ts). Remitente:
+// CELULAS_ALERTS_FROM (ej. alertas@bullseye-abm.com, con el dominio
+// verificado en Resend) o, si no está, onboarding@resend.dev (solo puede
+// enviar al dueño de la cuenta de Resend: sirve para el modo prueba).
+import { mailProvider, sendMail } from "@/lib/mailer";
 import { normalizeSdrName } from "@/lib/sdrAnalytics";
 import { chileToday, isBusinessDay } from "@/lib/celulasSdr/calendar";
 import { buildLeaderDigest, loadModelForDigest, type LeaderDigest } from "./digest";
@@ -40,7 +41,7 @@ export async function sendCellAlerts(opts: { today?: string; force?: boolean; te
   const mode = live ? "live" : "test";
   if (!opts.force && !isBusinessDay(today)) return { mode, today, results: [], skippedReason: "No es día hábil" };
 
-  const from = process.env.CELULAS_ALERTS_FROM || "ihincapie@bullseye-abm.com";
+  const from = process.env.CELULAS_ALERTS_FROM || (mailProvider() === "resend" ? "onboarding@resend.dev" : "ihincapie@bullseye-abm.com");
   const { digests } = await buildAllDigests(today);
   const results: SendResult[] = [];
   for (const d of digests) {
@@ -54,7 +55,7 @@ export async function sendCellAlerts(opts: { today?: string; force?: boolean; te
       continue;
     }
     try {
-      await sendGmail({ from, fromName: "BullsEye · Células SDR", to, cc, subject, html: d.html });
+      await sendMail({ from, fromName: "BullsEye · Células SDR", to, cc, subject, html: d.html });
       results.push({ leader: d.leader.name, to, cc, subject, status: "sent" });
     } catch (e) {
       results.push({ leader: d.leader.name, to, cc, subject, status: "error", error: (e as Error).message });
