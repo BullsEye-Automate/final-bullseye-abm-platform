@@ -73,6 +73,11 @@ export type Period = {
   dates: Set<string>;   // días calendario incluidos (para sumar eventos)
   bdays: string[];      // días hábiles incluidos (para metas y promedios)
   fullGoal: boolean;    // usar la meta completa del mes (base "Meta del mes")
+  // Último día del período completo (fin de mes / domingo), aunque `dates`
+  // corte en hoy: las reuniones se cuentan por FECHA DE LA REUNIÓN dentro
+  // del período completo, así que las pendientes de lo que queda del mes
+  // también son del mes (confirmado con BullsEye).
+  fullEnd?: string;
 };
 
 export type Agg = {
@@ -83,6 +88,7 @@ export type Agg = {
   // Actividad de quienes tienen meta diaria de llamadas/actividades (todos
   // menos los líderes de célula, que no tienen meta diaria — confirmado con
   // BullsEye). Las llamadas de los líderes sí suman a calls/emails/etc.
+  mtgTotal: number;     // reuniones con fecha de reunión en el período completo (cualquier estado)
   callDays: number; callsQ: number; emailsQ: number; waQ: number; liQ: number; actsQ: number | null;
   cl: Record<string, { calls: number; contacted: number; sched: number; held: number; noshow: number; resch: number; opps: number; goal: number; pending: number }>;
   qN: number; qSum: number; qcSum: number[]; qcN: number[]; qb: Record<QBand, number>;
@@ -302,11 +308,11 @@ export type PType = "mes" | "sem" | "dia";
 export function currentPeriod(M: Model, ptype: PType, pval: string): Period {
   if (ptype === "mes") {
     const end = monthEnd(pval);
-    return periodFromRange(monthStart(pval), end < M.today ? end : M.today, M.cfg.goalBase === "mes");
+    return { ...periodFromRange(monthStart(pval), end < M.today ? end : M.today, M.cfg.goalBase === "mes"), fullEnd: end };
   }
   if (ptype === "sem") {
     const sun = addDays(pval, 6);
-    return periodFromRange(pval, sun < M.today ? sun : M.today);
+    return { ...periodFromRange(pval, sun < M.today ? sun : M.today), fullEnd: sun };
   }
   return periodFromRange(pval, pval);
 }
@@ -373,7 +379,7 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
     calls: 0, contacted: 0, emails: 0, wa: 0, li: 0, other: null,
     sched: 0, held: 0, noshow: 0, resch: 0, pending: 0, pastPending: 0, opps: 0,
     goal: 0, sdrDays: 0, nd: P.bdays.length, cl: {},
-    callDays: 0, callsQ: 0, emailsQ: 0, waQ: 0, liQ: 0, actsQ: null,
+    mtgTotal: 0, callDays: 0, callsQ: 0, emailsQ: 0, waQ: 0, liQ: 0, actsQ: null,
     qN: 0, qSum: 0, qcSum: new Array(nC).fill(0), qcN: new Array(nC).fill(0), qb: { g: 0, y: 0, r: 0 },
     chUnavailable: fl.clientScoped,
   } as Agg;
@@ -410,19 +416,19 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
   const oppSet = new Set(cfg.oppValues);
   const sortedDates = [...inD].sort();
   const pStart = sortedDates[0] ?? M.today, pEnd = sortedDates[sortedDates.length - 1] ?? M.today;
-  const periodIsCurrent = pEnd >= M.today;
+  const horizon = P.fullEnd && P.fullEnd > pEnd ? P.fullEnd : pEnd;
   for (const m of M.meetings) {
     if (!fl.sdrOk(m.sdr) || !fl.cOk(m.client, m.country)) continue;
     if (m.sd && inD.has(m.sd)) {
       r.sched++;
       cl(m.client).sched++;
     }
-    // Pendientes = reuniones con Realizado "Pendiente" que siguen en agenda,
-    // sin importar cuándo se agendaron (una agendada en septiembre para el
-    // 20 de octubre es pendiente de octubre). Si el período incluye hoy, se
-    // cuentan todas las que vienen desde el inicio del período (también las
-    // de meses siguientes); en un período pasado, solo las de ese período.
-    if (m.st === "pending" && (m.md ? m.md >= pStart && (periodIsCurrent || m.md <= pEnd) : !!m.sd && inD.has(m.sd))) {
+    // Reuniones del período = todas las con FECHA DE LA REUNIÓN en el período
+    // completo (cualquier estado), como se cuentan en API Reuniones.
+    // Pendientes = las de ese conjunto con Realizado "Pendiente".
+    const inHorizon = !!m.md && m.md >= pStart && m.md <= horizon;
+    if (inHorizon) r.mtgTotal++;
+    if (m.st === "pending" && (m.md ? inHorizon : !!m.sd && inD.has(m.sd))) {
       r.pending++;
       cl(m.client).pending++;
     }
@@ -576,7 +582,7 @@ export function forecast(M: Model, fl: FL, endDate: string): Forecast {
   const allB = businessDaysBetween(monthStart(m), monthEnd(m));
   const mDays = allB.filter((d) => d <= endDate);
   const total = allB.length, elapsed = mDays.length, remaining = total - elapsed;
-  const a = agg(M, periodFromRange(monthStart(m), endDate, true), fl);
+  const a = agg(M, { ...periodFromRange(monthStart(m), endDate, true), fullEnd: monthEnd(m) }, fl);
   const goalM = monthGoal(M, fl, m);
   const avg = div(a.held, elapsed) ?? 0;
   const proj = a.held + avg * remaining;

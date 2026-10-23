@@ -194,7 +194,7 @@ Centro de mando del equipo SDR (14 vistas: Dirección / Operación / Análisis),
 - **Llamadas, contactados y puntaje:** Allo (`/api/celulas-sdr/allo?month=`), contactado = etapa "Conversación" del embudo de Allo; puntaje = "Score de Desempeño SDR" del summary (`lib/callScoreCard.ts`). País de llamadas = prefijo telefónico del número de Allo; país de reuniones = columna País.
 - **Email / WhatsApp / LinkedIn:** HubSpot, sin cliente (con filtro de cliente o país se muestran solo llamadas). "Otras" y "empresas/contactos trabajados": pendientes de conexión.
 - **Líderes de célula (Nicolle, Vanessa):** sin meta diaria de llamadas/actividades. Sus llamadas suman al total, pero no a la meta ni al cumplimiento de actividad (`callDays` / `callsQ` en `engine.ts`).
-- **Pendientes:** reuniones con Realizado = Pendiente que siguen en agenda, sin importar la fecha de agendamiento (en el período en curso incluye las de meses siguientes).
+- **Fecha de la reunión manda** (confirmado con BullsEye): "Reuniones" del Ranking = todas las con fecha de reunión en el período completo (mes/semana entero, cualquier estado); Pendientes = las de ese conjunto con Realizado = Pendiente (`mtgTotal` / `fullEnd` en `engine.ts`). "Agendadas" (embudo, KPIs) sigue contando por fecha de agendamiento.
 - **Excluidos de la reportería:** Adolfo Madriz y José Pablo Alvarez (`EXCLUDED_PEOPLE` en `lib/celulasSdr/engine.ts`): no aparecen y no suman metas, reuniones ni actividad.
 - **Días hábiles:** lunes a viernes menos feriados de Chile (`lib/celulasSdr/calendar.ts`, agregar los de cada año nuevo).
 - **Configurar:** global en la tabla `sdr_cells_config` (migración `supabase/20261016_sdr_cells_config.sql`), editable por cualquier usuario con sesión.
