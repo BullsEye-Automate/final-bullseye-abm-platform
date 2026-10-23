@@ -155,8 +155,8 @@ export default function WishlistContactsTab({ clientId, clientName }: { clientId
   return (
     <div>
       <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-4 text-sm text-gray-600">
-        Elige empresas de la wishlist de <strong>{clientName}</strong> y la IA busca en su Lemlist los contactos que calzan con su buyer persona
-        (máx. 8 por empresa). Revisa cada uno: al <strong>aprobar</strong> se crea en su Lemlist (lista “Contactos Wishlist BullsEye”) y se buscan
+        Cuando una empresa de la wishlist de <strong>{clientName}</strong> queda en su Lemlist, la IA busca sola (cada 15 min) los contactos que
+        calzan con su buyer persona (máx. 8 por empresa). También puedes elegir empresas y buscar ahora con el botón. Revisa cada uno: al <strong>aprobar</strong> se crea en su Lemlist (lista “Contactos Wishlist BullsEye”) y se buscan
         email y teléfono (créditos de Lemlist). Lo que apruebas o rechazas le enseña a la IA. Con menos de 2 contactos la empresa queda para Sales Navigator.
       </div>
 
