@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       .limit(500),
     db
       .from("wishlist_contacts")
-      .select("id, wishlist_id, full_name, title, linkedin_url, location, seniority, department, fit_score, buying_role, fit_reason, status, reject_reason, reviewed_by_email, lemlist_contact_id, lemlist_error, enrich_status, email, phone, hubspot_contact_id, hubspot_error")
+      .select("id, wishlist_id, lead_id, full_name, title, linkedin_url, location, seniority, department, fit_score, buying_role, fit_reason, status, reject_reason, reviewed_by_email, lemlist_contact_id, lemlist_error, enrich_status, email, phone, hubspot_contact_id, hubspot_error")
       .eq("client_id", clientId)
       .order("fit_score", { ascending: false })
       .limit(5000),

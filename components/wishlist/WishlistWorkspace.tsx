@@ -107,7 +107,8 @@ export default function WishlistWorkspace({ operatorClientId }: { operatorClient
 
 function WorkspaceTabs() {
   const ws = useWorkspace();
-  const [tab, setTab] = useState<Tab>("ai");
+  // El cliente ya no genera recomendaciones IA: BullsEye le propone empresas
+  const [tab, setTab] = useState<Tab>(ws.operator ? "ai" : "proposals");
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
@@ -140,9 +141,8 @@ function WorkspaceTabs() {
         { key: "exclusions", label: "Lista de exclusión", icon: <IconBan size={16} /> },
       ]
     : [
-        { key: "ai", label: "Recomendadas por IA", icon: <IconSparkles size={16} /> },
+        { key: "proposals", label: `Propuestas de BullsEye${count(proposed.length)}`, icon: <IconSend size={16} /> },
         { key: "search", label: "Buscar empresas", icon: <IconSearch size={16} /> },
-        ...(proposed.length ? [{ key: "proposals" as Tab, label: `Propuestas de BullsEye (${proposed.length})`, icon: <IconSend size={16} /> }] : []),
         { key: "wishlist", label: `Mi wishlist${count(own.length)}`, icon: <IconHeart size={16} /> },
         { key: "worked", label: "Empresas trabajadas", icon: <IconBriefcase size={16} /> },
         { key: "omitted", label: "Empresas omitidas", icon: <IconEyeOff size={16} /> },
@@ -155,8 +155,8 @@ function WorkspaceTabs() {
         <>
           <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>Wishlist de empresas</h1>
           <p className="text-sm text-gray-500 mt-1 mb-6 max-w-3xl">
-            Encuentra las empresas que quieres que prospectemos. Cada una muestra qué tan bien calza con tu ICP y por qué.
-            Al agregarla a tu wishlist, el equipo de prospección de BullsEye la recibe de inmediato.
+            El equipo de BullsEye te propone empresas según tu ICP, con su fit y la razón: apruébalas para que las prospectemos o
+            recházalas. Si quieres una empresa puntual, búscala o solicítala y la recibimos de inmediato.
           </p>
         </>
       )}
@@ -332,6 +332,30 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
   const generating = !!progress;
   const removeCard = (ref: string) => setCards((c) => c.filter((x) => x.ref !== ref));
 
+  // Operador: propone al cliente todas las recomendaciones en pantalla (de a una)
+  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+  async function proposeAll() {
+    const list = sortCards(cards, sort);
+    if (!list.length || !confirm(`¿Proponer las ${list.length} empresas al cliente? Las verá en su portal para aprobar o rechazar.`)) return;
+    setBulk({ done: 0, total: list.length });
+    let failed = 0;
+    for (let i = 0; i < list.length; i++) {
+      const c = list[i];
+      const r = await fetch(ws.url("/api/portal/wishlist"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: c.ref, mode: "ai", card: { name: c.name, domain: c.domain, linkedin_url: c.linkedin_url, facts: c.facts } }),
+      });
+      // 409 = ya estaba propuesta o en su wishlist: igual sale de la lista
+      if (r.ok || r.status === 409) removeCard(c.ref);
+      else failed++;
+      setBulk({ done: i + 1, total: list.length });
+    }
+    setBulk(null);
+    if (failed) setError(`${failed} empresas no se pudieron proponer; quedaron en la lista para reintentar.`);
+    onAdded();
+  }
+
   if (!loaded) return <IconLoader2 className="animate-spin text-gray-400 mx-auto mt-6" />;
 
   return (
@@ -340,13 +364,15 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
             <h2 className="font-semibold flex items-center gap-2" style={{ color: "#251762" }}>
-              <IconSparkles size={18} style={{ color: "#62E0D8" }} /> Recomendaciones según tu ICP
+              <IconSparkles size={18} style={{ color: "#62E0D8" }} /> Recomendaciones según {ws.operator ? "el ICP del cliente" : "tu ICP"}
             </h2>
             <p className="text-xs text-gray-500 mt-1 max-w-xl">
               {cards.length
-                ? `Tienes ${cards.length} recomendaciones por revisar. Quedan guardadas hasta que las agregues u omitas.`
-                : "Analizamos tu perfil de cliente ideal y te mostramos solo empresas con fit de 60% o más, con la razón."}{" "}
-              Nunca incluimos empresas de tu lista de exclusión ni las que ya estamos trabajando.
+                ? `${cards.length} recomendaciones por revisar. Quedan guardadas hasta que las ${ws.operator ? "propongas o descartes" : "agregues u omitas"}.`
+                : `La IA analiza ${ws.operator ? "el perfil de cliente ideal del cliente" : "tu perfil de cliente ideal"} y muestra solo empresas con fit de 60% o más, con la razón.`}{" "}
+              {ws.operator
+                ? "Propón al cliente las que sirvan: las verá en su portal para aprobar o rechazar."
+                : "Nunca incluimos empresas de tu lista de exclusión ni las que ya estamos trabajando."}
             </p>
           </div>
           {!generating && !exhausted && (
@@ -412,6 +438,19 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
         </ResultsToolbar>
       )}
       {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl mb-4">{error}</div>}
+      {ws.operator && cards.length > 0 && !generating && (
+        <div className="flex items-center justify-end gap-3 mb-3">
+          {bulk ? (
+            <span className="text-xs text-gray-600 flex items-center gap-1.5">
+              <IconLoader2 size={14} className="animate-spin" /> Proponiendo {bulk.done} de {bulk.total}…
+            </span>
+          ) : (
+            <button onClick={proposeAll} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-white" style={{ background: "#251762" }}>
+              <IconSend size={13} /> Proponer todas al cliente ({cards.length})
+            </button>
+          )}
+        </div>
+      )}
       <CardGrid cards={sortCards(cards, sort)} mode="ai" onAdded={(ref) => { removeCard(ref); onAdded(); }} />
       {!generating && cards.length === 0 && (lowFitHidden > 0 || exhausted) && !error && (
         <div className="text-sm text-gray-500 mt-4">No encontramos nuevas empresas con buen fit en esta búsqueda.</div>
@@ -1010,7 +1049,9 @@ function ProposalsTab({ items, onChange }: { items: WishlistItem[]; onChange: ()
   if (!items.length) {
     return (
       <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">
-        {ws.operator ? "No hay empresas esperando la aprobación del cliente. Propón desde Recomendadas por IA o Buscar empresas." : "No tienes propuestas pendientes."}
+        {ws.operator
+          ? "No hay empresas esperando la aprobación del cliente. Propón desde Recomendadas por IA o Buscar empresas."
+          : "No tienes propuestas pendientes. Cuando el equipo de BullsEye encuentre empresas para ti, aparecerán aquí para que las apruebes o rechaces."}
       </div>
     );
   }

@@ -17,7 +17,7 @@ import type { UnifiedFilters } from "@/lib/unifiedFilterDefs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Recomendaciones IA persistentes del portal.
+// Recomendaciones IA persistentes (solo equipo BullsEye, en Empresas).
 // Cada empresa evaluada con buen fit queda guardada en client_recommendations
 // como "pending" hasta que el cliente la agregue u omita: no desaparece al
 // recargar y no se vuelve a pagar su evaluación. El avance de la búsqueda
@@ -54,6 +54,9 @@ const toCard = (r: Row) => ({
 export async function GET(req: NextRequest) {
   const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
+  // Solo el equipo BullsEye genera y ve recomendaciones IA; al cliente se le
+  // PROPONEN empresas (Propuestas de BullsEye en su portal)
+  if (!user.isOperator) return NextResponse.json({ error: "Las recomendaciones las prepara el equipo de BullsEye" }, { status: 403 });
   const db = supabaseAdmin();
 
   const icpText = await getClientIcpText(db, user.clientId);
@@ -91,6 +94,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
+  // Solo el equipo BullsEye genera y ve recomendaciones IA; al cliente se le
+  // PROPONEN empresas (Propuestas de BullsEye en su portal)
+  if (!user.isOperator) return NextResponse.json({ error: "Las recomendaciones las prepara el equipo de BullsEye" }, { status: 403 });
   const body = await req.json().catch(() => null);
   const db = supabaseAdmin();
 

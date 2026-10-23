@@ -639,3 +639,35 @@ export async function searchHSContactsByPhones(
   }
   return result;
 }
+
+// Contactos asociados a una empresa (ids), con tope para empresas muy grandes
+export async function getHSCompanyContactIds(companyId: string, max = 300): Promise<string[]> {
+  const ids: string[] = [];
+  let after: string | undefined;
+  while (ids.length < max) {
+    const qs = new URLSearchParams({ limit: "500", ...(after ? { after } : {}) });
+    const res = await fetch(`${HS}/crm/v4/objects/companies/${companyId}/associations/contacts?${qs}`, { headers: hsHeaders() });
+    if (!res.ok) break;
+    const d = await res.json();
+    for (const r of d.results ?? []) if (r.toObjectId != null) ids.push(String(r.toObjectId));
+    after = d.paging?.next?.after;
+    if (!after) break;
+  }
+  return ids.slice(0, max);
+}
+
+// Lectura en lote de contactos (de a 100, límite de la API)
+export async function batchReadHSContacts(ids: string[], properties: string[]): Promise<{ id: string; properties: Record<string, string | null> }[]> {
+  const out: { id: string; properties: Record<string, string | null> }[] = [];
+  for (let i = 0; i < ids.length; i += 100) {
+    const res = await fetch(`${HS}/crm/v3/objects/contacts/batch/read`, {
+      method: "POST",
+      headers: hsHeaders(),
+      body: JSON.stringify({ properties, inputs: ids.slice(i, i + 100).map((id) => ({ id })) }),
+    });
+    if (!res.ok) continue;
+    const d = await res.json();
+    out.push(...(d.results ?? []));
+  }
+  return out;
+}
