@@ -220,6 +220,11 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
         protectedBatch.set(sheetRowKey, {
           sheet_row_key:         sheetRowKey,
           realizado:             normalizeRealizado(row["Realizado"] ?? ""),
+          // responsable y origen también siguen a la planilla: si se
+          // corrige el SDR de una reunión que ya tiene feedback, antes
+          // quedaba atribuida al SDR anterior en la reportería
+          responsable:           row["Responsable de la reunión"] || null,
+          origen:                row["Origen"]                    || null,
           empresa,
           contacto_nombre:       row["Contacto"]                  || null,
           contacto_cargo:        row["Cargo"]                     || null,
