@@ -275,3 +275,141 @@ export async function removeCompaniesFromList(apiKey: string, listId: string, co
     body: JSON.stringify({ companyIds }),
   });
 }
+
+// ── Personas (contactos de las empresas de la wishlist) ──────────────────
+//  - GET  /database/filters?usage=api&mode=people
+//  - POST /database/people   { filters, page, size }  sin créditos; cupo de búsquedas cada 24 h (`limitation`)
+//  - POST /contacts          upsert por email / LinkedIn → ctc_xxx (se puede ligar a la empresa con companyId)
+//  - GET/POST /contacts/lists, POST /contacts/lists/{id}/entities { contactIds }
+//  - POST /enrich?findEmail&findPhone…  → enr_xxx; resultado en GET /enrich/{id} (gasta créditos)
+
+export async function getLemlistPeopleFilters(apiKey: string): Promise<Result<LemlistFilterDef[]>> {
+  const r = await call<unknown>(apiKey, "/database/filters?usage=api&mode=people");
+  if (!r.ok) return r;
+  const list = Array.isArray(r.data) ? r.data : ((r.data as { filters?: unknown[] })?.filters ?? []);
+  const defs = (list as Record<string, unknown>[])
+    .map((f) => ({
+      filterId: String(f.filterId ?? f.id ?? ""),
+      description: String(f.description ?? f.label ?? f.filterId ?? ""),
+      type: String(f.type ?? "text"),
+      values: Array.isArray(f.values) ? (f.values as unknown[]).map((v) => (typeof v === "object" && v ? String((v as { value?: unknown; label?: unknown }).value ?? (v as { label?: unknown }).label ?? "") : String(v))) : undefined,
+    }))
+    .filter((f) => f.filterId);
+  return { ok: true, data: defs };
+}
+
+export type LemlistPerson = {
+  lead_id: string;
+  full_name: string;
+  title: string | null;
+  linkedin_url: string | null;
+  location: string | null;
+  seniority: string | null;
+  department: string | null;
+  summary: string | null;
+  company_name: string | null;
+  company_domain: string | null;
+  company_linkedin_url: string | null;
+};
+
+function normalizePerson(p: Record<string, unknown>): LemlistPerson | null {
+  const id = pickStr(p, "lead_id", "_id", "id");
+  const name = pickStr(p, "full_name", "fullName", "name");
+  if (!id || !name) return null;
+  // Experiencia actual: la marcada como principal, si no la primera sin fecha de término
+  const exps = (Array.isArray(p.experiences) ? p.experiences : []) as Record<string, unknown>[];
+  const current = exps.find((e) => e.main_in_profile === true) ?? exps.find((e) => !e.date_to) ?? exps[0] ?? {};
+  const dept = p.department;
+  return {
+    lead_id: id,
+    full_name: name,
+    title: pickStr(p, "title") ?? pickStr(current, "title"),
+    linkedin_url: pickStr(p, "lead_linkedin_url", "linkedin_url", "linkedinUrl"),
+    location: pickStr(p, "location", "country"),
+    seniority: pickStr(p, "seniority"),
+    department: Array.isArray(dept) ? dept.map(String).join(", ") || null : pickStr(p, "department"),
+    summary: pickStr(p, "summary")?.slice(0, 400) ?? null,
+    company_name: pickStr(p, "current_exp_company_name") ?? pickStr(current, "company_name"),
+    company_domain: cleanDomain(pickStr(current, "company_domain", "company_website_url")),
+    company_linkedin_url: pickStr(current, "company_linkedin_url"),
+  };
+}
+
+export async function searchLemlistPeople(
+  apiKey: string,
+  body: { filters: LemlistFilter[]; page: number; size: number }
+): Promise<Result<{ people: LemlistPerson[]; total: number | null; limitation: number | null }>> {
+  const filters = body.filters
+    .filter((f) => f.in?.length || f.out?.length)
+    .map((f) => ({ filterId: f.filterId, in: f.in ?? [], out: f.out ?? [] }));
+  if (!filters.length) return { ok: false, status: 400, error: "Falta al menos un filtro" };
+  const r = await call<Record<string, unknown>>(apiKey, "/database/people", {
+    method: "POST",
+    body: JSON.stringify({ filters, page: body.page, size: Math.min(Math.max(body.size, 1), 100) }),
+  });
+  if (!r.ok) return r;
+  const results = (r.data?.results ?? r.data?.people ?? r.data?.data ?? []) as Record<string, unknown>[];
+  const total = r.data?.total;
+  const limitation = r.data?.limitation;
+  return {
+    ok: true,
+    data: {
+      people: results.map(normalizePerson).filter((x): x is LemlistPerson => !!x),
+      total: typeof total === "number" ? total : null,
+      limitation: typeof limitation === "number" ? limitation : null,
+    },
+  };
+}
+
+export const WISHLIST_CONTACT_LIST_NAME = "Contactos Wishlist BullsEye";
+
+export async function ensureContactList(apiKey: string, name = WISHLIST_CONTACT_LIST_NAME): Promise<Result<{ listId: string }>> {
+  const found = await call<{ _id: string; name: string; dynamic?: boolean }[]>(apiKey, `/contacts/lists?search=${encodeURIComponent(name)}`);
+  if (!found.ok) return found;
+  const existing = (Array.isArray(found.data) ? found.data : []).find((l) => l.name === name && !l.dynamic);
+  if (existing) return { ok: true, data: { listId: existing._id } };
+  const created = await call<{ list?: { id?: string } }>(apiKey, "/contacts/lists", { method: "POST", body: JSON.stringify({ name }) });
+  if (!created.ok) return created;
+  const id = created.data?.list?.id;
+  return id ? { ok: true, data: { listId: id } } : { ok: false, status: 0, error: "Lemlist no devolvió el id de la lista" };
+}
+
+export async function addContactsToList(apiKey: string, listId: string, contactIds: string[]): Promise<Result<unknown>> {
+  return call(apiKey, `/contacts/lists/${encodeURIComponent(listId)}/entities`, {
+    method: "POST",
+    body: JSON.stringify({ contactIds }),
+  });
+}
+
+// Crea o actualiza el contacto (upsert por LinkedIn / email) → ctc_xxx
+export async function upsertLemlistContact(
+  apiKey: string,
+  c: Record<string, string | null | undefined>,
+  updateStrategy: "fillEmptyOnly" | "overwriteIgnoreEmpty" = "fillEmptyOnly"
+): Promise<Result<{ contactId: string; warnings: unknown[] }>> {
+  const body = Object.fromEntries(Object.entries(c).filter(([, v]) => typeof v === "string" && v.trim()));
+  const r = await call<{ data?: { _id?: string }; warnings?: unknown[] }>(apiKey, `/contacts?updateStrategy=${updateStrategy}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) return r;
+  const id = r.data?.data?._id;
+  return id ? { ok: true, data: { contactId: id, warnings: r.data?.warnings ?? [] } } : { ok: false, status: 0, error: "Lemlist no devolvió el id del contacto" };
+}
+
+// Pide email + teléfono de una persona (asíncrono, gasta créditos del cliente)
+export async function startLemlistEnrichment(
+  apiKey: string,
+  p: { linkedinUrl?: string | null; firstName?: string | null; lastName?: string | null; companyName?: string | null; companyDomain?: string | null; jobTitle?: string | null }
+): Promise<Result<{ enrichId: string }>> {
+  const qs = new URLSearchParams({ findEmail: "true", verifyEmail: "true", findPhone: "true" });
+  for (const [k, v] of Object.entries(p)) if (v) qs.set(k, v);
+  const r = await call<{ id?: string; _id?: string }>(apiKey, `/enrich?${qs.toString()}`, { method: "POST" });
+  if (!r.ok) return r;
+  const id = r.data?.id ?? r.data?._id;
+  return id ? { ok: true, data: { enrichId: id } } : { ok: false, status: 0, error: "Lemlist no devolvió el id del enriquecimiento" };
+}
+
+export async function getLemlistEnrichment(apiKey: string, enrichId: string): Promise<Result<Record<string, unknown>>> {
+  return call<Record<string, unknown>>(apiKey, `/enrich/${encodeURIComponent(enrichId)}`);
+}
