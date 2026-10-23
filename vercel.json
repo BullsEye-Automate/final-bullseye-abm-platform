@@ -9,6 +9,10 @@
       "schedule": "0 9 * * *"
     },
     {
+      "path": "/api/cron/sync-meetings?sinceDays=45",
+      "schedule": "0 11-23 * * 1-5"
+    },
+    {
       "path": "/api/cron/analyze-allo-calls",
       "schedule": "0 */4 * * *"
     },
