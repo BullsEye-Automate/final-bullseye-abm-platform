@@ -158,7 +158,7 @@ export function Funnel({ stages, convs, labels, mx, extra }: { stages: [string, 
 }
 
 // ─── Ranking de SDR ─────────────────────────────────────────────────────────
-const RCOLS: [string, string, string?][] = [["name", "SDR", "l"], ["leader", "Líder", "l"], ["goal", "Meta"], ["sched", "Agendadas"], ["held", "Realizadas"], ["pending", "Pendientes"], ["resch", "Reagendar"], ["compl", "Cumplimiento"], ["qScore", "Puntaje llamadas"], ["noshow", "No-show"], ["calls", "Llamadas"], ["contacted", "Conectados"], ["conn", "Conexión"], ["opps", "Oportunidades"], ["m2o", "Reunión → opp"]];
+const RCOLS: [string, string, string?][] = [["name", "SDR", "l"], ["leader", "Líder", "l"], ["goal", "Meta"], ["mtgTotal", "Reuniones"], ["held", "Realizadas"], ["pending", "Pendientes"], ["resch", "Reagendar"], ["compl", "Cumplimiento"], ["qScore", "Puntaje llamadas"], ["noshow", "No-show"], ["calls", "Llamadas"], ["contacted", "Conectados"], ["conn", "Conexión"], ["opps", "Oportunidades"], ["m2o", "Reunión → opp"]];
 const MEDAL = ["🥇", "🥈", "🥉"];
 
 export function ViewRank() {
@@ -231,7 +231,7 @@ export function ViewRank() {
           <GoalSeg />
         </div>
       ) : null}
-      <Sec t="Ranking individual" p={`Ordenado por ${(RCOLS.find((c) => c[0] === k) ?? ["", ""])[1].toLowerCase()}. Haz clic en un encabezado para cambiar el criterio. Solo SDR activos en la Maestra`} />
+      <Sec t="Ranking individual" p={`Ordenado por ${(RCOLS.find((c) => c[0] === k) ?? ["", ""])[1].toLowerCase()}. Haz clic en un encabezado para cambiar el criterio. Solo SDR activos en la Maestra. Reuniones, realizadas, pendientes, reagendar y no-show se cuentan por fecha de la reunión`} />
       <div className="cs-card">
         <div className="cs-tw">
           <table>
@@ -254,7 +254,7 @@ export function ViewRank() {
                     <td className="l"><Who s={r.s} /></td>
                     <td className="l"><span className="cs-tag" style={{ color: leaderColor(M, r.s) }}>{leaderLabel(M, r.s)}</span></td>
                     <td>{fmt(a.goal, 1)}</td>
-                    <td>{fmt(a.sched)}</td>
+                    <td>{fmt(a.mtgTotal)}</td>
                     <td><b>{fmt(a.held)}</b></td>
                     <td>{fmt(a.pending)}</td>
                     <td className={a.resch ? "cs-yt" : ""}>{fmt(a.resch)}</td>
