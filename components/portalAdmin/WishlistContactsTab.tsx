@@ -25,6 +25,7 @@ type Item = {
     limitation?: number | null;
     candidates?: number;
     prefilter?: { seniority?: string[]; department?: string[] } | null;
+    target_countries?: string[];
   } | null;
 };
 
@@ -232,6 +233,7 @@ export default function WishlistContactsTab({ clientId, clientName }: { clientId
                       {(i.contacts_debug.attempts ?? []).map((a) => `por ${a.label} → ${a.error ? `error ${a.error}` : `${a.total ?? "?"} resultados, ${a.matched} de la empresa`}`).join(" · ") || "sin intentos"}
                       {i.contacts_debug.prefilter ? ` · pre-filtro: ${[...(i.contacts_debug.prefilter.seniority ?? []), ...(i.contacts_debug.prefilter.department ?? [])].join(", ")}` : ""}
                       {typeof i.contacts_debug.candidates === "number" ? ` · ${i.contacts_debug.candidates} empleados evaluados` : ""}
+                      {i.contacts_debug.target_countries?.length ? ` · países del ICP: ${i.contacts_debug.target_countries.join(", ")} (fuera de ellos baja el fit)` : ""}
                     </div>
                   )}
                   {list.length === 0 && i.contacts_status !== "pending" && (

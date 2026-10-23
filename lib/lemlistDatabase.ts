@@ -325,7 +325,13 @@ function normalizePerson(p: Record<string, unknown>): LemlistPerson | null {
     full_name: name,
     title: pickStr(p, "title") ?? pickStr(current, "title"),
     linkedin_url: pickStr(p, "lead_linkedin_url", "linkedin_url", "linkedinUrl"),
-    location: pickStr(p, "location", "country"),
+    // Ubicación + país (a veces la ubicación trae solo la ciudad)
+    location: (() => {
+      const loc = pickStr(p, "location");
+      const country = pickStr(p, "country");
+      if (loc && country && !loc.toLowerCase().includes(country.toLowerCase())) return `${loc}, ${country}`;
+      return loc ?? country;
+    })(),
     seniority: pickStr(p, "seniority"),
     department: Array.isArray(dept) ? dept.map(String).join(", ") || null : pickStr(p, "department"),
     summary: pickStr(p, "summary")?.slice(0, 400) ?? null,
