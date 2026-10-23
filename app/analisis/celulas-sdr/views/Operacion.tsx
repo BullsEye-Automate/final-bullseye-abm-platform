@@ -21,7 +21,7 @@ const pctTick = (v: number) => `${Math.round(v * 100)}%`;
 const legend = <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />;
 const axis = { tick: { fontSize: 12 }, tickLine: false, axisLine: false } as const;
 
-const CHANNEL_NOTE = "Emails, WhatsApp y LinkedIn vienen de HubSpot, que no separa por cliente: con filtro de cliente o país solo se muestran las llamadas.";
+const CHANNEL_NOTE = "Emails, WhatsApp y LinkedIn vienen de HubSpot: por cliente solo se muestran si el cliente tiene su HubSpot conectado (Configuración → Cliente); con filtro de país solo se muestran las llamadas.";
 
 // ─── Actividad SDR ──────────────────────────────────────────────────────────
 export function ViewAct() {

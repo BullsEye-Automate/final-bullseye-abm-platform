@@ -20,6 +20,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
+import HubspotConnection from "./HubspotConnection";
 
 type Config = {
   lemlist_api_key:                    string;
@@ -746,6 +747,9 @@ export default function ConfigClientePage() {
               </button>
             </div>
           </section>
+
+          {/* HubSpot propio del cliente (Células SDR) */}
+          {currentClient && <HubspotConnection clientId={currentClient.id} />}
 
           {/* Allo */}
           <section className="card space-y-4">

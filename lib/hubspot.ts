@@ -1,8 +1,10 @@
 const HS = "https://api.hubapi.com";
 
-function hsHeaders() {
+// token: HubSpot de un cliente (client_configs.hubspot_access_token); sin
+// token se usa el HubSpot de BullsEye.
+function hsHeaders(token?: string) {
   return {
-    Authorization: `Bearer ${process.env.HUBSPOT_ACCESS_TOKEN}`,
+    Authorization: `Bearer ${token || process.env.HUBSPOT_ACCESS_TOKEN}`,
     "Content-Type": "application/json",
   };
 }
@@ -262,7 +264,7 @@ export type HSOwner = {
   lastName?: string;
 };
 
-export async function fetchHSOwners(): Promise<HSOwner[]> {
+export async function fetchHSOwners(token?: string): Promise<HSOwner[]> {
   const owners: HSOwner[] = [];
   let after: string | undefined;
   let pages = 0;
@@ -274,7 +276,7 @@ export async function fetchHSOwners(): Promise<HSOwner[]> {
     url.searchParams.set("archived", "false");
     if (after) url.searchParams.set("after", after);
 
-    const res = await hsFetchWithRetry(url.toString(), { headers: hsHeaders() });
+    const res = await hsFetchWithRetry(url.toString(), { headers: hsHeaders(token) });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       throw new Error(`HubSpot ${res.status} listando owners: ${text.slice(0, 300)}`);
@@ -294,7 +296,8 @@ async function searchHSEngagementsByCreator(
   objectType: "emails" | "communications",
   dateFromMs: number,
   dateToMs: number,
-  extraProperties: string[]
+  extraProperties: string[],
+  token?: string
 ): Promise<Record<string, string>[]> {
   const results: Record<string, string>[] = [];
   let after: string | undefined;
@@ -319,7 +322,7 @@ async function searchHSEngagementsByCreator(
 
     const res = await hsFetchWithRetry(`${HS}/crm/v3/objects/${objectType}/search`, {
       method: "POST",
-      headers: hsHeaders(),
+      headers: hsHeaders(token),
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -374,7 +377,8 @@ export async function fetchHSActivityCountsByCreator(
 // `${hs_created_by_user_id}|YYYY-MM-DD`.
 export async function fetchHSActivityCountsByCreatorDaily(
   dateFromMs: number,
-  dateToMs: number
+  dateToMs: number,
+  token?: string
 ): Promise<Map<string, HSActivityCounts>> {
   const out = new Map<string, HSActivityCounts>();
   const dayOf = (ts: string | undefined) => {
@@ -392,8 +396,8 @@ export async function fetchHSActivityCountsByCreatorDaily(
   };
 
   const [emails, comms] = await Promise.all([
-    searchHSEngagementsByCreator("emails", dateFromMs, dateToMs, []),
-    searchHSEngagementsByCreator("communications", dateFromMs, dateToMs, ["hs_communication_channel_type"]),
+    searchHSEngagementsByCreator("emails", dateFromMs, dateToMs, [], token),
+    searchHSEngagementsByCreator("communications", dateFromMs, dateToMs, ["hs_communication_channel_type"], token),
   ]);
   for (const e of emails) bump(e.hs_created_by_user_id, e.hs_timestamp, "email");
   for (const c of comms) {

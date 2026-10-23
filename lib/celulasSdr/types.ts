@@ -87,12 +87,16 @@ export type CallEval = {
   improve: string | null;
 };
 
-// Actividades de HubSpot (Correo / WhatsApp / LinkedIn) por día × SDR. No
-// tienen cliente (HubSpot todavía no sabe a qué cliente de BullsEye
-// pertenece cada actividad — mismo criterio que el Ranking SDR).
+// Actividades de HubSpot (Correo / WhatsApp / LinkedIn) por día × SDR.
+// Cada actividad se cuenta en el HubSpot del cliente que se trabaja (sin
+// duplicados, confirmado con BullsEye): las del HubSpot propio de un cliente
+// (client_configs.hubspot_access_token) traen su cliente en `c`; las del
+// HubSpot de BullsEye vienen con c = null (ahí no se sabe a qué cliente
+// pertenecen).
 export type ChannelDay = {
   d: string;
   s: string;
+  c: string | null;         // Client.id (HubSpot propio del cliente) o null (HubSpot de BullsEye)
   email: number;
   wa: number;
   li: number;
@@ -126,6 +130,7 @@ export type AlloMonthResponse = {
 export type HubspotMonthResponse = {
   month: string;
   channels: ChannelDay[];
+  connectedClients: string[]; // Client.id con HubSpot propio conectado
   sdrNames: Record<string, string>;
   cachedAt: string;
   warnings: DataWarning[];
