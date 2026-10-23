@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconCheck, IconX, IconLoader2, IconAlertTriangle, IconCopy, IconUserPlus, IconRefresh, IconExternalLink } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
+import WishlistContactsTab from "@/components/portalAdmin/WishlistContactsTab";
 
 // Módulo interno del portal de clientes:
 //  - Propuestas de ICP enviadas desde /portal/icp (aprobar / rechazar)
 //  - Empresas solicitadas (wishlist de cada cliente)
+//  - Contactos IA (contactos del buyer persona en las empresas de la wishlist)
 //  - Accesos al portal (usuarios por cliente)
 //  - Base HubSpot (sincronización del pool que usa la wishlist + diagnóstico Lemlist)
 
-type Tab = "empresas" | "icp" | "accesos" | "base";
+type Tab = "empresas" | "contactos" | "icp" | "accesos" | "base";
 
 export default function SolicitudesClientesPage() {
   const [tab, setTab] = useState<Tab>("empresas");
@@ -27,6 +29,7 @@ export default function SolicitudesClientesPage() {
       <div className="flex gap-1 border-b border-gray-200 mb-6">
         {([
           ["empresas", "Empresas solicitadas"],
+          ["contactos", "Contactos IA"],
           ["icp", "Propuestas de ICP"],
           ["accesos", "Accesos al portal"],
           ["base", "Base HubSpot"],
@@ -42,6 +45,7 @@ export default function SolicitudesClientesPage() {
       </div>
 
       {tab === "empresas" && <WishlistRequestsTab clientId={clientId} />}
+      {tab === "contactos" && <WishlistContactsTab clientId={clientId} clientName={currentClient?.name ?? null} />}
       {tab === "icp" && <IcpRequestsTab clientId={clientId} />}
       {tab === "accesos" && <AccessTab clientId={clientId} clientName={currentClient?.name ?? null} />}
       {tab === "base" && <PoolTab clientId={clientId} clientName={currentClient?.name ?? null} />}
