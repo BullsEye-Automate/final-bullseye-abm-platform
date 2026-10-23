@@ -43,7 +43,9 @@ function useWorkspace() {
     (path: string) => (ws.clientId ? `${path}${path.includes("?") ? "&" : "?"}client_id=${ws.clientId}` : path),
     [ws.clientId]
   );
-  return { ...ws, url };
+  // Memoizado: el objeto se usa en dependencias de useEffect/useCallback; uno
+  // nuevo en cada render dispara las cargas en bucle infinito
+  return useMemo(() => ({ ...ws, url }), [ws, url]);
 }
 
 // ── Tipos ────────────────────────────────────────────────────────────────
@@ -113,14 +115,14 @@ function WorkspaceTabs() {
   const loadWishlist = useCallback(async () => {
     const r = await fetch(ws.url("/api/portal/wishlist"), { cache: "no-store" });
     if (r.ok) setWishlist((await r.json()).items);
-  }, [ws]);
+  }, [ws.url]);
 
   useEffect(() => {
     fetch(ws.url("/api/portal/wishlist/options"), { cache: "no-store" })
       .then(async (r) => (r.ok ? setCatalog(await r.json()) : setCatalogError("No pudimos cargar los filtros")))
       .catch(() => setCatalogError("No pudimos cargar los filtros"));
     loadWishlist();
-  }, [loadWishlist, ws]);
+  }, [loadWishlist, ws.url]);
 
   const proposed = wishlist.filter((i) => i.status === "proposed");
   const rejected = wishlist.filter((i) => i.status === "rejected_by_client");
