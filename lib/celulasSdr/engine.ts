@@ -123,6 +123,7 @@ export type Model = {
   calls: CallDay[];
   evals: CallEval[];
   channels: ChannelDay[];
+  hsClients: Set<string>;       // clientes con HubSpot propio conectado
   alloMonths: Set<string>;
   hubspotMonths: Set<string>;
   // índices para el reparto de SDR-días con filtro de cliente/país
@@ -169,6 +170,7 @@ export function buildModel(
   const calls = loadedAllo.flatMap((m) => allo[m].calls).filter((c) => keep(c.s));
   const evals = loadedAllo.flatMap((m) => allo[m].evals).filter((e) => keep(e.s));
   const channels = loadedHs.flatMap((m) => hubspot[m].channels).filter((h) => keep(h.s));
+  const hsClients = new Set(loadedHs.flatMap((m) => hubspot[m].connectedClients ?? []));
 
   // SDR: roster base + quienes solo aparecen en Allo (llamadas). Los
   // usuarios de HubSpot que no son SDR del roster no se agregan: solo suman
@@ -260,7 +262,7 @@ export function buildModel(
 
   return {
     cfg, today, months, leaders: base.leaders, LD, sdrs, SD, clients: base.clients, CL, countries, days, weeks,
-    goals: base.goals, meetings: base.meetings, calls, evals, channels,
+    goals: base.goals, meetings: base.meetings, calls, evals, channels, hsClients,
     alloMonths: new Set(loadedAllo), hubspotMonths: new Set(loadedHs), sdrMonth, callsBySdrDay,
     incomplete: base.incomplete,
   };
@@ -375,13 +377,17 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
   const cfg = M.cfg;
   const inD = P.dates;
   const nC = QCRIT.length;
+  // filtro solo de cliente (sin país) sobre un cliente con HubSpot propio
+  const chClient = fl.f.client && !fl.f.country && M.hsClients.has(fl.f.client) ? fl.f.client : null;
   const r: Agg = {
     calls: 0, contacted: 0, emails: 0, wa: 0, li: 0, other: null,
     sched: 0, held: 0, noshow: 0, resch: 0, pending: 0, pastPending: 0, opps: 0,
     goal: 0, sdrDays: 0, nd: P.bdays.length, cl: {},
     mtgTotal: 0, callDays: 0, callsQ: 0, emailsQ: 0, waQ: 0, liQ: 0, actsQ: null,
     qN: 0, qSum: 0, qcSum: new Array(nC).fill(0), qcN: new Array(nC).fill(0), qb: { g: 0, y: 0, r: 0 },
-    chUnavailable: fl.clientScoped,
+    // con filtro de cliente, los canales de HubSpot solo se pueden mostrar si
+    // el cliente tiene su HubSpot conectado (sus actividades traen cliente)
+    chUnavailable: fl.clientScoped && !chClient,
   } as Agg;
   const cl = (id: string | null) => {
     const k = id ?? "__none";
@@ -397,9 +403,10 @@ export function agg(M: Model, P: Period, fl: FL): Agg {
     c.calls += a.calls;
     c.contacted += a.contacted;
   }
-  if (!fl.clientScoped) {
+  if (!fl.clientScoped || chClient) {
     for (const h of M.channels) {
       if (!inD.has(h.d) || !fl.sdrOk(h.s)) continue;
+      if (chClient && h.c !== chClient) continue;
       r.emails! += h.email;
       r.wa! += h.wa;
       r.li! += h.li;

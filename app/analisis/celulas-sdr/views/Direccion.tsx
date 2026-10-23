@@ -47,7 +47,7 @@ export function ViewExec() {
     { ic: "users", l: "Contactados", v: fmt(a.contacted), of: fmt(a.contGoal), prog: div(a.contacted, a.contGoal), dl: dPct(ptype, a.contacted, b?.contacted) },
     { ic: "wifi", l: "Tasa de conexión", v: pct(a.conn, 1), of: pct(cfg.connectTarget), prog: div(a.conn, cfg.connectTarget), dl: dPP(ptype, a.conn, b?.conn) },
     a.chUnavailable
-      ? { ic: "act", l: "Actividades realizadas", v: "—", sub: "Con filtro de cliente o país solo hay llamadas (HubSpot no separa por cliente)" }
+      ? { ic: "act", l: "Actividades realizadas", v: "—", sub: "Solo llamadas: el cliente no tiene HubSpot conectado (o hay filtro de país)" }
       : { ic: "act", l: "Actividades realizadas", v: fmt(a.acts), of: fmt(a.actGoal), prog: a.actPct, dl: dPct(ptype, a.acts, b?.acts) },
     { ic: "mic", l: "Puntaje de llamadas", v: fmt(a.qScore), of: fmt(cfg.qTarget), sem: qSt(M, a.qScore), prog: a.qPct, progTxt: ok(a.qScore) ? `${QBN[qBand(M, a.qScore)]}. ${fmt(a.qN)} llamadas evaluadas` : "Sin evaluaciones", dl: dPts(ptype, a.qScore, b?.qScore), hl: true },
   ];

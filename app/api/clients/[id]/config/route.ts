@@ -3,6 +3,14 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
+// El token de HubSpot del cliente no viaja al navegador (se gestiona en
+// /api/clients/[id]/hubspot).
+function hideSecrets<T extends Record<string, unknown> | null>(cfg: T): T {
+  if (!cfg) return cfg;
+  const { hubspot_access_token: _omit, ...rest } = cfg as Record<string, unknown>;
+  return rest as T;
+}
+
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const db = supabaseAdmin();
   const { data, error } = await db
@@ -12,7 +20,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ config: data ?? null });
+  return NextResponse.json({ config: hideSecrets(data) });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
@@ -39,5 +47,5 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ config: data });
+  return NextResponse.json({ config: hideSecrets(data) });
 }

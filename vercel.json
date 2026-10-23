@@ -45,7 +45,7 @@
     "app/api/analisis/scores/route.ts": { "maxDuration": 60 },
     "app/api/celulas-sdr/base/route.ts": { "maxDuration": 60 },
     "app/api/celulas-sdr/allo/route.ts": { "maxDuration": 300 },
-    "app/api/celulas-sdr/hubspot/route.ts": { "maxDuration": 120 },
+    "app/api/celulas-sdr/hubspot/route.ts": { "maxDuration": 300 },
     "app/api/cron/celulas-sdr-alerts/route.ts": { "maxDuration": 300 },
     "app/api/celulas-sdr/alerts-preview/route.ts": { "maxDuration": 300 }
   }

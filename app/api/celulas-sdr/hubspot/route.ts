@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { loadHubspotMonth } from "@/lib/celulasSdr/server/hubspot";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // Módulo Células SDR — Correo / WhatsApp / LinkedIn de HubSpot de un mes. Lógica en lib/celulasSdr/server/hubspot.ts (la reutiliza el
 // envío diario de alertas por correo a las líderes de célula).
