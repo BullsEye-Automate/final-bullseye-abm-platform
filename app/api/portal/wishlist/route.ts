@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 import { listPoolProperties, normalizeDomain } from "@/lib/hubspotPool";
 import { icpHash } from "@/lib/wishlistFit";
 import {
@@ -17,13 +17,15 @@ import { pushWishlistItemToLemlist } from "@/lib/wishlistLemlist";
 
 export const dynamic = "force-dynamic";
 
-// GET — wishlist del cliente de la sesión (sin la fuente: el cliente no la ve)
-export async function GET() {
-  const { user, response } = await requirePortalUser();
+// GET — wishlist del cliente (sin la fuente: el cliente no la ve). Incluye las
+// propuestas de BullsEye (status proposed / rejected_by_client): el portal las
+// muestra en su propia pestaña.
+export async function GET(req: NextRequest) {
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const { data, error } = await supabaseAdmin()
     .from("client_wishlist")
-    .select("id, company_name, domain, linkedin_url, mode, fit_score, fit_reason, status, requested_by_email, created_at")
+    .select("id, company_name, domain, linkedin_url, mode, fit_score, fit_reason, status, origin, snapshot, client_reject_reason, requested_by_email, created_at")
     .eq("client_id", user.clientId)
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -39,8 +41,11 @@ const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.
 // que vio el cliente (sanitizada). Queda en estado "new", aparece en
 // /solicitudes-clientes y se envía de inmediato a la cuenta Lemlist del
 // cliente (lista "Wishlist BullsEye").
+// Operador interno (Empresas, ?client_id=): la empresa queda como PROPUESTA de
+// BullsEye (origin bullseye, status proposed) y NO va a Lemlist hasta que el
+// cliente la apruebe en su portal.
 export async function POST(req: NextRequest) {
-  const { user, response } = await requirePortalUser();
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
 
   const body = await req.json().catch(() => null);
@@ -122,6 +127,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const proposed = user.isOperator;
   const { data, error } = await db
     .from("client_wishlist")
     .insert({
@@ -135,8 +141,9 @@ export async function POST(req: NextRequest) {
       fit_score: fit?.fit_score ?? null,
       fit_reason: fit?.fit_reason ?? null,
       snapshot: { facts: card.facts, lemlist_fields: lemlistFields, ...(comment ? { client_comment: comment } : {}) },
-      status: "new",
-      lemlist_status: "pendiente",
+      status: proposed ? "proposed" : "new",
+      origin: proposed ? "bullseye" : "client",
+      lemlist_status: proposed ? null : "pendiente",
       requested_by: user.portalUserId,
       requested_by_email: user.email,
     })
@@ -144,11 +151,14 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) {
-    if (error.code === "23505") return NextResponse.json({ error: "Esta empresa ya está en tu wishlist" }, { status: 409 });
+    if (error.code === "23505") {
+      return NextResponse.json({ error: proposed ? "Esta empresa ya está propuesta o en la wishlist del cliente" : "Esta empresa ya está en tu wishlist" }, { status: 409 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   await markRecommendation(db, user.clientId, source, sourceRef, "added");
+  if (proposed) return NextResponse.json({ ok: true, id: data.id, proposed: true });
 
   // Envío a Lemlist: si falla, la empresa igual queda en la wishlist y
   // prospección ve el error (y puede reintentar) en /solicitudes-clientes

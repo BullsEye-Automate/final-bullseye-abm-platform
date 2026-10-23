@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 import { getClientOwnLemlistKey } from "@/lib/lemlistDatabase";
 import { icpHash, icpToUnifiedFilters, scoreCompanies } from "@/lib/wishlistFit";
 import { cardSummary, excludeDetectedClients, getClientExclusions, getClientIcpText, isExcluded } from "@/lib/wishlist";
@@ -51,8 +51,8 @@ const toCard = (r: Row) => ({
 });
 
 // GET — recomendaciones pendientes (ICP vigente), de mayor a menor fit
-export async function GET() {
-  const { user, response } = await requirePortalUser();
+export async function GET(req: NextRequest) {
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const db = supabaseAdmin();
 
@@ -89,7 +89,7 @@ export async function GET() {
 // fit. El navegador repite tandas hasta llegar a la cantidad que eligió el
 // cliente (cada llamada cabe en el límite de 60 s de Vercel).
 export async function POST(req: NextRequest) {
-  const { user, response } = await requirePortalUser();
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const body = await req.json().catch(() => null);
   const db = supabaseAdmin();

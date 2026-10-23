@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 import { listPoolProperties } from "@/lib/hubspotPool";
 import { scoreCompanies } from "@/lib/wishlistFit";
 import { cardSummary, excludeDetectedClients, getClientIcpText, poolCompanyToCard, type CompanyCard } from "@/lib/wishlist";
@@ -15,7 +15,7 @@ const MAX_PER_CALL = 24;
 // % de fit de los resultados de una búsqueda con filtros. Las empresas de la
 // base HubSpot se releen del pool (no se confía en lo que manda el navegador).
 export async function POST(req: NextRequest) {
-  const { user, response } = await requirePortalUser();
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
 
   const body = await req.json().catch(() => null);

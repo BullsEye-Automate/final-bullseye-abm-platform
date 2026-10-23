@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 import { getClientOwnLemlistKey } from "@/lib/lemlistDatabase";
 import { icpHash } from "@/lib/wishlistFit";
 import { getClientExclusions, getClientIcpText, type CompanyCard } from "@/lib/wishlist";
@@ -20,7 +20,7 @@ const PAGE_SIZE = 24;
 // muestran gratis los fits que ya estaban calculados.
 // Las recomendaciones IA van por /api/portal/wishlist/recommendations.
 export async function POST(req: NextRequest) {
-  const { user, response } = await requirePortalUser();
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
 
   const body = await req.json().catch(() => null);

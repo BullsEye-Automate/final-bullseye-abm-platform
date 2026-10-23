@@ -9,6 +9,7 @@ import {
   rejectWishlistContact,
   searchWishlistContacts,
 } from "@/lib/wishlistContacts";
+import { pushContactToHubspot } from "@/lib/wishlistHubspot";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
       .limit(500),
     db
       .from("wishlist_contacts")
-      .select("id, wishlist_id, full_name, title, linkedin_url, location, seniority, department, fit_score, buying_role, fit_reason, status, reject_reason, reviewed_by_email, lemlist_contact_id, lemlist_error, enrich_status, email, phone")
+      .select("id, wishlist_id, full_name, title, linkedin_url, location, seniority, department, fit_score, buying_role, fit_reason, status, reject_reason, reviewed_by_email, lemlist_contact_id, lemlist_error, enrich_status, email, phone, hubspot_contact_id, hubspot_error")
       .eq("client_id", clientId)
       .order("fit_score", { ascending: false })
       .limit(5000),
@@ -43,6 +44,7 @@ export async function GET(req: NextRequest) {
 // POST
 //   { action: "search", wishlist_id }          busca contactos de UNA empresa (el navegador recorre la selección)
 //   { action: "approve" | "reject", contact_id, reason? }
+//   { action: "push_hubspot", contact_id }     reintenta el envío de un aprobado a HubSpot
 //   { action: "refresh", client_id }           revisa emails / teléfonos pendientes
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
@@ -63,6 +65,10 @@ export async function POST(req: NextRequest) {
         const { error } = await rejectWishlistContact(db, body.contact_id, reason, await getReviewerEmail());
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
         return NextResponse.json({ ok: true });
+      }
+      case "push_hubspot": {
+        if (typeof body.contact_id !== "string") return NextResponse.json({ error: "Falta contact_id" }, { status: 400 });
+        return NextResponse.json(await pushContactToHubspot(db, body.contact_id));
       }
       case "refresh": {
         if (typeof body.client_id !== "string") return NextResponse.json({ error: "Falta client_id" }, { status: 400 });

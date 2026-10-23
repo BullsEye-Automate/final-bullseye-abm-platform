@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 
 export const dynamic = "force-dynamic";
 
 // DELETE — quita un elemento de la lista de exclusión del cliente (y su copia
 // en la lista interna de BullsEye, si coincide nombre + sitio)
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { user, response } = await requirePortalUser();
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const db = supabaseAdmin();
   const { data, error } = await db

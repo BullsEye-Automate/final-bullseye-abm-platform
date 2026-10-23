@@ -49,6 +49,8 @@ type Contact = {
   enrich_status: "none" | "pending" | "done" | "error";
   email: string | null;
   phone: string | null;
+  hubspot_contact_id: string | null;
+  hubspot_error: string | null;
 };
 
 const CONTACT_STATUS: Record<Item["contacts_status"], { text: string; cls: string }> = {
@@ -144,6 +146,17 @@ export default function WishlistContactsTab({ clientId, clientName }: { clientId
     load();
   }
 
+  async function pushHubspot(c: Contact) {
+    const r = await fetch("/api/portal-admin/wishlist-contacts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "push_hubspot", contact_id: c.id }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) setError(`${c.full_name}: ${j.error ?? "no se pudo enviar a HubSpot"}`);
+    load();
+  }
+
   const toggle = (set: Set<string>, id: string) => {
     const n = new Set(set);
     if (n.has(id)) n.delete(id);
@@ -157,7 +170,7 @@ export default function WishlistContactsTab({ clientId, clientName }: { clientId
     <div>
       <div className="bg-white rounded-2xl border border-gray-100 p-4 mb-4 text-sm text-gray-600">
         Cuando una empresa de la wishlist de <strong>{clientName}</strong> queda en su Lemlist, la IA busca sola (cada 15 min) los contactos que
-        calzan con su buyer persona (máx. 8 por empresa). También puedes elegir empresas y buscar ahora con el botón. Revisa cada uno: al <strong>aprobar</strong> se crea en su Lemlist (lista “Contactos Wishlist BullsEye”) y se buscan
+        calzan con su buyer persona (máx. 8 por empresa). También puedes elegir empresas y buscar ahora con el botón. Revisa cada uno: al <strong>aprobar</strong> se crea en su Lemlist (lista “Contactos Wishlist BullsEye”) y en el HubSpot de BullsEye, y se buscan
         email y teléfono (créditos de Lemlist). Lo que apruebas o rechazas le enseña a la IA. Con menos de 2 contactos la empresa queda para Sales Navigator.
       </div>
 
@@ -284,7 +297,15 @@ export default function WishlistContactsTab({ clientId, clientName }: { clientId
                                 )}
                                 {c.status === "approved" && (
                                   <div className="text-xs space-y-0.5">
-                                    <div className="text-green-700 font-medium">Aprobado{c.lemlist_contact_id ? " · en Lemlist" : ""}</div>
+                                    <div className="text-green-700 font-medium">
+                                      Aprobado{c.lemlist_contact_id ? " · en Lemlist" : ""}{c.hubspot_contact_id ? " · en HubSpot" : ""}
+                                    </div>
+                                    {!c.hubspot_contact_id && (
+                                      <button onClick={() => pushHubspot(c)} className="text-[#251762] underline">
+                                        {c.hubspot_error ? "Reintentar HubSpot" : "Enviar a HubSpot"}
+                                      </button>
+                                    )}
+                                    {c.hubspot_error && <div className="text-red-600">HubSpot: {c.hubspot_error}</div>}
                                     {c.enrich_status === "pending" && <div className="text-gray-500 flex items-center gap-1"><IconLoader2 size={11} className="animate-spin" /> Buscando email y teléfono…</div>}
                                     {c.email && <div className="text-gray-700">{c.email}</div>}
                                     {c.phone && <div className="text-gray-700">{c.phone}</div>}
