@@ -13,5 +13,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
-  return NextResponse.json(await runMeetingsSync());
+  // ?sinceDays=N: sync incremental (solo filas recientes, sin borrar
+  // huérfanas). Lo usa el cron horario en horario laboral; el cron de la
+  // noche corre sin parámetro (sync completo).
+  const sinceDays = Number(req.nextUrl.searchParams.get("sinceDays")) || undefined;
+  return NextResponse.json(await runMeetingsSync(false, sinceDays));
 }
