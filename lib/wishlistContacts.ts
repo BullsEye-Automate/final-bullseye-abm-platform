@@ -7,6 +7,7 @@ import { normalizeDomain } from "./hubspotPool";
 import { getClientIcpText } from "./wishlist";
 import { COUNTRIES } from "./unifiedFilterDefs";
 import { pushContactToHubspot, updateHubspotContactData } from "./wishlistHubspot";
+import { batchReadHSContacts, getHSCompanyContactIds, searchHSCompany, searchHSCompanyByDomain } from "./hubspot";
 import {
   addContactsToList,
   ensureContactList,
@@ -217,6 +218,80 @@ async function findEmployees(
   return { people: [], attempts, limitation, prefiltered: null };
 }
 
+// ── Contactos de la empresa en el HubSpot de BullsEye ────────────────────
+// Segunda fuente, además de Lemlist: muchas empresas ya tienen contactos en
+// nuestro HubSpot (y suelen traer email / teléfono, sin gastar créditos).
+// lead_id = "hs:<id>" para distinguirlos.
+
+type Candidate = LemlistPerson & { email?: string | null; phone?: string | null; hubspot_contact_id?: string | null };
+
+const HS_CONTACT_PROPS = ["firstname", "lastname", "jobtitle", "email", "phone", "mobilephone", "hs_linkedin_url", "city", "country"];
+export const isHubspotLead = (leadId: string) => leadId.startsWith("hs:");
+
+async function findHubspotCompanyId(
+  db: SupabaseClient,
+  item: { id: string; company_name: string; domain: string | null; source: string | null; source_ref: string | null; hubspot_company_id: string | null }
+): Promise<string | null> {
+  const id =
+    item.hubspot_company_id ??
+    (item.source === "hubspot" ? item.source_ref : null) ??
+    (item.domain ? await searchHSCompanyByDomain(item.domain) : null) ??
+    (await searchHSCompany(item.company_name));
+  if (id && id !== item.hubspot_company_id) await db.from("client_wishlist").update({ hubspot_company_id: id }).eq("id", item.id);
+  return id;
+}
+
+async function findHubspotEmployees(companyId: string, company: { name: string; domain: string | null }): Promise<Candidate[]> {
+  const ids = await getHSCompanyContactIds(companyId, MAX_CANDIDATES);
+  if (!ids.length) return [];
+  const rows = await batchReadHSContacts(ids, HS_CONTACT_PROPS);
+  return rows
+    .map((r): Candidate | null => {
+      const p = r.properties;
+      const name = [p.firstname, p.lastname].filter(Boolean).join(" ").trim();
+      if (!name) return null;
+      return {
+        lead_id: `hs:${r.id}`,
+        full_name: name,
+        title: p.jobtitle || null,
+        linkedin_url: p.hs_linkedin_url || null,
+        location: [p.city, p.country].filter(Boolean).join(", ") || null,
+        seniority: null,
+        department: null,
+        summary: null,
+        company_name: company.name,
+        company_domain: company.domain,
+        company_linkedin_url: null,
+        email: p.email || null,
+        phone: p.mobilephone || p.phone || null,
+        hubspot_contact_id: r.id,
+      };
+    })
+    .filter((x): x is Candidate => !!x);
+}
+
+// Misma persona en las dos fuentes (por LinkedIn o nombre): se queda la de
+// HubSpot (trae email / teléfono) con el seniority / área de Lemlist
+const personKey = (p: LemlistPerson) =>
+  p.linkedin_url?.toLowerCase().replace(/^https?:\/\/(www\.)?/, "").replace(/\/+$/, "") || `name:${p.full_name.toLowerCase().replace(/\s+/g, " ").trim()}`;
+
+function mergeSources(lemlist: LemlistPerson[], hubspot: Candidate[]): Candidate[] {
+  const byKey = new Map<string, Candidate>();
+  for (const h of hubspot) byKey.set(personKey(h), h);
+  const out: Candidate[] = [...hubspot];
+  for (const l of lemlist) {
+    const h = byKey.get(personKey(l));
+    if (h) {
+      h.seniority ??= l.seniority;
+      h.department ??= l.department;
+      h.location ??= l.location;
+      h.linkedin_url ??= l.linkedin_url;
+      h.title ??= l.title;
+    } else out.push(l);
+  }
+  return out;
+}
+
 // ── Puntaje de cargos con IA ─────────────────────────────────────────────
 
 const TITLES_TOOL: Anthropic.Tool = {
@@ -380,7 +455,7 @@ export async function searchWishlistContacts(
 ): Promise<{ ok: boolean; found: number; status: string; error?: string; limitation?: number | null }> {
   const { data: item } = await db
     .from("client_wishlist")
-    .select("id, client_id, company_name, domain, linkedin_url")
+    .select("id, client_id, company_name, domain, linkedin_url, source, source_ref, hubspot_company_id")
     .eq("id", wishlistId)
     .maybeSingle();
   if (!item) return { ok: false, found: 0, status: "error", error: "Empresa no encontrada" };
@@ -404,7 +479,17 @@ export async function searchWishlistContacts(
   const prefilter = async () => (prefilterCache ??= await getPrefilter(db, item.client_id, icpText, defs));
 
   const company = { domain: normalizeDomain(item.domain), linkedin: item.linkedin_url, name: item.company_name };
-  const { people, attempts, limitation, prefiltered } = await findEmployees(apiKey, company, defs, prefilter);
+  const [lem, hubspotPeople] = await Promise.all([
+    findEmployees(apiKey, company, defs, prefilter),
+    findHubspotCompanyId(db, item)
+      .then((hsId) => (hsId ? findHubspotEmployees(hsId, company) : []))
+      .catch((err) => {
+        console.error("contactos HubSpot:", err);
+        return [] as Candidate[];
+      }),
+  ]);
+  const { attempts, limitation, prefiltered } = lem;
+  const people = mergeSources(lem.people, hubspotPeople);
   // Países objetivo del ICP (cacheado; una llamada a la IA por cliente)
   const targetCountries = (await prefilter()).countries ?? [];
   const debug = {
@@ -412,11 +497,13 @@ export async function searchWishlistContacts(
     limitation,
     prefilter: prefiltered,
     candidates: people.length,
+    lemlist_candidates: lem.people.length,
+    hubspot_candidates: hubspotPeople.length,
     target_countries: targetCountries,
     // Filtros de personas que expone Lemlist para esta cuenta (diagnóstico)
     available_filters: defs.map((d) => d.filterId),
   };
-  if (attempts.length && attempts.every((a) => a.error)) return fail(`Lemlist: ${attempts[0].error}`, debug);
+  if (!hubspotPeople.length && attempts.length && attempts.every((a) => a.error)) return fail(`Lemlist: ${attempts[0].error}`, debug);
 
   const feedback = await loadFeedback(db, item.client_id);
   const scores = await scoreTitles(db, item.client_id, icpText, feedback, people.map((p) => p.title ?? ""));
@@ -430,7 +517,7 @@ export async function searchWishlistContacts(
   const ranked = people
     .filter((p) => !reviewed.has(p.lead_id))
     .map((p) => ({ p, s: adjustForCountry(scores.get(normTitle(p.title ?? "")), p, targetCountries) }))
-    .filter((x): x is { p: LemlistPerson; s: TitleScore } => !!x.s && x.s.fit_score >= MIN_FIT)
+    .filter((x): x is { p: Candidate; s: TitleScore } => !!x.s && x.s.fit_score >= MIN_FIT)
     .sort((a, b) => b.s.fit_score - a.s.fit_score || (ROLE_RANK[b.s.buying_role] ?? 0) - (ROLE_RANK[a.s.buying_role] ?? 0))
     .filter(({ p }) => {
       const k = p.linkedin_url ?? p.lead_id;
@@ -461,6 +548,10 @@ export async function searchWishlistContacts(
           fit_score: s.fit_score,
           buying_role: s.buying_role,
           fit_reason: s.reason,
+          // De HubSpot: ya viene con email / teléfono y su registro
+          email: p.email ?? null,
+          phone: p.phone ?? null,
+          hubspot_contact_id: p.hubspot_contact_id ?? null,
         };
       })
     );
@@ -531,6 +622,8 @@ export async function approveWishlistContact(
       location: c.location,
       peopleDbSeniority: c.seniority,
       peopleDbDepartment: c.department,
+      email: c.email,
+      phone: c.phone,
       ...(wl?.snapshot?.lemlist_company_id ? { companyId: wl.snapshot.lemlist_company_id } : { companyDomain: wl?.domain ?? null }),
     });
     if (up.ok) {
@@ -545,7 +638,9 @@ export async function approveWishlistContact(
 
   let enrichId: string | null = c.enrich_id;
   let enrichStatus: string = c.enrich_status;
-  if (!enrichId) {
+  // Si ya tenemos email y teléfono (contacto de HubSpot) no se gastan créditos
+  if (!enrichId && c.email && c.phone) enrichStatus = "done";
+  else if (!enrichId) {
     const en = await startLemlistEnrichment(apiKey, {
       linkedinUrl: c.linkedin_url,
       firstName: c.first_name,
@@ -594,7 +689,7 @@ function deepPick(v: unknown, keys: string[]): string | null {
 export async function refreshEnrichments(db: SupabaseClient, clientId: string): Promise<{ checked: number; done: number }> {
   const { data: rows } = await db
     .from("wishlist_contacts")
-    .select("id, enrich_id, lemlist_contact_id, hubspot_contact_id")
+    .select("id, enrich_id, lemlist_contact_id, hubspot_contact_id, email, phone")
     .eq("client_id", clientId)
     .eq("enrich_status", "pending")
     .not("enrich_id", "is", null)
@@ -610,8 +705,9 @@ export async function refreshEnrichments(db: SupabaseClient, clientId: string): 
     const status = String(res.data.enrichmentStatus ?? res.data.status ?? "");
     if (status && status !== "done" && status !== "error" && status !== "failed") continue;
     const data = (res.data.data ?? {}) as Record<string, unknown>;
-    const email = deepPick(data.email, ["email", "value"]);
-    const phone = deepPick(data.phone, ["phone", "phoneNumber", "number", "value", "mobile"]);
+    // Lo que ya teníamos (p. ej. de HubSpot) no se pisa con un "no encontrado"
+    const email = deepPick(data.email, ["email", "value"]) ?? r.email;
+    const phone = deepPick(data.phone, ["phone", "phoneNumber", "number", "value", "mobile"]) ?? r.phone;
     await db
       .from("wishlist_contacts")
       .update({

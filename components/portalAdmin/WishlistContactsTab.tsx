@@ -24,6 +24,8 @@ type Item = {
     attempts?: { label: string; total: number | null; matched: number; error?: string }[];
     limitation?: number | null;
     candidates?: number;
+    lemlist_candidates?: number;
+    hubspot_candidates?: number;
     prefilter?: { seniority?: string[]; department?: string[] } | null;
     target_countries?: string[];
   } | null;
@@ -32,6 +34,7 @@ type Item = {
 type Contact = {
   id: string;
   wishlist_id: string;
+  lead_id: string;
   full_name: string;
   title: string | null;
   linkedin_url: string | null;
@@ -246,6 +249,7 @@ export default function WishlistContactsTab({ clientId, clientName }: { clientId
                       {(i.contacts_debug.attempts ?? []).map((a) => `por ${a.label} → ${a.error ? `error ${a.error}` : `${a.total ?? "?"} resultados, ${a.matched} de la empresa`}`).join(" · ") || "sin intentos"}
                       {i.contacts_debug.prefilter ? ` · pre-filtro: ${[...(i.contacts_debug.prefilter.seniority ?? []), ...(i.contacts_debug.prefilter.department ?? [])].join(", ")}` : ""}
                       {typeof i.contacts_debug.candidates === "number" ? ` · ${i.contacts_debug.candidates} empleados evaluados` : ""}
+                      {typeof i.contacts_debug.hubspot_candidates === "number" ? ` (${i.contacts_debug.lemlist_candidates ?? 0} de Lemlist, ${i.contacts_debug.hubspot_candidates} de HubSpot)` : ""}
                       {i.contacts_debug.target_countries?.length ? ` · países del ICP: ${i.contacts_debug.target_countries.join(", ")} (fuera de ellos baja el fit)` : ""}
                     </div>
                   )}
@@ -275,6 +279,12 @@ export default function WishlistContactsTab({ clientId, clientName }: { clientId
                                 </div>
                                 <div className="text-xs text-gray-700">{c.title ?? "—"}</div>
                                 <div className="text-[11px] text-gray-400">{[c.seniority, c.department, c.location].filter(Boolean).join(" · ")}</div>
+                                {c.lead_id.startsWith("hs:") && (
+                                  <div className="text-[11px] mt-0.5">
+                                    <span className="rounded bg-orange-50 text-orange-700 px-1.5 py-0.5">De nuestro HubSpot</span>
+                                    {c.status === "suggested" && (c.email || c.phone) ? <span className="text-gray-500 ml-1.5">{[c.email, c.phone].filter(Boolean).join(" · ")}</span> : null}
+                                  </div>
+                                )}
                               </td>
                               <td className="py-2 pr-3 whitespace-nowrap">
                                 <div className="font-semibold">{c.fit_score}%</div>
