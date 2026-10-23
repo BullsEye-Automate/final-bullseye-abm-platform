@@ -5,6 +5,7 @@ import { anthropic, getClientModel } from "./claude";
 import { logAiUsage } from "./aiUsageLogger";
 import { normalizeDomain } from "./hubspotPool";
 import { getClientIcpText } from "./wishlist";
+import { COUNTRIES } from "./unifiedFilterDefs";
 import {
   addContactsToList,
   ensureContactList,
@@ -46,6 +47,11 @@ const TITLE_BATCH = 30;
 const FEEDBACK_STEP = 10;
 const FEEDBACK_EXAMPLES = 40;
 const PROMPT_VERSION = "contacts-v1";
+// Pre-filtro + países objetivo (independiente del caché de cargos)
+const PREFILTER_VERSION = "prefilter-v2";
+// Contacto fuera de los países del ICP: se le resta esto al fit (un cargo con
+// 85 queda en 55, bajo MIN_FIT, y no se sugiere). Sin ubicación no se castiga.
+const OUT_OF_COUNTRY_PENALTY = 30;
 
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 16);
 export const normTitle = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 200);
@@ -68,22 +74,23 @@ async function loadFeedback(db: SupabaseClient, clientId: string): Promise<{ cou
   };
 }
 
-// ── Pre-filtro para empresas grandes (seniority / área de Lemlist) ───────
+// ── Pre-filtro (seniority / área de Lemlist) y países objetivo del ICP ───
 
 const PREFILTER_TOOL: Anthropic.Tool = {
   name: "set_prefilter",
-  description: "Elige los valores de seniority y área que pueden contener al buyer persona",
+  description: "Elige los valores de seniority y área que pueden contener al buyer persona, y los países donde se prospecta",
   input_schema: {
     type: "object",
     properties: {
       seniority: { type: "array", items: { type: "string" } },
       department: { type: "array", items: { type: "string" } },
+      countries: { type: "array", items: { type: "string" }, description: "Países objetivo del ICP (valores exactos de la lista). Vacío si el ICP no limita geografía." },
     },
-    required: ["seniority", "department"],
+    required: ["seniority", "department", "countries"],
   },
 };
 
-type Prefilter = { seniority?: string[]; department?: string[] };
+type Prefilter = { seniority?: string[]; department?: string[]; countries?: string[] };
 
 async function getPrefilter(db: SupabaseClient, clientId: string, icpText: string, defs: LemlistFilterDef[]): Promise<Prefilter> {
   const seniorityDef = defs.find((d) => d.filterId === "seniority");
@@ -92,9 +99,9 @@ async function getPrefilter(db: SupabaseClient, clientId: string, icpText: strin
   const departmentOpts = departmentDef?.values?.length
     ? departmentDef.values
     : ["Sales", "Customer service", "Engineering", "Marketing", "Operations", "Human Resources", "Finance / Legal / Admin", "Other"];
-  if (!seniorityOpts.length && !departmentDef) return {};
+  const countryOpts = COUNTRIES.map((c) => c.value);
 
-  const hash = sha(`${PROMPT_VERSION}\n${icpText}\n${seniorityOpts.join("|")}\n${departmentOpts.join("|")}`);
+  const hash = sha(`${PREFILTER_VERSION}\n${icpText}\n${seniorityOpts.join("|")}\n${departmentOpts.join("|")}`);
   const { data: cached } = await db.from("client_persona_filters").select("persona_hash, filters").eq("client_id", clientId).maybeSingle();
   if (cached?.persona_hash === hash) return cached.filters as Prefilter;
 
@@ -103,19 +110,19 @@ async function getPrefilter(db: SupabaseClient, clientId: string, icpText: strin
     model,
     max_tokens: 600,
     temperature: 0,
-    system: `Eres analista de prospección B2B. Según el ICP y buyer persona del cliente, eliges en qué niveles de seniority y áreas de una empresa grande pueden estar los contactos a prospectar (decisores, influenciadores y usuarios de lo que vende el cliente). Sé generoso: es un pre-filtro para no revisar miles de empleados, después otra IA elige uno a uno. Usa SOLO valores de las listas.`,
+    system: `Eres analista de prospección B2B. Según el ICP y buyer persona del cliente, eliges en qué niveles de seniority y áreas de una empresa grande pueden estar los contactos a prospectar (decisores, influenciadores y usuarios de lo que vende el cliente). Sé generoso: es un pre-filtro para no revisar miles de empleados, después otra IA elige uno a uno. Además indica en qué países se prospecta según la geografía del ICP (dónde deben estar los contactos); si el ICP no limita la geografía, deja countries vacío. Usa SOLO valores de las listas.`,
     tools: [PREFILTER_TOOL],
     tool_choice: { type: "tool", name: PREFILTER_TOOL.name },
     messages: [
       {
         role: "user",
-        content: `<icp>\n${icpText}\n</icp>\n\nSeniority disponibles: ${seniorityOpts.join(" | ") || "(no disponible)"}\nÁreas disponibles: ${departmentOpts.join(" | ")}`,
+        content: `<icp>\n${icpText}\n</icp>\n\nSeniority disponibles: ${seniorityOpts.join(" | ") || "(no disponible)"}\nÁreas disponibles: ${departmentOpts.join(" | ")}\nPaíses disponibles: ${countryOpts.join(" | ")}`,
       },
     ],
   });
   void logAiUsage({ clientId, functionName: "wishlist_contacts_prefilter", model, inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens });
   const block = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-  const raw = (block?.input ?? {}) as { seniority?: unknown[]; department?: unknown[] };
+  const raw = (block?.input ?? {}) as { seniority?: unknown[]; department?: unknown[]; countries?: unknown[] };
   const pick = (vals: unknown[] | undefined, opts: string[]) => {
     const m = new Map(opts.map((o) => [o.toLowerCase(), o]));
     return Array.from(new Set((vals ?? []).map((v) => m.get(String(v).toLowerCase())).filter((v): v is string => !!v)));
@@ -125,6 +132,8 @@ async function getPrefilter(db: SupabaseClient, clientId: string, icpText: strin
   const d = pick(raw.department, departmentOpts);
   if (s.length && s.length < seniorityOpts.length) filters.seniority = s;
   if (departmentDef && d.length && d.length < departmentOpts.length) filters.department = d;
+  const c = pick(raw.countries, countryOpts);
+  if (c.length) filters.countries = c;
   await db.from("client_persona_filters").upsert({ client_id: clientId, persona_hash: hash, filters, updated_at: new Date().toISOString() });
   return filters;
 }
@@ -333,6 +342,30 @@ async function scoreTitles(
 
 // ── Búsqueda completa para una empresa de la wishlist ────────────────────
 
+// ¿La persona está en alguno de los países objetivo? null = no se sabe (sin ubicación)
+const fold = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+export function inTargetCountries(location: string | null, targets: string[]): boolean | null {
+  if (!targets.length) return true;
+  if (!location?.trim()) return null;
+  const loc = fold(location);
+  return targets.some((t) => {
+    const c = COUNTRIES.find((x) => x.value === t);
+    const names = [t, c?.label, ...(c?.hubspot ?? [])].filter((n): n is string => !!n && n.length > 2);
+    return names.some((n) => new RegExp(`(^|[^a-z])${fold(n).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^a-z])`).test(loc));
+  });
+}
+
+// El puntaje del cargo es el mismo para todas las personas; la ubicación es
+// de cada una: fuera de los países del ICP se resta OUT_OF_COUNTRY_PENALTY
+function adjustForCountry(s: TitleScore | undefined, p: LemlistPerson, targets: string[]): TitleScore | undefined {
+  if (!s || inTargetCountries(p.location, targets) !== false) return s;
+  return {
+    ...s,
+    fit_score: Math.max(0, s.fit_score - OUT_OF_COUNTRY_PENALTY),
+    reason: `${s.reason} (fuera de los países del ICP)`.slice(0, 300),
+  };
+}
+
 const ROLE_RANK: Record<string, number> = { decisor: 3, influenciador: 2, usuario: 1, ninguno: 0 };
 
 function splitName(full: string): { first: string; last: string } {
@@ -371,7 +404,17 @@ export async function searchWishlistContacts(
 
   const company = { domain: normalizeDomain(item.domain), linkedin: item.linkedin_url, name: item.company_name };
   const { people, attempts, limitation, prefiltered } = await findEmployees(apiKey, company, defs, prefilter);
-  const debug = { attempts, limitation, prefilter: prefiltered, candidates: people.length };
+  // Países objetivo del ICP (cacheado; una llamada a la IA por cliente)
+  const targetCountries = (await prefilter()).countries ?? [];
+  const debug = {
+    attempts,
+    limitation,
+    prefilter: prefiltered,
+    candidates: people.length,
+    target_countries: targetCountries,
+    // Filtros de personas que expone Lemlist para esta cuenta (diagnóstico)
+    available_filters: defs.map((d) => d.filterId),
+  };
   if (attempts.length && attempts.every((a) => a.error)) return fail(`Lemlist: ${attempts[0].error}`, debug);
 
   const feedback = await loadFeedback(db, item.client_id);
@@ -385,7 +428,7 @@ export async function searchWishlistContacts(
   const seen = new Set<string>();
   const ranked = people
     .filter((p) => !reviewed.has(p.lead_id))
-    .map((p) => ({ p, s: scores.get(normTitle(p.title ?? "")) }))
+    .map((p) => ({ p, s: adjustForCountry(scores.get(normTitle(p.title ?? "")), p, targetCountries) }))
     .filter((x): x is { p: LemlistPerson; s: TitleScore } => !!x.s && x.s.fit_score >= MIN_FIT)
     .sort((a, b) => b.s.fit_score - a.s.fit_score || (ROLE_RANK[b.s.buying_role] ?? 0) - (ROLE_RANK[a.s.buying_role] ?? 0))
     .filter(({ p }) => {
