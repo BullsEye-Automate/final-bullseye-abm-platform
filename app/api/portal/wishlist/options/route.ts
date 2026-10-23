@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 import { getClientOwnLemlistKey } from "@/lib/lemlistDatabase";
 import { buildFilterCatalog } from "@/lib/unifiedSearch";
 
@@ -10,8 +10,8 @@ export const maxDuration = 60;
 // GET — catálogo de filtros unificados (en español) para la búsqueda de la
 // wishlist. La primera vez puede tardar unos segundos: traduce con IA los
 // valores de Lemlist y los deja cacheados.
-export async function GET() {
-  const { user, response } = await requirePortalUser();
+export async function GET(req: NextRequest) {
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const db = supabaseAdmin();
   const key = await getClientOwnLemlistKey(db, user.clientId);

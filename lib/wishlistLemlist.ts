@@ -24,6 +24,10 @@ export async function pushWishlistItemToLemlist(
     .eq("id", itemId)
     .maybeSingle();
   if (!item) return { ok: false, error: "Empresa no encontrada" };
+  // Las propuestas de BullsEye no van a Lemlist hasta que el cliente las apruebe
+  if (item.status === "proposed" || item.status === "rejected_by_client") {
+    return { ok: false, error: "La empresa espera la aprobación del cliente" };
+  }
 
   const save = async (patch: Record<string, unknown>) =>
     db.from("client_wishlist").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", item.id);

@@ -3,16 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { IconCheck, IconX, IconLoader2, IconAlertTriangle, IconCopy, IconUserPlus, IconRefresh, IconExternalLink } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
-import WishlistContactsTab from "@/components/portalAdmin/WishlistContactsTab";
 
 // Módulo interno del portal de clientes:
 //  - Propuestas de ICP enviadas desde /portal/icp (aprobar / rechazar)
 //  - Empresas solicitadas (wishlist de cada cliente)
-//  - Contactos IA (contactos del buyer persona en las empresas de la wishlist)
+//  (los Contactos IA de la wishlist se revisan en /contactos)
 //  - Accesos al portal (usuarios por cliente)
 //  - Base HubSpot (sincronización del pool que usa la wishlist + diagnóstico Lemlist)
 
-type Tab = "empresas" | "contactos" | "icp" | "accesos" | "base";
+type Tab = "empresas" | "icp" | "accesos" | "base";
 
 export default function SolicitudesClientesPage() {
   const [tab, setTab] = useState<Tab>("empresas");
@@ -29,7 +28,6 @@ export default function SolicitudesClientesPage() {
       <div className="flex gap-1 border-b border-gray-200 mb-6">
         {([
           ["empresas", "Empresas solicitadas"],
-          ["contactos", "Contactos IA"],
           ["icp", "Propuestas de ICP"],
           ["accesos", "Accesos al portal"],
           ["base", "Base HubSpot"],
@@ -45,7 +43,6 @@ export default function SolicitudesClientesPage() {
       </div>
 
       {tab === "empresas" && <WishlistRequestsTab clientId={clientId} />}
-      {tab === "contactos" && <WishlistContactsTab clientId={clientId} clientName={currentClient?.name ?? null} />}
       {tab === "icp" && <IcpRequestsTab clientId={clientId} />}
       {tab === "accesos" && <AccessTab clientId={clientId} clientName={currentClient?.name ?? null} />}
       {tab === "base" && <PoolTab clientId={clientId} clientName={currentClient?.name ?? null} />}
@@ -350,7 +347,7 @@ type WishlistRequest = {
   fit_score: number | null;
   fit_reason: string | null;
   snapshot: { facts?: { label: string; value: string }[]; client_comment?: string };
-  status: "new" | "in_lemlist" | "in_progress" | "contacts_found" | "discarded";
+  status: "proposed" | "rejected_by_client" | "new" | "in_lemlist" | "in_progress" | "contacts_found" | "discarded";
   lemlist_status: string | null;
   lemlist_error: string | null;
   internal_note: string | null;
@@ -359,6 +356,8 @@ type WishlistRequest = {
 };
 
 const WISHLIST_STATUSES: { value: WishlistRequest["status"]; label: string }[] = [
+  { value: "proposed", label: "Propuesta (espera al cliente)" },
+  { value: "rejected_by_client", label: "Rechazada por el cliente" },
   { value: "new", label: "Nueva" },
   { value: "in_lemlist", label: "En Lemlist" },
   { value: "in_progress", label: "En prospección" },
@@ -397,7 +396,7 @@ function WishlistRequestsTab({ clientId }: { clientId: string | null }) {
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-4 text-sm">
-        {[{ value: "new", label: "Nuevas" }, ...WISHLIST_STATUSES.slice(1), { value: "all", label: "Todas" }].map((s) => (
+        {[{ value: "new", label: "Nuevas" }, ...WISHLIST_STATUSES.filter((s) => s.value !== "new"), { value: "all", label: "Todas" }].map((s) => (
           <button
             key={s.value}
             onClick={() => setStatus(s.value)}

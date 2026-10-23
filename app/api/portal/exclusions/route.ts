@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 import { normalizeDomain } from "@/lib/hubspotPool";
 
 export const dynamic = "force-dynamic";
@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 const MAX_ITEMS = 5000;
 
 // GET — lista de exclusión del cliente
-export async function GET() {
-  const { user, response } = await requirePortalUser();
+export async function GET(req: NextRequest) {
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const { data, error } = await supabaseAdmin()
     .from("client_exclusions")
@@ -26,7 +26,7 @@ export async function GET() {
 // copian también a excluded_companies para que la prospección interna de
 // BullsEye las omita. Duplicados se ignoran.
 export async function POST(req: NextRequest) {
-  const { user, response } = await requirePortalUser();
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
 
   const body = await req.json().catch(() => null);

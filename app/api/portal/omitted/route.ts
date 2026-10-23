@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 import { listPoolProperties, normalizeDomain } from "@/lib/hubspotPool";
 import { markRecommendation, poolCompanyToCard, type CompanyCard } from "@/lib/wishlist";
 import { decodeRef } from "@/lib/unifiedSearch";
@@ -8,8 +8,8 @@ import { decodeRef } from "@/lib/unifiedSearch";
 export const dynamic = "force-dynamic";
 
 // GET — empresas que el cliente omitió (sin la fuente)
-export async function GET() {
-  const { user, response } = await requirePortalUser();
+export async function GET(req: NextRequest) {
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const { data, error } = await supabaseAdmin()
     .from("client_omitted_companies")
@@ -26,7 +26,7 @@ const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.
 // POST — { ref, card?, fit_score?, fit_reason? } omite una empresa de los
 // resultados: no vuelve a aparecer en búsquedas ni recomendaciones.
 export async function POST(req: NextRequest) {
-  const { user, response } = await requirePortalUser();
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const body = await req.json().catch(() => null);
   const id = decodeRef(body?.ref);

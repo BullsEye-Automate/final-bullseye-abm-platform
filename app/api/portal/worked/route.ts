@@ -1,15 +1,23 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 
 export const dynamic = "force-dynamic";
+
+const WISHLIST_LABEL: Record<string, string> = {
+  new: "Aprobada · enviando a Lemlist",
+  in_lemlist: "En Lemlist · buscando contactos",
+  in_progress: "En prospección",
+  contacts_found: "Contactos encontrados",
+};
 
 // GET — empresas que BullsEye ya está trabajando para el cliente:
 //  - companies aprobadas para prospección (approved / client_approved)
 //  - empresas de su wishlist que prospección marcó en curso o con contactos
 // Solo datos básicos: nunca el research ni las notas internas.
-export async function GET() {
-  const { user, response } = await requirePortalUser();
+// Las de la wishlist van primero (son las más recientes del flujo nuevo).
+export async function GET(req: NextRequest) {
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const db = supabaseAdmin();
 
@@ -40,19 +48,21 @@ export async function GET() {
     .from("client_wishlist")
     .select("company_name, domain, status, updated_at")
     .eq("client_id", user.clientId)
-    .in("status", ["in_progress", "contacts_found"]);
+    // El operador (Empresas → Aprobadas) ve también las recién aprobadas
+    .in("status", user.isOperator ? ["new", "in_lemlist", "in_progress", "contacts_found"] : ["in_progress", "contacts_found"]);
   const seen = new Set(items.map((i) => i.name.toLowerCase()));
+  const fromWishlist: typeof items = [];
   for (const w of wl ?? []) {
     if (seen.has(w.company_name.toLowerCase())) continue;
-    items.push({
+    fromWishlist.push({
       name: w.company_name,
       website: w.domain,
       country: null,
       since: w.updated_at,
       origin: "wishlist",
-      status: w.status === "contacts_found" ? "Contactos encontrados" : "En prospección",
+      status: WISHLIST_LABEL[w.status] ?? "En prospección",
     });
   }
 
-  return NextResponse.json({ items });
+  return NextResponse.json({ items: [...fromWishlist, ...items] });
 }

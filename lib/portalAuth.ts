@@ -63,3 +63,39 @@ export async function requirePortalUser(): Promise<
   }
   return { user, response: null };
 }
+
+// ── Wishlist: cliente del portal u operador interno de BullsEye ──────────
+// Las APIs de búsqueda / IA / wishlist del portal también las usa el equipo
+// interno desde Empresas (prospección), para buscar y PROPONER empresas a un
+// cliente. El cliente del portal siempre usa su propio client_id (de
+// client_users, nunca de la request); un usuario interno (sin rol "client")
+// elige el cliente con ?client_id=.
+export type WishlistActor = {
+  clientId: string;
+  portalUserId: string | null;
+  email: string;
+  isOperator: boolean;
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function requireWishlistActor(
+  req: Request
+): Promise<{ user: WishlistActor; response: null } | { user: null; response: NextResponse }> {
+  const portal = await getPortalUser();
+  if (portal) {
+    return { user: { clientId: portal.clientId, portalUserId: portal.portalUserId, email: portal.email, isOperator: false }, response: null };
+  }
+  const { data } = await supabaseServer().auth.getUser();
+  const authUser = data.user;
+  if (authUser && authUser.app_metadata?.role !== PORTAL_ROLE) {
+    const clientId = new URL(req.url).searchParams.get("client_id") ?? "";
+    if (!UUID_RE.test(clientId)) {
+      return { user: null, response: NextResponse.json({ error: "Elige un cliente" }, { status: 400 }) };
+    }
+    const { data: client } = await supabaseAdmin().from("clients").select("id").eq("id", clientId).maybeSingle();
+    if (!client) return { user: null, response: NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 }) };
+    return { user: { clientId, portalUserId: null, email: authUser.email ?? "BullsEye", isOperator: true }, response: null };
+  }
+  return { user: null, response: NextResponse.json({ error: "Sin acceso al portal" }, { status: 403 }) };
+}

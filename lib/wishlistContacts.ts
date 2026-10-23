@@ -6,6 +6,7 @@ import { logAiUsage } from "./aiUsageLogger";
 import { normalizeDomain } from "./hubspotPool";
 import { getClientIcpText } from "./wishlist";
 import { COUNTRIES } from "./unifiedFilterDefs";
+import { pushContactToHubspot, updateHubspotContactData } from "./wishlistHubspot";
 import {
   addContactsToList,
   ensureContactList,
@@ -510,6 +511,8 @@ export async function approveWishlistContact(
 
   const now = new Date().toISOString();
   await db.from("wishlist_contacts").update({ status: "approved", reviewed_by_email: email, reviewed_at: now, updated_at: now }).eq("id", c.id);
+  // HubSpot de BullsEye (independiente de Lemlist; el error queda en hubspot_error)
+  await pushContactToHubspot(db, c.id).catch((err) => console.error("pushContactToHubspot:", err));
 
   const apiKey = await getClientOwnLemlistKey(db, c.client_id);
   if (!apiKey) {
@@ -591,7 +594,7 @@ function deepPick(v: unknown, keys: string[]): string | null {
 export async function refreshEnrichments(db: SupabaseClient, clientId: string): Promise<{ checked: number; done: number }> {
   const { data: rows } = await db
     .from("wishlist_contacts")
-    .select("id, enrich_id, lemlist_contact_id")
+    .select("id, enrich_id, lemlist_contact_id, hubspot_contact_id")
     .eq("client_id", clientId)
     .eq("enrich_status", "pending")
     .not("enrich_id", "is", null)
@@ -622,6 +625,7 @@ export async function refreshEnrichments(db: SupabaseClient, clientId: string): 
     if (r.lemlist_contact_id && (email || phone)) {
       await upsertLemlistContact(apiKey, { contactId: r.lemlist_contact_id, email, phone }, "overwriteIgnoreEmpty");
     }
+    await updateHubspotContactData(db, r, { email, phone });
     done++;
   }
   return { checked: rows.length, done };

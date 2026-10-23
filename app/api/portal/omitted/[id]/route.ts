@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { requirePortalUser } from "@/lib/portalAuth";
+import { requireWishlistActor } from "@/lib/portalAuth";
 import { markRecommendation } from "@/lib/wishlist";
 
 export const dynamic = "force-dynamic";
 
 // DELETE — restaura una empresa omitida (vuelve a aparecer en las búsquedas)
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const { user, response } = await requirePortalUser();
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
   const db = supabaseAdmin();
   const { data, error } = await db

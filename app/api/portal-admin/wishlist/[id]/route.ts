@@ -4,7 +4,7 @@ import { pushWishlistItemToLemlist } from "@/lib/wishlistLemlist";
 
 export const dynamic = "force-dynamic";
 
-const STATUSES = ["new", "in_lemlist", "in_progress", "contacts_found", "discarded"];
+const STATUSES = ["proposed", "rejected_by_client", "new", "in_lemlist", "in_progress", "contacts_found", "discarded"];
 
 // POST — { status?, internal_note? } actualiza una empresa solicitada
 //        { action: "push_lemlist" } reintenta el envío a la cuenta Lemlist del cliente

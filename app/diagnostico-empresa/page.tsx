@@ -310,7 +310,7 @@ export default function DiagnosticoEmpresaPage() {
                     </div>
                   </>
                 )}
-                <a href="/empresas" className="btn-secondary ml-auto shrink-0 text-sm flex items-center gap-1.5">
+                <a href="/empresas/anterior" className="btn-secondary ml-auto shrink-0 text-sm flex items-center gap-1.5">
                   Ver empresas <IconExternalLink size={13} />
                 </a>
               </div>
