@@ -2,7 +2,7 @@ const HS = "https://api.hubapi.com";
 
 // token: HubSpot de un cliente (client_configs.hubspot_access_token); sin
 // token se usa el HubSpot de BullsEye.
-function hsHeaders(token?: string) {
+export function hsHeaders(token?: string) {
   return {
     Authorization: `Bearer ${token || process.env.HUBSPOT_ACCESS_TOKEN}`,
     "Content-Type": "application/json",
@@ -243,7 +243,7 @@ async function throttleHS() {
   if (nextSlot > now) await new Promise((r) => setTimeout(r, nextSlot - now));
 }
 
-async function hsFetchWithRetry(url: string, init: RequestInit, retriesLeft = 5): Promise<Response> {
+export async function hsFetchWithRetry(url: string, init: RequestInit, retriesLeft = 5): Promise<Response> {
   await throttleHS();
   const res = await fetch(url, init);
   if (res.status === 429 && retriesLeft > 0) {

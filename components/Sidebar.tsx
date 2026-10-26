@@ -31,6 +31,7 @@ import {
   IconCalendarEvent,
   IconBulb,
   IconUsersGroup,
+  IconRadar,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -84,6 +85,7 @@ const SECTIONS: Section[] = [
       { href: "/diagnostico-empresa", label: "Diagnóstico empresa", icon: IconStethoscope },
       { href: "/analisis/sdr",        label: "Análisis SDR",        icon: IconChartBar },
       { href: "/analisis/celulas-sdr", label: "Células SDR",        icon: IconUsersGroup },
+      { href: "/analisis/radar-abm",  label: "Radar ABM",           icon: IconRadar },
       { href: "/analisis/clientes",   label: "Análisis Clientes",   icon: IconBuilding }
     ]
   },

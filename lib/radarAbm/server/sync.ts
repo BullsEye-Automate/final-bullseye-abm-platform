@@ -1,0 +1,298 @@
+import { supabaseAdmin } from "@/lib/supabase";
+import { fetchHSOwners } from "@/lib/hubspot";
+import { chileToday } from "@/lib/celulasSdr/calendar";
+import { CO_ORDER, CT_ORDER } from "../dictionaries";
+import { deriveClientData, type FlatCompany, type FlatContact } from "../derive";
+import type { RadarDataset, RadarDeal, RadarMeeting } from "../types";
+import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
+import { hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot } from "./store";
+
+// Radar ABM — sincronización de un cliente desde HubSpot (§3).
+// Empresas del universo del cliente (propiedad "Cliente BullsEye", o todas
+// las que tienen status si se lee el HubSpot propio del cliente) → sus
+// contactos con "Asignación BullsEye por Llamar" → llamadas, correos,
+// WhatsApp/LinkedIn, reuniones y negocios asociados. El resultado se guarda
+// completo en radar_abm_snapshots y las pantallas calculan en el navegador.
+// Lo que no exista en HubSpot queda vacío y el informe muestra
+// "Sin información disponible" (§11).
+
+const toDay = (v: string | null | undefined): string | undefined => {
+  if (!v) return undefined;
+  const d = /^\d+$/.test(v) ? new Date(Number(v)) : new Date(v);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString().slice(0, 10);
+};
+
+// Textos oficiales: el valor de HubSpot se lleva al texto exacto del
+// diccionario aunque venga con otra capitalización, sin tilde o sin emoji.
+const canon = (s: string) => normLabel(s.replace(/\p{Extended_Pictographic}/gu, ""));
+function canonicalizer(official: string[]) {
+  const map = new Map(official.map((o) => [canon(o), o]));
+  return (label: string | null | undefined): string | null => {
+    const t = (label ?? "").trim();
+    if (!t) return null;
+    return map.get(canon(t)) ?? t;
+  };
+}
+const companyStatusCanon = canonicalizer(CO_ORDER.filter((s) => s !== "CONV"));
+const contactStatusCanon = canonicalizer(CT_ORDER);
+
+function optionLabeler(p: DetectedProperty | undefined) {
+  const m = new Map((p?.options ?? []).map((o) => [o.value, o.label]));
+  return (v: string | null | undefined): string | null => {
+    if (v == null || v === "") return null;
+    return v.split(";").map((x) => m.get(x) ?? x).join("; ");
+  };
+}
+
+function meetingStatus(outcome: string | null | undefined): string {
+  switch ((outcome ?? "").toUpperCase()) {
+    case "COMPLETED": return "Realizada";
+    case "NO_SHOW": return "No-show";
+    case "CANCELED":
+    case "CANCELLED": return "Cancelada";
+    case "RESCHEDULED": return "Reprogramada";
+    default: return "Pendiente";
+  }
+}
+
+function dealStageName(info: { label: string; won: boolean; lost: boolean } | undefined, raw: string): string {
+  if (info?.won) return "Ganado";
+  if (info?.lost) return "Perdido";
+  const l = normLabel(info?.label ?? raw);
+  if (/propuesta|proposal|cotizac/.test(l)) return "Propuesta enviada";
+  if (/negoci/.test(l)) return "Negociación";
+  return "Calificación";
+}
+
+function periodStart(today: string, months: number): string {
+  const d = new Date(`${today.slice(0, 7)}-01T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() - (months - 1));
+  return d.toISOString().slice(0, 10);
+}
+
+export async function syncClientRadar(clientId: string, by: string) {
+  const db = supabaseAdmin();
+  const { data: client } = await db.from("clients").select("id, name").eq("id", clientId).maybeSingle();
+  if (!client) throw new Error("Cliente no encontrado");
+
+  const cfg = await loadRadarConfig();
+  const settings = await loadClientSettings(clientId);
+  const token = await hubspotTokenFor(clientId, settings.hubspot_source);
+  const warnings: string[] = [];
+
+  const { catalog, errors } = await loadPropertyCatalog(token);
+  warnings.push(...errors);
+  const detected = detectProperties(cfg.properties, catalog);
+  const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
+  if (!P.companyStatus.property) throw new Error('No se encontró la propiedad de empresa "Status de la asignación - SDR". Indica su nombre interno en Configuración del Radar ABM.');
+  if (!P.contactStatus.property) throw new Error('No se encontró la propiedad de contacto "Asignación BullsEye por Llamar". Indica su nombre interno en Configuración del Radar ABM.');
+  for (const d of detected) if (!d.property && !d.required && d.key !== "companyClient") warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
+
+  // ── Universo de empresas ───────────────────────────────────────────────
+  const statusProp = P.companyStatus.property!;
+  let filterGroups: unknown[];
+  const clientProp = P.companyClient;
+  let clientValue = (settings.hubspot_client_value ?? "").trim();
+  if (clientProp.property && (clientValue || settings.hubspot_source === "bullseye")) {
+    if (!clientValue) {
+      const target = normLabel(client.name);
+      const opt = clientProp.options.find((o) => normLabel(o.label) === target || normLabel(o.value) === target);
+      clientValue = opt?.value ?? (clientProp.options.length ? "" : client.name);
+    }
+    if (!clientValue) {
+      throw new Error(`No se encontró "${client.name}" entre los valores de "Cliente BullsEye". Elige el valor en Configuración → Cliente → Radar ABM.`);
+    }
+    const multi = clientProp.fieldType === "checkbox";
+    filterGroups = [{ filters: [{ propertyName: clientProp.property, operator: multi ? "CONTAINS_TOKEN" : "EQ", value: clientValue }] }];
+  } else if (settings.hubspot_source === "client") {
+    filterGroups = [{ filters: [{ propertyName: statusProp, operator: "HAS_PROPERTY" }] }];
+  } else {
+    throw new Error('No se encontró la propiedad de empresa "Cliente BullsEye" para separar el universo del cliente. Indica su nombre interno en Configuración del Radar ABM.');
+  }
+
+  const countryProp = P.companyCountry.property ?? "country";
+  const companyProps = Array.from(new Set([
+    "name", "industry", "country", "numberofemployees", "hubspot_owner_id", "createdate", statusProp, countryProp,
+    ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier].map((p) => p.property).filter(Boolean) as string[],
+  ]));
+  const rawCompanies = await searchAll("companies", filterGroups, companyProps, token);
+
+  const owners = new Map<string, string>();
+  try {
+    for (const o of await fetchHSOwners(token)) owners.set(String(o.id), [o.firstName, o.lastName].filter(Boolean).join(" ").trim() || o.email || String(o.id));
+  } catch (e) {
+    warnings.push(`No se pudieron leer los usuarios de HubSpot (SDR): ${(e as Error).message}`);
+  }
+  const ownerName = (id: string | null | undefined) => (id ? owners.get(String(id)) ?? null : null);
+
+  const industryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === "industry") as DetectedProperty | undefined);
+  const statusLabel = optionLabeler(P.companyStatus);
+  const tierLabel = optionLabeler(P.companyIcpTier);
+  const countryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === countryProp) as DetectedProperty | undefined);
+  const unknownStatuses = new Set<string>();
+
+  const companies: FlatCompany[] = [];
+  for (const r of rawCompanies) {
+    const p = r.properties;
+    const label = statusLabel(p[statusProp]);
+    if (!label) continue; // sin status: no es parte del trabajo de BullsEye
+    const st = companyStatusCanon(label)!;
+    if (!st.startsWith("En conversaciones") && !CO_ORDER.includes(st)) unknownStatuses.add(st);
+    const tier = (tierLabel(P.companyIcpTier.property ? p[P.companyIcpTier.property] : null) ?? "").trim().toUpperCase().replace(/^(ICP|TIER)\s*/, "");
+    companies.push({
+      id: r.id,
+      n: p.name || `Empresa ${r.id}`,
+      ind: industryLabel(p.industry),
+      pais: countryLabel(p[countryProp]) || countryLabel(p.country) || "Sin país",
+      employees: p.numberofemployees ? Number(p.numberofemployees) : null,
+      icp: ["A", "B", "C"].includes(tier) ? tier : "s/i",
+      sdr: ownerName(p.hubspot_owner_id) ?? "Sin SDR",
+      asg: toDay(P.companyAssignedAt.property ? p[P.companyAssignedAt.property] : null) ?? toDay(p.createdate) ?? "",
+      st,
+      ...(P.companyNextFollowUp.property && toDay(p[P.companyNextFollowUp.property]) ? { next: toDay(p[P.companyNextFollowUp.property]) } : {}),
+    });
+  }
+  const companyIds = companies.map((c) => c.id as string);
+  const coById = new Map(companies.map((c) => [c.id, c]));
+
+  // ── Contactos ──────────────────────────────────────────────────────────
+  const coContacts = await batchAssociations("companies", "contacts", companyIds, token);
+  const contactCompany = new Map<string, string>();
+  for (const [co, cts] of coContacts) for (const ct of cts) if (!contactCompany.has(ct)) contactCompany.set(ct, co);
+  const contactStatusProp = P.contactStatus.property!;
+  const contactProps = Array.from(new Set([
+    "firstname", "lastname", "email", "jobtitle", "hubspot_owner_id", "notes_last_contacted", "notes_next_activity_date", contactStatusProp,
+    ...[P.contactObjection, P.contactSignal].map((p) => p.property).filter(Boolean) as string[],
+  ]));
+  const rawContacts = await batchRead("contacts", Array.from(contactCompany.keys()), contactProps, token);
+  const ctStatusLabel = optionLabeler(P.contactStatus);
+  const objLabel = optionLabeler(P.contactObjection);
+  const sigLabel = optionLabeler(P.contactSignal);
+  const unknownCtStatuses = new Set<string>();
+  const kept = rawContacts.filter((r) => ctStatusLabel(r.properties[contactStatusProp]));
+  const keptIds = kept.map((r) => r.id);
+
+  // Actividad: llamadas (= intentos), correos y comunicaciones (WhatsApp / LinkedIn)
+  const [ctCalls, ctEmails, ctComms, ctMeetings] = await Promise.all([
+    batchAssociations("contacts", "calls", keptIds, token),
+    batchAssociations("contacts", "emails", keptIds, token),
+    batchAssociations("contacts", "communications", keptIds, token),
+    batchAssociations("contacts", "meetings", keptIds, token),
+  ]);
+  const commIds = Array.from(new Set(Array.from(ctComms.values()).flat()));
+  const commChannel = new Map<string, string>();
+  if (commIds.length) {
+    for (const r of await batchRead("communications", commIds, ["hs_communication_channel_type"], token)) {
+      commChannel.set(r.id, (r.properties.hs_communication_channel_type ?? "").toUpperCase());
+    }
+  }
+
+  const contacts: FlatContact[] = kept.map((r) => {
+    const p = r.properties;
+    const st = contactStatusCanon(ctStatusLabel(p[contactStatusProp]))!;
+    if (!CT_ORDER.includes(st)) unknownCtStatuses.add(st);
+    const co = contactCompany.get(r.id)!;
+    const comms = (ctComms.get(r.id) ?? []).map((id) => commChannel.get(id) ?? "");
+    const calls = (ctCalls.get(r.id) ?? []).length;
+    const wa = comms.filter((c) => c.includes("WHATS")).length;
+    const li = comms.filter((c) => c.includes("LINKEDIN")).length;
+    const em = (ctEmails.get(r.id) ?? []).length;
+    const name = [p.firstname, p.lastname].filter(Boolean).join(" ").trim() || p.email || `Contacto ${r.id}`;
+    const obj = objLabel(P.contactObjection.property ? p[P.contactObjection.property] : null);
+    const sig = sigLabel(P.contactSignal.property ? p[P.contactSignal.property] : null);
+    return {
+      id: r.id, co, n: name,
+      ...(p.jobtitle ? { cargo: p.jobtitle } : {}),
+      sdr: ownerName(p.hubspot_owner_id) ?? coById.get(co)?.sdr ?? "Sin SDR",
+      st,
+      ...(calls ? { att: calls, calls } : {}),
+      ...(wa ? { wa } : {}), ...(li ? { li } : {}), ...(em ? { em } : {}),
+      ...(toDay(p.notes_last_contacted) ? { last: toDay(p.notes_last_contacted) } : {}),
+      ...(toDay(p.notes_next_activity_date) ? { next: toDay(p.notes_next_activity_date) } : {}),
+      ...(obj ? { obj } : {}), ...(sig ? { sig } : {}),
+    };
+  });
+
+  // ── Reuniones del período ──────────────────────────────────────────────
+  const today = chileToday();
+  const start = periodStart(today, cfg.periodMonths);
+  const meetingContact = new Map<string, string>();
+  for (const [ct, ms] of ctMeetings) for (const m of ms) if (!meetingContact.has(m)) meetingContact.set(m, ct);
+  const meetingProps = Array.from(new Set([
+    "hs_meeting_start_time", "hs_createdate", "hs_meeting_outcome", "hubspot_owner_id",
+    ...[P.meetingResult, P.meetingFeedback, P.meetingNeed].map((p) => p.property).filter(Boolean) as string[],
+  ]));
+  const rawMeetings = meetingContact.size ? await batchRead("meetings", Array.from(meetingContact.keys()), meetingProps, token) : [];
+  const resLabel = optionLabeler(P.meetingResult), fbLabel = optionLabeler(P.meetingFeedback), needLabel = optionLabeler(P.meetingNeed);
+  const ctById = new Map(contacts.map((k) => [k.id, k]));
+  const meetings: RadarMeeting[] = [];
+  for (const r of rawMeetings) {
+    const p = r.properties;
+    const ct = meetingContact.get(r.id)!;
+    const k = ctById.get(ct);
+    if (!k) continue;
+    const fecha = toDay(p.hs_meeting_start_time) ?? toDay(p.hs_createdate);
+    const agendada = toDay(p.hs_createdate) ?? fecha;
+    if (!fecha || !agendada) continue;
+    if (agendada < start && fecha < start) continue;
+    const st = meetingStatus(p.hs_meeting_outcome);
+    const res = resLabel(P.meetingResult.property ? p[P.meetingResult.property] : null);
+    const fb = fbLabel(P.meetingFeedback.property ? p[P.meetingFeedback.property] : null);
+    const need = needLabel(P.meetingNeed.property ? p[P.meetingNeed.property] : null);
+    meetings.push({
+      id: r.id, ct, co: k.co, sdr: ownerName(p.hubspot_owner_id) ?? k.sdr, agendada, fecha, st,
+      ...(st === "Reprogramada" ? { reprog: true } : {}),
+      ...(res ? { res } : {}), ...(fb ? { fb } : {}), ...(need ? { need } : {}),
+    });
+  }
+
+  // ── Negocios ───────────────────────────────────────────────────────────
+  let deals: RadarDeal[] = [];
+  try {
+    const coDeals = await batchAssociations("companies", "deals", companyIds, token);
+    const dealCompany = new Map<string, string>();
+    for (const [co, ds] of coDeals) for (const d of ds) if (!dealCompany.has(d)) dealCompany.set(d, co);
+    if (dealCompany.size) {
+      const stages = await dealStages(token);
+      const raw = await batchRead("deals", Array.from(dealCompany.keys()), ["dealstage", "amount", "createdate"], token);
+      deals = raw.map((r) => ({
+        co: dealCompany.get(r.id)!,
+        stage: dealStageName(stages.get(r.properties.dealstage ?? ""), r.properties.dealstage ?? ""),
+        amount: Number(r.properties.amount) || 0,
+        created: toDay(r.properties.createdate) ?? "",
+      }));
+    }
+  } catch (e) {
+    warnings.push(`No se pudieron leer los negocios: ${(e as Error).message}`);
+  }
+
+  if (unknownStatuses.size) warnings.push(`Status de empresa fuera del diccionario: ${Array.from(unknownStatuses).join(", ")}.`);
+  if (unknownCtStatuses.size) warnings.push(`Status de contacto fuera del diccionario: ${Array.from(unknownCtStatuses).join(", ")}.`);
+  if (!companies.length) warnings.push("No se encontraron empresas con status para este cliente en HubSpot.");
+
+  const clientData = deriveClientData({
+    name: client.name,
+    deep: settings.deep ?? undefined,
+    pipeline: settings.pipeline ?? deals.length > 0,
+    companies, contacts, meetings, deals, cfg, today,
+  });
+
+  const dataset: RadarDataset = {
+    client: clientData,
+    generated: today,
+    period: [start, today],
+    source: "hubspot",
+    syncedAt: new Date().toISOString(),
+    warnings,
+    mapping: detected.map((d) => ({ label: d.label, property: d.property })),
+  };
+  const stats = {
+    companies: companies.length,
+    contacts: contacts.length,
+    meetings: meetings.length,
+    deals: deals.length,
+    calls: contacts.reduce((n, k) => n + (k.calls ?? 0), 0),
+  };
+  await saveSnapshot(clientId, dataset, stats, by);
+  return { stats, warnings, syncedAt: dataset.syncedAt };
+}
