@@ -1,10 +1,10 @@
 // Envío del correo diario de alertas a las líderes de célula.
 //
 // Destinatarios (confirmados con BullsEye): cada líder recibe su célula y
-// Ingri Hincapié va en copia. Modo de envío según CELULAS_ALERTS_MODE:
-// - "live": a cada líder, con copia a CC_ALWAYS;
-// - cualquier otro valor o vacío (por defecto): modo prueba, TODOS los
-//   correos van solo a TEST_RECIPIENT. Así se revisan antes de activarlos.
+// Ingri Hincapié va en copia. Activado (confirmado con BullsEye tras recibir
+// la prueba): por defecto va a cada líder con copia a CC_ALWAYS. Con
+// CELULAS_ALERTS_MODE=test (o testOnly) TODOS los correos van solo a
+// TEST_RECIPIENT.
 // Envío por Resend (RESEND_API_KEY, ver lib/mailer.ts). Remitente:
 // CELULAS_ALERTS_FROM (ej. alertas@bullseye-abm.com, con el dominio
 // verificado en Resend) o, si no está, onboarding@resend.dev (solo puede
@@ -37,7 +37,7 @@ export async function buildAllDigests(today = chileToday()): Promise<{ digests: 
 
 export async function sendCellAlerts(opts: { today?: string; force?: boolean; testOnly?: boolean; leaderKey?: string } = {}): Promise<{ mode: string; today: string; results: SendResult[]; skippedReason?: string }> {
   const today = opts.today ?? chileToday();
-  const live = process.env.CELULAS_ALERTS_MODE === "live" && !opts.testOnly;
+  const live = process.env.CELULAS_ALERTS_MODE !== "test" && !opts.testOnly;
   const mode = live ? "live" : "test";
   if (!opts.force && !isBusinessDay(today)) return { mode, today, results: [], skippedReason: "No es día hábil" };
 

@@ -10,6 +10,8 @@ export const maxDuration = 300;
 // - GET ?format=json             → asunto, destinatario y resumen de cada líder
 // - POST ?leader=<clave>         → envía AHORA en modo prueba (solo a la casilla
 //                                  de prueba), aunque no sea día hábil
+// - POST ?leader=<clave>&live=1   → envía AHORA el correo real a esa líder
+//                                  (con copia), aunque no sea día hábil
 export async function GET(request: NextRequest) {
   try {
     const sp = request.nextUrl.searchParams;
@@ -30,8 +32,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const leaderKey = request.nextUrl.searchParams.get("leader") || undefined;
-    return NextResponse.json(await sendCellAlerts({ force: true, testOnly: true, leaderKey }));
+    const sp = request.nextUrl.searchParams;
+    const leaderKey = sp.get("leader") || undefined;
+    const live = sp.get("live") === "1";
+    return NextResponse.json(await sendCellAlerts({ force: true, testOnly: !live, leaderKey }));
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });
   }
