@@ -452,21 +452,24 @@ export function ViewAlerts() {
   );
 }
 
-// Correo diario a las líderes: vista previa y envío de prueba (solo a la
-// casilla de prueba — ver lib/celulasSdr/server/alertsMail.ts).
+// Correo diario a las líderes: vista previa, envío de prueba (solo a la
+// casilla de prueba) y envío real inmediato a una líder — ver
+// lib/celulasSdr/server/alertsMail.ts.
 function MailAlertsCard() {
   const { M } = useCells();
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const sendTest = async (key: string) => {
-    setBusy(key);
+  const sendTest = async (key: string, live = false) => {
+    if (live && !confirm("¿Enviar ahora el correo real a esta líder (con copia)?")) return;
+    setBusy(live ? `live:${key}` : key);
     setMsg(null);
     try {
-      const res = await fetch(`/api/celulas-sdr/alerts-preview?leader=${encodeURIComponent(key)}`, { method: "POST" });
+      const res = await fetch(`/api/celulas-sdr/alerts-preview?leader=${encodeURIComponent(key)}${live ? "&live=1" : ""}`, { method: "POST" });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error || "Error");
       const r = (j.results ?? [])[0];
-      setMsg(r ? (r.status === "sent" ? `Prueba enviada a ${r.to.join(", ")}.` : `No se envió: ${r.error}`) : "No hubo nada que enviar.");
+      const what = live ? "Correo enviado" : "Prueba enviada";
+      setMsg(r ? (r.status === "sent" ? `${what} a ${[...r.to, ...r.cc].join(", ")}.` : `No se envió: ${r.error}`) : "No hubo nada que enviar.");
     } catch (e) {
       setMsg(`No se pudo enviar: ${(e as Error).message}`);
     } finally {
@@ -481,6 +484,7 @@ function MailAlertsCard() {
           <span key={l.key} style={{ display: "inline-flex", gap: 6 }}>
             <a className="cs-btn" href={`/api/celulas-sdr/alerts-preview?leader=${encodeURIComponent(l.key)}`} target="_blank" rel="noreferrer">Ver correo de {l.short}</a>
             <button className="cs-btn" disabled={!!busy} onClick={() => sendTest(l.key)}>{busy === l.key ? "Enviando…" : "Enviarme prueba"}</button>
+            <button className="cs-btn" disabled={!!busy} onClick={() => sendTest(l.key, true)}>{busy === `live:${l.key}` ? "Enviando…" : `Enviar ahora a ${l.short}`}</button>
           </span>
         ))}
       </div>
