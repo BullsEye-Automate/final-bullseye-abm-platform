@@ -48,6 +48,7 @@ export default function RadarReport({
   const rootRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const pendingJump = useRef<string | null>(null);
+  const shownView = useRef<number | null>(null);
 
   useEffect(() => {
     try { if (localStorage.getItem("radar-theme") === "dark") setTheme("dark"); } catch { /* sin almacenamiento */ }
@@ -72,8 +73,14 @@ export default function RadarReport({
   useEffect(() => {
     const id = pendingJump.current;
     pendingJump.current = null;
+    // Al abrir no se mueve nada (en móvil escondería el menú del portal)
+    // (también con el doble efecto de React en desarrollo)
+    if (shownView.current === null || shownView.current === pi) { shownView.current = pi; return; }
+    shownView.current = pi;
+    // En la app interna el scroll es del <main>, no de la ventana: se lleva
+    // a la vista el inicio del informe en vez de window.scrollTo
     if (id) document.getElementById(id)?.scrollIntoView();
-    else window.scrollTo({ top: 0 });
+    else rootRef.current?.scrollIntoView({ block: "start" });
   }, [pi]);
 
   function jump(value: string) {

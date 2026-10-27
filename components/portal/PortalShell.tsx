@@ -59,7 +59,9 @@ export default function PortalShell({
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col lg:flex-row" style={{ background: "#F4F2FB" }}>
+    // self-start: html/body miden 100% de alto, así el layout crece con el
+    // contenido y el sidebar puede quedar fijo (sticky) al hacer scroll
+    <div className="min-h-screen w-full self-start flex flex-col lg:flex-row" style={{ background: "#F4F2FB" }}>
       <aside
         className="lg:w-[236px] shrink-0 lg:h-screen lg:sticky lg:top-0 overflow-y-auto text-white px-3 py-4 lg:py-5 flex flex-col"
         style={{ background: "#251762" }}
