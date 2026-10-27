@@ -367,6 +367,7 @@ export default function ChatV2Page() {
   const [alloCalls, setAlloCalls]         = useState<AlloCall[]>([]);
   const [alloLoading, setAlloLoading]     = useState(false);
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
+  const [alloPhoneOverride, setAlloPhoneOverride] = useState("");
 
   const [emailType, setEmailType]           = useState<EmailType>("cold");
   const [typeOpen, setTypeOpen]             = useState(false);
@@ -436,14 +437,15 @@ export default function ChatV2Page() {
   }, [contactQuery]);
 
   useEffect(() => {
+    const phone = alloPhoneOverride.trim() || selectedContact?.phone;
     setAlloCalls([]);
     setSelectedCallId(null);
-    if (!selectedContact?.phone) return;
+    if (!phone) return;
     setAlloLoading(true);
-    fetch(`/api/allo/contact-calls?phone=${encodeURIComponent(selectedContact.phone)}`)
+    fetch(`/api/allo/contact-calls?phone=${encodeURIComponent(phone)}`)
       .then(r => r.json()).then(j => setAlloCalls(j.calls ?? [])).catch(() => {})
       .finally(() => setAlloLoading(false));
-  }, [selectedContact?.phone]);
+  }, [selectedContact?.phone, alloPhoneOverride]);
 
   function chooseRecipientType(t: "prospecto" | "cliente") {
     setRecipientType(t);
@@ -475,6 +477,7 @@ export default function ChatV2Page() {
     setTitle("");
     setAlloCalls([]);
     setSelectedCallId(null);
+    setAlloPhoneOverride("");
   }
 
   async function send(userContent: string, isFirst = false, image?: typeof pendingImage) {
@@ -752,10 +755,29 @@ export default function ChatV2Page() {
                     Llamadas recientes (Allo)
                   </label>
                   {alloLoading && <div className="text-[12px]" style={{ color: "#b0acd4" }}>Buscando llamadas...</div>}
-                  {!alloLoading && !selectedContact.phone && <div className="text-[12px]" style={{ color: "#b0acd4" }}>Sin teléfono en HubSpot</div>}
-                  {!alloLoading && selectedContact.phone && alloCalls.length === 0 && (
-                    <div className="text-[12px]" style={{ color: "#b0acd4" }}>Sin llamadas en los últimos 90 días</div>
+                  {!alloLoading && !selectedContact.phone && !alloPhoneOverride && (
+                    <div className="text-[12px] mb-2" style={{ color: "#b0acd4" }}>Sin teléfono en HubSpot</div>
                   )}
+                  {!alloLoading && (selectedContact.phone || alloPhoneOverride) && alloCalls.length === 0 && (
+                    <div className="text-[12px] mb-2" style={{ color: "#b0acd4" }}>Sin llamadas en los últimos 90 días para este número</div>
+                  )}
+                  {/* Búsqueda manual por teléfono */}
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      value={alloPhoneOverride}
+                      onChange={e => setAlloPhoneOverride(e.target.value)}
+                      placeholder={selectedContact.phone ? `Probar otro número (actual: ${selectedContact.phone})` : "Buscar por teléfono (+56...)"}
+                      className="flex-1 rounded-xl px-3 py-2 text-[12px] outline-none"
+                      style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }}
+                    />
+                    {alloPhoneOverride && (
+                      <button type="button" onClick={() => setAlloPhoneOverride("")}
+                        className="shrink-0 p-1.5 rounded-lg" style={{ color: "#9b97c0" }}>
+                        <IconX size={12} />
+                      </button>
+                    )}
+                  </div>
                   {alloCalls.length > 0 && (
                     <div className="space-y-1.5">
                       {alloCalls.map(call => (
