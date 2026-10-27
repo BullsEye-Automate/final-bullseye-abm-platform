@@ -1,10 +1,11 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { fetchHSOwners } from "@/lib/hubspot";
 import { chileToday } from "@/lib/celulasSdr/calendar";
-import { CO_ORDER, CT_ORDER, CONNECTED_DISPOSITION, callChannel } from "../dictionaries";
+import { CO_ORDER, CT_ORDER } from "../dictionaries";
 import { deriveClientData, type FlatCompany, type FlatContact } from "../derive";
-import type { RadarDataset, RadarDeal, RadarMeeting } from "../types";
-import { batchAssociations, batchRead, callDispositions, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
+import type { RadarActivity, RadarDataset, RadarDeal, RadarMeeting } from "../types";
+import { loadActivities } from "./activities";
+import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot } from "./store";
 import { checkClientActive } from "./masterClients";
 
@@ -189,39 +190,16 @@ export async function syncClientRadar(clientId: string, by: string) {
   const kept = rawContacts.filter((r) => ctStatusLabel(r.properties[contactStatusProp]));
   const keptIds = kept.map((r) => r.id);
 
-  // Actividad: llamadas (= intentos), correos y comunicaciones (WhatsApp / LinkedIn)
-  const [ctCalls, ctEmails, ctComms, ctMeetings] = await Promise.all([
-    batchAssociations("contacts", "calls", keptIds, token),
-    batchAssociations("contacts", "emails", keptIds, token),
-    batchAssociations("contacts", "communications", keptIds, token),
-    batchAssociations("contacts", "meetings", keptIds, token),
-  ]);
-  const commIds = Array.from(new Set(Array.from(ctComms.values()).flat()));
-  const commChannel = new Map<string, string>();
-  if (commIds.length) {
-    for (const r of await batchRead("communications", commIds, ["hs_communication_channel_type"], token)) {
-      commChannel.set(r.id, (r.properties.hs_communication_channel_type ?? "").toUpperCase());
-    }
-  }
-
-  // Detalle de llamadas ("La Biblia"): "Tipo de llamada" WhatsApp / LinkedIn
-  // son de ese canal y no cuentan como intento telefónico; "Resultado de la
-  // llamada" Conectada / Conectado - … = conversación real. Si no se puede
-  // leer, todas las llamadas cuentan como intentos.
-  const callInfo = new Map<string, { ch: "wa" | "li" | null; conn: boolean }>();
-  const callIds = Array.from(new Set(Array.from(ctCalls.values()).flat()));
-  if (callIds.length) {
-    try {
-      const typeProp = (catalog.calls ?? []).find((p) => p.name === "hs_activity_type");
-      const typeLabel = optionLabeler(typeProp as DetectedProperty | undefined);
-      const dispositions = await callDispositions(token).catch(() => new Map<string, string>());
-      for (const r of await batchRead("calls", callIds, ["hs_activity_type", "hs_call_disposition"], token)) {
-        const disp = dispositions.get(r.properties.hs_call_disposition ?? "") ?? "";
-        callInfo.set(r.id, { ch: callChannel(typeLabel(r.properties.hs_activity_type)), conn: CONNECTED_DISPOSITION.test(disp) });
-      }
-    } catch (e) {
-      warnings.push(`No se pudo leer el detalle de las llamadas (tipo y resultado): ${(e as Error).message}`);
-    }
+  // ── Actividades de la cuenta (empresa + contactos): profundidad por canal
+  const act = await loadActivities({ companyIds, contactIds: keptIds, contactCompany, catalog, token });
+  warnings.push(...act.warnings);
+  const ctMeetings = act.contactMeetings;
+  const actByCt = new Map<string, RadarActivity[]>();
+  for (const a of act.activities) {
+    if (a.ct == null) continue;
+    const arr = actByCt.get(String(a.ct)) ?? [];
+    arr.push(a);
+    actByCt.set(String(a.ct), arr);
   }
 
   const contacts: FlatContact[] = kept.map((r) => {
@@ -229,13 +207,14 @@ export async function syncClientRadar(clientId: string, by: string) {
     const st = contactStatusCanon(ctStatusLabel(p[contactStatusProp]))!;
     if (!CT_ORDER.includes(st)) unknownCtStatuses.add(st);
     const co = contactCompany.get(r.id)!;
-    const comms = (ctComms.get(r.id) ?? []).map((id) => commChannel.get(id) ?? "");
-    const callList = (ctCalls.get(r.id) ?? []).map((id) => callInfo.get(id));
-    const calls = callList.filter((c) => !c?.ch).length;
-    const conv = callList.filter((c) => c?.conn).length;
-    const wa = comms.filter((c) => c.includes("WHATS")).length + callList.filter((c) => c?.ch === "wa").length;
-    const li = comms.filter((c) => c.includes("LINKEDIN")).length + callList.filter((c) => c?.ch === "li").length;
-    const em = (ctEmails.get(r.id) ?? []).length;
+    // Conteos por contacto desde sus actividades (intentos = llamadas telefónicas)
+    const acts = actByCt.get(r.id) ?? [];
+    const calls = acts.filter((a) => a.k === "call").length;
+    const conv = acts.filter((a) => a.conn).length;
+    const wa = acts.filter((a) => a.k === "wa").length;
+    const li = acts.filter((a) => a.k === "li").length;
+    const em = acts.filter((a) => a.k === "em").length;
+    const lastAct = acts.reduce((m, a) => (a.d && a.d > m ? a.d : m), "");
     const name = [p.firstname, p.lastname].filter(Boolean).join(" ").trim() || p.email || `Contacto ${r.id}`;
     const obj = objLabel(P.contactObjection.property ? p[P.contactObjection.property] : null);
     const sig = sigLabel(P.contactSignal.property ? p[P.contactSignal.property] : null);
@@ -247,7 +226,7 @@ export async function syncClientRadar(clientId: string, by: string) {
       ...(calls ? { att: calls, calls } : {}),
       ...(conv ? { conv } : {}),
       ...(wa ? { wa } : {}), ...(li ? { li } : {}), ...(em ? { em } : {}),
-      ...(toDay(p.notes_last_contacted) ? { last: toDay(p.notes_last_contacted) } : {}),
+      ...(toDay(p.notes_last_contacted) || lastAct ? { last: toDay(p.notes_last_contacted) ?? lastAct } : {}),
       ...(toDay(p.notes_next_activity_date) ? { next: toDay(p.notes_next_activity_date) } : {}),
       ...(obj ? { obj } : {}), ...(sig ? { sig } : {}),
     };
@@ -330,6 +309,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     pipeline: settings.pipeline ?? deals.length > 0,
     companies, contacts, meetings, deals, cfg, today,
   });
+  clientData.activities = act.activities;
 
   const dataset: RadarDataset = {
     client: clientData,
@@ -346,6 +326,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     meetings: meetings.length,
     deals: deals.length,
     calls: contacts.reduce((n, k) => n + (k.calls ?? 0), 0),
+    activities: act.activities.length,
   };
   await saveSnapshot(clientId, dataset, stats, by);
   return { stats, warnings, syncedAt: dataset.syncedAt };

@@ -96,6 +96,7 @@ export async function checkClientHubspot(clientId: string) {
   add("meetings", "Reuniones", false, await search("meetings"));
   add("emails", "Correos", false, await search("emails"));
   add("communications", "WhatsApp / LinkedIn", false, await search("communications"));
+  add("notes", "Notas", false, await search("notes"));
   add("deals", "Negocios (pipeline)", false, await search("deals"));
 
   return {

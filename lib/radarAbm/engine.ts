@@ -130,6 +130,7 @@ export function compute(ds: RadarDataset, cfg: RadarConfig = DEFAULT_CONFIG): Mo
     sch: cnt(Mt, (m) => (m.agendada || "").startsWith(mo)), held: cnt(held, (m) => (m.fecha || "").startsWith(mo)),
   }));
   M.health = health(M, cfg);
+  M.ad = activityDepth(M);
   return M;
 }
 
@@ -385,5 +386,74 @@ export function filterDataset(ds: RadarDataset, f: { sdr?: string; pais?: string
       meetings: ds.client.meetings.filter((m) => ids.has(m.co)),
       deals: ds.client.deals.filter((d) => ids.has(d.co)),
     },
+  };
+}
+
+/* ---------- profundidad por canales (actividades de la cuenta) ---------- */
+// Canales de contacto: los que cuentan para "multicanal". Las notas suman
+// actividad pero no son un canal.
+export const CHANNELS: { k: string; l: string; c: string }[] = [
+  { k: "call", l: "Llamadas", c: "var(--s1)" },
+  { k: "wa", l: "WhatsApp", c: "var(--g-int)" },
+  { k: "li", l: "LinkedIn", c: "var(--g-fut)" },
+  { k: "em", l: "Correo", c: "var(--g-cont)" },
+  { k: "sms", l: "SMS", c: "var(--g-disp)" },
+];
+
+// Con datos de HubSpot se usan las actividades asociadas a la empresa o a sus
+// contactos (sin duplicar); con datos demo, los conteos por contacto.
+export function activityDepth(M: Model) {
+  const acts: any[] | undefined = M.cl.activities;
+  const fromActivities = Array.isArray(acts);
+  const co = new Map((M.C as any[]).map((c) => [String(c.id), c]));
+  M.C.forEach((c: any) => { c.ch = { call: 0, wa: 0, li: 0, em: 0, sms: 0, note: 0 }; c.rep = 0; c.conn = 0; c.touched = new Set(); c.coOnly = 0; });
+  if (fromActivities) {
+    for (const a of acts!) {
+      const c = co.get(String(a.co));
+      if (!c) continue;
+      c.ch[a.k] = (c.ch[a.k] || 0) + 1;
+      if (a.in) c.rep++;
+      if (a.conn) c.conn++;
+      if (a.ct != null) c.touched.add(String(a.ct)); else c.coOnly++;
+    }
+  } else {
+    M.K.forEach((k: any) => {
+      const c = k.c; if (!c) return;
+      c.ch.call += k.calls || 0; c.ch.wa += k.wa || 0; c.ch.li += k.li || 0; c.ch.em += k.em || 0;
+      if ((k.calls || 0) + (k.wa || 0) + (k.li || 0) + (k.em || 0)) c.touched.add(String(k.id));
+    });
+  }
+  M.C.forEach((c: any) => {
+    c.acts = sum(Object.values(c.ch), (v: any) => v);
+    c.nch = CHANNELS.filter((x) => c.ch[x.k] > 0).length;
+  });
+  const worked = M.worked as any[], active = worked.filter((c) => c.acts > 0);
+  const tot: Record<string, number> = {};
+  for (const k of ["call", "wa", "li", "em", "sms", "note"]) tot[k] = sum(M.C, (c: any) => c.ch[k]);
+  // por mes (solo con fechas)
+  const months = (M.MONTHS as string[]).map((mo) => {
+    const row: Record<string, any> = { mo };
+    for (const x of CHANNELS) row[x.k] = fromActivities ? cnt(acts!, (a) => a.k === x.k && (a.d || "").startsWith(mo)) : 0;
+    return row;
+  });
+  return {
+    fromActivities,
+    dated: fromActivities && acts!.some((a) => a.d),
+    total: sum(Object.values(tot), (v: any) => v),
+    tot,
+    active,
+    perWorked: div(sum(worked, (c) => c.acts), worked.length),
+    multi: div(cnt(active, (c) => c.nch >= 2), active.length),
+    avgCh: div(sum(active, (c) => c.nch), active.length),
+    touched: div(sum(active, (c) => c.touched.size), active.length),
+    coOnly: sum(M.C, (c: any) => c.coOnly),
+    replies: sum(M.C, (c: any) => c.rep),
+    conn: sum(M.C, (c: any) => c.conn),
+    byChannel: CHANNELS.map((x) => ({ ...x, cov: div(cnt(worked, (c) => c.ch[x.k] > 0), worked.length) || 0 })),
+    byNch: [1, 2, 3, 4].map((n) => {
+      const set = active.filter((c) => (n === 4 ? c.nch >= 4 : c.nch === n));
+      return { n, count: set.length, mRate: div(cnt(set, (c) => c.M.length), set.length) || 0 };
+    }),
+    months,
   };
 }

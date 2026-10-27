@@ -1,7 +1,7 @@
 import { G, CO_G, CO_DEFS, CO_ORDER, CT_DEFS, CT_G, CT_ORDER, PAUSA, PEND, POS, REJ, MIN_N } from "./dictionaries";
 import {
   type Model, esc, by, cnt, sum, div, P, N, F1, USD, dmy, addDays,
-  seg, segCo, barrier, objectionPattern, insights, learnings, recsBE, recsCli,
+  seg, segCo, barrier, objectionPattern, insights, learnings, recsBE, recsCli, CHANNELS,
 } from "./engine";
 
 // Radar ABM — render de las secciones (§1 a §34 y A1 a A4) como HTML.
@@ -151,6 +151,21 @@ export function sec(no: number | string, id: string, title: string, lead: string
 const partialNote = (M: Model) => (M.partial ? `* ${M.MLAB[M.MONTHS[M.MONTHS.length - 1]].replace("*", "")} parcial (corte ${dmy(M.TODAY)}). ` : "");
 const monthLabels = (M: Model) => M.MONTHS.map((m: string) => M.MLAB[m]);
 
+/* ---------- profundidad por canales ---------- */
+function channelDepth(M: Model): string {
+  const ad = M.ad;
+  const mix = [...CHANNELS.map((x) => ({ l: x.l, v: ad.tot[x.k] || 0, c: x.c })), { l: "Notas", v: ad.tot.note || 0, c: "var(--g-pend)" }];
+  const extra = ad.fromActivities
+    ? `${tile("Correos respondidos", N(ad.replies), "correos entrantes del contacto")}${tile("Llamadas conectadas", N(ad.conn), "“Resultado de la llamada” = Conectad…")}`
+    : "";
+  return `<div class="rcard" style="margin-top:14px"><h4>Profundidad por canales</h4>
+  <div class="tiles">${tile("Actividades por empresa trabajada", F1(ad.perWorked), `${N(ad.total)} actividades en total`)}${tile("Empresas multicanal", P(ad.multi), "2+ canales entre las empresas con actividad")}${tile("Canales por empresa", F1(ad.avgCh), "promedio entre empresas con actividad")}${tile("Contactos tocados por empresa", F1(ad.touched), "contactos con al menos una actividad")}${extra}</div>
+  <div class="grid2" style="margin-top:14px"><div><h4>Mezcla de canales</h4>${ad.total ? stack(mix) : '<p class="note" style="margin-top:0">Sin actividades registradas.</p>'}</div>
+  <div><h4>Empresas trabajadas con actividad por canal</h4>${bars(ad.byChannel.map((x: any) => ({ l: x.l, v: x.cov, c: x.c })), { pct: 1, max: 1 })}</div></div>
+  <h4 style="margin-top:16px">% de empresas con reunión según canales usados</h4>${bars(ad.byNch.filter((x: any) => x.count).map((x: any) => ({ l: `${x.n === 4 ? "4 o más" : x.n} canal${x.n === 1 ? "" : "es"} (n=${x.count})`, v: x.mRate, c: "var(--g-int)" })), { pct: 1, max: 1 })}
+  <p class="note">${ad.fromActivities ? `Actividades asociadas a la empresa o a sus contactos, contadas una sola vez (${N(ad.coOnly)} registradas solo en la empresa). Llamadas con “Tipo de llamada” WhatsApp o LinkedIn cuentan en ese canal.` : "Datos demo: conteos por contacto (sin actividades registradas solo en la empresa ni fechas)."} Relación descriptiva, no causal.</p></div>`;
+}
+
 /* ---------- render de secciones ---------- */
 export function render(M: Model, mapping?: { label: string; property: string | null }[] | null): Record<string, string> {
   const k = M.kpi, h = M.health, cl = M.cl, C: any[] = M.C, K: any[] = M.K, f = M.fu, rf = M.ref, TODAY: string = M.TODAY;
@@ -174,7 +189,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   <div>${table([{ h: "Componente", f: (c) => esc(c.n) }, { h: "Peso", n: 1, f: (c) => (c.s == null ? `<s>${c.w}</s>` : c.w) }, { h: "Valor", n: 1, f: (c) => P(c.v) }, { h: "Meta", n: 1, f: (c) => P(c.t) }, { h: "Puntaje", n: 1, f: (c) => (c.s == null ? '<span class="flag">sin datos</span>' : Math.round(c.s)) }, { h: "Fórmula", s: 1, f: (c) => esc(c.f) }], h.comp, { dim: (c) => c.s == null })}
   <p class="note">Metodología: cada componente se expresa como avance hacia su meta (valor ÷ meta, tope 100) y se pondera por su peso. Los componentes sin datos suficientes se excluyen y el resto se re-pondera (peso usado: ${h.wt} de ${sum(h.comp, (c: any) => c.w)}). Saludable ≥ 75 · Requiere atención 55–74 · En riesgo &lt; 55. Las metas son supuestos iniciales a calibrar con histórico real de BullsEye; el puntaje no sirve para comparar clientes con universos o ICP distintos.</p></div></div>`;
 
-  const acts = sum(K, (x) => (x.calls || 0) + (x.wa || 0) + (x.li || 0) + (x.em || 0)), calls = sum(K, (x) => x.calls || 0);
+  const acts = M.ad.fromActivities ? M.ad.total : sum(K, (x) => (x.calls || 0) + (x.wa || 0) + (x.li || 0) + (x.em || 0)), calls = M.ad.fromActivities ? M.ad.tot.call : sum(K, (x) => x.calls || 0);
   s.kpis = `<div class="tiles">
     ${tile("Cobertura de cuentas", P(k.coverage), `${N(k.worked)} de ${N(k.universe)} empresas`, "hl", "target")}
     ${tile("Contactabilidad", P(k.contactRate), "efectivos / gestionados", "", "phone")}
@@ -197,7 +212,8 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   const qualWorked = M.worked.filter((c: any) => c.st !== "No califica");
   s.profundidad = `<div class="tiles">${tile("Contact penetration", P(k.penetration), "contactos gestionados / contactos ICP disponibles")}${tile("Contactos por empresa", F1(div(K.length, C.length)), "promedio en base")}${tile("Efectivos por empresa con contacto", F1(div(M.eff.length, M.coEff.length)), "interlocutores reales")}${tile("Reuniones por empresa", F1(k.mPerAcc), "entre empresas con reunión")}${tile("Reuniones por contacto efectivo", F1(k.mPerCt), "")}${tile("Interlocutores distintos", F1(k.interlocutors), "por empresa con reunión")}</div>
   <div class="rcard" style="margin-top:14px"><h4>Profundidad de las empresas trabajadas que califican (n=${qualWorked.length})</h4>${stack(depthOrder.map((d) => ({ l: d, v: cnt(qualWorked, (c: any) => c.depth === d), c: depthC[d] })))}
-  <p class="note">Profunda = 3+ contactos efectivos o 2+ efectivos en áreas distintas · Multi-thread = 2+ efectivos · Single-thread = 1.</p></div>`;
+  <p class="note">Profunda = 3+ contactos efectivos o 2+ efectivos en áreas distintas · Multi-thread = 2+ efectivos · Single-thread = 1.</p></div>
+  ${channelDepth(M)}`;
 
   const dist = [0, 1, 2, 3, 4].map((n) => ({ n, C: C.filter((c) => (n === 4 ? c.effK.length >= 4 : c.effK.length === n)) }));
   s.multi = `<div class="tiles">${tile("Multi-threading", P(k.multi), `${M.coMulti.length} de ${M.coEff.length} empresas con contacto`)}${tile("Deep multi-threading", P(k.deep), `${M.coDeep.length} empresas`)}${tile("Áreas distintas por empresa", F1(div(sum(M.coEff, (c: any) => (c.areas ? c.areas.length : 0)), M.coEff.length)), "promedio entre empresas con contacto")}</div>
@@ -344,9 +360,10 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   const half = Math.floor(M.MONTHS.length / 2);
   const trendLab = half ? `${M.MLAB[M.MONTHS[M.MONTHS.length - half]].replace("*", "")}–${M.MLAB[M.MONTHS[M.MONTHS.length - 1]].replace("*", "")} vs ${M.MLAB[M.MONTHS[M.MONTHS.length - 2 * half]]}–${M.MLAB[M.MONTHS[M.MONTHS.length - half - 1]]}` : "";
+  const actEvo = M.ad.dated ? `<div class="rcard" style="margin-top:16px"><h4>Actividades por mes y canal</h4>${lineChart(CHANNELS.filter((x) => M.ad.tot[x.k]).map((x) => ({ n: x.l, c: x.c, v: M.ad.months.map((m: any) => m[x.k]) })), monthLabels(M))}<p class="note">Actividades asociadas a las empresas del universo o a sus contactos, por fecha de la actividad.</p></div>` : "";
   s.evolucion = `<div class="grid2"><div class="rcard"><h4>Reuniones por mes</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}</div>
   <div class="rcard"><h4>Actividad de cuentas por mes</h4>${lineChart([{ n: "Empresas asignadas", c: "var(--s1)", v: M.month.map((m: any) => m.asg) }, { n: "Contactos efectivos (por última actividad)", c: "var(--s2)", v: M.month.map((m: any) => m.eff) }], monthLabels(M))}</div></div>
-  <p class="note">${partialNote(M)}Tendencia de reuniones (${trendLab}, normalizado): ${h.ratio == null ? "sin datos" : (h.ratio >= 1 ? "+" : "") + P(h.ratio - 1)}. Los contactos efectivos usan la fecha de última actividad como aproximación; con el historial de cambios de estado de HubSpot se podrá fechar cada transición.</p>`;
+  <p class="note">${partialNote(M)}Tendencia de reuniones (${trendLab}, normalizado): ${h.ratio == null ? "sin datos" : (h.ratio >= 1 ? "+" : "") + P(h.ratio - 1)}. Los contactos efectivos usan la fecha de última actividad como aproximación; con el historial de cambios de estado de HubSpot se podrá fechar cada transición.</p>${actEvo}`;
 
   s["stock-op"] = `<div class="tiles">${tile("Empresas asignadas sin gestión", N(cnt(C, (c) => c.st === "Asignada")), `${cnt(C, (c) => c.st === "Asignada" && c.asg < d30)} con más de 30 días`)}${tile("Hot Calling 🔥", N(cnt(K, (x) => x.st === "Hot Calling 🔥")), "gestión inmediata")}${tile("Por gestionar", N(cnt(K, (x) => x.st === "Por gestionar")))}${tile("Buscar", N(cnt(K, (x) => x.st === "Buscar")), "búsqueda de teléfono")}${tile("Seguimientos vencidos", N(f.overdue.length))}${tile("Contactos pendientes", N(cnt(K, (x) => PEND.has(x.st))), "total Hot + Por gestionar + Buscar")}</div>
   <p class="note">Responde a: ¿cuánto trabajo pendiente existe? Incluye ${N(cnt(K, (x) => x.nuevo))} contactos nuevos agregados en empresas ya nutridas.</p>`;
@@ -395,6 +412,8 @@ export function masterCompanyCols(M: Model): (Col & { x: (r: any) => any })[] {
     { h: "Gestionados", n: 1, f: (c) => c.nmg || 0, x: (c) => c.nmg || 0 },
     { h: "Efectivos", n: 1, f: (c) => c.neff || 0, x: (c) => c.neff || 0 },
     { h: "Roles", s: 1, f: (c) => esc((c.areas || []).join(", ")), x: (c) => (c.areas || []).join(", ") },
+    { h: "Actividades", n: 1, f: (c) => N(c.acts || 0), x: (c) => c.acts || 0 },
+    { h: "Canales", s: 1, f: (c) => esc(CHANNELS.filter((x) => c.ch?.[x.k]).map((x) => x.l).join(", ") || "—"), x: (c) => CHANNELS.filter((x) => c.ch?.[x.k]).map((x) => x.l).join(", ") },
     { h: "R. agendadas", n: 1, f: (c) => c.msch || 0, x: (c) => c.msch || 0 },
     { h: "R. realizadas", n: 1, f: (c) => c.mheld || 0, x: (c) => c.mheld || 0 },
     { h: "Seguimiento", f: (c) => (c.fu ? "Sí" : "No"), x: (c) => (c.fu ? "Sí" : "No") },

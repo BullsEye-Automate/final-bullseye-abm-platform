@@ -80,6 +80,20 @@ export type RadarDeal = {
   created: string;
 };
 
+// Actividad asociada a la cuenta (profundidad por canal). Solo en datos
+// sincronizados desde HubSpot; los datos demo traen solo los conteos por
+// contacto (calls / wa / li / em).
+export type ActivityKind = "call" | "wa" | "li" | "em" | "sms" | "note";
+export type RadarActivity = {
+  id: string;
+  k: ActivityKind;
+  co: number | string;       // empresa
+  ct?: number | string;      // contacto (sin él: asociada solo a la empresa)
+  d?: string;                // fecha (YYYY-MM-DD)
+  in?: 1;                    // correo entrante (respuesta)
+  conn?: 1;                  // llamada conectada
+};
+
 export type RadarClientData = {
   name: string;
   universe: number;
@@ -90,6 +104,7 @@ export type RadarClientData = {
   contacts: RadarContact[];
   meetings: RadarMeeting[];
   deals: RadarDeal[];
+  activities?: RadarActivity[];
 };
 
 export type RadarSource = "demo" | "hubspot";
