@@ -1,0 +1,16 @@
+PROPIEDAD,ETIQUETAS,DEFINICIONES
+Status de la asignación - SDR,Asignada,"Empresa asignada a SDR, todavia no se busca telefono ni se comienza a trabajar"
+,En gestión,"SDR toma la empresa y comienza a trabajarla, busca numeros de telefonos, se intenta llamar. No sale de este status hasta tener alguna respuesta o todos los intentos de llamadas a todos los contactos"
+,En seguimiento,Algun contacto tomador de desicion de la empresa comenta que lo llamen en una fecha determinada. o ya se esta en conversacion via whatsapp
+,Empresa ya nutrida,"Una vez ya nutrida, prospeccion o KAM la marca como ya nutrida y SDR puede volver a tomar empresa (como si fuera asignada)"
+,Sin interés ahora - Retomar,Algun contacto tomador de desicion de la empresa comenta que no esta interesado por ahora y pide retomar más adelante
+,No califica,SDR considera que la empresa no cumple con el ICP del cliente. Esto puede determinarse despues de alguna llamada o viendo a la empresa
+,No interesados,Algun contacto tomador de desicion de la empresa comenta que no esta interesado.
+,Reunión Agendada,Reunión agendada con algun contacto de la empresa. 
+,"Gestionada - sin contactos fit""","SDR no encuentra contactos que formen parte del ICP. (ESTO NO se pone cuando no se encuentran numeros de telefonos, SOLAMENTE cuando no forman parte del ICP)"
+,Gestionada - sin comunicación,"SDR intenta llamar a todos los contactos del ICP que posee en Hubspot, pero no obtiene respuesta de ellos (ya sea por intento de llamada o por no conseguir numero de telefono). "
+,Gestionada por linkedin,"Despues de hacer intento de comunicación con todos los contactos via telefono o whatsapp, se puede intentar comunicar por LinkedIn con tomador de decisión"
+,En conversaciones con _____ (nombre de cliente BullsEye),Algun contacto tomador de desicion de la empresa comenta que ya estan en contacto con _____ (cliente BullsEye)
+,Nutrir,"Una vez que no se logro contactar con nadie de la emrpesa, se vuelve a prospectar."
+,Clientes,SDR durante la llamada descubre que la empresa ya es cliente de  _________ (cliente BullsEye)
+,Sin contactos - (ya nutrida),"Empresa nutrida por prospección, pero no se logro encontrar ningun contacto nuevo relevante para el ICP"

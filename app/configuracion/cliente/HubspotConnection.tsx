@@ -10,10 +10,17 @@ import { IconAlertCircle, IconCloudDataConnection, IconCheck, IconLoader2, IconP
 
 type Status = { connected: boolean; last4: string | null; users?: number };
 
+// Células SDR usa owners, contactos, empresas y correos; el Radar ABM además
+// lee negocios y la definición de las propiedades. Si a HubSpot le falta
+// algún permiso para llamadas, reuniones o comunicaciones, "Probar HubSpot
+// del cliente" (Radar ABM) muestra el nombre exacto que pide.
 const SCOPES = [
   "crm.objects.owners.read",
   "crm.objects.contacts.read",
   "crm.objects.companies.read",
+  "crm.objects.deals.read",
+  "crm.schemas.companies.read",
+  "crm.schemas.contacts.read",
   "sales-email-read",
 ];
 
@@ -73,7 +80,7 @@ export default function HubspotConnection({ clientId }: { clientId: string }) {
         </h2>
         <p className="text-sm text-ink-muted mt-1">
           Solo si el cliente se trabaja en su propio HubSpot. Los correos, WhatsApp y LinkedIn que los SDR
-          registran ahí se suman a Células SDR con el cliente identificado. Si se trabaja en el HubSpot de
+          registran ahí se suman a Células SDR con el cliente identificado, y el Radar ABM puede leer su universo desde aquí. Si se trabaja en el HubSpot de
           BullsEye, déjalo sin conectar.
         </p>
       </div>

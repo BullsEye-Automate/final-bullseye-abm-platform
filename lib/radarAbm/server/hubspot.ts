@@ -1,0 +1,210 @@
+import { hsFetchWithRetry, hsHeaders } from "@/lib/hubspot";
+import { PROPERTY_DEFS } from "../dictionaries";
+
+// Radar ABM — lectura de HubSpot (solo lectura, API CRM v3/v4). El token es
+// el de BullsEye (HUBSPOT_ACCESS_TOKEN) o el token propio del cliente
+// (client_configs.hubspot_access_token); nunca llega al navegador.
+
+const HS = "https://api.hubapi.com";
+
+export type HSProperty = {
+  name: string;
+  label: string;
+  type: string;
+  fieldType?: string;
+  options?: { label: string; value: string; hidden?: boolean }[];
+};
+
+async function hsJson(url: string, init: RequestInit, what: string): Promise<any> {
+  const res = await hsFetchWithRetry(url, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HubSpot ${res.status} ${what}: ${text.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+export async function listProperties(objectType: string, token?: string): Promise<HSProperty[]> {
+  const d = await hsJson(`${HS}/crm/v3/properties/${objectType}`, { headers: hsHeaders(token) }, `leyendo propiedades de ${objectType}`);
+  return (d.results ?? []) as HSProperty[];
+}
+
+export const normLabel = (s: string) =>
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+export type PropertyCatalog = Record<string, HSProperty[]>;
+
+// Propiedades de empresas, contactos y reuniones (una llamada por objeto)
+export async function loadPropertyCatalog(token?: string): Promise<{ catalog: PropertyCatalog; errors: string[] }> {
+  const catalog: PropertyCatalog = {};
+  const errors: string[] = [];
+  // calls: solo para las etiquetas de "Tipo de llamada" (opcional)
+  for (const obj of ["companies", "contacts", "meetings", "calls"]) {
+    try {
+      catalog[obj] = await listProperties(obj, token);
+    } catch (e) {
+      catalog[obj] = [];
+      errors.push((e as Error).message);
+    }
+  }
+  return { catalog, errors };
+}
+
+// Normalización suave que conserva el guion: distingue "SDR - Xarvis" (por
+// cliente) de otras propiedades que solo empiezan con "SDR"
+const softLabel = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+export const hasLabelPrefix = (label: string, prefix: string) => softLabel(label).startsWith(softLabel(prefix));
+
+// Sufijo de cliente de una propiedad por cliente: "Status de la asignación -
+// SDR AcidLab" → "acidlab". Vacío = propiedad genérica (no es de un cliente).
+function clientSuffix(label: string, labelPrefix: string): string {
+  let rest = normLabel(softLabel(label).slice(softLabel(labelPrefix).length));
+  if (rest.startsWith("sdr ")) rest = rest.slice(4);
+  return rest;
+}
+
+// Entre las propiedades de cada cliente, la que calza con su nombre:
+// igual > una contiene a la otra ("Apply" ↔ "Apply Digital") > misma
+// primera palabra. Empate = ninguna (se elige a mano).
+export function matchClientProperty(cands: HSProperty[], labelPrefix: string, clientName: string): HSProperty | undefined {
+  const client = normLabel(clientName);
+  if (!client) return undefined;
+  const scored = cands.map((p) => {
+    const suf = clientSuffix(p.label, labelPrefix);
+    const score = !suf ? 0
+      : suf === client || suf.replace(/ /g, "") === client.replace(/ /g, "") ? 3
+      : (` ${client} `.includes(` ${suf} `) || ` ${suf} `.includes(` ${client} `)) ? 2
+      : suf.split(" ")[0] === client.split(" ")[0] ? 1 : 0;
+    return { p, score };
+  }).filter((x) => x.score > 0);
+  const best = Math.max(0, ...scored.map((x) => x.score));
+  const top = scored.filter((x) => x.score === best);
+  return top.length === 1 ? top[0].p : undefined;
+}
+
+// Busca el nombre interno de cada propiedad del Radar por su etiqueta
+// (§3.1: se confirman en el portal). Primero calce exacto de etiqueta,
+// después etiqueta que empieza igual. Lo configurado a mano manda. Las
+// propiedades por cliente (perClient) se eligen por el nombre del cliente;
+// sin cliente (configuración global) no se adivina ninguna.
+export function detectProperties(configured: Record<string, string>, catalog: PropertyCatalog, clientName?: string | null) {
+  return PROPERTY_DEFS.map((def) => {
+    const props = catalog[def.object] ?? [];
+    const manual = (configured[def.key] ?? "").trim();
+    let prop: HSProperty | undefined;
+    let candidates: { name: string; label: string }[] = [];
+    if (manual) prop = props.find((p) => p.name === manual);
+    if (def.perClient) {
+      const { labelPrefix, namePrefix } = def.perClient;
+      const cands = props.filter((p) => hasLabelPrefix(p.label, labelPrefix) || (namePrefix && p.name.startsWith(namePrefix)));
+      candidates = cands.map((p) => ({ name: p.name, label: p.label })).sort((a, b) => a.label.localeCompare(b.label));
+      if (!prop && !manual) {
+        // La del cliente por nombre; una única propiedad genérica (sin
+        // sufijo de cliente) sirve para todos
+        prop = (clientName ? matchClientProperty(cands, labelPrefix, clientName) : undefined)
+          ?? (cands.length === 1 && !clientSuffix(cands[0].label, labelPrefix) ? cands[0] : undefined);
+      }
+    } else if (!prop && !manual) {
+      const target = normLabel(def.label);
+      prop = props.find((p) => normLabel(p.label) === target) ?? props.find((p) => normLabel(p.label).startsWith(target));
+    }
+    return {
+      key: def.key,
+      object: def.object,
+      label: def.label,
+      required: !!def.required,
+      perClient: !!def.perClient,
+      candidates,
+      property: prop?.name ?? (manual || null),
+      found: !!prop,
+      manual: !!manual,
+      propLabel: prop?.label ?? null,
+      type: prop?.type ?? null,
+      fieldType: prop?.fieldType ?? null,
+      options: (prop?.options ?? []).filter((o) => !o.hidden).map((o) => ({ label: o.label, value: o.value })),
+    };
+  });
+}
+export type DetectedProperty = ReturnType<typeof detectProperties>[number];
+
+// Búsqueda paginada (100 por página, tope de HubSpot: 10.000 resultados)
+export async function searchAll(
+  objectType: string,
+  filterGroups: unknown[],
+  properties: string[],
+  token?: string,
+  max = 10_000
+): Promise<{ id: string; properties: Record<string, string | null> }[]> {
+  const out: { id: string; properties: Record<string, string | null> }[] = [];
+  let after: string | undefined;
+  do {
+    const body: Record<string, unknown> = { filterGroups, properties, limit: 100, sorts: [{ propertyName: "hs_object_id", direction: "ASCENDING" }] };
+    if (after) body.after = after;
+    const d = await hsJson(`${HS}/crm/v3/objects/${objectType}/search`, { method: "POST", headers: hsHeaders(token), body: JSON.stringify(body) }, `buscando ${objectType}`);
+    for (const r of d.results ?? []) out.push({ id: String(r.id), properties: r.properties ?? {} });
+    after = d.paging?.next?.after;
+  } while (after && out.length < max);
+  return out;
+}
+
+// Asociaciones en lote (v4): id de origen → ids asociados
+export async function batchAssociations(fromType: string, toType: string, ids: string[], token?: string): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const inputs = ids.slice(i, i + 100).map((id) => ({ id }));
+    const res = await hsFetchWithRetry(`${HS}/crm/v4/associations/${fromType}/${toType}/batch/read`, {
+      method: "POST",
+      headers: hsHeaders(token),
+      body: JSON.stringify({ inputs }),
+    });
+    // 207 = algunos ids sin asociaciones (vienen en "errors"): no es error
+    if (!res.ok && res.status !== 207) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`HubSpot ${res.status} leyendo asociaciones ${fromType}→${toType}: ${text.slice(0, 300)}`);
+    }
+    const d = await res.json();
+    for (const r of d.results ?? []) {
+      const from = String(r.from?.id ?? "");
+      if (!from) continue;
+      const arr = out.get(from) ?? [];
+      for (const t of r.to ?? []) if (t.toObjectId != null) arr.push(String(t.toObjectId));
+      out.set(from, arr);
+    }
+  }
+  return out;
+}
+
+// Lectura en lote de cualquier objeto (de a 100)
+export async function batchRead(objectType: string, ids: string[], properties: string[], token?: string) {
+  const out: { id: string; properties: Record<string, string | null> }[] = [];
+  const unique = Array.from(new Set(ids));
+  for (let i = 0; i < unique.length; i += 100) {
+    const d = await hsJson(
+      `${HS}/crm/v3/objects/${objectType}/batch/read`,
+      { method: "POST", headers: hsHeaders(token), body: JSON.stringify({ properties, inputs: unique.slice(i, i + 100).map((id) => ({ id })) }) },
+      `leyendo ${objectType}`
+    );
+    for (const r of d.results ?? []) out.push({ id: String(r.id), properties: r.properties ?? {} });
+  }
+  return out;
+}
+
+// "Resultado de la llamada": id de disposición → etiqueta
+export async function callDispositions(token?: string): Promise<Map<string, string>> {
+  const d = await hsJson(`${HS}/calling/v1/dispositions`, { headers: hsHeaders(token) }, "leyendo resultados de llamada");
+  return new Map(((Array.isArray(d) ? d : d.results ?? []) as { id: string; label: string }[]).map((x) => [String(x.id), String(x.label)]));
+}
+
+// Etapas de negocio: id → { label, ganado/perdido }
+export async function dealStages(token?: string): Promise<Map<string, { label: string; won: boolean; lost: boolean }>> {
+  const out = new Map<string, { label: string; won: boolean; lost: boolean }>();
+  const d = await hsJson(`${HS}/crm/v3/pipelines/deals`, { headers: hsHeaders(token) }, "leyendo pipelines de negocios");
+  for (const p of d.results ?? []) {
+    for (const s of p.stages ?? []) {
+      const closed = String(s.metadata?.isClosed ?? "") === "true";
+      const prob = Number(s.metadata?.probability ?? NaN);
+      out.set(String(s.id), { label: String(s.label ?? s.id), won: closed && prob >= 1, lost: closed && !(prob >= 1) });
+    }
+  }
+  return out;
+}

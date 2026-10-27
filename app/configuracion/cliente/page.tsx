@@ -18,9 +18,12 @@ import {
   IconPhone,
   IconSearch,
   IconX,
+  IconUsers,
 } from "@tabler/icons-react";
-import { useClient } from "@/lib/clientContext";
+import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import HubspotConnection from "./HubspotConnection";
+import RadarSettings from "./RadarSettings";
+import PortalAccessManager from "@/components/portalAdmin/PortalAccessManager";
 
 type Config = {
   lemlist_api_key:                    string;
@@ -750,6 +753,25 @@ export default function ConfigClientePage() {
 
           {/* HubSpot propio del cliente (Células SDR) */}
           {currentClient && <HubspotConnection clientId={currentClient.id} />}
+
+          {/* Portal de clientes: accesos de los usuarios del cliente */}
+          {currentClient && currentClient.id !== ALL_CLIENTS.id && (
+            <section className="card space-y-4">
+              <div>
+                <h2 className="font-semibold flex items-center gap-2">
+                  <IconUsers size={18} className="text-brand" /> Portal del cliente — accesos
+                </h2>
+                <p className="text-sm text-ink-muted mt-1">
+                  Usuarios de {currentClient.name} que entran a portal.bullseye-abm.com. Cada usuario ve solo la información de
+                  esta cuenta (Radar ABM, ICP, wishlist y aprobación de empresas). La contraseña temporal se muestra una sola vez.
+                </p>
+              </div>
+              <PortalAccessManager clientId={currentClient.id} clientName={currentClient.name} />
+            </section>
+          )}
+
+          {/* Radar ABM del cliente */}
+          {currentClient && currentClient.id !== ALL_CLIENTS.id && <RadarSettings clientId={currentClient.id} clientName={currentClient.name} />}
 
           {/* Allo */}
           <section className="card space-y-4">

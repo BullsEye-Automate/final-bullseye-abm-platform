@@ -23,6 +23,10 @@
     {
       "path": "/api/cron/wishlist-contacts",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/radar-abm-sync",
+      "schedule": "15 10 * * *"
     }
   ],
   "framework": "nextjs",
@@ -47,6 +51,9 @@
     "app/api/celulas-sdr/allo/route.ts": { "maxDuration": 300 },
     "app/api/celulas-sdr/hubspot/route.ts": { "maxDuration": 300 },
     "app/api/cron/celulas-sdr-alerts/route.ts": { "maxDuration": 300 },
-    "app/api/celulas-sdr/alerts-preview/route.ts": { "maxDuration": 300 }
+    "app/api/celulas-sdr/alerts-preview/route.ts": { "maxDuration": 300 },
+    "app/api/radar-abm/route.ts": { "maxDuration": 300 },
+    "app/api/radar-abm/detect/route.ts": { "maxDuration": 60 },
+    "app/api/cron/radar-abm-sync/route.ts": { "maxDuration": 300 }
   }
 }
