@@ -15,13 +15,31 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q")?.trim();
   if (!q || q.length < 2) return NextResponse.json({ contacts: [] });
 
+  const tokens = q.trim().split(/\s+/);
+  const filterGroups: object[] = [
+    { filters: [{ propertyName: "firstname", operator: "CONTAINS_TOKEN", value: q }] },
+    { filters: [{ propertyName: "lastname", operator: "CONTAINS_TOKEN", value: q }] },
+    { filters: [{ propertyName: "email", operator: "CONTAINS_TOKEN", value: q }] },
+    { filters: [{ propertyName: "company", operator: "CONTAINS_TOKEN", value: q }] },
+  ];
+  // Si hay varias palabras, agregar combinación firstname+lastname (AND dentro del grupo)
+  if (tokens.length >= 2) {
+    filterGroups.push({
+      filters: [
+        { propertyName: "firstname", operator: "CONTAINS_TOKEN", value: tokens[0] },
+        { propertyName: "lastname",  operator: "CONTAINS_TOKEN", value: tokens.slice(1).join(" ") },
+      ],
+    });
+    filterGroups.push({
+      filters: [
+        { propertyName: "firstname", operator: "CONTAINS_TOKEN", value: tokens.slice(0, -1).join(" ") },
+        { propertyName: "lastname",  operator: "CONTAINS_TOKEN", value: tokens[tokens.length - 1] },
+      ],
+    });
+  }
+
   const body = {
-    filterGroups: [
-      { filters: [{ propertyName: "firstname", operator: "CONTAINS_TOKEN", value: q }] },
-      { filters: [{ propertyName: "lastname", operator: "CONTAINS_TOKEN", value: q }] },
-      { filters: [{ propertyName: "email", operator: "CONTAINS_TOKEN", value: q }] },
-      { filters: [{ propertyName: "company", operator: "CONTAINS_TOKEN", value: q }] },
-    ],
+    filterGroups,
     properties: [
       "firstname", "lastname", "email", "jobtitle", "phone",
       "lifecyclestage", "hs_lead_status",
