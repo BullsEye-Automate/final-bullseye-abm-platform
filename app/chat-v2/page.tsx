@@ -71,7 +71,12 @@ type Segment = {
 function parseEmail(text: string): { subject: string; body: string } | null {
   try {
     const match = text.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]);
+    // Normaliza \n literales que el modelo a veces devuelve como string escapada
+    if (parsed.body) parsed.body = parsed.body.replace(/\\n/g, "\n");
+    if (parsed.subject) parsed.subject = parsed.subject.replace(/\\n/g, "\n");
+    return parsed;
   } catch {}
   return null;
 }
@@ -199,15 +204,60 @@ function InboxPreview({ subject, body, channel }: { subject: string; body: strin
 function EmailCard({ subject, body, showSubject = true, channel = "email" }: { subject: string; body: string; showSubject?: boolean; channel?: string }) {
   const [copied, setCopied] = useState(false);
   const [preview, setPreview] = useState(false);
+  const isBrief = channel === "meeting_brief";
 
   async function copy() {
-    const text = showSubject && subject ? `Asunto: ${subject}\n\n${body}` : body;
+    const text = showSubject && subject ? `${subject}\n\n${body}` : body;
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }
 
   const channelLabel = channel === "email" ? "Email" : channel === "linkedin" ? "LinkedIn" : "WhatsApp";
+
+  // Render especial para briefing interno
+  if (isBrief) {
+    const sections = body.split(/\n(?=\d+\.\s+[A-ZÁÉÍÓÚÑ])/);
+    return (
+      <div className="rounded-2xl overflow-hidden" style={{ background: "#fff", border: "1px solid #e2e0f0" }}>
+        <div className="px-5 py-3.5 flex items-center justify-between" style={{ borderBottom: "1px solid #ece9f8", background: "#f8f7fd" }}>
+          <div>
+            <p className="text-[10px] uppercase tracking-widest font-semibold" style={{ color: "#8b86b8" }}>Briefing interno</p>
+            {subject && <p className="text-sm font-semibold mt-0.5" style={{ color: "#1a1535" }}>{subject}</p>}
+          </div>
+          <button onClick={copy}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium"
+            style={{ background: "#251762", color: "#62E0D8" }}>
+            {copied ? <IconCheck size={13} /> : <IconCopy size={13} />}
+            {copied ? "Copiado" : "Copiar"}
+          </button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          {sections.map((section, i) => {
+            const lines = section.trim().split("\n");
+            const heading = lines[0];
+            const content = lines.slice(1).join("\n").trim();
+            const isHeading = /^\d+\.\s+[A-ZÁÉÍÓÚÑ]/.test(heading);
+            return (
+              <div key={i}>
+                {isHeading ? (
+                  <>
+                    <div className="text-[11px] font-bold uppercase tracking-wider mb-2 pb-1"
+                      style={{ color: "#251762", borderBottom: "1px solid #ece9f8" }}>
+                      {heading}
+                    </div>
+                    <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "#2d2950" }}>{content}</p>
+                  </>
+                ) : (
+                  <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "#2d2950" }}>{section.trim()}</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: "#fff", border: "1px solid #e2e0f0" }}>
@@ -412,10 +462,12 @@ export default function ChatV2Page() {
 
     try {
       const lower = userContent.toLowerCase();
-      let effectiveChannel = channel;
-      if (lower.includes("linkedin")) effectiveChannel = "linkedin";
-      else if (lower.includes("whatsapp")) effectiveChannel = "whatsapp";
-      else if (lower.includes("email") || lower.includes("correo")) effectiveChannel = "email";
+      let effectiveChannel: string = emailType === "meeting_brief" ? "meeting_brief" : channel;
+      if (emailType !== "meeting_brief") {
+        if (lower.includes("linkedin")) effectiveChannel = "linkedin";
+        else if (lower.includes("whatsapp")) effectiveChannel = "whatsapp";
+        else if (lower.includes("email") || lower.includes("correo")) effectiveChannel = "email";
+      }
 
       const selectedCall = alloCalls.find(c => c.id === selectedCallId);
 
