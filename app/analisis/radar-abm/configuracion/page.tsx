@@ -11,8 +11,8 @@ import type { RadarConfig } from "@/lib/radarAbm/types";
 // los nombres internos de HubSpot (§3.1, Anexo A1).
 
 type Component = { key: string; name: string; formula: string };
-type PropertyDef = { key: string; object: string; label: string; required?: boolean; help: string };
-type Detected = { key: string; property: string | null; found: boolean; manual: boolean; propLabel: string | null; type: string | null; options: { label: string }[] };
+type PropertyDef = { key: string; object: string; label: string; required?: boolean; help: string; perClient?: unknown };
+type Detected = { key: string; candidates?: { name: string; label: string }[]; property: string | null; found: boolean; manual: boolean; propLabel: string | null; type: string | null; options: { label: string }[] };
 
 const AREAS = ["Tecnología", "Operaciones", "Finanzas", "Marketing", "Comercial", "RRHH", "Gerencia General"];
 const SENS = ["C-Level", "Director", "Gerente", "Jefatura", "Especialista"];
@@ -165,10 +165,18 @@ export default function RadarConfigPage() {
                       <div className="text-xs text-ink-muted">{d.help}</div>
                     </td>
                     <td className="py-2 pr-3">
-                      <input className="input w-56 font-mono text-xs" placeholder="automático" value={cfg.properties[d.key] ?? ""} onChange={(e) => setCfg({ ...cfg, properties: { ...cfg.properties, [d.key]: e.target.value } })} />
+                      {d.key === "companyStatus" ? (
+                        <span className="text-xs text-ink-muted">Una por cliente: se elige en Configuración → Cliente → Radar ABM</span>
+                      ) : (
+                        <input className="input w-56 font-mono text-xs" placeholder="automático" value={cfg.properties[d.key] ?? ""} onChange={(e) => setCfg({ ...cfg, properties: { ...cfg.properties, [d.key]: e.target.value } })} />
+                      )}
                     </td>
                     <td className="py-2 text-xs">
-                      {!det ? <span className="text-ink-subtle">—</span> : det.found ? (
+                      {det && d.key === "companyStatus" ? (
+                        <span className={det.candidates?.length ? "text-success-fg" : "text-danger-fg"} title={(det.candidates ?? []).map((c) => c.label).join("\n")}>
+                          {det.candidates?.length ? `${det.candidates.length} propiedades por cliente detectadas` : "no se encontró ninguna"}
+                        </span>
+                      ) : !det ? <span className="text-ink-subtle">—</span> : det.found ? (
                         <span className="text-success-fg flex items-start gap-1"><IconCheck size={14} className="shrink-0 mt-0.5" /><span><code>{det.property}</code> · {det.propLabel}{det.options.length ? ` · ${det.options.length} valores` : ""}</span></span>
                       ) : (
                         <span className="text-danger-fg flex items-center gap-1"><IconX size={14} /> {det.manual ? "no existe ese nombre interno" : "no encontrada"}</span>

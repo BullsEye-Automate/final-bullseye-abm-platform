@@ -82,37 +82,34 @@ export async function syncClientRadar(clientId: string, by: string) {
 
   const { catalog, errors } = await loadPropertyCatalog(token);
   warnings.push(...errors);
-  const detected = detectProperties(effectiveProperties(cfg, settings), catalog);
+  const detected = detectProperties(effectiveProperties(cfg, settings), catalog, client.name);
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
   // Dónde se corrige el mapeo según el HubSpot que se lee
   const fixAt = settings.hubspot_source === "client" ? "Configuración → Cliente → Radar ABM (HubSpot del cliente)" : "Configuración del Radar ABM";
   const where = settings.hubspot_source === "client" ? " en el HubSpot del cliente" : "";
-  if (!P.companyStatus.property) throw new Error(`No se encontró la propiedad de empresa "Status de la asignación - SDR"${where}. Indica su nombre interno en ${fixAt}.`);
+  if (!P.companyStatus.property) {
+    const n = P.companyStatus.candidates.length;
+    throw new Error(n
+      ? `No se pudo elegir cuál de las ${n} propiedades "Status de la asignación - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Radar ABM.`
+      : `No se encontró ninguna propiedad de empresa "Status de la asignación - …"${where}. Indica su nombre interno en Configuración → Cliente → Radar ABM.`);
+  }
   if (!P.contactStatus.property) throw new Error(`No se encontró la propiedad de contacto "Asignación BullsEye por Llamar"${where}. Indica su nombre interno en ${fixAt}.`);
   for (const d of detected) if (d.manual && !d.found) warnings.push(`El nombre interno "${d.property}" de "${d.label}" no existe${where}.`);
   for (const d of detected) if (!d.property && !d.required && d.key !== "companyClient") warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
 
   // ── Universo de empresas ───────────────────────────────────────────────
+  // Empresas con la propiedad de status del cliente con algún valor. Si se
+  // fijó un valor de "Cliente BullsEye", además deben tenerlo.
   const statusProp = P.companyStatus.property!;
-  let filterGroups: unknown[];
+  const filters: unknown[] = [{ propertyName: statusProp, operator: "HAS_PROPERTY" }];
   const clientProp = P.companyClient;
-  let clientValue = (settings.hubspot_client_value ?? "").trim();
-  if (clientProp.property && (clientValue || settings.hubspot_source === "bullseye")) {
-    if (!clientValue) {
-      const target = normLabel(client.name);
-      const opt = clientProp.options.find((o) => normLabel(o.label) === target || normLabel(o.value) === target);
-      clientValue = opt?.value ?? (clientProp.options.length ? "" : client.name);
-    }
-    if (!clientValue) {
-      throw new Error(`No se encontró "${client.name}" entre los valores de "Cliente BullsEye". Elige el valor en Configuración → Cliente → Radar ABM.`);
-    }
-    const multi = clientProp.fieldType === "checkbox";
-    filterGroups = [{ filters: [{ propertyName: clientProp.property, operator: multi ? "CONTAINS_TOKEN" : "EQ", value: clientValue }] }];
-  } else if (settings.hubspot_source === "client") {
-    filterGroups = [{ filters: [{ propertyName: statusProp, operator: "HAS_PROPERTY" }] }];
-  } else {
-    throw new Error(`No se encontró la propiedad de empresa "Cliente BullsEye" para separar el universo del cliente. Indica su nombre interno en ${fixAt}.`);
+  const clientValue = (settings.hubspot_client_value ?? "").trim();
+  if (clientValue && clientProp.property) {
+    filters.push({ propertyName: clientProp.property, operator: clientProp.fieldType === "checkbox" ? "CONTAINS_TOKEN" : "EQ", value: clientValue });
+  } else if (clientValue) {
+    warnings.push('Hay un valor de "Cliente BullsEye" configurado, pero la propiedad no existe en este HubSpot: se ignoró.');
   }
+  const filterGroups = [{ filters }];
 
   const countryProp = P.companyCountry.property ?? "country";
   const companyProps = Array.from(new Set([

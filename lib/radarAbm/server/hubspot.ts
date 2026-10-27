@@ -49,16 +49,54 @@ export async function loadPropertyCatalog(token?: string): Promise<{ catalog: Pr
   return { catalog, errors };
 }
 
+// Sufijo de cliente de una propiedad por cliente: "Status de la asignación -
+// SDR AcidLab" → "acidlab"
+function clientSuffix(label: string, labelPrefix: string): string {
+  let rest = normLabel(label).slice(normLabel(labelPrefix).length).trim();
+  if (rest.startsWith("sdr ")) rest = rest.slice(4);
+  return rest;
+}
+
+// Entre las propiedades de cada cliente, la que calza con su nombre:
+// igual > una contiene a la otra ("Apply" ↔ "Apply Digital") > misma
+// primera palabra. Empate = ninguna (se elige a mano).
+export function matchClientProperty(cands: HSProperty[], labelPrefix: string, clientName: string): HSProperty | undefined {
+  const client = normLabel(clientName);
+  if (!client) return undefined;
+  const scored = cands.map((p) => {
+    const suf = clientSuffix(p.label, labelPrefix);
+    const score = !suf ? 0
+      : suf === client || suf.replace(/ /g, "") === client.replace(/ /g, "") ? 3
+      : (` ${client} `.includes(` ${suf} `) || ` ${suf} `.includes(` ${client} `)) ? 2
+      : suf.split(" ")[0] === client.split(" ")[0] ? 1 : 0;
+    return { p, score };
+  }).filter((x) => x.score > 0);
+  const best = Math.max(0, ...scored.map((x) => x.score));
+  const top = scored.filter((x) => x.score === best);
+  return top.length === 1 ? top[0].p : undefined;
+}
+
 // Busca el nombre interno de cada propiedad del Radar por su etiqueta
 // (§3.1: se confirman en el portal). Primero calce exacto de etiqueta,
-// después etiqueta que empieza igual. Lo configurado a mano manda.
-export function detectProperties(configured: Record<string, string>, catalog: PropertyCatalog) {
+// después etiqueta que empieza igual. Lo configurado a mano manda. Las
+// propiedades por cliente (perClient) se eligen por el nombre del cliente;
+// sin cliente (configuración global) no se adivina ninguna.
+export function detectProperties(configured: Record<string, string>, catalog: PropertyCatalog, clientName?: string | null) {
   return PROPERTY_DEFS.map((def) => {
     const props = catalog[def.object] ?? [];
     const manual = (configured[def.key] ?? "").trim();
     let prop: HSProperty | undefined;
+    let candidates: { name: string; label: string }[] = [];
     if (manual) prop = props.find((p) => p.name === manual);
-    if (!prop && !manual) {
+    if (def.perClient) {
+      const lp = normLabel(def.perClient.labelPrefix);
+      const np = def.perClient.namePrefix;
+      const cands = props.filter((p) => normLabel(p.label).startsWith(lp) || (np && p.name.startsWith(np)));
+      candidates = cands.map((p) => ({ name: p.name, label: p.label })).sort((a, b) => a.label.localeCompare(b.label));
+      if (!prop && !manual) {
+        prop = cands.length === 1 ? cands[0] : clientName ? matchClientProperty(cands, def.perClient.labelPrefix, clientName) : undefined;
+      }
+    } else if (!prop && !manual) {
       const target = normLabel(def.label);
       prop = props.find((p) => normLabel(p.label) === target) ?? props.find((p) => normLabel(p.label).startsWith(target));
     }
@@ -67,6 +105,8 @@ export function detectProperties(configured: Record<string, string>, catalog: Pr
       object: def.object,
       label: def.label,
       required: !!def.required,
+      perClient: !!def.perClient,
+      candidates,
       property: prop?.name ?? (manual || null),
       found: !!prop,
       manual: !!manual,

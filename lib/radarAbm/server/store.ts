@@ -31,10 +31,14 @@ const missingColumn = (msg: string) => /column .*properties|properties.*(does no
 export const PROPERTIES_MIGRATION_HINT = "Falta ejecutar la migración supabase/20261027_radar_abm_client_properties.sql en Supabase.";
 
 // Mapeo de propiedades que se usa para un cliente: el HubSpot de BullsEye usa
-// el mapeo global; el HubSpot propio del cliente, solo el suyo (los nombres
-// internos de BullsEye no existen en su cuenta).
+// el mapeo global más lo propio del cliente; el HubSpot propio del cliente,
+// solo el suyo (los nombres internos de BullsEye no existen en su cuenta).
+// En el HubSpot de BullsEye el status de empresa es una propiedad por cliente
+// ("Status de la asignación - <cliente>"): nunca se toma del mapeo global.
 export function effectiveProperties(cfg: RadarConfig, s: RadarClientSettings): Record<string, string> {
-  return s.hubspot_source === "client" ? { ...(s.properties ?? {}) } : { ...cfg.properties };
+  if (s.hubspot_source === "client") return { ...(s.properties ?? {}) };
+  const { companyStatus: _global, ...global } = cfg.properties;
+  return { ...global, ...(s.properties ?? {}) };
 }
 
 export async function loadRadarConfig(): Promise<RadarConfig> {

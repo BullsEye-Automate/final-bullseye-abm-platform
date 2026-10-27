@@ -131,14 +131,24 @@ export const DEFAULT_TITLE_RULES: RadarConfig["titleRules"] = [
 // Propiedades de HubSpot: clave interna → etiqueta que se busca en el portal
 // para detectar el nombre interno automáticamente (§3.1, se confirma en
 // Configuración del Radar ABM).
-export const PROPERTY_DEFS: { key: string; object: "companies" | "contacts" | "meetings"; label: string; required?: boolean; help: string }[] = [
-  { key: "companyStatus", object: "companies", label: "Status de la asignación - SDR", required: true, help: "Estado de gestión de la cuenta" },
+// perClient: en el HubSpot hay una propiedad por cliente ("Status de la
+// asignación - DSAC", "Status de la asignación - SDR AcidLab"…, nombres
+// internos status_de_la_asignacion_*): se elige la que calza con el cliente.
+export const PROPERTY_DEFS: {
+  key: string;
+  object: "companies" | "contacts" | "meetings";
+  label: string;
+  required?: boolean;
+  help: string;
+  perClient?: { labelPrefix: string; namePrefix?: string };
+}[] = [
+  { key: "companyStatus", object: "companies", label: "Status de la asignación - <cliente>", required: true, help: "Estado de gestión de la cuenta (una propiedad por cliente)", perClient: { labelPrefix: "Status de la asignación", namePrefix: "status_de_la_asignacion" } },
   { key: "companyClient", object: "companies", label: "Cliente BullsEye", required: true, help: "Separa el universo de cada cliente" },
   { key: "companyAssignedAt", object: "companies", label: "Fecha de asignación", help: "Sin ella se usa la fecha de creación" },
   { key: "companyNextFollowUp", object: "companies", label: "Fecha de próximo seguimiento", help: "Empresas en seguimiento o por retomar" },
   { key: "companyIcpTier", object: "companies", label: "Tier ICP", help: "A / B / C (propuesta, Anexo A4)" },
   { key: "companyCountry", object: "companies", label: "País", help: "Sin ella se usa country" },
-  { key: "contactStatus", object: "contacts", label: "Asignación BullsEye por Llamar", required: true, help: "Estado de gestión del contacto" },
+  { key: "contactStatus", object: "contacts", label: "Asignación BullsEye por Llamar", required: true, help: "Estado de gestión del contacto", perClient: { labelPrefix: "Asignación BullsEye por Llamar" } },
   { key: "contactObjection", object: "contacts", label: "Objeción principal", help: "Propuesta (Anexo A4)" },
   { key: "contactSignal", object: "contacts", label: "Señal de interés", help: "Propuesta (Anexo A4)" },
   { key: "meetingResult", object: "meetings", label: "Resultado de la reunión", help: "Propuesta (Anexo A4)" },

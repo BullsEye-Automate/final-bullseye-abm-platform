@@ -8,7 +8,7 @@ import { IconAlertTriangle, IconCheck, IconLoader2, IconPlugConnected, IconX } f
 // nombres internos pueden ser distintos a los del HubSpot de BullsEye).
 
 type CheckItem = { key: string; label: string; ok: boolean; required: boolean; detail?: string; scopes?: string[] };
-type Detected = { key: string; label: string; object: string; required: boolean; property: string | null; found: boolean; manual: boolean; propLabel: string | null; options: { label: string; value: string }[] };
+type Detected = { key: string; label: string; object: string; required: boolean; property: string | null; found: boolean; manual: boolean; propLabel: string | null; perClient?: boolean; candidates?: { name: string; label: string }[]; options: { label: string; value: string }[] };
 type CheckResult = { items: CheckItem[]; universe: number | null; contacts: number | null; properties: Detected[]; ready: boolean };
 
 const OBJ_LABEL: Record<string, string> = { companies: "Empresa", contacts: "Contacto", meetings: "Reunión" };
@@ -132,7 +132,14 @@ export default function ClientHubspotRadar({
                   <td className="py-2 pr-3 text-xs text-ink-muted">{OBJ_LABEL[d.object] ?? d.object}</td>
                   <td className="py-2 pr-3">{d.label}{d.required && <span className="text-danger-fg"> *</span>}</td>
                   <td className="py-2 pr-3">
-                    <input className="input w-52 font-mono text-xs" placeholder="automático" value={properties[d.key] ?? ""} onChange={(e) => setProp(d.key, e.target.value)} />
+                    {d.perClient && (d.candidates?.length ?? 0) > 1 ? (
+                      <select className="input w-60 text-xs" value={properties[d.key] ?? ""} onChange={(e) => setProp(d.key, e.target.value)}>
+                        <option value="">automático (por nombre del cliente)</option>
+                        {d.candidates!.map((c) => <option key={c.name} value={c.name}>{c.label}</option>)}
+                      </select>
+                    ) : (
+                      <input className="input w-52 font-mono text-xs" placeholder="automático" value={properties[d.key] ?? ""} onChange={(e) => setProp(d.key, e.target.value)} />
+                    )}
                   </td>
                   <td className="py-2 text-xs">
                     {d.found ? (

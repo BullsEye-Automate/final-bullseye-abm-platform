@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
 import { detectProperties, loadPropertyCatalog } from "@/lib/radarAbm/server/hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, type RadarClientSettings } from "@/lib/radarAbm/server/store";
 
@@ -17,8 +18,11 @@ export async function GET(req: NextRequest) {
     const clientId = req.nextUrl.searchParams.get("client_id") ?? "";
     let token: string | undefined;
     let settings: RadarClientSettings | null = null;
+    let clientName: string | null = null;
     if (UUID_RE.test(clientId)) {
       settings = await loadClientSettings(clientId);
+      const { data } = await supabaseAdmin().from("clients").select("name").eq("id", clientId).maybeSingle();
+      clientName = data?.name ?? null;
       token = await hubspotTokenFor(clientId, settings.hubspot_source);
     }
     const cfg = await loadRadarConfig();
@@ -27,7 +31,7 @@ export async function GET(req: NextRequest) {
     if (errors.length && !Object.values(catalog).some((v) => v.length)) {
       return NextResponse.json({ error: errors[0] }, { status: 502 });
     }
-    return NextResponse.json({ properties: detectProperties(mapping, catalog), warnings: errors });
+    return NextResponse.json({ properties: detectProperties(mapping, catalog, clientName), warnings: errors });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });
   }

@@ -1,4 +1,5 @@
 import { hsFetchWithRetry, hsHeaders } from "@/lib/hubspot";
+import { supabaseAdmin } from "@/lib/supabase";
 import { detectProperties, loadPropertyCatalog, type DetectedProperty } from "./hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig } from "./store";
 
@@ -41,7 +42,11 @@ const describe = (r: { status: number; body: any; text: string }) => {
 };
 
 export async function checkClientHubspot(clientId: string) {
-  const [settings, cfg] = await Promise.all([loadClientSettings(clientId), loadRadarConfig()]);
+  const [settings, cfg, { data: client }] = await Promise.all([
+    loadClientSettings(clientId),
+    loadRadarConfig(),
+    supabaseAdmin().from("clients").select("name").eq("id", clientId).maybeSingle(),
+  ]);
   const token = await hubspotTokenFor(clientId, settings.hubspot_source);
   const headers = hsHeaders(token);
   const items: CheckItem[] = [];
@@ -58,7 +63,7 @@ export async function checkClientHubspot(clientId: string) {
     ? { key: "schemas", label: "Propiedades de empresas, contactos y reuniones", ok: true, required: true }
     : { key: "schemas", label: "Propiedades de empresas, contactos y reuniones", ok: false, required: true, detail: errors[0]?.slice(0, 240), scopes: missingScopes(errors.join(" ")) });
 
-  const detected = detectProperties(effectiveProperties(cfg, settings), catalog);
+  const detected = detectProperties(effectiveProperties(cfg, settings), catalog, client?.name);
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
 
   // Universo: empresas con status (con "Cliente BullsEye" si se configuró un valor)
