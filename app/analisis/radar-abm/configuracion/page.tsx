@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { IconArrowLeft, IconCheck, IconDeviceFloppy, IconLoader2, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import type { RadarConfig } from "@/lib/radarAbm/types";
+import { CO_ORDER, CT_ORDER } from "@/lib/radarAbm/dictionaries";
 
 // Configuración del Radar ABM (global, tabla radar_abm_config): las metas y
 // pesos del Health Score, los tramos de tamaño, el período y la tabla de
@@ -188,6 +189,79 @@ export default function RadarConfigPage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* Definiciones (La Biblia) */}
+      <section className="card space-y-4">
+        <div>
+          <h2 className="font-semibold">Definiciones de los status</h2>
+          <p className="text-sm text-ink-muted mt-1">
+            Base de conocimiento de BullsEye (“La Biblia”, ver docs/radar-abm/). Se muestran en el informe (§8 Estados de empresas y al pasar el cursor en §9 Estados de contactos).
+            Edítalas cuando cambie el modelo de trabajo. Los nombres de los status no se cambian acá: deben ser iguales a los de HubSpot.
+          </p>
+        </div>
+        {([["companies", "Empresas — Status de la asignación", CO_ORDER], ["contacts", "Contactos — Asignación BullsEye por Llamar", CT_ORDER]] as const).map(([kind, title, order]) => (
+          <details key={kind} className="rounded-xl border border-[#ECEAF4] p-3">
+            <summary className="cursor-pointer text-sm font-medium">{title}</summary>
+            <div className="mt-3 space-y-2">
+              {order.map((st) => (
+                <label key={st} className="grid gap-1 sm:grid-cols-[260px_1fr] items-start text-sm">
+                  <span className="font-medium pt-2">{st === "CONV" ? "En conversaciones con [cliente]" : st}</span>
+                  <textarea
+                    className="input min-h-[56px]"
+                    value={cfg.definitions[kind][st] ?? ""}
+                    onChange={(e) => setCfg({ ...cfg, definitions: { ...cfg.definitions, [kind]: { ...cfg.definitions[kind], [st]: e.target.value } } })}
+                  />
+                </label>
+              ))}
+            </div>
+          </details>
+        ))}
+        <details className="rounded-xl border border-[#ECEAF4] p-3">
+          <summary className="cursor-pointer text-sm font-medium">Etiquetas antiguas de contacto → status actual</summary>
+          <p className="text-xs text-ink-muted mt-2">Si la propiedad de un cliente todavía usa una etiqueta anterior (ej. “Por Llamar”), se cuenta como el status actual que indiques.</p>
+          <div className="mt-3 space-y-2">
+            {Object.entries(cfg.contactAliases).map(([from, to], i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
+                <input
+                  className="input w-72"
+                  value={from}
+                  onChange={(e) => {
+                    const entries = Object.entries(cfg.contactAliases).map(([f, t], j) => (j === i ? [e.target.value, t] : [f, t]));
+                    setCfg({ ...cfg, contactAliases: Object.fromEntries(entries) });
+                  }}
+                />
+                <span className="text-ink-muted">→</span>
+                <select
+                  className="input w-72"
+                  value={to}
+                  onChange={(e) => setCfg({ ...cfg, contactAliases: { ...cfg.contactAliases, [from]: e.target.value } })}
+                >
+                  {CT_ORDER.map((st) => <option key={st}>{st}</option>)}
+                </select>
+                <button
+                  className="text-ink-subtle hover:text-danger-fg"
+                  aria-label="Quitar"
+                  onClick={() => {
+                    const { [from]: _x, ...rest } = cfg.contactAliases;
+                    setCfg({ ...cfg, contactAliases: rest });
+                  }}
+                >
+                  <IconTrash size={15} />
+                </button>
+              </div>
+            ))}
+            <button
+              className="text-sm text-brand flex items-center gap-1 hover:underline"
+              onClick={() => setCfg({ ...cfg, contactAliases: { ...cfg.contactAliases, "": CT_ORDER[0] } })}
+            >
+              <IconPlus size={14} /> Agregar etiqueta
+            </button>
+          </div>
+        </details>
+        <button className="text-xs text-ink-muted hover:underline" onClick={() => setCfg({ ...cfg, definitions: defaults.definitions, contactAliases: defaults.contactAliases })}>
+          Restaurar definiciones de La Biblia
+        </button>
       </section>
 
       {/* Cargos */}

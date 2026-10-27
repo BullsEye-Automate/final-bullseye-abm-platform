@@ -18,7 +18,8 @@ export async function GET() {
     if (!settings.portal_enabled) return NextResponse.json({ dataset: null, reason: "disabled" });
     if (!snapshot) return NextResponse.json({ dataset: null, reason: "pending" });
     const { warnings: _w, mapping: _m, ...dataset } = snapshot.dataset;
-    return NextResponse.json({ dataset, config });
+    // Al cliente solo lo que necesita el cálculo (sin mapeo de propiedades)
+    return NextResponse.json({ dataset, config: { ...config, properties: {}, contactAliases: {} } });
   } catch (err) {
     console.error("Radar ABM (portal):", err);
     return NextResponse.json({ error: "No se pudo cargar el informe" }, { status: 500 });

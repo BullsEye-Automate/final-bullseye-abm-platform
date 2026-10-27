@@ -1,10 +1,10 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { fetchHSOwners } from "@/lib/hubspot";
 import { chileToday } from "@/lib/celulasSdr/calendar";
-import { CO_ORDER, CT_ORDER } from "../dictionaries";
+import { CO_ORDER, CT_ORDER, CONNECTED_DISPOSITION, callChannel } from "../dictionaries";
 import { deriveClientData, type FlatCompany, type FlatContact } from "../derive";
 import type { RadarDataset, RadarDeal, RadarMeeting } from "../types";
-import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
+import { batchAssociations, batchRead, callDispositions, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot } from "./store";
 
 // Radar ABM — sincronización de un cliente desde HubSpot (§3).
@@ -25,8 +25,9 @@ const toDay = (v: string | null | undefined): string | undefined => {
 // Textos oficiales: el valor de HubSpot se lleva al texto exacto del
 // diccionario aunque venga con otra capitalización, sin tilde o sin emoji.
 const canon = (s: string) => normLabel(s.replace(/\p{Extended_Pictographic}/gu, ""));
-function canonicalizer(official: string[]) {
+function canonicalizer(official: string[], aliases: Record<string, string> = {}) {
   const map = new Map(official.map((o) => [canon(o), o]));
+  for (const [from, to] of Object.entries(aliases)) map.set(canon(from), to);
   return (label: string | null | undefined): string | null => {
     const t = (label ?? "").trim();
     if (!t) return null;
@@ -34,7 +35,6 @@ function canonicalizer(official: string[]) {
   };
 }
 const companyStatusCanon = canonicalizer(CO_ORDER.filter((s) => s !== "CONV"));
-const contactStatusCanon = canonicalizer(CT_ORDER);
 
 function optionLabeler(p: DetectedProperty | undefined) {
   const m = new Map((p?.options ?? []).map((o) => [o.value, o.label]));
@@ -176,6 +176,9 @@ export async function syncClientRadar(clientId: string, by: string) {
   ]));
   const rawContacts = await batchRead("contacts", Array.from(contactCompany.keys()), contactProps, token);
   const ctStatusLabel = optionLabeler(P.contactStatus);
+  // Etiquetas antiguas de contacto ("Por Llamar", "NO Llamar"…) → actuales
+  // (editables en Configuración del Radar ABM)
+  const contactStatusCanon = canonicalizer(CT_ORDER, cfg.contactAliases);
   const objLabel = optionLabeler(P.contactObjection);
   const sigLabel = optionLabeler(P.contactSignal);
   const unknownCtStatuses = new Set<string>();
@@ -197,15 +200,37 @@ export async function syncClientRadar(clientId: string, by: string) {
     }
   }
 
+  // Detalle de llamadas ("La Biblia"): "Tipo de llamada" WhatsApp / LinkedIn
+  // son de ese canal y no cuentan como intento telefónico; "Resultado de la
+  // llamada" Conectada / Conectado - … = conversación real. Si no se puede
+  // leer, todas las llamadas cuentan como intentos.
+  const callInfo = new Map<string, { ch: "wa" | "li" | null; conn: boolean }>();
+  const callIds = Array.from(new Set(Array.from(ctCalls.values()).flat()));
+  if (callIds.length) {
+    try {
+      const typeProp = (catalog.calls ?? []).find((p) => p.name === "hs_activity_type");
+      const typeLabel = optionLabeler(typeProp as DetectedProperty | undefined);
+      const dispositions = await callDispositions(token).catch(() => new Map<string, string>());
+      for (const r of await batchRead("calls", callIds, ["hs_activity_type", "hs_call_disposition"], token)) {
+        const disp = dispositions.get(r.properties.hs_call_disposition ?? "") ?? "";
+        callInfo.set(r.id, { ch: callChannel(typeLabel(r.properties.hs_activity_type)), conn: CONNECTED_DISPOSITION.test(disp) });
+      }
+    } catch (e) {
+      warnings.push(`No se pudo leer el detalle de las llamadas (tipo y resultado): ${(e as Error).message}`);
+    }
+  }
+
   const contacts: FlatContact[] = kept.map((r) => {
     const p = r.properties;
     const st = contactStatusCanon(ctStatusLabel(p[contactStatusProp]))!;
     if (!CT_ORDER.includes(st)) unknownCtStatuses.add(st);
     const co = contactCompany.get(r.id)!;
     const comms = (ctComms.get(r.id) ?? []).map((id) => commChannel.get(id) ?? "");
-    const calls = (ctCalls.get(r.id) ?? []).length;
-    const wa = comms.filter((c) => c.includes("WHATS")).length;
-    const li = comms.filter((c) => c.includes("LINKEDIN")).length;
+    const callList = (ctCalls.get(r.id) ?? []).map((id) => callInfo.get(id));
+    const calls = callList.filter((c) => !c?.ch).length;
+    const conv = callList.filter((c) => c?.conn).length;
+    const wa = comms.filter((c) => c.includes("WHATS")).length + callList.filter((c) => c?.ch === "wa").length;
+    const li = comms.filter((c) => c.includes("LINKEDIN")).length + callList.filter((c) => c?.ch === "li").length;
     const em = (ctEmails.get(r.id) ?? []).length;
     const name = [p.firstname, p.lastname].filter(Boolean).join(" ").trim() || p.email || `Contacto ${r.id}`;
     const obj = objLabel(P.contactObjection.property ? p[P.contactObjection.property] : null);
@@ -216,6 +241,7 @@ export async function syncClientRadar(clientId: string, by: string) {
       sdr: (P.contactSdr.property ? contactSdrLabel(p[P.contactSdr.property]) : null) ?? ownerName(p.hubspot_owner_id) ?? coById.get(co)?.sdr ?? "Sin SDR",
       st,
       ...(calls ? { att: calls, calls } : {}),
+      ...(conv ? { conv } : {}),
       ...(wa ? { wa } : {}), ...(li ? { li } : {}), ...(em ? { em } : {}),
       ...(toDay(p.notes_last_contacted) ? { last: toDay(p.notes_last_contacted) } : {}),
       ...(toDay(p.notes_next_activity_date) ? { next: toDay(p.notes_next_activity_date) } : {}),

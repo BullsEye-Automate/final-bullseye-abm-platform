@@ -38,7 +38,8 @@ export type PropertyCatalog = Record<string, HSProperty[]>;
 export async function loadPropertyCatalog(token?: string): Promise<{ catalog: PropertyCatalog; errors: string[] }> {
   const catalog: PropertyCatalog = {};
   const errors: string[] = [];
-  for (const obj of ["companies", "contacts", "meetings"]) {
+  // calls: solo para las etiquetas de "Tipo de llamada" (opcional)
+  for (const obj of ["companies", "contacts", "meetings", "calls"]) {
     try {
       catalog[obj] = await listProperties(obj, token);
     } catch (e) {
@@ -186,6 +187,12 @@ export async function batchRead(objectType: string, ids: string[], properties: s
     for (const r of d.results ?? []) out.push({ id: String(r.id), properties: r.properties ?? {} });
   }
   return out;
+}
+
+// "Resultado de la llamada": id de disposición → etiqueta
+export async function callDispositions(token?: string): Promise<Map<string, string>> {
+  const d = await hsJson(`${HS}/calling/v1/dispositions`, { headers: hsHeaders(token) }, "leyendo resultados de llamada");
+  return new Map(((Array.isArray(d) ? d : d.results ?? []) as { id: string; label: string }[]).map((x) => [String(x.id), String(x.label)]));
 }
 
 // Etapas de negocio: id → { label, ganado/perdido }

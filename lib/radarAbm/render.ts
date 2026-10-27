@@ -1,4 +1,4 @@
-import { G, CO_G, CO_ORDER, CT_G, CT_ORDER, PAUSA, PEND, POS, REJ, MIN_N } from "./dictionaries";
+import { G, CO_G, CO_DEFS, CO_ORDER, CT_DEFS, CT_G, CT_ORDER, PAUSA, PEND, POS, REJ, MIN_N } from "./dictionaries";
 import {
   type Model, esc, by, cnt, sum, div, P, N, F1, USD, dmy, addDays,
   seg, segCo, barrier, objectionPattern, insights, learnings, recsBE, recsCli,
@@ -158,6 +158,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   const b = barrier(M);
   const liveCo = C.filter((c) => c.st === "En seguimiento" || c.M.some((m: any) => m.st === "Pendiente" || m.st === "Reprogramada") || c.K.some((x: any) => x.st === "Refiere con el Tomador de Decisiones" && !rf.refd.some((y: any) => y.refBy === x.id)));
   const d30 = addDays(TODAY, -30);
+  const defs = M.cfg?.definitions ?? { companies: CO_DEFS, contacts: CT_DEFS };
 
   s.resumen = `<div class="exec"><ul>
     <li>Trabajamos <b>${N(k.worked)} de ${N(k.universe)}</b> empresas objetivo (${P(k.coverage)} de cobertura) y logramos conversación efectiva con <b>${N(M.eff.length)} contactos</b> en <b>${N(M.coEff.length)} empresas</b>.</li>
@@ -222,7 +223,8 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   s["est-emp"] = table([{ h: "Estado", f: (r) => `<span style="display:inline-flex;gap:6px;align-items:center"><span class="dot" style="background:${G[CO_G[r][0]].c}"></span>${esc(r === "CONV" ? `En conversaciones con ${cl.name}` : r)}</span>` },
     { h: "Empresas", n: 1, f: (r) => N((coCount[r] || []).length) }, { h: "%", n: 1, f: (r) => P((coCount[r] || []).length / C.length) },
     { h: "", f: (r) => `<div class="bar" style="grid-template-columns:1fr"><div class="t" style="min-width:90px"><i style="width:${(coCount[r] || []).length / coMax * 100}%;background:${G[CO_G[r][0]].c}"></i></div></div>` },
-    { h: "Grupo analítico", s: 1, f: (r) => CO_G[r].map((g) => G[g].l).join(" + ") }], CO_ORDER.filter((r) => coCount[r]))
+    { h: "Grupo analítico", s: 1, f: (r) => CO_G[r].map((g) => G[g].l).join(" + ") },
+    { h: "Qué significa", s: 1, f: (r) => esc(defs.companies[r] ?? "") }], CO_ORDER.filter((r) => coCount[r]))
     + `<div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Destino de las cuentas trabajadas (n=${M.worked.length})</h4>${stack(([
       ["Reunión", (c: any) => c.st === "Reunión Agendada", "var(--g-int)"], ["Seguimiento", (c: any) => c.st === "En seguimiento", "var(--s1)"], ["Conversación existente", (c: any) => c.key === "CONV", "var(--g-rel)"], ["Cliente existente", (c: any) => c.st === "Clientes", "var(--g-rel)"],
       ["Retomar", (c: any) => c.st === "Sin interés ahora - Retomar", "var(--g-fut)"], ["En gestión / LinkedIn", (c: any) => c.st === "En gestión" || c.st === "Gestionada por LinkedIn", "var(--g-act)"], ["No interesados", (c: any) => c.st === "No interesados", "var(--g-rej)"],
@@ -234,9 +236,9 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     <p class="note">"Nutrir", "Sin contactos - (ya nutrida)", "Gestionada por LinkedIn" y "En conversaciones con [cliente]" pertenecen a dos grupos; el color usa el primero.</p></div></div>`;
 
   const ctCount = by(K, (x) => x.st);
-  s["est-ct"] = `<div class="grid2"><div class="rcard"><h4>Contactos por estado (n=${K.length})</h4>${bars(CT_ORDER.filter((x) => ctCount[x]).map((x) => ({ l: x, v: ctCount[x].length, c: G[CT_G[x]].c, r: P(ctCount[x].length / K.length) })))}</div>
+  s["est-ct"] = `<div class="grid2"><div class="rcard"><h4>Contactos por estado (n=${K.length})</h4>${bars(CT_ORDER.filter((x) => ctCount[x]).map((x) => ({ l: x, v: ctCount[x].length, c: G[CT_G[x]].c, r: P(ctCount[x].length / K.length), tip: `${x}: ${N(ctCount[x].length)}. ${defs.contacts[x] ?? ""}` })))}</div>
   <div class="rcard"><h4>Por grupo analítico</h4>${bars(["pend", "pos", "rej", "cont", "dispc", "cal", "canal", "pausa"].map((g) => ({ l: G[g].l, v: cnt(K, (x) => CT_G[x.st] === g), c: G[g].c })))}
-  <p class="note">No Contestó ≠ No Interesado · Sin Información de Contacto ≠ rechazo · Contacto No Fit ≠ empresa fuera de ICP. "${PAUSA}" no tiene grupo oficial en el diccionario; se muestra aparte (ver Anexo A3).</p></div></div>`;
+  <p class="note">Pasa el cursor por cada estado para ver su definición oficial. No Contestó ≠ No Interesado · Sin Información de Contacto ≠ rechazo · Contacto No Fit ≠ empresa fuera de ICP. "${PAUSA}" no tiene grupo oficial en el diccionario; se muestra aparte (ver Anexo A3).</p></div></div>`;
 
   const snR = seg(M, (x) => x.sen);
   s.contactab = `<div class="tiles">${tile("Contacto efectivo", P(k.contactRate), `${N(M.eff.length)} de ${N(M.mg.length)} gestionados`)}${tile("Sin información de contacto", P(k.phoneGap), "problema de disponibilidad, no de interés")}${tile("No contestó (10 intentos)", P(div(cnt(M.mg, (x: any) => x.st === "No Contestó"), M.mg.length)), "problema de contactabilidad")}${tile("Pasaron a LinkedIn", P(div(cnt(M.mg, (x: any) => x.st === "En Gestión LinkedIn"), M.mg.length)), "cambio de canal")}</div>

@@ -158,6 +158,62 @@ export const PROPERTY_DEFS: {
   { key: "meetingNeed", object: "meetings", label: "Necesidad", help: "Necesidad detectada en la reunión" },
 ];
 
+// ── "La Biblia" BullsEye (docs/radar-abm/biblia-propiedades-*.csv) ───────
+// Etiquetas antiguas de "Asignación BullsEye por Llamar" que siguen vivas en
+// algunas propiedades por cliente → etiqueta actual del diccionario.
+export const CT_ALIASES: Record<string, string> = {
+  "Por Llamar": "Por gestionar",
+  "Llamada Completada - No Interesado": "Gestionado - No Interesado",
+  "No Contestó la Llamada": "No Contestó",
+  "Contacto No Fit para Llamada": "Contacto No Fit para gestión",
+  "No Llamar - Reunión Agendada con la Empresa": PAUSA,
+  "NO Llamar": "NO gestionar",
+};
+
+// Definición oficial de cada status de empresa
+export const CO_DEFS: Record<string, string> = {
+  "Asignada": "Empresa asignada a SDR; todavía no se busca teléfono ni se comienza a trabajar.",
+  "En gestión": "El SDR toma la empresa y la trabaja: busca teléfonos e intenta llamar. No sale de este status hasta tener respuesta o agotar los intentos con todos los contactos.",
+  "En seguimiento": "Un tomador de decisión pide que lo llamen en una fecha determinada, o ya hay conversación por WhatsApp.",
+  "Empresa ya nutrida": "Prospección o KAM la nutrió con contactos nuevos; el SDR puede volver a tomarla como si fuera asignada.",
+  "Sin interés ahora - Retomar": "Un tomador de decisión no está interesado por ahora y pide retomar más adelante.",
+  "No califica": "El SDR considera que la empresa no cumple el ICP del cliente (después de alguna llamada o viendo la empresa).",
+  "No interesados": "Un tomador de decisión indica que no está interesado.",
+  "Reunión Agendada": "Reunión agendada con algún contacto de la empresa.",
+  "Gestionada - sin contactos fit": "El SDR no encuentra contactos que formen parte del ICP (no aplica cuando solo faltan teléfonos).",
+  "Gestionada - sin comunicación": "El SDR intentó con todos los contactos ICP en HubSpot sin respuesta (por llamadas o por no conseguir teléfono).",
+  "Gestionada por LinkedIn": "Tras intentar con todos los contactos por teléfono o WhatsApp, se intenta con el tomador de decisión por LinkedIn.",
+  "CONV": "Un tomador de decisión indica que ya están en contacto con el cliente de BullsEye.",
+  "Nutrir": "No se logró contactar a nadie de la empresa; se vuelve a prospectar.",
+  "Clientes": "En la llamada el SDR descubre que la empresa ya es cliente del cliente de BullsEye.",
+  "Sin contactos - (ya nutrida)": "Prospección la nutrió, pero no encontró ningún contacto nuevo relevante para el ICP.",
+};
+
+// Definición oficial de cada status de contacto
+export const CT_DEFS: Record<string, string> = {
+  "Hot Calling 🔥": "Contacto asignado para gestión inmediata (el mismo día de la asignación).",
+  "Por gestionar": "Ya se intentó contactar por primera vez o se sigue buscando el teléfono.",
+  "Hacer Seguimiento": "Llamada completada y el contacto pide que lo llamen más adelante, no está interesado ahora pero se deja tarea, o pide información por correo.",
+  "Buscar": "Se deja para búsqueda masiva de teléfonos.",
+  "Gestionado - No Interesado": "El contacto expresa que no está interesado en el servicio.",
+  "Reunión Agendada": "Se concretó una reunión con el contacto.",
+  "Sin Información de Contacto": "No se logró obtener un teléfono.",
+  "No Contestó": "Tras 10 intentos en distintos días y horarios, el contacto no respondió.",
+  "Refiere con el Tomador de Decisiones": "No es la persona adecuada y entrega teléfono, correo o nombre del responsable.",
+  "Contacto No Fit para gestión": "No es la persona adecuada y no entrega información del encargado.",
+  [PAUSA]: "Un cliente de BullsEye pide no seguir contactando porque la empresa ya tiene una reunión programada.",
+  "NO gestionar": "El contacto pide expresamente que no se le vuelva a contactar.",
+  "En Gestión LinkedIn": "No es posible contactarlo por otros canales; se inicia la gestión por LinkedIn.",
+};
+
+// "Resultado de la llamada": disposiciones que son conversación real
+export const CONNECTED_DISPOSITION = /^conectad/i;
+// "Tipo de llamada": actividades registradas como llamada que son de otro canal
+export const callChannel = (type: string | null | undefined): "wa" | "li" | null => {
+  const t = (type ?? "").toLowerCase();
+  return t.includes("whats") ? "wa" : t.includes("linkedin") ? "li" : null;
+};
+
 export const DEFAULT_CONFIG: RadarConfig = {
   health: {
     coverage: { weight: 10, target: 0.95 },
@@ -175,6 +231,8 @@ export const DEFAULT_CONFIG: RadarConfig = {
   titleRules: DEFAULT_TITLE_RULES,
   properties: {},
   periodMonths: 6,
+  definitions: { companies: CO_DEFS, contacts: CT_DEFS },
+  contactAliases: CT_ALIASES,
 };
 
 // Mezcla la configuración guardada con los valores por defecto (campos
@@ -199,5 +257,29 @@ export function mergeConfig(saved: Partial<RadarConfig> | null | undefined): Rad
     titleRules: Array.isArray(s.titleRules) && s.titleRules.length ? s.titleRules : DEFAULT_TITLE_RULES,
     properties: { ...(s.properties ?? {}) },
     periodMonths: [3, 6, 12].includes(Number(s.periodMonths)) ? Number(s.periodMonths) : DEFAULT_CONFIG.periodMonths,
+    // Definiciones editables (nuevo modelo de trabajo): lo guardado manda,
+    // lo que falta se completa con La Biblia
+    definitions: {
+      companies: { ...CO_DEFS, ...cleanText(s.definitions?.companies, CO_ORDER) },
+      contacts: { ...CT_DEFS, ...cleanText(s.definitions?.contacts, CT_ORDER) },
+    },
+    contactAliases: s.contactAliases && typeof s.contactAliases === "object" ? cleanAliases(s.contactAliases) : CT_ALIASES,
   };
+}
+
+// Solo estados conocidos y textos acotados
+function cleanText(v: unknown, keys: string[]): Record<string, string> {
+  if (!v || typeof v !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>)
+      .filter(([k, t]) => keys.includes(k) && typeof t === "string")
+      .map(([k, t]) => [k, (t as string).trim().slice(0, 600)])
+  );
+}
+function cleanAliases(v: object): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(v as Record<string, unknown>)
+      .filter(([from, to]) => from.trim() && typeof to === "string" && CT_ORDER.includes(to))
+      .map(([from, to]) => [from.trim().slice(0, 120), to as string])
+  );
 }

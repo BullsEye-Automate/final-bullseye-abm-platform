@@ -58,7 +58,7 @@ export async function checkClientHubspot(clientId: string) {
 
   // Propiedades (esquemas) — sin esto no se detecta el mapeo
   const { catalog, errors } = await loadPropertyCatalog(token);
-  const schemaOk = Object.values(catalog).every((v) => v.length);
+  const schemaOk = ["companies", "contacts", "meetings"].every((o) => catalog[o]?.length);
   items.push(schemaOk
     ? { key: "schemas", label: "Propiedades de empresas, contactos y reuniones", ok: true, required: true }
     : { key: "schemas", label: "Propiedades de empresas, contactos y reuniones", ok: false, required: true, detail: errors[0]?.slice(0, 240), scopes: missingScopes(errors.join(" ")) });

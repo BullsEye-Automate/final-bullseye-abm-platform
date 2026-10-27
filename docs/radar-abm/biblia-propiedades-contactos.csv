@@ -1,0 +1,30 @@
+PROPIEDAD,ETIQUETAS,Nueva etiqueta,DEFINICIONES
+Asignación BullsEye por Llamar,Hot Calling🔥,Hot Calling🔥,Contacto asignado para ser llamado con gestión inmediata (el mismo día de la asignación).
+,Por Llamar,Por gestionar,Ya se intentó contactar por primera vez o se sigue buscando el número telefónico.
+,Hacer Seguimiento,Hacer Seguimiento,"- Llamada completada, pero el contacto solicita ser llamado más adelante. 
+ - El contacto no está interesado en este momento, pero se deja una tarea para intentar más adelante. 
+ - Si el contacto solicita recibir información por correo, se asigna una tarea de gestión."
+,Buscar,Buscar,Se deja el contacto en buscar cuando se quiere hacer busqueda masiva de números de telefonos
+,Llamada Completada - No Interesado,Gestionado - No Interesado,El contacto expresa que no está interesado en el servicio.
+,Reunión Agendada,Reunión Agendada,Se ha concretado una reunión con el contacto.
+,Sin Información de Contacto,Sin Información de Contacto,No se ha logrado obtener un número de teléfono.
+,No Contestó la Llamada,No Contestó ,"Tras 10 intentos en distintos días y horarios, el contacto no ha respondido."
+,Refiere con el Tomador de Decisiones,Refiere con el Tomador de Decisiones,"El contacto indica que no es la persona adecuada y proporciona información (teléfono, correo o nombre) del responsable."
+,Contacto No Fit para Llamada,Contacto No Fit para gestión,"El contacto indica que no es la persona adecuada, pero no entrega información del encargado."
+,No Llamar - Reunión Agendada con la Empresa,No gestionar - Reunión Agendada con la Empresa,"Un cliente de BullsEye solicita no continuar llamando, ya que la empresa tiene una reunión programada."
+,NO Llamar,NO gestionar,El contacto solicita expresamente que no se le vuelva a llamar.
+,En Gestión LinkedIn,En Gestión LinkedIn,"No es posible contactarlo por otros canales, por lo que se inicia la gestión a través de LinkedIn."
+Resultado de la llamada,Conectada,,"Se hablo con el contacto correcto.
+Se envia un whatsapp/linkedin y es contestado"
+,Conectado - Hacer segumiento,,
+,Coenctado - Reunión,,
+,,,
+,Sin respuesta,,"No se respondio la llamada
+Cortan la llamada sin escuchar la propuesta de valor
+Se envia un whatsapp/linkedin pero no lo responden (se deja en este valor hasta obtener respuesta)"
+,Ocupado,,Manda a buzón directo.
+,Dejo un mensaje en vivo,,"Se deja un mensaje con la secretaria, pero no se hablo directamente con el contacto"
+,Dejó mensaje de voz,,Se deja un mensaje en el buzón de voz
+,Número incorrecto,,El contacto menciona que no es la persona que se esta buscando
+Tipo de llamada,Whatsapp,,Se envio un whatsapp
+,Linkedin,,Se intento contactar por Linkedin

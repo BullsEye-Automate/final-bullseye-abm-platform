@@ -44,7 +44,7 @@ export type RadarContact = {
   em?: number;
   last?: string;             // última actividad
   next?: string;             // próxima actividad
-  conv?: number;
+  conv?: number;             // llamadas conectadas ("Resultado de la llamada" = Conectad…)
   fu?: "interes" | "retomar" | "conv";
   sig?: string;              // señal de interés
   obj?: string;              // objeción
@@ -114,4 +114,6 @@ export type RadarConfig = {
   titleRules: { kw: string; area?: string; sen?: string }[];
   properties: Record<string, string>;                   // clave → nombre interno HubSpot
   periodMonths: number;
+  definitions: { companies: Record<string, string>; contacts: Record<string, string> }; // status → definición
+  contactAliases: Record<string, string>;               // etiqueta antigua de contacto → status actual
 };
