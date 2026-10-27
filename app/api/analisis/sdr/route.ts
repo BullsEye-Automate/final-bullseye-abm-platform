@@ -62,6 +62,8 @@ type Reunion = {
   prospecto_nombre?: string;
   empresa?: string;
   client_id?: string;
+  client_name?: string;
+  origen?: string;
 };
 
 type ResultadosDia = {
@@ -575,6 +577,8 @@ export async function GET(request: NextRequest) {
           empresa: m.empresa,
           client_id: m.client_id,
           client_name: clientMap.get(m.client_id) || "Sin cliente",
+          // Lo usa el Reporte SDR diario (lib/reporteSdr/data.ts).
+          origen: (m.origen && String(m.origen).trim()) || "",
         })),
       });
 

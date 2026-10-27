@@ -204,6 +204,19 @@ Centro de mando del equipo SDR (14 vistas: Dirección / Operación / Análisis),
 
 ---
 
+### Reporte SDR diario por correo (`lib/reporteSdr/`)
+
+Correo automático con un **PNG vertical** (1080 px, para reenviar por WhatsApp) de las llamadas del día por SDR + reuniones agendadas hoy. **Lunes a viernes hábiles a las 13:00 y 18:30 de Chile.**
+
+- **Datos:** reutiliza tal cual `GET /api/analisis/sdr?client_id=__all__&rangeKey=today` (mismos números que Análisis → SDR → Ranking SDR). Reuniones agendadas = lista del día por fecha de agendamiento (la de "Origen de Reuniones"), asignadas a cada SDR por nombre normalizado (`lib/reporteSdr/data.ts`). Excluidos: Adolfo Madriz y José Pablo Alvarez (mismo criterio que Células SDR).
+- **Imagen:** `next/og` (Satori) en el servidor, fuente Outfit local en `lib/reporteSdr/fonts/` (incluida en el bundle vía `outputFileTracingIncludes` en `next.config.js`). Regla de Satori: todo `<div>` con más de un hijo necesita `display:flex`.
+- **Envío:** `sendMail` de `lib/mailer.ts` (Resend, ahora con `attachments`; el fallback Gmail también los soporta). Destinatarios por defecto ihincapie@ y amadriz@; se cambian sin deploy con `REPORTE_SDR_TO` (separados por coma). Remitente: `REPORTE_SDR_FROM`, si no `CELULAS_ALERTS_FROM`.
+- **Cron:** `/api/cron/reporte-sdr?slot=13|18`. Vercel agenda en UTC y Chile cambia de horario, así que `vercel.json` dispara cada corte en las dos horas UTC posibles (16/17 y 21/22 UTC) y la ruta envía solo la que coincide con la hora real de `America/Santiago`. `?force=1` (con `CRON_SECRET`) se salta el chequeo de hora y día hábil.
+- **Vista previa / envío manual** (requiere sesión): `GET /api/reporte-sdr?corte=18:30` devuelve el PNG con los datos de ese momento; `POST` lo envía en el momento a los destinatarios.
+- Alias agregado en `SDR_NAME_ALIASES`: "Pamela Alveal" (planilla de reuniones) = "Pamela Aveal" (Allo). Antes sus reuniones no calzaban en el Ranking SDR.
+
+---
+
 ### Radar ABM (`/analisis/radar-abm` y portal `/portal/radar`)
 
 Informe ABM integral **por cliente** (cuenta → contactos → actividad → conversación → interés → reunión → seguimiento → oportunidad). Port del prototipo `Radar_ABM_BullsEye_BETA.html` + prompt maestro: 13 vistas, secciones §1–§34 y anexo A1–A4. No compara clientes entre sí. Migración `supabase/20261026_radar_abm_migration.sql` (`radar_abm_config`, `radar_abm_clients`, `radar_abm_snapshots`).
