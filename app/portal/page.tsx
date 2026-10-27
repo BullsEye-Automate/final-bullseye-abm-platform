@@ -3,6 +3,7 @@ import { getPortalUser } from "@/lib/portalAuth";
 import { supabaseAdmin } from "@/lib/supabase";
 import { loadClientSettings, loadRadarConfig, loadSnapshot } from "@/lib/radarAbm/server/store";
 import { compute, N, P, dmy } from "@/lib/radarAbm/engine";
+import { isPortalClientActive } from "@/lib/radarAbm/server/masterClients";
 import { PART_SLUGS } from "@/lib/radarAbm/render";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function PortalHomePage() {
     db.from("icp_change_requests").select("id", { count: "exact", head: true }).eq("client_id", user.clientId).eq("status", "pending"),
     db.from("client_wishlist").select("id", { count: "exact", head: true }).eq("client_id", user.clientId),
     db.from("client_wishlist").select("id", { count: "exact", head: true }).eq("client_id", user.clientId).eq("status", "proposed"),
-    loadRadarSummary(user.clientId),
+    loadRadarSummary(user.clientId, user.clientName),
   ]);
 
   const firstName = user.fullName?.split(" ")[0];
@@ -78,10 +79,11 @@ export default async function PortalHomePage() {
 
 // Resumen del informe con el mismo cálculo del Radar ABM. Si no hay
 // sincronización o el informe está oculto para el cliente, no se muestra.
-async function loadRadarSummary(clientId: string) {
+async function loadRadarSummary(clientId: string, clientName: string) {
   try {
     const [settings, snapshot, config] = await Promise.all([loadClientSettings(clientId), loadSnapshot(clientId), loadRadarConfig()]);
     if (!settings.portal_enabled || !snapshot) return null;
+    if (!(await isPortalClientActive(clientId, clientName))) return null;
     const M = compute(snapshot.dataset, config);
     return {
       score: M.health.score,

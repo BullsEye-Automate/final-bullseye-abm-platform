@@ -33,6 +33,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
   const [s, setS] = useState<Settings | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [stats, setStats] = useState<Record<string, number> | null>(null);
+  const [master, setMaster] = useState<{ active: boolean; text: string } | null>(null);
   const [statusInfo, setStatusInfo] = useState<Record<string, { candidates: Option[]; auto: string | null }> | null>(null);
   const [optErr, setOptErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "sync" | null>(null);
@@ -52,6 +53,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
         setS(d.settings);
         setSyncedAt(d.syncedAt);
         setStats(d.stats);
+        setMaster(d.master ?? null);
       })
       .catch((e) => setError(e.message));
   }, [clientId]);
@@ -114,6 +116,12 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
           Es el informe que el cliente ve en su portal. Ver en <Link href="/analisis/radar-abm" className="text-brand hover:underline">Análisis → Radar ABM</Link>.
         </p>
       </div>
+
+      {master && (
+        <div className={`text-sm rounded-lg px-3 py-2 ${master.active ? "bg-success-bg text-success-fg" : "bg-warning-bg text-warning-fg"}`}>
+          {master.text}{!master.active && " No se sincroniza ni se muestra en el portal mientras no esté activo en la Maestra (Maestra IA → Status Cliente)."}
+        </div>
+      )}
 
       {!s && !error ? (
         <div className="flex items-center gap-2 text-sm text-ink-muted"><IconLoader2 size={14} className="animate-spin" /> Cargando…</div>

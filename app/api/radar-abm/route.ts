@@ -4,6 +4,7 @@ import { getReviewerEmail } from "@/lib/portalAdmin";
 import { demoDataset } from "@/lib/radarAbm/demo";
 import { loadClientSettings, loadRadarConfig, loadSnapshot } from "@/lib/radarAbm/server/store";
 import { syncClientRadar } from "@/lib/radarAbm/server/sync";
+import { masterStatusFor } from "@/lib/radarAbm/server/masterClients";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,19 +22,20 @@ export async function GET(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("client_id") ?? "";
   if (!UUID_RE.test(clientId)) return NextResponse.json({ error: "Elige un cliente" }, { status: 400 });
   try {
-    const { data: client } = await supabaseAdmin().from("clients").select("id, name").eq("id", clientId).maybeSingle();
+    const { data: client } = await supabaseAdmin().from("clients").select("id, name, slug").eq("id", clientId).maybeSingle();
     if (!client) return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     const config = await loadRadarConfig();
     if (req.nextUrl.searchParams.get("demo") === "1") {
       return NextResponse.json({ dataset: demoDataset(client.name), config });
     }
-    const [snapshot, settings] = await Promise.all([loadSnapshot(clientId), loadClientSettings(clientId)]);
+    const [snapshot, settings, master] = await Promise.all([loadSnapshot(clientId), loadClientSettings(clientId), masterStatusFor(client)]);
     return NextResponse.json({
       dataset: snapshot?.dataset ?? null,
       syncedAt: snapshot?.synced_at ?? null,
       warnings: snapshot?.warnings ?? [],
       stats: snapshot?.stats ?? null,
       settings,
+      master,
       config,
     });
   } catch (err) {

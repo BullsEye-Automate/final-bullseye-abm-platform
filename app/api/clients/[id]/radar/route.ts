@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getReviewerEmail } from "@/lib/portalAdmin";
+import { supabaseAdmin } from "@/lib/supabase";
+import { masterStatusFor } from "@/lib/radarAbm/server/masterClients";
 import { PROPERTY_DEFS } from "@/lib/radarAbm/dictionaries";
 import { loadClientSettings, loadSnapshot, saveClientSettings, type RadarClientSettings } from "@/lib/radarAbm/server/store";
 
@@ -11,8 +13,13 @@ export const dynamic = "force-dynamic";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const [settings, snapshot] = await Promise.all([loadClientSettings(params.id), loadSnapshot(params.id)]);
-    return NextResponse.json({ settings, syncedAt: snapshot?.synced_at ?? null, stats: snapshot?.stats ?? null, warnings: snapshot?.warnings ?? [] });
+    const { data: client } = await supabaseAdmin().from("clients").select("id, name, slug").eq("id", params.id).maybeSingle();
+    const [settings, snapshot, master] = await Promise.all([
+      loadClientSettings(params.id),
+      loadSnapshot(params.id),
+      client ? masterStatusFor(client) : Promise.resolve({ active: false, text: "Cliente no encontrado" }),
+    ]);
+    return NextResponse.json({ settings, syncedAt: snapshot?.synced_at ?? null, stats: snapshot?.stats ?? null, warnings: snapshot?.warnings ?? [], master });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });
   }

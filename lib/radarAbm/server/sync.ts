@@ -6,6 +6,7 @@ import { deriveClientData, type FlatCompany, type FlatContact } from "../derive"
 import type { RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { batchAssociations, batchRead, callDispositions, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot } from "./store";
+import { checkClientActive } from "./masterClients";
 
 // Radar ABM — sincronización de un cliente desde HubSpot (§3).
 // Empresas del universo del cliente (propiedad "Cliente BullsEye", o todas
@@ -72,8 +73,11 @@ function periodStart(today: string, months: number): string {
 
 export async function syncClientRadar(clientId: string, by: string) {
   const db = supabaseAdmin();
-  const { data: client } = await db.from("clients").select("id, name").eq("id", clientId).maybeSingle();
+  const { data: client } = await db.from("clients").select("id, name, slug").eq("id", clientId).maybeSingle();
   if (!client) throw new Error("Cliente no encontrado");
+  // Solo clientes activos en la Maestra (Maestra IA → Status Cliente)
+  const master = await checkClientActive(client);
+  if (!master.active) throw new Error(master.reason);
 
   const cfg = await loadRadarConfig();
   const settings = await loadClientSettings(clientId);

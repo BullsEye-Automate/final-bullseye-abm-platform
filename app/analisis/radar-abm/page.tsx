@@ -24,6 +24,7 @@ type ApiResponse = {
   warnings?: string[];
   stats?: Record<string, number> | null;
   settings?: { portal_enabled: boolean };
+  master?: { active: boolean; text: string };
   config: RadarConfig;
   error?: string;
 };
@@ -141,6 +142,9 @@ export default function RadarAbmPage() {
               <summary style={{ cursor: "pointer" }}>Avisos de la última sincronización ({data.warnings.length})</summary>
               <ul className="clean" style={{ marginTop: 6 }}>{data.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
             </details>
+          )}
+          {!demo && data?.master && !data.master.active && (
+            <div className="ra-banner warn">{data.master.text} No se sincroniza ni se muestra en el portal mientras no esté activo.</div>
           )}
           {!demo && data?.settings && !data.settings.portal_enabled && (
             <div className="ra-banner info">Este informe está oculto en el portal del cliente (Configuración → Cliente → Radar ABM).</div>
