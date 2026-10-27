@@ -194,8 +194,9 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
         </div>
       ) : null}
 
-      {s?.hubspot_source === "client" && (
+      {s && (
         <ClientHubspotRadar
+          source={s.hubspot_source}
           clientId={clientId}
           properties={s.properties ?? {}}
           onPropertiesChange={(properties) => setS({ ...s, properties })}

@@ -18,7 +18,9 @@ export default function ClientHubspotRadar({
   properties,
   onPropertiesChange,
   saveFirst,
+  source = "client",
 }: {
+  source?: "bullseye" | "client";
   clientId: string;
   properties: Record<string, string>;
   onPropertiesChange: (p: Record<string, string>) => void;
@@ -29,14 +31,17 @@ export default function ClientHubspotRadar({
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const own = source === "client";
   useEffect(() => {
     setConnected(null);
     setResult(null);
+    // El HubSpot de BullsEye siempre está conectado (HUBSPOT_ACCESS_TOKEN)
+    if (!own) { setConnected(true); return; }
     fetch(`/api/clients/${clientId}/hubspot`, { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => setConnected(!!d.connected))
       .catch(() => setConnected(false));
-  }, [clientId]);
+  }, [clientId, own]);
 
   async function check() {
     setChecking(true);
@@ -76,11 +81,11 @@ export default function ClientHubspotRadar({
     <div className="space-y-4 rounded-xl border border-[#E5E2F0] p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm">
-          <div className="font-medium flex items-center gap-2"><IconPlugConnected size={16} className="text-brand" /> HubSpot del cliente</div>
+          <div className="font-medium flex items-center gap-2"><IconPlugConnected size={16} className="text-brand" /> {own ? "HubSpot del cliente" : "HubSpot de BullsEye"}</div>
           <div className="text-xs text-ink-muted mt-0.5">Prueba los permisos del token, cuenta el universo y detecta las propiedades en su cuenta. No sincroniza nada.</div>
         </div>
         <button onClick={check} disabled={checking || connected === null} className="btn-secondary text-sm">
-          {checking ? <IconLoader2 size={15} className="animate-spin" /> : <IconCheck size={15} />} Probar HubSpot del cliente
+          {checking ? <IconLoader2 size={15} className="animate-spin" /> : <IconCheck size={15} />} {own ? "Probar HubSpot del cliente" : "Probar HubSpot"}
         </button>
       </div>
 
@@ -109,14 +114,16 @@ export default function ClientHubspotRadar({
 
           {missing.length > 0 && (
             <div className="text-xs text-ink-muted">
-              Agrega estos permisos a la app privada del cliente (HubSpot → Configuración → Integraciones → Apps privadas → la app → Permisos) y vuelve a probar:{" "}
+              Agrega estos permisos a la app privada {own ? "del cliente" : "de BullsEye (la del token HUBSPOT_ACCESS_TOKEN)"} (HubSpot → Configuración → Integraciones → Apps privadas → la app → Permisos) y vuelve a probar:{" "}
               {missing.map((s, i) => <span key={s}><code>{s}</code>{i < missing.length - 1 ? ", " : ""}</span>)}.
             </div>
           )}
         </>
       )}
 
-      <div>
+      {/* Mapeo propio solo para el HubSpot del cliente; en el de BullsEye las
+          propiedades por cliente se eligen en los selectores de arriba */}
+      {own && <div>
         <div className="text-sm font-medium mb-1">Propiedades en el HubSpot del cliente</div>
         <p className="text-xs text-ink-muted mb-2">
           Se buscan por su etiqueta. Si en su cuenta se llaman distinto, escribe el nombre interno (HubSpot → Configuración → Propiedades → la propiedad → “Nombre interno”). Se guarda solo para este cliente.
@@ -156,7 +163,7 @@ export default function ClientHubspotRadar({
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }
