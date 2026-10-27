@@ -165,14 +165,14 @@ export default function RadarConfigPage() {
                       <div className="text-xs text-ink-muted">{d.help}</div>
                     </td>
                     <td className="py-2 pr-3">
-                      {d.key === "companyStatus" ? (
+                      {["companyStatus", "contactStatus", "companySdr", "contactSdr"].includes(d.key) ? (
                         <span className="text-xs text-ink-muted">Una por cliente: se elige en Configuración → Cliente → Radar ABM</span>
                       ) : (
                         <input className="input w-56 font-mono text-xs" placeholder="automático" value={cfg.properties[d.key] ?? ""} onChange={(e) => setCfg({ ...cfg, properties: { ...cfg.properties, [d.key]: e.target.value } })} />
                       )}
                     </td>
                     <td className="py-2 text-xs">
-                      {det && d.key === "companyStatus" ? (
+                      {det && ["companyStatus", "contactStatus", "companySdr", "contactSdr"].includes(d.key) ? (
                         <span className={det.candidates?.length ? "text-success-fg" : "text-danger-fg"} title={(det.candidates ?? []).map((c) => c.label).join("\n")}>
                           {det.candidates?.length ? `${det.candidates.length} propiedades por cliente detectadas` : "no se encontró ninguna"}
                         </span>

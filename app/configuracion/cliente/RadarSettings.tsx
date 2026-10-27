@@ -18,6 +18,14 @@ type Settings = {
 };
 type Option = { name: string; label: string };
 
+// Propiedades que en el HubSpot de BullsEye existen una por cliente
+const PER_CLIENT: [string, string, boolean][] = [
+  ["companyStatus", "Status de empresa", true],
+  ["contactStatus", "Status de contacto", true],
+  ["companySdr", "SDR de la empresa", false],
+  ["contactSdr", "SDR del contacto", false],
+];
+
 const tri = (v: boolean | null) => (v === true ? "si" : v === false ? "no" : "auto");
 const fromTri = (v: string) => (v === "si" ? true : v === "no" ? false : null);
 
@@ -25,7 +33,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
   const [s, setS] = useState<Settings | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [stats, setStats] = useState<Record<string, number> | null>(null);
-  const [statusInfo, setStatusInfo] = useState<{ candidates: Option[]; auto: string | null } | null>(null);
+  const [statusInfo, setStatusInfo] = useState<Record<string, { candidates: Option[]; auto: string | null }> | null>(null);
   const [optErr, setOptErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<"save" | "sync" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,17 +56,22 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
       .catch((e) => setError(e.message));
   }, [clientId]);
 
-  // Propiedades "Status de la asignación - <cliente>" del HubSpot de BullsEye
-  // y la que se elige automáticamente para este cliente
+  // Propiedades por cliente del HubSpot de BullsEye ("Status de la
+  // asignación - <cliente>", "Asignación BullsEye por llamar - <cliente>",
+  // "SDR - <cliente>", "SDR Asignado - <cliente>") y la que se elige
+  // automáticamente para este cliente
   useEffect(() => {
     if (!s || s.hubspot_source !== "bullseye" || statusInfo) return;
     fetch(`/api/radar-abm/detect?client_id=${clientId}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         if (d.error) return setOptErr(d.error);
-        const p = (d.properties ?? []).find((x: { key: string }) => x.key === "companyStatus");
-        if (!p?.candidates?.length) return setOptErr('No se encontraron propiedades "Status de la asignación - …" en el HubSpot de BullsEye.');
-        setStatusInfo({ candidates: p.candidates, auto: p.manual ? null : p.propLabel });
+        const info: Record<string, { candidates: Option[]; auto: string | null }> = {};
+        for (const p of d.properties ?? []) {
+          if (PER_CLIENT.some(([k]) => k === p.key)) info[p.key] = { candidates: p.candidates ?? [], auto: p.manual ? null : p.propLabel };
+        }
+        if (!info.companyStatus?.candidates.length) setOptErr('No se encontraron propiedades "Status de la asignación - …" en el HubSpot de BullsEye.');
+        setStatusInfo(info);
       })
       .catch((e) => setOptErr(e.message));
   }, [s, statusInfo, clientId]);
@@ -119,25 +132,34 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
             </span>
           </label>
 
-          {s.hubspot_source === "bullseye" ? (
-            <label className="text-sm">
-              <span className="label block mb-1">Propiedad de status del cliente</span>
-              <select
-                className="input"
-                value={s.properties?.companyStatus ?? ""}
-                onChange={(e) => {
-                  const { companyStatus: _c, ...rest } = s.properties ?? {};
-                  setS({ ...s, properties: e.target.value ? { ...rest, companyStatus: e.target.value } : rest });
-                }}
-              >
-                <option value="">
-                  Automático{statusInfo ? `: ${statusInfo.auto ?? "sin coincidencia con el nombre, elige una"}` : ""}
-                </option>
-                {(statusInfo?.candidates ?? []).map((o) => <option key={o.name} value={o.name}>{o.label}</option>)}
-              </select>
-              {optErr && <span className="text-xs text-danger-fg block mt-1">{optErr}</span>}
-            </label>
-          ) : <div />}
+          <div />
+
+          {s.hubspot_source === "bullseye" && (
+            <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
+              {PER_CLIENT.map(([key, label, required]) => {
+                const info = statusInfo?.[key];
+                return (
+                  <label key={key} className="text-sm">
+                    <span className="label block mb-1">{label}{required && <span className="text-danger-fg"> *</span>}</span>
+                    <select
+                      className="input"
+                      value={s.properties?.[key] ?? ""}
+                      onChange={(e) => {
+                        const { [key]: _old, ...rest } = s.properties ?? {};
+                        setS({ ...s, properties: e.target.value ? { ...rest, [key]: e.target.value } : rest });
+                      }}
+                    >
+                      <option value="">
+                        Automático{info ? `: ${info.auto ?? (required ? "sin coincidencia, elige una" : "propietario del registro")}` : ""}
+                      </option>
+                      {(info?.candidates ?? []).map((o) => <option key={o.name} value={o.name}>{o.label}</option>)}
+                    </select>
+                  </label>
+                );
+              })}
+              {optErr && <span className="text-xs text-danger-fg sm:col-span-2">{optErr}</span>}
+            </div>
+          )}
 
           <label className="text-sm">
             <span className="label block mb-1">Registra negocios (pipeline)</span>

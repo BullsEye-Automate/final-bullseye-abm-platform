@@ -49,10 +49,15 @@ export async function loadPropertyCatalog(token?: string): Promise<{ catalog: Pr
   return { catalog, errors };
 }
 
+// Normalización suave que conserva el guion: distingue "SDR - Xarvis" (por
+// cliente) de otras propiedades que solo empiezan con "SDR"
+const softLabel = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+export const hasLabelPrefix = (label: string, prefix: string) => softLabel(label).startsWith(softLabel(prefix));
+
 // Sufijo de cliente de una propiedad por cliente: "Status de la asignación -
-// SDR AcidLab" → "acidlab"
+// SDR AcidLab" → "acidlab". Vacío = propiedad genérica (no es de un cliente).
 function clientSuffix(label: string, labelPrefix: string): string {
-  let rest = normLabel(label).slice(normLabel(labelPrefix).length).trim();
+  let rest = normLabel(softLabel(label).slice(softLabel(labelPrefix).length));
   if (rest.startsWith("sdr ")) rest = rest.slice(4);
   return rest;
 }
@@ -89,12 +94,14 @@ export function detectProperties(configured: Record<string, string>, catalog: Pr
     let candidates: { name: string; label: string }[] = [];
     if (manual) prop = props.find((p) => p.name === manual);
     if (def.perClient) {
-      const lp = normLabel(def.perClient.labelPrefix);
-      const np = def.perClient.namePrefix;
-      const cands = props.filter((p) => normLabel(p.label).startsWith(lp) || (np && p.name.startsWith(np)));
+      const { labelPrefix, namePrefix } = def.perClient;
+      const cands = props.filter((p) => hasLabelPrefix(p.label, labelPrefix) || (namePrefix && p.name.startsWith(namePrefix)));
       candidates = cands.map((p) => ({ name: p.name, label: p.label })).sort((a, b) => a.label.localeCompare(b.label));
       if (!prop && !manual) {
-        prop = cands.length === 1 ? cands[0] : clientName ? matchClientProperty(cands, def.perClient.labelPrefix, clientName) : undefined;
+        // La del cliente por nombre; una única propiedad genérica (sin
+        // sufijo de cliente) sirve para todos
+        prop = (clientName ? matchClientProperty(cands, labelPrefix, clientName) : undefined)
+          ?? (cands.length === 1 && !clientSuffix(cands[0].label, labelPrefix) ? cands[0] : undefined);
       }
     } else if (!prop && !manual) {
       const target = normLabel(def.label);

@@ -33,11 +33,11 @@ export const PROPERTIES_MIGRATION_HINT = "Falta ejecutar la migración supabase/
 // Mapeo de propiedades que se usa para un cliente: el HubSpot de BullsEye usa
 // el mapeo global más lo propio del cliente; el HubSpot propio del cliente,
 // solo el suyo (los nombres internos de BullsEye no existen en su cuenta).
-// En el HubSpot de BullsEye el status de empresa es una propiedad por cliente
-// ("Status de la asignación - <cliente>"): nunca se toma del mapeo global.
+// En el HubSpot de BullsEye el status y el SDR de empresa y de contacto son
+// propiedades por cliente: nunca se toman del mapeo global.
 export function effectiveProperties(cfg: RadarConfig, s: RadarClientSettings): Record<string, string> {
   if (s.hubspot_source === "client") return { ...(s.properties ?? {}) };
-  const { companyStatus: _global, ...global } = cfg.properties;
+  const { companyStatus: _st, contactStatus: _ct, companySdr: _cs, contactSdr: _ks, ...global } = cfg.properties;
   return { ...global, ...(s.properties ?? {}) };
 }
 

@@ -143,12 +143,14 @@ export const PROPERTY_DEFS: {
   perClient?: { labelPrefix: string; namePrefix?: string };
 }[] = [
   { key: "companyStatus", object: "companies", label: "Status de la asignación - <cliente>", required: true, help: "Estado de gestión de la cuenta (una propiedad por cliente)", perClient: { labelPrefix: "Status de la asignación", namePrefix: "status_de_la_asignacion" } },
-  { key: "companyClient", object: "companies", label: "Cliente BullsEye", required: true, help: "Separa el universo de cada cliente" },
+  { key: "companyClient", object: "companies", label: "Cliente BullsEye", help: "Opcional: filtro adicional del universo" },
+  { key: "companySdr", object: "companies", label: "SDR - <cliente>", help: "SDR de la cuenta (una por cliente; sin ella, el propietario)", perClient: { labelPrefix: "SDR -" } },
   { key: "companyAssignedAt", object: "companies", label: "Fecha de asignación", help: "Sin ella se usa la fecha de creación" },
   { key: "companyNextFollowUp", object: "companies", label: "Fecha de próximo seguimiento", help: "Empresas en seguimiento o por retomar" },
   { key: "companyIcpTier", object: "companies", label: "Tier ICP", help: "A / B / C (propuesta, Anexo A4)" },
   { key: "companyCountry", object: "companies", label: "País", help: "Sin ella se usa country" },
-  { key: "contactStatus", object: "contacts", label: "Asignación BullsEye por Llamar", required: true, help: "Estado de gestión del contacto", perClient: { labelPrefix: "Asignación BullsEye por Llamar" } },
+  { key: "contactStatus", object: "contacts", label: "Asignación BullsEye por Llamar - <cliente>", required: true, help: "Estado de gestión del contacto (una propiedad por cliente)", perClient: { labelPrefix: "Asignación BullsEye por Llamar" } },
+  { key: "contactSdr", object: "contacts", label: "SDR Asignado - <cliente>", help: "SDR del contacto (una por cliente; sin ella, el propietario)", perClient: { labelPrefix: "SDR Asignado" } },
   { key: "contactObjection", object: "contacts", label: "Objeción principal", help: "Propuesta (Anexo A4)" },
   { key: "contactSignal", object: "contacts", label: "Señal de interés", help: "Propuesta (Anexo A4)" },
   { key: "meetingResult", object: "meetings", label: "Resultado de la reunión", help: "Propuesta (Anexo A4)" },

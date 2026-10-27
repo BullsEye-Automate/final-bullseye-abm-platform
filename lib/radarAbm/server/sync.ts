@@ -85,7 +85,6 @@ export async function syncClientRadar(clientId: string, by: string) {
   const detected = detectProperties(effectiveProperties(cfg, settings), catalog, client.name);
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
   // Dónde se corrige el mapeo según el HubSpot que se lee
-  const fixAt = settings.hubspot_source === "client" ? "Configuración → Cliente → Radar ABM (HubSpot del cliente)" : "Configuración del Radar ABM";
   const where = settings.hubspot_source === "client" ? " en el HubSpot del cliente" : "";
   if (!P.companyStatus.property) {
     const n = P.companyStatus.candidates.length;
@@ -93,9 +92,15 @@ export async function syncClientRadar(clientId: string, by: string) {
       ? `No se pudo elegir cuál de las ${n} propiedades "Status de la asignación - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Radar ABM.`
       : `No se encontró ninguna propiedad de empresa "Status de la asignación - …"${where}. Indica su nombre interno en Configuración → Cliente → Radar ABM.`);
   }
-  if (!P.contactStatus.property) throw new Error(`No se encontró la propiedad de contacto "Asignación BullsEye por Llamar"${where}. Indica su nombre interno en ${fixAt}.`);
+  if (!P.contactStatus.property) {
+    const n = P.contactStatus.candidates.length;
+    throw new Error(n
+      ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Radar ABM.`
+      : `No se encontró ninguna propiedad de contacto "Asignación BullsEye por Llamar - …"${where}. Indica su nombre interno en Configuración → Cliente → Radar ABM.`);
+  }
   for (const d of detected) if (d.manual && !d.found) warnings.push(`El nombre interno "${d.property}" de "${d.label}" no existe${where}.`);
-  for (const d of detected) if (!d.property && !d.required && d.key !== "companyClient") warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
+  // Sin SDR por cliente se usa el propietario del registro: no es un aviso
+  for (const d of detected) if (!d.property && !d.required && !["companyClient", "companySdr", "contactSdr"].includes(d.key)) warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
 
   // ── Universo de empresas ───────────────────────────────────────────────
   // Empresas con la propiedad de status del cliente con algún valor. Si se
@@ -114,7 +119,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const countryProp = P.companyCountry.property ?? "country";
   const companyProps = Array.from(new Set([
     "name", "industry", "country", "numberofemployees", "hubspot_owner_id", "createdate", statusProp, countryProp,
-    ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier].map((p) => p.property).filter(Boolean) as string[],
+    ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier, P.companySdr].map((p) => p.property).filter(Boolean) as string[],
   ]));
   const rawCompanies = await searchAll("companies", filterGroups, companyProps, token);
 
@@ -125,6 +130,10 @@ export async function syncClientRadar(clientId: string, by: string) {
     warnings.push(`No se pudieron leer los usuarios de HubSpot (SDR): ${(e as Error).message}`);
   }
   const ownerName = (id: string | null | undefined) => (id ? owners.get(String(id)) ?? null : null);
+  // SDR por cliente ("SDR - <cliente>" / "SDR Asignado - <cliente>"); sin
+  // valor, el propietario del registro
+  const companySdrLabel = optionLabeler(P.companySdr);
+  const contactSdrLabel = optionLabeler(P.contactSdr);
 
   const industryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === "industry") as DetectedProperty | undefined);
   const statusLabel = optionLabeler(P.companyStatus);
@@ -147,7 +156,7 @@ export async function syncClientRadar(clientId: string, by: string) {
       pais: countryLabel(p[countryProp]) || countryLabel(p.country) || "Sin país",
       employees: p.numberofemployees ? Number(p.numberofemployees) : null,
       icp: ["A", "B", "C"].includes(tier) ? tier : "s/i",
-      sdr: ownerName(p.hubspot_owner_id) ?? "Sin SDR",
+      sdr: (P.companySdr.property ? companySdrLabel(p[P.companySdr.property]) : null) ?? ownerName(p.hubspot_owner_id) ?? "Sin SDR",
       asg: toDay(P.companyAssignedAt.property ? p[P.companyAssignedAt.property] : null) ?? toDay(p.createdate) ?? "",
       st,
       ...(P.companyNextFollowUp.property && toDay(p[P.companyNextFollowUp.property]) ? { next: toDay(p[P.companyNextFollowUp.property]) } : {}),
@@ -163,7 +172,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const contactStatusProp = P.contactStatus.property!;
   const contactProps = Array.from(new Set([
     "firstname", "lastname", "email", "jobtitle", "hubspot_owner_id", "notes_last_contacted", "notes_next_activity_date", contactStatusProp,
-    ...[P.contactObjection, P.contactSignal].map((p) => p.property).filter(Boolean) as string[],
+    ...[P.contactObjection, P.contactSignal, P.contactSdr].map((p) => p.property).filter(Boolean) as string[],
   ]));
   const rawContacts = await batchRead("contacts", Array.from(contactCompany.keys()), contactProps, token);
   const ctStatusLabel = optionLabeler(P.contactStatus);
@@ -204,7 +213,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     return {
       id: r.id, co, n: name,
       ...(p.jobtitle ? { cargo: p.jobtitle } : {}),
-      sdr: ownerName(p.hubspot_owner_id) ?? coById.get(co)?.sdr ?? "Sin SDR",
+      sdr: (P.contactSdr.property ? contactSdrLabel(p[P.contactSdr.property]) : null) ?? ownerName(p.hubspot_owner_id) ?? coById.get(co)?.sdr ?? "Sin SDR",
       st,
       ...(calls ? { att: calls, calls } : {}),
       ...(wa ? { wa } : {}), ...(li ? { li } : {}), ...(em ? { em } : {}),
@@ -213,6 +222,20 @@ export async function syncClientRadar(clientId: string, by: string) {
       ...(obj ? { obj } : {}), ...(sig ? { sig } : {}),
     };
   });
+
+  // Empresa sin SDR: el más frecuente entre sus contactos
+  const ctSdrByCo = new Map<string | number, Map<string, number>>();
+  for (const k of contacts) {
+    if (k.sdr === "Sin SDR") continue;
+    const m = ctSdrByCo.get(k.co) ?? new Map<string, number>();
+    m.set(k.sdr, (m.get(k.sdr) ?? 0) + 1);
+    ctSdrByCo.set(k.co, m);
+  }
+  for (const c of companies) {
+    if (c.sdr !== "Sin SDR") continue;
+    const m = ctSdrByCo.get(c.id);
+    if (m) c.sdr = Array.from(m.entries()).sort((a, b) => b[1] - a[1])[0][0];
+  }
 
   // ── Reuniones del período ──────────────────────────────────────────────
   const today = chileToday();
@@ -241,7 +264,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     const fb = fbLabel(P.meetingFeedback.property ? p[P.meetingFeedback.property] : null);
     const need = needLabel(P.meetingNeed.property ? p[P.meetingNeed.property] : null);
     meetings.push({
-      id: r.id, ct, co: k.co, sdr: ownerName(p.hubspot_owner_id) ?? k.sdr, agendada, fecha, st,
+      id: r.id, ct, co: k.co, sdr: (P.contactSdr.property ? k.sdr : ownerName(p.hubspot_owner_id)) ?? k.sdr, agendada, fecha, st,
       ...(st === "Reprogramada" ? { reprog: true } : {}),
       ...(res ? { res } : {}), ...(fb ? { fb } : {}), ...(need ? { need } : {}),
     });
