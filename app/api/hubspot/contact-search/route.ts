@@ -18,32 +18,34 @@ export async function GET(req: NextRequest) {
   const isEmail = q.includes("@");
   const tokens = q.trim().split(/\s+/);
 
-  const filterGroups: object[] = isEmail
-    // Para emails: igualdad exacta (CONTAINS_TOKEN no funciona bien con @ y .)
-    ? [
-        { filters: [{ propertyName: "email", operator: "EQ", value: q }] },
-      ]
-    : [
-        { filters: [{ propertyName: "firstname", operator: "CONTAINS_TOKEN", value: q }] },
-        { filters: [{ propertyName: "lastname",  operator: "CONTAINS_TOKEN", value: q }] },
-        { filters: [{ propertyName: "email",     operator: "CONTAINS_TOKEN", value: q }] },
-        { filters: [{ propertyName: "company",   operator: "CONTAINS_TOKEN", value: q }] },
-      ];
-
-  // Si hay varias palabras (no email), buscar también por firstname+lastname separados
-  if (!isEmail && tokens.length >= 2) {
-    filterGroups.push({
-      filters: [
-        { propertyName: "firstname", operator: "CONTAINS_TOKEN", value: tokens[0] },
-        { propertyName: "lastname",  operator: "CONTAINS_TOKEN", value: tokens.slice(1).join(" ") },
-      ],
-    });
-    filterGroups.push({
-      filters: [
-        { propertyName: "firstname", operator: "CONTAINS_TOKEN", value: tokens.slice(0, -1).join(" ") },
-        { propertyName: "lastname",  operator: "CONTAINS_TOKEN", value: tokens[tokens.length - 1] },
-      ],
-    });
+  // HubSpot limita a 3 filterGroups por request — hay que priorizar
+  let filterGroups: object[];
+  if (isEmail) {
+    // Email: EQ exacto + CONTAINS_TOKEN del usuario (parte antes del @)
+    const localPart = q.split("@")[0];
+    filterGroups = [
+      { filters: [{ propertyName: "email", operator: "EQ", value: q.toLowerCase() }] },
+      { filters: [{ propertyName: "email", operator: "CONTAINS_TOKEN", value: localPart }] },
+    ];
+  } else if (tokens.length >= 2) {
+    // Nombre completo: priorizar combinación firstname+lastname
+    filterGroups = [
+      {
+        filters: [
+          { propertyName: "firstname", operator: "CONTAINS_TOKEN", value: tokens[0] },
+          { propertyName: "lastname",  operator: "CONTAINS_TOKEN", value: tokens.slice(1).join(" ") },
+        ],
+      },
+      { filters: [{ propertyName: "firstname", operator: "CONTAINS_TOKEN", value: q }] },
+      { filters: [{ propertyName: "company",   operator: "CONTAINS_TOKEN", value: q }] },
+    ];
+  } else {
+    // Una sola palabra: buscar en los campos principales
+    filterGroups = [
+      { filters: [{ propertyName: "firstname", operator: "CONTAINS_TOKEN", value: q }] },
+      { filters: [{ propertyName: "lastname",  operator: "CONTAINS_TOKEN", value: q }] },
+      { filters: [{ propertyName: "email",     operator: "CONTAINS_TOKEN", value: q }] },
+    ];
   }
 
   const body = {
@@ -65,6 +67,10 @@ export async function GET(req: NextRequest) {
     body: JSON.stringify(body),
   });
   const d = await r.json();
+  if (!r.ok) {
+    console.error("HubSpot contact-search error:", JSON.stringify(d));
+    return NextResponse.json({ contacts: [], error: d?.message });
+  }
   const contacts = (d.results ?? []).map((c: any) => ({
     id: c.id,
     firstname: c.properties.firstname ?? "",
