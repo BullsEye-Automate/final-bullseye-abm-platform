@@ -174,8 +174,8 @@ export const CT_ALIASES: Record<string, string> = {
   "Seguimiento por Whatsapp": "Hacer Seguimiento",
   "Seguimiento por Linkedin": "En Gestión LinkedIn",
   "Refiere con TD": "Refiere con el Tomador de Decisiones",
+  // "REAGENDAR" no tiene equivalencia: se conserva tal cual (confirmado con BullsEye)
   "No llamar, ya se agendo reunión con la empresa": PAUSA,
-  "REAGENDAR": "Reunión Agendada",
   "Ya no labora en la empresa - Desasociar": EXCLUDE,
 };
 export const CO_ALIASES: Record<string, string> = {
@@ -279,9 +279,11 @@ export function mergeConfig(saved: Partial<RadarConfig> | null | undefined): Rad
       companies: { ...CO_DEFS, ...cleanText(s.definitions?.companies, CO_ORDER) },
       contacts: { ...CT_DEFS, ...cleanText(s.definitions?.contacts, CT_ORDER) },
     },
-    // Equivalencias: las de La Biblia + lo guardado (lo guardado manda)
-    contactAliases: { ...CT_ALIASES, ...cleanAliases(s.contactAliases, CT_ORDER) },
-    companyAliases: { ...CO_ALIASES, ...cleanAliases(s.companyAliases, CO_ORDER.filter((x) => x !== "CONV")) },
+    // Equivalencias: las de La Biblia hasta que se guarden desde
+    // Configuración; desde ahí manda la lista guardada (así una equivalencia
+    // por defecto también se puede quitar)
+    contactAliases: s.contactAliases && typeof s.contactAliases === "object" ? cleanAliases(s.contactAliases, CT_ORDER) : CT_ALIASES,
+    companyAliases: s.companyAliases && typeof s.companyAliases === "object" ? cleanAliases(s.companyAliases, CO_ORDER.filter((x) => x !== "CONV")) : CO_ALIASES,
   };
 }
 
