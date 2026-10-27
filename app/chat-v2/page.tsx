@@ -314,7 +314,13 @@ function EmailCard({ subject, body, showSubject = true, channel = "email" }: { s
 function Bubble({ msg, channel }: { msg: Message; channel: string }) {
   const isUser = msg.role === "user";
   const effectiveChannel = msg.channel ?? channel;
-  const parsed = !isUser ? parseEmail(msg.content) : null;
+  const isBriefChannel = effectiveChannel === "meeting_brief";
+  const parsed = !isUser && !isBriefChannel ? parseEmail(msg.content) : null;
+
+  // Para briefing: el modelo devuelve texto plano (no JSON)
+  const briefText = !isUser && isBriefChannel
+    ? msg.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim()
+    : null;
 
   return (
     <div className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"} mb-5`}>
@@ -327,7 +333,9 @@ function Bubble({ msg, channel }: { msg: Message; channel: string }) {
         {msg.imagePreview && (
           <img src={msg.imagePreview} alt="Adjunto" className="rounded-xl max-w-full" style={{ maxHeight: 220, objectFit: "contain" }} />
         )}
-        {parsed ? (
+        {briefText ? (
+          <EmailCard subject="" body={briefText} showSubject={false} channel="meeting_brief" />
+        ) : parsed ? (
           <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={effectiveChannel === "email"} channel={effectiveChannel} />
         ) : (
           <div className="rounded-2xl px-4 py-3 text-sm leading-relaxed"

@@ -136,7 +136,7 @@ function buildSystemPrompt(
   const styleBlock = recipient.segmentStyleGuide ? `\n\nGuía de estilo (aplica estrictamente):\n${recipient.segmentStyleGuide}` : "";
 
   const jsonFormat = isMeetingBrief
-    ? `{\n  "subject": "Previa: [Nombre Contacto] - [Empresa]",\n  "body": "Briefing completo en texto"\n}`
+    ? null
     : channelInfo.hasSubject
       ? `{\n  "subject": "Asunto del mensaje",\n  "body": "Cuerpo con salto de línea \\n entre párrafos"\n}`
       : `{\n  "subject": "",\n  "body": "Texto del mensaje"\n}`;
@@ -164,10 +164,10 @@ ${contextBlock}${icpBlock}${styleBlock}${extraInstruction}
 
 Usa TODA la información disponible del contacto y la empresa para hiperpersonalizar el mensaje. Menciona detalles específicos de la industria, tamaño de empresa, cargo o situación del contacto.
 
-Devuelve SIEMPRE este JSON sin markdown:
-${jsonFormat}
-
-Para ajustes, aplica directamente y devuelve el mensaje completo en JSON.`;
+${jsonFormat
+    ? `Devuelve SIEMPRE este JSON sin markdown:\n${jsonFormat}\n\nPara ajustes, aplica directamente y devuelve el mensaje completo en JSON.`
+    : `Devuelve el briefing como texto plano estructurado, con secciones numeradas y encabezados en MAYÚSCULAS. No uses JSON, no uses markdown, no uses asteriscos. Usa saltos de línea simples para separar elementos. Para ajustes, devuelve el briefing completo actualizado.`
+  }`;
 }
 
 export async function POST(req: NextRequest) {
