@@ -55,6 +55,7 @@ export async function GET(req: NextRequest) {
       result: c.result ?? null,
       summary: c.summary ?? null,
       user: c.user?.name ?? null,
+      recording_url: c.recording_url ?? c.recordingUrl ?? null,
     }));
 
     return NextResponse.json({ calls });

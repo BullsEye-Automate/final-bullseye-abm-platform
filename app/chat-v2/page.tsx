@@ -58,6 +58,7 @@ type HSContact = {
 type AlloCall = {
   id: string; date: string; direction: string; duration: number;
   result: string | null; summary: string | null; user: string | null;
+  recording_url: string | null;
 };
 
 type Client  = { id: string; name: string };
@@ -565,10 +566,11 @@ export default function ChatV2Page() {
                 </div>
               )}
 
-              {/* Buscar contacto HubSpot — solo para prospectos */}
-              {recipientType === "prospecto" && <div>
+              {/* Buscar contacto HubSpot */}
+              {recipientType && <div>
                 <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
-                  Contacto HubSpot <span style={{ fontWeight: 400 }}>(opcional)</span>
+                  {recipientType === "cliente" ? "Contraparte en HubSpot" : "Contacto HubSpot"}{" "}
+                  <span style={{ fontWeight: 400 }}>(opcional)</span>
                 </label>
                 <div className="relative">
                   <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "#b0acd4" }} />
@@ -646,8 +648,8 @@ export default function ChatV2Page() {
                 )}
               </div>}
 
-              {/* Llamadas Allo — solo para prospectos */}
-              {recipientType === "prospecto" && selectedContact && (
+              {/* Llamadas Allo */}
+              {recipientType && selectedContact && (
                 <div>
                   <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
                     Llamadas recientes (Allo)
@@ -682,7 +684,17 @@ export default function ChatV2Page() {
                               <span className="text-[11px]" style={{ color: "#9b97c0" }}>{fmtDuration(call.duration)}</span>
                             </div>
                           </div>
-                          {call.user && <div className="text-[11px] mt-0.5" style={{ color: "#9b97c0" }}>{call.user}</div>}
+                          <div className="flex items-center justify-between mt-0.5">
+                            {call.user && <div className="text-[11px]" style={{ color: "#9b97c0" }}>{call.user}</div>}
+                            {call.recording_url && (
+                              <a href={call.recording_url} target="_blank" rel="noopener noreferrer"
+                                onClick={e => e.stopPropagation()}
+                                className="text-[10px] px-2 py-0.5 rounded font-medium hover:opacity-80 flex items-center gap-1"
+                                style={{ background: "rgba(98,224,216,0.15)", color: "#1a9e98" }}>
+                                ▶ Grabación
+                              </a>
+                            )}
+                          </div>
                           {call.summary && (
                             <div className="text-[11px] mt-1 line-clamp-2" style={{ color: "#6b66a3" }}>{call.summary}</div>
                           )}
@@ -787,10 +799,9 @@ export default function ChatV2Page() {
               {recipientType && (
                 <>
                   {recipientType === "cliente" && (
-                    <div className="rounded-xl px-4 py-3 text-[12px]"
-                      style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#6b66a3" }}>
-                      <strong style={{ color: "#251762" }}>Contraparte de la reunión:</strong> ¿Con quién se reúnen? (el prospecto o empresa visitada)
-                    </div>
+                    <p className="text-[11px]" style={{ color: "#9b97c0" }}>
+                      Busca el prospecto en HubSpot o ingresa los datos manualmente.
+                    </p>
                   )}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
