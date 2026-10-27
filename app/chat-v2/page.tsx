@@ -51,7 +51,7 @@ const LATAM_COUNTRIES = [
 type HSContact = {
   id: string; firstname: string; lastname: string; email: string;
   jobtitle: string; phone: string; estado_contacto: string;
-  sdr_asignado: string; associatedcompanyid: string;
+  sdr_asignado: string; company: string; associatedcompanyid: string;
   num_contacted: string; last_contacted: string;
 };
 
@@ -373,6 +373,7 @@ export default function ChatV2Page() {
     setContactDropOpen(false);
     setRecipientName(`${c.firstname} ${c.lastname}`.trim());
     if (c.jobtitle) setTitle(c.jobtitle);
+    if (c.company) setCompany(c.company);
   }
 
   function clearContact() {
