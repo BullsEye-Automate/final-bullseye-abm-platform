@@ -31,6 +31,9 @@ const PUBLIC_API_PREFIXES = [
   "/api/test-debug", // endpoint de diagnóstico
   "/api/admin/debug-ai-usage", // endpoint de debug para auditar ai_usage_log
   "/api/agente-contenido",    // agente de contenido SDR — accesible desde /chat sin sesión
+  "/api/agente-contenido-v2", // V2 del agente (beta interna) — accesible desde /chat-v2 sin sesión
+  "/api/hubspot/contact-search", // búsqueda de contactos HubSpot — usada por /chat-v2
+  "/api/allo/contact-calls",  // llamadas Allo por teléfono — usada por /chat-v2
   "/api/training/segments",   // segmentos de estilo — requeridos por /chat sin sesión
 ];
 
