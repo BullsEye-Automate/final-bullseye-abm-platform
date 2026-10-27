@@ -1,13 +1,15 @@
 // Envío del Reporte SDR diario (lunes a viernes hábiles, 13:00 y 18:30 de
-// Chile). Destinatarios confirmados con BullsEye: Ingri Hincapié y Adolfo
-// Madriz. Se pueden cambiar sin deploy de código con REPORTE_SDR_TO (lista
-// separada por comas). Remitente: REPORTE_SDR_FROM, si no CELULAS_ALERTS_FROM
+// Chile). Destinatario por defecto: Ingri Hincapié (confirmado con BullsEye).
+// Mientras bullseye-abm.com no esté verificado en Resend, la cuenta (de Ingri)
+// solo puede enviar a ihincapie@. Una vez verificado, se pueden sumar más
+// destinatarios sin deploy de código con REPORTE_SDR_TO (lista separada por
+// comas, ej. "ihincapie@bullseye-abm.com,amadriz@bullseye-abm.com"). Remitente: REPORTE_SDR_FROM, si no CELULAS_ALERTS_FROM
 // (el mismo de las alertas de Células SDR), si no onboarding@resend.dev.
 import { mailProvider, sendMail } from "@/lib/mailer";
 import { buildDailySdrReport, formatLongDate, pct, shortName, type DailySdrReport } from "./data";
 import { renderReportPng } from "./image";
 
-const DEFAULT_TO = ["ihincapie@bullseye-abm.com", "amadriz@bullseye-abm.com"];
+const DEFAULT_TO = ["ihincapie@bullseye-abm.com"];
 
 export function reportRecipients(): string[] {
   const env = process.env.REPORTE_SDR_TO;
