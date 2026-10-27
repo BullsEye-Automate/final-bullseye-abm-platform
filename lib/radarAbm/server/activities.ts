@@ -3,8 +3,8 @@ import type { ActivityKind, RadarActivity } from "../types";
 import { batchAssociations, batchRead, callDispositions, type PropertyCatalog } from "./hubspot";
 
 // Radar ABM — actividades de las cuentas (profundidad ABM por canal).
-// Se traen las llamadas, correos, comunicaciones (WhatsApp / LinkedIn / SMS)
-// y notas asociadas a las empresas del universo Y a sus contactos con status.
+// Se traen las llamadas, correos y comunicaciones (WhatsApp / LinkedIn / SMS)
+// asociadas (las notas no son actividades) a las empresas del universo Y a sus contactos con status.
 // Una actividad asociada a la vez a la empresa y al contacto se cuenta una
 // sola vez (por id), atribuida al contacto. Las asociadas solo a la empresa
 // suman a la cuenta sin contacto.
@@ -14,7 +14,7 @@ import { batchAssociations, batchRead, callDispositions, type PropertyCatalog } 
 // Conectada / Conectado - … = llamada conectada; un correo entrante
 // (hs_email_direction = INCOMING_EMAIL) es una respuesta.
 
-const OBJECTS = ["calls", "emails", "communications", "notes"] as const;
+const OBJECTS = ["calls", "emails", "communications"] as const;
 type Obj = (typeof OBJECTS)[number];
 
 // Tope de seguridad: más actividades que esto no caben en el tiempo del sync
@@ -66,7 +66,7 @@ export async function loadActivities(input: {
   if (owner.size > MAX_ACTIVITIES) {
     warnings.push(`Hay ${owner.size} actividades; se leyó el detalle de las primeras ${MAX_ACTIVITIES}.`);
   }
-  const byObj: Record<Obj, string[]> = { calls: [], emails: [], communications: [], notes: [] };
+  const byObj: Record<Obj, string[]> = { calls: [], emails: [], communications: [] };
   for (const [key, o] of Array.from(owner.entries()).slice(0, MAX_ACTIVITIES)) byObj[o.obj].push(key.slice(o.obj.length + 1));
 
   // Detalle de cada tipo (fecha, canal, resultado)
@@ -111,13 +111,6 @@ export async function loadActivities(input: {
       }
     } catch (e) {
       warnings.push(`No se pudo leer el detalle de WhatsApp / LinkedIn: ${(e as Error).message}`);
-    }
-  }
-  if (byObj.notes.length) {
-    try {
-      for (const r of await batchRead("notes", byObj.notes, ["hs_timestamp"], token)) push("notes", r.id, "note", toDay(r.properties.hs_timestamp));
-    } catch (e) {
-      warnings.push(`No se pudo leer el detalle de las notas: ${(e as Error).message}`);
     }
   }
   return { activities, contactMeetings, warnings };

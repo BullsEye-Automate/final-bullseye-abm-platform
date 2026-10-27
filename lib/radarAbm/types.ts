@@ -83,7 +83,7 @@ export type RadarDeal = {
 // Actividad asociada a la cuenta (profundidad por canal). Solo en datos
 // sincronizados desde HubSpot; los datos demo traen solo los conteos por
 // contacto (calls / wa / li / em).
-export type ActivityKind = "call" | "wa" | "li" | "em" | "sms" | "note";
+export type ActivityKind = "call" | "wa" | "li" | "em" | "sms";
 export type RadarActivity = {
   id: string;
   k: ActivityKind;

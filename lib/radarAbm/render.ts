@@ -154,7 +154,7 @@ const monthLabels = (M: Model) => M.MONTHS.map((m: string) => M.MLAB[m]);
 /* ---------- profundidad por canales ---------- */
 function channelDepth(M: Model): string {
   const ad = M.ad;
-  const mix = [...CHANNELS.map((x) => ({ l: x.l, v: ad.tot[x.k] || 0, c: x.c })), { l: "Notas", v: ad.tot.note || 0, c: "var(--g-pend)" }];
+  const mix = CHANNELS.map((x) => ({ l: x.l, v: ad.tot[x.k] || 0, c: x.c }));
   const extra = ad.fromActivities
     ? `${tile("Correos respondidos", N(ad.replies), "correos entrantes del contacto")}${tile("Llamadas conectadas", N(ad.conn), "“Resultado de la llamada” = Conectad…")}`
     : "";

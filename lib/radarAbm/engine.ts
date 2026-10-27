@@ -390,8 +390,8 @@ export function filterDataset(ds: RadarDataset, f: { sdr?: string; pais?: string
 }
 
 /* ---------- profundidad por canales (actividades de la cuenta) ---------- */
-// Canales de contacto: los que cuentan para "multicanal". Las notas suman
-// actividad pero no son un canal.
+// Canales de contacto: los que cuentan para "multicanal" (las notas no son
+// actividades).
 export const CHANNELS: { k: string; l: string; c: string }[] = [
   { k: "call", l: "Llamadas", c: "var(--s1)" },
   { k: "wa", l: "WhatsApp", c: "var(--g-int)" },
@@ -406,11 +406,11 @@ export function activityDepth(M: Model) {
   const acts: any[] | undefined = M.cl.activities;
   const fromActivities = Array.isArray(acts);
   const co = new Map((M.C as any[]).map((c) => [String(c.id), c]));
-  M.C.forEach((c: any) => { c.ch = { call: 0, wa: 0, li: 0, em: 0, sms: 0, note: 0 }; c.rep = 0; c.conn = 0; c.touched = new Set(); c.coOnly = 0; });
+  M.C.forEach((c: any) => { c.ch = { call: 0, wa: 0, li: 0, em: 0, sms: 0 }; c.rep = 0; c.conn = 0; c.touched = new Set(); c.coOnly = 0; });
   if (fromActivities) {
     for (const a of acts!) {
       const c = co.get(String(a.co));
-      if (!c) continue;
+      if (!c || !(a.k in c.ch)) continue; // las notas no son actividades
       c.ch[a.k] = (c.ch[a.k] || 0) + 1;
       if (a.in) c.rep++;
       if (a.conn) c.conn++;
@@ -429,7 +429,7 @@ export function activityDepth(M: Model) {
   });
   const worked = M.worked as any[], active = worked.filter((c) => c.acts > 0);
   const tot: Record<string, number> = {};
-  for (const k of ["call", "wa", "li", "em", "sms", "note"]) tot[k] = sum(M.C, (c: any) => c.ch[k]);
+  for (const k of ["call", "wa", "li", "em", "sms"]) tot[k] = sum(M.C, (c: any) => c.ch[k]);
   // por mes (solo con fechas)
   const months = (M.MONTHS as string[]).map((mo) => {
     const row: Record<string, any> = { mo };
