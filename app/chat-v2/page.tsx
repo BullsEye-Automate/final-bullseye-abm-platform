@@ -386,9 +386,12 @@ export default function ChatV2Page() {
     setSelectedContact(c);
     setContactQuery(`${c.firstname} ${c.lastname}`.trim());
     setContactDropOpen(false);
-    setRecipientName(`${c.firstname} ${c.lastname}`.trim());
-    if (c.jobtitle) setTitle(c.jobtitle);
-    if (c.company) setCompany(c.company);
+    // En flujo cliente, el contacto es el PROSPECTO de la reunión, no el destinatario del brief
+    if (recipientType !== "cliente") {
+      setRecipientName(`${c.firstname} ${c.lastname}`.trim());
+      if (c.jobtitle) setTitle(c.jobtitle);
+      if (c.company) setCompany(c.company);
+    }
   }
 
   function clearContact() {
@@ -566,12 +569,30 @@ export default function ChatV2Page() {
                 </div>
               )}
 
+              {/* Flujo CLIENTE: destinatario del brief */}
+              {recipientType === "cliente" && (
+                <div>
+                  <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
+                    Para quién es el brief
+                  </label>
+                  <input type="text" value={recipientName} onChange={e => setRecipientName(e.target.value)}
+                    placeholder="Ej: Ingri Hincapié (cliente BullsEye)"
+                    className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
+                    style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
+                </div>
+              )}
+
               {/* Buscar contacto HubSpot */}
               {recipientType && <div>
                 <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
-                  {recipientType === "cliente" ? "Contraparte en HubSpot" : "Contacto HubSpot"}{" "}
+                  {recipientType === "cliente" ? "Prospecto de la reunión" : "Contacto HubSpot"}{" "}
                   <span style={{ fontWeight: 400 }}>(opcional)</span>
                 </label>
+                {recipientType === "cliente" && (
+                  <p className="text-[11px] mb-2" style={{ color: "#b0acd4" }}>
+                    Busca al contacto con quien agendaste la reunión para extraer su información.
+                  </p>
+                )}
                 <div className="relative">
                   <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "#b0acd4" }} />
                   <input type="text" value={contactQuery}
@@ -795,28 +816,19 @@ export default function ChatV2Page() {
                 </div>
               )}
 
-              {/* Nombre, empresa y cargo — labels varían según tipo de destinatario */}
-              {recipientType && (
+              {/* Nombre, empresa y cargo — solo para prospectos */}
+              {recipientType === "prospecto" && (
                 <>
-                  {recipientType === "cliente" && (
-                    <p className="text-[11px]" style={{ color: "#9b97c0" }}>
-                      Busca el prospecto en HubSpot o ingresa los datos manualmente.
-                    </p>
-                  )}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
-                        {recipientType === "cliente" ? "Nombre contraparte" : "Nombre"}
-                      </label>
+                      <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Nombre</label>
                       <input type="text" value={recipientName} onChange={e => setRecipientName(e.target.value)}
-                        placeholder={recipientType === "cliente" ? "Ej: Juan Pérez" : "Ej: María González"}
+                        placeholder="Ej: María González"
                         className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
                         style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
                     </div>
                     <div>
-                      <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
-                        {recipientType === "cliente" ? "Empresa contraparte" : "Empresa"}
-                      </label>
+                      <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Empresa</label>
                       <input type="text" value={recipientCompany} onChange={e => setRecipientCompany(e.target.value)}
                         placeholder="Ej: Clínica Norte"
                         className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
@@ -824,9 +836,7 @@ export default function ChatV2Page() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
-                      {recipientType === "cliente" ? "Cargo contraparte" : "Cargo del destinatario"}
-                    </label>
+                    <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Cargo del destinatario</label>
                     <input type="text" value={recipientTitle} onChange={e => setTitle(e.target.value)}
                       placeholder="Ej: Director de Operaciones"
                       className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
