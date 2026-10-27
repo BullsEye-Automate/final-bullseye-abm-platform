@@ -159,8 +159,10 @@ export const PROPERTY_DEFS: {
 ];
 
 // ── "La Biblia" BullsEye (docs/radar-abm/biblia-propiedades-*.csv) ───────
-// Etiquetas antiguas de "Asignación BullsEye por Llamar" que siguen vivas en
-// algunas propiedades por cliente → etiqueta actual del diccionario.
+// Equivalencias: etiquetas antiguas o propias de un cliente que siguen vivas
+// en las propiedades por cliente → status del diccionario. EXCLUDE saca el
+// registro del informe (no es parte del trabajo de prospección).
+export const EXCLUDE = "Excluir del informe";
 export const CT_ALIASES: Record<string, string> = {
   "Por Llamar": "Por gestionar",
   "Llamada Completada - No Interesado": "Gestionado - No Interesado",
@@ -168,6 +170,19 @@ export const CT_ALIASES: Record<string, string> = {
   "Contacto No Fit para Llamada": "Contacto No Fit para gestión",
   "No Llamar - Reunión Agendada con la Empresa": PAUSA,
   "NO Llamar": "NO gestionar",
+  // Vistas en HubSpot (AcidLab, 2026-10)
+  "Seguimiento por Whatsapp": "Hacer Seguimiento",
+  "Seguimiento por Linkedin": "En Gestión LinkedIn",
+  "Refiere con TD": "Refiere con el Tomador de Decisiones",
+  "No llamar, ya se agendo reunión con la empresa": PAUSA,
+  "REAGENDAR": "Reunión Agendada",
+  "Ya no labora en la empresa - Desasociar": EXCLUDE,
+};
+export const CO_ALIASES: Record<string, string> = {
+  "Gestionado por Linkedin": "Gestionada por LinkedIn",
+  "Es cliente": "Clientes",
+  // Empresas ya clientes marcadas para no gestionar: no son universo objetivo
+  "No gestionar - Cliente": EXCLUDE,
 };
 
 // Definición oficial de cada status de empresa
@@ -233,6 +248,7 @@ export const DEFAULT_CONFIG: RadarConfig = {
   periodMonths: 6,
   definitions: { companies: CO_DEFS, contacts: CT_DEFS },
   contactAliases: CT_ALIASES,
+  companyAliases: CO_ALIASES,
 };
 
 // Mezcla la configuración guardada con los valores por defecto (campos
@@ -263,7 +279,9 @@ export function mergeConfig(saved: Partial<RadarConfig> | null | undefined): Rad
       companies: { ...CO_DEFS, ...cleanText(s.definitions?.companies, CO_ORDER) },
       contacts: { ...CT_DEFS, ...cleanText(s.definitions?.contacts, CT_ORDER) },
     },
-    contactAliases: s.contactAliases && typeof s.contactAliases === "object" ? cleanAliases(s.contactAliases) : CT_ALIASES,
+    // Equivalencias: las de La Biblia + lo guardado (lo guardado manda)
+    contactAliases: { ...CT_ALIASES, ...cleanAliases(s.contactAliases, CT_ORDER) },
+    companyAliases: { ...CO_ALIASES, ...cleanAliases(s.companyAliases, CO_ORDER.filter((x) => x !== "CONV")) },
   };
 }
 
@@ -276,10 +294,11 @@ function cleanText(v: unknown, keys: string[]): Record<string, string> {
       .map(([k, t]) => [k, (t as string).trim().slice(0, 600)])
   );
 }
-function cleanAliases(v: object): Record<string, string> {
+function cleanAliases(v: unknown, targets: string[]): Record<string, string> {
+  if (!v || typeof v !== "object") return {};
   return Object.fromEntries(
     Object.entries(v as Record<string, unknown>)
-      .filter(([from, to]) => from.trim() && typeof to === "string" && CT_ORDER.includes(to))
+      .filter(([from, to]) => from.trim() && typeof to === "string" && (targets.includes(to) || to === EXCLUDE))
       .map(([from, to]) => [from.trim().slice(0, 120), to as string])
   );
 }

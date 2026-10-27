@@ -22,7 +22,7 @@ export async function GET() {
     if (!snapshot) return NextResponse.json({ dataset: null, reason: "pending" });
     const { warnings: _w, mapping: _m, ...dataset } = snapshot.dataset;
     // Al cliente solo lo que necesita el cálculo (sin mapeo de propiedades)
-    return NextResponse.json({ dataset, config: { ...config, properties: {}, contactAliases: {} } });
+    return NextResponse.json({ dataset, config: { ...config, properties: {}, contactAliases: {}, companyAliases: {} } });
   } catch (err) {
     console.error("Radar ABM (portal):", err);
     return NextResponse.json({ error: "No se pudo cargar el informe" }, { status: 500 });
