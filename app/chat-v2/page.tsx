@@ -8,7 +8,7 @@ import {
 } from "@tabler/icons-react";
 
 type EmailType = "cold" | "no_contact" | "post_call" | "info" | "referral" | "meeting" | "meeting_brief";
-type Channel   = "email" | "whatsapp" | "linkedin";
+type Channel   = "email" | "whatsapp" | "linkedin" | "meeting_brief";
 type Message   = { role: "user" | "assistant"; content: string; imagePreview?: string; channel?: Channel };
 
 const MSG_TYPE_LABELS: Record<EmailType, string> = {
@@ -68,15 +68,31 @@ type Segment = {
   style_rules: string | null; style_avoid: string | null; style_email_length: string | null;
 };
 
+// Repara JSON con saltos de línea literales dentro de strings (JSON inválido que el modelo genera a veces)
+function repairJson(s: string): string {
+  let result = ""; let inStr = false; let esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (esc) { result += ch; esc = false; continue; }
+    if (ch === "\\" && inStr) { esc = true; result += ch; continue; }
+    if (ch === '"') { inStr = !inStr; result += ch; continue; }
+    if (inStr && ch === "\n") { result += "\\n"; continue; }
+    if (inStr && ch === "\r") { result += "\\r"; continue; }
+    result += ch;
+  }
+  return result;
+}
+
 function parseEmail(text: string): { subject: string; body: string } | null {
+  // Strip markdown code fences
+  const clean = text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "");
   try {
-    const match = text.match(/\{[\s\S]*\}/);
+    const match = clean.match(/\{[\s\S]*\}/);
     if (!match) return null;
-    const parsed = JSON.parse(match[0]);
-    // Normaliza \n literales que el modelo a veces devuelve como string escapada
-    if (parsed.body) parsed.body = parsed.body.replace(/\\n/g, "\n");
+    const parsed = JSON.parse(repairJson(match[0]));
     if (parsed.subject) parsed.subject = parsed.subject.replace(/\\n/g, "\n");
-    return parsed;
+    if (parsed.body) parsed.body = parsed.body.replace(/\\n/g, "\n");
+    if (parsed.subject || parsed.body) return parsed;
   } catch {}
   return null;
 }
