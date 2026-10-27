@@ -5,7 +5,7 @@ import { CO_ORDER, CT_ORDER } from "../dictionaries";
 import { deriveClientData, type FlatCompany, type FlatContact } from "../derive";
 import type { RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
-import { hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot } from "./store";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot } from "./store";
 
 // Radar ABM — sincronización de un cliente desde HubSpot (§3).
 // Empresas del universo del cliente (propiedad "Cliente BullsEye", o todas
@@ -82,10 +82,14 @@ export async function syncClientRadar(clientId: string, by: string) {
 
   const { catalog, errors } = await loadPropertyCatalog(token);
   warnings.push(...errors);
-  const detected = detectProperties(cfg.properties, catalog);
+  const detected = detectProperties(effectiveProperties(cfg, settings), catalog);
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
-  if (!P.companyStatus.property) throw new Error('No se encontró la propiedad de empresa "Status de la asignación - SDR". Indica su nombre interno en Configuración del Radar ABM.');
-  if (!P.contactStatus.property) throw new Error('No se encontró la propiedad de contacto "Asignación BullsEye por Llamar". Indica su nombre interno en Configuración del Radar ABM.');
+  // Dónde se corrige el mapeo según el HubSpot que se lee
+  const fixAt = settings.hubspot_source === "client" ? "Configuración → Cliente → Radar ABM (HubSpot del cliente)" : "Configuración del Radar ABM";
+  const where = settings.hubspot_source === "client" ? " en el HubSpot del cliente" : "";
+  if (!P.companyStatus.property) throw new Error(`No se encontró la propiedad de empresa "Status de la asignación - SDR"${where}. Indica su nombre interno en ${fixAt}.`);
+  if (!P.contactStatus.property) throw new Error(`No se encontró la propiedad de contacto "Asignación BullsEye por Llamar"${where}. Indica su nombre interno en ${fixAt}.`);
+  for (const d of detected) if (d.manual && !d.found) warnings.push(`El nombre interno "${d.property}" de "${d.label}" no existe${where}.`);
   for (const d of detected) if (!d.property && !d.required && d.key !== "companyClient") warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
 
   // ── Universo de empresas ───────────────────────────────────────────────
@@ -107,7 +111,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   } else if (settings.hubspot_source === "client") {
     filterGroups = [{ filters: [{ propertyName: statusProp, operator: "HAS_PROPERTY" }] }];
   } else {
-    throw new Error('No se encontró la propiedad de empresa "Cliente BullsEye" para separar el universo del cliente. Indica su nombre interno en Configuración del Radar ABM.');
+    throw new Error(`No se encontró la propiedad de empresa "Cliente BullsEye" para separar el universo del cliente. Indica su nombre interno en ${fixAt}.`);
   }
 
   const countryProp = P.companyCountry.property ?? "country";

@@ -12,6 +12,7 @@ export type RadarClientSettings = {
   deep: boolean | null;
   pipeline: boolean | null;
   portal_enabled: boolean;
+  properties: Record<string, string>;   // mapeo propio (solo HubSpot del cliente)
 };
 
 export const DEFAULT_CLIENT_SETTINGS = (clientId: string): RadarClientSettings => ({
@@ -21,10 +22,20 @@ export const DEFAULT_CLIENT_SETTINGS = (clientId: string): RadarClientSettings =
   deep: null,
   pipeline: null,
   portal_enabled: true,
+  properties: {},
 });
 
 const missingTable = (msg: string) => /does not exist|relation .* not found|Could not find the table/i.test(msg);
 export const MIGRATION_HINT = "Falta ejecutar la migración supabase/20261026_radar_abm_migration.sql en Supabase.";
+const missingColumn = (msg: string) => /column .*properties|properties.*(does not exist|schema cache)/i.test(msg);
+export const PROPERTIES_MIGRATION_HINT = "Falta ejecutar la migración supabase/20261027_radar_abm_client_properties.sql en Supabase.";
+
+// Mapeo de propiedades que se usa para un cliente: el HubSpot de BullsEye usa
+// el mapeo global; el HubSpot propio del cliente, solo el suyo (los nombres
+// internos de BullsEye no existen en su cuenta).
+export function effectiveProperties(cfg: RadarConfig, s: RadarClientSettings): Record<string, string> {
+  return s.hubspot_source === "client" ? { ...(s.properties ?? {}) } : { ...cfg.properties };
+}
 
 export async function loadRadarConfig(): Promise<RadarConfig> {
   const { data, error } = await supabaseAdmin().from("radar_abm_config").select("config").eq("id", "global").maybeSingle();
@@ -46,10 +57,15 @@ export async function loadClientSettings(clientId: string): Promise<RadarClientS
 }
 
 export async function saveClientSettings(s: RadarClientSettings, by: string): Promise<void> {
-  const { error } = await supabaseAdmin()
-    .from("radar_abm_clients")
-    .upsert({ ...s, updated_by: by, updated_at: new Date().toISOString() }, { onConflict: "client_id" });
-  if (error) throw new Error(missingTable(error.message) ? MIGRATION_HINT : error.message);
+  const row = { ...s, updated_by: by, updated_at: new Date().toISOString() };
+  let { error } = await supabaseAdmin().from("radar_abm_clients").upsert(row, { onConflict: "client_id" });
+  // Sin la columna properties (migración 20261027 pendiente) se puede seguir
+  // guardando lo demás mientras no haya un mapeo propio que perder.
+  if (error && missingColumn(error.message) && !Object.keys(s.properties ?? {}).length) {
+    const { properties: _p, ...rest } = row;
+    ({ error } = await supabaseAdmin().from("radar_abm_clients").upsert(rest, { onConflict: "client_id" }));
+  }
+  if (error) throw new Error(missingTable(error.message) ? MIGRATION_HINT : missingColumn(error.message) ? PROPERTIES_MIGRATION_HINT : error.message);
 }
 
 export type RadarSnapshot = { dataset: RadarDataset; synced_at: string; warnings: string[]; stats: Record<string, number> };

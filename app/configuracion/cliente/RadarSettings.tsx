@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import ClientHubspotRadar from "./ClientHubspotRadar";
 import { IconAlertCircle, IconCheck, IconDeviceFloppy, IconLoader2, IconRadar, IconRefresh } from "@tabler/icons-react";
 
 // Radar ABM del cliente: de qué HubSpot se lee su universo, qué valor de
@@ -13,6 +14,7 @@ type Settings = {
   deep: boolean | null;
   pipeline: boolean | null;
   portal_enabled: boolean;
+  properties: Record<string, string>;
 };
 type Option = { label: string; value: string };
 
@@ -155,6 +157,15 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
           </label>
         </div>
       ) : null}
+
+      {s?.hubspot_source === "client" && (
+        <ClientHubspotRadar
+          clientId={clientId}
+          properties={s.properties ?? {}}
+          onPropertiesChange={(properties) => setS({ ...s, properties })}
+          saveFirst={save}
+        />
+      )}
 
       {s && (
         <div className="flex flex-wrap items-center gap-3">

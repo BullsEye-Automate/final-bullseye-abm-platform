@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { detectProperties, loadPropertyCatalog } from "@/lib/radarAbm/server/hubspot";
-import { hubspotTokenFor, loadClientSettings, loadRadarConfig } from "@/lib/radarAbm/server/store";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, type RadarClientSettings } from "@/lib/radarAbm/server/store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -16,16 +16,18 @@ export async function GET(req: NextRequest) {
   try {
     const clientId = req.nextUrl.searchParams.get("client_id") ?? "";
     let token: string | undefined;
+    let settings: RadarClientSettings | null = null;
     if (UUID_RE.test(clientId)) {
-      const settings = await loadClientSettings(clientId);
+      settings = await loadClientSettings(clientId);
       token = await hubspotTokenFor(clientId, settings.hubspot_source);
     }
     const cfg = await loadRadarConfig();
+    const mapping = settings ? effectiveProperties(cfg, settings) : cfg.properties;
     const { catalog, errors } = await loadPropertyCatalog(token);
     if (errors.length && !Object.values(catalog).some((v) => v.length)) {
       return NextResponse.json({ error: errors[0] }, { status: 502 });
     }
-    return NextResponse.json({ properties: detectProperties(cfg.properties, catalog), warnings: errors });
+    return NextResponse.json({ properties: detectProperties(mapping, catalog), warnings: errors });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });
   }

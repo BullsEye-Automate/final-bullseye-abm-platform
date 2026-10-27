@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getReviewerEmail } from "@/lib/portalAdmin";
+import { PROPERTY_DEFS } from "@/lib/radarAbm/dictionaries";
 import { loadClientSettings, loadSnapshot, saveClientSettings, type RadarClientSettings } from "@/lib/radarAbm/server/store";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,13 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       deep: triState(b.deep),
       pipeline: triState(b.pipeline),
       portal_enabled: b.portal_enabled !== false,
+      // Mapeo propio (HubSpot del cliente): solo claves conocidas y nombres
+      // internos válidos (letras, números y guion bajo)
+      properties: Object.fromEntries(
+        Object.entries((b.properties ?? {}) as Record<string, unknown>)
+          .filter(([k, v]) => PROPERTY_DEFS.some((d) => d.key === k) && typeof v === "string" && /^[a-z0-9_]+$/i.test(v.trim()))
+          .map(([k, v]) => [k, (v as string).trim()])
+      ),
     };
     await saveClientSettings(settings, await getReviewerEmail());
     return NextResponse.json({ settings });
