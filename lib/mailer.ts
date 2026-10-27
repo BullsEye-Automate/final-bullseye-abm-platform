@@ -18,7 +18,11 @@ export type MailMessage = {
   cc?: string[];
   subject: string;
   html: string;
+  // Adjuntos (ej. el PNG del Reporte SDR). content = bytes del archivo.
+  attachments?: MailAttachment[];
 };
+
+export type MailAttachment = { filename: string; content: Buffer; contentType: string };
 
 export function mailProvider(): "resend" | "gmail" {
   return process.env.RESEND_API_KEY ? "resend" : "gmail";
@@ -37,6 +41,9 @@ export async function sendMail(msg: MailMessage): Promise<{ id: string }> {
       cc: msg.cc?.length ? msg.cc : undefined,
       subject: msg.subject,
       html: msg.html,
+      attachments: msg.attachments?.length
+        ? msg.attachments.map((a) => ({ filename: a.filename, content: a.content.toString("base64"), content_type: a.contentType }))
+        : undefined,
     }),
   });
   const body = await res.json().catch(() => ({}));
