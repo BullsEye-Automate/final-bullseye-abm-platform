@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { IconArrowLeft, IconCheck, IconDeviceFloppy, IconLoader2, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import type { RadarConfig } from "@/lib/radarAbm/types";
-import { CO_ORDER, CT_ORDER } from "@/lib/radarAbm/dictionaries";
+import { CO_ORDER, CT_ORDER, EXCLUDE } from "@/lib/radarAbm/dictionaries";
 
 // Configuración del Radar ABM (global, tabla radar_abm_config): las metas y
 // pesos del Health Score, los tramos de tamaño, el período y la tabla de
@@ -217,49 +217,53 @@ export default function RadarConfigPage() {
             </div>
           </details>
         ))}
-        <details className="rounded-xl border border-[#ECEAF4] p-3">
-          <summary className="cursor-pointer text-sm font-medium">Etiquetas antiguas de contacto → status actual</summary>
-          <p className="text-xs text-ink-muted mt-2">Si la propiedad de un cliente todavía usa una etiqueta anterior (ej. “Por Llamar”), se cuenta como el status actual que indiques.</p>
-          <div className="mt-3 space-y-2">
-            {Object.entries(cfg.contactAliases).map(([from, to], i) => (
-              <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
-                <input
-                  className="input w-72"
-                  value={from}
-                  onChange={(e) => {
-                    const entries = Object.entries(cfg.contactAliases).map(([f, t], j) => (j === i ? [e.target.value, t] : [f, t]));
-                    setCfg({ ...cfg, contactAliases: Object.fromEntries(entries) });
-                  }}
-                />
-                <span className="text-ink-muted">→</span>
-                <select
-                  className="input w-72"
-                  value={to}
-                  onChange={(e) => setCfg({ ...cfg, contactAliases: { ...cfg.contactAliases, [from]: e.target.value } })}
-                >
-                  {CT_ORDER.map((st) => <option key={st}>{st}</option>)}
-                </select>
-                <button
-                  className="text-ink-subtle hover:text-danger-fg"
-                  aria-label="Quitar"
-                  onClick={() => {
-                    const { [from]: _x, ...rest } = cfg.contactAliases;
-                    setCfg({ ...cfg, contactAliases: rest });
-                  }}
-                >
-                  <IconTrash size={15} />
-                </button>
-              </div>
-            ))}
-            <button
-              className="text-sm text-brand flex items-center gap-1 hover:underline"
-              onClick={() => setCfg({ ...cfg, contactAliases: { ...cfg.contactAliases, "": CT_ORDER[0] } })}
-            >
-              <IconPlus size={14} /> Agregar etiqueta
-            </button>
-          </div>
-        </details>
-        <button className="text-xs text-ink-muted hover:underline" onClick={() => setCfg({ ...cfg, definitions: defaults.definitions, contactAliases: defaults.contactAliases })}>
+        {([
+          ["companyAliases", "Equivalencias de status de empresa", CO_ORDER.filter((x) => x !== "CONV")],
+          ["contactAliases", "Equivalencias de status de contacto", CT_ORDER],
+        ] as const).map(([field, title, targets]) => (
+          <details key={field} className="rounded-xl border border-[#ECEAF4] p-3">
+            <summary className="cursor-pointer text-sm font-medium">{title} ({Object.keys(cfg[field]).length})</summary>
+            <p className="text-xs text-ink-muted mt-2">
+              Etiquetas de HubSpot que no son el texto oficial (antiguas o propias de un cliente) y a qué status equivalen. “{EXCLUDE}” saca el registro del informe
+              (por ejemplo, empresas que ya son clientes y no se gestionan, o contactos que ya no trabajan en la empresa). Se aplica en la próxima sincronización.
+            </p>
+            <div className="mt-3 space-y-2">
+              {Object.entries(cfg[field]).map(([from, to], i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
+                  <input
+                    className="input w-72"
+                    value={from}
+                    onChange={(e) => {
+                      const entries = Object.entries(cfg[field]).map(([f, t], j) => (j === i ? [e.target.value, t] : [f, t]));
+                      setCfg({ ...cfg, [field]: Object.fromEntries(entries) });
+                    }}
+                  />
+                  <span className="text-ink-muted">→</span>
+                  <select className="input w-72" value={to} onChange={(e) => setCfg({ ...cfg, [field]: { ...cfg[field], [from]: e.target.value } })}>
+                    {[...targets, EXCLUDE].map((st) => <option key={st}>{st}</option>)}
+                  </select>
+                  <button
+                    className="text-ink-subtle hover:text-danger-fg"
+                    aria-label="Quitar"
+                    onClick={() => {
+                      const { [from]: _x, ...rest } = cfg[field];
+                      setCfg({ ...cfg, [field]: rest });
+                    }}
+                  >
+                    <IconTrash size={15} />
+                  </button>
+                </div>
+              ))}
+              <button
+                className="text-sm text-brand flex items-center gap-1 hover:underline"
+                onClick={() => setCfg({ ...cfg, [field]: { ...cfg[field], "": targets[0] } })}
+              >
+                <IconPlus size={14} /> Agregar equivalencia
+              </button>
+            </div>
+          </details>
+        ))}
+        <button className="text-xs text-ink-muted hover:underline" onClick={() => setCfg({ ...cfg, definitions: defaults.definitions, contactAliases: defaults.contactAliases, companyAliases: defaults.companyAliases })}>
           Restaurar definiciones de La Biblia
         </button>
       </section>

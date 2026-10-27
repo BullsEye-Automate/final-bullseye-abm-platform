@@ -130,5 +130,6 @@ export type RadarConfig = {
   properties: Record<string, string>;                   // clave → nombre interno HubSpot
   periodMonths: number;
   definitions: { companies: Record<string, string>; contacts: Record<string, string> }; // status → definición
-  contactAliases: Record<string, string>;               // etiqueta antigua de contacto → status actual
+  contactAliases: Record<string, string>;               // etiqueta de contacto → status del diccionario (o "Excluir del informe")
+  companyAliases: Record<string, string>;               // etiqueta de empresa → status del diccionario (o "Excluir del informe")
 };

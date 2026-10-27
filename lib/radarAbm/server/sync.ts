@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { fetchHSOwners } from "@/lib/hubspot";
 import { chileToday } from "@/lib/celulasSdr/calendar";
-import { CO_ORDER, CT_ORDER } from "../dictionaries";
+import { CO_ORDER, CT_ORDER, EXCLUDE } from "../dictionaries";
 import { deriveClientData, type FlatCompany, type FlatContact } from "../derive";
 import type { RadarActivity, RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { loadActivities } from "./activities";
@@ -36,7 +36,6 @@ function canonicalizer(official: string[], aliases: Record<string, string> = {})
     return map.get(canon(t)) ?? t;
   };
 }
-const companyStatusCanon = canonicalizer(CO_ORDER.filter((s) => s !== "CONV"));
 
 function optionLabeler(p: DetectedProperty | undefined) {
   const m = new Map((p?.options ?? []).map((o) => [o.value, o.label]));
@@ -145,6 +144,9 @@ export async function syncClientRadar(clientId: string, by: string) {
   const tierLabel = optionLabeler(P.companyIcpTier);
   const countryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === countryProp) as DetectedProperty | undefined);
   const unknownStatuses = new Set<string>();
+  // Equivalencias de status (La Biblia + Configuración del Radar ABM)
+  const companyStatusCanon = canonicalizer(CO_ORDER.filter((s) => s !== "CONV"), cfg.companyAliases);
+  let excludedCompanies = 0;
 
   const companies: FlatCompany[] = [];
   for (const r of rawCompanies) {
@@ -152,6 +154,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     const label = statusLabel(p[statusProp]);
     if (!label) continue; // sin status: no es parte del trabajo de BullsEye
     const st = companyStatusCanon(label)!;
+    if (st === EXCLUDE) { excludedCompanies++; continue; } // ej. "No gestionar - Cliente"
     if (!st.startsWith("En conversaciones") && !CO_ORDER.includes(st)) unknownStatuses.add(st);
     const tier = (tierLabel(P.companyIcpTier.property ? p[P.companyIcpTier.property] : null) ?? "").trim().toUpperCase().replace(/^(ICP|TIER)\s*/, "");
     companies.push({
@@ -187,7 +190,12 @@ export async function syncClientRadar(clientId: string, by: string) {
   const objLabel = optionLabeler(P.contactObjection);
   const sigLabel = optionLabeler(P.contactSignal);
   const unknownCtStatuses = new Set<string>();
-  const kept = rawContacts.filter((r) => ctStatusLabel(r.properties[contactStatusProp]));
+  // Con status y sin equivalencia "Excluir del informe" (ej. ya no trabaja ahí)
+  const kept = rawContacts.filter((r) => {
+    const label = ctStatusLabel(r.properties[contactStatusProp]);
+    return !!label && contactStatusCanon(label) !== EXCLUDE;
+  });
+  const excludedContacts = rawContacts.filter((r) => { const l = ctStatusLabel(r.properties[contactStatusProp]); return !!l && contactStatusCanon(l) === EXCLUDE; }).length;
   const keptIds = kept.map((r) => r.id);
 
   // ── Actividades de la cuenta (empresa + contactos): profundidad por canal
@@ -299,8 +307,9 @@ export async function syncClientRadar(clientId: string, by: string) {
     warnings.push(`No se pudieron leer los negocios: ${(e as Error).message}`);
   }
 
-  if (unknownStatuses.size) warnings.push(`Status de empresa fuera del diccionario: ${Array.from(unknownStatuses).join(", ")}.`);
-  if (unknownCtStatuses.size) warnings.push(`Status de contacto fuera del diccionario: ${Array.from(unknownCtStatuses).join(", ")}.`);
+  if (excludedCompanies || excludedContacts) warnings.push(`Excluidos del informe por equivalencia: ${excludedCompanies} empresas y ${excludedContacts} contactos (Configuración del Radar ABM → Equivalencias).`);
+  if (unknownStatuses.size) warnings.push(`Status de empresa fuera del diccionario (agrega su equivalencia en Configuración del Radar ABM): ${Array.from(unknownStatuses).join(", ")}.`);
+  if (unknownCtStatuses.size) warnings.push(`Status de contacto fuera del diccionario (agrega su equivalencia en Configuración del Radar ABM): ${Array.from(unknownCtStatuses).join(", ")}.`);
   if (!companies.length) warnings.push("No se encontraron empresas con status para este cliente en HubSpot.");
 
   const clientData = deriveClientData({
@@ -327,6 +336,8 @@ export async function syncClientRadar(clientId: string, by: string) {
     deals: deals.length,
     calls: contacts.reduce((n, k) => n + (k.calls ?? 0), 0),
     activities: act.activities.length,
+    excludedCompanies,
+    excludedContacts,
   };
   await saveSnapshot(clientId, dataset, stats, by);
   return { stats, warnings, syncedAt: dataset.syncedAt };
