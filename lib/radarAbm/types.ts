@@ -84,7 +84,7 @@ export type RadarDeal = {
 // Actividad asociada a la cuenta (profundidad por canal). Solo en datos
 // sincronizados desde HubSpot; los datos demo traen solo los conteos por
 // contacto (calls / wa / li / em).
-export type ActivityKind = "call" | "wa" | "li" | "em" | "sms";
+export type ActivityKind = "call" | "wa" | "li" | "em";
 export type RadarActivity = {
   id: string;
   k: ActivityKind;
@@ -116,6 +116,7 @@ export type RadarDataset = {
   generated: string;         // fecha de corte (YYYY-MM-DD)
   period: [string, string];  // inicio y fin del período
   range?: { from: string; to: string }; // rango elegido en el selector de fechas (lo pone filterDataset)
+  trendBase?: { period: [string, string]; agendadas: string[] }; // con rango: reuniones del período completo para la tendencia por meses
   source: RadarSource;
   syncedAt?: string | null;  // última sincronización con HubSpot
   warnings?: string[];

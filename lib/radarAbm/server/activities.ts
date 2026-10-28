@@ -3,7 +3,7 @@ import type { ActivityKind, RadarActivity } from "../types";
 import { batchAssociations, batchRead, callDispositions, type PropertyCatalog } from "./hubspot";
 
 // Radar ABM — actividades de las cuentas (profundidad ABM por canal).
-// Se traen las llamadas, correos y comunicaciones (WhatsApp / LinkedIn / SMS)
+// Se traen las llamadas, correos y comunicaciones (WhatsApp / LinkedIn)
 // asociadas (las notas no son actividades) a las empresas del universo Y a sus contactos con status.
 // Una actividad asociada a la vez a la empresa y al contacto se cuenta una
 // sola vez (por id), atribuida al contacto. Las asociadas solo a la empresa
@@ -106,8 +106,9 @@ export async function loadActivities(input: {
     try {
       for (const r of await batchRead("communications", byObj.communications, ["hs_timestamp", "hs_communication_channel_type"], token)) {
         const t = (r.properties.hs_communication_channel_type ?? "").toUpperCase();
-        const k: ActivityKind = t.includes("WHATS") ? "wa" : t.includes("LINKEDIN") ? "li" : "sms";
-        push("communications", r.id, k, toDay(r.properties.hs_timestamp));
+        // BullsEye no trabaja SMS: otras comunicaciones no cuentan como actividad
+        const k: ActivityKind | null = t.includes("WHATS") ? "wa" : t.includes("LINKEDIN") ? "li" : null;
+        if (k) push("communications", r.id, k, toDay(r.properties.hs_timestamp));
       }
     } catch (e) {
       warnings.push(`No se pudo leer el detalle de WhatsApp / LinkedIn: ${(e as Error).message}`);

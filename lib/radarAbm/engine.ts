@@ -162,6 +162,14 @@ export function compute(ds: RadarDataset, cfg: RadarConfig = DEFAULT_CONFIG): Mo
     mo: b.k, days: b.days, to: b.to, asg: cnt(C, (c) => inBucket(c.asg, b)), eff: cnt(eff, (k) => inBucket(k.last, b)),
     sch: cnt(Mt, (m) => inBucket(m.agendada, b)), held: cnt(held, (m) => inBucket(m.fecha, b)),
   }));
+  // Tendencia: siempre por meses completos del período del informe, aunque
+  // se elija un mes, semana o día en el selector de fechas
+  if (ds.trendBase) {
+    const tm = periodMonths(ds.trendBase.period, TODAY);
+    M.trendM = tm.map((mo) => ({ mo, lab: MONTH_ABBR[Number(mo.slice(5, 7)) - 1], days: daysInMonth(mo), to: `${mo}-${String(daysInMonth(mo)).padStart(2, "0")}`, sch: cnt(ds.trendBase!.agendadas, (d) => d.startsWith(mo)) }));
+  } else {
+    M.trendM = M.month.map((m: any) => ({ ...m, lab: MLAB[m.mo].replace("*", "") }));
+  }
   M.health = health(M, cfg);
   M.ad = activityDepth(M);
   return M;
@@ -171,7 +179,7 @@ export function compute(ds: RadarDataset, cfg: RadarConfig = DEFAULT_CONFIG): Mo
 // primera (con 6 meses: últimos 3 vs 3 previos). El mes en curso se
 // normaliza por los días transcurridos.
 function trendRatio(M: Model): number | null {
-  const months: any[] = M.month;
+  const months: any[] = M.trendM;
   if (months.length < 2) return null;
   const half = Math.floor(months.length / 2);
   const firstM = months.slice(months.length - 2 * half, months.length - half), lastM = months.slice(months.length - half);
@@ -425,6 +433,8 @@ export function filterDataset(ds: RadarDataset, f: RadarFilter): RadarDataset {
     if (activities) activities = activities.filter(inCo);
   }
   let period = ds.period;
+  let trendBase: RadarDataset["trendBase"];
+  const allMeetings = meetings;
   if (byDate) {
     const from = f.from!, to = f.to!;
     const inR = (d?: string | null) => !!d && d >= from && d <= to;
@@ -447,12 +457,14 @@ export function filterDataset(ds: RadarDataset, f: RadarFilter): RadarDataset {
       const M = mBy[String(c.id)] || [], held = M.filter((m) => m.st === "Realizada");
       return { ...c, msch: M.length, mheld: held.length, opp: held.some((m) => m.res === "Oportunidad") || openDeal.has(String(c.id)) };
     });
+    // La tendencia del Health Score sigue usando los meses completos
+    trendBase = { period: ds.trendBase?.period ?? ds.period, agendadas: allMeetings.map((m) => m.agendada).filter(Boolean) };
     period = [from, to];
   }
   return {
     ...ds,
     period,
-    ...(byDate ? { range: { from: f.from!, to: f.to! } } : {}),
+    ...(byDate ? { range: { from: f.from!, to: f.to! }, trendBase } : {}),
     client: {
       ...ds.client,
       ...(byCo ? { universe: companies.length, sdrs: f.sdr ? [f.sdr] : ds.client.sdrs } : {}),
@@ -470,7 +482,6 @@ export const CHANNELS: { k: string; l: string; c: string }[] = [
   { k: "wa", l: "WhatsApp", c: "var(--g-int)" },
   { k: "li", l: "LinkedIn", c: "var(--g-fut)" },
   { k: "em", l: "Correo", c: "var(--g-cont)" },
-  { k: "sms", l: "SMS", c: "var(--g-disp)" },
 ];
 
 // Con datos de HubSpot se usan las actividades asociadas a la empresa o a sus
@@ -479,7 +490,7 @@ export function activityDepth(M: Model) {
   const acts: any[] | undefined = M.cl.activities;
   const fromActivities = Array.isArray(acts);
   const co = new Map((M.C as any[]).map((c) => [String(c.id), c]));
-  M.C.forEach((c: any) => { c.ch = { call: 0, wa: 0, li: 0, em: 0, sms: 0 }; c.rep = 0; c.conn = 0; c.touched = new Set(); c.coOnly = 0; });
+  M.C.forEach((c: any) => { c.ch = { call: 0, wa: 0, li: 0, em: 0 }; c.rep = 0; c.conn = 0; c.touched = new Set(); c.coOnly = 0; });
   if (fromActivities) {
     for (const a of acts!) {
       const c = co.get(String(a.co));
@@ -502,7 +513,7 @@ export function activityDepth(M: Model) {
   });
   const worked = M.worked as any[], active = worked.filter((c) => c.acts > 0);
   const tot: Record<string, number> = {};
-  for (const k of ["call", "wa", "li", "em", "sms"]) tot[k] = sum(M.C, (c: any) => c.ch[k]);
+  for (const k of ["call", "wa", "li", "em"]) tot[k] = sum(M.C, (c: any) => c.ch[k]);
   // por mes (solo con fechas)
   const months = (M.B as Bucket[]).map((b) => {
     const row: Record<string, any> = { mo: b.k };

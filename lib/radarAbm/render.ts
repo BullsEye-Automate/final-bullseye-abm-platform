@@ -75,6 +75,15 @@ export const LEADS: Record<string, string> = {
 
 /* ---------- componentes visuales ---------- */
 type BarItem = { l: string; v: number; c?: string; r?: string | null; tip?: string };
+// Cobertura de una industria a la vez: desplegable + panel por industria
+// (RadarReport alterna los paneles con el atributo data-ra-pick)
+function industryPicker(rows: any[]) {
+  if (!rows.length) return `<p class="note">Sin información disponible.</p>`;
+  const panel = (x: any, i: number) => `<div data-ra-panel="${i}"${i ? " hidden" : ""}>
+    ${stack([{ l: "Trabajadas", v: x.worked, c: "var(--accent)" }, { l: "Asignadas sin gestión", v: x.co - x.worked, c: "var(--g-pend)" }])}
+    <div class="tiles" style="margin-top:12px">${tile("Cobertura", P(x.cov), `${N(x.worked)} de ${N(x.co)} empresas trabajadas`)}${tile("Con reunión", N(x.coMt), `${N(x.mt)} reuniones`)}${tile("Contactabilidad", P(x.cr), `${N(x.eff)} contactos efectivos`)}</div></div>`;
+  return `<select class="ra-select" data-ra-pick aria-label="Industria" style="margin-bottom:12px">${rows.map((x, i) => `<option value="${i}">${esc(x.key)} (${N(x.co)})</option>`).join("")}</select>${rows.map(panel).join("")}`;
+}
 export function bars(items: BarItem[], opt: { max?: number; pct?: boolean | number } = {}) {
   const max = opt.max || Math.max(1, ...items.map((i) => i.v));
   return `<div class="bars">${items.map((i) => `<div class="bar" data-tip="${esc(i.tip || (i.l + ": " + (opt.pct ? P(i.v, 1) : N(i.v))))}">
@@ -209,7 +218,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   const covInd = segCo(M, (c) => c.ind || "Sin industria");
   s.cobertura = `<div class="grid2"><div class="rcard"><h4>Universo de cuentas</h4>${stack([{ l: "Trabajadas", v: k.worked, c: "var(--accent)" }, { l: "Asignadas sin gestión", v: k.universe - k.worked, c: "var(--g-pend)" }])}
     <p class="note">Cuenta trabajada = empresa con estado distinto de "Asignada". Empresas asignadas hace más de 30 días sin gestión: <b>${N(cnt(C, (c) => c.st === "Asignada" && c.asg < d30))}</b>.</p></div>
-    <div class="rcard"><h4>Cobertura por industria</h4>${bars(covInd.map((x) => ({ l: `${x.key} (${x.co})`, v: x.cov, c: "var(--s1)", tip: `${x.key}: ${x.worked} de ${x.co} trabajadas` })), { pct: 1, max: 1 })}</div></div>`;
+    <div class="rcard"><h4>Cobertura por industria</h4>${industryPicker(covInd)}</div></div>`;
 
   const depthOrder = ["Profunda", "Multi-thread", "Single-thread", "Sin contacto efectivo"], depthC: Record<string, string> = { "Profunda": "var(--g-int)", "Multi-thread": "var(--s1)", "Single-thread": "var(--g-disp)", "Sin contacto efectivo": "var(--g-pend)" };
   const qualWorked = M.worked.filter((c: any) => c.st !== "No califica");
@@ -361,8 +370,8 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     + table([{ h: "SDR", f: (r) => esc(r.sd) }, { h: "Hot Calling pendientes", n: 1, f: (r) => r.hot }, { h: "Seguim. vencidos", n: 1, f: (r) => r.over }, { h: "Conversaciones sin próxima acción", n: 1, f: (r) => r.none }, { h: "Empresas asignadas +30 días sin gestión", n: 1, f: (r) => r.idle }, { h: "Cuentas con 3+ contactos pendientes", n: 1, f: (r) => r.multiPend }, { h: "Llamadas (actividad)", n: 1, f: (r) => `<span style="color:var(--muted)">${N(r.calls)}</span>` }, { h: "Contactos con problema de base", n: 1, f: (r) => `<span style="color:var(--muted)">${r.base}</span>` }], sdrR)
     + `<p class="note">Las llamadas son actividad operativa, no indicador de éxito. "Problema de base" (sin teléfono o contacto no fit) se muestra como contexto y no penaliza al SDR.${cl.sdrs.length === 1 ? " Un solo SDR asignado: no hay comparación interna." : ""}</p>`;
 
-  const half = Math.floor(M.MONTHS.length / 2);
-  const trendLab = half ? `${M.MLAB[M.MONTHS[M.MONTHS.length - half]].replace("*", "")}–${M.MLAB[M.MONTHS[M.MONTHS.length - 1]].replace("*", "")} vs ${M.MLAB[M.MONTHS[M.MONTHS.length - 2 * half]]}–${M.MLAB[M.MONTHS[M.MONTHS.length - half - 1]]}` : "";
+  const TM: any[] = M.trendM, th = Math.floor(TM.length / 2);
+  const trendLab = th ? `${TM[TM.length - th].lab}–${TM[TM.length - 1].lab} vs ${TM[TM.length - 2 * th].lab}–${TM[TM.length - th - 1].lab}` : "";
   const actEvo = M.ad.dated ? `<div class="rcard" style="margin-top:16px"><h4>Actividades ${perUnit(M)} y canal</h4>${lineChart(CHANNELS.filter((x) => M.ad.tot[x.k]).map((x) => ({ n: x.l, c: x.c, v: M.ad.months.map((m: any) => m[x.k]) })), monthLabels(M))}<p class="note">Actividades asociadas a las empresas del universo o a sus contactos, por fecha de la actividad.</p></div>` : "";
   s.evolucion = `<div class="grid2"><div class="rcard"><h4>Reuniones ${perUnit(M)}</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}</div>
   <div class="rcard"><h4>Actividad de cuentas ${perUnit(M)}</h4>${lineChart([{ n: "Empresas asignadas", c: "var(--s1)", v: M.month.map((m: any) => m.asg) }, { n: "Contactos efectivos (por última actividad)", c: "var(--s2)", v: M.month.map((m: any) => m.eff) }], monthLabels(M))}</div></div>

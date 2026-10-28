@@ -136,6 +136,20 @@ export default function RadarReport({
     try { localStorage.setItem("radar-theme", t); } catch { /* sin almacenamiento */ }
   }
 
+  // Desplegables dentro del HTML generado (data-ra-pick): muestran el panel
+  // elegido de su tarjeta
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const onPick = (e: Event) => {
+      const sel = e.target as HTMLSelectElement;
+      if (!sel.matches?.("select[data-ra-pick]")) return;
+      sel.closest(".rcard")?.querySelectorAll<HTMLElement>("[data-ra-panel]").forEach((p) => { p.hidden = p.dataset.raPanel !== sel.value; });
+    };
+    root.addEventListener("change", onPick);
+    return () => root.removeEventListener("change", onPick);
+  }, []);
+
   // Tooltip de los gráficos (atributo data-tip del HTML generado)
   function onMove(e: React.MouseEvent) {
     const tip = tipRef.current;
