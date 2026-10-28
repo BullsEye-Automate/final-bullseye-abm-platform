@@ -39,6 +39,10 @@ const tri = (v: boolean | null) => (v === true ? "si" : v === false ? "no" : "au
 const fromTri = (v: string) => (v === "si" ? true : v === "no" ? false : null);
 
 export default function RadarSettings({ clientId, clientName }: { clientId: string; clientName: string }) {
+  // Qué resuelve "Automático" para este cliente (misma regla que el servidor, lib/radarAbm/server/store.ts)
+  const compactName = clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const isBullseye = compactName === "bullseye";
+  const isAcid = compactName.startsWith("acidlab");
   const [s, setS] = useState<Settings | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [stats, setStats] = useState<Record<string, number> | null>(null);
@@ -159,12 +163,14 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
                 setS({ ...s, properties: e.target.value ? { ...rest, universeMode: e.target.value } : rest });
               }}
             >
-              <option value="">Automático (BullsEye: Cliente BullsEye; resto: Status de la asignación)</option>
+              <option value="">Automático: {isBullseye ? "solo Cliente BullsEye (sin status de asignación)" : "Status de la asignación + Cliente"}</option>
               <option value="status">Status de la asignación + Asignación BullsEye por llamar</option>
               <option value="client">Propiedad “Cliente BullsEye” (sin status de asignación)</option>
             </select>
             <span className="text-xs text-ink-subtle block mt-1">
-              Con “Cliente BullsEye”: empresas con “Cliente BullsEye Empresa” y contactos con “Cliente BullsEye” = el valor de este cliente; la etapa sale del ciclo de vida y de la actividad.
+              {(s.properties?.universeMode ?? (isBullseye ? "client" : "status")) === "client"
+                ? "Empresas y contactos solo por el Cliente (titular); la etapa sale del ciclo de vida y de la actividad."
+                : "Empresas con Status de la asignación y Cliente = este cliente; contactos con Cliente = este cliente (con o sin status de asignación)."}
             </span>
           </label>
 
@@ -192,7 +198,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
                 setS({ ...s, properties: e.target.value ? { ...rest, meetingsTotal: e.target.value } : rest });
               }}
             >
-              <option value="">Automático (AcidLab: total de la planilla; resto: se filtran)</option>
+              <option value="">Automático: {isAcid ? "total de la planilla" : "se filtran por wishlist, industria, etc."}</option>
               <option value="si">Siempre el total de la planilla (solo fechas, SDR y país)</option>
               <option value="no">Se filtran por wishlist, industria, etc.</option>
             </select>
