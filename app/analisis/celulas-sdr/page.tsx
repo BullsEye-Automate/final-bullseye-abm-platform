@@ -14,6 +14,7 @@ import { CellsCtx, Ic, type ViewState } from "./components/ui";
 import { ViewAlerts, ViewExec, ViewLeaders, ViewRank } from "./views/Direccion";
 import { ViewAct, ViewAvg, ViewClients, ViewConn, ViewMtg, ViewQual } from "./views/Operacion";
 import { ViewCal, ViewEff, ViewFicha, ViewTrend } from "./views/Analisis";
+import { ViewEvo } from "./views/Evolutivo";
 import ConfigModal from "./ConfigModal";
 
 // Módulo "Células SDR" (Análisis → Células SDR): centro de mando del equipo
@@ -34,6 +35,7 @@ const VIEWS: Record<string, { t: string; s: string; ic: string; g?: string; C: (
   clients: { t: "Cumplimiento por cliente", s: "Ponderado según meta y peso de cada cuenta", ic: "bld", C: ViewClients },
   cal: { t: "Calendario de desempeño", s: "Desempeño de cada SDR por día", ic: "grid", g: "Análisis", C: ViewCal },
   trend: { t: "Tendencia semanal", s: "Ritmo de desempeño semana a semana", ic: "trend", C: ViewTrend },
+  evo: { t: "Evolutivo mensual", s: "Reuniones agendadas por SDR mes a mes, de enero a la fecha", ic: "trend", C: ViewEvo },
   eff: { t: "Indicadores de eficiencia", s: "Cantidad vs calidad de la actividad", ic: "zap", C: ViewEff },
   ficha: { t: "Ficha individual", s: "Productividad detallada por SDR", ic: "user", C: ViewFicha },
 };
