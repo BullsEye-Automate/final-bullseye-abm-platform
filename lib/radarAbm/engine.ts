@@ -113,10 +113,10 @@ export function compute(ds: RadarDataset, cfg: RadarConfig = DEFAULT_CONFIG): Mo
   const icpK = K.filter((k) => k.c.st !== "No califica");
   const coEff = C.filter((c) => c.effK.length >= 1), coMulti = C.filter((c) => c.effK.length >= 2), coDeep = C.filter((c) => c.depth === "Profunda");
   const coMt = C.filter((c) => c.M.length), coHeld = C.filter((c) => c.mheld);
-  // Con rango de fechas (como el Excel de metas): agendadas por fecha de
-  // agendamiento; realizadas / no-show / canceladas por fecha de la reunión
+  // Con rango de fechas, todas las reuniones van por fecha de la reunión
+  // (como el Excel de metas): "agendadas" = reuniones del rango, en cualquier estado
   const rg = ds.range, inRg = (d?: string | null) => !rg || (!!d && d >= rg.from && d <= rg.to);
-  const agM = rg ? Mt.filter((m) => inRg(m.agendada)) : Mt;
+  const agM = rg ? Mt.filter((m) => inRg(m.fecha)) : Mt;
   const held = Mt.filter((m) => m.st === "Realizada" && inRg(m.fecha)), noshow = Mt.filter((m) => m.st === "No-show" && inRg(m.fecha)), canc = Mt.filter((m) => m.st === "Cancelada" && inRg(m.fecha));
   const pendM = Mt.filter((m) => m.st === "Pendiente" || m.st === "Reprogramada"), reprog = Mt.filter((m) => m.reprog || m.st === "Reprogramada");
   Object.assign(M, { worked, qual, mg, eff, icpK, coEff, coMulti, coDeep, coMt, coHeld, held, noshow, canc, pendM, reprog, agM });
@@ -446,7 +446,8 @@ export function filterDataset(ds: RadarDataset, f: RadarFilter): RadarDataset {
   if (byDate) {
     const from = f.from!, to = f.to!;
     const inR = (d?: string | null) => !!d && d >= from && d <= to;
-    meetings = meetings.filter((m) => inR(m.agendada) || inR(m.fecha));
+    // Como el Excel de metas y Células SDR: manda la fecha de la reunión
+    meetings = meetings.filter((m) => inR(m.fecha));
     deals = deals.filter((d) => inR(d.created));
     if (callEvals) callEvals = callEvals.filter((e) => inR(e.d));
     if (activities) {
