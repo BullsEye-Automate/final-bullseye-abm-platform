@@ -59,6 +59,15 @@ export type RadarMeeting = {
   id: number | string;
   ct: number | string;
   ctn?: string;              // nombre del contacto en la planilla de reuniones
+  cargo?: string;            // cargo del contacto (planilla)
+  org?: string;              // origen de la reunión (planilla)
+  pais?: string;             // país (planilla)
+  oppv?: string;             // Propuesta/Oportunidad tal cual en la planilla
+  fbk?: 1;                   // el cliente respondió la encuesta de feedback
+  cal?: number;              // calificación del cliente (1–10)
+  prob?: number;             // probabilidad de cierre (0–100)
+  prop?: string;             // propuesta comercial (Si / No / No aún / Falta otra reunión)
+  com?: string;              // comentarios del cliente
   co: number | string;
   sdr: string;
   agendada: string;
@@ -96,6 +105,16 @@ export type RadarActivity = {
   conn?: 1;                  // llamada conectada
 };
 
+// Score de Desempeño SDR de las llamadas conectadas (IA de Allo), solo de
+// los números de Allo asignados al cliente. Sin datos del prospecto.
+export type RadarCallEval = {
+  d: string;                 // fecha (YYYY-MM-DD)
+  s: string;                 // SDR
+  score: number;             // puntaje total /100
+  crit: (number | null)[];   // puntaje por criterio /5 (SCORE_CARD_CATEGORIES)
+  nivel?: string | null;
+};
+
 export type RadarClientData = {
   name: string;
   universe: number;
@@ -107,6 +126,7 @@ export type RadarClientData = {
   meetings: RadarMeeting[];
   deals: RadarDeal[];
   activities?: RadarActivity[];
+  callEvals?: RadarCallEval[];
 };
 
 export type RadarSource = "demo" | "hubspot";

@@ -52,7 +52,7 @@ export async function loadSheetMeetings(input: {
   for (let offset = 0; offset < 100000; offset += PAGE) {
     const { data, error } = await supabase
       .from("meetings")
-      .select("id, empresa, contacto_nombre, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, notas")
+      .select("id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais")
       .eq("client_id", input.clientId)
       .or(`fecha_reunion.gte.${input.start},fecha_agendamiento.gte.${input.start}`)
       .order("id", { ascending: true })
@@ -68,7 +68,7 @@ export async function loadSheetMeetings(input: {
   for (let i = 0; i < ids.length; i += 300) {
     const { data } = await supabase
       .from("meeting_feedback")
-      .select("meeting_id, calificacion, empresa_calificada, contacto_calificado, propuesta_comercial, comentarios_adicionales")
+      .select("meeting_id, calificacion, empresa_calificada, contacto_calificado, propuesta_comercial, comentarios_adicionales, probabilidad_cierre")
       .in("meeting_id", ids.slice(i, i + 300));
     for (const f of data ?? []) feedback.set(f.meeting_id, f);
   }
@@ -125,6 +125,17 @@ export async function loadSheetMeetings(input: {
       // Sin contacto en HubSpot: un id propio para no fusionar interlocutores
       ct: ct ?? `mt:${pn || r.id}`,
       ...(r.contacto_nombre ? { ctn: String(r.contacto_nombre).trim() } : {}),
+      // Datos completos de la planilla (vista Reuniones)
+      ...(r.contacto_cargo ? { cargo: String(r.contacto_cargo).trim() } : {}),
+      ...(r.origen ? { org: String(r.origen).trim() } : {}),
+      ...(r.pais ? { pais: String(r.pais).trim() } : {}),
+      ...(r.propuesta_oportunidad ? { oppv: String(r.propuesta_oportunidad).trim() } : {}),
+      // Encuesta del cliente (vista Feedback comercial)
+      ...(f ? { fbk: 1 as const } : {}),
+      ...(f?.calificacion != null ? { cal: Number(f.calificacion) } : {}),
+      ...(f?.probabilidad_cierre != null ? { prob: Number(f.probabilidad_cierre) } : {}),
+      ...(f?.propuesta_comercial ? { prop: String(f.propuesta_comercial) } : {}),
+      ...(f?.comentarios_adicionales?.trim() ? { com: String(f.comentarios_adicionales).trim().slice(0, 600) } : {}),
       co,
       sdr: (r.responsable || r.sdr_nombre || "").trim() || input.sdrOf(co),
       agendada, fecha, st,
