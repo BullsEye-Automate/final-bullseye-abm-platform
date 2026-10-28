@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { IconAlertTriangle, IconCheck, IconLoader2, IconPlugConnected, IconX } from "@tabler/icons-react";
 
-// Radar ABM leído del HubSpot propio del cliente: prueba de permisos,
+// Pulso ABM leído del HubSpot propio del cliente: prueba de permisos,
 // tamaño del universo y mapeo de propiedades propio de esa cuenta (los
 // nombres internos pueden ser distintos a los del HubSpot de BullsEye).
 

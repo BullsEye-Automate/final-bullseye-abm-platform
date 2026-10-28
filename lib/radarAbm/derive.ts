@@ -2,7 +2,7 @@ import type { RadarClientData, RadarCompany, RadarConfig, RadarContact, RadarDea
 import { EFF, PEND, PAUSA } from "./dictionaries";
 import { dmy } from "./engine";
 
-// Radar ABM — campos derivados (§3.2, §5 y §7 del prompt maestro).
+// Pulso ABM — campos derivados (§3.2, §5 y §7 del prompt maestro).
 // El sync de HubSpot entrega registros "planos" y acá se calculan los mismos
 // campos que el prototipo trae precalculados en sus datos demo: tamaño,
 // área / seniority desde el cargo, conteos por empresa, profundidad,

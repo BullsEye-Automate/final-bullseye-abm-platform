@@ -1,6 +1,6 @@
 import type { RadarClientData, RadarDataset } from "./types";
 
-// Datos demo del Radar ABM: la constante RAW del prototipo
+// Datos demo del Pulso ABM: la constante RAW del prototipo
 // Radar_ABM_BullsEye_BETA.html (20 clientes con empresas, contactos y cifras
 // FICTICIAS, con la estructura de HubSpot). Sirven para validar métricas y
 // formato antes de conectar HubSpot. Solo los ve el equipo interno y siempre

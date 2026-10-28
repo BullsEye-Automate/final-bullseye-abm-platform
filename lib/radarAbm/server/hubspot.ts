@@ -1,7 +1,7 @@
 import { hsFetchWithRetry, hsHeaders } from "@/lib/hubspot";
 import { PROPERTY_DEFS } from "../dictionaries";
 
-// Radar ABM — lectura de HubSpot (solo lectura, API CRM v3/v4). El token es
+// Pulso ABM — lectura de HubSpot (solo lectura, API CRM v3/v4). El token es
 // el de BullsEye (HUBSPOT_ACCESS_TOKEN) o el token propio del cliente
 // (client_configs.hubspot_access_token); nunca llega al navegador.
 

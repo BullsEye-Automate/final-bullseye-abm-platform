@@ -4,7 +4,7 @@ import {
   seg, segCo, barrier, objectionPattern, insights, learnings, recsBE, recsCli, CHANNELS,
 } from "./engine";
 
-// Radar ABM — render de las secciones (§1 a §34 y A1 a A4) como HTML.
+// Pulso ABM — render de las secciones (§1 a §34 y A1 a A4) como HTML.
 // Port del render() del prototipo: mismos textos, misma lógica y mismas
 // clases (con prefijo ra- en el CSS del módulo, ver components/radar/radar.css,
 // donde todo vive bajo .ra-root). Todo dato que viene de HubSpot pasa por
@@ -513,7 +513,7 @@ export function annex(M: Model, mapping?: { label: string; property: string | nu
     ["Negocio", "Oportunidad / pipeline", "objeto Deals: pipeline · dealstage · amount · createdate", "Oportunidades y pipeline (solo si el cliente lo registra)", "req"],
   ];
   const stt: Record<string, string> = { ok: '<span class="pill hi">Disponible</span>', req: '<span class="pill md">Requiere configuración</span>', new: '<span class="pill lo">No existe: crear</span>' };
-  s["datos-prop"] = `<p class="note" style="margin-top:0">Mapeo esperado a partir de la estructura estándar de HubSpot más las dos propiedades clave. Los nombres internos de las propiedades personalizadas se confirman en Configuración del Radar ABM.</p>`
+  s["datos-prop"] = `<p class="note" style="margin-top:0">Mapeo esperado a partir de la estructura estándar de HubSpot más las dos propiedades clave. Los nombres internos de las propiedades personalizadas se confirman en Configuración del Pulso ABM.</p>`
     + table([{ h: "Objeto", f: (r) => r[0] }, { h: "Dato", f: (r) => esc(r[1]) }, { h: "Propiedad HubSpot", s: 1, f: (r) => `<code>${esc(r[2])}</code>` }, { h: "Uso en el informe", s: 1, f: (r) => esc(r[3]) }, { h: "Estado", f: (r) => stt[r[4]] }], props)
     + (mapping && mapping.length
       ? `<h4 class="subh">Nombres internos usados en la última sincronización</h4>` + table([{ h: "Dato", f: (r) => esc(r.label) }, { h: "Nombre interno", s: 1, f: (r) => (r.property ? `<code>${esc(r.property)}</code>` : '<span class="flag">no encontrada: se muestra "Sin información disponible"</span>') }], mapping)

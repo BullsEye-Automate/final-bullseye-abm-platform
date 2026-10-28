@@ -2,7 +2,7 @@ import { CONNECTED_DISPOSITION, callChannel } from "../dictionaries";
 import type { ActivityKind, RadarActivity } from "../types";
 import { batchAssociations, batchRead, callDispositions, type PropertyCatalog } from "./hubspot";
 
-// Radar ABM — actividades de las cuentas (profundidad ABM por canal).
+// Pulso ABM — actividades de las cuentas (profundidad ABM por canal).
 // Se traen las llamadas, correos y comunicaciones (WhatsApp / LinkedIn)
 // asociadas (las notas no son actividades) a las empresas del universo Y a sus contactos con status.
 // Una actividad asociada a la vez a la empresa y al contacto se cuenta una

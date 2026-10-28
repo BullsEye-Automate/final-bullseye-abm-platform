@@ -6,7 +6,7 @@ import { IconArrowLeft, IconCheck, IconDeviceFloppy, IconLoader2, IconPlus, Icon
 import type { RadarConfig } from "@/lib/radarAbm/types";
 import { CO_ORDER, CT_ORDER, EXCLUDE, PER_CLIENT_KEYS } from "@/lib/radarAbm/dictionaries";
 
-// Configuración del Radar ABM (global, tabla radar_abm_config): las metas y
+// Configuración del Pulso ABM (global, tabla radar_abm_config): las metas y
 // pesos del Health Score, los tramos de tamaño, el período y la tabla de
 // cargos son supuestos a calibrar (§13); el mapeo de propiedades confirma
 // los nombres internos de HubSpot (§3.1, Anexo A1).
@@ -85,8 +85,8 @@ export default function RadarConfigPage() {
   return (
     <div className="max-w-5xl space-y-6">
       <div>
-        <Link href="/analisis/radar-abm" className="text-sm text-ink-muted hover:text-ink flex items-center gap-1 mb-2"><IconArrowLeft size={14} /> Radar ABM</Link>
-        <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>Configuración del Radar ABM</h1>
+        <Link href="/analisis/radar-abm" className="text-sm text-ink-muted hover:text-ink flex items-center gap-1 mb-2"><IconArrowLeft size={14} /> Pulso ABM</Link>
+        <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>Configuración del Pulso ABM</h1>
         <p className="text-sm text-ink-muted mt-1">Global para todos los clientes. Metas, pesos y tramos son supuestos iniciales a calibrar con el histórico real.</p>
       </div>
 
@@ -167,7 +167,7 @@ export default function RadarConfigPage() {
                     </td>
                     <td className="py-2 pr-3">
                       {PER_CLIENT_KEYS.includes(d.key) ? (
-                        <span className="text-xs text-ink-muted">Una por cliente: se elige en Configuración → Cliente → Radar ABM</span>
+                        <span className="text-xs text-ink-muted">Una por cliente: se elige en Configuración → Cliente → Pulso ABM</span>
                       ) : (
                         <input className="input w-56 font-mono text-xs" placeholder="automático" value={cfg.properties[d.key] ?? ""} onChange={(e) => setCfg({ ...cfg, properties: { ...cfg.properties, [d.key]: e.target.value } })} />
                       )}

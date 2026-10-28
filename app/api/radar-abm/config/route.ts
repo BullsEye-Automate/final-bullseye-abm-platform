@@ -5,7 +5,7 @@ import { loadRadarConfig, saveRadarConfig } from "@/lib/radarAbm/server/store";
 
 export const dynamic = "force-dynamic";
 
-// Configuración global del Radar ABM (tabla radar_abm_config): metas y pesos
+// Configuración global del Pulso ABM (tabla radar_abm_config): metas y pesos
 // del Health Score, tramos de tamaño, tabla de cargos y mapeo de propiedades
 // de HubSpot. Cualquier usuario interno puede editarla.
 

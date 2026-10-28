@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import ClientHubspotRadar from "./ClientHubspotRadar";
-import { IconAlertCircle, IconCheck, IconDeviceFloppy, IconLoader2, IconRadar, IconRefresh } from "@tabler/icons-react";
+import { IconAlertCircle, IconCheck, IconDeviceFloppy, IconLoader2, IconActivityHeartbeat, IconRefresh } from "@tabler/icons-react";
 
-// Radar ABM del cliente: de qué HubSpot se lee su universo, qué valor de
+// Pulso ABM del cliente: de qué HubSpot se lee su universo, qué valor de
 // "Cliente BullsEye" lo identifica y si el informe se ve en su portal.
 
 type Settings = {
@@ -110,11 +110,11 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
     <section className="card space-y-4">
       <div>
         <h2 className="font-semibold flex items-center gap-2">
-          <IconRadar size={18} className="text-brand" /> Radar ABM
+          <IconActivityHeartbeat size={18} className="text-brand" /> Pulso ABM
         </h2>
         <p className="text-sm text-ink-muted mt-1">
           Informe ABM del cliente (cuentas, contactos, conversaciones, reuniones y oportunidades), leído de HubSpot una vez al día o con “Sincronizar ahora”.
-          Es el informe que el cliente ve en su portal. Ver en <Link href="/analisis/radar-abm" className="text-brand hover:underline">Análisis → Radar ABM</Link>.
+          Es el informe que el cliente ve en su portal. Ver en <Link href="/analisis/radar-abm" className="text-brand hover:underline">Análisis → Pulso ABM</Link>.
         </p>
       </div>
 
@@ -190,7 +190,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
 
           <label className="flex items-center gap-2 text-sm sm:col-span-2">
             <input type="checkbox" checked={s.portal_enabled} onChange={(e) => setS({ ...s, portal_enabled: e.target.checked })} />
-            Mostrar el Radar ABM en el portal del cliente
+            Mostrar el Pulso ABM en el portal del cliente
           </label>
         </div>
       ) : null}

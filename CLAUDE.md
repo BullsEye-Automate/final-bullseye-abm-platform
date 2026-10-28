@@ -217,7 +217,9 @@ Correo automático con un **PNG vertical** (1080 px, para reenviar por WhatsApp)
 
 ---
 
-### Radar ABM (`/analisis/radar-abm` y portal `/portal/radar`)
+### Pulso ABM — antes "Radar ABM" (`/analisis/radar-abm` y portal `/portal/radar`)
+
+Nombre visible: **Pulso ABM** (se cambió por conflicto de nombre). El código, las URLs (`radar-abm`, `/portal/radar`), `lib/radarAbm/` y las tablas `radar_abm_*` mantienen el nombre interno "radar".
 
 Informe ABM integral **por cliente** (cuenta → contactos → actividad → conversación → interés → reunión → seguimiento → oportunidad). Port del prototipo `Radar_ABM_BullsEye_BETA.html` + prompt maestro: 13 vistas, secciones §1–§34 y anexo A1–A4. No compara clientes entre sí. Migración `supabase/20261026_radar_abm_migration.sql` (`radar_abm_config`, `radar_abm_clients`, `radar_abm_snapshots`).
 

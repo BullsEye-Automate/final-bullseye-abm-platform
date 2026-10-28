@@ -10,7 +10,7 @@ import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConf
 import { checkClientActive } from "./masterClients";
 import { loadSheetMeetings } from "./sheetMeetings";
 
-// Radar ABM — sincronización de un cliente desde HubSpot (§3).
+// Pulso ABM — sincronización de un cliente desde HubSpot (§3).
 // Empresas del universo del cliente (propiedad "Cliente BullsEye", o todas
 // las que tienen status si se lee el HubSpot propio del cliente) → sus
 // contactos con "Asignación BullsEye por Llamar" → llamadas, correos,
@@ -83,14 +83,14 @@ export async function syncClientRadar(clientId: string, by: string) {
   if (!P.companyStatus.property) {
     const n = P.companyStatus.candidates.length;
     throw new Error(n
-      ? `No se pudo elegir cuál de las ${n} propiedades "Status de la asignación - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Radar ABM.`
-      : `No se encontró ninguna propiedad de empresa "Status de la asignación - …"${where}. Indica su nombre interno en Configuración → Cliente → Radar ABM.`);
+      ? `No se pudo elegir cuál de las ${n} propiedades "Status de la asignación - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
+      : `No se encontró ninguna propiedad de empresa "Status de la asignación - …"${where}. Indica su nombre interno en Configuración → Cliente → Pulso ABM.`);
   }
   if (!P.contactStatus.property) {
     const n = P.contactStatus.candidates.length;
     throw new Error(n
-      ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Radar ABM.`
-      : `No se encontró ninguna propiedad de contacto "Asignación BullsEye por Llamar - …"${where}. Indica su nombre interno en Configuración → Cliente → Radar ABM.`);
+      ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
+      : `No se encontró ninguna propiedad de contacto "Asignación BullsEye por Llamar - …"${where}. Indica su nombre interno en Configuración → Cliente → Pulso ABM.`);
   }
   for (const d of detected) if (d.manual && !d.found) warnings.push(`El nombre interno "${d.property}" de "${d.label}" no existe${where}.`);
   // Sin SDR por cliente se usa el propietario del registro: no es un aviso
@@ -135,7 +135,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const tierLabel = optionLabeler(P.companyIcpTier);
   const countryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === countryProp) as DetectedProperty | undefined);
   const unknownStatuses = new Set<string>();
-  // Equivalencias de status (La Biblia + Configuración del Radar ABM)
+  // Equivalencias de status (La Biblia + Configuración del Pulso ABM)
   const companyStatusCanon = canonicalizer(CO_ORDER.filter((s) => s !== "CONV"), cfg.companyAliases);
   let excludedCompanies = 0;
 
@@ -179,7 +179,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const rawContacts = await batchRead("contacts", Array.from(contactCompany.keys()), contactProps, token);
   const ctStatusLabel = optionLabeler(P.contactStatus);
   // Etiquetas antiguas de contacto ("Por Llamar", "NO Llamar"…) → actuales
-  // (editables en Configuración del Radar ABM)
+  // (editables en Configuración del Pulso ABM)
   const contactStatusCanon = canonicalizer(CT_ORDER, cfg.contactAliases);
   const objLabel = optionLabeler(P.contactObjection);
   const sigLabel = optionLabeler(P.contactSignal);
@@ -289,9 +289,9 @@ export async function syncClientRadar(clientId: string, by: string) {
     warnings.push(`No se pudieron leer los negocios: ${(e as Error).message}`);
   }
 
-  if (excludedCompanies || excludedContacts) warnings.push(`Excluidos del informe por equivalencia: ${excludedCompanies} empresas y ${excludedContacts} contactos (Configuración del Radar ABM → Equivalencias).`);
-  if (unknownStatuses.size) warnings.push(`Status de empresa fuera del diccionario (agrega su equivalencia en Configuración del Radar ABM): ${Array.from(unknownStatuses).join(", ")}.`);
-  if (unknownCtStatuses.size) warnings.push(`Status de contacto fuera del diccionario (agrega su equivalencia en Configuración del Radar ABM): ${Array.from(unknownCtStatuses).join(", ")}.`);
+  if (excludedCompanies || excludedContacts) warnings.push(`Excluidos del informe por equivalencia: ${excludedCompanies} empresas y ${excludedContacts} contactos (Configuración del Pulso ABM → Equivalencias).`);
+  if (unknownStatuses.size) warnings.push(`Status de empresa fuera del diccionario (agrega su equivalencia en Configuración del Pulso ABM): ${Array.from(unknownStatuses).join(", ")}.`);
+  if (unknownCtStatuses.size) warnings.push(`Status de contacto fuera del diccionario (agrega su equivalencia en Configuración del Pulso ABM): ${Array.from(unknownCtStatuses).join(", ")}.`);
   if (!companies.length) warnings.push("No se encontraron empresas con status para este cliente en HubSpot.");
 
   const clientData = deriveClientData({

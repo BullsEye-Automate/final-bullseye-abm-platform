@@ -763,14 +763,14 @@ export default function ConfigClientePage() {
                 </h2>
                 <p className="text-sm text-ink-muted mt-1">
                   Usuarios de {currentClient.name} que entran a portal.bullseye-abm.com. Cada usuario ve solo la información de
-                  esta cuenta (Radar ABM, ICP, wishlist y aprobación de empresas). La contraseña temporal se muestra una sola vez.
+                  esta cuenta (Pulso ABM, ICP, wishlist y aprobación de empresas). La contraseña temporal se muestra una sola vez.
                 </p>
               </div>
               <PortalAccessManager clientId={currentClient.id} clientName={currentClient.name} />
             </section>
           )}
 
-          {/* Radar ABM del cliente */}
+          {/* Pulso ABM del cliente */}
           {currentClient && currentClient.id !== ALL_CLIENTS.id && <RadarSettings clientId={currentClient.id} clientName={currentClient.name} />}
 
           {/* Allo */}

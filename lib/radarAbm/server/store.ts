@@ -2,7 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { mergeConfig, PER_CLIENT_KEYS } from "../dictionaries";
 import type { RadarConfig, RadarDataset } from "../types";
 
-// Radar ABM — lectura y escritura en Supabase (service role, solo servidor).
+// Pulso ABM — lectura y escritura en Supabase (service role, solo servidor).
 // Tablas en supabase/20261026_radar_abm_migration.sql.
 
 export type RadarClientSettings = {

@@ -1,6 +1,6 @@
 import type { RadarConfig } from "./types";
 
-// Radar ABM — diccionarios oficiales (textos exactos de HubSpot) y valores
+// Pulso ABM — diccionarios oficiales (textos exactos de HubSpot) y valores
 // por defecto de la configuración. Ver §4 del prompt maestro y el prototipo
 // Radar_ABM_BullsEye_BETA.html.
 
@@ -130,7 +130,7 @@ export const DEFAULT_TITLE_RULES: RadarConfig["titleRules"] = [
 
 // Propiedades de HubSpot: clave interna → etiqueta que se busca en el portal
 // para detectar el nombre interno automáticamente (§3.1, se confirma en
-// Configuración del Radar ABM).
+// Configuración del Pulso ABM).
 // perClient: en el HubSpot hay una propiedad por cliente ("Status de la
 // asignación - DSAC", "Status de la asignación - SDR AcidLab"…, nombres
 // internos status_de_la_asignacion_*): se elige la que calza con el cliente.

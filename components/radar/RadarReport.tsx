@@ -8,8 +8,8 @@ import { LEADS, PARTS, render, sec } from "@/lib/radarAbm/render";
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import MasterTables from "./MasterTables";
 
-// Informe Radar ABM de un cliente (una vista = una parte del informe, con
-// sus secciones numeradas). Lo usan la vista interna (Análisis → Radar ABM)
+// Informe Pulso ABM de un cliente (una vista = una parte del informe, con
+// sus secciones numeradas). Lo usan la vista interna (Análisis → Pulso ABM)
 // y el portal de clientes. El cálculo corre en el navegador sobre el set de
 // datos sincronizado (lib/radarAbm/engine.ts) y el HTML de cada sección sale
 // de lib/radarAbm/render.ts, igual que en el prototipo.

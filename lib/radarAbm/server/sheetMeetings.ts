@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import type { RadarMeeting } from "../types";
 
-// Radar ABM — reuniones desde la planilla de reuniones (tabla meetings, la
+// Pulso ABM — reuniones desde la planilla de reuniones (tabla meetings, la
 // misma de Células SDR y del Excel de metas), no desde HubSpot: hay clientes
 // con varias reuniones por empresa y la planilla es la fuente oficial.
 // Cada reunión se asocia a una empresa del universo por nombre (normalizado,

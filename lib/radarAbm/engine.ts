@@ -1,7 +1,7 @@
 import type { RadarConfig, RadarDataset } from "./types";
 import { PEND, PAUSA, EFF, POS, REJ, MIN_N, HEALTH_COMPONENTS, coKey, DEFAULT_CONFIG } from "./dictionaries";
 
-// Radar ABM — cálculo de métricas. Port 1:1 de las funciones del prototipo
+// Pulso ABM — cálculo de métricas. Port 1:1 de las funciones del prototipo
 // Radar_ABM_BullsEye_BETA.html (compute, health, seg, segCo, barrier,
 // objectionPattern, insights, learnings, recsBE, recsCli): con el set de
 // datos demo debe dar exactamente las mismas cifras. Las únicas diferencias
