@@ -27,6 +27,7 @@ import GraficoSaludTelefonica from "./components/GraficoSaludTelefonica";
 import MapaCalorHorarios, { type CeldaHeatmap } from "./components/MapaCalorHorarios";
 import AlertasNumeros from "./components/AlertasNumeros";
 import MailRecipientsEditor from "@/components/MailRecipientsEditor";
+import EnviarReporteSdr from "./components/EnviarReporteSdr";
 
 type SdrRoster = { sdr_id: string; sdr_nombre: string };
 type PaisRoster = { pais_key: string; pais_nombre: string };
@@ -1446,6 +1447,7 @@ export default function AnalisisSdr() {
           Imagen con las llamadas del día por SDR y las reuniones agendadas, días hábiles a las 13:00 y 18:30.
         </p>
         <MailRecipientsEditor reportKey="reporte_sdr" />
+        <EnviarReporteSdr />
       </section>
 
       {scoreModal && (
