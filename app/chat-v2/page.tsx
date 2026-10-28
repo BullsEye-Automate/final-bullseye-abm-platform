@@ -30,7 +30,7 @@ const MSG_TYPE_DESCRIPTIONS: Record<EmailType, string> = {
 };
 
 const CHANNEL_LABELS: Record<Channel, string> = {
-  email: "Email", whatsapp: "WhatsApp", linkedin: "LinkedIn",
+  email: "Email", whatsapp: "WhatsApp", linkedin: "LinkedIn", meeting_brief: "Briefing",
 };
 
 const LATAM_COUNTRIES = [
@@ -207,8 +207,15 @@ function InboxPreview({ subject, body, channel }: { subject: string; body: strin
   );
 }
 
-function EmailCard({ subject, body, showSubject = true, channel = "email" }: { subject: string; body: string; showSubject?: boolean; channel?: string }) {
+function EmailCard({ subject, body, showSubject = true, channel = "email", onSend, sending, sendResult }: {
+  subject: string; body: string; showSubject?: boolean; channel?: string;
+  onSend?: (subject: string, body: string) => void;
+  sending?: boolean;
+  sendResult?: { ok: boolean; msg?: string } | null;
+}) {
   const [copied, setCopied] = useState(false);
+  const [sendTo, setSendTo] = useState("");
+  const [showSendForm, setShowSendForm] = useState(false);
   const [preview, setPreview] = useState(false);
   const isBrief = channel === "meeting_brief";
 
@@ -282,6 +289,13 @@ function EmailCard({ subject, body, showSubject = true, channel = "email" }: { s
               style={{ background: preview ? "rgba(98,224,216,0.12)" : "#f3f1fc", color: preview ? "#1a9e98" : "#6b66a3", border: `1px solid ${preview ? "rgba(98,224,216,0.4)" : "#e2e0f0"}` }}>
               {preview ? "Ocultar" : `Ver como ${channelLabel}`}
             </button>
+            {onSend && channel === "email" && (
+              <button onClick={() => setShowSendForm(v => !v)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium"
+                style={{ background: showSendForm ? "rgba(98,224,216,0.15)" : "#f3f1fc", color: "#1a9e98", border: "1px solid rgba(98,224,216,0.4)" }}>
+                <IconSend size={13} /> Enviar
+              </button>
+            )}
             <button onClick={copy}
               className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium"
               style={{ background: "#251762", color: "#62E0D8" }}>
@@ -290,6 +304,24 @@ function EmailCard({ subject, body, showSubject = true, channel = "email" }: { s
             </button>
           </div>
         </div>
+        {showSendForm && onSend && (
+          <div className="mb-3 flex gap-2 items-center">
+            <input type="email" value={sendTo} onChange={e => setSendTo(e.target.value)}
+              placeholder="Email del destinatario"
+              className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
+              style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
+            <button onClick={() => { if (sendTo) onSend(subject, body); }} disabled={!sendTo || sending}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium disabled:opacity-50"
+              style={{ background: "#251762", color: "#62E0D8" }}>
+              {sending ? "Enviando…" : <><IconSend size={13} /> Enviar</>}
+            </button>
+          </div>
+        )}
+        {sendResult && (
+          <p className="text-[12px] mb-2" style={{ color: sendResult.ok ? "#1a9e98" : "#e53e3e" }}>
+            {sendResult.ok ? "✓ " : "✗ "}{sendResult.msg}
+          </p>
+        )}
         <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "#2d2950" }}>{body}</p>
       </div>
       {preview && (
@@ -301,7 +333,12 @@ function EmailCard({ subject, body, showSubject = true, channel = "email" }: { s
   );
 }
 
-function Bubble({ msg, channel }: { msg: Message; channel: string }) {
+function Bubble({ msg, channel, onSend, sending, sendResult }: {
+  msg: Message; channel: string;
+  onSend?: (subject: string, body: string) => void;
+  sending?: boolean;
+  sendResult?: { ok: boolean; msg?: string } | null;
+}) {
   const isUser = msg.role === "user";
   const effectiveChannel = msg.channel ?? channel;
   const parsed = !isUser ? parsePlainMessage(msg.content, effectiveChannel) : null;
@@ -318,7 +355,8 @@ function Bubble({ msg, channel }: { msg: Message; channel: string }) {
           <img src={msg.imagePreview} alt="Adjunto" className="rounded-xl max-w-full" style={{ maxHeight: 220, objectFit: "contain" }} />
         )}
         {parsed?.body ? (
-          <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={effectiveChannel === "email"} channel={effectiveChannel} />
+          <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={effectiveChannel === "email"} channel={effectiveChannel}
+            onSend={onSend} sending={sending} sendResult={sendResult} />
         ) : (
           <div className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
             style={isUser ? { background: "#251762", color: "rgba(255,255,255,0.92)" } : { background: "#fff", color: "#2d2950", border: "1px solid #e2e0f0" }}>
@@ -372,8 +410,25 @@ export default function ChatV2Page() {
   const fileRef     = useRef<HTMLInputElement>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Gmail
+  const [gmailEmail, setGmailEmail]       = useState<string | null>(null);
+  const [gmailChecked, setGmailChecked]   = useState(false);
+  const [sendingEmail, setSendingEmail]   = useState<number | null>(null); // índice del mensaje
+  const [sendResult, setSendResult]       = useState<{ idx: number; ok: boolean; msg?: string } | null>(null);
+  const [userId, setUserId]               = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/clients").then(r => r.json()).then(j => setClients(j.clients ?? [])).catch(() => {});
+    // Verificar si ya hay Gmail conectado
+    fetch("/api/auth/gmail/status").then(r => r.json()).then(j => {
+      setGmailEmail(j.email ?? null);
+      setUserId(j.userId ?? null);
+      setGmailChecked(true);
+    }).catch(() => setGmailChecked(true));
+    // Leer resultado de conexión desde URL
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("gmail_ok")) { window.history.replaceState({}, "", "/chat-v2"); }
+    if (params.get("gmail_error")) { window.history.replaceState({}, "", "/chat-v2"); }
   }, []);
 
   useEffect(() => {
@@ -541,6 +596,24 @@ export default function ChatV2Page() {
     e.target.value = "";
   }
 
+  async function sendGmail(msgIdx: number, to: string, subject: string, body: string) {
+    setSendingEmail(msgIdx);
+    setSendResult(null);
+    try {
+      const r = await fetch("/api/auth/gmail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, subject, body }),
+      });
+      const j = await r.json();
+      setSendResult({ idx: msgIdx, ok: r.ok, msg: r.ok ? "Enviado" : (j.error ?? "Error al enviar") });
+    } catch {
+      setSendResult({ idx: msgIdx, ok: false, msg: "Error de red" });
+    } finally {
+      setSendingEmail(null);
+    }
+  }
+
   async function handleStart(e: React.FormEvent) {
     e.preventDefault();
     if (!clientId) return;
@@ -581,13 +654,28 @@ export default function ChatV2Page() {
             Beta interna
           </span>
         </div>
-        {messages.length > 0 && (
-          <button onClick={() => { setMessages([]); setInput(""); setPendingImage(null); }}
-            className="flex items-center gap-1.5 text-[12px] hover:opacity-70"
-            style={{ color: "rgba(255,255,255,0.55)" }}>
-            <IconRefresh size={13} /> Limpiar
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {gmailChecked && (
+            gmailEmail ? (
+              <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+                ✉ {gmailEmail}
+              </span>
+            ) : (
+              <a href={userId ? `/api/auth/gmail?userId=${userId}` : "#"}
+                className="text-[11px] px-3 py-1 rounded-full font-medium transition hover:opacity-80"
+                style={{ background: "rgba(98,224,216,0.2)", color: "#62E0D8", border: "1px solid rgba(98,224,216,0.3)" }}>
+                Conectar Gmail
+              </a>
+            )
+          )}
+          {messages.length > 0 && (
+            <button onClick={() => { setMessages([]); setInput(""); setPendingImage(null); }}
+              className="flex items-center gap-1.5 text-[12px] hover:opacity-70"
+              style={{ color: "rgba(255,255,255,0.55)" }}>
+              <IconRefresh size={13} /> Limpiar
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden" style={{ height: "calc(100vh - 57px)" }}>
@@ -1056,7 +1144,16 @@ export default function ChatV2Page() {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto px-6 py-6">
-              {messages.map((msg, i) => <Bubble key={i} msg={msg} channel={channel} />)}
+              {messages.map((msg, i) => (
+                <Bubble key={i} msg={msg} channel={channel}
+                  onSend={gmailEmail && msg.role === "assistant" ? (subj, body) => {
+                    const to = selectedContact?.email ?? "";
+                    sendGmail(i, to, subj, body);
+                  } : undefined}
+                  sending={sendingEmail === i}
+                  sendResult={sendResult?.idx === i ? sendResult : null}
+                />
+              ))}
               {loading && (
                 <div className="flex gap-3 mb-5">
                   <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "#ede9fb" }}>

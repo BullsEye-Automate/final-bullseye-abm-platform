@@ -34,6 +34,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/agente-contenido-v2", // V2 del agente (beta interna) — accesible desde /chat-v2 sin sesión
   "/api/hubspot/contact-search",   // búsqueda de contactos HubSpot — usada por /chat-v2
   "/api/hubspot/contact-meetings", // reuniones HubSpot del contacto — usada por /chat-v2
+  "/api/auth/gmail/callback",      // callback OAuth Google — Google redirige sin sesión
   "/api/allo/contact-calls",  // llamadas Allo por teléfono — usada por /chat-v2
   "/api/training/segments",   // segmentos de estilo — requeridos por /chat sin sesión
 ];
