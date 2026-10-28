@@ -42,7 +42,7 @@ export const LEADS: Record<string, string> = {
   cobertura: "¿Qué porcentaje del universo estamos trabajando?",
   profundidad: "¿Qué tan profundamente estamos penetrando cada empresa?",
   multi: "Cuántas cuentas tienen más de un interlocutor real y si eso se asocia a más reuniones.",
-  funnel: "Cuenta → contacto → conversación → interés → reunión → oportunidad.",
+  funnel: "Según el Status de la asignación de cada empresa: asignada → en gestión → respuesta → interés → reunión → oportunidad. Clic en una etapa para ver sus empresas.",
   "est-emp": "Status de la asignación - SDR, con su grupo analítico. Ningún grupo es falla automática del SDR.",
   "est-ct": "Asignación BullsEye por Llamar, con su grupo analítico.",
   contactab: "¿Qué tan fácil es llegar a los interlocutores?",
@@ -232,19 +232,45 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Empresas según número de contactos efectivos</h4>${bars(dist.map((d) => ({ l: d.n === 4 ? "4 o más" : d.n === 0 ? "Ninguno" : String(d.n), v: d.C.length, c: "var(--s1)" })))}</div>
   <div class="rcard"><h4>% de empresas con reunión según profundidad</h4>${bars(dist.filter((d) => d.n > 0).map((d) => ({ l: (d.n === 4 ? "4 o más" : d.n) + ` (n=${d.C.length})`, v: div(cnt(d.C, (c: any) => c.M.length), d.C.length) || 0, c: "var(--g-int)" })), { pct: 1, max: 1 })}<p class="note">Relación descriptiva; con pocos casos por barra no debe leerse como causalidad.</p></div></div>`;
 
-  const fsteps: [string, string, number | null][] = [
-    ["Empresas objetivo", "universo del cliente", C.length], ["Empresas asignadas", "con status de asignación", C.length], ["Empresas en gestión", "estado distinto de Asignada", k.worked],
-    ["Empresas con contacto", "1+ contacto efectivo", M.coEff.length], ["Conversaciones", "con interlocutor relevante (excluye No Fit)", cnt(C, (c) => c.conv)],
-    ["Interés", "reunión, seguimiento o referral", cnt(C, (c) => c.pos)], ["Reuniones agendadas", "empresas", M.coMt.length], ["Reuniones realizadas", "empresas", M.coHeld.length],
-    ["Oportunidades", "empresas", k.opp], ["Pipeline / negocio", M.pipe ? `${M.pipe.n} negocios registrados` : "sin información disponible", M.pipe ? M.pipe.open + M.pipe.won : null]];
+  // Funnel por Status de la asignación de la empresa. Las etapas son
+  // acumulativas (una empresa con reunión cuenta también en las anteriores);
+  // las reuniones salen de la planilla de reuniones. En cada etapa se ve qué
+  // status se quedan ahí y al hacer clic, la lista de empresas.
+  const RESP = new Set(["En seguimiento", "Reunión Agendada", "CONV", "Sin interés ahora - Retomar", "No interesados", "Clientes"]);
+  const INTR = new Set(["En seguimiento", "Reunión Agendada", "CONV"]);
+  const sResp = C.filter((c) => c.worked && (RESP.has(c.key) || c.M.length)), sInt = sResp.filter((c) => INTR.has(c.key) || c.M.length);
+  const sMt = C.filter((c) => c.M.length), sHeld = C.filter((c) => c.mheld), sOpp = C.filter((c) => c.opp);
+  const fsteps: { l: string; d: string; set: any[] }[] = [
+    { l: "Empresas asignadas", d: "con Status de la asignación", set: C },
+    { l: "Empresas en gestión", d: "status distinto de Asignada", set: M.worked },
+    { l: "Con respuesta", d: "seguimiento, reunión, conversación, retomar o no interesado", set: sResp },
+    { l: "Interés / avance", d: "en seguimiento, reunión agendada o en conversaciones", set: sInt },
+    { l: "Con reunión agendada", d: `${N(M.Mt.length)} reuniones${M.source === "hubspot" ? " en la planilla" : ""}`, set: sMt },
+    { l: "Con reunión realizada", d: `${N(M.held.length)} reuniones realizadas`, set: sHeld },
+    { l: "Con oportunidad", d: "reunión con propuesta/oportunidad o negocio abierto", set: sOpp },
+  ];
   const fmax = C.length || 1;
+  const stColor = (c: any) => G[(CO_G[c.key] || ["pend"])[0]]?.c || "var(--g-pend)";
+  const stays = (i: number) => {
+    if (i >= fsteps.length - 1) return "";
+    const next = new Set(fsteps[i + 1].set);
+    const left = Object.entries(by(fsteps[i].set.filter((c: any) => !next.has(c)), (c: any) => c.st)).sort((a, b) => b[1].length - a[1].length);
+    return left.length ? `<div class="fstay">Se quedan aquí: ${left.map(([st, A]) => `<span><i style="background:${stColor(A[0])}"></i>${esc(st)} <b>${N(A.length)}</b></span>`).join("")}</div>` : "";
+  };
+  const coList = (A: any[]) => table([
+    { h: "Empresa", f: (c) => esc(c.n) }, { h: "Status", s: 1, f: (c) => esc(c.st) }, { h: "SDR", s: 1, f: (c) => esc(c.sdr) },
+    { h: "Contactos efectivos", n: 1, f: (c) => c.effK.length }, { h: "R. agendadas", n: 1, f: (c) => c.M.length }, { h: "R. realizadas", n: 1, f: (c) => c.mheld || 0 },
+    { h: "Última reunión", f: (c) => dmy(c.M.reduce((m: string, x: any) => (x.fecha > m ? x.fecha : m), "") || null) },
+  ], [...A].sort((a, b) => b.M.length - a.M.length || a.n.localeCompare(b.n)).slice(0, 500)) + (A.length > 500 ? `<p class="note">Se muestran 500 de ${N(A.length)}; la lista completa está en Tablas maestras.</p>` : "");
+  const money = M.pipe ? `<div class="fconv" style="height:6px;padding:0"></div><div class="fst"><div class="fbar" style="width:60%;background:var(--good)" data-tip="Pipeline / negocio: ${M.pipe.n} negocios registrados"><span>Pipeline / negocio<small>${M.pipe.n} negocios registrados</small></span><b>${USD(M.pipe.open + M.pipe.won)}</b></div></div>` : "";
   s.funnel = `<div class="rcard"><div class="fun">${fsteps.map((st, i) => {
-    const v = st[2], prev = i ? fsteps[i - 1][2] : null, isMoney = i === 9;
-    const w = v == null ? 100 : isMoney ? 60 : 36 + 64 * v / fmax, col = isMoney ? "var(--good)" : `color-mix(in srgb, var(--accent) ${100 - i * 11}%, var(--teal))`;
-    const conv = i > 2 && i < 9 && prev != null && v != null ? `<div class="fconv">↓ <b>${P(div(v, prev))}</b> pasa desde la etapa anterior</div>` : i > 0 ? `<div class="fconv" style="height:6px;padding:0"></div>` : "";
-    return `${conv}<div class="fst"><div class="fbar${v == null ? " na" : ""}" style="width:${w}%;background:${col}" data-tip="${esc(st[0] + ": " + st[1])}"><span>${st[0]}<small>${st[1]}</small></span><b>${v == null ? "Sin información" : isMoney ? USD(v) : N(v)}</b></div></div>`;
-  }).join("")}</div></div>
-  <p class="note">Unidad: empresas (salvo pipeline, en dólares). A nivel contacto: ${N(M.mg.length)} gestionados → ${N(M.eff.length)} efectivos → ${N(cnt(K, (x) => POS.has(x.st)))} con resultado positivo → ${N(cnt(K, (x) => x.st === "Reunión Agendada"))} con reunión.</p>`;
+    const v = st.set.length, prev = i ? fsteps[i - 1].set.length : null;
+    const w = 36 + 64 * v / fmax, col = `color-mix(in srgb, var(--accent) ${100 - i * 13}%, var(--teal))`;
+    const conv = i > 0 && prev != null ? `<div class="fconv">↓ <b>${P(div(v, prev))}</b> pasa desde la etapa anterior</div>` : "";
+    return `${conv}<div class="fst"><button type="button" class="fbar" data-ra-stage="${i}" style="width:${w}%;background:${col}" data-tip="${esc(st.l + ": " + st.d + " · clic para ver las empresas")}"><span>${st.l}<small>${st.d}</small></span><b>${N(v)}</b></button></div>${stays(i)}`;
+  }).join("")}${money}</div>
+  ${fsteps.map((st, i) => `<div class="fco-list" data-ra-stage-list="${i}" hidden><h4>${esc(st.l)} · ${N(st.set.length)} empresas</h4>${coList(st.set)}</div>`).join("")}</div>
+  <p class="note">Unidad: empresas, según el Status de la asignación de cada una (las etapas son acumulativas: una empresa con reunión cuenta también en las anteriores). Reuniones desde la planilla de reuniones (una empresa puede tener varias). Haz clic en una etapa para ver sus empresas. A nivel contacto: ${N(M.mg.length)} gestionados → ${N(M.eff.length)} efectivos → ${N(cnt(K, (x) => POS.has(x.st)))} con resultado positivo.</p>`;
 
   const coCount = by(C, (c) => c.key);
   const coMax = Math.max(1, ...Object.values(coCount).map((a) => a.length));
@@ -290,7 +316,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   const qd = by(M.held as any[], (m) => m.q), yn = (v: any) => (v === true ? "Sí" : v === false ? "No" : '<span class="flag">s/i</span>');
   s.calidad = `<div class="tiles">${["hi", "md", "lo", "na"].map((q) => tile(pill(q), N((qd[q] || []).length), P(div((qd[q] || []).length, M.held.length)))).join("")}</div>
   <p class="note">Criterios por reunión realizada: empresa en ICP (A/B), contacto correcto (gerente o superior en área decisora), necesidad identificada, próximo paso definido y resultado con avance. Alta = 4–5 · Media = 2–3 · Baja = 0–1. Si faltan 2 o más campos (necesidad, resultado, feedback), se marca "Sin info suficiente" y no se clasifica.</p>
-  ${table([{ h: "Empresa", f: (m) => esc(m.c?.n) }, { h: "Contacto", s: 1, f: (m) => `${esc(m.k?.n ?? "—")}<br>${esc(m.k?.cargo || "sin cargo")}` }, { h: "Fecha", f: (m) => dmy(m.fecha) }, { h: "ICP", f: (m) => yn(m.icpfit) }, { h: "Contacto correcto", f: (m) => yn(m.okct) }, { h: "Necesidad", s: 1, f: (m) => (m.need ? esc(m.need) : '<span class="flag">s/i</span>') }, { h: "Próximo paso", f: (m) => yn(m.next) }, { h: "Feedback cliente", s: 1, f: (m) => (m.fb ? esc(m.fb) : '<span class="flag">s/i</span>') }, { h: "Resultado", f: (m) => esc(m.res) || '<span class="flag">s/i</span>' }, { h: "Calidad", f: (m) => pill(m.q) }],
+  ${table([{ h: "Empresa", f: (m) => esc(m.c?.n) }, { h: "Contacto", s: 1, f: (m) => `${esc(m.k?.n ?? m.ctn ?? "—")}<br>${esc(m.k?.cargo || "sin cargo")}` }, { h: "Fecha", f: (m) => dmy(m.fecha) }, { h: "ICP", f: (m) => yn(m.icpfit) }, { h: "Contacto correcto", f: (m) => yn(m.okct) }, { h: "Necesidad", s: 1, f: (m) => (m.need ? esc(m.need) : '<span class="flag">s/i</span>') }, { h: "Próximo paso", f: (m) => yn(m.next) }, { h: "Feedback cliente", s: 1, f: (m) => (m.fb ? esc(m.fb) : '<span class="flag">s/i</span>') }, { h: "Resultado", f: (m) => esc(m.res) || '<span class="flag">s/i</span>' }, { h: "Calidad", f: (m) => pill(m.q) }],
     M.held.slice().sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)).slice(0, 25))}${M.held.length > 25 ? `<p class="note">Se muestran las 25 más recientes de ${M.held.length}.</p>` : ""}`;
 
   const fuRow = (x: any) => ({ x, reason: x.sig || x.obj || "" });

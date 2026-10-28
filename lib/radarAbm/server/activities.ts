@@ -32,13 +32,13 @@ export async function loadActivities(input: {
   contactCompany: Map<string, string>;
   catalog: PropertyCatalog;
   token?: string;
-}): Promise<{ activities: RadarActivity[]; contactMeetings: Map<string, string[]>; warnings: string[] }> {
+}): Promise<{ activities: RadarActivity[]; warnings: string[] }> {
   const { companyIds, contactIds, contactCompany, catalog, token } = input;
   const warnings: string[] = [];
 
-  // Asociaciones: contactos (incluye reuniones) y empresas
+  // Asociaciones: contactos y empresas (las reuniones salen de la planilla)
   const [ctAssoc, coAssoc] = await Promise.all([
-    Promise.all([...OBJECTS, "meetings"].map((o) => batchAssociations("contacts", o, contactIds, token).catch((e) => {
+    Promise.all(OBJECTS.map((o) => batchAssociations("contacts", o, contactIds, token).catch((e) => {
       warnings.push(`No se pudieron leer ${o} de los contactos: ${(e as Error).message}`);
       return new Map<string, string[]>();
     }))),
@@ -47,7 +47,6 @@ export async function loadActivities(input: {
       return new Map<string, string[]>();
     }))),
   ]);
-  const contactMeetings = ctAssoc[OBJECTS.length];
 
   // id de actividad → dueño (contacto primero, si no la empresa)
   const owner = new Map<string, { obj: Obj; co: string; ct?: string }>();
@@ -114,5 +113,5 @@ export async function loadActivities(input: {
       warnings.push(`No se pudo leer el detalle de WhatsApp / LinkedIn: ${(e as Error).message}`);
     }
   }
-  return { activities, contactMeetings, warnings };
+  return { activities, warnings };
 }

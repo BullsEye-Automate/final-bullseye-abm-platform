@@ -58,6 +58,7 @@ export type RadarContact = {
 export type RadarMeeting = {
   id: number | string;
   ct: number | string;
+  ctn?: string;              // nombre del contacto en la planilla de reuniones
   co: number | string;
   sdr: string;
   agendada: string;
