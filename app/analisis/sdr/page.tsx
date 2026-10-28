@@ -25,6 +25,7 @@ import NumeroMultiSelect from "./components/NumeroMultiSelect";
 import TablaSaludTelefonica, { type NumeroSalud } from "./components/TablaSaludTelefonica";
 import GraficoSaludTelefonica from "./components/GraficoSaludTelefonica";
 import MapaCalorHorarios, { type CeldaHeatmap } from "./components/MapaCalorHorarios";
+import AlertasNumeros from "./components/AlertasNumeros";
 
 type SdrRoster = { sdr_id: string; sdr_nombre: string };
 type PaisRoster = { pais_key: string; pais_nombre: string };
@@ -772,6 +773,9 @@ export default function AnalisisSdr() {
           {syncMessage && <p className="text-xs text-ink-muted text-right">{syncMessage}</p>}
         </div>
       </header>
+
+      {/* Sección Alertas de Números (semáforo proactivo por número de Allo) */}
+      <AlertasNumeros />
 
       {/* Sección Gráfico */}
       <section className="card space-y-4">
