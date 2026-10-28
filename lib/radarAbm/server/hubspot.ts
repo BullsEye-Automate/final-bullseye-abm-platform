@@ -67,6 +67,7 @@ export const hasLabelPrefix = (label: string, prefix: string) => afterPrefix(lab
 function clientSuffix(label: string, labelPrefix: string): string {
   let rest = normLabel(afterPrefix(label, labelPrefix) ?? "");
   if (rest.startsWith("sdr ")) rest = rest.slice(4);
+  else if (rest === "sdr") rest = ""; // "Status de la asignación - SDR" (HubSpot propio del cliente) es genérica
   return rest;
 }
 
