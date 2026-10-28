@@ -128,7 +128,8 @@ export type RadarClientData = {
   deals: RadarDeal[];
   activities?: RadarActivity[];
   callEvals?: RadarCallEval[];
-  meetingsTotal?: boolean;   // Reuniones = total de la planilla (no se recortan por filtros de empresa)
+  meetingsTotal?: boolean;
+  refCases?: string;         // casos de éxito / clientes de referencia del ICP   // Reuniones = total de la planilla (no se recortan por filtros de empresa)
 };
 
 export type RadarSource = "demo" | "hubspot";
