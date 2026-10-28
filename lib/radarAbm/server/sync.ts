@@ -103,14 +103,31 @@ export async function syncClientRadar(clientId: string, by: string) {
       ?? names.map((n) => list.find((x) => x.name === n)).find(Boolean)
       ?? list.find((x) => normLabel(x.label) === normLabel(label));
   };
-  const uniCo = clientMode ? findProp("companies", settings.properties?.universeCompanyClient, ["cliente_bullseye_empresa"], "Cliente BullsEye Empresa") : undefined;
-  const uniCt = clientMode ? findProp("contacts", settings.properties?.universeContactClient, ["cliente_bullseye"], "Cliente BullsEye") : undefined;
+  // "Cliente BullsEye Empresa" / "Cliente BullsEye" (titular de la cuenta):
+  // en todos los clientes se exige además que la empresa y el contacto sean
+  // de este cliente (en el modo Cliente BullsEye es el único filtro)
+  const uniCo = findProp("companies", settings.properties?.universeCompanyClient, ["cliente_bullseye_empresa"], "Cliente BullsEye Empresa");
+  const uniCt = findProp("contacts", settings.properties?.universeContactClient, ["cliente_bullseye"], "Cliente BullsEye");
   const uniValue = (settings.hubspot_client_value ?? "").trim() || client.name;
   if (clientMode && !uniCo) throw new Error(`No se encontró la propiedad de empresa "Cliente BullsEye Empresa"${where}.`);
   if (clientMode && !uniCt) throw new Error(`No se encontró la propiedad de contacto "Cliente BullsEye"${where}.`);
   // Valor interno de la opción cuyo nombre es el del cliente
-  const optionValue = (prop: { options?: { value: string; label: string }[] } | undefined, v: string) =>
-    prop?.options?.find((o) => normLabel(o.label) === normLabel(v) || normLabel(o.value) === normLabel(v))?.value ?? v;
+  // ("Acid Labs" ↔ "AcidLab": se compara sin espacios y por prefijo)
+  const compact = (x: string) => normLabel(x).replace(/ /g, "");
+  const matchOption = (prop: { options?: { value: string; label: string }[] } | undefined, v: string) => {
+    const opts = prop?.options ?? [], c = compact(v);
+    return opts.find((o) => compact(o.label) === c || compact(o.value) === c)
+      ?? (c.length >= 4 ? opts.find((o) => { const l = compact(o.label); return l.length >= 4 && (l.startsWith(c) || c.startsWith(l)); }) : undefined);
+  };
+  const optionValue = (prop: { options?: { value: string; label: string }[] } | undefined, v: string) => matchOption(prop, v)?.value ?? v;
+  const coOpt = matchOption(uniCo, uniValue), ctOpt = matchOption(uniCt, uniValue);
+  if (!clientMode && uniCo && !coOpt) warnings.push(`"${uniCo.label}" no tiene la opción "${uniValue}": no se filtraron las empresas por cliente (ajusta el valor de "Cliente BullsEye" en Configuración → Cliente → Pulso ABM).`);
+  if (!clientMode && uniCt && !ctOpt) warnings.push(`"${uniCt.label}" no tiene la opción "${uniValue}": no se filtraron los contactos por cliente.`);
+  // El contacto es de este cliente (valor de "Cliente BullsEye"; admite varios con ;)
+  const isClientContact = (raw: string | null | undefined) => {
+    const v = (raw ?? "").split(";").map((x) => x.trim()).filter(Boolean);
+    return ctOpt ? v.includes(ctOpt.value) : v.some((x) => compact(x) === compact(uniValue));
+  };
   if (!clientMode && !P.companyStatus.property) {
     const n = P.companyStatus.candidates.length;
     throw new Error(n
@@ -132,12 +149,15 @@ export async function syncClientRadar(clientId: string, by: string) {
   // fijó un valor de "Cliente BullsEye", además deben tenerlo.
   const statusProp = clientMode ? "lifecyclestage" : P.companyStatus.property!;
   const filters: unknown[] = clientMode
-    ? [{ propertyName: uniCo!.name, operator: "EQ", value: optionValue(uniCo as any, uniValue) }]
+    ? [{ propertyName: uniCo!.name, operator: uniCo!.fieldType === "checkbox" ? "CONTAINS_TOKEN" : "EQ", value: optionValue(uniCo as any, uniValue) }]
     : [{ propertyName: statusProp, operator: "HAS_PROPERTY" }];
   const clientProp = P.companyClient;
   const clientValue = (settings.hubspot_client_value ?? "").trim();
   if (clientMode) {
     // el universo ya es la propiedad del cliente
+  } else if (uniCo && coOpt) {
+    // Titular de la cuenta: "Cliente BullsEye Empresa" = este cliente
+    filters.push({ propertyName: uniCo.name, operator: uniCo.fieldType === "checkbox" ? "CONTAINS_TOKEN" : "EQ", value: coOpt.value });
   } else if (clientValue && clientProp.property) {
     filters.push({ propertyName: clientProp.property, operator: clientProp.fieldType === "checkbox" ? "CONTAINS_TOKEN" : "EQ", value: clientValue });
   } else if (clientValue) {
@@ -211,6 +231,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const contactStatusProp = clientMode ? uniCt!.name : P.contactStatus.property!;
   const contactProps = Array.from(new Set([
     "firstname", "lastname", "email", "jobtitle", "hubspot_owner_id", "notes_last_contacted", "notes_next_activity_date", contactStatusProp,
+    ...(uniCt ? [uniCt.name] : []),
     ...[P.contactObjection, P.contactSignal, P.contactSdr].map((p) => p.property).filter(Boolean) as string[],
   ]));
   const rawContacts = await batchRead("contacts", Array.from(contactCompany.keys()), contactProps, token);
@@ -222,13 +243,16 @@ export async function syncClientRadar(clientId: string, by: string) {
   const sigLabel = optionLabeler(P.contactSignal);
   const unknownCtStatuses = new Set<string>();
   // Con status y sin equivalencia "Excluir del informe" (ej. ya no trabaja ahí)
-  const ctClientLabel = optionLabeler(uniCt as DetectedProperty | undefined);
+  // Contacto de este cliente ("Cliente BullsEye"); sin la propiedad en este HubSpot no se filtra
+  const ofClient = (r: { properties: Record<string, string | null> }) => !uniCt || (!clientMode && !ctOpt) || isClientContact(r.properties[uniCt.name]);
+  const otherClient = clientMode ? 0 : rawContacts.filter((r) => !!ctStatusLabel(r.properties[contactStatusProp]) && !ofClient(r)).length;
+  if (otherClient) warnings.push(`${otherClient} contactos con status de asignación no tienen "${uniCt!.label}" = ${uniValue}: no se cuentan.`);
   const kept = clientMode
     // Modo Cliente BullsEye: contactos con "Cliente BullsEye" = el cliente
-    ? rawContacts.filter((r) => normLabel(ctClientLabel(r.properties[contactStatusProp]) ?? "").split(" ").join("") === normLabel(uniValue).split(" ").join(""))
+    ? rawContacts.filter(ofClient)
     : rawContacts.filter((r) => {
         const label = ctStatusLabel(r.properties[contactStatusProp]);
-        return !!label && contactStatusCanon(label) !== EXCLUDE;
+        return !!label && contactStatusCanon(label) !== EXCLUDE && ofClient(r);
       });
   const excludedContacts = clientMode ? 0 : rawContacts.filter((r) => { const l = ctStatusLabel(r.properties[contactStatusProp]); return !!l && contactStatusCanon(l) === EXCLUDE; }).length;
   const keptIds = kept.map((r) => r.id);
