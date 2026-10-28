@@ -56,8 +56,8 @@ export async function GET(req: NextRequest) {
         end:     m.properties.hs_meeting_end_time   ?? null,
         outcome: m.properties.hs_meeting_outcome    ?? null,
       }))
-      // Reuniones de los últimos 7 días hacia adelante (sin límite de futuro)
-      .filter((m: any) => m.start && new Date(m.start).getTime() > now - 7 * 24 * 3600 * 1000)
+      // Reuniones de los últimos 30 días hacia adelante
+      .filter((m: any) => m.start && new Date(m.start).getTime() > now - 30 * 24 * 3600 * 1000)
       .sort((a: any, b: any) => new Date(a.start).getTime() - new Date(b.start).getTime())
       .slice(0, 5);
 

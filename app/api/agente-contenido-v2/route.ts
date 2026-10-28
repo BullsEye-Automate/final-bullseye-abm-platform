@@ -139,7 +139,7 @@ function buildSystemPrompt(
   const typeInstructions: Record<string, string> = {
     no_contact:    `\n\nEste mensaje es para alguien que el SDR no logró contactar por teléfono. Reconoce que se intentó llamar, menciona brevemente el motivo del contacto, y ofrece otra forma de conectarse (correo, LinkedIn, WhatsApp).`,
     post_call:     `\n\nEste mensaje es post-llamada conectada. Retoma lo conversado en la llamada, avanza el siguiente paso acordado, y refuerza el valor propuesto de forma personalizada.`,
-    meeting_brief: `\n\nGenera una previa de reunión (briefing interno) para quien va a reunirse con este contacto. Incluye: 1) Datos del contacto y empresa, 2) Por qué esta empresa es un buen fit según el ICP, 3) Posibles pain points o intereses según la industria y tamaño, 4) Puntos clave para mencionar de la propuesta de valor, 5) Posibles objeciones y cómo manejarlas. Tono ejecutivo, estructurado con secciones claras.`,
+    meeting_brief: `\n\nGenera una previa de reunión (briefing interno) CONCISA para quien va a reunirse con este contacto. Máximo 220 palabras en total. Exactamente 4 secciones: 1) Contexto rápido (quién es, empresa, cargo, datos relevantes), 2) Fit con nuestro ICP (2-3 razones concretas), 3) Ángulo de entrada (1-2 pain points probables + cómo conectarlos con nuestra propuesta de valor), 4) Dato clave para la reunión (algo específico para personalizar la conversación: un logro, una señal, una objeción previsible). Tono ejecutivo. Sin relleno.`,
     meeting:       `\n\nConfirma la fecha y hora de la reunión. Recuerda brevemente la propuesta de valor y enmarca la reunión como una conversación exploratoria.`,
   };
 
@@ -150,7 +150,7 @@ function buildSystemPrompt(
 
   return `Eres un experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar mensajes hiperpersonalizados.
 
-${channelInstruction}No incluyas firma, despedida con nombre ni datos de contacto. El SDR añadirá su propia firma. Nunca uses el carácter — (guión largo).
+${channelInstruction}Comienza siempre con un saludo apropiado (Hola [Nombre], Buenos días [Nombre], etc.). No incluyas firma, despedida con nombre ni datos de contacto — el SDR añadirá su propia firma. Nunca uses el carácter — (guión largo).
 
 ${recipientLines ? `Datos del destinatario:\n${recipientLines}` : ""}${contactSection}${alloBlock}
 
@@ -162,7 +162,7 @@ Usa TODA la información disponible del contacto y la empresa para hiperpersonal
 ${channelInfo.hasSubject && !isMeetingBrief
       ? `Devuelve el mensaje en texto plano. Primera línea: "Asunto: [el asunto]". Luego una línea vacía. Luego el cuerpo. Sin markdown, sin JSON, sin asteriscos.`
       : isMeetingBrief
-        ? `Devuelve el briefing como texto plano estructurado, con secciones numeradas y encabezados en MAYÚSCULAS. Sin JSON, sin markdown, sin asteriscos. Para ajustes, devuelve el briefing completo actualizado.`
+        ? `Devuelve el briefing en texto plano. Primera línea: "Previa: [Nombre Contacto] - [Empresa]". Luego línea vacía. Luego 4 secciones numeradas con encabezado en MAYÚSCULAS. Sin JSON, sin markdown, sin asteriscos. Para ajustes, devuelve el briefing completo actualizado.`
         : `Devuelve solo el texto del mensaje. Sin asunto, sin markdown, sin JSON, sin asteriscos. Para ajustes, devuelve el mensaje completo actualizado.`
     }`;
 }

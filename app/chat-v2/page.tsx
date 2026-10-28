@@ -72,7 +72,15 @@ type Segment = {
 
 function parsePlainMessage(text: string, channel: string): { subject: string; body: string } {
   const clean = text.replace(/^```(?:\w+)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+  // Email: primera línea "Asunto: ..."
   if (channel === "email" && clean.startsWith("Asunto:")) {
+    const nl = clean.indexOf("\n");
+    const subject = nl >= 0 ? clean.slice(7, nl).trim() : clean.slice(7).trim();
+    const body = nl >= 0 ? clean.slice(nl + 1).trim() : "";
+    return { subject, body };
+  }
+  // Briefing: primera línea "Previa: ..."
+  if (channel === "meeting_brief" && clean.startsWith("Previa:")) {
     const nl = clean.indexOf("\n");
     const subject = nl >= 0 ? clean.slice(7, nl).trim() : clean.slice(7).trim();
     const body = nl >= 0 ? clean.slice(nl + 1).trim() : "";
@@ -815,7 +823,7 @@ export default function ChatV2Page() {
                       ))}
                       {selectedCallId && (
                         <div className="text-[10px] mt-1" style={{ color: "#9b97c0" }}>
-                          ✓ Resumen de esta llamada incluido en el contexto
+                          ✓ Resumen incluido en el contexto · Haz clic en otra para cambiar
                         </div>
                       )}
                     </div>
@@ -1036,7 +1044,7 @@ export default function ChatV2Page() {
         </div>
 
         {/* Panel derecho: chat */}
-        <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#f4f2fb" }}>
+        <div className="flex-1 flex flex-col min-h-0" style={{ background: "#f4f2fb" }}>
           {messages.length === 0 && !loading ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 px-8">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
