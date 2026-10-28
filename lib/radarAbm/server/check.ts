@@ -1,7 +1,7 @@
 import { hsFetchWithRetry, hsHeaders } from "@/lib/hubspot";
 import { supabaseAdmin } from "@/lib/supabase";
 import { detectProperties, loadPropertyCatalog, type DetectedProperty } from "./hubspot";
-import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig } from "./store";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, universeMode } from "./store";
 
 // Pulso ABM — prueba del HubSpot de un cliente antes de sincronizar.
 // Hace una llamada mínima (limit 1) por cada cosa que lee el sync y reporta
@@ -65,6 +65,29 @@ export async function checkClientHubspot(clientId: string) {
 
   const detected = detectProperties(effectiveProperties(cfg, settings), catalog, client?.name);
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
+
+  // Modo "Cliente BullsEye" (ej. BullsEye): universo por "Cliente BullsEye Empresa" / "Cliente BullsEye"
+  if (universeMode(settings, client?.name ?? "") === "client") {
+    const value = (settings.hubspot_client_value ?? "").trim() || client?.name || "";
+    const coProp = (catalog.companies ?? []).find((x) => x.name === (settings.properties?.universeCompanyClient || "cliente_bullseye_empresa"));
+    const ctProp = (catalog.contacts ?? []).find((x) => x.name === (settings.properties?.universeContactClient || "cliente_bullseye"));
+    const opt = (p: typeof coProp) => p?.options?.find((o) => o.label.toLowerCase() === value.toLowerCase())?.value ?? value;
+    let universe: number | null = null, contacts: number | null = null;
+    if (coProp) {
+      const r = await search("companies", [{ propertyName: coProp.name, operator: "EQ", value: opt(coProp) }]);
+      if (r.ok) universe = Number(r.body?.total ?? 0);
+      add("companies", "Empresas", true, r, r.ok ? `${universe} empresas con "${coProp.label}" = ${value}` : undefined);
+    } else items.push({ key: "companies", label: "Empresas", ok: false, required: true, detail: 'No existe la propiedad "Cliente BullsEye Empresa"' });
+    if (ctProp) {
+      const r = await search("contacts", [{ propertyName: ctProp.name, operator: "EQ", value: opt(ctProp) }]);
+      if (r.ok) contacts = Number(r.body?.total ?? 0);
+      add("contacts", "Contactos", true, r, r.ok ? `${contacts} contactos con "${ctProp.label}" = ${value}` : undefined);
+    } else items.push({ key: "contacts", label: "Contactos", ok: false, required: true, detail: 'No existe la propiedad de contacto "Cliente BullsEye"' });
+    for (const [k, l] of [["owners", "Usuarios (SDR)"], ["calls", "Llamadas (intentos)"], ["emails", "Correos"], ["communications", "WhatsApp / LinkedIn"], ["deals", "Negocios (pipeline)"]] as const) {
+      add(k, l, false, k === "owners" ? await probe(`${HS}/crm/v3/owners?limit=1`, { headers }) : await search(k));
+    }
+    return { source: settings.hubspot_source, items, universe, contacts, properties: detected, ready: items.filter((i) => i.required).every((i) => i.ok) };
+  }
 
   // Universo: empresas con status (con "Cliente BullsEye" si se configuró un valor)
   const statusProp = P.companyStatus.property;

@@ -141,7 +141,40 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
             </span>
           </label>
 
-          <div />
+          <label className="text-sm">
+            <span className="label block mb-1">Universo del informe</span>
+            <select
+              className="input"
+              value={s.properties?.universeMode ?? ""}
+              onChange={(e) => {
+                const { universeMode: _m, ...rest } = s.properties ?? {};
+                setS({ ...s, properties: e.target.value ? { ...rest, universeMode: e.target.value } : rest });
+              }}
+            >
+              <option value="">Automático (BullsEye: Cliente BullsEye; resto: Status de la asignación)</option>
+              <option value="status">Status de la asignación + Asignación BullsEye por llamar</option>
+              <option value="client">Propiedad “Cliente BullsEye” (sin status de asignación)</option>
+            </select>
+            <span className="text-xs text-ink-subtle block mt-1">
+              Con “Cliente BullsEye”: empresas con “Cliente BullsEye Empresa” y contactos con “Cliente BullsEye” = el valor de este cliente; la etapa sale del ciclo de vida y de la actividad.
+            </span>
+          </label>
+
+          <label className="text-sm">
+            <span className="label block mb-1">Reuniones con filtros de empresa</span>
+            <select
+              className="input"
+              value={s.properties?.meetingsTotal ?? ""}
+              onChange={(e) => {
+                const { meetingsTotal: _m, ...rest } = s.properties ?? {};
+                setS({ ...s, properties: e.target.value ? { ...rest, meetingsTotal: e.target.value } : rest });
+              }}
+            >
+              <option value="">Automático (AcidLab: total de la planilla; resto: se filtran)</option>
+              <option value="si">Siempre el total de la planilla (solo fechas, SDR y país)</option>
+              <option value="no">Se filtran por wishlist, industria, etc.</option>
+            </select>
+          </label>
 
           {s.hubspot_source === "bullseye" && (
             <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">

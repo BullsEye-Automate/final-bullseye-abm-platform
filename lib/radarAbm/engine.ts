@@ -113,9 +113,13 @@ export function compute(ds: RadarDataset, cfg: RadarConfig = DEFAULT_CONFIG): Mo
   const icpK = K.filter((k) => k.c.st !== "No califica");
   const coEff = C.filter((c) => c.effK.length >= 1), coMulti = C.filter((c) => c.effK.length >= 2), coDeep = C.filter((c) => c.depth === "Profunda");
   const coMt = C.filter((c) => c.M.length), coHeld = C.filter((c) => c.mheld);
-  const held = Mt.filter((m) => m.st === "Realizada"), noshow = Mt.filter((m) => m.st === "No-show"), canc = Mt.filter((m) => m.st === "Cancelada");
+  // Con rango de fechas (como el Excel de metas): agendadas por fecha de
+  // agendamiento; realizadas / no-show / canceladas por fecha de la reunión
+  const rg = ds.range, inRg = (d?: string | null) => !rg || (!!d && d >= rg.from && d <= rg.to);
+  const agM = rg ? Mt.filter((m) => inRg(m.agendada)) : Mt;
+  const held = Mt.filter((m) => m.st === "Realizada" && inRg(m.fecha)), noshow = Mt.filter((m) => m.st === "No-show" && inRg(m.fecha)), canc = Mt.filter((m) => m.st === "Cancelada" && inRg(m.fecha));
   const pendM = Mt.filter((m) => m.st === "Pendiente" || m.st === "Reprogramada"), reprog = Mt.filter((m) => m.reprog || m.st === "Reprogramada");
-  Object.assign(M, { worked, qual, mg, eff, icpK, coEff, coMulti, coDeep, coMt, coHeld, held, noshow, canc, pendM, reprog });
+  Object.assign(M, { worked, qual, mg, eff, icpK, coEff, coMulti, coDeep, coMt, coHeld, held, noshow, canc, pendM, reprog, agM });
   M.kpi = {
     universe: C.length, worked: worked.length, coverage: div(worked.length, C.length),
     penetration: div(cnt(icpK, (k) => k.mg), icpK.length),
@@ -429,7 +433,10 @@ export function filterDataset(ds: RadarDataset, f: RadarFilter): RadarDataset {
     const ids = new Set(companies.map((c) => String(c.id)));
     const inCo = (x: { co: number | string }) => ids.has(String(x.co));
     contacts = contacts.filter(inCo);
-    meetings = meetings.filter(inCo);
+    // Total de la planilla: solo SDR (responsable) y país, que la planilla tiene
+    meetings = ds.client.meetingsTotal
+      ? meetings.filter((m) => (!f.sdr || normName(m.sdr) === normName(f.sdr)) && (!f.pais || !m.pais || normName(m.pais) === normName(f.pais)))
+      : meetings.filter(inCo);
     deals = deals.filter(inCo);
     if (activities) activities = activities.filter(inCo);
   }

@@ -6,7 +6,7 @@ import { deriveClientData, type FlatCompany, type FlatContact } from "../derive"
 import type { RadarActivity, RadarCallEval, RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { loadActivities } from "./activities";
 import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
-import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot } from "./store";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, universeMode } from "./store";
 import { checkClientActive } from "./masterClients";
 import { loadSheetMeetings } from "./sheetMeetings";
 import { loadAlloMonth } from "@/lib/celulasSdr/server/allo";
@@ -48,6 +48,16 @@ function optionLabeler(p: DetectedProperty | undefined) {
   };
 }
 
+// Etapa de la empresa desde el ciclo de vida de HubSpot (modo Cliente
+// BullsEye). "Asignada" se completa después con la actividad.
+function lifecycleStatus(v: string | null | undefined, clientName: string): string {
+  const x = (v ?? "").toLowerCase();
+  if (x === "customer" || x === "evangelist") return "Clientes";
+  if (x === "opportunity") return `En conversaciones con ${clientName}`;
+  if (x === "other") return "Nutrir";
+  return "Asignada";
+}
+
 function dealStageName(info: { label: string; won: boolean; lost: boolean } | undefined, raw: string): string {
   if (info?.won) return "Ganado";
   if (info?.lost) return "Perdido";
@@ -82,13 +92,32 @@ export async function syncClientRadar(clientId: string, by: string) {
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
   // Dónde se corrige el mapeo según el HubSpot que se lee
   const where = settings.hubspot_source === "client" ? " en el HubSpot del cliente" : "";
-  if (!P.companyStatus.property) {
+  // Modo "Cliente BullsEye" (ej. el propio BullsEye): el universo sale de las
+  // propiedades "Cliente BullsEye Empresa" / "Cliente BullsEye" con el valor del
+  // cliente, sin Status de la asignación ni Asignación BullsEye por llamar; la
+  // etapa sale del ciclo de vida de la empresa y de la actividad.
+  const clientMode = universeMode(settings, client.name) === "client";
+  const findProp = (obj: string, manual: string | undefined, names: string[], label: string) => {
+    const list = catalog[obj] ?? [];
+    return (manual ? list.find((x) => x.name === manual) : undefined)
+      ?? names.map((n) => list.find((x) => x.name === n)).find(Boolean)
+      ?? list.find((x) => normLabel(x.label) === normLabel(label));
+  };
+  const uniCo = clientMode ? findProp("companies", settings.properties?.universeCompanyClient, ["cliente_bullseye_empresa"], "Cliente BullsEye Empresa") : undefined;
+  const uniCt = clientMode ? findProp("contacts", settings.properties?.universeContactClient, ["cliente_bullseye"], "Cliente BullsEye") : undefined;
+  const uniValue = (settings.hubspot_client_value ?? "").trim() || client.name;
+  if (clientMode && !uniCo) throw new Error(`No se encontró la propiedad de empresa "Cliente BullsEye Empresa"${where}.`);
+  if (clientMode && !uniCt) throw new Error(`No se encontró la propiedad de contacto "Cliente BullsEye"${where}.`);
+  // Valor interno de la opción cuyo nombre es el del cliente
+  const optionValue = (prop: { options?: { value: string; label: string }[] } | undefined, v: string) =>
+    prop?.options?.find((o) => normLabel(o.label) === normLabel(v) || normLabel(o.value) === normLabel(v))?.value ?? v;
+  if (!clientMode && !P.companyStatus.property) {
     const n = P.companyStatus.candidates.length;
     throw new Error(n
       ? `No se pudo elegir cuál de las ${n} propiedades "Status de la asignación - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
       : `No se encontró ninguna propiedad de empresa "Status de la asignación - …"${where}. Indica su nombre interno en Configuración → Cliente → Pulso ABM.`);
   }
-  if (!P.contactStatus.property) {
+  if (!clientMode && !P.contactStatus.property) {
     const n = P.contactStatus.candidates.length;
     throw new Error(n
       ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
@@ -101,11 +130,15 @@ export async function syncClientRadar(clientId: string, by: string) {
   // ── Universo de empresas ───────────────────────────────────────────────
   // Empresas con la propiedad de status del cliente con algún valor. Si se
   // fijó un valor de "Cliente BullsEye", además deben tenerlo.
-  const statusProp = P.companyStatus.property!;
-  const filters: unknown[] = [{ propertyName: statusProp, operator: "HAS_PROPERTY" }];
+  const statusProp = clientMode ? "lifecyclestage" : P.companyStatus.property!;
+  const filters: unknown[] = clientMode
+    ? [{ propertyName: uniCo!.name, operator: "EQ", value: optionValue(uniCo as any, uniValue) }]
+    : [{ propertyName: statusProp, operator: "HAS_PROPERTY" }];
   const clientProp = P.companyClient;
   const clientValue = (settings.hubspot_client_value ?? "").trim();
-  if (clientValue && clientProp.property) {
+  if (clientMode) {
+    // el universo ya es la propiedad del cliente
+  } else if (clientValue && clientProp.property) {
     filters.push({ propertyName: clientProp.property, operator: clientProp.fieldType === "checkbox" ? "CONTAINS_TOKEN" : "EQ", value: clientValue });
   } else if (clientValue) {
     warnings.push('Hay un valor de "Cliente BullsEye" configurado, pero la propiedad no existe en este HubSpot: se ignoró.');
@@ -143,12 +176,14 @@ export async function syncClientRadar(clientId: string, by: string) {
 
   const companies: FlatCompany[] = [];
   const companyDomain = new Map<string, string>();
+  const pendingStage = new Set<string>();
   for (const r of rawCompanies) {
     const p = r.properties;
     if (p.domain) companyDomain.set(String(r.id), p.domain);
-    const label = statusLabel(p[statusProp]);
+    const label = clientMode ? lifecycleStatus(p.lifecyclestage, client.name) : statusLabel(p[statusProp]);
     if (!label) continue; // sin status: no es parte del trabajo de BullsEye
-    const st = companyStatusCanon(label)!;
+    const st = clientMode ? label : companyStatusCanon(label)!;
+    if (clientMode && st === "Asignada") pendingStage.add(String(r.id)); // se completa con la actividad
     if (st === EXCLUDE) { excludedCompanies++; continue; } // ej. "No gestionar - Cliente"
     if (!st.startsWith("En conversaciones") && !CO_ORDER.includes(st)) unknownStatuses.add(st);
     const tier = (tierLabel(P.companyIcpTier.property ? p[P.companyIcpTier.property] : null) ?? "").trim().toUpperCase().replace(/^(ICP|TIER)\s*/, "");
@@ -173,7 +208,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const coContacts = await batchAssociations("companies", "contacts", companyIds, token);
   const contactCompany = new Map<string, string>();
   for (const [co, cts] of coContacts) for (const ct of cts) if (!contactCompany.has(ct)) contactCompany.set(ct, co);
-  const contactStatusProp = P.contactStatus.property!;
+  const contactStatusProp = clientMode ? uniCt!.name : P.contactStatus.property!;
   const contactProps = Array.from(new Set([
     "firstname", "lastname", "email", "jobtitle", "hubspot_owner_id", "notes_last_contacted", "notes_next_activity_date", contactStatusProp,
     ...[P.contactObjection, P.contactSignal, P.contactSdr].map((p) => p.property).filter(Boolean) as string[],
@@ -187,11 +222,15 @@ export async function syncClientRadar(clientId: string, by: string) {
   const sigLabel = optionLabeler(P.contactSignal);
   const unknownCtStatuses = new Set<string>();
   // Con status y sin equivalencia "Excluir del informe" (ej. ya no trabaja ahí)
-  const kept = rawContacts.filter((r) => {
-    const label = ctStatusLabel(r.properties[contactStatusProp]);
-    return !!label && contactStatusCanon(label) !== EXCLUDE;
-  });
-  const excludedContacts = rawContacts.filter((r) => { const l = ctStatusLabel(r.properties[contactStatusProp]); return !!l && contactStatusCanon(l) === EXCLUDE; }).length;
+  const ctClientLabel = optionLabeler(uniCt as DetectedProperty | undefined);
+  const kept = clientMode
+    // Modo Cliente BullsEye: contactos con "Cliente BullsEye" = el cliente
+    ? rawContacts.filter((r) => normLabel(ctClientLabel(r.properties[contactStatusProp]) ?? "").split(" ").join("") === normLabel(uniValue).split(" ").join(""))
+    : rawContacts.filter((r) => {
+        const label = ctStatusLabel(r.properties[contactStatusProp]);
+        return !!label && contactStatusCanon(label) !== EXCLUDE;
+      });
+  const excludedContacts = clientMode ? 0 : rawContacts.filter((r) => { const l = ctStatusLabel(r.properties[contactStatusProp]); return !!l && contactStatusCanon(l) === EXCLUDE; }).length;
   const keptIds = kept.map((r) => r.id);
 
   // ── Actividades de la cuenta (empresa + contactos): profundidad por canal
@@ -207,11 +246,15 @@ export async function syncClientRadar(clientId: string, by: string) {
 
   const contacts: FlatContact[] = kept.map((r) => {
     const p = r.properties;
-    const st = contactStatusCanon(ctStatusLabel(p[contactStatusProp]))!;
-    if (!CT_ORDER.includes(st)) unknownCtStatuses.add(st);
     const co = contactCompany.get(r.id)!;
     // Conteos por contacto desde sus actividades (intentos = llamadas telefónicas)
     const acts = actByCt.get(r.id) ?? [];
+    // Modo Cliente BullsEye: status por actividad (conversó = seguimiento,
+    // sin respuesta = no contestó, sin actividad = por gestionar)
+    const st = clientMode
+      ? (acts.some((a) => a.conn || a.in) ? "Hacer Seguimiento" : acts.length ? "No Contestó" : "Por gestionar")
+      : contactStatusCanon(ctStatusLabel(p[contactStatusProp]))!;
+    if (!CT_ORDER.includes(st)) unknownCtStatuses.add(st);
     const calls = acts.filter((a) => a.k === "call").length;
     const conv = acts.filter((a) => a.conn).length;
     const wa = acts.filter((a) => a.k === "wa").length;
@@ -265,10 +308,25 @@ export async function syncClientRadar(clientId: string, by: string) {
     if (!sheet.total) warnings.push("La planilla de reuniones no tiene reuniones de este cliente en el período.");
     if (sheet.unmatched.length) {
       const n = sheet.unmatched.reduce((a, x) => a + x.n, 0);
-      warnings.push(`${n} reuniones de la planilla no calzan con ninguna empresa con status en HubSpot (revisa el nombre de la empresa): ${sheet.unmatched.slice(0, 12).map((x) => `${x.empresa}${x.n > 1 ? ` (${x.n})` : ""}`).join(", ")}${sheet.unmatched.length > 12 ? "…" : ""}.`);
+      warnings.push(`${n} reuniones de la planilla no calzan con ninguna empresa del universo en HubSpot: se cuentan en Reuniones pero no en el funnel ni en los cálculos por empresa (revisa el nombre de la empresa): ${sheet.unmatched.slice(0, 12).map((x) => `${x.empresa}${x.n > 1 ? ` (${x.n})` : ""}`).join(", ")}${sheet.unmatched.length > 12 ? "…" : ""}.`);
     }
   } catch (e) {
     warnings.push((e as Error).message);
+  }
+
+  // Modo Cliente BullsEye: contacto con reunión = Reunión Agendada; empresa
+  // Lead (o sin etapa) = reunión → conversación → actividad → asignada
+  if (clientMode) {
+    const mtCt = new Set(meetings.map((m) => String(m.ct))), mtCo = new Set(meetings.map((m) => String(m.co)));
+    for (const k of contacts) if (mtCt.has(String(k.id))) k.st = "Reunión Agendada";
+    const coActs = new Set(act.activities.map((a) => String(a.co)));
+    const coEff = new Set(contacts.filter((k) => k.st === "Hacer Seguimiento" || k.st === "Reunión Agendada").map((k) => String(k.co)));
+    for (const c of companies) {
+      if (!pendingStage.has(String(c.id))) continue;
+      const id = String(c.id);
+      c.st = mtCo.has(id) ? "Reunión Agendada" : coEff.has(id) ? "En seguimiento" : coActs.has(id) ? "En gestión" : "Asignada";
+    }
+    warnings.push(`Modo "Cliente BullsEye": universo = empresas con "${uniCo!.label}" = ${uniValue} y sus contactos con "${uniCt!.label}" = ${uniValue}; etapa por ciclo de vida (Opportunity = en conversaciones, Customer = cliente) y por actividad.`);
   }
 
   // ── Score de Desempeño SDR (Allo) ─────────────────────────────────────
@@ -323,6 +381,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   });
   clientData.activities = act.activities;
   clientData.callEvals = callEvals;
+  if (meetingsTotal(settings, client.name)) clientData.meetingsTotal = true;
 
   const dataset: RadarDataset = {
     client: clientData,

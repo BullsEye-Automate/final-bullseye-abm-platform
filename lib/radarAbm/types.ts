@@ -59,6 +59,7 @@ export type RadarMeeting = {
   id: number | string;
   ct: number | string;
   ctn?: string;              // nombre del contacto en la planilla de reuniones
+  emp?: string;              // empresa tal como está en la planilla de reuniones
   cargo?: string;            // cargo del contacto (planilla)
   org?: string;              // origen de la reunión (planilla)
   pais?: string;             // país (planilla)
@@ -127,6 +128,7 @@ export type RadarClientData = {
   deals: RadarDeal[];
   activities?: RadarActivity[];
   callEvals?: RadarCallEval[];
+  meetingsTotal?: boolean;   // Reuniones = total de la planilla (no se recortan por filtros de empresa)
 };
 
 export type RadarSource = "demo" | "hubspot";

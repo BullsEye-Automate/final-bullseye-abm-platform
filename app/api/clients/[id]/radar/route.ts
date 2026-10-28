@@ -5,6 +5,9 @@ import { masterStatusFor } from "@/lib/radarAbm/server/masterClients";
 import { PROPERTY_DEFS } from "@/lib/radarAbm/dictionaries";
 import { loadClientSettings, loadSnapshot, saveClientSettings, type RadarClientSettings } from "@/lib/radarAbm/server/store";
 
+
+// Modo del universo (status / client) y propiedades del modo "Cliente BullsEye"
+const UNIVERSE_KEYS = ["universeMode", "universeCompanyClient", "universeContactClient", "meetingsTotal"];
 export const dynamic = "force-dynamic";
 
 // Pulso ABM — configuración del cliente (Configuración → Cliente → Pulso ABM):
@@ -40,7 +43,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       // internos válidos (letras, números y guion bajo)
       properties: Object.fromEntries(
         Object.entries((b.properties ?? {}) as Record<string, unknown>)
-          .filter(([k, v]) => PROPERTY_DEFS.some((d) => d.key === k) && typeof v === "string" && /^[a-z0-9_]+$/i.test(v.trim()))
+          .filter(([k, v]) => (PROPERTY_DEFS.some((d) => d.key === k) || UNIVERSE_KEYS.includes(k)) && typeof v === "string" && /^[a-z0-9_]+$/i.test(v.trim()))
           .map(([k, v]) => [k, (v as string).trim()])
       ),
     };
