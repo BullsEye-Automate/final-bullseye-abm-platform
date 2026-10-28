@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    return NextResponse.json({ sent: await sendDailySdrReport(cutFrom(req)), recipients: reportRecipients() });
+    return NextResponse.json({ sent: await sendDailySdrReport(cutFrom(req)), recipients: await reportRecipients() });
   } catch (err) {
     console.error("Error en POST /api/reporte-sdr:", err);
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });
