@@ -161,6 +161,20 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
           </label>
 
           <label className="text-sm">
+            <span className="label block mb-1">Cliente (titular de la cuenta)</span>
+            <input
+              className="input"
+              placeholder={clientName}
+              value={s.hubspot_client_value ?? ""}
+              onChange={(e) => setS({ ...s, hubspot_client_value: e.target.value || null })}
+            />
+            <span className="text-xs text-ink-subtle block mt-1">
+              Solo entran empresas con “Cliente BullsEye Empresa” y contactos con “Cliente BullsEye” = <b>{(s.hubspot_client_value ?? "").trim() || clientName}</b>
+              {s.hubspot_source === "client" ? " (si existen esas propiedades en el HubSpot del cliente)" : ""}. Vacío = nombre del cliente; se compara sin espacios (“Acid Labs” = “AcidLab”).
+            </span>
+          </label>
+
+          <label className="text-sm">
             <span className="label block mb-1">Reuniones con filtros de empresa</span>
             <select
               className="input"
