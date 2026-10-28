@@ -29,8 +29,9 @@
   background: var(--bg);
 }
 .ra-root * { box-sizing: border-box; }
-.ra-root h1, .ra-root h2, .ra-root h3, .ra-root h4 { margin: 0; letter-spacing: -.01em; }
-.ra-root button, .ra-root select, .ra-root input { font: inherit; color: inherit; }
+.ra-root h1:not(.ra-plain *), .ra-root h2:not(.ra-plain *), .ra-root h3:not(.ra-plain *), .ra-root h4:not(.ra-plain *) { margin: 0; letter-spacing: -.01em; }
+/* Solo los controles del informe: los módulos embebidos (.ra-plain, ej. la wishlist) conservan sus colores */
+.ra-root button:not(.ra-plain *), .ra-root select:not(.ra-plain *), .ra-root input:not(.ra-plain *) { font: inherit; color: inherit; }
 .ra-root .num, .ra-root td.n, .ra-root th.n { font-variant-numeric: tabular-nums; }
 .ra-root code { font-size: 11.5px; background: var(--panel-3); padding: 1px 5px; border-radius: 5px; }
 
@@ -188,6 +189,6 @@
 @media (prefers-reduced-motion: reduce) { .ra-root * { transition: none !important; } }
 
 /* Módulos de la app dentro del informe (wishlist, ICP, feedback): estilos propios */
-.ra-root .ra-plain { color: #1A1733; }
+.ra-root .ra-plain { color: #1A1733; font-family: inherit; }
 .ra-root .ra-plain-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
 .ra-root[data-theme=dark] .ra-plain-card { background: #fff; }
