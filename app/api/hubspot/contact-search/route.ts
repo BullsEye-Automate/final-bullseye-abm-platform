@@ -37,11 +37,9 @@ export async function GET(req: NextRequest) {
   // HubSpot limita a 3 filterGroups por request — hay que priorizar
   let filterGroups: object[];
   if (isEmail) {
-    // Email: EQ exacto + CONTAINS_TOKEN del usuario (parte antes del @)
-    const localPart = q.split("@")[0];
+    // Email: solo EQ exacto — el fallback por usuario local da falsos positivos
     filterGroups = [
       { filters: [{ propertyName: "email", operator: "EQ", value: q.toLowerCase() }] },
-      { filters: [{ propertyName: "email", operator: "CONTAINS_TOKEN", value: localPart }] },
     ];
   } else if (tokens.length >= 2) {
     // Nombre completo: priorizar combinación firstname+lastname
