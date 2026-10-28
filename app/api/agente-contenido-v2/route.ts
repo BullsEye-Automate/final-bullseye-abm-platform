@@ -18,7 +18,6 @@ function hsHeaders() {
 const MSG_TYPE_LABELS: Record<string, string> = {
   cold:          "primer contacto frío",
   no_contact:    "seguimiento tras no poder contactar por teléfono",
-  post_call:     "seguimiento post-llamada conectada",
   info:          "solicitud de más información",
   referral:      "contacto derivado por un conocido",
   meeting:       "confirmación de reunión agendada",
@@ -138,7 +137,6 @@ function buildSystemPrompt(
 
   const typeInstructions: Record<string, string> = {
     no_contact:    `\n\nEste mensaje es para alguien que el SDR no logró contactar por teléfono. Reconoce que se intentó llamar, menciona brevemente el motivo del contacto, y ofrece otra forma de conectarse (correo, LinkedIn, WhatsApp).`,
-    post_call:     `\n\nEste mensaje es post-llamada conectada. Retoma lo conversado en la llamada, avanza el siguiente paso acordado, y refuerza el valor propuesto de forma personalizada.`,
     meeting_brief: `\n\nGenera una previa de reunión (briefing interno) CONCISA para quien va a reunirse con este contacto. Máximo 220 palabras en total. Exactamente 4 secciones: 1) Contexto rápido (quién es, empresa, cargo, datos relevantes), 2) Fit con nuestro ICP (2-3 razones concretas), 3) Ángulo de entrada (1-2 pain points probables + cómo conectarlos con nuestra propuesta de valor), 4) Dato clave para la reunión (algo específico para personalizar la conversación: un logro, una señal, una objeción previsible). Tono ejecutivo. Sin relleno.`,
     meeting:       `\n\nConfirma la fecha y hora de la reunión. Recuerda brevemente la propuesta de valor y enmarca la reunión como una conversación exploratoria.`,
   };

@@ -7,14 +7,13 @@ import {
   IconArrowLeft,
 } from "@tabler/icons-react";
 
-type EmailType = "cold" | "no_contact" | "post_call" | "info" | "referral" | "meeting" | "meeting_brief";
+type EmailType = "cold" | "no_contact" | "info" | "referral" | "meeting" | "meeting_brief";
 type Channel   = "email" | "whatsapp" | "linkedin" | "meeting_brief";
 type Message   = { role: "user" | "assistant"; content: string; imagePreview?: string; channel?: Channel };
 
 const MSG_TYPE_LABELS: Record<EmailType, string> = {
   cold:          "Primer contacto",
   no_contact:    "Sin contacto telefónico",
-  post_call:     "Post-llamada",
   info:          "Más información",
   referral:      "Derivación / Referido",
   meeting:       "Confirmación de reunión",
@@ -24,7 +23,6 @@ const MSG_TYPE_LABELS: Record<EmailType, string> = {
 const MSG_TYPE_DESCRIPTIONS: Record<EmailType, string> = {
   cold:          "Sin conversación previa",
   no_contact:    "SDR intentó llamar, no contestó",
-  post_call:     "Tras llamada conectada",
   info:          "El prospecto pidió más información",
   referral:      "Un conocido los refirió",
   meeting:       "Reunión ya agendada",
