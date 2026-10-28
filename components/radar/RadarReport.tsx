@@ -308,7 +308,7 @@ export default function RadarReport({
         )}
         {range && (
           <div className="ra-banner info">
-            Fechas: {range.label}. Reuniones (agendadas o realizadas), actividades y negocios se cuentan solo dentro de ese rango; el status de empresas y contactos es el actual.
+            Fechas: {range.label}. Reuniones (por fecha de la reunión, como el Excel de metas), actividades y negocios se cuentan solo dentro de ese rango; el status de empresas y contactos es el actual.
             {dataset.source === "demo" && " En datos demo las actividades por contacto no tienen fecha y no se recortan."}
           </div>
         )}
