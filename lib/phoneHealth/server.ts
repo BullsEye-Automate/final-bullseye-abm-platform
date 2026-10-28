@@ -95,7 +95,9 @@ export async function buildPhoneHealthReport(today = chileToday()): Promise<Phon
   // golpe). En ese caso se muestran los datos pero NO se envían alertas.
   let dataWarning: string | null = null;
   if (connectedIds === null) {
-    dataWarning = "La clasificación de conversaciones de Allo falló; se usó una aproximación por duración.";
+    dataWarning =
+      "Allo no entregó su clasificación de conversaciones; se usa una aproximación (llamadas contestadas de 60 s o más). " +
+      "Como cada número se compara con su propia base medida igual, las caídas siguen siendo válidas.";
   } else if (totalDials >= 200 && totalHuman === 0) {
     dataWarning = `Allo no devolvió ninguna conversación para ${totalDials} llamadas: probable falla de la API. Alertas suspendidas hasta que se normalice.`;
   }
