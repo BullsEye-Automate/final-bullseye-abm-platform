@@ -177,9 +177,11 @@ export async function runPhoneAlerts(opts: { cron: boolean; to?: string[]; today
     const monday = dow(today) === 1;
     shouldSend = monday || diff.newAlerts.length > 0 || diff.resolved.length > 0;
     reason = monday ? "Resumen semanal (lunes)" : shouldSend ? "Hay alertas nuevas o resueltas" : "Sin cambios desde ayer";
-    await saveAlertState(report, state, diff);
   }
-  if (!shouldSend) return result(false, reason);
+  if (!shouldSend) {
+    if (opts.cron) await saveAlertState(report, state, diff);
+    return result(false, reason);
+  }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://portal.bullseye-abm.com";
   const { subject, html } = buildAlertEmail(report, diff, appUrl);
@@ -188,5 +190,8 @@ export async function runPhoneAlerts(opts: { cron: boolean; to?: string[]; today
     process.env.CELULAS_ALERTS_FROM ||
     (mailProvider() === "resend" ? "onboarding@resend.dev" : "ihincapie@bullseye-abm.com");
   await sendMail({ from, fromName: "BullsEye · Alertas de números", to, subject, html });
+  // El estado se guarda solo después de un envío exitoso: si el correo
+  // falla, las alertas nuevas se vuelven a avisar en la próxima ejecución.
+  if (opts.cron) await saveAlertState(report, state, diff);
   return result(true, reason);
 }
