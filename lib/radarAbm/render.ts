@@ -94,10 +94,27 @@ export const LEADS: Record<string, string> = {
 type BarItem = { l: string; v: number; c?: string; r?: string | null; tip?: string };
 // Cobertura de una industria a la vez: desplegable + panel por industria
 // (RadarReport alterna los paneles con el atributo data-ra-pick)
-function industryPicker(rows: any[]) {
+// Lista de empresas que se abre al hacer clic (funnel, descartadas, cobertura)
+function coListHtml(A: any[]) {
+  return table([
+    { h: "Empresa", f: (c) => esc(c.n) }, { h: "Status", s: 1, f: (c) => esc(c.st) }, { h: "SDR", s: 1, f: (c) => esc(c.sdr) },
+    { h: "Contactos efectivos", n: 1, f: (c) => c.effK.length }, { h: "R. agendadas", n: 1, f: (c) => c.M.length }, { h: "R. realizadas", n: 1, f: (c) => c.mheld || 0 },
+    { h: "Última reunión", f: (c) => dmy(c.M.reduce((m: string, x: any) => (x.fecha > m ? x.fecha : m), "") || null) },
+  ], [...A].sort((a, b) => b.M.length - a.M.length || a.n.localeCompare(b.n)).slice(0, 500)) + (A.length > 500 ? `<p class="note">Se muestran 500 de ${N(A.length)}; la lista completa está en Tablas maestras.</p>` : "");
+}
+// Botones "Ver …" + listas ocultas (los alterna RadarReport: data-ra-stage / data-ra-stage-list dentro de la .rcard)
+function companyLists(prefix: string, groups: { l: string; A: any[] }[]) {
+  const g = groups.filter((x) => x.A.length);
+  if (!g.length) return "";
+  return `<div class="ra-lists">${g.map((x, i) => `<button type="button" class="ra-link" data-ra-stage="${prefix}${i}">Ver ${esc(x.l.toLowerCase())} (${N(x.A.length)})</button>`).join("")}</div>`
+    + g.map((x, i) => `<div class="fco-list" data-ra-stage-list="${prefix}${i}" hidden><h4>${esc(x.l)} · ${N(x.A.length)} empresas</h4>${coListHtml(x.A)}</div>`).join("");
+}
+
+function industryPicker(rows: any[], companiesOf?: (key: string) => any[]) {
   if (!rows.length) return `<p class="note">Sin información disponible.</p>`;
   const panel = (x: any, i: number) => `<div data-ra-panel="${i}"${i ? " hidden" : ""}>
     ${stack([{ l: "Trabajadas", v: x.worked, c: "var(--accent)" }, { l: "Asignadas sin gestión", v: x.co - x.worked, c: "var(--g-pend)" }])}
+    ${companiesOf ? ((A: any[]) => companyLists(`ci${i}-`, [{ l: "Trabajadas", A: A.filter((c) => c.worked) }, { l: "Asignadas sin gestión", A: A.filter((c) => !c.worked) }]))(companiesOf(x.key)) : ""}
     <div class="tiles" style="margin-top:12px">${tile("Cobertura", P(x.cov), `${N(x.worked)} de ${N(x.co)} empresas trabajadas`)}${tile("Con reunión", N(x.coMt), `${N(x.mt)} reuniones`)}${tile("Contactabilidad", P(x.cr), `${N(x.eff)} contactos efectivos`)}</div></div>`;
   return `<select class="ra-select" data-ra-pick aria-label="Industria" style="margin-bottom:12px">${rows.map((x, i) => `<option value="${i}">${esc(x.key)} (${N(x.co)})</option>`).join("")}</select>${rows.map(panel).join("")}`;
 }
@@ -234,8 +251,9 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   const covInd = segCo(M, (c) => c.ind || "Sin industria");
   s.cobertura = `<div class="grid2"><div class="rcard"><h4>Universo de cuentas</h4>${stack([{ l: "Trabajadas", v: k.worked, c: "var(--accent)" }, { l: "Asignadas sin gestión", v: k.universe - k.worked, c: "var(--g-pend)" }])}
+    ${companyLists("cu", [{ l: "Trabajadas", A: C.filter((c) => c.worked) }, { l: "Asignadas sin gestión", A: C.filter((c) => !c.worked) }])}
     <p class="note">Cuenta trabajada = empresa con estado distinto de "Asignada". Empresas asignadas hace más de 30 días sin gestión: <b>${N(cnt(C, (c) => c.st === "Asignada" && c.asg < d30))}</b>.</p></div>
-    <div class="rcard"><h4>Cobertura por industria</h4>${industryPicker(covInd)}</div></div>`;
+    <div class="rcard"><h4>Cobertura por industria</h4>${industryPicker(covInd, (key) => C.filter((c) => (c.ind || "Sin industria") === key))}</div></div>`;
 
   const depthOrder = ["Profunda", "Multi-thread", "Single-thread", "Sin contacto efectivo"], depthC: Record<string, string> = { "Profunda": "var(--g-int)", "Multi-thread": "var(--s1)", "Single-thread": "var(--g-disp)", "Sin contacto efectivo": "var(--g-pend)" };
   const qualWorked = M.worked.filter((c: any) => c.st !== "No califica");
@@ -274,11 +292,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     const left = Object.entries(by(fsteps[i].set.filter((c: any) => !next.has(c)), (c: any) => c.st)).sort((a, b) => b[1].length - a[1].length);
     return left.length ? `<div class="fstay">Se quedan aquí: ${left.map(([st, A]) => `<span><i style="background:${stColor(A[0])}"></i>${esc(st)} <b>${N(A.length)}</b></span>`).join("")}</div>` : "";
   };
-  const coList = (A: any[]) => table([
-    { h: "Empresa", f: (c) => esc(c.n) }, { h: "Status", s: 1, f: (c) => esc(c.st) }, { h: "SDR", s: 1, f: (c) => esc(c.sdr) },
-    { h: "Contactos efectivos", n: 1, f: (c) => c.effK.length }, { h: "R. agendadas", n: 1, f: (c) => c.M.length }, { h: "R. realizadas", n: 1, f: (c) => c.mheld || 0 },
-    { h: "Última reunión", f: (c) => dmy(c.M.reduce((m: string, x: any) => (x.fecha > m ? x.fecha : m), "") || null) },
-  ], [...A].sort((a, b) => b.M.length - a.M.length || a.n.localeCompare(b.n)).slice(0, 500)) + (A.length > 500 ? `<p class="note">Se muestran 500 de ${N(A.length)}; la lista completa está en Tablas maestras.</p>` : "");
+  const coList = coListHtml;
   const money = M.pipe ? `<div class="fconv" style="height:6px;padding:0"></div><div class="fst"><div class="fbar" style="width:60%;background:var(--good)" data-tip="Pipeline / negocio: ${M.pipe.n} negocios registrados"><span>Pipeline / negocio<small>${M.pipe.n} negocios registrados</small></span><b>${USD(M.pipe.open + M.pipe.won)}</b></div></div>` : "";
   s.funnel = `<div class="rcard"><div class="fun">${fsteps.map((st, i) => {
     const v = st.set.length, prev = i ? fsteps[i - 1].set.length : null;
