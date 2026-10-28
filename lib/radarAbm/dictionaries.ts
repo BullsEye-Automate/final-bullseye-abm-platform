@@ -145,6 +145,8 @@ export const PROPERTY_DEFS: {
   { key: "companyStatus", object: "companies", label: "Status de la asignación - <cliente>", required: true, help: "Estado de gestión de la cuenta (una propiedad por cliente)", perClient: { labelPrefix: "Status de la asignación", namePrefix: "status_de_la_asignacion" } },
   { key: "companyClient", object: "companies", label: "Cliente BullsEye", help: "Opcional: filtro adicional del universo" },
   { key: "companySdr", object: "companies", label: "SDR - <cliente>", help: "SDR de la cuenta (una por cliente; sin ella, el propietario)", perClient: { labelPrefix: "SDR -" } },
+  { key: "universeCompanyClient", object: "companies", label: "Cliente BullsEye Empresa", help: "Titular de la cuenta (empresa): solo entran las empresas de este cliente", perClient: { labelPrefix: "Cliente BullsEye" } },
+  { key: "universeContactClient", object: "contacts", label: "Cliente BullsEye", help: "Titular de la cuenta (contacto): solo entran los contactos de este cliente", perClient: { labelPrefix: "Cliente BullsEye" } },
   { key: "companyWishlist", object: "companies", label: "Wish List - <cliente>", help: "Empresas de la wishlist del cliente (una por cliente; filtro del informe)", perClient: { labelPrefix: "Wish List" } },
   { key: "companyAssignedAt", object: "companies", label: "Fecha de asignación", help: "Sin ella se usa la fecha de creación" },
   { key: "companyNextFollowUp", object: "companies", label: "Fecha de próximo seguimiento", help: "Empresas en seguimiento o por retomar" },
