@@ -111,7 +111,9 @@ export function detectProperties(configured: Record<string, string>, catalog: Pr
         // La del cliente por nombre; una única propiedad genérica (sin
         // sufijo de cliente) sirve para todos
         prop = (clientName ? matchClientProperty(cands, labelPrefix, clientName) : undefined)
-          ?? (cands.length === 1 && !clientSuffix(cands[0].label, labelPrefix) ? cands[0] : undefined);
+          // Sin propiedad con el nombre del cliente: la genérica, si hay una sola
+          // (HubSpot propio del cliente: "Status de la asignación - SDR")
+          ?? ((g) => (g.length === 1 ? g[0] : undefined))(cands.filter((p) => !clientSuffix(p.label, labelPrefix)));
       }
     } else if (!prop && !manual) {
       const target = normLabel(def.label);
