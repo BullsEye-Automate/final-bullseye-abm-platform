@@ -415,6 +415,7 @@ export function recsCli(M: Model) {
 // rango), actividades y negocios; los status de empresas y contactos son los
 // actuales, porque el snapshot no guarda su historia.
 export const NO_IND = "Sin industria";
+const normName = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 export const NO_WL = "Fuera de la wishlist";
 export type RadarFilter = { sdr?: string; pais?: string; ind?: string; wl?: string; from?: string; to?: string };
 
@@ -422,7 +423,7 @@ export function filterDataset(ds: RadarDataset, f: RadarFilter): RadarDataset {
   const byCo = !!(f.sdr || f.pais || f.ind || f.wl);
   const byDate = !!(f.from && f.to);
   if (!byCo && !byDate) return ds;
-  let { companies, contacts, meetings, deals, activities } = ds.client;
+  let { companies, contacts, meetings, deals, activities, callEvals } = ds.client;
   if (byCo) {
     companies = companies.filter((c) => (!f.sdr || c.sdr === f.sdr) && (!f.pais || c.pais === f.pais) && (!f.ind || (c.ind || NO_IND) === f.ind) && (!f.wl || (c.wl || NO_WL) === f.wl));
     const ids = new Set(companies.map((c) => String(c.id)));
@@ -440,6 +441,7 @@ export function filterDataset(ds: RadarDataset, f: RadarFilter): RadarDataset {
     const inR = (d?: string | null) => !!d && d >= from && d <= to;
     meetings = meetings.filter((m) => inR(m.agendada) || inR(m.fecha));
     deals = deals.filter((d) => inR(d.created));
+    if (callEvals) callEvals = callEvals.filter((e) => inR(e.d));
     if (activities) {
       // Conteos por contacto con las actividades del rango (igual que el sync)
       activities = activities.filter((a) => inR(a.d));
@@ -470,6 +472,7 @@ export function filterDataset(ds: RadarDataset, f: RadarFilter): RadarDataset {
       ...(byCo ? { universe: companies.length, sdrs: f.sdr ? [f.sdr] : ds.client.sdrs } : {}),
       companies, contacts, meetings, deals,
       ...(activities ? { activities } : {}),
+      ...(callEvals ? { callEvals: f.sdr ? callEvals.filter((e) => normName(e.s) === normName(f.sdr!)) : callEvals } : {}),
     },
   };
 }

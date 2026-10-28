@@ -3,12 +3,14 @@ import { fetchHSOwners } from "@/lib/hubspot";
 import { chileToday } from "@/lib/celulasSdr/calendar";
 import { CO_ORDER, CT_ORDER, EXCLUDE } from "../dictionaries";
 import { deriveClientData, type FlatCompany, type FlatContact } from "../derive";
-import type { RadarActivity, RadarDataset, RadarDeal, RadarMeeting } from "../types";
+import type { RadarActivity, RadarCallEval, RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { loadActivities } from "./activities";
 import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot } from "./store";
 import { checkClientActive } from "./masterClients";
 import { loadSheetMeetings } from "./sheetMeetings";
+import { loadAlloMonth } from "@/lib/celulasSdr/server/allo";
+import { periodMonths } from "../engine";
 
 // Pulso ABM — sincronización de un cliente desde HubSpot (§3).
 // Empresas del universo del cliente (propiedad "Cliente BullsEye", o todas
@@ -269,6 +271,25 @@ export async function syncClientRadar(clientId: string, by: string) {
     warnings.push((e as Error).message);
   }
 
+  // ── Score de Desempeño SDR (Allo) ─────────────────────────────────────
+  // Llamadas evaluadas por la IA de Allo en los números asignados al cliente
+  // (Configuración → Cliente → Allo). Usa el mismo caché mensual de Células
+  // SDR; con tope de tiempo para no comerse el sync.
+  const callEvals: RadarCallEval[] = [];
+  try {
+    const deadline = Date.now() + 120_000;
+    for (const month of periodMonths([start, today], today)) {
+      if (Date.now() > deadline) { warnings.push("Score SDR (Allo): se cortó por tiempo; faltan meses (vuelve a sincronizar)."); break; }
+      const r = await loadAlloMonth(month);
+      for (const e of r.evals) {
+        if (e.c !== clientId) continue;
+        callEvals.push({ d: e.d, s: r.sdrNames[e.s] ?? e.s, score: e.score, crit: e.crit, ...(e.nivel ? { nivel: e.nivel } : {}) });
+      }
+    }
+  } catch (e) {
+    warnings.push(`Score SDR (Allo): ${(e as Error).message}`);
+  }
+
   // ── Negocios ───────────────────────────────────────────────────────────
   let deals: RadarDeal[] = [];
   try {
@@ -301,6 +322,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     companies, contacts, meetings, deals, cfg, today,
   });
   clientData.activities = act.activities;
+  clientData.callEvals = callEvals;
 
   const dataset: RadarDataset = {
     client: clientData,

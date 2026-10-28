@@ -1,6 +1,7 @@
-import WishlistWorkspace from "@/components/wishlist/WishlistWorkspace";
+import { redirect } from "next/navigation";
 
-// Wishlist del cliente en su portal (la misma pantalla usa el equipo BullsEye en Empresas)
+// La wishlist ahora vive en Pulso ABM → Cuentas objetivo (se conserva la
+// ruta para links ya compartidos)
 export default function PortalWishlistPage() {
-  return <WishlistWorkspace />;
+  redirect("/portal/radar?vista=cuentas-objetivo");
 }

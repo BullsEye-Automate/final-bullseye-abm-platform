@@ -5,17 +5,16 @@ import { usePathname, useSearchParams } from "next/navigation";
 import {
   IconHome,
   IconTargetArrow,
-  IconBuildingStore,
   IconUserCircle,
 } from "@tabler/icons-react";
 import PortalLogoutButton from "./PortalLogoutButton";
-import { PARTS, PART_SLUGS } from "@/lib/radarAbm/render";
+import { INTERNAL_PARTS, PARTS, PART_SLUGS, partIndex } from "@/lib/radarAbm/render";
 import { PART_ICONS } from "@/components/radar/partIcons";
 
 // Layout del portal de clientes: barra lateral con el mismo lenguaje del
-// sidebar interno de BullsEye (#251762 / #62E0D8). "Mi cuenta" agrupa ICP y
-// wishlist; "Pulso ABM" lista las vistas del informe (sin el anexo de
-// validación de datos, que es solo interno).
+// sidebar interno de BullsEye (#251762 / #62E0D8). "Mi cuenta" = inicio y
+// ICP; "Pulso ABM" lista las vistas del informe (la wishlist es "Cuentas
+// objetivo"; sin las vistas solo internas: inteligencia y anexo).
 
 type NavItem = { href: string; label: string; icon: typeof IconHome; active: boolean };
 
@@ -32,15 +31,14 @@ export default function PortalShell({
 }) {
   const pathname = usePathname() ?? "";
   const params = useSearchParams();
-  const vista = params?.get("vista") ?? PART_SLUGS[0];
+  const vista = PART_SLUGS[partIndex(params?.get("vista"))];
 
   const account: NavItem[] = [
     { href: "/portal", label: "Inicio", icon: IconHome, active: pathname === "/portal" },
     { href: "/portal/icp", label: "ICP y buyer persona", icon: IconTargetArrow, active: pathname.startsWith("/portal/icp") },
-    { href: "/portal/wishlist", label: "Wishlist de empresas", icon: IconBuildingStore, active: pathname.startsWith("/portal/wishlist") },
   ];
   const radar: NavItem[] = PARTS.map((p, i) => ({ p, i }))
-    .filter(({ p }) => p[0] !== "A")
+    .filter(({ i }) => !INTERNAL_PARTS.has(PART_SLUGS[i]))
     .map(({ p, i }) => ({
       href: `/portal/radar?vista=${PART_SLUGS[i]}`,
       label: p[1],

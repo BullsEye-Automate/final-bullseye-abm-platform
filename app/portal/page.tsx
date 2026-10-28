@@ -30,7 +30,7 @@ export default async function PortalHomePage() {
         Hola{firstName ? `, ${firstName}` : ""} 👋
       </h1>
       <p className="text-sm text-gray-500 mt-1 mb-6">
-        Este es el portal de {user.clientName} en BullsEye: el estado de tus cuentas objetivo, tu ICP y tu wishlist de empresas.
+        Este es el portal de {user.clientName} en BullsEye: el estado de tus cuentas objetivo, tu ICP y las empresas que quieres trabajar.
       </p>
 
       {radar ? (
@@ -61,8 +61,8 @@ export default async function PortalHomePage() {
           badge={pendingIcp ? `${pendingIcp} propuesta${pendingIcp > 1 ? "s" : ""} en revisión` : undefined}
         />
         <Card
-          href="/portal/wishlist"
-          title="Wishlist de empresas"
+          href="/portal/radar?vista=cuentas-objetivo"
+          title="Cuentas objetivo"
           body="Aprueba las empresas que te propone BullsEye, busca empresas con filtros y arma tu wishlist."
           badge={
             proposals

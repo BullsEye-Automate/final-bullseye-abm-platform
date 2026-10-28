@@ -153,7 +153,7 @@ export default function RadarAbmPage() {
           {loading && !data ? (
             <div className="ra-empty"><IconLoader2 size={18} className="animate-spin" /> Cargando…</div>
           ) : data?.dataset ? (
-            <RadarReport dataset={data.dataset} config={data.config ?? DEFAULT_CONFIG} view={view} onView={changeView} audience="internal" actions={actions} />
+            <RadarReport dataset={data.dataset} config={data.config ?? DEFAULT_CONFIG} view={view} onView={changeView} audience="internal" actions={actions} clientId={clientId} />
           ) : data ? (
             <div className="ra-empty">
               <b style={{ color: "var(--ink)" }}>{currentClient?.name} todavía no tiene datos sincronizados.</b>

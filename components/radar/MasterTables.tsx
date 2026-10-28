@@ -11,7 +11,7 @@ import { LEADS, companyStatusLabel, masterCompanyCols, masterContactCols, table 
 
 const PAGE = 50;
 
-export default function MasterTables({ M }: { M: Model }) {
+export default function MasterTables({ M, numbers }: { M: Model; numbers?: (number | string)[] }) {
   const clientName: string = M.cl.name;
   const coCols = useMemo(() => masterCompanyCols(M), [M]);
   const ctCols = useMemo(() => masterContactCols(M), [M]);
@@ -60,7 +60,7 @@ export default function MasterTables({ M }: { M: Model }) {
   return (
     <>
       <section className="s" id="tm-emp">
-        <div className="s-h"><span className="no">§33</span><h3>Tabla maestra de empresas</h3></div>
+        <div className="s-h"><span className="no">§{numbers?.[0] ?? 40}</span><h3>Tabla maestra de empresas</h3></div>
         <p className="lead">{LEADS["tm-emp"]}</p>
         <div className="tools">
           <input type="search" value={qE} onChange={(e) => { setQE(e.target.value); setLimE(PAGE); }} placeholder="Buscar empresa, industria, SDR…" aria-label="Buscar empresas" />
@@ -81,7 +81,7 @@ export default function MasterTables({ M }: { M: Model }) {
         )}
       </section>
       <section className="s" id="tm-ct">
-        <div className="s-h"><span className="no">§34</span><h3>Tabla maestra de contactos</h3></div>
+        <div className="s-h"><span className="no">§{numbers?.[1] ?? 41}</span><h3>Tabla maestra de contactos</h3></div>
         <p className="lead">{LEADS["tm-ct"]}</p>
         <div className="tools">
           <input type="search" value={qC} onChange={(e) => { setQC(e.target.value); setLimC(PAGE); }} placeholder="Buscar contacto, empresa, cargo…" aria-label="Buscar contactos" />

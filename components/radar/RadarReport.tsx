@@ -4,9 +4,12 @@ import "./radar.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconAlertTriangle, IconArrowLeft, IconArrowRight, IconMoon, IconSun } from "@tabler/icons-react";
 import { addDays, compute, dmy, filterDataset, mondayOf, N, NO_IND, NO_WL, periodMonths } from "@/lib/radarAbm/engine";
-import { LEADS, PARTS, render, sec } from "@/lib/radarAbm/render";
+import { INTERNAL_PARTS, LEADS, PARTS, PART_SLUGS, REACT_SECTIONS, render, sec } from "@/lib/radarAbm/render";
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import MasterTables from "./MasterTables";
+import WishlistWorkspace from "@/components/wishlist/WishlistWorkspace";
+import IcpPanel from "./IcpPanel";
+import FeedbackPanel from "./FeedbackPanel";
 
 // Informe Pulso ABM de un cliente (una vista = una parte del informe, con
 // sus secciones numeradas). Lo usan la vista interna (Análisis → Pulso ABM)
@@ -17,7 +20,8 @@ import MasterTables from "./MasterTables";
 export type RadarAudience = "internal" | "portal";
 
 // Partes visibles: el anexo de validación de datos es solo interno
-export const visibleParts = (audience: RadarAudience) => PARTS.map((_, i) => i).filter((i) => audience === "internal" || PARTS[i][0] !== "A");
+// Partes visibles: el anexo de validación de datos y la inteligencia (KAM) son solo internos
+export const visibleParts = (audience: RadarAudience) => PARTS.map((_, i) => i).filter((i) => audience === "internal" || !INTERNAL_PARTS.has(PART_SLUGS[i]));
 
 const MONTHS_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 function periodLabel(ds: RadarDataset) {
@@ -45,6 +49,7 @@ export default function RadarReport({
   onView,
   audience,
   actions,
+  clientId,
 }: {
   dataset: RadarDataset;
   config: RadarConfig;
@@ -52,6 +57,7 @@ export default function RadarReport({
   onView: (v: number) => void;
   audience: RadarAudience;
   actions?: React.ReactNode;
+  clientId?: string | null;            // vista interna: cliente para la wishlist, el ICP y el feedback
 }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [sdr, setSdr] = useState("");
@@ -176,10 +182,27 @@ export default function RadarReport({
   }
 
   const cl = dataset.client;
-  const html = useMemo(() => {
-    if (pn === "XII") return "";
-    return items.map(([no, id, title]) => sec(no, id, title, LEADS[id] || "", secs[id] || "")).join("");
-  }, [pn, items, secs]);
+  // Bloques de la vista: secciones en HTML generado (juntas) y secciones que
+  // arma React (wishlist, ICP, feedback), en el orden de PARTS
+  const blocks = useMemo(() => {
+    const out: ({ html: string } | { react: string; no: number | string; title: string })[] = [];
+    for (const [no, id, title] of items) {
+      if (REACT_SECTIONS.has(id)) { out.push({ react: id, no, title }); continue; }
+      const h = sec(no, id, title, LEADS[id] || "", secs[id] || "");
+      const last = out[out.length - 1];
+      if (last && "html" in last) last.html += h; else out.push({ html: h });
+    }
+    return out;
+  }, [items, secs]);
+  const reactSection = (id: string) => {
+    if (id === "wishlist") {
+      if (audience === "internal" && !clientId) return <div className="ra-plain-card text-sm text-gray-600">Elige un cliente para ver su wishlist.</div>;
+      return <div className="ra-plain-card"><WishlistWorkspace key={clientId ?? "portal"} operatorClientId={audience === "internal" ? clientId ?? undefined : undefined} /></div>;
+    }
+    if (id === "icp-vigente") return <IcpPanel audience={audience} clientId={clientId} />;
+    if (id === "feedback-form") return <FeedbackPanel audience={audience} clientId={clientId} />;
+    return null;
+  };
 
   return (
     <div className="ra-root" data-theme={theme} ref={rootRef} onMouseMove={onMove} onMouseLeave={() => tipRef.current && (tipRef.current.style.opacity = "0")}>
@@ -291,7 +314,15 @@ export default function RadarReport({
         )}
       </header>
 
-      {pn === "XII" ? <MasterTables M={M} /> : <div dangerouslySetInnerHTML={{ __html: html }} />}
+      {pn === "XII" ? <MasterTables M={M} numbers={items.map((x) => x[0])} /> : blocks.map((b, i) => "html" in b
+        ? <div key={i} dangerouslySetInnerHTML={{ __html: b.html }} />
+        : (
+          <section key={i} className="s" id={b.react}>
+            <div className="s-h"><span className="no">§{b.no}</span><h3>{b.title}</h3></div>
+            {LEADS[b.react] && <p className="lead">{LEADS[b.react]}</p>}
+            <div className="body ra-plain">{reactSection(b.react)}</div>
+          </section>
+        ))}
 
       <div className="ra-pager">
         {prev != null ? (
