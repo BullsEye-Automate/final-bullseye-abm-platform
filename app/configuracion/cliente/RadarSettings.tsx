@@ -25,7 +25,15 @@ const PER_CLIENT: [string, string, boolean][] = [
   ["companySdr", "SDR de la empresa", false],
   ["contactSdr", "SDR del contacto", false],
   ["companyWishlist", "Wish List de la empresa", false],
+  ["universeCompanyClient", "Cliente de la empresa (titular)", false],
+  ["universeContactClient", "Cliente del contacto (titular)", false],
 ];
+// Sin elegir: qué usa el sync por defecto
+const DEFAULT_AUTO: Record<string, string> = {
+  companyWishlist: "sin wishlist",
+  universeCompanyClient: "Cliente BullsEye Empresa (cliente_bullseye_empresa)",
+  universeContactClient: "Cliente BullsEye (cliente_bullseye)",
+};
 
 const tri = (v: boolean | null) => (v === true ? "si" : v === false ? "no" : "auto");
 const fromTri = (v: string) => (v === "si" ? true : v === "no" ? false : null);
@@ -161,7 +169,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
           </label>
 
           <label className="text-sm">
-            <span className="label block mb-1">Cliente (titular de la cuenta)</span>
+            <span className="label block mb-1">Valor del cliente (titular de la cuenta)</span>
             <input
               className="input"
               placeholder={clientName}
@@ -206,9 +214,9 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
                       }}
                     >
                       <option value="">
-                        Automático{info ? `: ${info.auto ?? (required ? "sin coincidencia, elige una" : key === "companyWishlist" ? "sin wishlist" : "propietario del registro")}` : ""}
+                        Automático{info || DEFAULT_AUTO[key] ? `: ${(DEFAULT_AUTO[key] && key !== "companyWishlist" ? DEFAULT_AUTO[key] : info?.auto) ?? (required ? "sin coincidencia, elige una" : DEFAULT_AUTO[key] ?? "propietario del registro")}` : ""}
                       </option>
-                      {(info?.candidates ?? []).map((o) => <option key={o.name} value={o.name}>{o.label}</option>)}
+                      {(info?.candidates ?? []).map((o) => <option key={o.name} value={o.name}>{key.startsWith("universe") ? `${o.label} (${o.name})` : o.label}</option>)}
                     </select>
                   </label>
                 );

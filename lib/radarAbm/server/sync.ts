@@ -142,7 +142,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   }
   for (const d of detected) if (d.manual && !d.found) warnings.push(`El nombre interno "${d.property}" de "${d.label}" no existe${where}.`);
   // Sin SDR por cliente se usa el propietario del registro: no es un aviso
-  for (const d of detected) if (!d.property && !d.required && !["companyClient", "companySdr", "contactSdr", "companyWishlist"].includes(d.key) && d.object !== "meetings") warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
+  for (const d of detected) if (!d.property && !d.required && !["companyClient", "companySdr", "contactSdr", "companyWishlist", "universeCompanyClient", "universeContactClient"].includes(d.key) && d.object !== "meetings") warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
 
   // ── Universo de empresas ───────────────────────────────────────────────
   // Empresas con la propiedad de status del cliente con algún valor. Si se
