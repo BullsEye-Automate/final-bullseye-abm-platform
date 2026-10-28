@@ -145,6 +145,7 @@ export const PROPERTY_DEFS: {
   { key: "companyStatus", object: "companies", label: "Status de la asignación - <cliente>", required: true, help: "Estado de gestión de la cuenta (una propiedad por cliente)", perClient: { labelPrefix: "Status de la asignación", namePrefix: "status_de_la_asignacion" } },
   { key: "companyClient", object: "companies", label: "Cliente BullsEye", help: "Opcional: filtro adicional del universo" },
   { key: "companySdr", object: "companies", label: "SDR - <cliente>", help: "SDR de la cuenta (una por cliente; sin ella, el propietario)", perClient: { labelPrefix: "SDR -" } },
+  { key: "companyWishlist", object: "companies", label: "Wish List - <cliente>", help: "Empresas de la wishlist del cliente (una por cliente; filtro del informe)", perClient: { labelPrefix: "Wish List" } },
   { key: "companyAssignedAt", object: "companies", label: "Fecha de asignación", help: "Sin ella se usa la fecha de creación" },
   { key: "companyNextFollowUp", object: "companies", label: "Fecha de próximo seguimiento", help: "Empresas en seguimiento o por retomar" },
   { key: "companyIcpTier", object: "companies", label: "Tier ICP", help: "A / B / C (propuesta, Anexo A4)" },
@@ -157,6 +158,9 @@ export const PROPERTY_DEFS: {
   { key: "meetingFeedback", object: "meetings", label: "Feedback del cliente", help: "Propuesta (Anexo A4)" },
   { key: "meetingNeed", object: "meetings", label: "Necesidad", help: "Necesidad detectada en la reunión" },
 ];
+
+// Claves que se eligen por cliente (nunca salen del mapeo global)
+export const PER_CLIENT_KEYS = PROPERTY_DEFS.filter((d) => d.perClient).map((d) => d.key);
 
 // ── "La Biblia" BullsEye (docs/radar-abm/biblia-propiedades-*.csv) ───────
 // Equivalencias: etiquetas antiguas o propias de un cliente que siguen vivas

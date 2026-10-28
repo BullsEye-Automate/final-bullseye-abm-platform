@@ -104,7 +104,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   }
   for (const d of detected) if (d.manual && !d.found) warnings.push(`El nombre interno "${d.property}" de "${d.label}" no existe${where}.`);
   // Sin SDR por cliente se usa el propietario del registro: no es un aviso
-  for (const d of detected) if (!d.property && !d.required && !["companyClient", "companySdr", "contactSdr"].includes(d.key)) warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
+  for (const d of detected) if (!d.property && !d.required && !["companyClient", "companySdr", "contactSdr", "companyWishlist"].includes(d.key)) warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
 
   // ── Universo de empresas ───────────────────────────────────────────────
   // Empresas con la propiedad de status del cliente con algún valor. Si se
@@ -123,7 +123,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const countryProp = P.companyCountry.property ?? "country";
   const companyProps = Array.from(new Set([
     "name", "industry", "country", "numberofemployees", "hubspot_owner_id", "createdate", statusProp, countryProp,
-    ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier, P.companySdr].map((p) => p.property).filter(Boolean) as string[],
+    ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier, P.companySdr, P.companyWishlist].map((p) => p.property).filter(Boolean) as string[],
   ]));
   const rawCompanies = await searchAll("companies", filterGroups, companyProps, token);
 
@@ -138,6 +138,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   // valor, el propietario del registro
   const companySdrLabel = optionLabeler(P.companySdr);
   const contactSdrLabel = optionLabeler(P.contactSdr);
+  const wishlistLabel = optionLabeler(P.companyWishlist);
 
   const industryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === "industry") as DetectedProperty | undefined);
   const statusLabel = optionLabeler(P.companyStatus);
@@ -167,6 +168,7 @@ export async function syncClientRadar(clientId: string, by: string) {
       sdr: (P.companySdr.property ? companySdrLabel(p[P.companySdr.property]) : null) ?? ownerName(p.hubspot_owner_id) ?? "Sin SDR",
       asg: toDay(P.companyAssignedAt.property ? p[P.companyAssignedAt.property] : null) ?? toDay(p.createdate) ?? "",
       st,
+      ...(P.companyWishlist.property && wishlistLabel(p[P.companyWishlist.property]) ? { wl: wishlistLabel(p[P.companyWishlist.property])! } : {}),
       ...(P.companyNextFollowUp.property && toDay(p[P.companyNextFollowUp.property]) ? { next: toDay(p[P.companyNextFollowUp.property]) } : {}),
     });
   }

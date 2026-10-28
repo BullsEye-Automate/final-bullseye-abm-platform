@@ -147,7 +147,7 @@ export function deriveClientData(input: {
 
     return {
       id: c.id, n: c.n, ind: c.ind, pais: c.pais, size: sizeFromEmployees(c.employees, cfg.sizeTiers), icp: c.icp, sdr: c.sdr,
-      asg: c.asg, st: c.st, ...(c.next ? { next: c.next } : {}),
+      asg: c.asg, st: c.st, ...(c.wl ? { wl: c.wl } : {}), ...(c.next ? { next: c.next } : {}),
       nct: K.length, nmg: K.filter((k) => !PEND.has(k.st) && k.st !== PAUSA).length, neff: eff.length, areas,
       msch: M.length, mheld: held.length, fu: K.some((k) => k.st === "Hacer Seguimiento"), opp, depth, prio, why: why.join(", "),
     };

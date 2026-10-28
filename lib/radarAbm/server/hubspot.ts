@@ -53,12 +53,19 @@ export async function loadPropertyCatalog(token?: string): Promise<{ catalog: Pr
 // Normalización suave que conserva el guion: distingue "SDR - Xarvis" (por
 // cliente) de otras propiedades que solo empiezan con "SDR"
 const softLabel = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-export const hasLabelPrefix = (label: string, prefix: string) => softLabel(label).startsWith(softLabel(prefix));
+// Prefijo de etiqueta sin importar los espacios internos ("Wish List" calza
+// con "WishList - SOVOS" y "Wishlist Webfleet"); devuelve el resto o null
+function afterPrefix(label: string, prefix: string): string | null {
+  const re = new RegExp("^" + softLabel(prefix).replace(/ /g, "").split("").map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*"));
+  const m = softLabel(label).match(re);
+  return m ? softLabel(label).slice(m[0].length) : null;
+}
+export const hasLabelPrefix = (label: string, prefix: string) => afterPrefix(label, prefix) !== null;
 
 // Sufijo de cliente de una propiedad por cliente: "Status de la asignación -
 // SDR AcidLab" → "acidlab". Vacío = propiedad genérica (no es de un cliente).
 function clientSuffix(label: string, labelPrefix: string): string {
-  let rest = normLabel(softLabel(label).slice(softLabel(labelPrefix).length));
+  let rest = normLabel(afterPrefix(label, labelPrefix) ?? "");
   if (rest.startsWith("sdr ")) rest = rest.slice(4);
   return rest;
 }
@@ -73,7 +80,8 @@ export function matchClientProperty(cands: HSProperty[], labelPrefix: string, cl
     const suf = clientSuffix(p.label, labelPrefix);
     const score = !suf ? 0
       : suf === client || suf.replace(/ /g, "") === client.replace(/ /g, "") ? 3
-      : (` ${client} `.includes(` ${suf} `) || ` ${suf} `.includes(` ${client} `)) ? 2
+      : (` ${client} `.includes(` ${suf} `) || ` ${suf} `.includes(` ${client} `)
+        || suf.replace(/ /g, "").startsWith(client.replace(/ /g, "")) || client.replace(/ /g, "").startsWith(suf.replace(/ /g, ""))) ? 2
       : suf.split(" ")[0] === client.split(" ")[0] ? 1 : 0;
     return { p, score };
   }).filter((x) => x.score > 0);
