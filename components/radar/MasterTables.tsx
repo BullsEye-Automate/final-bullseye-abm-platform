@@ -36,7 +36,7 @@ export default function MasterTables({ M }: { M: Model }) {
   }, [M, qC, fC]);
 
   const sheet = (cols: { h: string; x: (r: any) => any }[], rows: any[]) => [cols.map((c) => c.h), ...rows.map((r) => cols.map((c) => c.x(r)))];
-  const fileBase = `Radar ABM - ${clientName}`.replace(/[\\/:*?"<>|]/g, "");
+  const fileBase = `Pulso ABM - ${clientName}`.replace(/[\\/:*?"<>|]/g, "");
 
   async function exportXlsx() {
     const XLSX = await import("xlsx");

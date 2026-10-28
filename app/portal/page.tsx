@@ -8,7 +8,7 @@ import { PART_SLUGS } from "@/lib/radarAbm/render";
 
 export const dynamic = "force-dynamic";
 
-// Inicio del portal: resumen del Radar ABM de la cuenta (si ya está
+// Inicio del portal: resumen del Pulso ABM de la cuenta (si ya está
 // sincronizado) y accesos a ICP y wishlist.
 export default async function PortalHomePage() {
   const user = await getPortalUser();
@@ -36,7 +36,7 @@ export default async function PortalHomePage() {
       {radar ? (
         <Link href="/portal/radar" className="block bg-white rounded-2xl border border-gray-100 p-5 mb-6 hover:border-[#62E0D8] transition">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <h2 className="font-semibold text-[15px]" style={{ color: "#251762" }}>Radar ABM · resumen</h2>
+            <h2 className="font-semibold text-[15px]" style={{ color: "#251762" }}>Pulso ABM · resumen</h2>
             <span className="text-xs text-gray-400">Actualizado {radar.syncedAt} · corte {radar.cut}</span>
           </div>
           <div className="grid gap-3 grid-cols-2 md:grid-cols-5">
@@ -52,7 +52,7 @@ export default async function PortalHomePage() {
 
       <div className="grid gap-4 sm:grid-cols-3">
         {!radar && (
-          <Card href={`/portal/radar?vista=${PART_SLUGS[0]}`} title="Radar ABM" body="Qué está pasando en tus cuentas objetivo: cobertura, conversaciones, reuniones, oportunidades e inteligencia de mercado." />
+          <Card href={`/portal/radar?vista=${PART_SLUGS[0]}`} title="Pulso ABM" body="Qué está pasando en tus cuentas objetivo: cobertura, conversaciones, reuniones, oportunidades e inteligencia de mercado." />
         )}
         <Card
           href="/portal/icp"
@@ -77,7 +77,7 @@ export default async function PortalHomePage() {
   );
 }
 
-// Resumen del informe con el mismo cálculo del Radar ABM. Si no hay
+// Resumen del informe con el mismo cálculo del Pulso ABM. Si no hay
 // sincronización o el informe está oculto para el cliente, no se muestra.
 async function loadRadarSummary(clientId: string, clientName: string) {
   try {
@@ -99,7 +99,7 @@ async function loadRadarSummary(clientId: string, clientName: string) {
       syncedAt: new Date(snapshot.synced_at).toLocaleDateString("es-CL", { timeZone: "America/Santiago" }),
     };
   } catch (e) {
-    console.error("Portal: no se pudo armar el resumen del Radar ABM:", e);
+    console.error("Portal: no se pudo armar el resumen del Pulso ABM:", e);
     return null;
   }
 }

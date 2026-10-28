@@ -8,8 +8,9 @@ import { loadActivities } from "./activities";
 import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot } from "./store";
 import { checkClientActive } from "./masterClients";
+import { loadSheetMeetings } from "./sheetMeetings";
 
-// Radar ABM — sincronización de un cliente desde HubSpot (§3).
+// Pulso ABM — sincronización de un cliente desde HubSpot (§3).
 // Empresas del universo del cliente (propiedad "Cliente BullsEye", o todas
 // las que tienen status si se lee el HubSpot propio del cliente) → sus
 // contactos con "Asignación BullsEye por Llamar" → llamadas, correos,
@@ -43,17 +44,6 @@ function optionLabeler(p: DetectedProperty | undefined) {
     if (v == null || v === "") return null;
     return v.split(";").map((x) => m.get(x) ?? x).join("; ");
   };
-}
-
-function meetingStatus(outcome: string | null | undefined): string {
-  switch ((outcome ?? "").toUpperCase()) {
-    case "COMPLETED": return "Realizada";
-    case "NO_SHOW": return "No-show";
-    case "CANCELED":
-    case "CANCELLED": return "Cancelada";
-    case "RESCHEDULED": return "Reprogramada";
-    default: return "Pendiente";
-  }
 }
 
 function dealStageName(info: { label: string; won: boolean; lost: boolean } | undefined, raw: string): string {
@@ -93,18 +83,18 @@ export async function syncClientRadar(clientId: string, by: string) {
   if (!P.companyStatus.property) {
     const n = P.companyStatus.candidates.length;
     throw new Error(n
-      ? `No se pudo elegir cuál de las ${n} propiedades "Status de la asignación - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Radar ABM.`
-      : `No se encontró ninguna propiedad de empresa "Status de la asignación - …"${where}. Indica su nombre interno en Configuración → Cliente → Radar ABM.`);
+      ? `No se pudo elegir cuál de las ${n} propiedades "Status de la asignación - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
+      : `No se encontró ninguna propiedad de empresa "Status de la asignación - …"${where}. Indica su nombre interno en Configuración → Cliente → Pulso ABM.`);
   }
   if (!P.contactStatus.property) {
     const n = P.contactStatus.candidates.length;
     throw new Error(n
-      ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Radar ABM.`
-      : `No se encontró ninguna propiedad de contacto "Asignación BullsEye por Llamar - …"${where}. Indica su nombre interno en Configuración → Cliente → Radar ABM.`);
+      ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
+      : `No se encontró ninguna propiedad de contacto "Asignación BullsEye por Llamar - …"${where}. Indica su nombre interno en Configuración → Cliente → Pulso ABM.`);
   }
   for (const d of detected) if (d.manual && !d.found) warnings.push(`El nombre interno "${d.property}" de "${d.label}" no existe${where}.`);
   // Sin SDR por cliente se usa el propietario del registro: no es un aviso
-  for (const d of detected) if (!d.property && !d.required && !["companyClient", "companySdr", "contactSdr", "companyWishlist"].includes(d.key)) warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
+  for (const d of detected) if (!d.property && !d.required && !["companyClient", "companySdr", "contactSdr", "companyWishlist"].includes(d.key) && d.object !== "meetings") warnings.push(`Propiedad "${d.label}" no encontrada: lo que depende de ella se muestra como "Sin información disponible".`);
 
   // ── Universo de empresas ───────────────────────────────────────────────
   // Empresas con la propiedad de status del cliente con algún valor. Si se
@@ -122,7 +112,7 @@ export async function syncClientRadar(clientId: string, by: string) {
 
   const countryProp = P.companyCountry.property ?? "country";
   const companyProps = Array.from(new Set([
-    "name", "industry", "country", "numberofemployees", "hubspot_owner_id", "createdate", statusProp, countryProp,
+    "name", "domain", "industry", "country", "numberofemployees", "hubspot_owner_id", "createdate", statusProp, countryProp,
     ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier, P.companySdr, P.companyWishlist].map((p) => p.property).filter(Boolean) as string[],
   ]));
   const rawCompanies = await searchAll("companies", filterGroups, companyProps, token);
@@ -145,13 +135,15 @@ export async function syncClientRadar(clientId: string, by: string) {
   const tierLabel = optionLabeler(P.companyIcpTier);
   const countryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === countryProp) as DetectedProperty | undefined);
   const unknownStatuses = new Set<string>();
-  // Equivalencias de status (La Biblia + Configuración del Radar ABM)
+  // Equivalencias de status (La Biblia + Configuración del Pulso ABM)
   const companyStatusCanon = canonicalizer(CO_ORDER.filter((s) => s !== "CONV"), cfg.companyAliases);
   let excludedCompanies = 0;
 
   const companies: FlatCompany[] = [];
+  const companyDomain = new Map<string, string>();
   for (const r of rawCompanies) {
     const p = r.properties;
+    if (p.domain) companyDomain.set(String(r.id), p.domain);
     const label = statusLabel(p[statusProp]);
     if (!label) continue; // sin status: no es parte del trabajo de BullsEye
     const st = companyStatusCanon(label)!;
@@ -187,7 +179,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const rawContacts = await batchRead("contacts", Array.from(contactCompany.keys()), contactProps, token);
   const ctStatusLabel = optionLabeler(P.contactStatus);
   // Etiquetas antiguas de contacto ("Por Llamar", "NO Llamar"…) → actuales
-  // (editables en Configuración del Radar ABM)
+  // (editables en Configuración del Pulso ABM)
   const contactStatusCanon = canonicalizer(CT_ORDER, cfg.contactAliases);
   const objLabel = optionLabeler(P.contactObjection);
   const sigLabel = optionLabeler(P.contactSignal);
@@ -203,7 +195,6 @@ export async function syncClientRadar(clientId: string, by: string) {
   // ── Actividades de la cuenta (empresa + contactos): profundidad por canal
   const act = await loadActivities({ companyIds, contactIds: keptIds, contactCompany, catalog, token });
   warnings.push(...act.warnings);
-  const ctMeetings = act.contactMeetings;
   const actByCt = new Map<string, RadarActivity[]>();
   for (const a of act.activities) {
     if (a.ct == null) continue;
@@ -259,34 +250,23 @@ export async function syncClientRadar(clientId: string, by: string) {
   // ── Reuniones del período ──────────────────────────────────────────────
   const today = chileToday();
   const start = periodStart(today, cfg.periodMonths);
-  const meetingContact = new Map<string, string>();
-  for (const [ct, ms] of ctMeetings) for (const m of ms) if (!meetingContact.has(m)) meetingContact.set(m, ct);
-  const meetingProps = Array.from(new Set([
-    "hs_meeting_start_time", "hs_createdate", "hs_meeting_outcome", "hubspot_owner_id",
-    ...[P.meetingResult, P.meetingFeedback, P.meetingNeed].map((p) => p.property).filter(Boolean) as string[],
-  ]));
-  const rawMeetings = meetingContact.size ? await batchRead("meetings", Array.from(meetingContact.keys()), meetingProps, token) : [];
-  const resLabel = optionLabeler(P.meetingResult), fbLabel = optionLabeler(P.meetingFeedback), needLabel = optionLabeler(P.meetingNeed);
-  const ctById = new Map(contacts.map((k) => [k.id, k]));
-  const meetings: RadarMeeting[] = [];
-  for (const r of rawMeetings) {
-    const p = r.properties;
-    const ct = meetingContact.get(r.id)!;
-    const k = ctById.get(ct);
-    if (!k) continue;
-    const fecha = toDay(p.hs_meeting_start_time) ?? toDay(p.hs_createdate);
-    const agendada = toDay(p.hs_createdate) ?? fecha;
-    if (!fecha || !agendada) continue;
-    if (agendada < start && fecha < start) continue;
-    const st = meetingStatus(p.hs_meeting_outcome);
-    const res = resLabel(P.meetingResult.property ? p[P.meetingResult.property] : null);
-    const fb = fbLabel(P.meetingFeedback.property ? p[P.meetingFeedback.property] : null);
-    const need = needLabel(P.meetingNeed.property ? p[P.meetingNeed.property] : null);
-    meetings.push({
-      id: r.id, ct, co: k.co, sdr: (P.contactSdr.property ? k.sdr : ownerName(p.hubspot_owner_id)) ?? k.sdr, agendada, fecha, st,
-      ...(st === "Reprogramada" ? { reprog: true } : {}),
-      ...(res ? { res } : {}), ...(fb ? { fb } : {}), ...(need ? { need } : {}),
+  // Reuniones: planilla de reuniones (Excel de metas), no HubSpot
+  let meetings: RadarMeeting[] = [];
+  try {
+    const sheet = await loadSheetMeetings({
+      clientId, start,
+      companies: companies.map((c) => ({ id: c.id, n: c.n, domain: companyDomain.get(String(c.id)) })),
+      contacts: contacts.map((k) => ({ id: k.id, co: k.co, n: k.n })),
+      sdrOf: (co) => coById.get(co)?.sdr ?? "Sin SDR",
     });
+    meetings = sheet.meetings;
+    if (!sheet.total) warnings.push("La planilla de reuniones no tiene reuniones de este cliente en el período.");
+    if (sheet.unmatched.length) {
+      const n = sheet.unmatched.reduce((a, x) => a + x.n, 0);
+      warnings.push(`${n} reuniones de la planilla no calzan con ninguna empresa con status en HubSpot (revisa el nombre de la empresa): ${sheet.unmatched.slice(0, 12).map((x) => `${x.empresa}${x.n > 1 ? ` (${x.n})` : ""}`).join(", ")}${sheet.unmatched.length > 12 ? "…" : ""}.`);
+    }
+  } catch (e) {
+    warnings.push((e as Error).message);
   }
 
   // ── Negocios ───────────────────────────────────────────────────────────
@@ -309,9 +289,9 @@ export async function syncClientRadar(clientId: string, by: string) {
     warnings.push(`No se pudieron leer los negocios: ${(e as Error).message}`);
   }
 
-  if (excludedCompanies || excludedContacts) warnings.push(`Excluidos del informe por equivalencia: ${excludedCompanies} empresas y ${excludedContacts} contactos (Configuración del Radar ABM → Equivalencias).`);
-  if (unknownStatuses.size) warnings.push(`Status de empresa fuera del diccionario (agrega su equivalencia en Configuración del Radar ABM): ${Array.from(unknownStatuses).join(", ")}.`);
-  if (unknownCtStatuses.size) warnings.push(`Status de contacto fuera del diccionario (agrega su equivalencia en Configuración del Radar ABM): ${Array.from(unknownCtStatuses).join(", ")}.`);
+  if (excludedCompanies || excludedContacts) warnings.push(`Excluidos del informe por equivalencia: ${excludedCompanies} empresas y ${excludedContacts} contactos (Configuración del Pulso ABM → Equivalencias).`);
+  if (unknownStatuses.size) warnings.push(`Status de empresa fuera del diccionario (agrega su equivalencia en Configuración del Pulso ABM): ${Array.from(unknownStatuses).join(", ")}.`);
+  if (unknownCtStatuses.size) warnings.push(`Status de contacto fuera del diccionario (agrega su equivalencia en Configuración del Pulso ABM): ${Array.from(unknownCtStatuses).join(", ")}.`);
   if (!companies.length) warnings.push("No se encontraron empresas con status para este cliente en HubSpot.");
 
   const clientData = deriveClientData({

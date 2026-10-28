@@ -14,7 +14,7 @@ import { PART_ICONS } from "@/components/radar/partIcons";
 
 // Layout del portal de clientes: barra lateral con el mismo lenguaje del
 // sidebar interno de BullsEye (#251762 / #62E0D8). "Mi cuenta" agrupa ICP y
-// wishlist; "Radar ABM" lista las vistas del informe (sin el anexo de
+// wishlist; "Pulso ABM" lista las vistas del informe (sin el anexo de
 // validación de datos, que es solo interno).
 
 type NavItem = { href: string; label: string; icon: typeof IconHome; active: boolean };
@@ -86,7 +86,7 @@ export default function PortalShell({
         <nav className="mt-2 lg:flex-1 flex lg:block gap-1 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
           <div className="sb-section-label hidden lg:block">Mi cuenta</div>
           {account.map(item)}
-          <div className="sb-section-label hidden lg:block">Radar ABM</div>
+          <div className="sb-section-label hidden lg:block">Pulso ABM</div>
           {radar.map(item)}
         </nav>
 

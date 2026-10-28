@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { detectProperties, loadPropertyCatalog, type DetectedProperty } from "./hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig } from "./store";
 
-// Radar ABM — prueba del HubSpot de un cliente antes de sincronizar.
+// Pulso ABM — prueba del HubSpot de un cliente antes de sincronizar.
 // Hace una llamada mínima (limit 1) por cada cosa que lee el sync y reporta
 // cuáles fallan y qué permiso pide HubSpot, más las propiedades detectadas y
 // el tamaño del universo. No guarda nada.

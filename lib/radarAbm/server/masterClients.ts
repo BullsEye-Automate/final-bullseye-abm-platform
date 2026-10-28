@@ -1,6 +1,6 @@
 import { getSheetValues } from "@/lib/googleSheets";
 
-// Radar ABM — validación de cliente activo contra la Maestra.
+// Pulso ABM — validación de cliente activo contra la Maestra.
 // Planilla "Metas equipo BullsEye / reuniones / oportunidades"
 // (GOOGLE_SHEETS_MEETINGS_ID), pestaña "Maestra IA", columnas A–C:
 // Cliente | ID Cliente | Status Cliente. Solo se sincroniza y se muestra en
@@ -54,7 +54,7 @@ export function findMasterRow(rows: MasterClient[], client: { id: string; name: 
 export async function checkClientActive(client: { id: string; name: string; slug?: string | null }): Promise<MasterCheck> {
   const row = findMasterRow(await readMasterClients(), client);
   if (!row) return { active: false, row: null, reason: `"${client.name}" no figura en la Maestra (pestaña "${TAB}", columna Cliente).` };
-  if (!row.active) return { active: false, row, reason: `"${row.name}" figura como "${row.status || "sin status"}" en la Maestra: el Radar solo se trae para clientes activos.` };
+  if (!row.active) return { active: false, row, reason: `"${row.name}" figura como "${row.status || "sin status"}" en la Maestra: Pulso ABM solo se trae para clientes activos.` };
   return { active: true, row };
 }
 
@@ -64,7 +64,7 @@ export async function isPortalClientActive(clientId: string, clientName: string)
   try {
     return (await checkClientActive({ id: clientId, name: clientName })).active;
   } catch (e) {
-    console.error("Radar ABM: no se pudo validar el cliente en la Maestra:", e);
+    console.error("Pulso ABM: no se pudo validar el cliente en la Maestra:", e);
     return false;
   }
 }

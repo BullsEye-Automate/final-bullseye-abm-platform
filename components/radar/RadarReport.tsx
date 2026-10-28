@@ -8,8 +8,8 @@ import { LEADS, PARTS, render, sec } from "@/lib/radarAbm/render";
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import MasterTables from "./MasterTables";
 
-// Informe Radar ABM de un cliente (una vista = una parte del informe, con
-// sus secciones numeradas). Lo usan la vista interna (Análisis → Radar ABM)
+// Informe Pulso ABM de un cliente (una vista = una parte del informe, con
+// sus secciones numeradas). Lo usan la vista interna (Análisis → Pulso ABM)
 // y el portal de clientes. El cálculo corre en el navegador sobre el set de
 // datos sincronizado (lib/radarAbm/engine.ts) y el HTML de cada sección sale
 // de lib/radarAbm/render.ts, igual que en el prototipo.
@@ -146,8 +146,21 @@ export default function RadarReport({
       if (!sel.matches?.("select[data-ra-pick]")) return;
       sel.closest(".rcard")?.querySelectorAll<HTMLElement>("[data-ra-panel]").forEach((p) => { p.hidden = p.dataset.raPanel !== sel.value; });
     };
+    // Funnel: clic en una etapa muestra (o esconde) la lista de sus empresas
+    const onStage = (e: Event) => {
+      const bar = (e.target as HTMLElement).closest?.("[data-ra-stage]") as HTMLElement | null;
+      if (!bar) return;
+      const card = bar.closest(".rcard");
+      const id = bar.dataset.raStage;
+      const open = !bar.classList.contains("sel");
+      card?.querySelectorAll<HTMLElement>("[data-ra-stage]").forEach((b) => b.classList.toggle("sel", open && b === bar));
+      let shown: HTMLElement | null = null;
+      card?.querySelectorAll<HTMLElement>("[data-ra-stage-list]").forEach((p) => { p.hidden = !(open && p.dataset.raStageList === id); if (!p.hidden) shown = p; });
+      (shown as HTMLElement | null)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    };
     root.addEventListener("change", onPick);
-    return () => root.removeEventListener("change", onPick);
+    root.addEventListener("click", onStage);
+    return () => { root.removeEventListener("change", onPick); root.removeEventListener("click", onStage); };
   }, []);
 
   // Tooltip de los gráficos (atributo data-tip del HTML generado)

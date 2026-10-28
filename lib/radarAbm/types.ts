@@ -1,4 +1,4 @@
-// Radar ABM — forma de los datos de un cliente.
+// Pulso ABM — forma de los datos de un cliente.
 // Es la misma estructura que la constante RAW del prototipo
 // Radar_ABM_BullsEye_BETA.html (claves cortas para que el JSON pese poco):
 // cliente → companies, contacts, meetings, deals. La genera el sync de
@@ -58,6 +58,7 @@ export type RadarContact = {
 export type RadarMeeting = {
   id: number | string;
   ct: number | string;
+  ctn?: string;              // nombre del contacto en la planilla de reuniones
   co: number | string;
   sdr: string;
   agendada: string;
@@ -123,7 +124,7 @@ export type RadarDataset = {
   mapping?: { label: string; property: string | null }[]; // propiedades usadas (anexo A1)
 };
 
-// Parámetros editables (Configuración del Radar ABM)
+// Parámetros editables (Configuración del Pulso ABM)
 export type HealthComponentConfig = { weight: number; target: number };
 
 export type RadarConfig = {

@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Radar ABM — vista interna (Análisis → Radar ABM). Solo equipo BullsEye:
+// Pulso ABM — vista interna (Análisis → Pulso ABM). Solo equipo BullsEye:
 // el middleware deja fuera a los usuarios del portal (rol "client").
 //   GET  ?client_id=          → última sincronización + configuración
 //   GET  ?client_id=&demo=1   → datos demo del prototipo (badge "Datos demo")
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     const result = await syncClientRadar(clientId, await getReviewerEmail());
     return NextResponse.json(result);
   } catch (err) {
-    console.error("Radar ABM: error sincronizando", clientId, err);
+    console.error("Pulso ABM: error sincronizando", clientId, err);
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });
   }
 }

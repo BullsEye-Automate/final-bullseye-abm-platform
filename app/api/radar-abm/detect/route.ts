@@ -6,7 +6,7 @@ import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConf
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Detecta en HubSpot el nombre interno de cada propiedad del Radar ABM por
+// Detecta en HubSpot el nombre interno de cada propiedad del Pulso ABM por
 // su etiqueta (Anexo A1) y devuelve los valores de las enumeraciones (por
 // ejemplo, los clientes de "Cliente BullsEye"). Con ?client_id= usa el
 // HubSpot que corresponde a ese cliente; sin él, el de BullsEye.

@@ -11,7 +11,7 @@ import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import RadarReport, { visibleParts } from "@/components/radar/RadarReport";
 import { PART_ICONS } from "@/components/radar/partIcons";
 
-// Análisis → Radar ABM: informe ABM integral por cliente (cuenta → contactos
+// Análisis → Pulso ABM: informe ABM integral por cliente (cuenta → contactos
 // → actividad → conversación → interés → reunión → seguimiento →
 // oportunidad). Mide cuentas, profundidad e inteligencia de mercado; no
 // reemplaza el reporte de productividad SDR (Células SDR). Un cliente a la
@@ -94,9 +94,9 @@ export default function RadarAbmPage() {
   if (!clientId) {
     return (
       <div className="ra-root">
-        <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>Radar ABM</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>Pulso ABM</h1>
         <div className="ra-empty" style={{ marginTop: 16 }}>
-          Elige un cliente en el menú lateral: el Radar ABM se lee un cliente a la vez (los universos e ICP de cada cliente no son comparables).
+          Elige un cliente en el menú lateral: el Pulso ABM se lee un cliente a la vez (los universos e ICP de cada cliente no son comparables).
         </div>
       </div>
     );
@@ -147,7 +147,7 @@ export default function RadarAbmPage() {
             <div className="ra-banner warn">{data.master.text} No se sincroniza ni se muestra en el portal mientras no esté activo.</div>
           )}
           {!demo && data?.settings && !data.settings.portal_enabled && (
-            <div className="ra-banner info">Este informe está oculto en el portal del cliente (Configuración → Cliente → Radar ABM).</div>
+            <div className="ra-banner info">Este informe está oculto en el portal del cliente (Configuración → Cliente → Pulso ABM).</div>
           )}
           <div style={{ height: 10 }} />
           {loading && !data ? (

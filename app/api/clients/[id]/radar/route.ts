@@ -7,7 +7,7 @@ import { loadClientSettings, loadSnapshot, saveClientSettings, type RadarClientS
 
 export const dynamic = "force-dynamic";
 
-// Radar ABM — configuración del cliente (Configuración → Cliente → Radar ABM):
+// Pulso ABM — configuración del cliente (Configuración → Cliente → Pulso ABM):
 // de qué HubSpot se lee, valor de "Cliente BullsEye" y si se muestra en el
 // portal. Requiere sesión interna (middleware).
 
