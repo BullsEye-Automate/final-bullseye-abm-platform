@@ -113,9 +113,13 @@ export function compute(ds: RadarDataset, cfg: RadarConfig = DEFAULT_CONFIG): Mo
   const icpK = K.filter((k) => k.c.st !== "No califica");
   const coEff = C.filter((c) => c.effK.length >= 1), coMulti = C.filter((c) => c.effK.length >= 2), coDeep = C.filter((c) => c.depth === "Profunda");
   const coMt = C.filter((c) => c.M.length), coHeld = C.filter((c) => c.mheld);
-  const held = Mt.filter((m) => m.st === "Realizada"), noshow = Mt.filter((m) => m.st === "No-show"), canc = Mt.filter((m) => m.st === "Cancelada");
+  // Con rango de fechas (como el Excel de metas): agendadas por fecha de
+  // agendamiento; realizadas / no-show / canceladas por fecha de la reunión
+  const rg = ds.range, inRg = (d?: string | null) => !rg || (!!d && d >= rg.from && d <= rg.to);
+  const agM = rg ? Mt.filter((m) => inRg(m.agendada)) : Mt;
+  const held = Mt.filter((m) => m.st === "Realizada" && inRg(m.fecha)), noshow = Mt.filter((m) => m.st === "No-show" && inRg(m.fecha)), canc = Mt.filter((m) => m.st === "Cancelada" && inRg(m.fecha));
   const pendM = Mt.filter((m) => m.st === "Pendiente" || m.st === "Reprogramada"), reprog = Mt.filter((m) => m.reprog || m.st === "Reprogramada");
-  Object.assign(M, { worked, qual, mg, eff, icpK, coEff, coMulti, coDeep, coMt, coHeld, held, noshow, canc, pendM, reprog });
+  Object.assign(M, { worked, qual, mg, eff, icpK, coEff, coMulti, coDeep, coMt, coHeld, held, noshow, canc, pendM, reprog, agM });
   M.kpi = {
     universe: C.length, worked: worked.length, coverage: div(worked.length, C.length),
     penetration: div(cnt(icpK, (k) => k.mg), icpK.length),

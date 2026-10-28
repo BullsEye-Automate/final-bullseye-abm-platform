@@ -308,7 +308,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     if (!sheet.total) warnings.push("La planilla de reuniones no tiene reuniones de este cliente en el período.");
     if (sheet.unmatched.length) {
       const n = sheet.unmatched.reduce((a, x) => a + x.n, 0);
-      warnings.push(`${n} reuniones de la planilla no calzan con ninguna empresa con status en HubSpot (revisa el nombre de la empresa): ${sheet.unmatched.slice(0, 12).map((x) => `${x.empresa}${x.n > 1 ? ` (${x.n})` : ""}`).join(", ")}${sheet.unmatched.length > 12 ? "…" : ""}.`);
+      warnings.push(`${n} reuniones de la planilla no calzan con ninguna empresa del universo en HubSpot: se cuentan en Reuniones pero no en el funnel ni en los cálculos por empresa (revisa el nombre de la empresa): ${sheet.unmatched.slice(0, 12).map((x) => `${x.empresa}${x.n > 1 ? ` (${x.n})` : ""}`).join(", ")}${sheet.unmatched.length > 12 ? "…" : ""}.`);
     }
   } catch (e) {
     warnings.push((e as Error).message);

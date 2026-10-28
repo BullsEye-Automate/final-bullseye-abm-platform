@@ -206,7 +206,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   s.resumen = `<div class="exec"><ul>
     <li>Trabajamos <b>${N(k.worked)} de ${N(k.universe)}</b> empresas objetivo (${P(k.coverage)} de cobertura) y logramos conversación efectiva con <b>${N(M.eff.length)} contactos</b> en <b>${N(M.coEff.length)} empresas</b>.</li>
-    <li>Se agendaron <b>${N(M.Mt.length)} reuniones</b> en ${N(M.coMt.length)} empresas (${F1(k.mPerAcc)} por empresa con reunión). Se realizaron <b>${N(M.held.length)}</b> (${P(k.realization)} de realización) y hay ${N(M.pendM.length)} pendientes.</li>
+    <li>Se agendaron <b>${N(M.agM.length)} reuniones</b> en ${N(M.coMt.length)} empresas (${F1(k.mPerAcc)} por empresa con reunión). Se realizaron <b>${N(M.held.length)}</b> (${P(k.realization)} de realización) y hay ${N(M.pendM.length)} pendientes.</li>
     <li>Profundidad: <b>${P(k.multi)}</b> de las empresas con contacto tiene 2 o más interlocutores y ${P(k.deep)} tiene cobertura profunda (3+ contactos o varias áreas).</li>
     ${b.tot ? `<li>${b.main[0] === "rechazo explícito" ? "La principal barrera es el rechazo explícito" : `La principal barrera no es el rechazo sino <b>${b.main[0]}</b>`} (${P(b.main[1] / b.tot)} de las empresas trabajadas sin avance).</li>` : ""}
     <li>Potencial vivo: <b>${N(liveCo.length)} empresas</b> con seguimiento activo, reunión próxima o referral por trabajar; ${N(C.filter((c) => c.st === "Sin interés ahora - Retomar").length)} más pidieron retomar más adelante.</li>
@@ -224,7 +224,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     ${tile("Contactabilidad", P(k.contactRate), "efectivos / gestionados", "", "phone")}
     ${tile("Multi-threading", P(k.multi), "empresas con 2+ interlocutores", "", "users")}
     ${tile("Conversación → reunión", P(k.convToMeet), "empresas con reunión / con conversación", "", "msg")}
-    ${tile("Reuniones agendadas", N(M.Mt.length), `${N(M.coMt.length)} empresas`, "", "cal")}
+    ${tile("Reuniones agendadas", N(M.agM.length), `${N(M.coMt.length)} empresas`, "", "cal")}
     ${tile("Reuniones realizadas", N(M.held.length), `realización ${P(k.realization)}`, "", "check", k.realization >= 0.85 ? "g" : k.realization >= 0.7 ? "y" : "r")}
     ${tile("Referral rate", P(k.referralRate), `${rf.refs.length} referrals`, "", "split")}
     ${tile("Oportunidades", N(k.opp), M.pipe ? `pipeline abierto ${USD(M.pipe.open)}` : "pipeline sin información", "", "star")}
@@ -262,7 +262,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     { l: "Empresas en gestión", d: "status distinto de Asignada", set: M.worked },
     { l: "Con respuesta", d: "seguimiento, reunión, conversación, retomar o no interesado", set: sResp },
     { l: "Interés / avance", d: "en seguimiento, reunión agendada o en conversaciones", set: sInt },
-    { l: "Con reunión agendada", d: `${N(M.Mt.length)} reuniones${M.source === "hubspot" ? " en la planilla" : ""}`, set: sMt },
+    { l: "Con reunión agendada", d: `${N(M.agM.length)} reuniones agendadas${M.source === "hubspot" ? " en la planilla" : ""}`, set: sMt },
     { l: "Con reunión realizada", d: `${N(M.held.length)} reuniones realizadas`, set: sHeld },
     { l: "Con oportunidad", d: "reunión con propuesta/oportunidad o negocio abierto", set: sOpp },
   ];
@@ -324,8 +324,8 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   const mst: [string, string][] = [["Realizada", "var(--g-int)"], ["Pendiente", "var(--s1)"], ["Reprogramada", "var(--g-act)"], ["No-show", "var(--g-cont)"], ["Cancelada", "var(--g-rej)"]];
   const res: [string | null, string][] = [["Oportunidad", "var(--g-int)"], ["Seguimiento", "var(--s1)"], ["Sin avance", "var(--g-disp)"], ["Descartada", "var(--g-rej)"], [null, "var(--g-pend)"]];
-  s.reuniones = `<div class="tiles">${tile("Agendadas", N(M.Mt.length))}${tile("Realizadas", N(M.held.length))}${tile("Pendientes", N(M.pendM.length))}${tile("No-show", N(M.noshow.length))}${tile("Canceladas", N(M.canc.length))}${tile("Reprogramadas", N(M.reprog.length), "incluye las ya realizadas")}${tile("Tasa de realización", P(k.realization), "sobre reuniones con fecha pasada")}${tile("Empresas con reunión", N(M.coMt.length), `${F1(k.mPerAcc)} reuniones por empresa`)}${tile("Contactos con reunión", N(new Set(M.Mt.map((m: any) => m.ct)).size), `${F1(k.interlocutors)} interlocutores por empresa`)}</div>
-  <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Estado de las ${M.Mt.length} reuniones agendadas</h4>${stack(mst.map(([l, c]) => ({ l, v: cnt(M.Mt, (m: any) => m.st === l), c })))}</div>
+  s.reuniones = `<div class="tiles">${tile("Agendadas", N(M.agM.length), M.range ? "por fecha de agendamiento" : "")}${tile("Realizadas", N(M.held.length))}${tile("Pendientes", N(M.pendM.length))}${tile("No-show", N(M.noshow.length))}${tile("Canceladas", N(M.canc.length))}${tile("Reprogramadas", N(M.reprog.length), "incluye las ya realizadas")}${tile("Tasa de realización", P(k.realization), "sobre reuniones con fecha pasada")}${tile("Empresas con reunión", N(M.coMt.length), `${F1(k.mPerAcc)} reuniones por empresa`)}${tile("Contactos con reunión", N(new Set(M.Mt.map((m: any) => m.ct)).size), `${F1(k.interlocutors)} interlocutores por empresa`)}</div>
+  <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Estado de las ${M.agM.length} reuniones agendadas</h4>${stack(mst.map(([l, c]) => ({ l, v: cnt(M.agM, (m: any) => m.st === l), c })))}</div>
   <div class="rcard"><h4>Qué pasó después de las ${M.held.length} realizadas</h4>${bars(res.map(([l, c]) => ({ l: l || "Sin información de resultado", v: cnt(M.held, (m: any) => (m.res || null) === l), c })))}<p class="note">Agendada ≠ realizada, y reunión ≠ oportunidad: solo se cuenta oportunidad cuando hay resultado registrado o un negocio asociado.</p></div></div>
   ${M.pipe ? `<div class="rcard" style="margin-top:14px"><h4>Pipeline asociado (${M.pipe.n} negocios)</h4>${bars(["Calificación", "Propuesta enviada", "Negociación", "Ganado", "Perdido"].map((st) => ({ l: st, v: sum(M.pipe.byStage[st] || [], (d: any) => d.amount), c: st === "Perdido" ? "var(--g-rej)" : st === "Ganado" ? "var(--g-rel)" : "var(--s1)", r: `(${(M.pipe.byStage[st] || []).length})`, tip: `${st}: ${USD(sum(M.pipe.byStage[st] || [], (d: any) => d.amount))}` })))}<p class="note">Montos en dólares; barras en miles.</p></div>` : `<p class="note">Pipeline: sin información disponible para este cliente.</p>`}
   <div class="rcard" style="margin-top:14px"><h4>${evoTitle(M)}</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}<p class="note">${partialNote(M)}Agendadas por fecha de agendamiento; realizadas por fecha de la reunión.</p></div>`;
@@ -333,7 +333,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   const qd = by(M.held as any[], (m) => m.q), yn = (v: any) => (v === true ? "Sí" : v === false ? "No" : '<span class="flag">s/i</span>');
   s.calidad = `<div class="tiles">${["hi", "md", "lo", "na"].map((q) => tile(pill(q), N((qd[q] || []).length), P(div((qd[q] || []).length, M.held.length)))).join("")}</div>
   <p class="note">Criterios por reunión realizada: empresa en ICP (A/B), contacto correcto (gerente o superior en área decisora), necesidad identificada, próximo paso definido y resultado con avance. Alta = 4–5 · Media = 2–3 · Baja = 0–1. Si faltan 2 o más campos (necesidad, resultado, feedback), se marca "Sin info suficiente" y no se clasifica.</p>
-  ${table([{ h: "Empresa", f: (m) => esc(m.c?.n) }, { h: "Contacto", s: 1, f: (m) => `${esc(m.k?.n ?? m.ctn ?? "—")}<br>${esc(m.k?.cargo || "sin cargo")}` }, { h: "Fecha", f: (m) => dmy(m.fecha) }, { h: "ICP", f: (m) => yn(m.icpfit) }, { h: "Contacto correcto", f: (m) => yn(m.okct) }, { h: "Necesidad", s: 1, f: (m) => (m.need ? esc(m.need) : '<span class="flag">s/i</span>') }, { h: "Próximo paso", f: (m) => yn(m.next) }, { h: "Feedback cliente", s: 1, f: (m) => (m.fb ? esc(m.fb) : '<span class="flag">s/i</span>') }, { h: "Resultado", f: (m) => esc(m.res) || '<span class="flag">s/i</span>' }, { h: "Calidad", f: (m) => pill(m.q) }],
+  ${table([{ h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) }, { h: "Contacto", s: 1, f: (m) => `${esc(m.k?.n ?? m.ctn ?? "—")}<br>${esc(m.k?.cargo || "sin cargo")}` }, { h: "Fecha", f: (m) => dmy(m.fecha) }, { h: "ICP", f: (m) => yn(m.icpfit) }, { h: "Contacto correcto", f: (m) => yn(m.okct) }, { h: "Necesidad", s: 1, f: (m) => (m.need ? esc(m.need) : '<span class="flag">s/i</span>') }, { h: "Próximo paso", f: (m) => yn(m.next) }, { h: "Feedback cliente", s: 1, f: (m) => (m.fb ? esc(m.fb) : '<span class="flag">s/i</span>') }, { h: "Resultado", f: (m) => esc(m.res) || '<span class="flag">s/i</span>' }, { h: "Calidad", f: (m) => pill(m.q) }],
     M.held.slice().sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)).slice(0, 25))}${M.held.length > 25 ? `<p class="note">Se muestran las 25 más recientes de ${M.held.length}.</p>` : ""}`;
 
   const fuRow = (x: any) => ({ x, reason: x.sig || x.obj || "" });
@@ -353,7 +353,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   const mtRows = [...(M.Mt as any[])].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
   s["reuniones-detalle"] = mtRows.length
     ? table([
-        { h: "Agendada", f: (m) => dmy(m.agendada) }, { h: "Reunión", f: (m) => dmy(m.fecha) }, { h: "Empresa", f: (m) => esc(m.c?.n) },
+        { h: "Agendada", f: (m) => dmy(m.agendada) }, { h: "Reunión", f: (m) => dmy(m.fecha) }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) },
         { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") }, { h: "Cargo", s: 1, f: (m) => esc(m.cargo || m.k?.cargo || "—") },
         { h: "SDR", s: 1, f: (m) => esc(m.sdr) }, { h: "Estado", f: (m) => esc(m.st) }, { h: "Origen", s: 1, f: (m) => esc(m.org || "—") },
         { h: "Propuesta / oportunidad", s: 1, f: (m) => esc(m.oppv || m.res || "—") },
@@ -371,7 +371,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   s.feedback = `<div class="tiles">${tile("Reuniones realizadas", N(M.held.length))}${tile("Con feedback del cliente", N(fbM.length), `${P(div(fbM.length, M.held.length))} de las realizadas`)}${tile("Calificación promedio", calAvg == null ? "—" : F1(calAvg) + "/10")}${tile("Empresa calificada", P(shareYes(fbM, (m) => m.icpfit)), "según el cliente")}${tile("Contacto calificado", P(shareYes(fbM, (m) => m.okct)), "según el cliente")}${tile("Con propuesta comercial", P(withProp.length ? div(cnt(withProp, (m) => m.prop === "Si"), withProp.length) : null))}${tile("Probabilidad de cierre", probAvg == null ? "—" : P(probAvg / 100), "promedio")}${tile("Pendientes de feedback", N(fbPend.length), "reuniones realizadas sin respuesta")}</div>
   ${withProp.length ? `<div class="rcard" style="margin-top:14px"><h4>¿Hubo propuesta comercial? (n=${withProp.length})</h4>${bars(props.filter((x) => cnt(withProp, (m) => m.prop === x)).map((x) => ({ l: x === "Si" ? "Sí" : x, v: cnt(withProp, (m) => m.prop === x), c: propC[x], r: P(cnt(withProp, (m) => m.prop === x) / withProp.length) })))}</div>` : ""}
   ${fbM.length ? `<h4 class="subh">Respuestas del cliente</h4>` + table([
-    { h: "Reunión", f: (m) => dmy(m.fecha) }, { h: "Empresa", f: (m) => esc(m.c?.n) }, { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") },
+    { h: "Reunión", f: (m) => dmy(m.fecha) }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) }, { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") },
     { h: "Calificación", n: 1, f: (m) => (m.cal == null ? '<span class="flag">s/i</span>' : `${m.cal}/10`) }, { h: "Empresa calificada", f: (m) => yn(m.icpfit) }, { h: "Contacto calificado", f: (m) => yn(m.okct) },
     { h: "Propuesta", s: 1, f: (m) => esc(m.prop === "Si" ? "Sí" : m.prop || "—") }, { h: "Prob. cierre", n: 1, f: (m) => (m.prob == null ? "—" : P(m.prob / 100)) }, { h: "Comentarios", s: 1, f: (m) => esc(m.com || (M.source === "demo" ? m.fb : "") || "—") },
   ], [...fbM].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "")).slice(0, 300)) : `<p class="note">Todavía no hay respuestas del cliente en el período.</p>`}`;

@@ -106,11 +106,11 @@ export async function loadSheetMeetings(input: {
   const unmatched = new Map<string, number>();
   for (const r of rows) {
     const empresa = (r.empresa ?? "").trim();
-    const co = matchCompany(empresa, r.correo);
-    if (co == null) {
-      unmatched.set(empresa || "(sin empresa)", (unmatched.get(empresa || "(sin empresa)") ?? 0) + 1);
-      continue;
-    }
+    const matched = matchCompany(empresa, r.correo);
+    // Sin empresa en el universo igual cuenta como reunión (los totales deben
+    // calzar con el Excel de metas); solo queda fuera de los cálculos por empresa
+    if (matched == null) unmatched.set(empresa || "(sin empresa)", (unmatched.get(empresa || "(sin empresa)") ?? 0) + 1);
+    const co = matched ?? `nc:${normCompany(empresa) || r.id}`;
     const fecha = r.fecha_reunion ?? r.fecha_agendamiento;
     const agendada = r.fecha_agendamiento ?? r.fecha_reunion;
     if (!fecha || !agendada) continue;
@@ -124,6 +124,7 @@ export async function loadSheetMeetings(input: {
       id: r.id,
       // Sin contacto en HubSpot: un id propio para no fusionar interlocutores
       ct: ct ?? `mt:${pn || r.id}`,
+      ...(empresa ? { emp: empresa } : {}),
       ...(r.contacto_nombre ? { ctn: String(r.contacto_nombre).trim() } : {}),
       // Datos completos de la planilla (vista Reuniones)
       ...(r.contacto_cargo ? { cargo: String(r.contacto_cargo).trim() } : {}),
