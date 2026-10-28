@@ -140,7 +140,7 @@ export const PROPERTY_DEFS: {
   label: string;
   required?: boolean;
   help: string;
-  perClient?: { labelPrefix: string; namePrefix?: string };
+  perClient?: { labelPrefix: string; alsoPrefixes?: string[]; namePrefix?: string };
 }[] = [
   { key: "companyStatus", object: "companies", label: "Status de la asignación - <cliente>", required: true, help: "Estado de gestión de la cuenta (una propiedad por cliente)", perClient: { labelPrefix: "Status de la asignación", namePrefix: "status_de_la_asignacion" } },
   { key: "companyClient", object: "companies", label: "Cliente BullsEye", help: "Opcional: filtro adicional del universo" },
@@ -153,7 +153,7 @@ export const PROPERTY_DEFS: {
   { key: "companyIcpTier", object: "companies", label: "Tier ICP", help: "A / B / C (propuesta, Anexo A4)" },
   { key: "companyCountry", object: "companies", label: "País", help: "Sin ella se usa country" },
   { key: "contactStatus", object: "contacts", label: "Asignación BullsEye por Llamar - <cliente>", required: true, help: "Estado de gestión del contacto (una propiedad por cliente)", perClient: { labelPrefix: "Asignación BullsEye por Llamar" } },
-  { key: "contactSdr", object: "contacts", label: "SDR Asignado - <cliente>", help: "SDR del contacto (una por cliente; sin ella, el propietario)", perClient: { labelPrefix: "SDR Asignado" } },
+  { key: "contactSdr", object: "contacts", label: "SDR Asignado - <cliente>", help: "SDR del contacto (\"SDR Asignado - <cliente>\" o \"SDR - <cliente>\"; sin ella, el propietario)", perClient: { labelPrefix: "SDR Asignado", alsoPrefixes: ["SDR -"] } },
   { key: "contactObjection", object: "contacts", label: "Objeción principal", help: "Propuesta (Anexo A4)" },
   { key: "contactSignal", object: "contacts", label: "Señal de interés", help: "Propuesta (Anexo A4)" },
   { key: "meetingResult", object: "meetings", label: "Resultado de la reunión", help: "Propuesta (Anexo A4)" },

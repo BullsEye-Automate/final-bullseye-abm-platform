@@ -60,12 +60,19 @@ function afterPrefix(label: string, prefix: string): string | null {
   const m = softLabel(label).match(re);
   return m ? softLabel(label).slice(m[0].length) : null;
 }
-export const hasLabelPrefix = (label: string, prefix: string) => afterPrefix(label, prefix) !== null;
+export const hasLabelPrefix = (label: string, prefix: string | string[]) => prefixIndex(label, prefix) >= 0;
+// Índice del primer prefijo que calza (-1 = ninguno). Varios prefijos: "SDR
+// Asignado - <cliente>" o "SDR - <cliente>" en contactos
+function prefixIndex(label: string, prefix: string | string[]): number {
+  return (Array.isArray(prefix) ? prefix : [prefix]).findIndex((x) => afterPrefix(label, x) !== null);
+}
 
 // Sufijo de cliente de una propiedad por cliente: "Status de la asignación -
 // SDR AcidLab" → "acidlab". Vacío = propiedad genérica (no es de un cliente).
-function clientSuffix(label: string, labelPrefix: string): string {
-  let rest = normLabel(afterPrefix(label, labelPrefix) ?? "");
+function clientSuffix(label: string, labelPrefix: string | string[]): string {
+  const list = Array.isArray(labelPrefix) ? labelPrefix : [labelPrefix];
+  const i = prefixIndex(label, list);
+  let rest = normLabel(i >= 0 ? afterPrefix(label, list[i]) ?? "" : "");
   if (rest.startsWith("sdr ")) rest = rest.slice(4);
   else if (rest === "sdr") rest = ""; // "Status de la asignación - SDR" (HubSpot propio del cliente) es genérica
   return rest;
@@ -74,7 +81,7 @@ function clientSuffix(label: string, labelPrefix: string): string {
 // Entre las propiedades de cada cliente, la que calza con su nombre:
 // igual > una contiene a la otra ("Apply" ↔ "Apply Digital") > misma
 // primera palabra. Empate = ninguna (se elige a mano).
-export function matchClientProperty(cands: HSProperty[], labelPrefix: string, clientName: string): HSProperty | undefined {
+export function matchClientProperty(cands: HSProperty[], labelPrefix: string | string[], clientName: string): HSProperty | undefined {
   const client = normLabel(clientName);
   if (!client) return undefined;
   const scored = cands.map((p) => {
@@ -84,10 +91,12 @@ export function matchClientProperty(cands: HSProperty[], labelPrefix: string, cl
       : (` ${client} `.includes(` ${suf} `) || ` ${suf} `.includes(` ${client} `)
         || suf.replace(/ /g, "").startsWith(client.replace(/ /g, "")) || client.replace(/ /g, "").startsWith(suf.replace(/ /g, ""))) ? 2
       : suf.split(" ")[0] === client.split(" ")[0] ? 1 : 0;
-    return { p, score };
+    return { p, score, pi: Math.max(0, prefixIndex(p.label, labelPrefix)) };
   }).filter((x) => x.score > 0);
   const best = Math.max(0, ...scored.map((x) => x.score));
-  const top = scored.filter((x) => x.score === best);
+  let top = scored.filter((x) => x.score === best);
+  // Empate: manda el prefijo principal (ej. "SDR Asignado" antes que "SDR -")
+  if (top.length > 1) { const minPi = Math.min(...top.map((x) => x.pi)); top = top.filter((x) => x.pi === minPi); }
   return top.length === 1 ? top[0].p : undefined;
 }
 
@@ -104,7 +113,8 @@ export function detectProperties(configured: Record<string, string>, catalog: Pr
     let candidates: { name: string; label: string }[] = [];
     if (manual) prop = props.find((p) => p.name === manual);
     if (def.perClient) {
-      const { labelPrefix, namePrefix } = def.perClient;
+      const { namePrefix } = def.perClient;
+      const labelPrefix = [def.perClient.labelPrefix, ...(def.perClient.alsoPrefixes ?? [])];
       const cands = props.filter((p) => hasLabelPrefix(p.label, labelPrefix) || (namePrefix && p.name.startsWith(namePrefix)));
       candidates = cands.map((p) => ({ name: p.name, label: p.label })).sort((a, b) => a.label.localeCompare(b.label));
       if (!prop && !manual) {
