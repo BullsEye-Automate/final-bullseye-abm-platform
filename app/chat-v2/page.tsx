@@ -61,6 +61,8 @@ type AlloCall = {
   recording_url: string | null;
 };
 
+type HSMeeting = { id: string; title: string | null; start: string; end: string | null; outcome: string | null };
+
 type Client  = { id: string; name: string };
 type Segment = {
   id: string; name: string;
@@ -68,33 +70,15 @@ type Segment = {
   style_rules: string | null; style_avoid: string | null; style_email_length: string | null;
 };
 
-// Repara JSON con saltos de línea literales dentro de strings (JSON inválido que el modelo genera a veces)
-function repairJson(s: string): string {
-  let result = ""; let inStr = false; let esc = false;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (esc) { result += ch; esc = false; continue; }
-    if (ch === "\\" && inStr) { esc = true; result += ch; continue; }
-    if (ch === '"') { inStr = !inStr; result += ch; continue; }
-    if (inStr && ch === "\n") { result += "\\n"; continue; }
-    if (inStr && ch === "\r") { result += "\\r"; continue; }
-    result += ch;
+function parsePlainMessage(text: string, channel: string): { subject: string; body: string } {
+  const clean = text.replace(/^```(?:\w+)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+  if (channel === "email" && clean.startsWith("Asunto:")) {
+    const nl = clean.indexOf("\n");
+    const subject = nl >= 0 ? clean.slice(7, nl).trim() : clean.slice(7).trim();
+    const body = nl >= 0 ? clean.slice(nl + 1).trim() : "";
+    return { subject, body };
   }
-  return result;
-}
-
-function parseEmail(text: string): { subject: string; body: string } | null {
-  // Strip markdown code fences
-  const clean = text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "");
-  try {
-    const match = clean.match(/\{[\s\S]*\}/);
-    if (!match) return null;
-    const parsed = JSON.parse(repairJson(match[0]));
-    if (parsed.subject) parsed.subject = parsed.subject.replace(/\\n/g, "\n");
-    if (parsed.body) parsed.body = parsed.body.replace(/\\n/g, "\n");
-    if (parsed.subject || parsed.body) return parsed;
-  } catch {}
-  return null;
+  return { subject: "", body: clean };
 }
 
 function fmtDuration(s: number): string {
@@ -314,13 +298,7 @@ function EmailCard({ subject, body, showSubject = true, channel = "email" }: { s
 function Bubble({ msg, channel }: { msg: Message; channel: string }) {
   const isUser = msg.role === "user";
   const effectiveChannel = msg.channel ?? channel;
-  const isBriefChannel = effectiveChannel === "meeting_brief";
-  const parsed = !isUser && !isBriefChannel ? parseEmail(msg.content) : null;
-
-  // Para briefing: el modelo devuelve texto plano (no JSON)
-  const briefText = !isUser && isBriefChannel
-    ? msg.content.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim()
-    : null;
+  const parsed = !isUser ? parsePlainMessage(msg.content, effectiveChannel) : null;
 
   return (
     <div className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"} mb-5`}>
@@ -333,9 +311,7 @@ function Bubble({ msg, channel }: { msg: Message; channel: string }) {
         {msg.imagePreview && (
           <img src={msg.imagePreview} alt="Adjunto" className="rounded-xl max-w-full" style={{ maxHeight: 220, objectFit: "contain" }} />
         )}
-        {briefText ? (
-          <EmailCard subject="" body={briefText} showSubject={false} channel="meeting_brief" />
-        ) : parsed ? (
+        {parsed?.body ? (
           <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={effectiveChannel === "email"} channel={effectiveChannel} />
         ) : (
           <div className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
@@ -368,6 +344,7 @@ export default function ChatV2Page() {
   const [alloLoading, setAlloLoading]     = useState(false);
   const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
   const [alloPhoneOverride, setAlloPhoneOverride] = useState("");
+  const [contactMeetings, setContactMeetings] = useState<HSMeeting[]>([]);
 
   const [emailType, setEmailType]           = useState<EmailType>("cold");
   const [typeOpen, setTypeOpen]             = useState(false);
@@ -427,7 +404,7 @@ export default function ChatV2Page() {
     searchTimer.current = setTimeout(async () => {
       setContactSearching(true);
       try {
-        const r = await fetch(`/api/hubspot/contact-search?q=${encodeURIComponent(contactQuery)}`);
+        const r = await fetch(`/api/hubspot/contact-search?q=${encodeURIComponent(contactQuery)}&clientId=${encodeURIComponent(clientId)}`);
         const j = await r.json();
         setContactResults(j.contacts ?? []);
         setContactDropOpen(true);
@@ -443,9 +420,25 @@ export default function ChatV2Page() {
     if (!phone) return;
     setAlloLoading(true);
     fetch(`/api/allo/contact-calls?phone=${encodeURIComponent(phone)}`)
-      .then(r => r.json()).then(j => setAlloCalls(j.calls ?? [])).catch(() => {})
+      .then(r => r.json()).then(j => {
+        const calls: AlloCall[] = j.calls ?? [];
+        setAlloCalls(calls);
+        const withSummary = calls.find(c => c.summary);
+        if (withSummary) setSelectedCallId(withSummary.id);
+      }).catch(() => {})
       .finally(() => setAlloLoading(false));
   }, [selectedContact?.phone, alloPhoneOverride]);
+
+  useEffect(() => {
+    setContactMeetings([]);
+    if (!selectedContact?.id) return;
+    fetch(`/api/hubspot/contact-meetings?contactId=${selectedContact.id}&clientId=${encodeURIComponent(clientId)}`)
+      .then(r => r.json()).then(j => {
+        const meetings: HSMeeting[] = j.meetings ?? [];
+        setContactMeetings(meetings);
+        if (meetings.length > 0) setMeetingDate(meetings[0].start.slice(0, 16));
+      }).catch(() => {});
+  }, [selectedContact?.id, clientId]);
 
   function chooseRecipientType(t: "prospecto" | "cliente") {
     setRecipientType(t);
@@ -478,6 +471,7 @@ export default function ChatV2Page() {
     setAlloCalls([]);
     setSelectedCallId(null);
     setAlloPhoneOverride("");
+    setContactMeetings([]);
   }
 
   async function send(userContent: string, isFirst = false, image?: typeof pendingImage) {
@@ -965,6 +959,26 @@ export default function ChatV2Page() {
                       {LATAM_COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
                     </select>
                   </div>
+                  {contactMeetings.length > 0 && (
+                    <div>
+                      <div className="text-[11px] mb-1.5" style={{ color: "#9b97c0" }}>Reuniones en HubSpot:</div>
+                      <div className="space-y-1">
+                        {contactMeetings.map(m => (
+                          <button key={m.id} type="button"
+                            onClick={() => setMeetingDate(m.start.slice(0, 16))}
+                            className="w-full text-left rounded-xl px-3 py-2 text-[12px] transition"
+                            style={{
+                              background: meetingDate === m.start.slice(0, 16) ? "rgba(37,23,98,0.06)" : "#f4f2fb",
+                              border: `1px solid ${meetingDate === m.start.slice(0, 16) ? "#9b97c0" : "#e2e0f0"}`,
+                              color: "#1a1535",
+                            }}>
+                            {new Date(m.start).toLocaleString("es-CL", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                            {m.title && <span className="ml-2" style={{ color: "#9b97c0" }}>{m.title}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Fecha y hora</label>
                     <input type="datetime-local" value={meetingDate} onChange={e => setMeetingDate(e.target.value)}

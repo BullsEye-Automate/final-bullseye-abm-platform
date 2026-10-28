@@ -1,19 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const HS = "https://api.hubapi.com";
-function hsHeaders() {
+function hsHeaders(token: string) {
   return {
-    Authorization: `Bearer ${process.env.HUBSPOT_ACCESS_TOKEN}`,
+    Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   };
+}
+
+async function resolveToken(clientId: string | null): Promise<string> {
+  const defaultToken = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
+  if (!clientId) return defaultToken;
+  const db = supabaseAdmin();
+  const { data } = await db
+    .from("client_configs")
+    .select("hubspot_access_token")
+    .eq("client_id", clientId)
+    .single();
+  return data?.hubspot_access_token || defaultToken;
 }
 
 export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams.get("q")?.trim();
   if (!q || q.length < 2) return NextResponse.json({ contacts: [] });
+
+  const clientId = req.nextUrl.searchParams.get("clientId");
+  const token = await resolveToken(clientId);
 
   const isEmail = q.includes("@");
   const tokens = q.trim().split(/\s+/);
@@ -63,7 +79,7 @@ export async function GET(req: NextRequest) {
 
   const r = await fetch(`${HS}/crm/v3/objects/contacts/search`, {
     method: "POST",
-    headers: hsHeaders(),
+    headers: hsHeaders(token),
     body: JSON.stringify(body),
   });
   const d = await r.json();

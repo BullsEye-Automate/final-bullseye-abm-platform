@@ -135,11 +135,6 @@ function buildSystemPrompt(
   const contactSection = recipient.contactBlock ? `\n\n${recipient.contactBlock}` : "";
   const styleBlock = recipient.segmentStyleGuide ? `\n\nGuía de estilo (aplica estrictamente):\n${recipient.segmentStyleGuide}` : "";
 
-  const jsonFormat = isMeetingBrief
-    ? null
-    : channelInfo.hasSubject
-      ? `{\n  "subject": "Asunto del mensaje",\n  "body": "Cuerpo con salto de línea \\n entre párrafos"\n}`
-      : `{\n  "subject": "",\n  "body": "Texto del mensaje"\n}`;
 
   const typeInstructions: Record<string, string> = {
     no_contact:    `\n\nEste mensaje es para alguien que el SDR no logró contactar por teléfono. Reconoce que se intentó llamar, menciona brevemente el motivo del contacto, y ofrece otra forma de conectarse (correo, LinkedIn, WhatsApp).`,
@@ -164,10 +159,12 @@ ${contextBlock}${icpBlock}${styleBlock}${extraInstruction}
 
 Usa TODA la información disponible del contacto y la empresa para hiperpersonalizar el mensaje. Menciona detalles específicos de la industria, tamaño de empresa, cargo o situación del contacto.
 
-${jsonFormat
-    ? `Devuelve SIEMPRE este JSON sin markdown:\n${jsonFormat}\n\nPara ajustes, aplica directamente y devuelve el mensaje completo en JSON.`
-    : `Devuelve el briefing como texto plano estructurado, con secciones numeradas y encabezados en MAYÚSCULAS. No uses JSON, no uses markdown, no uses asteriscos. Usa saltos de línea simples para separar elementos. Para ajustes, devuelve el briefing completo actualizado.`
-  }`;
+${channelInfo.hasSubject && !isMeetingBrief
+      ? `Devuelve el mensaje en texto plano. Primera línea: "Asunto: [el asunto]". Luego una línea vacía. Luego el cuerpo. Sin markdown, sin JSON, sin asteriscos.`
+      : isMeetingBrief
+        ? `Devuelve el briefing como texto plano estructurado, con secciones numeradas y encabezados en MAYÚSCULAS. Sin JSON, sin markdown, sin asteriscos. Para ajustes, devuelve el briefing completo actualizado.`
+        : `Devuelve solo el texto del mensaje. Sin asunto, sin markdown, sin JSON, sin asteriscos. Para ajustes, devuelve el mensaje completo actualizado.`
+    }`;
 }
 
 export async function POST(req: NextRequest) {
@@ -255,25 +252,19 @@ export async function POST(req: NextRequest) {
 
     const assistantText = (response.content[0] as { type: string; text: string }).text ?? "";
 
-    let parsed: { subject?: string; body?: string } | null = null;
-    try {
-      const match = assistantText.match(/\{[\s\S]*\}/);
-      if (match) parsed = JSON.parse(match[0]);
-    } catch {}
-
-    if (save && parsed?.body) {
+    if (save) {
       const db = supabaseAdmin();
       await db.from("generated_emails").insert({
         client_id: clientId, email_type: emailType ?? "unknown",
         recipient_title: recipientTitle ?? null,
         referrer_name:   referrerName   ?? null,
         context_notes:   contextNotes   ?? null,
-        subject:         parsed.subject ?? null,
-        body:            parsed.body,
+        subject:         null,
+        body:            assistantText,
       });
     }
 
-    return NextResponse.json({ message: assistantText, parsed });
+    return NextResponse.json({ message: assistantText });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("agente-contenido-v2 error:", msg);
