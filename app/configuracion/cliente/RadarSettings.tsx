@@ -160,6 +160,22 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
             </span>
           </label>
 
+          <label className="text-sm">
+            <span className="label block mb-1">Reuniones con filtros de empresa</span>
+            <select
+              className="input"
+              value={s.properties?.meetingsTotal ?? ""}
+              onChange={(e) => {
+                const { meetingsTotal: _m, ...rest } = s.properties ?? {};
+                setS({ ...s, properties: e.target.value ? { ...rest, meetingsTotal: e.target.value } : rest });
+              }}
+            >
+              <option value="">Automático (AcidLab: total de la planilla; resto: se filtran)</option>
+              <option value="si">Siempre el total de la planilla (solo fechas, SDR y país)</option>
+              <option value="no">Se filtran por wishlist, industria, etc.</option>
+            </select>
+          </label>
+
           {s.hubspot_source === "bullseye" && (
             <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
               {PER_CLIENT.map(([key, label, required]) => {

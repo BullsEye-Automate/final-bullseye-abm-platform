@@ -6,7 +6,7 @@ import { deriveClientData, type FlatCompany, type FlatContact } from "../derive"
 import type { RadarActivity, RadarCallEval, RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { loadActivities } from "./activities";
 import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
-import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, saveSnapshot, universeMode } from "./store";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, universeMode } from "./store";
 import { checkClientActive } from "./masterClients";
 import { loadSheetMeetings } from "./sheetMeetings";
 import { loadAlloMonth } from "@/lib/celulasSdr/server/allo";
@@ -381,6 +381,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   });
   clientData.activities = act.activities;
   clientData.callEvals = callEvals;
+  if (meetingsTotal(settings, client.name)) clientData.meetingsTotal = true;
 
   const dataset: RadarDataset = {
     client: clientData,

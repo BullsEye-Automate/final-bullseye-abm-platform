@@ -37,6 +37,16 @@ export const PROPERTIES_MIGRATION_HINT = "Falta ejecutar la migración supabase/
 // propiedades por cliente: nunca se toman del mapeo global.
 // Modo del universo: "status" (Status de la asignación, por defecto) o
 // "client" (propiedad Cliente BullsEye). El cliente BullsEye usa "client".
+// Reuniones = total de la planilla aunque haya filtros de empresa (wishlist,
+// industria): solo se filtran por fechas, SDR y país, que la planilla sí
+// tiene. Por ahora solo AcidLab (automático) o quien lo active en
+// Configuración → Cliente → Pulso ABM.
+export function meetingsTotal(s: { properties?: Record<string, string> }, clientName: string): boolean {
+  const m = s.properties?.meetingsTotal;
+  if (m === "si" || m === "no") return m === "si";
+  return clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith("acidlab");
+}
+
 export function universeMode(s: { properties?: Record<string, string> }, clientName: string): "status" | "client" {
   const m = s.properties?.universeMode;
   if (m === "client" || m === "status") return m;

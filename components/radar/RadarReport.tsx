@@ -303,7 +303,7 @@ export default function RadarReport({
         )}
         {(sdr || pais || ind || wl) && (
           <div className="ra-banner info">
-            Filtro activo ({[sdr && `SDR: ${sdr}`, pais && `País: ${pais}`, ind && `Industria: ${ind}`, wl && `Wishlist: ${wl}`].filter(Boolean).join(" · ")}): el universo y todas las tasas se calculan solo sobre esas empresas.
+            Filtro activo ({[sdr && `SDR: ${sdr}`, pais && `País: ${pais}`, ind && `Industria: ${ind}`, wl && `Wishlist: ${wl}`].filter(Boolean).join(" · ")}): el universo y todas las tasas se calculan solo sobre esas empresas.{dataset.client.meetingsTotal && (ind || wl) ? " Reuniones muestra el total de la planilla (no se filtra por industria ni wishlist)." : ""}
           </div>
         )}
         {range && (

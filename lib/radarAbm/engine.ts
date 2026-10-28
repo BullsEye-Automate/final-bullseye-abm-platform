@@ -433,7 +433,10 @@ export function filterDataset(ds: RadarDataset, f: RadarFilter): RadarDataset {
     const ids = new Set(companies.map((c) => String(c.id)));
     const inCo = (x: { co: number | string }) => ids.has(String(x.co));
     contacts = contacts.filter(inCo);
-    meetings = meetings.filter(inCo);
+    // Total de la planilla: solo SDR (responsable) y país, que la planilla tiene
+    meetings = ds.client.meetingsTotal
+      ? meetings.filter((m) => (!f.sdr || normName(m.sdr) === normName(f.sdr)) && (!f.pais || !m.pais || normName(m.pais) === normName(f.pais)))
+      : meetings.filter(inCo);
     deals = deals.filter(inCo);
     if (activities) activities = activities.filter(inCo);
   }
