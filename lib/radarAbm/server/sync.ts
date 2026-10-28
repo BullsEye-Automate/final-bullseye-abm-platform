@@ -244,18 +244,28 @@ export async function syncClientRadar(clientId: string, by: string) {
   const unknownCtStatuses = new Set<string>();
   // Con status y sin equivalencia "Excluir del informe" (ej. ya no trabaja ahí)
   // Contacto de este cliente ("Cliente BullsEye"); sin la propiedad en este HubSpot no se filtra
-  const ofClient = (r: { properties: Record<string, string | null> }) => !uniCt || (!clientMode && !ctOpt) || isClientContact(r.properties[uniCt.name]);
-  const otherClient = clientMode ? 0 : rawContacts.filter((r) => !!ctStatusLabel(r.properties[contactStatusProp]) && !ofClient(r)).length;
-  if (otherClient) warnings.push(`${otherClient} contactos con status de asignación no tienen "${uniCt!.label}" = ${uniValue}: no se cuentan.`);
+  const filterByClient = !!uniCt && (clientMode || !!ctOpt);
+  const ofClient = (r: { properties: Record<string, string | null> }) => !filterByClient || isClientContact(r.properties[uniCt!.name]);
+  // Contacto de otro cliente: tiene "Cliente BullsEye" con otro valor
+  const otherClientC = (r: { properties: Record<string, string | null> }) => filterByClient && !!(r.properties[uniCt!.name] ?? "").trim() && !ofClient(r);
+  const otherClient = clientMode ? 0 : rawContacts.filter((r) => !!ctStatusLabel(r.properties[contactStatusProp]) && otherClientC(r)).length;
+  if (otherClient) warnings.push(`${otherClient} contactos con status de asignación tienen "${uniCt!.label}" de otro cliente: no se cuentan.`);
+  // Contactos de la cuenta = los con "Cliente BullsEye" = el cliente (penetración
+  // real, aunque no tengan status de asignación) + los con status sin titular
   const kept = clientMode
     // Modo Cliente BullsEye: contactos con "Cliente BullsEye" = el cliente
     ? rawContacts.filter(ofClient)
     : rawContacts.filter((r) => {
         const label = ctStatusLabel(r.properties[contactStatusProp]);
-        return !!label && contactStatusCanon(label) !== EXCLUDE && ofClient(r);
+        if (label && contactStatusCanon(label) === EXCLUDE) return false;
+        if (otherClientC(r)) return false;
+        return !!label || (filterByClient && ofClient(r));
       });
+  const noStatusContacts = clientMode ? 0 : kept.filter((r) => !ctStatusLabel(r.properties[contactStatusProp])).length;
+  if (noStatusContacts) warnings.push(`${noStatusContacts} contactos de ${uniValue} sin "Asignación BullsEye por llamar": se incluyen con status por actividad (conversó = Hacer Seguimiento, sin respuesta = No Contestó, sin actividad = Por gestionar).`);
   const excludedContacts = clientMode ? 0 : rawContacts.filter((r) => { const l = ctStatusLabel(r.properties[contactStatusProp]); return !!l && contactStatusCanon(l) === EXCLUDE; }).length;
   const keptIds = kept.map((r) => r.id);
+  const derivedCt = new Set<string>(); // contactos con status por actividad
 
   // ── Actividades de la cuenta (empresa + contactos): profundidad por canal
   const act = await loadActivities({ companyIds, contactIds: keptIds, contactCompany, catalog, token });
@@ -275,9 +285,12 @@ export async function syncClientRadar(clientId: string, by: string) {
     const acts = actByCt.get(r.id) ?? [];
     // Modo Cliente BullsEye: status por actividad (conversó = seguimiento,
     // sin respuesta = no contestó, sin actividad = por gestionar)
-    const st = clientMode
-      ? (acts.some((a) => a.conn || a.in) ? "Hacer Seguimiento" : acts.length ? "No Contestó" : "Por gestionar")
-      : contactStatusCanon(ctStatusLabel(p[contactStatusProp]))!;
+    // Sin status de asignación (o en modo Cliente BullsEye): status por actividad
+    const ownLabel = clientMode ? null : ctStatusLabel(p[contactStatusProp]);
+    if (!ownLabel) derivedCt.add(String(r.id));
+    const st = ownLabel
+      ? contactStatusCanon(ownLabel)!
+      : (acts.some((a) => a.conn || a.in) ? "Hacer Seguimiento" : acts.length ? "No Contestó" : "Por gestionar");
     if (!CT_ORDER.includes(st)) unknownCtStatuses.add(st);
     const calls = acts.filter((a) => a.k === "call").length;
     const conv = acts.filter((a) => a.conn).length;
@@ -340,6 +353,11 @@ export async function syncClientRadar(clientId: string, by: string) {
 
   // Modo Cliente BullsEye: contacto con reunión = Reunión Agendada; empresa
   // Lead (o sin etapa) = reunión → conversación → actividad → asignada
+  // Contactos sin status de asignación (status por actividad): con reunión = Reunión Agendada
+  if (!clientMode && derivedCt.size) {
+    const mtCt = new Set(meetings.map((m) => String(m.ct)));
+    for (const k of contacts) if (derivedCt.has(String(k.id)) && mtCt.has(String(k.id))) k.st = "Reunión Agendada";
+  }
   if (clientMode) {
     const mtCt = new Set(meetings.map((m) => String(m.ct))), mtCo = new Set(meetings.map((m) => String(m.co)));
     for (const k of contacts) if (mtCt.has(String(k.id))) k.st = "Reunión Agendada";
