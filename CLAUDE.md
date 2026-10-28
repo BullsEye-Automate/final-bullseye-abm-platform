@@ -218,6 +218,18 @@ Correo automático con un **PNG vertical** (1080 px, para reenviar por WhatsApp)
 
 ---
 
+### Alertas de Números (`lib/phoneHealth/`, Análisis SDR)
+
+Detección proactiva de números de Allo que caen en spam o pierden conectividad. Sección **"Alertas de Números"** arriba de Análisis → SDR (`app/analisis/sdr/components/AlertasNumeros.tsx`) + correo diario.
+
+- **Métrica:** % de llamadas que contesta una persona = etapa "Conversación" del embudo de Allo (`fetchAlloConnectedCallIds`), por número asignado en `client_allo_numbers`. Ventanas móviles que terminan ayer (día de Chile): actual = últimos 7 días, anterior = 7 días previos, base = 28 días previos a la actual.
+- **Reglas** (`engine.ts`, `THRESHOLDS`): se evalúa con ≥ 50 llamadas en 7 días (si no, "Sin volumen") y se compara con la base si tiene ≥ 100. **Rojo:** bajo 5% dos semanas seguidas o caída ≥ 40% vs su base → reemplazar el número. **Amarillo:** caída 25–40%, bajo 5% solo esta semana, > 60% a buzón, o conexiones "contestadas" sin conversación de < 15 s ≥ 30% y +10 pts vs base (posibles cortes / "no se oye") → llamada de prueba y escuchar grabaciones. **Vigilar:** ≥ 400 llamadas en 7 días → rotación preventiva. Cada número se compara contra su propio historial (validado con datos ago–oct 2026: habría marcado Crossnet Argentina y Grupo Tress MX semanas antes).
+- **Resguardo de datos:** si Allo no devuelve ninguna "Conversación" con ≥ 200 llamadas, `dataWarning` y NO se envía correo (es una falla de API, no de los números).
+- **Correo** (`mail.ts`, cron `/api/cron/alertas-numeros`, 11 y 12 UTC L-V, corre solo el que cae a las 8:00 de Chile; `?force=1` con `CRON_SECRET` lo fuerza): se envía si hay alertas nuevas (o amarilla → roja) o resueltas, y siempre los lunes como resumen. Estado en la tabla `phone_health_alerts` (migración `supabase/20261028_phone_health_alerts_migration.sql`) para no repetir el mismo aviso. Destinatarios `PHONE_ALERTS_TO` (coma; por defecto amadriz@), remitente `PHONE_ALERTS_FROM` → `CELULAS_ALERTS_FROM`. Mismo límite de Resend: sin el dominio verificado solo entrega al dueño de la cuenta.
+- **API con sesión:** `GET /api/analisis/alertas-numeros` (semáforo + `since` de cada alerta), `POST` envía el correo en el momento sin tocar el estado (botón "Enviarme el correo ahora").
+
+---
+
 ### Pulso ABM — antes "Radar ABM" (`/analisis/radar-abm` y portal `/portal/radar`)
 
 Nombre visible: **Pulso ABM** (se cambió por conflicto de nombre). El código, las URLs (`radar-abm`, `/portal/radar`), `lib/radarAbm/` y las tablas `radar_abm_*` mantienen el nombre interno "radar".
