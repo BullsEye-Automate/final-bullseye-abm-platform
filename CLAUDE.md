@@ -204,6 +204,16 @@ Centro de mando del equipo SDR (14 vistas: Dirección / Operación / Análisis),
 
 ---
 
+### Academia SDR (`/analisis/academia-sdr`)
+
+Capacitación para SDRs nuevos **por cliente**, en el menú debajo de Células SDR. Port del skill "academia-sdr-bullseye": 10 módulos ("vueltas", metáfora Fórmula 1) con las mismas reglas (cuentas ya filtradas, mensajes sin investigar cada cuenta, "Cuándo avisar a tu líder", tono simple con analogías, "Lo que debes recordar"). Solo la ve el equipo BullsEye (no está en `/portal`). Migración `supabase/20261028_academia_sdr_migration.sql` (`sdr_academies` = datos de entrada por cliente, `sdr_academy_modules` = un módulo por fila).
+
+- **Entrada:** servicio foco y países (obligatorios: en la app la IA no puede preguntar), industrias prioritarias e indicaciones (opcionales). La IA lee el Contexto IA del cliente (`client_ai_context`, incluido el ICP general), el ICP por industria (`icp_industry_sections`) y las notas de `icp_config` (`loadClientMaterials` en `lib/academiaSdr/server/generate.ts`). Sin documentos no se puede generar.
+- **Generación:** una llamada por módulo (`POST /api/academia-sdr/generate`, herramienta forzada `guardar_modulo`, bloques tipados de `lib/academiaSdr/types.ts`; qué bloques lleva cada vuelta en `lib/academiaSdr/modules.ts`). El navegador genera primero la vuelta 1 (deja el contexto cacheado con `cache_control`) y después las otras 9, de a 3 en paralelo. Se puede regenerar una vuelta sola. Lo que la IA no encuentra o ve contradictorio va a `openQuestions` y la página lo lista como "Confirmar con el cliente". Costo en `/admin/uso-ia` como `academia_sdr_module`.
+- **HTML interactivo** (`lib/academiaSdr/render.ts`, todo dato pasa por `esc()`): autocontenido, colores del skill (índigo #140F3D, cian #62E0D8…), Sora + Roboto, pestañas por vuelta y semáforo de avance (localStorage con try/catch), selector de servicios, diccionario con tarjetas que se dan vuelta, casos por industria, armador de mensajes de 4 piezas (contador < 80 palabras, copiar), simulador de objeciones, checklist de reunión y quiz (aprueba con 80%). Vista previa en iframe, "Abrir en pestaña" y descarga (`GET /api/academia-sdr/html?client_id=`).
+
+---
+
 ### Reporte SDR diario por correo (`lib/reporteSdr/`)
 
 Correo automático con un **PNG vertical** (1080 px, para reenviar por WhatsApp) de las llamadas del día por SDR + reuniones agendadas hoy. **Lunes a viernes hábiles a las 13:00 y 18:30 de Chile.**
