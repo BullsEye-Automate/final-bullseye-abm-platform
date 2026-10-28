@@ -218,9 +218,11 @@ Correo automático con un **PNG vertical** (1080 px, para reenviar por WhatsApp)
 
 ---
 
-### Alertas de Números (`lib/phoneHealth/`, Análisis SDR)
+### Salud de números — Alertas de Números (`lib/phoneHealth/`, `/analisis/salud-numeros`)
 
-Detección proactiva de números de Allo que caen en spam o pierden conectividad. Sección **"Alertas de Números"** arriba de Análisis → SDR (`app/analisis/sdr/components/AlertasNumeros.tsx`) + correo diario.
+Detección proactiva de números de Allo que caen en spam o pierden conectividad. **Página propia** `/analisis/salud-numeros` (menú Análisis → "Salud de números"): tarjetas de conteo y números agrupados por acción (Reemplazar / Revisar esta semana / Vigilar / Sanos / Sin volumen, los tres últimos plegados); cada fila muestra un motivo corto (`summary` del engine) y al hacer clic el detalle (número, cliente, desde cuándo, todos los motivos, acción). En Análisis → SDR solo queda una **franja de una línea** con los conteos y "Ver detalle" (`app/analisis/sdr/components/AlertasNumeros.tsx`). + correo diario.
+
+- **Caché del reporte:** calcularlo toma ~45 s, así que el último reporte se guarda en `allo_response_cache` (clave `phone_health_report:v1`, 6 h; `getPhoneHealthReport` en `server.ts`). El cron de las 8:00 lo deja listo; la franja y la página lo leen al instante; "Actualizar" usa `?fresh=1`. Etiquetas del nivel por acción (`LEVEL_LABEL`: Reemplazar / Revisar / Vigilar / Sano / Sin volumen), también en el correo, que enlaza a `/analisis/salud-numeros`.
 
 - **Métrica:** % de llamadas que contesta una persona = etapa "Conversación" del embudo de Allo (`fetchAlloConnectedCallIds`), por número asignado en `client_allo_numbers`. Ventanas móviles que terminan ayer (día de Chile): actual = últimos 7 días, anterior = 7 días previos, base = 28 días previos a la actual.
 - **Reglas** (`engine.ts`, `THRESHOLDS`): se evalúa con ≥ 50 llamadas en 7 días (si no, "Sin volumen") y se compara con la base si tiene ≥ 100. **Rojo:** bajo 5% dos semanas seguidas o caída ≥ 40% vs su base → reemplazar el número. **Amarillo:** caída 25–40%, bajo 5% solo esta semana, > 60% a buzón, o conexiones "contestadas" sin conversación de < 15 s ≥ 30% y +10 pts vs base (posibles cortes / "no se oye") → llamada de prueba y escuchar grabaciones. **Vigilar:** ≥ 400 llamadas en 7 días → rotación preventiva. Cada número se compara contra su propio historial (validado con datos ago–oct 2026: habría marcado Crossnet Argentina y Grupo Tress MX semanas antes).
