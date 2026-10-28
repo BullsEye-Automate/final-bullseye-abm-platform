@@ -192,7 +192,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
                       }}
                     >
                       <option value="">
-                        Automático{info ? `: ${info.auto ?? (required ? "sin coincidencia, elige una" : "propietario del registro")}` : ""}
+                        Automático{info ? `: ${info.auto ?? (required ? "sin coincidencia, elige una" : key === "companyWishlist" ? "sin wishlist" : "propietario del registro")}` : ""}
                       </option>
                       {(info?.candidates ?? []).map((o) => <option key={o.name} value={o.name}>{o.label}</option>)}
                     </select>

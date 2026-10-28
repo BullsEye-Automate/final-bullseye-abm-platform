@@ -74,12 +74,12 @@ export async function checkClientHubspot(clientId: string) {
     const opt = (p: typeof coProp) => p?.options?.find((o) => o.label.toLowerCase() === value.toLowerCase())?.value ?? value;
     let universe: number | null = null, contacts: number | null = null;
     if (coProp) {
-      const r = await search("companies", [{ propertyName: coProp.name, operator: "EQ", value: opt(coProp) }]);
+      const r = await search("companies", [{ propertyName: coProp.name, operator: coProp.fieldType === "checkbox" ? "CONTAINS_TOKEN" : "EQ", value: opt(coProp) }]);
       if (r.ok) universe = Number(r.body?.total ?? 0);
       add("companies", "Empresas", true, r, r.ok ? `${universe} empresas con "${coProp.label}" = ${value}` : undefined);
     } else items.push({ key: "companies", label: "Empresas", ok: false, required: true, detail: 'No existe la propiedad "Cliente BullsEye Empresa"' });
     if (ctProp) {
-      const r = await search("contacts", [{ propertyName: ctProp.name, operator: "EQ", value: opt(ctProp) }]);
+      const r = await search("contacts", [{ propertyName: ctProp.name, operator: ctProp.fieldType === "checkbox" ? "CONTAINS_TOKEN" : "EQ", value: opt(ctProp) }]);
       if (r.ok) contacts = Number(r.body?.total ?? 0);
       add("contacts", "Contactos", true, r, r.ok ? `${contacts} contactos con "${ctProp.label}" = ${value}` : undefined);
     } else items.push({ key: "contacts", label: "Contactos", ok: false, required: true, detail: 'No existe la propiedad de contacto "Cliente BullsEye"' });
@@ -95,12 +95,17 @@ export async function checkClientHubspot(clientId: string) {
   let universe: number | null = null;
   if (statusProp) {
     const filters: unknown[] = [{ propertyName: statusProp, operator: "HAS_PROPERTY" }];
-    if (P.companyClient.property && clientValue) {
+    // Titular de la cuenta: "Cliente BullsEye Empresa" = este cliente (igual que el sync)
+    const titular = (catalog.companies ?? []).find((x) => x.name === (settings.properties?.universeCompanyClient || "cliente_bullseye_empresa"));
+    const want = (clientValue || client?.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const opt = titular?.options?.find((o) => { const l = o.label.toLowerCase().replace(/[^a-z0-9]/g, ""); return l === want || (l.length >= 4 && want.length >= 4 && (l.startsWith(want) || want.startsWith(l))); });
+    if (titular && opt) filters.push({ propertyName: titular.name, operator: titular.fieldType === "checkbox" ? "CONTAINS_TOKEN" : "EQ", value: opt.value });
+    else if (P.companyClient.property && clientValue) {
       filters.push({ propertyName: P.companyClient.property, operator: P.companyClient.fieldType === "checkbox" ? "CONTAINS_TOKEN" : "EQ", value: clientValue });
     }
     const r = await search("companies", filters);
     if (r.ok) universe = Number(r.body?.total ?? 0);
-    add("companies", "Empresas", true, r, r.ok ? `${universe} empresas con "Status de la asignación - SDR"` : undefined);
+    add("companies", "Empresas", true, r, r.ok ? `${universe} empresas con "Status de la asignación"${opt ? ` y "${titular!.label}" = ${opt.label}` : ""}` : undefined);
   } else {
     add("companies", "Empresas", true, await search("companies"));
   }
