@@ -42,6 +42,7 @@ export type NumberHealth = {
   country: string;
   level: AlertLevel;
   reasons: string[];      // en español, para la pantalla y el correo
+  summary: string;        // motivo principal en pocas palabras (fila de la página)
   action: string;         // acción sugerida
   dials7: number;
   rate7: number | null;   // % contesta persona, últimos 7 días
@@ -81,60 +82,69 @@ export function evaluateNumber(n: NumberInput): NumberHealth {
   const hasBase = n.baseline.dials >= T.minCallsBaseline && rateBase !== null && rateBase > 0;
   const dropPct = hasBase && rate7 !== null ? ((rateBase! - rate7) / rateBase!) * 100 : null;
 
-  const base: Omit<NumberHealth, "level" | "reasons" | "action"> = {
+  const base: Omit<NumberHealth, "level" | "reasons" | "summary" | "action"> = {
     number: n.number, name: n.name, client: n.client, country: n.country,
     dials7: n.current.dials, rate7, ratePrev7, rateBase, dropPct, voicemailShare7, shortShare7, shortShareBase,
   };
 
   if (n.current.dials < T.minCallsWindow) {
-    return { ...base, level: "low_volume", reasons: [`Solo ${n.current.dials} llamadas en 7 días (mínimo ${T.minCallsWindow} para evaluar)`], action: "Sin acción" };
+    return { ...base, level: "low_volume", reasons: [`Solo ${n.current.dials} llamadas en 7 días (mínimo ${T.minCallsWindow} para evaluar)`], summary: `Solo ${n.current.dials} llamadas en 7 días`, action: "Sin acción" };
   }
 
   const red: string[] = [];
   const yellow: string[] = [];
   const watch: string[] = [];
+  // Versión corta de cada motivo, en el mismo orden (la primera es la principal).
+  const redShort: string[] = [];
+  const yellowShort: string[] = [];
 
   const prevEnough = n.previous.dials >= T.minCallsWindow;
   if (rate7 !== null && rate7 < T.redRate && prevEnough && ratePrev7 !== null && ratePrev7 < T.redRate) {
     red.push(`Bajo ${T.redRate}% dos semanas seguidas (${fmt(ratePrev7)} → ${fmt(rate7)})`);
+    redShort.push(`Bajo ${T.redRate}% dos semanas seguidas`);
   }
   if (dropPct !== null && dropPct >= T.redDrop) {
     red.push(`Cayó ${Math.round(dropPct)}% vs su promedio de 4 semanas (${fmt(rateBase)} → ${fmt(rate7)})`);
+    redShort.push(`Cayó ${Math.round(dropPct)}% vs. su promedio`);
   } else if (dropPct !== null && dropPct >= T.yellowDrop) {
     yellow.push(`Cayó ${Math.round(dropPct)}% vs su promedio de 4 semanas (${fmt(rateBase)} → ${fmt(rate7)})`);
+    yellowShort.push(`Cayó ${Math.round(dropPct)}% vs. su promedio`);
   }
   if (rate7 !== null && rate7 < T.redRate && red.length === 0) {
     yellow.push(`Contesta una persona solo el ${fmt(rate7)} esta semana`);
+    yellowShort.push(`Bajo ${T.redRate}% de contestación`);
   }
   if (voicemailShare7 !== null && voicemailShare7 > T.voicemailShare) {
     yellow.push(`${fmt(voicemailShare7)} de las llamadas termina en buzón`);
+    yellowShort.push(`${fmt(voicemailShare7)} termina en buzón`);
   }
   if (
     shortShare7 !== null && shortShare7 >= T.shortShare &&
     (shortShareBase === null || shortShare7 - shortShareBase >= T.shortShareRise)
   ) {
     yellow.push(`Suben las conexiones de menos de 15 s: ${fmt(shortShare7)} (base ${fmt(shortShareBase)}) — posibles cortes o "no se oye"`);
+    yellowShort.push("Posibles cortes (llamadas < 15 s)");
   }
   if (n.current.dials >= T.highVolume) {
     watch.push(`Alto volumen: ${n.current.dials} llamadas en 7 días; programar rotación preventiva`);
   }
 
   if (red.length) {
-    return { ...base, level: "red", reasons: [...red, ...yellow], action: "Reemplazar el número esta semana" };
+    return { ...base, level: "red", reasons: [...red, ...yellow], summary: redShort[0], action: "Reemplazar el número esta semana" };
   }
   if (yellow.length) {
-    return { ...base, level: "yellow", reasons: yellow, action: "Revisar: llamada de prueba a operadoras y escuchar grabaciones" };
+    return { ...base, level: "yellow", reasons: yellow, summary: yellowShort[0], action: "Revisar: llamada de prueba a operadoras y escuchar grabaciones" };
   }
   if (watch.length) {
-    return { ...base, level: "watch", reasons: watch, action: "Vigilar y planificar rotación" };
+    return { ...base, level: "watch", reasons: watch, summary: "Alto volumen: planificar rotación", action: "Vigilar y planificar rotación" };
   }
-  return { ...base, level: "ok", reasons: [], action: "Sin acción" };
+  return { ...base, level: "ok", reasons: [], summary: "Dentro de lo normal", action: "Sin acción" };
 }
 
 export const LEVEL_ORDER: Record<AlertLevel, number> = { red: 0, yellow: 1, watch: 2, ok: 3, low_volume: 4 };
 export const LEVEL_LABEL: Record<AlertLevel, string> = {
-  red: "Rojo",
-  yellow: "Amarillo",
+  red: "Reemplazar",
+  yellow: "Revisar",
   watch: "Vigilar",
   ok: "Sano",
   low_volume: "Sin volumen",

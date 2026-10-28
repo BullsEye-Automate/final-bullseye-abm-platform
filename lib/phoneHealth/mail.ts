@@ -14,7 +14,7 @@ import { mailProvider, sendMail } from "@/lib/mailer";
 import { supabaseAdmin } from "@/lib/supabase";
 import { dow, isBusinessDay, chileToday } from "@/lib/celulasSdr/calendar";
 import { formatPct, LEVEL_LABEL, type NumberHealth } from "./engine";
-import { buildPhoneHealthReport, type PhoneHealthReport } from "./server";
+import { buildPhoneHealthReport, saveCachedReport, type PhoneHealthReport } from "./server";
 
 const DEFAULT_TO = ["amadriz@bullseye-abm.com"];
 
@@ -109,13 +109,13 @@ export function buildAlertEmail(report: PhoneHealthReport, diff: AlertDiff, appU
   const n = diff.newAlerts.length;
   const subject =
     reds + yellows === 0
-      ? `Alertas de números: todo en orden (${report.today})`
-      : `Alertas de números: ${reds} en rojo, ${yellows} en amarillo${n ? ` · ${n} nueva${n > 1 ? "s" : ""}` : ""}`;
+      ? `Salud de números: todo en orden (${report.today})`
+      : `Salud de números: ${reds} por reemplazar, ${yellows} por revisar${n ? ` · ${n} nueva${n > 1 ? "s" : ""}` : ""}`;
 
   const alertRows = [...diff.newAlerts.map((h) => row(h, true)), ...diff.ongoing.map((h) => row(h, false))].join("");
   const resolvedHtml = diff.resolved.length
     ? `<h3 style="font-size:15px;color:${COLORS.teal};margin:24px 0 8px">Salieron de alerta</h3><p style="font-size:13px;color:${COLORS.muted};margin:0">${diff.resolved
-        .map((r) => `${esc(r.name)} (${esc(r.client)}, antes ${r.wasLevel.toLowerCase()})`)
+        .map((r) => `${esc(r.name)} (${esc(r.client)}, estaba en “${r.wasLevel}”)`)
         .join(" · ")}</p>`
     : "";
   const watch = report.numbers.filter((h) => h.level === "watch");
@@ -127,8 +127,8 @@ export function buildAlertEmail(report: PhoneHealthReport, diff: AlertDiff, appU
 
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;background:${COLORS.bg};padding:24px">
 <div style="max-width:760px;margin:0 auto;background:#fff;border-radius:12px;padding:28px">
-<p style="margin:0;color:${COLORS.teal};font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase">BullsEye · Alertas de números</p>
-<h2 style="margin:6px 0 4px;color:${COLORS.ink};font-size:22px">${reds + yellows === 0 ? "Todos los números están dentro de lo normal" : `${reds} número${reds === 1 ? "" : "s"} en rojo y ${yellows} en amarillo`}</h2>
+<p style="margin:0;color:${COLORS.teal};font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase">BullsEye · Salud de números</p>
+<h2 style="margin:6px 0 4px;color:${COLORS.ink};font-size:22px">${reds + yellows === 0 ? "Todos los números están dentro de lo normal" : `${reds} por reemplazar y ${yellows} por revisar`}</h2>
 <p style="margin:0 0 18px;color:${COLORS.muted};font-size:13px">Últimos 7 días (${report.windows.current[0]} a ${report.windows.current[1]}) comparados con el promedio de las 4 semanas anteriores. Métrica: % de llamadas que contesta una persona.</p>
 ${report.dataWarning ? `<p style="margin:0 0 18px;padding:10px 12px;background:#FFF6E0;border-radius:8px;color:${COLORS.ink};font-size:12px">${esc(report.dataWarning)}</p>` : ""}
 ${
@@ -138,7 +138,7 @@ ${
 }
 ${resolvedHtml}${watchHtml}
 <p style="margin:24px 0 0;font-size:13px;color:${COLORS.muted}">Sanos: ${report.counts.ok} · Vigilar: ${report.counts.watch} · Sin volumen suficiente: ${report.counts.low_volume}</p>
-<p style="margin:16px 0 0"><a href="${appUrl}/analisis/sdr#alertas-numeros" style="display:inline-block;background:${COLORS.ink};color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-size:14px">Ver en el portal</a></p>
+<p style="margin:16px 0 0"><a href="${appUrl}/analisis/salud-numeros" style="display:inline-block;background:${COLORS.ink};color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-size:14px">Ver en el portal</a></p>
 </div></div>`;
   return { subject, html };
 }
@@ -160,6 +160,8 @@ export type AlertRunResult = {
 export async function runPhoneAlerts(opts: { cron: boolean; to?: string[]; today?: string } = { cron: true }): Promise<AlertRunResult> {
   const today = opts.today ?? chileToday();
   const report = await buildPhoneHealthReport(today);
+  // El cron deja el reporte del día en caché para la página y la franja.
+  if (opts.cron) await saveCachedReport(report);
   const state = await readAlertState();
   const diff = diffAlerts(report, state);
   const to = opts.to?.length ? opts.to : alertRecipients();
@@ -190,7 +192,7 @@ export async function runPhoneAlerts(opts: { cron: boolean; to?: string[]; today
     process.env.PHONE_ALERTS_FROM ||
     process.env.CELULAS_ALERTS_FROM ||
     (mailProvider() === "resend" ? "onboarding@resend.dev" : "ihincapie@bullseye-abm.com");
-  await sendMail({ from, fromName: "BullsEye · Alertas de números", to, subject, html });
+  await sendMail({ from, fromName: "BullsEye · Salud de números", to, subject, html });
   // El estado se guarda solo después de un envío exitoso: si el correo
   // falla, las alertas nuevas se vuelven a avisar en la próxima ejecución.
   if (opts.cron) await saveAlertState(report, state, diff);

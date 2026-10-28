@@ -106,3 +106,47 @@ export async function buildPhoneHealthReport(today = chileToday()): Promise<Phon
   for (const h of health) counts[h.level]++;
   return { ...base, numbers: health, counts, dataWarning };
 }
+
+// ─── Caché del reporte ──────────────────────────────────────────────────────
+// Calcular el reporte toma ~45 s (todas las llamadas de 35 días de cada
+// número). Se guarda el último resultado en allo_response_cache para que la
+// franja de Análisis SDR y la página Salud de números carguen al instante.
+// El cron de las 8:00 lo recalcula; "Actualizar" en la página fuerza uno nuevo.
+const REPORT_CACHE_KEY = "phone_health_report:v1";
+const REPORT_TTL_MS = 6 * 60 * 60_000; // 6 horas
+
+export async function saveCachedReport(report: PhoneHealthReport): Promise<void> {
+  const { error } = await supabaseAdmin()
+    .from("allo_response_cache")
+    .upsert(
+      { cache_key: REPORT_CACHE_KEY, response: report, expires_at: new Date(Date.now() + REPORT_TTL_MS).toISOString() },
+      { onConflict: "cache_key" }
+    );
+  if (error) console.error("No se pudo guardar el reporte de Salud de números en caché:", error.message);
+}
+
+export async function readCachedReport(): Promise<PhoneHealthReport | null> {
+  try {
+    const { data } = await supabaseAdmin()
+      .from("allo_response_cache")
+      .select("response, expires_at")
+      .eq("cache_key", REPORT_CACHE_KEY)
+      .maybeSingle();
+    if (data && new Date(data.expires_at).getTime() > Date.now()) return data.response as PhoneHealthReport;
+  } catch (err) {
+    console.error("Lectura del reporte de Salud de números en caché falló:", err);
+  }
+  return null;
+}
+
+// Devuelve el reporte en caché si está vigente y es de hoy; si no (o con
+// fresh = true), lo recalcula y lo guarda.
+export async function getPhoneHealthReport(opts: { fresh?: boolean } = {}): Promise<PhoneHealthReport> {
+  if (!opts.fresh) {
+    const cached = await readCachedReport();
+    if (cached && cached.today === chileToday()) return cached;
+  }
+  const report = await buildPhoneHealthReport();
+  await saveCachedReport(report);
+  return report;
+}
