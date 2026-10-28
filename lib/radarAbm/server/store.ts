@@ -35,6 +35,14 @@ export const PROPERTIES_MIGRATION_HINT = "Falta ejecutar la migración supabase/
 // solo el suyo (los nombres internos de BullsEye no existen en su cuenta).
 // En el HubSpot de BullsEye el status y el SDR de empresa y de contacto son
 // propiedades por cliente: nunca se toman del mapeo global.
+// Modo del universo: "status" (Status de la asignación, por defecto) o
+// "client" (propiedad Cliente BullsEye). El cliente BullsEye usa "client".
+export function universeMode(s: { properties?: Record<string, string> }, clientName: string): "status" | "client" {
+  const m = s.properties?.universeMode;
+  if (m === "client" || m === "status") return m;
+  return clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "") === "bullseye" ? "client" : "status";
+}
+
 export function effectiveProperties(cfg: RadarConfig, s: RadarClientSettings): Record<string, string> {
   if (s.hubspot_source === "client") return { ...(s.properties ?? {}) };
   const global = Object.fromEntries(Object.entries(cfg.properties).filter(([k]) => !PER_CLIENT_KEYS.includes(k)));
