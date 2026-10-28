@@ -130,6 +130,7 @@ export function buildAlertEmail(report: PhoneHealthReport, diff: AlertDiff, appU
 <p style="margin:0;color:${COLORS.teal};font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase">BullsEye · Alertas de números</p>
 <h2 style="margin:6px 0 4px;color:${COLORS.ink};font-size:22px">${reds + yellows === 0 ? "Todos los números están dentro de lo normal" : `${reds} número${reds === 1 ? "" : "s"} en rojo y ${yellows} en amarillo`}</h2>
 <p style="margin:0 0 18px;color:${COLORS.muted};font-size:13px">Últimos 7 días (${report.windows.current[0]} a ${report.windows.current[1]}) comparados con el promedio de las 4 semanas anteriores. Métrica: % de llamadas que contesta una persona.</p>
+${report.dataWarning ? `<p style="margin:0 0 18px;padding:10px 12px;background:#FFF6E0;border-radius:8px;color:${COLORS.ink};font-size:12px">${esc(report.dataWarning)}</p>` : ""}
 ${
   alertRows
     ? `<table style="width:100%;border-collapse:collapse;font-size:14px;color:${COLORS.ink}"><tr style="background:${COLORS.bg}"><th style="padding:8px;text-align:left">Nivel</th><th style="padding:8px;text-align:left">Número</th><th style="padding:8px;text-align:right">Contesta</th><th style="padding:8px;text-align:left">Motivo y acción</th></tr>${alertRows}</table>`
