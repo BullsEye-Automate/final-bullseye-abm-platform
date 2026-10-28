@@ -148,7 +148,10 @@ export function sec(no: number | string, id: string, title: string, lead: string
 }
 
 // Nota del mes en curso (en el prototipo: "Septiembre parcial")
-const partialNote = (M: Model) => (M.partial ? `* ${M.MLAB[M.MONTHS[M.MONTHS.length - 1]].replace("*", "")} parcial (corte ${dmy(M.TODAY)}). ` : "");
+const partialNote = (M: Model) => (M.partial ? `* ${M.gran === "week" ? "Semana del " : ""}${M.MLAB[M.MONTHS[M.MONTHS.length - 1]].replace("*", "")} parcial (corte ${dmy(M.TODAY)}). ` : "");
+// "por mes" / "por semana" / "por día" según el tramo de las series
+const perUnit = (M: Model) => ({ month: "por mes", week: "por semana", day: "por día" } as Record<string, string>)[M.gran] || "por mes";
+const evoTitle = (M: Model) => ({ month: "Evolución mensual", week: "Evolución semanal", day: "Evolución diaria" } as Record<string, string>)[M.gran] || "Evolución mensual";
 const monthLabels = (M: Model) => M.MONTHS.map((m: string) => M.MLAB[m]);
 
 /* ---------- profundidad por canales ---------- */
@@ -273,7 +276,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Estado de las ${M.Mt.length} reuniones agendadas</h4>${stack(mst.map(([l, c]) => ({ l, v: cnt(M.Mt, (m: any) => m.st === l), c })))}</div>
   <div class="rcard"><h4>Qué pasó después de las ${M.held.length} realizadas</h4>${bars(res.map(([l, c]) => ({ l: l || "Sin información de resultado", v: cnt(M.held, (m: any) => (m.res || null) === l), c })))}<p class="note">Agendada ≠ realizada, y reunión ≠ oportunidad: solo se cuenta oportunidad cuando hay resultado registrado o un negocio asociado.</p></div></div>
   ${M.pipe ? `<div class="rcard" style="margin-top:14px"><h4>Pipeline asociado (${M.pipe.n} negocios)</h4>${bars(["Calificación", "Propuesta enviada", "Negociación", "Ganado", "Perdido"].map((st) => ({ l: st, v: sum(M.pipe.byStage[st] || [], (d: any) => d.amount), c: st === "Perdido" ? "var(--g-rej)" : st === "Ganado" ? "var(--g-rel)" : "var(--s1)", r: `(${(M.pipe.byStage[st] || []).length})`, tip: `${st}: ${USD(sum(M.pipe.byStage[st] || [], (d: any) => d.amount))}` })))}<p class="note">Montos en dólares; barras en miles.</p></div>` : `<p class="note">Pipeline: sin información disponible para este cliente.</p>`}
-  <div class="rcard" style="margin-top:14px"><h4>Evolución mensual</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}<p class="note">${partialNote(M)}Agendadas por fecha de agendamiento; realizadas por fecha de la reunión.</p></div>`;
+  <div class="rcard" style="margin-top:14px"><h4>${evoTitle(M)}</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}<p class="note">${partialNote(M)}Agendadas por fecha de agendamiento; realizadas por fecha de la reunión.</p></div>`;
 
   const qd = by(M.held as any[], (m) => m.q), yn = (v: any) => (v === true ? "Sí" : v === false ? "No" : '<span class="flag">s/i</span>');
   s.calidad = `<div class="tiles">${["hi", "md", "lo", "na"].map((q) => tile(pill(q), N((qd[q] || []).length), P(div((qd[q] || []).length, M.held.length)))).join("")}</div>
@@ -360,9 +363,9 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   const half = Math.floor(M.MONTHS.length / 2);
   const trendLab = half ? `${M.MLAB[M.MONTHS[M.MONTHS.length - half]].replace("*", "")}–${M.MLAB[M.MONTHS[M.MONTHS.length - 1]].replace("*", "")} vs ${M.MLAB[M.MONTHS[M.MONTHS.length - 2 * half]]}–${M.MLAB[M.MONTHS[M.MONTHS.length - half - 1]]}` : "";
-  const actEvo = M.ad.dated ? `<div class="rcard" style="margin-top:16px"><h4>Actividades por mes y canal</h4>${lineChart(CHANNELS.filter((x) => M.ad.tot[x.k]).map((x) => ({ n: x.l, c: x.c, v: M.ad.months.map((m: any) => m[x.k]) })), monthLabels(M))}<p class="note">Actividades asociadas a las empresas del universo o a sus contactos, por fecha de la actividad.</p></div>` : "";
-  s.evolucion = `<div class="grid2"><div class="rcard"><h4>Reuniones por mes</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}</div>
-  <div class="rcard"><h4>Actividad de cuentas por mes</h4>${lineChart([{ n: "Empresas asignadas", c: "var(--s1)", v: M.month.map((m: any) => m.asg) }, { n: "Contactos efectivos (por última actividad)", c: "var(--s2)", v: M.month.map((m: any) => m.eff) }], monthLabels(M))}</div></div>
+  const actEvo = M.ad.dated ? `<div class="rcard" style="margin-top:16px"><h4>Actividades ${perUnit(M)} y canal</h4>${lineChart(CHANNELS.filter((x) => M.ad.tot[x.k]).map((x) => ({ n: x.l, c: x.c, v: M.ad.months.map((m: any) => m[x.k]) })), monthLabels(M))}<p class="note">Actividades asociadas a las empresas del universo o a sus contactos, por fecha de la actividad.</p></div>` : "";
+  s.evolucion = `<div class="grid2"><div class="rcard"><h4>Reuniones ${perUnit(M)}</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}</div>
+  <div class="rcard"><h4>Actividad de cuentas ${perUnit(M)}</h4>${lineChart([{ n: "Empresas asignadas", c: "var(--s1)", v: M.month.map((m: any) => m.asg) }, { n: "Contactos efectivos (por última actividad)", c: "var(--s2)", v: M.month.map((m: any) => m.eff) }], monthLabels(M))}</div></div>
   <p class="note">${partialNote(M)}Tendencia de reuniones (${trendLab}, normalizado): ${h.ratio == null ? "sin datos" : (h.ratio >= 1 ? "+" : "") + P(h.ratio - 1)}. Los contactos efectivos usan la fecha de última actividad como aproximación; con el historial de cambios de estado de HubSpot se podrá fechar cada transición.</p>${actEvo}`;
 
   s["stock-op"] = `<div class="tiles">${tile("Empresas asignadas sin gestión", N(cnt(C, (c) => c.st === "Asignada")), `${cnt(C, (c) => c.st === "Asignada" && c.asg < d30)} con más de 30 días`)}${tile("Hot Calling 🔥", N(cnt(K, (x) => x.st === "Hot Calling 🔥")), "gestión inmediata")}${tile("Por gestionar", N(cnt(K, (x) => x.st === "Por gestionar")))}${tile("Buscar", N(cnt(K, (x) => x.st === "Buscar")), "búsqueda de teléfono")}${tile("Seguimientos vencidos", N(f.overdue.length))}${tile("Contactos pendientes", N(cnt(K, (x) => PEND.has(x.st))), "total Hot + Por gestionar + Buscar")}</div>
@@ -400,7 +403,8 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 /* ---------- tablas maestras (filas + columnas, el filtro/exportación va en React) ---------- */
 export function masterCompanyCols(M: Model): (Col & { x: (r: any) => any })[] {
   const cl = M.cl;
-  return [
+  const hasWl = (M.C as any[]).some((c) => c.wl);
+  const cols: (Col & { x: (r: any) => any })[] = [
     { h: "Empresa", f: (c) => esc(c.n), x: (c) => c.n },
     { h: "Cliente", s: 1, f: () => esc(cl.name), x: () => cl.name },
     { h: "País", s: 1, f: (c) => esc(c.pais), x: (c) => c.pais },
@@ -421,6 +425,9 @@ export function masterCompanyCols(M: Model): (Col & { x: (r: any) => any })[] {
     { h: "Profundidad", s: 1, f: (c) => esc(c.depth), x: (c) => c.depth },
     { h: "Prioridad", f: (c) => prioPill(c.prio), x: (c) => c.prio },
   ];
+  // Wishlist del cliente, solo si la propiedad trae valores
+  if (hasWl) cols.splice(4, 0, { h: "Wishlist", s: 1, f: (c) => esc(c.wl || "—"), x: (c) => c.wl || "" });
+  return cols;
 }
 export function masterContactCols(M: Model): (Col & { x: (r: any) => any })[] {
   const mByCt = new Map((M.Mt as any[]).map((m) => [m.ct, m]));

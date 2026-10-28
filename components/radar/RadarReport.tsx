@@ -3,7 +3,7 @@
 import "./radar.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconAlertTriangle, IconArrowLeft, IconArrowRight, IconMoon, IconSun } from "@tabler/icons-react";
-import { compute, dmy, filterDataset, N, periodMonths } from "@/lib/radarAbm/engine";
+import { addDays, compute, dmy, filterDataset, mondayOf, N, NO_IND, NO_WL, periodMonths } from "@/lib/radarAbm/engine";
 import { LEADS, PARTS, render, sec } from "@/lib/radarAbm/render";
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import MasterTables from "./MasterTables";
@@ -26,6 +26,17 @@ function periodLabel(ds: RadarDataset) {
   const lab = (m: string) => MONTHS_ES[Number(m.slice(5, 7)) - 1];
   return a.slice(0, 4) === b.slice(0, 4) ? `${lab(a)}–${lab(b)} ${b.slice(0, 4)}` : `${lab(a)} ${a.slice(0, 4)}–${lab(b)} ${b.slice(0, 4)}`;
 }
+const monthName = (mo: string) => `${MONTHS_ES[Number(mo.slice(5, 7)) - 1]} ${mo.slice(0, 4)}`;
+const lastOfMonth = (mo: string) => new Date(Date.UTC(Number(mo.slice(0, 4)), Number(mo.slice(5, 7)), 0)).toISOString().slice(0, 10);
+
+// Selector de fechas: todo el período, un mes, una semana (lunes a domingo) o un día
+type DateGran = "" | "month" | "week" | "day";
+function dateRange(gran: DateGran, value: string): { from: string; to: string; label: string } | null {
+  if (!gran || !value) return null;
+  if (gran === "month") return { from: value + "-01", to: lastOfMonth(value), label: monthName(value) };
+  if (gran === "week") return { from: value, to: addDays(value, 6), label: `semana del ${dmy(value)}` };
+  return { from: value, to: value, label: dmy(value) };
+}
 
 export default function RadarReport({
   dataset,
@@ -45,6 +56,10 @@ export default function RadarReport({
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [sdr, setSdr] = useState("");
   const [pais, setPais] = useState("");
+  const [ind, setInd] = useState("");
+  const [wl, setWl] = useState("");
+  const [gran, setGran] = useState<DateGran>("");
+  const [dateValue, setDateValue] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const pendingJump = useRef<string | null>(null);
@@ -54,11 +69,33 @@ export default function RadarReport({
     try { if (localStorage.getItem("radar-theme") === "dark") setTheme("dark"); } catch { /* sin almacenamiento */ }
   }, []);
   // Otro cliente: se limpian los filtros
-  useEffect(() => { setSdr(""); setPais(""); }, [dataset]);
+  useEffect(() => { setSdr(""); setPais(""); setInd(""); setWl(""); setGran(""); setDateValue(""); }, [dataset]);
 
   const sdrs = useMemo(() => Array.from(new Set(dataset.client.companies.map((c) => c.sdr))).sort(), [dataset]);
   const countries = useMemo(() => Array.from(new Set(dataset.client.companies.map((c) => c.pais))).sort(), [dataset]);
-  const filtered = useMemo(() => filterDataset(dataset, { sdr, pais }), [dataset, sdr, pais]);
+  const industries = useMemo(() => Array.from(new Set(dataset.client.companies.map((c) => c.ind || NO_IND))).sort((a, b) => (a === NO_IND ? 1 : b === NO_IND ? -1 : a.localeCompare(b, "es"))), [dataset]);
+  // Wishlist del cliente ("Wish List - <cliente>"): solo si alguna empresa tiene valor
+  const wishlists = useMemo(() => {
+    const vals = Array.from(new Set(dataset.client.companies.map((c) => c.wl).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "es"));
+    return vals.length ? [...vals, NO_WL] : [];
+  }, [dataset]);
+  // Opciones del selector de fechas dentro del período del informe (más reciente primero)
+  const monthOpts = useMemo(() => periodMonths(dataset.period, dataset.generated).reverse(), [dataset]);
+  const weekOpts = useMemo(() => {
+    const out: string[] = [];
+    for (let d = mondayOf(dataset.generated); d >= mondayOf(dataset.period[0]) && out.length < 60; d = addDays(d, -7)) out.push(d);
+    return out;
+  }, [dataset]);
+  const range = dateRange(gran, dateValue);
+  const filtered = useMemo(
+    () => filterDataset(dataset, { sdr, pais, ind, wl, ...(range ? { from: range.from, to: range.to } : {}) }),
+    [dataset, sdr, pais, ind, wl, range?.from, range?.to] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  function changeGran(g: DateGran) {
+    setGran(g);
+    setDateValue(g === "month" ? monthOpts[0] : g === "week" ? weekOpts[0] : g === "day" ? dataset.generated : "");
+  }
   const M = useMemo(() => compute(filtered, config), [filtered, config]);
   const secs = useMemo(() => render(M, dataset.mapping), [M, dataset.mapping]);
 
@@ -124,7 +161,7 @@ export default function RadarReport({
           <div style={{ minWidth: 0 }}>
             <h1>{pt}</h1>
             <p className="ra-sub">
-              {cl.name} · {N(sdr || pais ? M.C.length : cl.universe)} empresas objetivo · {periodLabel(dataset)} · corte {dmy(dataset.generated)}
+              {cl.name} · {N(sdr || pais || ind || wl ? M.C.length : cl.universe)} empresas objetivo · {range ? range.label : periodLabel(dataset)} · corte {dmy(dataset.generated)}
             </p>
           </div>
           <div className="ra-actions">
@@ -168,6 +205,45 @@ export default function RadarReport({
               </select>
             </>
           )}
+          {industries.length > 1 && (
+            <>
+              <label htmlFor="ra-ind">Industria</label>
+              <select id="ra-ind" className={`ra-select${ind ? " act" : ""}`} value={ind} onChange={(e) => setInd(e.target.value)}>
+                <option value="">Todas</option>
+                {industries.map((s) => <option key={s}>{s}</option>)}
+              </select>
+            </>
+          )}
+          {wishlists.length > 0 && (
+            <>
+              <label htmlFor="ra-wl">Wishlist</label>
+              <select id="ra-wl" className={`ra-select${wl ? " act" : ""}`} value={wl} onChange={(e) => setWl(e.target.value)}>
+                <option value="">Todas las empresas</option>
+                {wishlists.map((s) => <option key={s} value={s}>{s === NO_WL ? s : `En wishlist: ${s}`}</option>)}
+              </select>
+            </>
+          )}
+          <label htmlFor="ra-gran">Fechas</label>
+          <select id="ra-gran" className={`ra-select${gran ? " act" : ""}`} value={gran} onChange={(e) => changeGran(e.target.value as DateGran)}>
+            <option value="">Todo el período</option>
+            <option value="month">Mes</option>
+            <option value="week">Semana</option>
+            <option value="day">Día</option>
+          </select>
+          {gran === "month" && (
+            <select aria-label="Mes" className="ra-select act" value={dateValue} onChange={(e) => setDateValue(e.target.value)}>
+              {monthOpts.map((m) => <option key={m} value={m}>{monthName(m)}</option>)}
+            </select>
+          )}
+          {gran === "week" && (
+            <select aria-label="Semana" className="ra-select act" value={dateValue} onChange={(e) => setDateValue(e.target.value)}>
+              {weekOpts.map((w) => <option key={w} value={w}>{`${dmy(w).slice(0, 5)} – ${dmy(addDays(w, 6))}`}</option>)}
+            </select>
+          )}
+          {gran === "day" && (
+            <input type="date" aria-label="Día" className="ra-select ra-date act" value={dateValue} min={dataset.period[0]} max={dataset.generated}
+              onChange={(e) => e.target.value && setDateValue(e.target.value)} />
+          )}
         </div>
         {pi === 0 && dataset.source === "demo" && (
           <div className="simnote">
@@ -175,9 +251,15 @@ export default function RadarReport({
             <span><b>Beta con datos simulados.</b> Sirven para validar métricas, lógica y formato antes de conectar HubSpot. No presentar estas cifras a clientes.</span>
           </div>
         )}
-        {(sdr || pais) && (
+        {(sdr || pais || ind || wl) && (
           <div className="ra-banner info">
-            Filtro activo ({[sdr && `SDR: ${sdr}`, pais && `País: ${pais}`].filter(Boolean).join(" · ")}): el universo y todas las tasas se calculan solo sobre esas empresas.
+            Filtro activo ({[sdr && `SDR: ${sdr}`, pais && `País: ${pais}`, ind && `Industria: ${ind}`, wl && `Wishlist: ${wl}`].filter(Boolean).join(" · ")}): el universo y todas las tasas se calculan solo sobre esas empresas.
+          </div>
+        )}
+        {range && (
+          <div className="ra-banner info">
+            Fechas: {range.label}. Reuniones (agendadas o realizadas), actividades y negocios se cuentan solo dentro de ese rango; el status de empresas y contactos es el actual.
+            {dataset.source === "demo" && " En datos demo las actividades por contacto no tienen fecha y no se recortan."}
           </div>
         )}
       </header>

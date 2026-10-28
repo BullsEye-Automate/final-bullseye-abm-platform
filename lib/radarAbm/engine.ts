@@ -51,17 +51,50 @@ export function periodMonths(period: [string, string], today: string): string[] 
   return out;
 }
 const daysInMonth = (mo: string) => new Date(Date.UTC(Number(mo.slice(0, 4)), Number(mo.slice(5, 7)), 0)).getUTCDate();
+const daysBetween = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);
+
+// Tramos de las series de evolución. Sin rango de fechas: meses del período
+// (como el prototipo). Con rango: días (hasta 2 semanas), semanas de lunes a
+// domingo (hasta ~3 meses) o meses.
+export type RadarGran = "month" | "week" | "day";
+export type Bucket = { k: string; from: string; to: string; lab: string; days: number };
+const ddmm = (d: string) => d.slice(8, 10) + "/" + d.slice(5, 7);
+export function mondayOf(d: string) {
+  const dow = (new Date(d + "T00:00:00Z").getUTCDay() + 6) % 7;
+  return addDays(d, -dow);
+}
+function buildBuckets(ds: RadarDataset, today: string): { gran: RadarGran; B: Bucket[] } {
+  const monthB = (mo: string): Bucket => ({ k: mo, from: mo + "-01", to: `${mo}-${String(daysInMonth(mo)).padStart(2, "0")}`, lab: MONTH_ABBR[Number(mo.slice(5, 7)) - 1], days: daysInMonth(mo) });
+  if (!ds.range) return { gran: "month", B: periodMonths(ds.period, today).map(monthB) };
+  const { from } = ds.range;
+  const to = ds.range.to > today && from <= today ? today : ds.range.to;
+  const span = daysBetween(from, to) + 1;
+  const B: Bucket[] = [];
+  if (span <= 14) {
+    for (let d = from; d <= to && B.length < 400; d = addDays(d, 1)) B.push({ k: d, from: d, to: d, lab: ddmm(d), days: 1 });
+    return { gran: "day", B };
+  }
+  if (span <= 92) {
+    for (let d = mondayOf(from); d <= to && B.length < 60; d = addDays(d, 7)) B.push({ k: d, from: d, to: addDays(d, 6), lab: "", days: 7 });
+    return { gran: "week", B: B.map(clip).map((x) => ({ ...x, lab: ddmm(x.from) })) };
+  }
+  return { gran: "month", B: periodMonths([from, to], to).map(monthB).map(clip) };
+  // Los tramos de los bordes se recortan al rango (la semana del 27/07 parte el 01/08)
+  function clip(x: Bucket): Bucket {
+    const f = x.from < from ? from : x.from, t = x.to > ds.range!.to ? ds.range!.to : x.to;
+    return { ...x, from: f, to: t, days: daysBetween(f, t) + 1 };
+  }
+}
+export const inBucket = (d: string | null | undefined, b: Bucket) => !!d && d.slice(0, 10) >= b.from && d.slice(0, 10) <= b.to;
 
 /* ---------- cálculo ---------- */
 export function compute(ds: RadarDataset, cfg: RadarConfig = DEFAULT_CONFIG): Model {
   const cl: any = structuredClone(ds.client);
   const TODAY = ds.generated;
-  const MONTHS = periodMonths(ds.period, TODAY);
-  const lastDay = Number(TODAY.slice(8, 10));
-  const partial = lastDay < daysInMonth(TODAY.slice(0, 7));
-  const MLAB: Record<string, string> = Object.fromEntries(
-    MONTHS.map((mo, i) => [mo, MONTH_ABBR[Number(mo.slice(5, 7)) - 1] + (i === MONTHS.length - 1 && partial ? "*" : "")])
-  );
+  const { gran, B } = buildBuckets(ds, TODAY);
+  const MONTHS = B.map((b) => b.k);
+  const partial = B.length > 0 && B[B.length - 1].to > TODAY;
+  const MLAB: Record<string, string> = Object.fromEntries(B.map((b, i) => [b.k, b.lab + (i === B.length - 1 && partial ? "*" : "")]));
 
   const C: any[] = cl.companies, K: any[] = cl.contacts, Mt: any[] = cl.meetings, Dl: any[] = cl.deals;
   const co = new Map(C.map((c) => [c.id, c]));
@@ -74,7 +107,7 @@ export function compute(ds: RadarDataset, cfg: RadarConfig = DEFAULT_CONFIG): Mo
   });
   const kById = new Map(K.map((k) => [k.id, k]));
   Mt.forEach((m) => { m.k = kById.get(m.ct); m.c = co.get(m.co); });
-  const M: Model = { cl, C, K, Mt, Dl, TODAY, MONTHS, MLAB, partial, cfg, source: ds.source, syncedAt: ds.syncedAt ?? null };
+  const M: Model = { cl, C, K, Mt, Dl, TODAY, MONTHS, MLAB, B, gran, range: ds.range ?? null, partial, cfg, source: ds.source, syncedAt: ds.syncedAt ?? null };
   const worked = C.filter((c) => c.worked), qual = C.filter((c) => c.st !== "No califica");
   const mg = K.filter((k) => k.mg), eff = K.filter((k) => k.eff);
   const icpK = K.filter((k) => k.c.st !== "No califica");
@@ -125,9 +158,9 @@ export function compute(ds: RadarDataset, cfg: RadarConfig = DEFAULT_CONFIG): Mo
       }
     : null;
   // mensual
-  M.month = MONTHS.map((mo) => ({
-    mo, asg: cnt(C, (c) => (c.asg || "").startsWith(mo)), eff: cnt(eff, (k) => (k.last || "").startsWith(mo)),
-    sch: cnt(Mt, (m) => (m.agendada || "").startsWith(mo)), held: cnt(held, (m) => (m.fecha || "").startsWith(mo)),
+  M.month = B.map((b) => ({
+    mo: b.k, days: b.days, to: b.to, asg: cnt(C, (c) => inBucket(c.asg, b)), eff: cnt(eff, (k) => inBucket(k.last, b)),
+    sch: cnt(Mt, (m) => inBucket(m.agendada, b)), held: cnt(held, (m) => inBucket(m.fecha, b)),
   }));
   M.health = health(M, cfg);
   M.ad = activityDepth(M);
@@ -143,8 +176,8 @@ function trendRatio(M: Model): number | null {
   const half = Math.floor(months.length / 2);
   const firstM = months.slice(months.length - 2 * half, months.length - half), lastM = months.slice(months.length - half);
   const first = sum(firstM, (m) => m.sch);
-  const lastDays = sum(lastM, (m) => daysInMonth(m.mo));
-  const elapsed = lastDays - (daysInMonth(M.TODAY.slice(0, 7)) - Number(M.TODAY.slice(8, 10)));
+  const lastDays = sum(lastM, (m) => m.days);
+  const elapsed = lastDays - Math.max(0, daysBetween(M.TODAY, lastM[lastM.length - 1].to));
   const last = sum(lastM, (m) => m.sch) * (lastDays / Math.max(1, elapsed));
   return first ? last / first : null;
 }
@@ -368,23 +401,63 @@ export function recsCli(M: Model) {
   return R;
 }
 
-// Filtros globales del módulo (SDR y País opcionales): recorta empresas y
-// todo lo que cuelga de ellas antes de calcular. El universo pasa a ser el
-// del filtro.
-export function filterDataset(ds: RadarDataset, f: { sdr?: string; pais?: string }): RadarDataset {
-  if (!f.sdr && !f.pais) return ds;
-  const companies = ds.client.companies.filter((c) => (!f.sdr || c.sdr === f.sdr) && (!f.pais || c.pais === f.pais));
-  const ids = new Set(companies.map((c) => c.id));
+// Filtros globales del módulo: SDR, País, Industria y Wishlist recortan empresas y todo
+// lo que cuelga de ellas (el universo pasa a ser el del filtro). El rango de
+// fechas recorta lo que tiene fecha: reuniones (agendada o realizada en el
+// rango), actividades y negocios; los status de empresas y contactos son los
+// actuales, porque el snapshot no guarda su historia.
+export const NO_IND = "Sin industria";
+export const NO_WL = "Fuera de la wishlist";
+export type RadarFilter = { sdr?: string; pais?: string; ind?: string; wl?: string; from?: string; to?: string };
+
+export function filterDataset(ds: RadarDataset, f: RadarFilter): RadarDataset {
+  const byCo = !!(f.sdr || f.pais || f.ind || f.wl);
+  const byDate = !!(f.from && f.to);
+  if (!byCo && !byDate) return ds;
+  let { companies, contacts, meetings, deals, activities } = ds.client;
+  if (byCo) {
+    companies = companies.filter((c) => (!f.sdr || c.sdr === f.sdr) && (!f.pais || c.pais === f.pais) && (!f.ind || (c.ind || NO_IND) === f.ind) && (!f.wl || (c.wl || NO_WL) === f.wl));
+    const ids = new Set(companies.map((c) => String(c.id)));
+    const inCo = (x: { co: number | string }) => ids.has(String(x.co));
+    contacts = contacts.filter(inCo);
+    meetings = meetings.filter(inCo);
+    deals = deals.filter(inCo);
+    if (activities) activities = activities.filter(inCo);
+  }
+  let period = ds.period;
+  if (byDate) {
+    const from = f.from!, to = f.to!;
+    const inR = (d?: string | null) => !!d && d >= from && d <= to;
+    meetings = meetings.filter((m) => inR(m.agendada) || inR(m.fecha));
+    deals = deals.filter((d) => inR(d.created));
+    if (activities) {
+      // Conteos por contacto con las actividades del rango (igual que el sync)
+      activities = activities.filter((a) => inR(a.d));
+      const byCt = by(activities.filter((a) => a.ct != null), (a) => String(a.ct));
+      contacts = contacts.map((k) => {
+        const A = byCt[String(k.id)] || [];
+        const calls = cnt(A, (a) => a.k === "call");
+        return { ...k, att: calls, calls, conv: cnt(A, (a) => !!a.conn), wa: cnt(A, (a) => a.k === "wa"), li: cnt(A, (a) => a.k === "li"), em: cnt(A, (a) => a.k === "em") };
+      });
+    }
+    // Reuniones y oportunidad de cada empresa dentro del rango
+    const mBy = by(meetings, (m) => String(m.co));
+    const openDeal = new Set(deals.filter((d) => d.stage !== "Perdido").map((d) => String(d.co)));
+    companies = companies.map((c) => {
+      const M = mBy[String(c.id)] || [], held = M.filter((m) => m.st === "Realizada");
+      return { ...c, msch: M.length, mheld: held.length, opp: held.some((m) => m.res === "Oportunidad") || openDeal.has(String(c.id)) };
+    });
+    period = [from, to];
+  }
   return {
     ...ds,
+    period,
+    ...(byDate ? { range: { from: f.from!, to: f.to! } } : {}),
     client: {
       ...ds.client,
-      universe: companies.length,
-      sdrs: f.sdr ? [f.sdr] : ds.client.sdrs,
-      companies,
-      contacts: ds.client.contacts.filter((k) => ids.has(k.co)),
-      meetings: ds.client.meetings.filter((m) => ids.has(m.co)),
-      deals: ds.client.deals.filter((d) => ids.has(d.co)),
+      ...(byCo ? { universe: companies.length, sdrs: f.sdr ? [f.sdr] : ds.client.sdrs } : {}),
+      companies, contacts, meetings, deals,
+      ...(activities ? { activities } : {}),
     },
   };
 }
@@ -431,9 +504,9 @@ export function activityDepth(M: Model) {
   const tot: Record<string, number> = {};
   for (const k of ["call", "wa", "li", "em", "sms"]) tot[k] = sum(M.C, (c: any) => c.ch[k]);
   // por mes (solo con fechas)
-  const months = (M.MONTHS as string[]).map((mo) => {
-    const row: Record<string, any> = { mo };
-    for (const x of CHANNELS) row[x.k] = fromActivities ? cnt(acts!, (a) => a.k === x.k && (a.d || "").startsWith(mo)) : 0;
+  const months = (M.B as Bucket[]).map((b) => {
+    const row: Record<string, any> = { mo: b.k };
+    for (const x of CHANNELS) row[x.k] = fromActivities ? cnt(acts!, (a) => a.k === x.k && inBucket(a.d, b)) : 0;
     return row;
   });
   return {

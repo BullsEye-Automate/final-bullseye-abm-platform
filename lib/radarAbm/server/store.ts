@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase";
-import { mergeConfig } from "../dictionaries";
+import { mergeConfig, PER_CLIENT_KEYS } from "../dictionaries";
 import type { RadarConfig, RadarDataset } from "../types";
 
 // Radar ABM — lectura y escritura en Supabase (service role, solo servidor).
@@ -37,7 +37,7 @@ export const PROPERTIES_MIGRATION_HINT = "Falta ejecutar la migración supabase/
 // propiedades por cliente: nunca se toman del mapeo global.
 export function effectiveProperties(cfg: RadarConfig, s: RadarClientSettings): Record<string, string> {
   if (s.hubspot_source === "client") return { ...(s.properties ?? {}) };
-  const { companyStatus: _st, contactStatus: _ct, companySdr: _cs, contactSdr: _ks, ...global } = cfg.properties;
+  const global = Object.fromEntries(Object.entries(cfg.properties).filter(([k]) => !PER_CLIENT_KEYS.includes(k)));
   return { ...global, ...(s.properties ?? {}) };
 }
 

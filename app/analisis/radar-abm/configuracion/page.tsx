@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { IconArrowLeft, IconCheck, IconDeviceFloppy, IconLoader2, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import type { RadarConfig } from "@/lib/radarAbm/types";
-import { CO_ORDER, CT_ORDER, EXCLUDE } from "@/lib/radarAbm/dictionaries";
+import { CO_ORDER, CT_ORDER, EXCLUDE, PER_CLIENT_KEYS } from "@/lib/radarAbm/dictionaries";
 
 // Configuración del Radar ABM (global, tabla radar_abm_config): las metas y
 // pesos del Health Score, los tramos de tamaño, el período y la tabla de
@@ -166,14 +166,14 @@ export default function RadarConfigPage() {
                       <div className="text-xs text-ink-muted">{d.help}</div>
                     </td>
                     <td className="py-2 pr-3">
-                      {["companyStatus", "contactStatus", "companySdr", "contactSdr"].includes(d.key) ? (
+                      {PER_CLIENT_KEYS.includes(d.key) ? (
                         <span className="text-xs text-ink-muted">Una por cliente: se elige en Configuración → Cliente → Radar ABM</span>
                       ) : (
                         <input className="input w-56 font-mono text-xs" placeholder="automático" value={cfg.properties[d.key] ?? ""} onChange={(e) => setCfg({ ...cfg, properties: { ...cfg.properties, [d.key]: e.target.value } })} />
                       )}
                     </td>
                     <td className="py-2 text-xs">
-                      {det && ["companyStatus", "contactStatus", "companySdr", "contactSdr"].includes(d.key) ? (
+                      {det && PER_CLIENT_KEYS.includes(d.key) ? (
                         <span className={det.candidates?.length ? "text-success-fg" : "text-danger-fg"} title={(det.candidates ?? []).map((c) => c.label).join("\n")}>
                           {det.candidates?.length ? `${det.candidates.length} propiedades por cliente detectadas` : "no se encontró ninguna"}
                         </span>

@@ -14,6 +14,7 @@ export type RadarCompany = {
   sdr: string;
   asg: string;               // fecha de asignación (YYYY-MM-DD)
   st: string;                // Status de la asignación - SDR
+  wl?: string;               // valor de "Wish List - <cliente>" (sin él: fuera de la wishlist)
   next?: string;             // próximo seguimiento
   nct: number;               // contactos
   nmg: number;               // contactos gestionados
@@ -114,6 +115,7 @@ export type RadarDataset = {
   client: RadarClientData;
   generated: string;         // fecha de corte (YYYY-MM-DD)
   period: [string, string];  // inicio y fin del período
+  range?: { from: string; to: string }; // rango elegido en el selector de fechas (lo pone filterDataset)
   source: RadarSource;
   syncedAt?: string | null;  // última sincronización con HubSpot
   warnings?: string[];

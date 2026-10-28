@@ -24,6 +24,7 @@ const PER_CLIENT: [string, string, boolean][] = [
   ["contactStatus", "Status de contacto", true],
   ["companySdr", "SDR de la empresa", false],
   ["contactSdr", "SDR del contacto", false],
+  ["companyWishlist", "Wish List de la empresa", false],
 ];
 
 const tri = (v: boolean | null) => (v === true ? "si" : v === false ? "no" : "auto");
