@@ -1,26 +1,26 @@
 // Correo de Alertas de Números. Se evalúa todos los días hábiles a las
 // 8:00 de Chile (cron /api/cron/alertas-numeros) y se envía:
-//   - cuando aparece una alerta NUEVA (roja o amarilla, o una amarilla que
-//     pasa a roja) o un número sale de alerta (resuelta), y
-//   - siempre los lunes, como resumen semanal.
+//   - siempre los lunes, como resumen semanal completo (por reemplazar, por
+//     revisar, vigilar y los que salieron de alerta), y
+//   - de martes a viernes SOLO si un número pasa a "Reemplazar" (rojo nuevo o
+//     amarillo que empeora). Lo demás queda para el resumen del lunes y en la
+//     página /analisis/salud-numeros.
 // El estado de cada alerta vive en la tabla phone_health_alerts para no
 // repetir el mismo aviso todos los días.
 //
-// Destinatarios: PHONE_ALERTS_TO (separados por coma; por defecto
-// amadriz@bullseye-abm.com). Remitente: PHONE_ALERTS_FROM, si no
+// Destinatarios: editables desde la página Salud de números
+// (lib/mailRecipients.ts, clave "phone_health"). Remitente: PHONE_ALERTS_FROM, si no
 // CELULAS_ALERTS_FROM. Ojo: mientras bullseye-abm.com no esté verificado en
 // Resend, Resend solo entrega al dueño de su cuenta (ver lib/mailer.ts).
 import { mailProvider, sendMail } from "@/lib/mailer";
+import { getRecipients } from "@/lib/mailRecipients";
 import { supabaseAdmin } from "@/lib/supabase";
 import { dow, isBusinessDay, chileToday } from "@/lib/celulasSdr/calendar";
 import { formatPct, LEVEL_LABEL, type NumberHealth } from "./engine";
 import { buildPhoneHealthReport, saveCachedReport, type PhoneHealthReport } from "./server";
 
-const DEFAULT_TO = ["amadriz@bullseye-abm.com"];
-
-export function alertRecipients(): string[] {
-  const env = (process.env.PHONE_ALERTS_TO || "").split(",").map((s) => s.trim()).filter(Boolean);
-  return env.length ? env : DEFAULT_TO;
+export function alertRecipients(): Promise<string[]> {
+  return getRecipients("phone_health");
 }
 
 type StateRow = { allo_number: string; level: "red" | "yellow"; since: string };
@@ -164,7 +164,7 @@ export async function runPhoneAlerts(opts: { cron: boolean; to?: string[]; today
   if (opts.cron) await saveCachedReport(report);
   const state = await readAlertState();
   const diff = diffAlerts(report, state);
-  const to = opts.to?.length ? opts.to : alertRecipients();
+  const to = opts.to?.length ? opts.to : await alertRecipients();
   const result = (sent: boolean, reason: string): AlertRunResult => ({
     today, sent, reason, to, counts: report.counts, newAlerts: diff.newAlerts.length, resolved: diff.resolved.length, dataWarning: report.dataWarning,
   });
@@ -178,8 +178,10 @@ export async function runPhoneAlerts(opts: { cron: boolean; to?: string[]; today
   if (opts.cron) {
     if (!isBusinessDay(today)) return result(false, "No es día hábil");
     const monday = dow(today) === 1;
-    shouldSend = monday || diff.newAlerts.length > 0 || diff.resolved.length > 0;
-    reason = monday ? "Resumen semanal (lunes)" : shouldSend ? "Hay alertas nuevas o resueltas" : "Sin cambios desde ayer";
+    // Martes a viernes: solo urgencias (un número que pasa a "Reemplazar").
+    const newRed = diff.newAlerts.some((h) => h.level === "red");
+    shouldSend = monday || newRed;
+    reason = monday ? "Resumen semanal (lunes)" : newRed ? "Hay números nuevos por reemplazar" : "Sin urgencias (queda para el resumen del lunes)";
   }
   if (!shouldSend) {
     if (opts.cron) await saveAlertState(report, state, diff);
