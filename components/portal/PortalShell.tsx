@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
   IconHome,
-  IconTargetArrow,
   IconUserCircle,
 } from "@tabler/icons-react";
 import PortalLogoutButton from "./PortalLogoutButton";
@@ -12,9 +11,10 @@ import { INTERNAL_PARTS, PARTS, PART_SLUGS, partIndex } from "@/lib/radarAbm/ren
 import { PART_ICONS } from "@/components/radar/partIcons";
 
 // Layout del portal de clientes: barra lateral con el mismo lenguaje del
-// sidebar interno de BullsEye (#251762 / #62E0D8). "Mi cuenta" = inicio y
-// ICP; "Pulso ABM" lista las vistas del informe (la wishlist es "Cuentas
-// objetivo"; sin las vistas solo internas: inteligencia y anexo).
+// sidebar interno de BullsEye (#251762 / #62E0D8). Una sola navegación:
+// Inicio + las vistas de Pulso ABM (la wishlist es "Cuentas objetivo" y el
+// formulario del ICP se abre desde "ICP del proyecto"; sin las vistas solo
+// internas: inteligencia y anexo).
 
 type NavItem = { href: string; label: string; icon: typeof IconHome; active: boolean };
 
@@ -35,7 +35,6 @@ export default function PortalShell({
 
   const account: NavItem[] = [
     { href: "/portal", label: "Inicio", icon: IconHome, active: pathname === "/portal" },
-    { href: "/portal/icp", label: "ICP y buyer persona", icon: IconTargetArrow, active: pathname.startsWith("/portal/icp") },
   ];
   const radar: NavItem[] = PARTS.map((p, i) => ({ p, i }))
     .filter(({ i }) => !INTERNAL_PARTS.has(PART_SLUGS[i]))
@@ -43,7 +42,8 @@ export default function PortalShell({
       href: `/portal/radar?vista=${PART_SLUGS[i]}`,
       label: p[1],
       icon: PART_ICONS[i],
-      active: pathname.startsWith("/portal/radar") && vista === PART_SLUGS[i],
+      // El formulario del ICP (/portal/icp) se abre desde "ICP del proyecto"
+      active: (pathname.startsWith("/portal/radar") && vista === PART_SLUGS[i]) || (PART_SLUGS[i] === "icp-proyecto" && pathname.startsWith("/portal/icp")),
     }));
 
   const item = (it: NavItem) => {
@@ -82,7 +82,6 @@ export default function PortalShell({
         </div>
 
         <nav className="mt-2 lg:flex-1 flex lg:block gap-1 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
-          <div className="sb-section-label hidden lg:block">Mi cuenta</div>
           {account.map(item)}
           <div className="sb-section-label hidden lg:block">Pulso ABM</div>
           {radar.map(item)}
