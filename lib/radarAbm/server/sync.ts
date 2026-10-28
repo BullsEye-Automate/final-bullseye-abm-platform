@@ -9,6 +9,7 @@ import { batchAssociations, batchRead, dealStages, detectProperties, loadPropert
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, universeMode } from "./store";
 import { checkClientActive } from "./masterClients";
 import { loadSheetMeetings } from "./sheetMeetings";
+import { loadClientIcps } from "./icp";
 import { loadAlloMonth } from "@/lib/celulasSdr/server/allo";
 import { periodMonths } from "../engine";
 
@@ -424,6 +425,11 @@ export async function syncClientRadar(clientId: string, by: string) {
   clientData.activities = act.activities;
   clientData.callEvals = callEvals;
   if (meetingsTotal(settings, client.name)) clientData.meetingsTotal = true;
+  // Casos de éxito del cliente (ICP → clientes de referencia) para las recomendaciones
+  try {
+    const refs = Array.from(new Set((await loadClientIcps(clientId)).map((x) => (x.form.mejores_clientes ?? "").trim()).filter(Boolean))).join(" · ");
+    if (refs) clientData.refCases = refs.replace(/\s+/g, " ").slice(0, 600);
+  } catch { /* sin ICP: la recomendación propone crear los casos */ }
 
   const dataset: RadarDataset = {
     client: clientData,

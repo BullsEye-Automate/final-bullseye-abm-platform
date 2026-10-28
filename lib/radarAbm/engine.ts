@@ -408,7 +408,11 @@ export function recsCli(M: Model) {
   const nofb = cnt(M.held, (m: any) => !m.fb || !m.res);
   if (M.held.length && nofb / M.held.length > 0.25) R.push(["Feedback post reunión", `Registrar resultado y feedback de cada reunión dentro de 48 horas; sin esto no se puede medir calidad ni oportunidad.`, `${nofb} de ${M.held.length} reuniones realizadas sin feedback o resultado.`]);
   const ind = segCo(M, (x) => x.ind || "Sin industria").filter((s) => !s.small).sort((a, b) => b.mRate - a.mRate)[0];
-  if (ind) R.push(["Casos por industria", `Desarrollar un caso de éxito de ${ind.key}, el segmento que mejor responde, y usarlo en la cadencia.`, `Reunión por empresa trabajada en ${ind.key}: ${P(ind.mRate)}.`]);
+  // Si el ICP ya trae clientes de referencia (casos de éxito), se usan; si no, se propone crearlos
+  const refs: string = (M.cl.refCases ?? "").trim();
+  if (ind) R.push(["Casos por industria", refs
+    ? `Usar en la cadencia de ${ind.key}, el segmento que mejor responde, los casos de éxito que ya tiene (${refs.length > 140 ? refs.slice(0, 140) + "…" : refs}), priorizando los de esa industria.`
+    : `Desarrollar un caso de éxito de ${ind.key}, el segmento que mejor responde, y usarlo en la cadencia.`, `Reunión por empresa trabajada en ${ind.key}: ${P(ind.mRate)}.${refs ? " Casos de éxito tomados del ICP (clientes de referencia)." : ""}`]);
   if (M.kpi.oppRate != null && M.coHeld.length >= 3 && M.kpi.oppRate < 0.3) R.push(["Paso siguiente en reunión", `Cerrar cada reunión con un próximo paso concreto (propuesta, workshop o demo con fecha).`, `Solo ${P(M.kpi.oppRate)} de las empresas con reunión realizada tiene oportunidad.`]);
   return R;
 }
