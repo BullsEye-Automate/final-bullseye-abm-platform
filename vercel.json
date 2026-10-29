@@ -30,11 +30,11 @@
     },
     {
       "path": "/api/cron/reporte-sdr?slot=13",
-      "schedule": "0 16,17 * * 1-5"
+      "schedule": "0 16,17,18 * * 1-5"
     },
     {
       "path": "/api/cron/reporte-sdr?slot=18",
-      "schedule": "30 21,22 * * 1-5"
+      "schedule": "30 21,22,23 * * 1-5"
     },
     {
       "path": "/api/cron/alertas-numeros",
@@ -67,8 +67,8 @@
     "app/api/radar-abm/route.ts": { "maxDuration": 300 },
     "app/api/radar-abm/detect/route.ts": { "maxDuration": 60 },
     "app/api/cron/radar-abm-sync/route.ts": { "maxDuration": 300 },
-    "app/api/cron/reporte-sdr/route.ts": { "maxDuration": 120 },
-    "app/api/reporte-sdr/route.ts": { "maxDuration": 120 },
+    "app/api/cron/reporte-sdr/route.ts": { "maxDuration": 300 },
+    "app/api/reporte-sdr/route.ts": { "maxDuration": 300 },
     "app/api/cron/alertas-numeros/route.ts": { "maxDuration": 300 },
     "app/api/analisis/alertas-numeros/route.ts": { "maxDuration": 300 }
   }
