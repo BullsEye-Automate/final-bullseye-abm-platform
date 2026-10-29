@@ -7,6 +7,7 @@
 export type RadarCompany = {
   id: number | string;
   n: string;                 // nombre
+  dom?: string;              // dominio normalizado (excluir de la wishlist)
   ind?: string | null;       // industria
   pais: string;
   size: string;              // Pyme / Mid-market / Enterprise

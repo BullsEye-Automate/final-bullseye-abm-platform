@@ -12,6 +12,7 @@ import { loadSheetMeetings } from "./sheetMeetings";
 import { loadClientIcps } from "./icp";
 import { loadAlloMonth } from "@/lib/celulasSdr/server/allo";
 import { periodMonths } from "../engine";
+import { normalizeDomain } from "@/lib/hubspotPool";
 
 // Pulso ABM — sincronización de un cliente desde HubSpot (§3).
 // Empresas del universo del cliente (propiedad "Cliente BullsEye", o todas
@@ -215,6 +216,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     companies.push({
       id: r.id,
       n: p.name || `Empresa ${r.id}`,
+      ...(normalizeDomain(p.domain) ? { dom: normalizeDomain(p.domain)! } : {}),
       ind: (industryProp ? bullseyeIndustryLabel(p[industryProp]) : null) || industryLabel(p.industry),
       pais: countryLabel(p[countryProp]) || countryLabel(p.country) || "Sin país",
       employees: p.numberofemployees ? Number(p.numberofemployees) : null,
