@@ -23,7 +23,8 @@ export type ClientExclusions = { domains: string[]; names: string[]; keywords: s
 
 // Empresas que NO deben volver a aparecerle al cliente: las de su wishlist,
 // las que omitió, las excluidas por BullsEye, las de su lista de exclusión
-// del portal (empresas y palabras clave) y las que ya están en su pipeline.
+// del portal (empresas y palabras clave), las que ya están en su pipeline y
+// las que BullsEye ya trabaja con el cliente en HubSpot (Pulso ABM).
 export async function getClientExclusions(db: SupabaseClient, clientId: string): Promise<ClientExclusions> {
   const domains = new Set<string>();
   const names = new Set<string>();
@@ -57,6 +58,27 @@ export async function getClientExclusions(db: SupabaseClient, clientId: string):
       .range(from, from + 999);
     for (const r of data ?? []) add(r.company_name, r.company_website);
     if (!data || data.length < 1000) break;
+  }
+
+  // Cuentas que BullsEye ya trabaja con el cliente en HubSpot (universo del
+  // Pulso ABM, último sync): no se le vuelven a proponer. Los snapshots
+  // antiguos no traen dominio: si vienen del HubSpot de BullsEye se busca
+  // por id en el pool (mismo HubSpot)
+  const [{ data: snap }, { data: radarCl }] = await Promise.all([
+    db.from("radar_abm_snapshots").select("companies:dataset->client->companies").eq("client_id", clientId).maybeSingle(),
+    db.from("radar_abm_clients").select("hubspot_source").eq("client_id", clientId).maybeSingle(),
+  ]);
+  const worked = (Array.isArray((snap as any)?.companies) ? (snap as any).companies : []) as { id: string | number; n?: string; dom?: string }[];
+  const noDomain: string[] = [];
+  for (const c of worked) {
+    add(c.n, c.dom);
+    if (!c.dom && c.id != null) noDomain.push(String(c.id));
+  }
+  if (noDomain.length && (radarCl as any)?.hubspot_source !== "client") {
+    for (let i = 0; i < noDomain.length; i += 300) {
+      const { data } = await db.from("hubspot_company_pool").select("domain").in("hs_id", noDomain.slice(i, i + 300));
+      for (const r of data ?? []) if (r.domain) domains.add(r.domain);
+    }
   }
 
   return { domains: Array.from(domains), names: Array.from(names), keywords: Array.from(keywords) };
