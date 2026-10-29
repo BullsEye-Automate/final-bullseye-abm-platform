@@ -167,8 +167,11 @@ export async function syncClientRadar(clientId: string, by: string) {
   const filterGroups = [{ filters }];
 
   const countryProp = P.companyCountry.property ?? "country";
+  // Industria: "Industria BullsEye" (industria_bullseye) y, si viene vacía, la estándar
+  const industryProp = P.companyIndustry?.property ?? null;
   const companyProps = Array.from(new Set([
     "name", "domain", "industry", "country", "numberofemployees", "hubspot_owner_id", "createdate", statusProp, countryProp,
+    ...(industryProp ? [industryProp] : []),
     ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier, P.companySdr, P.companyWishlist].map((p) => p.property).filter(Boolean) as string[],
   ]));
   const rawCompanies = await searchAll("companies", filterGroups, companyProps, token);
@@ -187,6 +190,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const wishlistLabel = optionLabeler(P.companyWishlist);
 
   const industryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === "industry") as DetectedProperty | undefined);
+  const bullseyeIndustryLabel = optionLabeler(P.companyIndustry);
   const statusLabel = optionLabeler(P.companyStatus);
   const tierLabel = optionLabeler(P.companyIcpTier);
   const countryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === countryProp) as DetectedProperty | undefined);
@@ -211,7 +215,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     companies.push({
       id: r.id,
       n: p.name || `Empresa ${r.id}`,
-      ind: industryLabel(p.industry),
+      ind: (industryProp ? bullseyeIndustryLabel(p[industryProp]) : null) || industryLabel(p.industry),
       pais: countryLabel(p[countryProp]) || countryLabel(p.country) || "Sin país",
       employees: p.numberofemployees ? Number(p.numberofemployees) : null,
       icp: ["A", "B", "C"].includes(tier) ? tier : "s/i",
