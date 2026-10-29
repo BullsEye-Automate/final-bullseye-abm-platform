@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     const [report, state] = await Promise.all([getPhoneHealthReport({ fresh }), readAlertState().catch(() => new Map())]);
     const since: Record<string, string> = {};
     for (const [num, row] of state) since[num] = (row as any).since;
-    return NextResponse.json({ ...report, since, recipients: alertRecipients() });
+    return NextResponse.json({ ...report, since, recipients: await alertRecipients() });
   } catch (err) {
     console.error("Error en /api/analisis/alertas-numeros:", err);
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });

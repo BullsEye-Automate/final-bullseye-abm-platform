@@ -16,6 +16,7 @@ import {
   IconChevronUp,
   IconInfoCircle,
 } from "@tabler/icons-react";
+import MailRecipientsEditor from "@/components/MailRecipientsEditor";
 
 type Level = "red" | "yellow" | "watch" | "ok" | "low_volume";
 type NumberHealth = {
@@ -239,11 +240,18 @@ export default function SaludNumerosPage() {
             })}
           </section>
 
+          <section className="card space-y-2">
+            <h2 className="text-sm font-semibold">Correo automático</h2>
+            <p className="text-xs text-ink-muted">
+              Lunes a las 8:00: resumen semanal completo. Martes a viernes a las 8:00: solo si un número pasa a
+              “Reemplazar”.
+            </p>
+            <MailRecipientsEditor reportKey="phone_health" />
+          </section>
+
           <p className="text-xs text-ink-muted">
             Métrica: % de llamadas que contesta una persona. Reemplazar: bajo 5% dos semanas seguidas o caída de 40% o
-            más. Revisar: caída de 25–40%, bajo 5% esta semana, más de 60% a buzón o posibles cortes. Se evalúa cada día
-            hábil a las 8:00 y se avisa por correo
-            {data.recipients?.length ? ` a ${data.recipients.join(", ")}` : ""} cuando hay cambios, y siempre los lunes.
+            más. Revisar: caída de 25–40%, bajo 5% esta semana, más de 60% a buzón o posibles cortes.
           </p>
         </>
       )}
