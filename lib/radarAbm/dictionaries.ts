@@ -152,6 +152,7 @@ export const PROPERTY_DEFS: {
   { key: "companyNextFollowUp", object: "companies", label: "Fecha de próximo seguimiento", help: "Empresas en seguimiento o por retomar" },
   { key: "companyIcpTier", object: "companies", label: "Tier ICP", help: "A / B / C (propuesta, Anexo A4)" },
   { key: "companyCountry", object: "companies", label: "País", help: "Sin ella se usa country" },
+  { key: "companyIndustry", object: "companies", label: "Industria BullsEye", help: "Industria de la empresa; si viene vacía (o no existe) se usa industry" },
   { key: "contactStatus", object: "contacts", label: "Asignación BullsEye por Llamar - <cliente>", required: true, help: "Estado de gestión del contacto (una propiedad por cliente)", perClient: { labelPrefix: "Asignación BullsEye por Llamar" } },
   { key: "contactSdr", object: "contacts", label: "SDR Asignado - <cliente>", help: "SDR del contacto (\"SDR Asignado - <cliente>\" o \"SDR - <cliente>\"; sin ella, el propietario)", perClient: { labelPrefix: "SDR Asignado", alsoPrefixes: ["SDR -"] } },
   { key: "contactObjection", object: "contacts", label: "Objeción principal", help: "Propuesta (Anexo A4)" },
