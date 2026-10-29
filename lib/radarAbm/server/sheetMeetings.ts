@@ -45,15 +45,30 @@ export async function loadSheetMeetings(input: {
   companies: { id: string | number; n: string; domain?: string | null }[];
   contacts: { id: string | number; co: string | number; n: string }[];
   sdrOf: (co: string | number) => string;
-}): Promise<{ meetings: RadarMeeting[]; unmatched: { empresa: string; n: number }[]; total: number }> {
+}): Promise<{ meetings: RadarMeeting[]; unmatched: { empresa: string; n: number }[]; total: number; byClient: { name: string; n: number }[] }> {
   const supabase = supabaseAdmin();
+  // La planilla puede tener el mismo cliente bajo otro registro con nombre
+  // equivalente ("Coderslab" / "Coders Lab" / "CodersLab Chile"): se suman
+  // las reuniones de todos los clientes cuyo nombre compacto calza
+  const { data: allClients } = await supabase.from("clients").select("id, name");
+  const compactName = (s: string | null | undefined) => normCompany(s).replace(/ /g, "");
+  const own = (allClients ?? []).find((c: any) => c.id === input.clientId);
+  const ownKey = compactName(own?.name);
+  const clientIds = new Set<string>([input.clientId]);
+  if (ownKey.length >= 4) {
+    for (const c of allClients ?? []) {
+      const k = compactName(c.name);
+      if (k.length >= 4 && (k.startsWith(ownKey) || ownKey.startsWith(k))) clientIds.add(c.id);
+    }
+  }
+  const nameOf = new Map((allClients ?? []).map((c: any) => [c.id, c.name as string]));
   const rows: any[] = [];
   const PAGE = 1000;
   for (let offset = 0; offset < 100000; offset += PAGE) {
     const { data, error } = await supabase
       .from("meetings")
-      .select("id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais")
-      .eq("client_id", input.clientId)
+      .select("id, client_id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais")
+      .in("client_id", [...clientIds])
       .or(`fecha_reunion.gte.${input.start},fecha_agendamiento.gte.${input.start}`)
       .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
@@ -148,7 +163,10 @@ export async function loadSheetMeetings(input: {
       ...(fb ? { fb } : {}),
     });
   }
+  const perClient = new Map<string, number>();
+  for (const r of rows) perClient.set(r.client_id, (perClient.get(r.client_id) ?? 0) + 1);
   return {
+    byClient: Array.from(perClient.entries()).map(([id, n]) => ({ name: nameOf.get(id) ?? id, n })),
     meetings,
     unmatched: Array.from(unmatched.entries()).map(([empresa, n]) => ({ empresa, n })).sort((a, b) => b.n - a.n),
     total: rows.length,
