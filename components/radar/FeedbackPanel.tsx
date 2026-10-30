@@ -5,7 +5,7 @@ import { IconCopy, IconExternalLink, IconLoader2 } from "@tabler/icons-react";
 import ClientFeedbackBoard from "@/components/feedback/ClientFeedbackBoard";
 import type { RadarAudience } from "./RadarReport";
 
-// Pulso ABM → Feedback comercial → Completar feedback. En el portal el
+// Pulso ABM → Feedback manual → Completar feedback. En el portal el
 // cliente evalúa sus reuniones realizadas ahí mismo (mismo formulario y
 // tabla que el link /feedback-cliente/<token>). En la vista interna se
 // muestra el link para compartirlo; el equipo no completa el feedback.
@@ -32,7 +32,7 @@ export default function FeedbackPanel({ audience, clientId }: { audience: RadarA
   const url = `${typeof window !== "undefined" ? window.location.origin : ""}/feedback-cliente/${token}`;
   return (
     <div className="ra-plain-card text-sm text-gray-700">
-      <p className="mb-3">El cliente completa el feedback de cada reunión realizada en su portal (Pulso ABM → Feedback comercial) o con este link:</p>
+      <p className="mb-3">El cliente completa el feedback de cada reunión realizada en su portal (Pulso ABM → Feedback manual) o con este link:</p>
       <div className="flex flex-wrap items-center gap-2">
         <code className="text-xs break-all">{url}</code>
         <button className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-200 text-xs" onClick={() => { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>

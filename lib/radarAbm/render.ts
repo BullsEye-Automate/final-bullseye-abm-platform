@@ -19,31 +19,34 @@ export const PARTS: Part[] = [
   ["II", "Cuentas objetivo", [[4, "cobertura", "Cobertura de cuentas"], [5, "wishlist", "Wishlist y propuestas de BullsEye"]]],
   ["III", "Avance en cuentas", [[6, "funnel", "Funnel ABM"], [7, "profundidad", "Profundidad ABM"], [8, "multi", "Multi-threading"], [9, "est-emp", "Estados de empresas"], [10, "est-ct", "Estados de contactos"], [11, "contactab", "Contactabilidad"], [12, "conv", "Conversaciones"], [13, "seguimientos", "Seguimientos"], [14, "referrals", "Referrals"]]],
   ["IV", "Reuniones", [[15, "reuniones", "Reuniones agendadas vs realizadas"], [16, "reuniones-detalle", "Detalle de reuniones"]]],
-  ["V", "Feedback comercial", [[17, "feedback", "Feedback del cliente"], [18, "calidad", "Calidad de reuniones"], [19, "feedback-form", "Completar feedback"]]],
-  ["VI", "Voz del mercado", [[20, "objeciones", "Objeciones"], [21, "senales", "Señales de interés"], [22, "score-sdr", "Score de desempeño SDR"], [23, "descartadas", "Empresas descartadas"], [24, "icp", "Ajuste al ICP"]]],
-  ["VII", "ICP del proyecto", [[25, "icp-vigente", "ICP y buyer persona vigentes"], [26, "icp-trabajo", "Lo que estamos trabajando"]]],
-  ["VIII", "Segmentos", [[27, "rol", "Análisis por rol"], [28, "industria", "Análisis por industria"], [29, "pais", "Análisis por país"], [30, "sdr", "Análisis por SDR"]]],
-  ["IX", "Evolución y stock", [[31, "evolucion", "Evolución temporal"], [32, "stock-op", "Stock operativo"], [33, "stock-opp", "Stock de oportunidad"], [34, "recuperables", "Cuentas recuperables"]]],
-  ["X", "Recomendaciones", [[35, "rec-be", "Recomendaciones BullsEye"], [36, "rec-cli", "Recomendaciones para el cliente"]]],
-  ["XI", "Inteligencia (KAM)", [[37, "inteligencia", "Inteligencia comercial"], [38, "aprendizajes", "Lo que aprendimos del mercado"], [39, "oportunidades", "Oportunidades detectadas"]]],
-  ["XII", "Tablas maestras", [[40, "tm-emp", "Tabla maestra de empresas"], [41, "tm-ct", "Tabla maestra de contactos"]]],
+  ["V", "Feedback manual", [[17, "feedback-form", "Completar feedback"]]],
+  ["VI", "Resumen feedback", [[18, "feedback", "Feedback del cliente"], [19, "calidad", "Calidad de reuniones"]]],
+  ["VII", "Peitho", [["P", "peitho", "Peitho · feedback automático de reuniones"]]],
+  ["VIII", "Voz del mercado", [[20, "objeciones", "Objeciones"], [21, "senales", "Señales de interés"], [22, "score-sdr", "Score de desempeño SDR"], [23, "descartadas", "Empresas descartadas"], [24, "icp", "Ajuste al ICP"]]],
+  ["IX", "ICP del proyecto", [[25, "icp-vigente", "ICP y buyer persona vigentes"], [26, "icp-trabajo", "Lo que estamos trabajando"]]],
+  ["X", "Segmentos", [[27, "rol", "Análisis por rol"], [28, "industria", "Análisis por industria"], [29, "pais", "Análisis por país"], [30, "sdr", "Análisis por SDR"]]],
+  ["XI", "Evolución y stock", [[31, "evolucion", "Evolución temporal"], [32, "stock-op", "Stock operativo"], [33, "stock-opp", "Stock de oportunidad"], [34, "recuperables", "Cuentas recuperables"]]],
+  ["XII", "Recomendaciones", [[35, "rec-be", "Recomendaciones BullsEye"], [36, "rec-cli", "Recomendaciones para el cliente"]]],
+  ["XIII", "Inteligencia (KAM)", [[37, "inteligencia", "Inteligencia comercial"], [38, "aprendizajes", "Lo que aprendimos del mercado"], [39, "oportunidades", "Oportunidades detectadas"]]],
+  ["XIV", "Tablas maestras", [[40, "tm-emp", "Tabla maestra de empresas"], [41, "tm-ct", "Tabla maestra de contactos"]]],
   ["A", "Anexo · Validación de datos", [["A1", "datos-prop", "Propiedades y mapeo HubSpot"], ["A2", "datos-metr", "Qué se puede calcular"], ["A3", "datos-inc", "Inconsistencias detectadas"], ["A4", "datos-nuevas", "Propiedades a registrar"]]],
 ];
 
 // Slug de cada vista (URLs del portal: /portal/radar?vista=<slug>)
 export const PART_SLUGS = [
-  "vision-ejecutiva", "cuentas-objetivo", "avance-cuentas", "reuniones", "feedback-comercial", "voz-mercado",
+  "vision-ejecutiva", "cuentas-objetivo", "avance-cuentas", "reuniones", "feedback-manual", "resumen-feedback", "peitho", "voz-mercado",
   "icp-proyecto", "segmentos", "evolucion-stock", "recomendaciones", "inteligencia", "tablas-maestras", "validacion-datos",
 ];
 // Vistas solo para el equipo BullsEye (no se muestran en el portal)
 export const INTERNAL_PARTS = new Set(["inteligencia", "validacion-datos"]);
 // Slugs anteriores (links ya compartidos) → vista actual
 const SLUG_ALIASES: Record<string, string> = {
+  "feedback-comercial": "feedback-manual",
   "cuentas-contactos": "avance-cuentas", "contacto-conversacion": "avance-cuentas", potencial: "avance-cuentas", "descarte-icp": "voz-mercado",
 };
 export const partIndex = (slug: string | null | undefined) => Math.max(0, PART_SLUGS.indexOf(SLUG_ALIASES[slug ?? ""] ?? slug ?? ""));
 // Secciones que arma React (no salen del HTML generado)
-export const REACT_SECTIONS = new Set(["wishlist", "feedback-form", "icp-vigente", "tm-emp", "tm-ct"]);
+export const REACT_SECTIONS = new Set(["wishlist", "feedback-form", "peitho", "icp-vigente", "tm-emp", "tm-ct"]);
 
 export const LEADS: Record<string, string> = {
   resumen: "Qué pasó con las cuentas, hasta dónde llegamos dentro de ellas y qué potencial queda abierto.",
@@ -63,6 +66,7 @@ export const LEADS: Record<string, string> = {
   "reuniones-detalle": "Todas las reuniones del período tal como están en la planilla de reuniones.",
   feedback: "Lo que el cliente nos dice de cada reunión realizada: si la empresa y el contacto calificaban, la propuesta y la probabilidad de cierre.",
   "feedback-form": "Reuniones realizadas que esperan tu evaluación.",
+  peitho: "Feedback automático de cada reunión: preparación, análisis de la conversación y fit con el ICP.",
   "score-sdr": "Calidad de las conversaciones según el Score de Desempeño SDR que la IA de Allo asigna a las llamadas conectadas.",
   "icp-vigente": "El perfil de empresa y de contacto con el que estamos prospectando.",
   "icp-trabajo": "Cómo se ve, en los hechos, la base que estamos trabajando frente a ese ICP.",

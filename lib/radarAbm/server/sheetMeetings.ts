@@ -146,7 +146,7 @@ export async function loadSheetMeetings(input: {
       ...(r.origen ? { org: String(r.origen).trim() } : {}),
       ...(r.pais ? { pais: String(r.pais).trim() } : {}),
       ...(r.propuesta_oportunidad ? { oppv: String(r.propuesta_oportunidad).trim() } : {}),
-      // Encuesta del cliente (vista Feedback comercial)
+      // Encuesta del cliente (vista Resumen feedback)
       ...(f ? { fbk: 1 as const } : {}),
       ...(f?.calificacion != null ? { cal: Number(f.calificacion) } : {}),
       ...(f?.probabilidad_cierre != null ? { prob: Number(f.probabilidad_cierre) } : {}),
