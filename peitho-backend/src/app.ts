@@ -10,6 +10,7 @@ import { panelRouter } from './routes/panel';
 import { publicResearchRouter } from './routes/publicResearch';
 import { publicAnalysisRouter } from './routes/publicAnalysis';
 import { publicDiagnosticsRouter } from './routes/publicDiagnostics';
+import { integrationRouter } from './routes/integration';
 
 export const app = express();
 
@@ -61,6 +62,8 @@ app.use(
   })
 );
 app.use(healthRouter);
+// Integración con el portal de BullsEye (ver bullseyeIntegration.ts)
+app.use(integrationRouter);
 app.use(authRouter);
 app.use(calendarRouter);
 app.use(meetingsRouter);
