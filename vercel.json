@@ -39,6 +39,10 @@
     {
       "path": "/api/cron/alertas-numeros",
       "schedule": "0 11,12 * * 1-5"
+    },
+    {
+      "path": "/api/cron/alerta-feriados",
+      "schedule": "30 10,11,12 * * 1-5"
     }
   ],
   "framework": "nextjs",
@@ -70,6 +74,8 @@
     "app/api/cron/reporte-sdr/route.ts": { "maxDuration": 300 },
     "app/api/reporte-sdr/route.ts": { "maxDuration": 300 },
     "app/api/cron/alertas-numeros/route.ts": { "maxDuration": 300 },
-    "app/api/analisis/alertas-numeros/route.ts": { "maxDuration": 300 }
+    "app/api/analisis/alertas-numeros/route.ts": { "maxDuration": 300 },
+    "app/api/cron/alerta-feriados/route.ts": { "maxDuration": 300 },
+    "app/api/alerta-feriados/route.ts": { "maxDuration": 120 }
   }
 }

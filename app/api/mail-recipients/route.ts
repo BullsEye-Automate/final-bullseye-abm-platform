@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 // Destinatarios de los correos automáticos (lib/mailRecipients.ts).
 // Requiere sesión del equipo (no está en la lista pública de middleware.ts).
-// GET → { phone_health: [...], reporte_sdr: [...] }
+// GET → { phone_health: [...], reporte_sdr: [...], feriados: [...] }
 // PUT { key, emails } → guarda la lista de ese reporte.
 export async function GET() {
   try {

@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { IconX, IconPlus, IconLoader2, IconCheck } from "@tabler/icons-react";
 
-type Key = "phone_health" | "reporte_sdr";
+type Key = "phone_health" | "reporte_sdr" | "feriados";
 const EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 
 export default function MailRecipientsEditor({ reportKey, label = "Enviar a" }: { reportKey: Key; label?: string }) {

@@ -15,6 +15,7 @@ export type GmailMessage = {
   fromName?: string;
   to: string[];
   cc?: string[];
+  replyTo?: string[];
   subject: string;
   html: string;
   attachments?: { filename: string; content: Buffer; contentType: string }[];
@@ -43,6 +44,7 @@ export async function sendGmail(msg: GmailMessage): Promise<{ id: string }> {
     `From: ${from}`,
     `To: ${msg.to.join(", ")}`,
     msg.cc?.length ? `Cc: ${msg.cc.join(", ")}` : null,
+    msg.replyTo?.length ? `Reply-To: ${msg.replyTo.join(", ")}` : null,
     `Subject: ${encodeHeader(msg.subject)}`,
     "MIME-Version: 1.0",
   ].filter((l): l is string => l !== null);
