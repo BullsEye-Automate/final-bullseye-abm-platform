@@ -224,7 +224,7 @@ Correo automático con un **PNG vertical** (1080 px, para reenviar por WhatsApp)
 
 ---
 
-### Alerta de feriados (`lib/feriados/`, `/analisis/feriados`)
+### Alerta de feriados (`lib/feriados/`, vista de Células SDR)
 
 Correo diario con los feriados de los 5 países a los que llama BullsEye (Chile, México, Colombia, Perú y Argentina) y las reuniones agendadas por error en un feriado. **Lunes a viernes a las 8:30 de Chile** (también en feriados de Chile: los otros países siguen llamando). **El aviso llega el día hábil anterior al feriado** (confirmado con BullsEye): el correo destaca el próximo día de lunes a viernes (`nextDay` / `nextStatus` en `report.ts`; el viernes avisa lo del lunes) y luego lista lo que viene en 3 semanas.
 
@@ -232,7 +232,7 @@ Correo diario con los feriados de los 5 países a los que llama BullsEye (Chile,
 - **Reuniones en feriado** (`lib/feriados/report.ts`, ventana de 21 días): (1) **planilla de reuniones** (tabla `meetings`, columna País, solo Pendiente/Reagendar) y (2) **reuniones de HubSpot de BullsEye** (país `pais_g` y región `state`/`city` de la empresa asociada; día local del país). Niveles: **conflicto** (feriado nacional del país de la empresa, o regional con región que calza), **revisar** (feriado regional sin región conocida o día de baja actividad), **sin país** (cae en un feriado nacional de algún país y la reunión no tiene país/empresa). Si una fuente falla, el correo sigue y lo avisa.
 - **Envío** (`lib/feriados/mail.ts`): Resend, remitente `FERIADOS_ALERTS_FROM` → `CELULAS_ALERTS_FROM` (alertas@notificaciones.bullseye-abm.com), nombre "BullsEye · Alerta de feriados". **Respuestas** (`Reply-To`): `FERIADOS_ALERTS_REPLY_TO`, por defecto amadriz@ (la casilla de alertas no se revisa; `replyTo` agregado a `lib/mailer.ts` y `lib/gmail.ts`). Destinatarios editables en la página (clave `feriados` de `lib/mailRecipients.ts`; por defecto ihincapie@, vabarzua@ y nnazar@).
 - **Cron:** `/api/cron/alerta-feriados` (11:30, 12:30 y 13:30 UTC L-V; envía solo cuando en Chile son las 8:xx, reintenta a las 9:xx si no quedó registrado en `allo_response_cache`, clave `feriados_alert_sent:<día>`). `?force=1` con `CRON_SECRET`.
-- **Página** `/analisis/feriados` (menú Análisis → "Alerta de feriados"): próximo día hábil por país, reuniones marcadas, próximos feriados, destinatarios, vista previa del correo y "Enviar ahora". API con sesión: `GET /api/alerta-feriados` (reporte + HTML), `POST` lo envía en el momento.
+- **Vista dentro de Células SDR** (Operación → "Alerta de feriados", `app/analisis/celulas-sdr/views/Feriados.tsx`, `np: true` en `VIEWS`: oculta período y filtros del módulo). Enlace directo `/analisis/celulas-sdr?vista=feriados` (lo usa el botón del correo; `?vista=<clave>` sirve para cualquier vista); `/analisis/feriados` redirige ahí. Muestra próximo día hábil por país, reuniones marcadas, próximos feriados, destinatarios, vista previa del correo y "Enviar ahora". API con sesión: `GET /api/alerta-feriados` (reporte + HTML), `POST` lo envía en el momento.
 
 ---
 

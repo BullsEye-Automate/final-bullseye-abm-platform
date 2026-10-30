@@ -4,7 +4,7 @@
 // reuniones agendadas en un feriado (planilla de reuniones + HubSpot),
 // próximos feriados en días hábiles y las fuentes oficiales.
 //
-// Destinatarios: editables desde Análisis → Alerta de feriados
+// Destinatarios: editables desde Células SDR → Alerta de feriados
 // (lib/mailRecipients.ts, clave "feriados"; por defecto Ingri, Vanessa y
 // Nicolle). Remitente: FERIADOS_ALERTS_FROM, si no CELULAS_ALERTS_FROM
 // (alertas@notificaciones.bullseye-abm.com). Respuestas: FERIADOS_ALERTS_REPLY_TO
@@ -150,7 +150,7 @@ function meetingsSection(r: HolidayReport, appUrl: string): string {
 </tr>`;
     }).join("");
     const more = list.length > MAX_ROWS_PER_LEVEL
-      ? `<p style="margin:4px 0 0;font-size:12px;color:${C.muted}">Y ${list.length - MAX_ROWS_PER_LEVEL} más: <a href="${appUrl}/analisis/feriados" style="color:${C.ink}">ver todas en el portal</a>.</p>`
+      ? `<p style="margin:4px 0 0;font-size:12px;color:${C.muted}">Y ${list.length - MAX_ROWS_PER_LEVEL} más: <a href="${appUrl}/analisis/celulas-sdr?vista=feriados" style="color:${C.ink}">ver todas en el portal</a>.</p>`
       : "";
     return `<p style="margin:0 0 4px">${pill(`${meta.title} · ${list.length}`, meta.fg, meta.bg)}</p>
 <p style="margin:0 0 6px;font-size:12px;color:${C.muted}">${meta.hint}</p>
@@ -206,7 +206,7 @@ ${meetingsSection(r, appUrl)}
 ${upcomingSection(r)}
 ${weekendNote(r)}
 ${warnings}
-<p style="margin:0 0 18px"><a href="${appUrl}/analisis/feriados" style="display:inline-block;background:${C.ink};color:#fff;padding:9px 14px;border-radius:8px;text-decoration:none;font-size:13px">Ver en el portal</a></p>
+<p style="margin:0 0 18px"><a href="${appUrl}/analisis/celulas-sdr?vista=feriados" style="display:inline-block;background:${C.ink};color:#fff;padding:9px 14px;border-radius:8px;text-decoration:none;font-size:13px">Ver en el portal</a></p>
 ${sourcesFooter()}
 <p style="margin:0;font-size:12px;color:${C.muted}">Correo automático del portal BullsEye, de lunes a viernes a las 8:30 de Chile, con los feriados del día hábil siguiente.</p>
 </div>`;

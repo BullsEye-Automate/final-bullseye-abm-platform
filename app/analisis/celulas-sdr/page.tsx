@@ -16,6 +16,7 @@ import { ViewAct, ViewAvg, ViewClients, ViewConn, ViewMtg, ViewQual } from "./vi
 import { ViewCal, ViewEff, ViewFicha, ViewTrend } from "./views/Analisis";
 import { ViewEvo } from "./views/Evolutivo";
 import { ViewRegistro } from "./views/Registro";
+import { ViewFeriados } from "./views/Feriados";
 import ConfigModal from "./ConfigModal";
 
 // Módulo "Células SDR" (Análisis → Células SDR): centro de mando del equipo
@@ -23,7 +24,8 @@ import ConfigModal from "./ConfigModal";
 // Cadena del reporte: Actividad → Contacto → Agendada → Realizada →
 // Oportunidad → Resultado. Todos los usuarios ven toda la información.
 
-const VIEWS: Record<string, { t: string; s: string; ic: string; g?: string; C: () => JSX.Element }> = {
+// np = la vista no usa el período ni los filtros del módulo (se ocultan).
+const VIEWS: Record<string, { t: string; s: string; ic: string; g?: string; np?: boolean; C: () => JSX.Element }> = {
   exec: { t: "Resumen ejecutivo", s: "¿Estamos cumpliendo la meta?", ic: "gauge", g: "Dirección", C: ViewExec },
   rank: { t: "Ranking de SDR", s: "Quién cumple y quién necesita apoyo", ic: "trophy", C: ViewRank },
   leaders: { t: "Comparación de líderes", s: "Célula contra célula", ic: "users", C: ViewLeaders },
@@ -35,6 +37,7 @@ const VIEWS: Record<string, { t: string; s: string; ic: string; g?: string; C: (
   mtg: { t: "Reuniones y no-show", s: "Del contacto a la oportunidad", ic: "funnel", C: ViewMtg },
   clients: { t: "Cumplimiento por cliente", s: "Ponderado según meta y peso de cada cuenta", ic: "bld", C: ViewClients },
   registro: { t: "Registro de reuniones", s: "La planilla API Reuniones, con filtros (solo lectura)", ic: "cal", C: ViewRegistro },
+  feriados: { t: "Alerta de feriados", s: "Feriados de Chile, México, Colombia, Perú y Argentina, y reuniones agendadas en feriado.", ic: "flag", np: true, C: ViewFeriados },
   cal: { t: "Calendario de desempeño", s: "Desempeño de cada SDR por día", ic: "grid", g: "Análisis", C: ViewCal },
   trend: { t: "Tendencia semanal", s: "Ritmo de desempeño semana a semana", ic: "trend", C: ViewTrend },
   evo: { t: "Evolutivo mensual", s: "Reuniones agendadas por SDR mes a mes, de enero a la fecha", ic: "trend", C: ViewEvo },
@@ -152,6 +155,13 @@ export default function CelulasSdrPage() {
   const P = useMemo(() => (M ? currentPeriod(M, ptype, pval) : null), [M, ptype, pval]);
   const Pp = useMemo(() => (M ? previousPeriod(M, ptype, pval) : null), [M, ptype, pval]);
 
+  // Enlace directo a una vista: /analisis/celulas-sdr?vista=feriados (lo usa
+  // el correo de la Alerta de feriados).
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get("vista");
+    if (v && VIEWS[v]) setView(v);
+  }, []);
+
   const go = useCallback((v: string) => { setView(v); if (typeof window !== "undefined") window.scrollTo({ top: 0 }); }, []);
   const openSdr = useCallback((key: string) => { setS({ ficha: key }); setF((x) => (x.sdr ? { ...x, sdr: key } : x)); go("ficha"); }, [go, setS]);
   const openLeader = useCallback((key: string) => { setF((x) => ({ ...x, leader: key, sdr: "" })); go("rank"); }, [go]);
@@ -241,7 +251,7 @@ export default function CelulasSdrPage() {
               <div className="cs-top-row">
                 <div>
                   <h1>{V.t}</h1>
-                  <p className="cs-sub">{V.s} {periodLabel}{fs.length ? `. Filtros: ${fs.join(", ")}` : ""}</p>
+                  <p className="cs-sub">{V.np ? V.s : <>{V.s} {periodLabel}{fs.length ? `. Filtros: ${fs.join(", ")}` : ""}</>}</p>
                 </div>
                 <div className="cs-actions">
                   <button className="cs-btn" onClick={() => load(baseMonth, true)} disabled={baseLoading || loadingMonths.allo.length > 0} title="Volver a consultar la planilla, Allo y HubSpot">
@@ -250,7 +260,7 @@ export default function CelulasSdrPage() {
                   <button className="cs-btn" onClick={() => setCfgOpen(true)}><Ic n="sliders" s={15} /> Configurar</button>
                 </div>
               </div>
-              <div className="cs-filters">
+              {V.np ? null : <div className="cs-filters">
                 <div className="cs-seg">
                   {([["dia", "Día"], ["sem", "Semana"], ["mes", "Mes"]] as [PType, string][]).map(([v, l]) => (
                     <button key={v} className={ptype === v ? "on" : ""} onClick={() => changePtype(v)}>{l}</button>
@@ -280,7 +290,7 @@ export default function CelulasSdrPage() {
                   {M.countries.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <button className="cs-btn ghost" onClick={() => setF(EMPTY_F)}>Limpiar filtros</button>
-              </div>
+              </div>}
             </header>
 
             {baseLoading ? <div className="cs-banner info"><IconLoader2 size={15} className="animate-spin" /><span>Cargando metas y reuniones de la ventana seleccionada…</span></div> : null}
