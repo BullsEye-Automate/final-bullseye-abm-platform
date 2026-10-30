@@ -6,20 +6,23 @@
    data-theme en .ra-root. */
 .ra-root {
   --bg: #F4F2FB; --panel: #ffffff; --panel-2: #F8F7FC; --panel-3: #EEEDF5; --line: #ECEAF4; --line-2: #DCD8EA;
-  --ink: #1A1733; --ink-2: #3B3760; --muted: #6B6884; --faint: #9794AC;
+  --ink: #1A1733; --ink-2: #3B3760; --muted: #6B6884; --faint: #6A6684;
   --brand: #251762; --accent: #3D2878; --accent-soft: rgba(61,40,120,.08); --cyan: #62E0D8;
   --magenta: #E0457B; --teal: #14A39A;
   --good: #1F9D74; --good-soft: #E1F5EE; --warn: #D99A1E; --warn-soft: #FAEEDA; --bad: #D0583A; --bad-soft: #FAECE7; --info: #2F80ED;
   --g-pend: #9794AC; --g-act: #7F77DD; --g-int: #14A39A; --g-fut: #2F80ED; --g-rej: #D0583A; --g-cont: #F08A3E; --g-disp: #D99A1E;
   --g-icp: #E0457B; --g-rel: #1F9D74; --g-rec: #8A93B5; --g-pausa: #9DB4FF;
   --s1: #7F77DD; --s2: #14A39A;
+  /* Colores para TEXTO (contraste AA sobre fondos claros); los de arriba son rellenos de gráficos */
+  --good-fg: #0F6E56; --warn-fg: #8A5A0B; --bad-fg: #A83F25; --magenta-fg: #B42B60; --teal-fg: #0B7A73;
   --shadow: 0 1px 0 rgba(38,33,92,0.04);
   color: var(--ink); font-size: 14px; line-height: 1.45;
 }
 .ra-root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #120c33; --panel: #1b1446; --panel-2: #211952; --panel-3: #2b2263; --line: #2f2668; --line-2: #3b3180;
-  --ink: #EEEDFE; --ink-2: #CFCBF0; --muted: #A9A4CF; --faint: #7a74a8;
+  --ink: #EEEDFE; --ink-2: #CFCBF0; --muted: #A9A4CF; --faint: #938dc2;
+  --good-fg: #3ccf98; --warn-fg: #f2b84b; --bad-fg: #ff7d63; --magenta-fg: #ff6b9a; --teal-fg: #4fd8cf;
   --accent: #A99FF0; --accent-soft: rgba(169,159,240,.16);
   --magenta: #ff6b9a; --teal: #4fd8cf;
   --good: #3ccf98; --good-soft: rgba(60,207,152,.16); --warn: #f2b84b; --warn-soft: rgba(242,184,75,.16); --bad: #ff7d63; --bad-soft: rgba(255,125,99,.16);
@@ -30,8 +33,9 @@
 }
 .ra-root * { box-sizing: border-box; }
 .ra-root h1:not(.ra-plain *), .ra-root h2:not(.ra-plain *), .ra-root h3:not(.ra-plain *), .ra-root h4:not(.ra-plain *) { margin: 0; letter-spacing: -.01em; }
-/* Solo los controles del informe: los módulos embebidos (.ra-plain, ej. la wishlist) conservan sus colores */
-.ra-root button:not(.ra-plain *), .ra-root select:not(.ra-plain *), .ra-root input:not(.ra-plain *) { font: inherit; color: inherit; }
+/* Solo los controles del informe: los módulos embebidos (.ra-plain, ej. la wishlist) conservan sus colores.
+   :where() deja esta base sin especificidad: si no, le ganaba a .fbar / .ra-btn.pri y les quitaba el texto blanco */
+:where(.ra-root button:not(.ra-plain *), .ra-root select:not(.ra-plain *), .ra-root input:not(.ra-plain *)) { font: inherit; color: inherit; }
 .ra-root .num, .ra-root td.n, .ra-root th.n { font-variant-numeric: tabular-nums; }
 .ra-root code { font-size: 11.5px; background: var(--panel-3); padding: 1px 5px; border-radius: 5px; }
 
@@ -50,8 +54,8 @@
 .ra-btn:hover { border-color: var(--g-act); }
 .ra-btn:disabled { opacity: .5; cursor: not-allowed; }
 .ra-btn.pri { background: var(--brand); color: #fff; border-color: var(--brand); }
-.ra-demo { font-size: 12px; font-weight: 600; color: var(--magenta); background: color-mix(in srgb, var(--magenta) 12%, transparent); padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
-.ra-sync { font-size: 12px; font-weight: 500; color: var(--teal); background: color-mix(in srgb, var(--teal) 12%, transparent); padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+.ra-demo { font-size: 12px; font-weight: 600; color: var(--magenta-fg); background: color-mix(in srgb, var(--magenta) 12%, transparent); padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
+.ra-sync { font-size: 12px; font-weight: 500; color: var(--teal-fg); background: color-mix(in srgb, var(--teal) 12%, transparent); padding: 5px 10px; border-radius: 999px; white-space: nowrap; }
 .ra-banner { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-radius: 10px; font-size: 12.5px; margin: 10px 0 0; }
 .ra-banner.info { background: #E6F1FB; color: #185FA5; }
 .ra-banner.warn { background: var(--warn-soft); color: #854F0B; }
@@ -89,7 +93,7 @@
 .ra-root .tile { min-width: 0; overflow-wrap: anywhere; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 15px 13px; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow); }
 .ra-root .tile .k { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
 .ra-root .kic { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
-.ra-root .kic.g { background: var(--good-soft); color: var(--good); } .ra-root .kic.y { background: var(--warn-soft); color: var(--warn); } .ra-root .kic.r { background: var(--bad-soft); color: var(--bad); }
+.ra-root .kic.g { background: var(--good-soft); color: var(--good-fg); } .ra-root .kic.y { background: var(--warn-soft); color: var(--warn-fg); } .ra-root .kic.r { background: var(--bad-soft); color: var(--bad-fg); }
 .ra-root .tile .v { font-size: 26px; font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .ra-root .tile .d { font-size: 12px; color: var(--muted); }
 .ra-root .tile.hl { background: linear-gradient(160deg, color-mix(in srgb, var(--cyan) 22%, var(--panel)), var(--panel) 70%); border-color: color-mix(in srgb, var(--cyan) 55%, var(--line)); }
@@ -103,7 +107,7 @@
 .ra-root .tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 7px; font-size: 11.5px; font-weight: 600; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
 .ra-root .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; font-weight: 600; font-size: 12px; white-space: nowrap; }
 .ra-root .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.ra-root .pill.hi { background: var(--good-soft); color: var(--good); } .ra-root .pill.md { background: var(--warn-soft); color: var(--warn); } .ra-root .pill.lo { background: var(--bad-soft); color: var(--bad); } .ra-root .pill.na { background: var(--panel-3); color: var(--muted); }
+.ra-root .pill.hi { background: var(--good-soft); color: var(--good-fg); } .ra-root .pill.md { background: var(--warn-soft); color: var(--warn-fg); } .ra-root .pill.lo { background: var(--bad-soft); color: var(--bad-fg); } .ra-root .pill.na { background: var(--panel-3); color: var(--muted); }
 .ra-root .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
 
 /* barras */
@@ -126,6 +130,7 @@
 .ra-root .fbar b { font-size: 20px; font-weight: 700; white-space: nowrap; }
 .ra-root button.fbar { border: 0; cursor: pointer; font: inherit; text-align: left; transition: filter .15s, box-shadow .15s; }
 .ra-root button.fbar:hover { filter: brightness(1.08); }
+.ra-root[data-theme="dark"] .fbar:not(.na) { color: #160B52; }
 .ra-root button.fbar.sel { box-shadow: 0 0 0 3px var(--panel), 0 0 0 5px var(--accent); }
 .ra-root button.ra-link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .ra-root button.ra-link.sel { font-weight: 700; }
@@ -172,12 +177,12 @@
 /* hallazgos */
 .ra-root .ins { display: grid; gap: 10px; }
 .ra-root .in { --c: var(--accent); display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--c); }
-.ra-root .in .ix { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); font-weight: 700; font-size: 12.5px; grid-row: span 2; }
+.ra-root .in .ix { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 14%, transparent); color: color-mix(in srgb, var(--c) 60%, var(--ink)); font-weight: 700; font-size: 12.5px; grid-row: span 2; }
 .ra-root .in p { margin: 0; font-weight: 500; max-width: 95ch; }
 .ra-root .in .ev { grid-column: 2; font-size: 12.5px; color: var(--muted); }
 .ra-root .in .ev b { font-weight: 600; color: var(--ink-2); }
 .ra-root .kind { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 2px 6px; border-radius: 5px; margin-right: 6px; vertical-align: 1px; }
-.ra-root .kind.h { background: var(--accent-soft); color: var(--accent); } .ra-root .kind.i { background: var(--warn-soft); color: var(--warn); }
+.ra-root .kind.h { background: var(--accent-soft); color: var(--accent); } .ra-root .kind.i { background: var(--warn-soft); color: var(--warn-fg); }
 .ra-root ul.clean { margin: 0; padding-left: 18px; list-style: disc; } .ra-root ul.clean li { margin: 5px 0; }
 .ra-root .exec { background: linear-gradient(160deg, color-mix(in srgb, var(--cyan) 18%, var(--panel)), var(--panel) 65%); border: 1px solid color-mix(in srgb, var(--cyan) 50%, var(--line)); border-radius: 12px; padding: 18px 22px; box-shadow: var(--shadow); }
 .ra-root .exec ul { margin: 0; padding-left: 18px; list-style: disc; } .ra-root .exec li { margin: 7px 0; max-width: 100ch; }
