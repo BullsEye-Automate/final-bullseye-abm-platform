@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveSdrKey } from "@/lib/sdrAnalytics";
-import { readMaster, makePersonResolver } from "@/lib/celulasSdr/sheets";
+import { readMaster, readAssignment, makePersonResolver } from "@/lib/celulasSdr/sheets";
+import { buildClientDirectory } from "./clientAccounts";
 import { canonicalCountry } from "@/lib/celulasSdr/country";
 import { chileToday } from "@/lib/celulasSdr/calendar";
 import type { DataWarning, MonthlyMeetingRow, MonthlyMeetingsResponse } from "@/lib/celulasSdr/types";
@@ -30,17 +31,24 @@ export async function loadMonthlyMeetings(yearParam: string | null): Promise<Mon
   const master = await readMaster(spreadsheetId, warnings);
   const resolvePerson = makePersonResolver(master.people);
 
-  // Paginado: PostgREST corta en 1000 filas
   const db = supabaseAdmin();
+  // cuentas (Nisum Chile / Colombia / Perú…): mismas que el resto del módulo
+  const { data: clientRows } = await db.from("clients").select("id, name, slug");
+  const rawGoals = await readAssignment(spreadsheetId, resolvePerson, warnings, year).catch(() => []);
+  const dir = buildClientDirectory((clientRows ?? []) as any, rawGoals);
+
+  // Paginado: PostgREST corta en 1000 filas
   const PAGE = 1000;
   const rows: any[] = [];
+  let cliCol = " cliente_nombre,";
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
       .from("meetings")
-      .select("id, responsable, sdr_nombre, client_id, pais, fecha_agendamiento, fecha_reunion, realizado")
+      .select("id, responsable, sdr_nombre, client_id," + cliCol + " pais, fecha_agendamiento, fecha_reunion, realizado")
       .or(`and(fecha_agendamiento.gte.${from},fecha_agendamiento.lte.${to}),and(fecha_reunion.gte.${from},fecha_reunion.lte.${to})`)
       .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
+    if (error && cliCol && /cliente_nombre/.test(error.message)) { cliCol = ""; offset -= PAGE; continue; }
     if (error) throw new Error(error.message);
     rows.push(...(data ?? []));
     if (!data || data.length < PAGE) break;
@@ -58,8 +66,8 @@ export async function loadMonthlyMeetings(yearParam: string | null): Promise<Mon
     const person = resolvePerson((r.responsable || r.sdr_nombre || "Sin responsable").trim()).name;
     const s = resolveSdrKey(person);
     sdrNames[s] = sdrNames[s] ?? person;
-    const c = r.client_id ?? null;
     const k = canonicalCountry(r.pais);
+    const c = dir.toAccount(r.client_id ?? null, r.cliente_nombre, k);
     const sm = (r.fecha_agendamiento ?? "").slice(0, 7);
     if (months.includes(sm) && r.fecha_agendamiento <= to) bump(sm, s, c, k, "sched");
     const mm = (r.fecha_reunion ?? "").slice(0, 7);

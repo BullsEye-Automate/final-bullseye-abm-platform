@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { resolveSdrKey } from "@/lib/sdrAnalytics";
-import { readMaster, makePersonResolver } from "@/lib/celulasSdr/sheets";
+import { readMaster, readAssignment, makePersonResolver } from "@/lib/celulasSdr/sheets";
+import { buildClientDirectory } from "./clientAccounts";
 import { canonicalCountry } from "@/lib/celulasSdr/country";
 import { chileToday, monthEnd, monthStart } from "@/lib/celulasSdr/calendar";
 import { canEditMeetings } from "@/lib/celulasSdr/editors";
@@ -39,23 +40,28 @@ export async function loadMeetingRecords(params: URLSearchParams, userEmail: str
   const resolvePerson = makePersonResolver(master.people);
 
   const db = supabaseAdmin();
-  const { data: clientRows } = await db.from("clients").select("id, name");
+  const { data: clientRows } = await db.from("clients").select("id, name, slug");
+  // cuentas (Nisum Chile / Colombia / Perú…): mismas que el resto del módulo
+  const rawGoals = await readAssignment(spreadsheetId, resolvePerson, warnings, Number(to.slice(0, 4))).catch(() => []);
+  const dir = buildClientDirectory((clientRows ?? []) as any, rawGoals);
   const clientNames: Record<string, string> = {};
-  for (const c of clientRows ?? []) clientNames[c.id as string] = c.name as string;
+  for (const c of dir.clients.values()) clientNames[c.id] = c.name;
 
   // Paginado: PostgREST corta en 1000 filas
   const PAGE = 1000;
   const raw: any[] = [];
   let truncated = false;
+  let cliCol = " cliente_nombre,";
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
       .from("meetings")
-      .select("id, sheet_row_key, responsable, sdr_nombre, client_id, pais, fecha_agendamiento, fecha_reunion, hora, realizado, propuesta_oportunidad, origen, empresa, contacto_nombre, contacto_cargo, notas")
+      .select("id, sheet_row_key, responsable, sdr_nombre, client_id," + cliCol + " pais, fecha_agendamiento, fecha_reunion, hora, realizado, propuesta_oportunidad, origen, empresa, contacto_nombre, contacto_cargo, notas")
       .gte(col, from)
       .lte(col, to)
       .order(col, { ascending: false })
       .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
+    if (error && cliCol && /cliente_nombre/.test(error.message)) { cliCol = ""; offset -= PAGE; continue; }
     if (error) throw new Error(error.message);
     raw.push(...(data ?? []));
     if (raw.length >= MAX_ROWS) { truncated = true; break; }
@@ -67,11 +73,12 @@ export async function loadMeetingRecords(params: URLSearchParams, userEmail: str
     const person = resolvePerson((m.responsable || m.sdr_nombre || "Sin responsable").trim()).name;
     const sdr = resolveSdrKey(person);
     sdrNames[sdr] = sdrNames[sdr] ?? person;
+    const country = canonicalCountry(m.pais);
     return {
       id: String(m.id),
       sdr,
-      client: m.client_id ?? null,
-      country: canonicalCountry(m.pais),
+      client: dir.toAccount(m.client_id ?? null, m.cliente_nombre, country),
+      country,
       sd: m.fecha_agendamiento ?? null,
       md: m.fecha_reunion ?? null,
       hour: (m.hora ?? "").trim() || null,

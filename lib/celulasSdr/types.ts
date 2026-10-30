@@ -112,6 +112,7 @@ export type BaseResponse = {
   clients: Client[];
   goals: Goal[];
   meetings: Meeting[];
+  accounts?: import("./accounts").ClientAccount[]; // clientes partidos en cuentas (ver accounts.ts)
   oppValues: string[];      // valores distintos de Propuesta/Oportunidad (para Configurar)
   incomplete: { pastPending: number; invalidDates: number };
   warnings: DataWarning[];
