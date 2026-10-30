@@ -218,6 +218,7 @@ export type MeetingRecord = {
   contact: string;
   title: string;            // cargo
   comment: string;          // Comentario de la reunión
+  editable: boolean;        // tiene "ID Reunión" en la planilla (se puede cambiar el estado desde la app)
 };
 
 export type MeetingRecordsResponse = {
@@ -229,4 +230,5 @@ export type MeetingRecordsResponse = {
   sdrNames: Record<string, string>;
   clientNames: Record<string, string>;
   truncated: boolean;
+  canEdit: boolean;         // el usuario puede cambiar estados (lib/celulasSdr/editors.ts)
 };

@@ -3,6 +3,7 @@ import { resolveSdrKey } from "@/lib/sdrAnalytics";
 import { readMaster, makePersonResolver } from "@/lib/celulasSdr/sheets";
 import { canonicalCountry } from "@/lib/celulasSdr/country";
 import { chileToday, monthEnd, monthStart } from "@/lib/celulasSdr/calendar";
+import { canEditMeetings } from "@/lib/celulasSdr/editors";
 import type { DataWarning, MeetingRecord, MeetingRecordsResponse, MeetingStatus } from "@/lib/celulasSdr/types";
 
 // Módulo Células SDR — Registro de reuniones: las filas de la pestaña API
@@ -23,7 +24,7 @@ function toStatus(realizado: string | null | undefined): MeetingStatus {
 
 const isDay = (s: string | null) => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
 
-export async function loadMeetingRecords(params: URLSearchParams): Promise<MeetingRecordsResponse> {
+export async function loadMeetingRecords(params: URLSearchParams, userEmail: string | null = null): Promise<MeetingRecordsResponse> {
   const today = chileToday();
   const field = params.get("field") === "sd" ? "sd" : "md";
   const from = isDay(params.get("from")) ? params.get("from")! : monthStart(today.slice(0, 7));
@@ -49,7 +50,7 @@ export async function loadMeetingRecords(params: URLSearchParams): Promise<Meeti
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
       .from("meetings")
-      .select("id, responsable, sdr_nombre, client_id, pais, fecha_agendamiento, fecha_reunion, hora, realizado, propuesta_oportunidad, origen, empresa, contacto_nombre, contacto_cargo, notas")
+      .select("id, sheet_row_key, responsable, sdr_nombre, client_id, pais, fecha_agendamiento, fecha_reunion, hora, realizado, propuesta_oportunidad, origen, empresa, contacto_nombre, contacto_cargo, notas")
       .gte(col, from)
       .lte(col, to)
       .order(col, { ascending: false })
@@ -81,8 +82,9 @@ export async function loadMeetingRecords(params: URLSearchParams): Promise<Meeti
       contact: (m.contacto_nombre ?? "").trim(),
       title: (m.contacto_cargo ?? "").trim(),
       comment: (m.notas ?? "").trim(),
+      editable: !!m.sheet_row_key && !String(m.sheet_row_key).includes("|"),
     };
   });
 
-  return { from, to, field, today, rows, sdrNames, clientNames, truncated };
+  return { from, to, field, today, rows, sdrNames, clientNames, truncated, canEdit: canEditMeetings(userEmail) };
 }
