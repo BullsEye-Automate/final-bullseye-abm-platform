@@ -198,3 +198,35 @@ export type MonthlyMeetingsResponse = {
   rows: MonthlyMeetingRow[];
   sdrNames: Record<string, string>;
 };
+
+// Registro de reuniones (vista "Registro de reuniones"): espejo de solo
+// lectura de la pestaña API Reuniones. Por decisión de BullsEye muestra
+// nombre y cargo del contacto, empresa, fechas y comentario, pero NUNCA
+// teléfono ni correo del prospecto.
+export type MeetingRecord = {
+  id: string;
+  sdr: string;              // Sdr.key
+  client: string | null;    // Client.id
+  country: string | null;   // país canónico
+  sd: string | null;        // fecha de agendamiento
+  md: string | null;        // fecha de la reunión
+  hour: string | null;
+  st: MeetingStatus;
+  opp: string;              // Propuesta/Oportunidad tal cual viene
+  origin: string;
+  company: string;
+  contact: string;
+  title: string;            // cargo
+  comment: string;          // Comentario de la reunión
+};
+
+export type MeetingRecordsResponse = {
+  from: string;
+  to: string;
+  field: "md" | "sd";
+  today: string;
+  rows: MeetingRecord[];
+  sdrNames: Record<string, string>;
+  clientNames: Record<string, string>;
+  truncated: boolean;
+};

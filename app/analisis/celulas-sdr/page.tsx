@@ -15,6 +15,7 @@ import { ViewAlerts, ViewExec, ViewLeaders, ViewRank } from "./views/Direccion";
 import { ViewAct, ViewAvg, ViewClients, ViewConn, ViewMtg, ViewQual } from "./views/Operacion";
 import { ViewCal, ViewEff, ViewFicha, ViewTrend } from "./views/Analisis";
 import { ViewEvo } from "./views/Evolutivo";
+import { ViewRegistro } from "./views/Registro";
 import ConfigModal from "./ConfigModal";
 
 // Módulo "Células SDR" (Análisis → Células SDR): centro de mando del equipo
@@ -33,6 +34,7 @@ const VIEWS: Record<string, { t: string; s: string; ic: string; g?: string; C: (
   qual: { t: "Calidad de llamadas", s: "Puntaje y calificación de las llamadas de cada SDR", ic: "mic", C: ViewQual },
   mtg: { t: "Reuniones y no-show", s: "Del contacto a la oportunidad", ic: "funnel", C: ViewMtg },
   clients: { t: "Cumplimiento por cliente", s: "Ponderado según meta y peso de cada cuenta", ic: "bld", C: ViewClients },
+  registro: { t: "Registro de reuniones", s: "La planilla API Reuniones, con filtros (solo lectura)", ic: "cal", C: ViewRegistro },
   cal: { t: "Calendario de desempeño", s: "Desempeño de cada SDR por día", ic: "grid", g: "Análisis", C: ViewCal },
   trend: { t: "Tendencia semanal", s: "Ritmo de desempeño semana a semana", ic: "trend", C: ViewTrend },
   evo: { t: "Evolutivo mensual", s: "Reuniones agendadas por SDR mes a mes, de enero a la fecha", ic: "trend", C: ViewEvo },
