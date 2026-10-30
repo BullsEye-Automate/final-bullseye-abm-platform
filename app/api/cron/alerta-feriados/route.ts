@@ -6,11 +6,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Vercel Cron: Alerta de feriados diaria a las 7:30 de Chile, lunes a
+// Vercel Cron: Alerta de feriados diaria a las 8:30 de Chile, lunes a
 // viernes (también en feriados de Chile: los otros países siguen llamando).
+// Avisa los feriados del día hábil siguiente (el viernes, los del lunes).
 // Vercel agenda en UTC y Chile cambia de horario, así que vercel.json dispara
-// a las 10:30, 11:30 y 12:30 UTC y acá se envía solo cuando en Chile son las
-// 7:xx; a las 8:xx se reintenta si el envío de las 7:30 no quedó registrado.
+// a las 11:30, 12:30 y 13:30 UTC y acá se envía solo cuando en Chile son las
+// 8:xx; a las 9:xx se reintenta si el envío de las 8:30 no quedó registrado.
 // ?force=1 (con CRON_SECRET) se salta el chequeo de hora y día.
 function chileHour(now = new Date()): number {
   return Number(
@@ -29,12 +30,13 @@ export async function GET(req: NextRequest) {
   const force = req.nextUrl.searchParams.get("force") === "1";
   const day = chileDay();
   const hour = chileHour();
-  const isRetry = hour === 8;
+  const SEND_HOUR = 8;
+  const isRetry = hour === SEND_HOUR + 1;
 
   if (!force) {
     const w = weekday(day);
     if (w === 0 || w === 6) return NextResponse.json({ skipped: `Fin de semana (${day})` });
-    if (hour !== 7 && !isRetry) return NextResponse.json({ skipped: `Hora de Chile ${hour}:xx no corresponde a las 7:30 ni a su reintento` });
+    if (hour !== SEND_HOUR && !isRetry) return NextResponse.json({ skipped: `Hora de Chile ${hour}:xx no corresponde a las 8:30 ni a su reintento` });
     if (await wasAlertSent(day)) return NextResponse.json({ skipped: `La alerta de hoy ya se envió` });
   }
 

@@ -1,9 +1,10 @@
 "use client";
 
-// Alerta de feriados: estado de hoy por país, reuniones agendadas en un
+// Alerta de feriados: feriados del próximo día hábil por país (el aviso llega
+// el día hábil anterior al feriado), reuniones agendadas en un
 // feriado del país de la empresa (planilla de reuniones + HubSpot) y próximos
 // feriados en días hábiles. El mismo contenido se envía por correo de lunes a
-// viernes a las 7:30 de Chile (cron /api/cron/alerta-feriados). Calendario y
+// viernes a las 8:30 de Chile (cron /api/cron/alerta-feriados). Calendario y
 // fuentes oficiales en lib/feriados/calendar.ts.
 import { useEffect, useState } from "react";
 import {
@@ -35,8 +36,9 @@ type Flag = {
 };
 type Report = {
   today: string;
+  nextDay: string;
   windowEnd: string;
-  todayStatus: { country: CountryCode; holidays: Holiday[] }[];
+  nextStatus: { country: CountryCode; holidays: Holiday[] }[];
   upcoming: { date: string; holidays: Holiday[] }[];
   weekend: { date: string; holidays: Holiday[] }[];
   flags: Flag[];
@@ -181,8 +183,9 @@ export default function AlertaFeriadosPage() {
             </div>
           )}
 
+          <h2 className="text-sm font-semibold -mb-3">Próximo día hábil · {shortDay(r.nextDay)}</h2>
           <section className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-            {r.todayStatus.map((s) => {
+            {r.nextStatus.map((s) => {
               const top = s.holidays[0];
               return (
                 <div key={s.country} className="rounded-lg bg-black/[0.03] px-4 py-3">
@@ -255,9 +258,9 @@ export default function AlertaFeriadosPage() {
           </section>
 
           <section className="card space-y-2">
-            <h2 className="text-sm font-semibold">Próximos feriados en días hábiles</h2>
+            <h2 className="text-sm font-semibold">Más adelante (próximas 3 semanas)</h2>
             {r.upcoming.length === 0 ? (
-              <p className="text-sm text-ink-muted">Ninguno en las próximas 3 semanas.</p>
+              <p className="text-sm text-ink-muted">Ningún otro feriado en días hábiles.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -294,7 +297,7 @@ export default function AlertaFeriadosPage() {
           <section className="card space-y-2">
             <h2 className="text-sm font-semibold">Correo automático</h2>
             <p className="text-xs text-ink-muted">
-              Lunes a viernes a las 7:30 de Chile, desde alertas@notificaciones.bullseye-abm.com. Asunto de hoy: “{data.subject}”.
+              Lunes a viernes a las 8:30 de Chile, con los feriados del día hábil siguiente (el viernes avisa los del lunes), desde alertas@notificaciones.bullseye-abm.com. Asunto de hoy: “{data.subject}”.
             </p>
             <MailRecipientsEditor reportKey="feriados" />
             <button onClick={() => setShowMail((v) => !v)} className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink pt-1">

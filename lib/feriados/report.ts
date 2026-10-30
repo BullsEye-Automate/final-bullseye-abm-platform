@@ -1,5 +1,7 @@
 // Alerta de feriados — armado del reporte diario (servidor).
-// - Hoy: estado de cada país (normal / feriado / regional / baja actividad).
+// - Próximo día hábil: estado de cada país ese día (normal / feriado /
+//   regional / baja actividad). El aviso llega el día hábil ANTERIOR al
+//   feriado (confirmado con BullsEye): el viernes avisa lo del lunes.
 // - Próximos días hábiles con feriado (ventana de WINDOW_DAYS días).
 // - Reuniones que caen en un feriado del país de la empresa, en dos fuentes:
 //   la planilla de reuniones de los SDR (tabla meetings, columna País) y las
@@ -38,9 +40,10 @@ export type MeetingFlag = {
 
 export type HolidayReport = {
   today: string;
+  nextDay: string; // próximo día de lunes a viernes después de hoy
   windowEnd: string;
-  todayStatus: DayStatus[];
-  upcoming: { date: string; holidays: Holiday[] }[]; // días hábiles, sin hoy
+  nextStatus: DayStatus[]; // feriados de cada país el próximo día hábil
+  upcoming: { date: string; holidays: Holiday[] }[]; // días hábiles después del próximo
   weekend: { date: string; holidays: Holiday[] }[]; // sábados/domingos de la ventana
   flags: MeetingFlag[];
   checked: { sheet: number; hubspot: number };
@@ -75,6 +78,13 @@ export function weekday(day: string): number {
 }
 
 const isWeekend = (day: string) => weekday(day) === 0 || weekday(day) === 6;
+
+// Próximo día de lunes a viernes después de `day` (el viernes → el lunes).
+export function nextWeekday(day: string): string {
+  let d = addDays(day, 1);
+  while (isWeekend(d)) d = addDays(d, 1);
+  return d;
+}
 
 const normText = (s: string) =>
   s
@@ -302,14 +312,16 @@ export async function buildHolidayReport(opts: { today?: string } = {}): Promise
   const windowEnd = addDays(today, WINDOW_DAYS);
   const warnings: string[] = [];
 
-  const todayStatus: DayStatus[] = COUNTRY_ORDER.map((country) => ({
+  const nextDay = nextWeekday(today);
+  const nextStatus: DayStatus[] = COUNTRY_ORDER.map((country) => ({
     country,
-    holidays: holidaysOn(today, country).sort((a, b) => KIND_RANK[b.kind] - KIND_RANK[a.kind]),
+    holidays: holidaysOn(nextDay, country).sort((a, b) => KIND_RANK[b.kind] - KIND_RANK[a.kind]),
   }));
 
   const upcoming: HolidayReport["upcoming"] = [];
   const weekend: HolidayReport["weekend"] = [];
   for (let d = addDays(today, 1); d <= windowEnd; d = addDays(d, 1)) {
+    if (d === nextDay) continue; // ya va destacado arriba
     const list = holidaysOn(d).sort(
       (a, b) => COUNTRY_ORDER.indexOf(a.country) - COUNTRY_ORDER.indexOf(b.country) || KIND_RANK[b.kind] - KIND_RANK[a.kind]
     );
@@ -340,5 +352,5 @@ export async function buildHolidayReport(opts: { today?: string } = {}): Promise
   }
   flags.sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level] || a.date.localeCompare(b.date) || a.who.localeCompare(b.who));
 
-  return { today, windowEnd, todayStatus, upcoming, weekend, flags, checked, warnings, generatedAt: new Date().toISOString() };
+  return { today, nextDay, windowEnd, nextStatus, upcoming, weekend, flags, checked, warnings, generatedAt: new Date().toISOString() };
 }
