@@ -39,7 +39,7 @@ const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.
 //   { manual: { name, website?, linkedin_url?, comment? } }  empresa que no apareció
 // HubSpot: datos y fit se toman del servidor. Lemlist: se guarda la tarjeta
 // que vio el cliente (sanitizada). Queda en estado "new", aparece en
-// /solicitudes-clientes y se envía de inmediato a la cuenta Lemlist del
+// Empresas (vista del equipo) y se envía de inmediato a la cuenta Lemlist del
 // cliente (lista "Wishlist BullsEye").
 // Operador interno (Empresas, ?client_id=): la empresa queda como PROPUESTA de
 // BullsEye (origin bullseye, status proposed) y NO va a Lemlist hasta que el
@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
   if (proposed) return NextResponse.json({ ok: true, id: data.id, proposed: true });
 
   // Envío a Lemlist: si falla, la empresa igual queda en la wishlist y
-  // prospección ve el error (y puede reintentar) en /solicitudes-clientes
+  // prospección ve el error (y puede reintentar) en el Dashboard de prospección
   const push = await pushWishlistItemToLemlist(db, data.id).catch((err) => ({ ok: false, error: String(err) }));
   return NextResponse.json({ ok: true, id: data.id, lemlist: push.ok ? "ok" : "pendiente" });
 }

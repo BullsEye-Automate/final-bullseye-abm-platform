@@ -487,8 +487,8 @@ export async function getAllCampaignsStats(
 }
 
 // ─── Actividades por contacto (para "lead scoring" e interacciones) ───────────
-// Mismo modelo de puntaje que app/api/lemlist/actividad/route.ts (usado en
-// /sdr/calientes) — se reutiliza para que el "lead scoring" signifique lo
+// Mismo modelo de puntaje que tenía app/api/lemlist/actividad/route.ts (usado en
+// la ex vista Contactos calientes) — se reutiliza para que el "lead scoring" signifique lo
 // mismo en toda la app.
 
 export const LEMLIST_ACTIVITY_TYPES = [

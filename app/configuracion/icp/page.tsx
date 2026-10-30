@@ -19,8 +19,9 @@ import {
   IconList,
   IconFileTypePdf
 } from "@tabler/icons-react";
-import { useClient } from "@/lib/clientContext";
+import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import IndustriesPanel from "./IndustriesPanel";
+import IcpRequestsPanel from "@/components/portalAdmin/IcpRequestsPanel";
 import {
   IcpFormData,
   EMPTY_FORM,
@@ -422,6 +423,17 @@ export default function IcpPage() {
           </button>
         </div>
       </header>
+
+      {/* Propuestas de ICP enviadas por el cliente desde su portal */}
+      {currentClient.id !== ALL_CLIENTS.id && (
+        <details className="card">
+          <summary className="cursor-pointer font-semibold">Propuestas del portal del cliente</summary>
+          <p className="text-sm text-ink-muted mt-1 mb-4">
+            Cambios de ICP / buyer persona que {currentClient.name} envió desde su portal. Aprobar reemplaza el ICP vigente de esa industria.
+          </p>
+          <IcpRequestsPanel clientId={currentClient.id} />
+        </details>
+      )}
 
       <input ref={fileRef} type="file" accept=".txt,.md,.docx,.doc,.pdf" className="hidden" onChange={handleFile} />
       <input ref={jsonRef} type="file" accept=".json" className="hidden" onChange={handleJsonImport} />

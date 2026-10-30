@@ -1130,7 +1130,7 @@ export default function FeedbackPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Feedback de reuniones</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Feedback manual</h1>
           <p className="text-sm text-gray-500 mt-1">Comparte el link de encuesta con tu cliente después de cada reunión realizada</p>
         </div>
         <div className="flex items-center gap-2">

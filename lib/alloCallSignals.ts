@@ -5,7 +5,7 @@ import { logAiUsage } from "./aiUsageLogger";
 // ─── Tipos ──────────────────────────────────────────────────────────────────
 
 // Las 8 categorías del prompt original de análisis comercial — fijas (enum)
-// en vez de texto libre para que el filtro "tipo de señal" en /sdr/senales
+// en vez de texto libre para que el filtro "tipo de señal" en la ex vista Señales comerciales
 // sea confiable (texto libre generaba variantes inconsistentes entre
 // llamadas, ej. "Ciclo de presupuesto" vs "Presupuesto anual").
 export type CallSignalCategory =
