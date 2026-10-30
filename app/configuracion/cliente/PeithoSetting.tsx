@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { IconLoader2, IconSparkles } from "@tabler/icons-react";
+import PeithoUsersManager from "@/components/peitho/app/PeithoUsersManager";
 
 // "Incluir Peitho": Sí = el cliente paga el servicio y en Oportunidades →
 // Peitho ve la app con el feedback automático de sus reuniones; No = ve la
@@ -41,8 +42,8 @@ export default function PeithoSetting({ clientId, clientName }: { clientId: stri
           <IconSparkles size={18} className="text-brand" /> Peitho — feedback automático de reuniones
         </h2>
         <p className="text-sm text-ink-muted mt-1">
-          Marca &quot;Sí&quot; si {clientName} tiene contratado Peitho: en Oportunidades → Peitho verá el feedback automático de sus
-          reuniones. Con &quot;No&quot; se muestra la página comercial para activarlo.
+          Marca &quot;Sí&quot; si {clientName} tiene contratado Peitho: en su portal (Pulso ABM → Peitho) y en Oportunidades → Peitho
+          se ven sus reuniones con el research y el análisis automático. Con &quot;No&quot; se muestra la página comercial para activarlo.
         </p>
       </div>
       <div className="flex items-center gap-3">
@@ -67,6 +68,14 @@ export default function PeithoSetting({ clientId, clientName }: { clientId: stri
         {saving && <IconLoader2 size={15} className="animate-spin text-ink-muted" />}
       </div>
       {error && <p className="text-xs text-danger-fg">{error}</p>}
+      {enabled && (
+        <details className="pt-2 border-t border-gray-100">
+          <summary className="cursor-pointer text-sm font-medium">Usuarios de Peitho</summary>
+          <div className="mt-3">
+            <PeithoUsersManager base={`/api/clients/${clientId}/peitho/proxy`} />
+          </div>
+        </details>
+      )}
     </section>
   );
 }
