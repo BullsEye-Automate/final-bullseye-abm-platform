@@ -89,7 +89,7 @@ const STATUS_LABEL: Record<WishlistItem["status"], { text: string; cls: string }
   discarded: { text: "Descartada", cls: "bg-gray-100 text-gray-500" },
 };
 
-type Tab = "ai" | "search" | "proposals" | "rejected" | "wishlist" | "worked" | "omitted" | "exclusions";
+type Tab = "ai" | "search" | "upload" | "proposals" | "rejected" | "wishlist" | "worked" | "omitted" | "exclusions";
 
 // Clave para no repetir una empresa que aparece en las dos bases
 const dedupeKey = (c: { name: string; domain: string | null }) => c.domain ?? c.name.trim().toLowerCase();
@@ -141,11 +141,12 @@ function WorkspaceTabs() {
         { key: "exclusions", label: "Lista de exclusión", icon: <IconBan size={16} /> },
       ]
     : [
-        { key: "proposals", label: `Propuestas de BullsEye${count(proposed.length)}`, icon: <IconSend size={16} /> },
-        { key: "search", label: "Buscar empresas", icon: <IconSearch size={16} /> },
-        { key: "wishlist", label: `Mi wishlist${count(own.length)}`, icon: <IconHeart size={16} /> },
+        // El cliente no busca ni genera recomendaciones: aprueba lo que BullsEye
+        // le propone y sube las empresas que ya eligió por su cuenta
+        { key: "proposals", label: `Pendientes de aprobación${count(proposed.length)}`, icon: <IconClock size={16} /> },
+        { key: "upload", label: "Subir listado de empresas", icon: <IconUpload size={16} /> },
+        { key: "wishlist", label: `Aprobadas para prospectar${count(own.length)}`, icon: <IconHeart size={16} /> },
         { key: "worked", label: "Empresas trabajadas", icon: <IconBriefcase size={16} /> },
-        { key: "omitted", label: "Empresas omitidas", icon: <IconEyeOff size={16} /> },
         { key: "exclusions", label: "Lista de exclusión", icon: <IconBan size={16} /> },
       ];
 
@@ -156,7 +157,7 @@ function WorkspaceTabs() {
           <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>Wishlist de empresas</h1>
           <p className="text-sm text-gray-500 mt-1 mb-6 max-w-3xl">
             El equipo de BullsEye te propone empresas según tu ICP, con su fit y la razón: apruébalas para que las prospectemos o
-            recházalas. Si quieres una empresa puntual, búscala o solicítala y la recibimos de inmediato.
+            recházalas. Si ya tienes empresas elegidas, sube el listado: quedan aprobadas para prospectar de inmediato.
           </p>
         </>
       )}
@@ -181,6 +182,7 @@ function WorkspaceTabs() {
 
       {tab === "ai" && catalog && <AiTab catalog={catalog} onAdded={loadWishlist} />}
       {tab === "search" && catalog && <SearchTab catalog={catalog} onAdded={loadWishlist} />}
+      {tab === "upload" && <UploadTab onAdded={loadWishlist} onDone={() => setTab("wishlist")} />}
       {tab === "proposals" && <ProposalsTab items={proposed} onChange={loadWishlist} />}
       {tab === "rejected" && <RejectedTab items={rejected} />}
       {tab === "wishlist" && <WishlistTab items={own} onChange={loadWishlist} />}
@@ -796,7 +798,7 @@ function ManualRequest({ onAdded }: { onAdded: () => void }) {
     const j = await r.json().catch(() => ({}));
     setBusy(false);
     if (!r.ok) return setMsg({ ok: false, text: j.error ?? "No se pudo enviar" });
-    setMsg({ ok: true, text: ws.operator ? `“${form.name}” quedó propuesta al cliente.` : `“${form.name}” quedó en tu wishlist.` });
+    setMsg({ ok: true, text: ws.operator ? `“${form.name}” quedó propuesta al cliente.` : `“${form.name}” quedó aprobada para prospectar.` });
     setForm({ name: "", website: "", linkedin_url: "", comment: "" });
     onAdded();
   }
@@ -805,11 +807,11 @@ function ManualRequest({ onAdded }: { onAdded: () => void }) {
     <div className="mt-8 bg-white rounded-2xl border border-dashed border-gray-200 p-5">
       {!open ? (
         <button onClick={() => setOpen(true)} className="flex items-center gap-2 text-sm text-[#251762]">
-          <IconBuildingPlus size={18} /> ¿No encuentras una empresa? <span className="underline">{ws.operator ? "Propónla a mano" : "Solicítala aquí"}</span>
+          <IconBuildingPlus size={18} /> {ws.operator ? "¿No encuentras una empresa?" : "¿Es solo una empresa?"} <span className="underline">{ws.operator ? "Propónla a mano" : "Agrégala aquí"}</span>
         </button>
       ) : (
         <form onSubmit={submit} className="space-y-3">
-          <div className="text-sm font-medium" style={{ color: "#251762" }}>Solicitar una empresa</div>
+          <div className="text-sm font-medium" style={{ color: "#251762" }}>{ws.operator ? "Proponer una empresa" : "Agregar una empresa"}</div>
           <div className="grid gap-3 sm:grid-cols-3">
             <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nombre de la empresa *" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
             <input value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} placeholder="Sitio web (ej: empresa.cl)" className="border border-gray-200 rounded-xl px-3 py-2 text-sm" />
@@ -818,7 +820,7 @@ function ManualRequest({ onAdded }: { onAdded: () => void }) {
           <textarea value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} rows={2} placeholder="Comentario para el equipo (opcional): por qué te interesa, a quién apuntar…" className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm" />
           <div className="flex items-center gap-3">
             <button disabled={busy} className="px-4 py-2 rounded-xl text-white text-sm disabled:opacity-50" style={{ background: "#251762" }}>
-              {busy ? "Enviando…" : ws.operator ? "Proponer al cliente" : "Agregar a mi wishlist"}
+              {busy ? "Enviando…" : ws.operator ? "Proponer al cliente" : "Enviar a prospección"}
             </button>
             <button type="button" onClick={() => setOpen(false)} className="text-sm text-gray-500">Cancelar</button>
             <span className="text-xs text-gray-400">Necesitamos el sitio web o el LinkedIn.</span>
@@ -1168,7 +1170,7 @@ function WishlistTab({ items, onChange }: { items: WishlistItem[]; onChange: () 
   }
 
   if (!items.length) {
-    return <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">Aún no agregas empresas. Usa las recomendaciones o la búsqueda.</div>;
+    return <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">Aún no hay empresas aprobadas. Aprueba las propuestas de BullsEye o sube tu listado.</div>;
   }
 
   return (
@@ -1347,15 +1349,167 @@ function OmittedTab() {
   );
 }
 
+// ── Subir listado de empresas (cliente) ──────────────────────────────────
+
+type UploadRow = { name: string | null; domain: string | null; linkedin_url?: string | null };
+type UploadResult = { name: string; result: "added" | "approved" | "duplicate" | "invalid" | "error"; error?: string };
+const UPLOAD_BATCH = 20;
+
+// El cliente sube las empresas que ya eligió (Excel / CSV): quedan aprobadas
+// para prospectar de inmediato y se envían a su Lemlist (/api/portal/wishlist/upload,
+// en tandas para no pasar el límite de 60 s por llamada).
+function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => void }) {
+  const ws = useWorkspace();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [rows, setRows] = useState<UploadRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [results, setResults] = useState<UploadResult[] | null>(null);
+
+  async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError(null);
+    setResults(null);
+    try {
+      const parsed = await parseExclusionFile(file);
+      if (!parsed.length) return setError("No encontramos empresas en el archivo. Usa una columna “Empresa” y, si puedes, “Sitio web” y/o “LinkedIn”.");
+      if (parsed.length > 2000) return setError("El archivo tiene más de 2.000 filas. Divídelo en partes.");
+      setFileName(file.name);
+      setRows(parsed);
+    } catch {
+      setError("No pudimos leer el archivo. Sube un Excel (.xlsx) o CSV.");
+    }
+  }
+
+  async function send() {
+    if (!rows) return;
+    setError(null);
+    setProgress(0);
+    const all: UploadResult[] = [];
+    for (let i = 0; i < rows.length; i += UPLOAD_BATCH) {
+      const batch = rows.slice(i, i + UPLOAD_BATCH).map((r) => ({ name: r.name, website: r.domain, linkedin_url: r.linkedin_url ?? null }));
+      const r = await fetch(ws.url("/api/portal/wishlist/upload"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: batch }),
+      });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j) {
+        setError(`${j?.error ?? "Se cortó el envío"}. Se enviaron ${i} de ${rows.length}; puedes volver a subir el archivo (las que ya llegaron no se duplican).`);
+        break;
+      }
+      all.push(...(j.results as UploadResult[]));
+      setProgress(Math.min(i + UPLOAD_BATCH, rows.length));
+    }
+    setProgress(null);
+    setResults(all);
+    setRows(null);
+    onAdded();
+  }
+
+  function downloadTemplate() {
+    const csv = "Empresa,Sitio web,LinkedIn\nEmpresa Ejemplo,empresaejemplo.com,https://www.linkedin.com/company/empresa-ejemplo\n";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = "listado-empresas.csv";
+    a.click();
+  }
+
+  const n = (k: UploadResult["result"]) => (results ?? []).filter((r) => r.result === k).length;
+  const failed = (results ?? []).filter((r) => r.result === "error" || r.result === "invalid");
+
+  return (
+    <div className="space-y-5 max-w-4xl">
+      <p className="text-sm text-gray-500">
+        ¿Ya tienes empresas elegidas? Súbelas aquí en vez de mandarlas por correo. Quedan <b>aprobadas para prospectar</b> de inmediato
+        y el equipo de BullsEye empieza a buscar sus contactos.
+      </p>
+
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onFile} className="hidden" />
+          <button onClick={() => fileRef.current?.click()} disabled={progress !== null} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm text-white disabled:opacity-50" style={{ background: "#251762" }}>
+            <IconUpload size={15} /> Elegir archivo Excel o CSV
+          </button>
+          <button onClick={downloadTemplate} className="text-sm text-[#251762] underline">Descargar plantilla</button>
+        </div>
+        <p className="text-xs text-gray-500">
+          Una fila por empresa, con una columna “Empresa” y, si la tienes, “Sitio web” y/o “LinkedIn” (con eso encontramos mejor a la empresa). Máximo 2.000 filas.
+        </p>
+
+        {rows && (
+          <div className="border-t border-gray-100 pt-4 space-y-3">
+            <div className="text-sm">
+              <b>{rows.length.toLocaleString("es-CL")}</b> empresas en <span className="text-gray-500">{fileName}</span>
+            </div>
+            <div className="border border-gray-100 rounded-xl overflow-x-auto max-h-72">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-gray-500 border-b border-gray-100 bg-gray-50 sticky top-0">
+                  <tr><th className="p-2">Empresa</th><th className="p-2">Sitio web</th><th className="p-2">LinkedIn</th></tr>
+                </thead>
+                <tbody>
+                  {rows.slice(0, 100).map((r, i) => (
+                    <tr key={i} className="border-b border-gray-50 last:border-0">
+                      <td className="p-2">{r.name ?? r.domain}</td>
+                      <td className="p-2 text-gray-500">{r.domain ?? "—"}</td>
+                      <td className="p-2 text-gray-500 truncate max-w-[220px]">{r.linkedin_url ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {rows.length > 100 && <div className="p-2 text-xs text-gray-400">Mostrando 100 de {rows.length.toLocaleString("es-CL")}.</div>}
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button onClick={send} disabled={progress !== null} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm text-white disabled:opacity-50" style={{ background: "#251762" }}>
+                {progress !== null ? <IconLoader2 size={15} className="animate-spin" /> : <IconSend size={15} />}
+                {progress !== null ? `Enviando… ${progress} de ${rows.length}` : `Enviar ${rows.length.toLocaleString("es-CL")} empresas a prospección`}
+              </button>
+              {progress === null && <button onClick={() => setRows(null)} className="text-sm text-gray-500">Cancelar</button>}
+            </div>
+            {progress !== null && (
+              <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                <div className="h-2 rounded-full transition-all" style={{ width: `${(progress / rows.length) * 100}%`, background: "#62E0D8" }} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {error && <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl">{error}</div>}
+
+        {results && (
+          <div className="border-t border-gray-100 pt-4 space-y-2 text-sm">
+            <div className="flex items-center gap-2 font-medium" style={{ color: "#251762" }}>
+              <IconCheck size={16} /> Listo: {n("added") + n("approved")} empresas quedaron aprobadas para prospectar
+            </div>
+            <ul className="text-gray-600 space-y-0.5">
+              {n("added") > 0 && <li>· {n("added")} nuevas</li>}
+              {n("approved") > 0 && <li>· {n("approved")} ya te las habíamos propuesto: quedaron aprobadas</li>}
+              {n("duplicate") > 0 && <li>· {n("duplicate")} ya estaban en tu lista (no se duplicaron)</li>}
+              {failed.length > 0 && <li className="text-red-600">· {failed.length} no se pudieron agregar: {failed.slice(0, 5).map((f) => f.name).join(", ")}{failed.length > 5 ? "…" : ""}</li>}
+            </ul>
+            <button onClick={onDone} className="text-sm text-[#251762] underline">Ver aprobadas para prospectar</button>
+          </div>
+        )}
+      </div>
+
+      <ManualRequest onAdded={onAdded} />
+    </div>
+  );
+}
+
 // ── Lista de exclusión ───────────────────────────────────────────────────
 
 type ExclusionItem = { id: string; kind: "company" | "keyword"; company_name: string | null; domain: string | null; keyword: string | null; reason: string | null; created_by_email: string | null; created_at: string };
 
 const NAME_HEADERS = /^(empresa|empresas|nombre|razon social|razón social|company|company name|cliente|cuenta|account)$/i;
 const DOMAIN_HEADERS = /^(dominio|domain|web|website|sitio|sitio web|url|pagina web|página web)$/i;
+const LINKEDIN_HEADERS = /^(linkedin|linked in|linkedin url|url linkedin|linkedin empresa|perfil linkedin)$/i;
 
-// Lee un Excel/CSV y devuelve [{ name, domain }] detectando las columnas
-async function parseExclusionFile(file: File): Promise<{ name: string | null; domain: string | null }[]> {
+// Lee un Excel/CSV y devuelve [{ name, domain, linkedin_url }] detectando las columnas
+async function parseExclusionFile(file: File): Promise<{ name: string | null; domain: string | null; linkedin_url?: string | null }[]> {
   const XLSX = await import("xlsx");
   const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
   const sheet = wb.Sheets[wb.SheetNames[0]];
@@ -1364,7 +1518,8 @@ async function parseExclusionFile(file: File): Promise<{ name: string | null; do
   const header = rows[0].map((h) => String(h ?? "").trim());
   let nameCol = header.findIndex((h) => NAME_HEADERS.test(h));
   let domainCol = header.findIndex((h) => DOMAIN_HEADERS.test(h));
-  const hasHeader = nameCol >= 0 || domainCol >= 0;
+  const linkedinCol = header.findIndex((h) => LINKEDIN_HEADERS.test(h));
+  const hasHeader = nameCol >= 0 || domainCol >= 0 || linkedinCol >= 0;
   if (!hasHeader) {
     // Sin encabezados: la primera columna es el nombre; si parece dominio, va como dominio
     nameCol = 0;
@@ -1374,8 +1529,9 @@ async function parseExclusionFile(file: File): Promise<{ name: string | null; do
   return rows.slice(hasHeader ? 1 : 0).map((r) => {
     const name = nameCol >= 0 ? String(r[nameCol] ?? "").trim() : "";
     const domain = domainCol >= 0 ? String(r[domainCol] ?? "").trim() : "";
-    if (!domain && name && looksLikeDomain(name) && !name.includes(" ")) return { name: null, domain: name };
-    return { name: name || null, domain: domain || null };
+    const linkedin = linkedinCol >= 0 ? String(r[linkedinCol] ?? "").trim() : "";
+    if (!domain && name && looksLikeDomain(name) && !name.includes(" ")) return { name: null, domain: name, linkedin_url: linkedin || null };
+    return { name: name || null, domain: domain || null, linkedin_url: linkedin || null };
   }).filter((r) => r.name || r.domain);
 }
 

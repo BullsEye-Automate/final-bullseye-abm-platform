@@ -62,7 +62,7 @@ export const LEADS: Record<string, string> = {
   conv: "¿Qué ocurre cuando logramos hablar con alguien?",
   reuniones: "Agendadas ≠ realizadas. Reunión ≠ oportunidad.",
   calidad: "Clasificación solo cuando hay información suficiente.",
-  wishlist: "Las cuentas que el cliente quiere trabajar: propuestas de BullsEye para aprobar, búsqueda y solicitud de empresas, y la lista de exclusión.",
+  wishlist: "Las cuentas que el cliente quiere trabajar: propuestas de BullsEye para aprobar, listado de empresas subido por el cliente y la lista de exclusión.",
   "reuniones-detalle": "Todas las reuniones del período tal como están en la planilla de reuniones.",
   feedback: "Lo que el cliente nos dice de cada reunión realizada: si la empresa y el contacto calificaban, la propuesta y la probabilidad de cierre.",
   "feedback-form": "Reuniones realizadas que esperan tu evaluación.",
