@@ -18,6 +18,8 @@ export type MailMessage = {
   cc?: string[];
   subject: string;
   html: string;
+  // Dirección a la que llegan las respuestas (la casilla de alertas no se revisa).
+  replyTo?: string[];
   // Adjuntos (ej. el PNG del Reporte SDR). content = bytes del archivo.
   attachments?: MailAttachment[];
 };
@@ -39,6 +41,7 @@ export async function sendMail(msg: MailMessage): Promise<{ id: string }> {
       from: msg.fromName ? `${msg.fromName} <${msg.from}>` : msg.from,
       to: msg.to,
       cc: msg.cc?.length ? msg.cc : undefined,
+      reply_to: msg.replyTo?.length ? msg.replyTo : undefined,
       subject: msg.subject,
       html: msg.html,
       attachments: msg.attachments?.length
