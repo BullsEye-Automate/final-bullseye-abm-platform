@@ -6,11 +6,12 @@
 // REPORTE_SDR_TO ya no se usan.
 import { supabaseAdmin } from "@/lib/supabase";
 
-export type RecipientsKey = "phone_health" | "reporte_sdr";
+export type RecipientsKey = "phone_health" | "reporte_sdr" | "feriados";
 
 export const RECIPIENT_DEFAULTS: Record<RecipientsKey, string[]> = {
   phone_health: ["amadriz@bullseye-abm.com", "ihincapie@bullseye-abm.com"],
   reporte_sdr: ["ihincapie@bullseye-abm.com", "jkarmy@bullseye-abm.com", "amadriz@bullseye-abm.com"],
+  feriados: ["ihincapie@bullseye-abm.com", "vabarzua@bullseye-abm.com", "nnazar@bullseye-abm.com"],
 };
 
 export const RECIPIENT_KEYS = Object.keys(RECIPIENT_DEFAULTS) as RecipientsKey[];
