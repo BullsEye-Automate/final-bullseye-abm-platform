@@ -1,5 +1,6 @@
-// Correo diario de la Alerta de feriados (lunes a viernes, 7:30 de Chile,
-// cron /api/cron/alerta-feriados). Contenido: estado de hoy por país,
+// Correo diario de la Alerta de feriados (lunes a viernes, 8:30 de Chile,
+// cron /api/cron/alerta-feriados). Contenido: feriados del próximo día hábil
+// por país (el aviso llega el día hábil anterior al feriado),
 // reuniones agendadas en un feriado (planilla de reuniones + HubSpot),
 // próximos feriados en días hábiles y las fuentes oficiales.
 //
@@ -74,29 +75,51 @@ const holidayLabel = (x: Holiday) => (x.kind === "regional" && x.regions ? `${x.
 
 // ─── Asunto ─────────────────────────────────────────────────────────────────
 
+// "mañana" si el próximo día hábil es el día siguiente; si no, el día ("el lunes").
+function nextWhen(r: HolidayReport): string {
+  return weekday(r.nextDay) - weekday(r.today) === 1 ? "mañana" : `el ${DAYS[weekday(r.nextDay)]}`;
+}
+
+const joinY = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}` : xs[0] ?? "");
+
 export function buildSubject(r: HolidayReport): string {
-  const off = r.todayStatus.filter((s) => s.holidays.some((h) => h.kind === "national")).map((s) => COUNTRIES[s.country].name);
+  const top = (k: Holiday["kind"]) =>
+    r.nextStatus.filter((s) => s.holidays[0]?.kind === k).map((s) => COUNTRIES[s.country].name);
+  const off = top("national");
+  const regional = top("regional");
+  const low = top("low");
   const conflicts = r.flags.filter((f) => f.level === "conflict").length;
-  const head = off.length ? `hoy feriado en ${off.join(", ")}` : "hoy se llama normal en los 5 países";
+  const when = `${nextWhen(r)} ${dd(r.nextDay)} ${MONTHS_SHORT[mm(r.nextDay)]}`;
+  const parts: string[] = [];
+  if (off.length) parts.push(`es feriado en ${joinY(off)}`);
+  if (regional.length) parts.push(`${off.length ? "y " : "hay "}feriado regional en ${joinY(regional)}`);
+  if (low.length) parts.push(`${off.length || regional.length ? "y " : "hay "}baja actividad en ${joinY(low)}`);
+  const head = parts.length ? `${when} ${parts.join(" ")}` : `${when} se llama normal en los 5 países`;
   const tail = conflicts ? ` · ${conflicts} reunión${conflicts === 1 ? "" : "es"} en feriado` : "";
-  return `Feriados · ${shortDay(r.today)}: ${head}${tail}`;
+  return `Feriados · ${cap(head)}${tail}`;
 }
 
 // ─── Secciones ──────────────────────────────────────────────────────────────
 
-function todaySection(r: HolidayReport): string {
-  const withHoliday = r.todayStatus.filter((s) => s.holidays.length);
+// El aviso principal: el próximo día hábil (el viernes avisa lo del lunes).
+function nextDaySection(r: HolidayReport): string {
+  const title = `${cap(nextWhen(r))}, ${longDay(r.nextDay)}`;
+  const withHoliday = r.nextStatus.filter((s) => s.holidays.length);
   if (!withHoliday.length) {
-    return `<table style="width:100%;border-collapse:collapse;margin:0 0 18px"><tr><td style="background:${C.greenBg};border-radius:8px;padding:12px 14px;color:${C.green};font-weight:600">✔ Hoy se llama normal en los 5 países</td></tr></table>`;
+    return `<p style="margin:0 0 6px;font-weight:700">${esc(title)}</p><table style="width:100%;border-collapse:collapse;margin:0 0 18px"><tr><td style="background:${C.greenBg};border-radius:8px;padding:12px 14px;color:${C.green};font-weight:600">✔ Se llama normal en los 5 países</td></tr></table>`;
   }
   const rows = COUNTRY_ORDER.map((code) => {
-    const s = r.todayStatus.find((x) => x.country === code)!;
+    const s = r.nextStatus.find((x) => x.country === code)!;
     const top = s.holidays[0];
     const status = top ? pill(KIND_LABEL[top.kind], KIND_STYLE[top.kind].fg, KIND_STYLE[top.kind].bg) : pill("Normal", C.green, C.greenBg);
-    const detail = top ? esc(holidayLabel(top)) : "Se llama normal";
+    const detail = top ? `${esc(holidayLabel(top))}<br><span style="font-size:12px">${esc(top.legal)}</span>` : "Se llama normal";
     return `<tr><td style="padding:7px 8px;border-bottom:1px solid ${C.line};width:110px"><b>${esc(COUNTRIES[code].name)}</b></td><td style="padding:7px 8px;border-bottom:1px solid ${C.line};width:130px">${status}</td><td style="padding:7px 8px;border-bottom:1px solid ${C.line};color:${C.muted};font-size:13px">${detail}</td></tr>`;
   }).join("");
-  return `<p style="margin:0 0 6px;font-weight:700">Hoy</p><table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 18px">${rows}</table>`;
+  const off = withHoliday.filter((s) => s.holidays.some((h) => h.kind === "national")).map((s) => COUNTRIES[s.country].name);
+  const action = off.length
+    ? `<p style="margin:0 0 18px;font-size:13px">No programar llamadas ${esc(nextWhen(r))} a ${esc(off.join(", "))} y revisar las reuniones de ese día.</p>`
+    : `<p style="margin:0 0 18px"></p>`;
+  return `<p style="margin:0 0 6px;font-weight:700">${esc(title)}</p><table style="width:100%;border-collapse:collapse;font-size:14px;margin:0 0 8px">${rows}</table>${action}`;
 }
 
 const LEVEL_META: Record<MeetingFlag["level"], { title: string; fg: string; bg: string; hint: string }> = {
@@ -140,7 +163,7 @@ ${rows}</table>${more}`;
 
 function upcomingSection(r: HolidayReport): string {
   if (!r.upcoming.length) {
-    return `<p style="margin:0 0 6px;font-weight:700">Próximos feriados en días hábiles</p><p style="margin:0 0 18px">Ninguno en las próximas 3 semanas.</p>`;
+    return `<p style="margin:0 0 6px;font-weight:700">Más adelante (próximas 3 semanas)</p><p style="margin:0 0 18px">Ningún otro feriado en días hábiles.</p>`;
   }
   const rows = r.upcoming.flatMap(({ date, holidays }) =>
     holidays.map((x) => `<tr>
@@ -150,7 +173,7 @@ function upcomingSection(r: HolidayReport): string {
 <td style="padding:7px 8px;border-bottom:1px solid ${C.line}">${pill(KIND_LABEL[x.kind], KIND_STYLE[x.kind].fg, KIND_STYLE[x.kind].bg)}</td>
 </tr>`)
   ).join("");
-  return `<p style="margin:0 0 6px;font-weight:700">Próximos feriados en días hábiles (3 semanas)</p>
+  return `<p style="margin:0 0 6px;font-weight:700">Más adelante (próximas 3 semanas)</p>
 <table style="width:100%;border-collapse:collapse;font-size:13px;margin:0 0 8px">
 <tr style="background:#F6F7FB"><th style="text-align:left;padding:6px 8px">Fecha</th><th style="text-align:left;padding:6px 8px">País</th><th style="text-align:left;padding:6px 8px">Motivo</th><th style="text-align:left;padding:6px 8px">Impacto</th></tr>
 ${rows}</table>`;
@@ -177,15 +200,15 @@ export function buildHolidayEmail(r: HolidayReport, appUrl: string): { subject: 
     : "";
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:${C.text};max-width:640px;font-size:14px;line-height:1.5">
 <p style="margin:0 0 4px;font-size:12px;color:${C.muted}">Alerta diaria de feriados · Chile, México, Colombia, Perú y Argentina</p>
-<h2 style="margin:0 0 14px;font-size:20px;color:${C.ink}">${esc(cap(longDay(r.today)))}</h2>
-${todaySection(r)}
+<h2 style="margin:0 0 14px;font-size:20px;color:${C.ink}">Aviso del ${esc(longDay(r.today))}</h2>
+${nextDaySection(r)}
 ${meetingsSection(r, appUrl)}
 ${upcomingSection(r)}
 ${weekendNote(r)}
 ${warnings}
 <p style="margin:0 0 18px"><a href="${appUrl}/analisis/feriados" style="display:inline-block;background:${C.ink};color:#fff;padding:9px 14px;border-radius:8px;text-decoration:none;font-size:13px">Ver en el portal</a></p>
 ${sourcesFooter()}
-<p style="margin:0;font-size:12px;color:${C.muted}">Correo automático del portal BullsEye, de lunes a viernes a las 7:30 de Chile.</p>
+<p style="margin:0;font-size:12px;color:${C.muted}">Correo automático del portal BullsEye, de lunes a viernes a las 8:30 de Chile, con los feriados del día hábil siguiente.</p>
 </div>`;
   return { subject: buildSubject(r), html };
 }

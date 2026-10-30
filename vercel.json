@@ -42,7 +42,7 @@
     },
     {
       "path": "/api/cron/alerta-feriados",
-      "schedule": "30 10,11,12 * * 1-5"
+      "schedule": "30 11,12,13 * * 1-5"
     }
   ],
   "framework": "nextjs",
