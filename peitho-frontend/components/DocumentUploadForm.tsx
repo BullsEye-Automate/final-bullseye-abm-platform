@@ -58,6 +58,20 @@ export default function DocumentUploadForm({
         return;
       }
       router.refresh();
+    } catch (err) {
+      // Bug real (30-10-2026): sin este catch, cualquier falla a nivel de red
+      // (CORS, backend caído, bloqueado por el navegador) hacía que el
+      // `fetch` tirara una excepción no capturada — el `finally` de abajo
+      // igual corría (resetea el spinner y limpia el input), pero `error`
+      // nunca se seteaba: el usuario veía "Subiendo…" por un instante y
+      // después nada, sin ningún mensaje. Ahora se muestra el detalle real
+      // y queda en la consola del navegador para poder diagnosticarlo.
+      console.error("Error subiendo documento a la base de conocimiento", err);
+      setError(
+        err instanceof TypeError
+          ? "No se pudo conectar con el servidor — revisa tu conexión o avisa al administrador (posible bloqueo de red/CORS)."
+          : "Ocurrió un error inesperado subiendo el archivo."
+      );
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
