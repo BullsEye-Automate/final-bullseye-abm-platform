@@ -30,5 +30,5 @@ export default function PeithoPanel({
   }, [audience, clientId, clientName]);
 
   if (!state) return <div className="text-sm text-gray-500 flex items-center gap-2"><IconLoader2 size={15} className="animate-spin" /> Cargando…</div>;
-  return <div className="ra-plain">{state.enabled ? <PeithoApp clientName={state.name} /> : <PeithoLanding clientName={state.name} />}</div>;
+  return <div className="ra-plain">{state.enabled ? <PeithoApp audience={audience} clientId={clientId} /> : <PeithoLanding clientName={state.name} />}</div>;
 }

@@ -28,13 +28,13 @@ export default function PeithoPage() {
 
   if (!clientId) return <PeithoLanding clientName={null} />;
   if (enabled === null) return <IconLoader2 className="animate-spin text-ink-muted" />;
-  return enabled ? <PeithoAppView clientName={currentClient!.name} /> : <PeithoLanding clientName={currentClient!.name} />;
+  return enabled ? <PeithoAppView clientName={currentClient!.name} clientId={clientId} /> : <PeithoLanding clientName={currentClient!.name} />;
 }
 
 // ── Cliente con Peitho contratado ────────────────────────────────────────
-function PeithoAppView({ clientName }: { clientName: string }) {
+function PeithoAppView({ clientName, clientId }: { clientName: string; clientId: string }) {
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-7xl">
       <header>
         <div className="label">Oportunidades</div>
         <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
@@ -42,7 +42,7 @@ function PeithoAppView({ clientName }: { clientName: string }) {
         </h1>
         <p className="text-sm text-ink-muted mt-1">Feedback automático de las reuniones de {clientName}.</p>
       </header>
-      <PeithoApp clientName={clientName} />
+      <PeithoApp audience="internal" clientId={clientId} />
     </div>
   );
 }
