@@ -7,7 +7,9 @@ import type { MeetingRecord, MeetingRecordsResponse, MeetingStatus } from "@/lib
 import { CardH, KGrid, Pending, Seg, useCells, type KCard } from "../components/ui";
 
 // ─── Registro de reuniones ──────────────────────────────────────────────────
-// Espejo de solo lectura de la pestaña API Reuniones, con filtros. Por
+// Espejo de la pestaña API Reuniones, con filtros. Las líderes de célula e
+// Ingri pueden cambiar el estado ("Realizado"): se escribe en la planilla
+// (ver /api/celulas-sdr/records/status); el resto es solo lectura. Por
 // defecto: este mes por fecha de la reunión. Respeta además los filtros
 // globales de célula, SDR, cliente y país. Sin teléfono ni correo del
 // prospecto (ver lib/celulasSdr/server/records.ts).
@@ -52,6 +54,33 @@ export function ViewRegistro() {
   const [sort, setSort] = useState<{ k: SortK; d: 1 | -1 }>({ k: "md", d: -1 });
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ t: string; err: boolean } | null>(null);
+
+  const setRowStatus = (id: string, st: MeetingStatus) =>
+    setData((x) => (x ? { ...x, rows: x.rows.map((r) => (r.id === id ? { ...r, st } : r)) } : x));
+
+  const changeStatus = async (r: MeetingRecord, st: MeetingStatus) => {
+    if (st === r.st) return;
+    setSavingId(r.id);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/celulas-sdr/records/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: r.id, status: st, from: r.st }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.status === 409 && j.current) setRowStatus(r.id, j.current);
+      if (!res.ok) throw new Error(j.error || `Error ${res.status}`);
+      setRowStatus(r.id, st);
+      setMsg({ t: `${r.company || "Reunión"}: estado cambiado a "${ST_LABEL[st]}" en la planilla.`, err: false });
+    } catch (e) {
+      setMsg({ t: (e as Error).message, err: true });
+    } finally {
+      setSavingId(null);
+    }
+  };
 
   const pickPreset = (p: Preset) => {
     setPreset(p);
@@ -159,7 +188,7 @@ export function ViewRegistro() {
             <input type="checkbox" checked={todo} onChange={(e) => setTodo(e.target.checked)} /> Solo por actualizar
           </label>
         </div>
-        <p className="cs-note">Espejo de solo lectura de la pestaña API Reuniones (se sincroniza cada hora en horario laboral). Los filtros de célula, SDR, cliente y país de arriba también aplican.</p>
+        <p className="cs-note">Espejo de la pestaña API Reuniones (se sincroniza cada hora en horario laboral). {data?.canEdit ? "Puedes cambiar el estado de cada reunión: se guarda directo en la planilla." : "Solo lectura."} Los filtros de célula, SDR, cliente y país de arriba también aplican.</p>
       </div>
 
       {err ? <div className="cs-banner err">{err}</div> : null}
@@ -172,6 +201,7 @@ export function ViewRegistro() {
               <span>⚠️ {d.late} {d.late === 1 ? "reunión ya pasó y sigue" : "reuniones ya pasaron y siguen"} en "Pendiente" en este rango: hay que actualizar su estado en la planilla. Clic para verlas.</span>
             </div>
           ) : null}
+          {msg ? <div className={`cs-banner ${msg.err ? "err" : "info"}`}>{msg.t}</div> : null}
           {data.truncated ? <div className="cs-banner warn">El rango tiene demasiadas reuniones: se muestran las primeras 5.000. Acota las fechas.</div> : null}
           <KGrid cards={cards} />
           <div className="cs-card cs-mt" style={{ opacity: loading ? 0.6 : 1 }}>
@@ -199,7 +229,16 @@ export function ViewRegistro() {
                           <td className="l">{r.contact || "—"}</td>
                           <td className="l" style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={r.title}>{r.title || "—"}</td>
                           <td className="l">{r.country ?? "—"}</td>
-                          <td className="l"><span className={`cs-tag ${late ? "r" : ST_CLS[r.st]}`}>{ST_LABEL[r.st]}{late ? " · por actualizar" : ""}</span></td>
+                          <td className="l" onClick={(e) => data.canEdit && r.editable && e.stopPropagation()}>
+                            {data.canEdit && r.editable ? (
+                              <select className={`cs-select ${late ? "act" : ""}`} style={{ padding: "4px 26px 4px 8px", fontSize: 12.5 }} value={r.st} disabled={savingId === r.id} onChange={(e) => changeStatus(r, e.target.value as MeetingStatus)} title={late ? "Por actualizar: la fecha ya pasó" : ""}>
+                                {(Object.keys(ST_LABEL) as MeetingStatus[]).map((s2) => <option key={s2} value={s2}>{ST_LABEL[s2]}</option>)}
+                              </select>
+                            ) : (
+                              <span className={`cs-tag ${late ? "r" : ST_CLS[r.st]}`}>{ST_LABEL[r.st]}{late ? " · por actualizar" : ""}</span>
+                            )}
+                            {savingId === r.id ? <span className="cs-muted" style={{ marginLeft: 6 }}>Guardando…</span> : null}
+                          </td>
                           <td className="l">{r.opp || "—"}</td>
                           <td className="l">{r.origin || "—"}</td>
                           <td className="l" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{r.comment || <span className="cs-muted">—</span>}</td>
