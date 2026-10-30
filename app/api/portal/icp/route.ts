@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
 }
 
 // POST — envía una propuesta de cambio. No toca el ICP vigente: queda
-// pendiente hasta que BullsEye la apruebe en /solicitudes-clientes.
+// pendiente hasta que BullsEye la apruebe en Sistema → ICP (Propuestas del portal).
 // Si ya hay una pendiente para el mismo ICP, se reemplaza su contenido.
 export async function POST(req: NextRequest) {
   const { user, response } = await requirePortalUser();

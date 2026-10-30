@@ -1,683 +1,386 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { useClient } from "@/lib/clientContext";
-import type { DashboardData, Delta } from "@/lib/dashboardQueries";
-import { RangeKey, RANGE_LABELS } from "@/lib/dashboardRanges";
-import { IconAlertCircle, IconAlertTriangle } from "@tabler/icons-react";
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  IconAlertCircle,
+  IconAlertTriangle,
+  IconArrowRight,
+  IconLoader2,
+  IconRefresh,
+} from "@tabler/icons-react";
+import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
+import type {
+  AllClientsDashboard,
+  ClientCard,
+  ClientDashboard,
+  LemlistErrorItem,
+  MonthPoint,
+  ProspectingKpis,
+} from "@/lib/prospectingDashboard";
 
-// ─── Sub-componentes ─────────────────────────────────────────────────────────
+// Dashboard de prospección: la nueva forma de trabajar con la wishlist
+// (recomendamos → el cliente aprueba → búsqueda automática de contactos →
+// búsqueda manual cuando hay pocos). Con un cliente elegido muestra su
+// reporte; con "Todos los clientes", una tarjeta de estado por cliente.
 
-function KpiCard({
-  label,
-  value,
-  delta,
-  sub
-}: {
-  label: string;
-  value: number | string;
-  delta: Delta;
-  sub?: string;
-}) {
-  const pct = delta.pct_change;
-  const arrow = pct == null ? "" : pct > 0 ? "↑" : pct < 0 ? "↓" : "→";
-  const color =
-    pct == null ? "#6B6884" : pct > 0 ? "#0F6E56" : pct < 0 ? "#993C1D" : "#6B6884";
-  return (
-    <div className="card">
-      <div className="label">{label}</div>
-      <div className="text-3xl font-bold text-ink mt-1">{value}</div>
-      <div className="text-xs mt-1.5 flex items-center gap-1" style={{ color }}>
-        <span>{arrow}</span>
-        <span>
-          {pct == null
-            ? "sin datos previos"
-            : `${Math.abs(pct).toFixed(0)}% vs período anterior`}
-        </span>
-      </div>
-      {sub && <div className="text-xs text-ink-muted mt-0.5">{sub}</div>}
-    </div>
-  );
-}
+const RANGES = [
+  ["this_week", "Esta semana"],
+  ["last_week", "Semana pasada"],
+  ["this_month", "Este mes"],
+  ["last_month", "Mes pasado"],
+  ["this_quarter", "Este trimestre"],
+  ["this_year", "Este año"],
+] as const;
 
-function RateCard({ label, value }: { label: string; value: number | null }) {
-  return (
-    <div className="card">
-      <div className="label">{label}</div>
-      <div className="text-2xl font-bold text-ink mt-1">
-        {value == null ? "—" : `${value.toFixed(0)}%`}
-      </div>
-      <div className="w-full bg-gray-100 rounded-full h-1.5 mt-2">
-        <div
-          className="h-1.5 rounded-full"
-          style={{
-            width: `${Math.min(value ?? 0, 100)}%`,
-            background: "#62E0D8"
-          }}
-        />
-      </div>
-    </div>
-  );
-}
+type Data = (ClientDashboard | AllClientsDashboard) & { range: { key: string; label: string } };
 
-function Funnel({ steps }: { steps: DashboardData["funnel"] }) {
-  const max = Math.max(...steps.map((s) => s.count), 1);
-  return (
-    <div className="card">
-      <h2 className="font-semibold mb-4">Funnel de conversión</h2>
-      <div className="space-y-2">
-        {steps.map((s, i) => (
-          <div key={s.step} className="flex items-center gap-3">
-            <div className="w-24 text-xs text-ink-muted text-right shrink-0">{s.step}</div>
-            <div className="flex-1 bg-gray-100 rounded-full h-5 relative">
-              <div
-                className="h-5 rounded-full flex items-center px-2"
-                style={{
-                  width: `${(s.count / max) * 100}%`,
-                  background: i === 0 ? "#251762" : "#62E0D8",
-                  minWidth: s.count > 0 ? "2rem" : 0
-                }}
-              >
-                {s.count > 0 && (
-                  <span className="text-[11px] font-medium text-white">{s.count}</span>
-                )}
-              </div>
-            </div>
-            {s.rate_from_prev != null && (
-              <div className="w-12 text-xs text-ink-muted text-right shrink-0">
-                {s.rate_from_prev.toFixed(0)}%
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Sparkline({
-  data,
-  key1,
-  key2,
-  color1,
-  color2
-}: {
-  data: DashboardData["activity"];
-  key1: keyof DashboardData["activity"][0];
-  key2: keyof DashboardData["activity"][0];
-  color1: string;
-  color2: string;
-}) {
-  if (!data.length) return null;
-  const vals1 = data.map((d) => d[key1] as number);
-  const vals2 = data.map((d) => d[key2] as number);
-  const max = Math.max(...vals1, ...vals2, 1);
-  const W = 400;
-  const H = 80;
-  const xs = data.map((_, i) => (i / Math.max(data.length - 1, 1)) * W);
-  const y = (v: number) => H - (v / max) * H * 0.9;
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-16">
-      <polyline
-        points={data.map((_, i) => `${xs[i]},${y(vals1[i])}`).join(" ")}
-        fill="none"
-        stroke={color1}
-        strokeWidth="2"
-      />
-      <polyline
-        points={data.map((_, i) => `${xs[i]},${y(vals2[i])}`).join(" ")}
-        fill="none"
-        stroke={color2}
-        strokeWidth="2"
-        strokeDasharray="4"
-      />
-    </svg>
-  );
-}
-
-function EvolutionChart({ data }: { data: DashboardData["evolution_8mo"] }) {
-  if (!data.length) return null;
-  const maxVal = Math.max(...data.map((d) => Math.max(d.companies_clay_push, d.contacts_total)), 1);
-  const H = 100;
-  const barW = 16;
-  const gap = 8;
-  const colW = barW * 2 + gap + 8;
-
-  return (
-    <div className="card">
-      <h2 className="font-semibold mb-4">Evolución 8 meses</h2>
-      <div className="overflow-x-auto">
-        <svg
-          viewBox={`0 0 ${data.length * colW} ${H + 30}`}
-          className="w-full"
-          style={{ minWidth: data.length * colW }}
-        >
-          {data.map((d, i) => {
-            const x = i * colW;
-            const h1 = Math.max((d.companies_clay_push / maxVal) * H, 1);
-            const h2 = Math.max((d.contacts_total / maxVal) * H, 1);
-            return (
-              <g key={d.month}>
-                {/* Barra empresas */}
-                <rect
-                  x={x}
-                  y={H - h1}
-                  width={barW}
-                  height={h1}
-                  fill="#251762"
-                  rx="2"
-                />
-                {/* Barra contactos */}
-                <rect
-                  x={x + barW + gap}
-                  y={H - h2}
-                  width={barW}
-                  height={h2}
-                  fill="#62E0D8"
-                  rx="2"
-                />
-                {/* Etiqueta mes */}
-                <text
-                  x={x + barW + gap / 2}
-                  y={H + 18}
-                  textAnchor="middle"
-                  fontSize="9"
-                  fill="#6B6884"
-                >
-                  {d.label}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-      {/* Leyenda */}
-      <div className="flex items-center gap-4 mt-2 text-xs text-ink-muted">
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block w-3 h-3 rounded-sm" style={{ background: "#251762" }} />
-          Empresas Clay
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="inline-block w-3 h-3 rounded-sm" style={{ background: "#62E0D8" }} />
-          Contactos total
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function DistributionList({
-  title,
-  items
-}: {
-  title: string;
-  items: Array<{ key: string; label: string; count: number }>;
-}) {
-  const total = items.reduce((s, i) => s + i.count, 0);
-  return (
-    <div className="card">
-      <h2 className="font-semibold mb-4">{title}</h2>
-      {items.length === 0 ? (
-        <div className="text-sm text-ink-muted">Sin datos en este período.</div>
-      ) : (
-        <div className="space-y-2">
-          {items.map((item) => {
-            const pct = total === 0 ? 0 : (item.count / total) * 100;
-            return (
-              <div key={item.key} className="flex items-center gap-3">
-                <div className="w-28 text-xs text-ink-muted text-right shrink-0 truncate">
-                  {item.label}
-                </div>
-                <div className="flex-1 bg-gray-100 rounded-full h-3">
-                  <div
-                    className="h-3 rounded-full"
-                    style={{ width: `${pct}%`, background: "#62E0D8", minWidth: item.count > 0 ? "4px" : 0 }}
-                  />
-                </div>
-                <div className="w-8 text-xs text-ink-muted text-right shrink-0">{item.count}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LoadingSkeleton() {
-  return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* KPI skeleton */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[...Array(4)].map((_, i) => (
-          <div key={i} className="animate-pulse bg-gray-100 rounded-xl h-28" />
-        ))}
-      </div>
-      {/* Rate skeleton */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[...Array(4)].map((_, i) => (
-          <div key={i} className="animate-pulse bg-gray-100 rounded-xl h-28" />
-        ))}
-      </div>
-      {/* Funnel skeleton */}
-      <div className="animate-pulse bg-gray-100 rounded-xl h-48" />
-      {/* Two columns skeleton */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="animate-pulse bg-gray-100 rounded-xl h-40" />
-        <div className="animate-pulse bg-gray-100 rounded-xl h-40" />
-      </div>
-      {/* Chart skeleton */}
-      <div className="animate-pulse bg-gray-100 rounded-xl h-48" />
-    </div>
-  );
-}
-
-// ─── Página principal ─────────────────────────────────────────────────────────
+const n = (v: number) => v.toLocaleString("es-CL");
+const dec = (v: number | null) => (v == null ? "—" : v.toLocaleString("es-CL", { maximumFractionDigits: 1 }));
+const pct = (v: number | null) => (v == null ? "—" : `${Math.round(v)}%`);
+const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
 export default function DashboardPage() {
-  const { currentClient } = useClient();
-  const [rangeKey, setRangeKey] = useState<RangeKey>("this_month");
-  const [data, setData] = useState<DashboardData | null>(null);
+  const { currentClient, setCurrentClient, clients } = useClient();
+  const [range, setRange] = useState<string>("this_month");
+  const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [phoneRefreshBusy, setPhoneRefreshBusy] = useState(false);
-  const [phoneRefreshMsg, setPhoneRefreshMsg] = useState<string | null>(null);
 
-  const load = useCallback(
-    async (isRefresh = false) => {
-      if (!currentClient) return;
-      if (isRefresh) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      try {
-        const url = `/api/dashboard?range=${rangeKey}&client_id=${currentClient.id}`;
-        const res = await fetch(url, { cache: "no-store" });
-        const json = await res.json();
-        if (!res.ok) {
-          setError(json.error ?? "Error al cargar el dashboard.");
-          return;
-        }
-        setData(json);
-      } catch (e: any) {
-        setError(e.message ?? "Error de red.");
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [rangeKey, currentClient]
-  );
+  const clientId = currentClient && currentClient.id !== ALL_CLIENTS.id ? currentClient.id : null;
+
+  const load = useCallback(async () => {
+    if (!currentClient) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/dashboard?range=${range}&client_id=${clientId ?? "__all__"}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "Error al cargar");
+      setData(j);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error al cargar");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentClient, clientId, range]);
 
   useEffect(() => {
-    if (currentClient) {
-      load();
-    } else {
-      setData(null);
-    }
-  }, [rangeKey, currentClient?.id]);
+    setData(null);
+    load();
+  }, [load]);
 
-  async function handlePhoneRefresh() {
-    setPhoneRefreshBusy(true);
-    setPhoneRefreshMsg(null);
-    try {
-      const res = await fetch("/api/lemlist/refresh-phones", { method: "POST" });
-      const json = await res.json();
-      setPhoneRefreshMsg(json.message ?? "Sincronización iniciada.");
-    } catch {
-      setPhoneRefreshMsg("Error al iniciar sincronización.");
-    } finally {
-      setPhoneRefreshBusy(false);
-    }
-  }
-
-  // Mostrar banner de teléfonos
-  const showPhoneRefreshBanner =
-    data != null &&
-    data.pipeline.contacts_in_lemlist.current > 5 &&
-    data.pipeline.contacts_with_phone.current /
-      data.pipeline.contacts_in_lemlist.current <
-      0.5;
+  const openClient = (id: string) => {
+    const c = clients.find((x) => x.id === id);
+    if (c) setCurrentClient(c);
+  };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header className="flex items-end justify-between mb-6">
+    <div className="space-y-6 max-w-6xl">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="label">Análisis</div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard operativo</h1>
-          {currentClient && (
-            <span
-              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white mt-1"
-              style={{ background: "#251762" }}
-            >
-              {currentClient.name}
-            </span>
-          )}
+          <div className="label">Prospección</div>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard de prospección</h1>
+          <p className="text-sm text-ink-muted mt-1">
+            {clientId
+              ? `Empresas recomendadas, aprobadas y prospectadas para ${currentClient?.name}.`
+              : "Estado de la prospección de cada cliente. Elige un cliente en el menú para ver su detalle."}
+          </p>
         </div>
-        <div className="flex items-center gap-3">
-          <select
-            className="input py-1.5 text-sm"
-            value={rangeKey}
-            onChange={(e) => setRangeKey(e.target.value as RangeKey)}
-          >
-            {Object.entries(RANGE_LABELS).map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
+        <div className="flex items-center gap-2">
+          <select value={range} onChange={(e) => setRange(e.target.value)} className="btn-secondary py-1.5 text-sm">
+            {RANGES.map(([k, l]) => (
+              <option key={k} value={k}>{l}</option>
             ))}
           </select>
-          <button
-            className="btn-secondary py-1.5"
-            onClick={() => load(true)}
-            disabled={loading || refreshing}
-          >
-            {refreshing ? "…" : "↺"}
+          <button onClick={load} disabled={loading} className="btn-secondary py-1.5 px-2.5" title="Actualizar">
+            {loading ? <IconLoader2 size={16} className="animate-spin" /> : <IconRefresh size={16} />}
           </button>
         </div>
       </header>
 
-      {/* ── Sin cliente seleccionado ─────────────────────────────────────── */}
-      {!currentClient && (
-        <div
-          className="card border flex items-center gap-3 text-sm"
-          style={{ borderColor: "#F0C060", background: "#FFFBE6", color: "#7A5F00" }}
-        >
-          <IconAlertTriangle size={16} className="shrink-0" />
-          Selecciona un cliente en el sidebar para ver el dashboard operativo.
-        </div>
-      )}
-
-      {/* ── Error ─────────────────────────────────────────────────────────── */}
       {error && (
-        <div className="card border border-red-200 flex items-center gap-2 text-red-700 text-sm">
-          <IconAlertCircle size={16} className="shrink-0" />
-          {error}
+        <div className="card flex items-center gap-2 text-sm text-danger-fg bg-danger-bg">
+          <IconAlertCircle size={16} /> {error}
         </div>
       )}
-
-      {/* ── Skeleton mientras carga ──────────────────────────────────────── */}
-      {loading && <LoadingSkeleton />}
-
-      {/* ── Contenido principal ──────────────────────────────────────────── */}
-      {!loading && data && (
-        <div className="max-w-6xl mx-auto space-y-6">
-
-          {/* 1. Hero KPIs */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard
-              label="Empresas descubiertas"
-              value={data.pipeline.companies_discovered.current}
-              delta={data.pipeline.companies_discovered}
-            />
-            <KpiCard
-              label="Aprobadas"
-              value={data.pipeline.companies_approved.current}
-              delta={data.pipeline.companies_approved}
-            />
-            <KpiCard
-              label="Contactos importados"
-              value={data.pipeline.contacts_imported.current}
-              delta={data.pipeline.contacts_imported}
-            />
-            <KpiCard
-              label="En Lemlist"
-              value={data.pipeline.contacts_in_lemlist.current}
-              delta={data.pipeline.contacts_in_lemlist}
-              sub={
-                data.pipeline.contacts_with_phone.current > 0
-                  ? `${data.pipeline.contacts_with_phone.current} con teléfono`
-                  : undefined
-              }
-            />
-          </div>
-
-          {/* 2. Rate mini-cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <RateCard label="Tasa de aprobación" value={data.pipeline.approval_rate} />
-            <RateCard label="Fit rate / YES" value={data.pipeline.fit_rate} />
-            <RateCard label="Tasa de teléfono" value={data.pipeline.phone_rate} />
-            <RateCard label="Tasa HubSpot" value={data.pipeline.hubspot_rate} />
-          </div>
-
-          {/* 3. Funnel */}
-          <Funnel steps={data.funnel} />
-
-          {/* 4. Coverage + Clay funnel */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Coverage */}
-            <div className="card">
-              <h2 className="font-semibold mb-4">Cobertura de contactos</h2>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-ink-muted">Total en Clay</span>
-                  <span className="font-semibold">{data.coverage.total_in_clay}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-ink-muted">Sin contactos</span>
-                  <span className="font-semibold text-red-600">{data.coverage.no_contacts}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-ink-muted">1 contacto</span>
-                  <span className="font-semibold text-amber-600">{data.coverage.one_contact}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-ink-muted">2+ contactos</span>
-                  <span className="font-semibold text-green-700">{data.coverage.two_plus_contacts}</span>
-                </div>
-                {data.usage.avg_contacts_per_company != null && (
-                  <div
-                    className="flex justify-between pt-2 mt-2"
-                    style={{ borderTop: "1px solid #F1EEF7" }}
-                  >
-                    <span className="text-ink-muted">Promedio por empresa</span>
-                    <span className="font-semibold">
-                      {data.usage.avg_contacts_per_company.toFixed(1)}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Clay funnel */}
-            <div className="card">
-              <h2 className="font-semibold mb-4">Funnel Clay</h2>
-              <div className="grid grid-cols-3 gap-3">
-                {[
-                  { label: "De Clay", value: data.clay_funnel.total_from_clay },
-                  { label: "Fit (YES)", value: data.clay_funnel.fit },
-                  { label: "En Lemlist", value: data.clay_funnel.in_lemlist }
-                ].map((item) => (
-                  <div
-                    key={item.label}
-                    className="rounded-xl p-4 text-center"
-                    style={{ background: "#F4F2FB" }}
-                  >
-                    <div className="text-2xl font-bold text-ink">{item.value}</div>
-                    <div className="text-xs text-ink-muted mt-1">{item.label}</div>
-                  </div>
-                ))}
-              </div>
-              {data.clay_funnel.total_from_clay > 0 && (
-                <div className="mt-3 text-xs text-ink-muted text-center">
-                  {((data.clay_funnel.in_lemlist / data.clay_funnel.total_from_clay) * 100).toFixed(0)}% de Clay llegó a Lemlist
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 4.5 Búsqueda manual: Campaña puente → app → campaña real */}
-          <div className="card">
-            <h2 className="font-semibold mb-1">Búsqueda manual (Sales Navigator)</h2>
-            <p className="text-xs text-ink-muted mb-4">
-              Contactos que el equipo prospectó a mano, desde que entran a la Campaña puente de Lemlist hasta que salen a la campaña real.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <KpiCard
-                label="Empresas importadas"
-                value={data.manual_prospecting.companies_imported.current}
-                delta={data.manual_prospecting.companies_imported}
-              />
-              <KpiCard
-                label="Contactos: puente → app"
-                value={data.manual_prospecting.contacts_imported.current}
-                delta={data.manual_prospecting.contacts_imported}
-              />
-              <KpiCard
-                label="Contactos: app → campaña real"
-                value={data.manual_prospecting.contacts_sent_to_lemlist.current}
-                delta={data.manual_prospecting.contacts_sent_to_lemlist}
-              />
-            </div>
-          </div>
-
-          {/* 5. Gráfico de evolución 8 meses */}
-          <EvolutionChart data={data.evolution_8mo} />
-
-          {/* 6. Distribuciones */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <DistributionList
-              title="Tipos de empresa"
-              items={data.distribution.company_types}
-            />
-            <DistributionList
-              title="Acciones IA (fit_action)"
-              items={data.distribution.fit_actions}
-            />
-          </div>
-
-          {/* 7. Calidad */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Acuerdo humano */}
-            <div className="card">
-              <h2 className="font-semibold mb-3">Acuerdo humano con IA</h2>
-              {data.quality.human_agreement_rate == null ? (
-                <div className="text-sm text-ink-muted">Sin datos en este período.</div>
-              ) : (
-                <>
-                  <div className="text-3xl font-bold text-ink">
-                    {data.quality.human_agreement_rate.toFixed(0)}%
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2 mt-3">
-                    <div
-                      className="h-2 rounded-full"
-                      style={{
-                        width: `${Math.min(data.quality.human_agreement_rate, 100)}%`,
-                        background: "#62E0D8"
-                      }}
-                    />
-                  </div>
-                  <div className="text-xs text-ink-muted mt-2">
-                    Porcentaje de contactos marcados "enrich" por IA que el humano aprobó.
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Razones de descarte */}
-            <div className="card">
-              <h2 className="font-semibold mb-3">Top razones de descarte</h2>
-              {data.quality.discard_reasons.length === 0 ? (
-                <div className="text-sm text-ink-muted">Sin descartes registrados.</div>
-              ) : (
-                <ol className="space-y-1.5">
-                  {data.quality.discard_reasons.map((r, i) => (
-                    <li key={r.reason} className="flex items-start gap-2 text-sm">
-                      <span
-                        className="shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-full text-[11px] font-bold text-white"
-                        style={{ background: "#251762" }}
-                      >
-                        {i + 1}
-                      </span>
-                      <span className="text-ink/90 capitalize">{r.reason}</span>
-                      <span className="ml-auto text-xs text-ink-muted shrink-0">{r.count}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
-          </div>
-
-          {/* 8. Actividad diaria (sparkline) */}
-          {data.activity.length > 0 && (
-            <div className="card">
-              <h2 className="font-semibold mb-3">Actividad diaria</h2>
-              <Sparkline
-                data={data.activity}
-                key1="companies_approved"
-                key2="contacts_imported"
-                color1="#251762"
-                color2="#62E0D8"
-              />
-              {/* Etiquetas de fecha inicio/fin */}
-              <div className="flex justify-between text-[10px] text-ink-muted mt-1">
-                <span>{data.activity[0]?.date}</span>
-                <span>{data.activity[data.activity.length - 1]?.date}</span>
-              </div>
-              {/* Leyenda */}
-              <div className="flex items-center gap-4 mt-2 text-xs text-ink-muted">
-                <span className="flex items-center gap-1.5">
-                  <svg width="20" height="8">
-                    <line x1="0" y1="4" x2="20" y2="4" stroke="#251762" strokeWidth="2" />
-                  </svg>
-                  Empresas aprobadas
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <svg width="20" height="8">
-                    <line
-                      x1="0"
-                      y1="4"
-                      x2="20"
-                      y2="4"
-                      stroke="#62E0D8"
-                      strokeWidth="2"
-                      strokeDasharray="4"
-                    />
-                  </svg>
-                  Contactos importados
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* 9. Banner de teléfonos */}
-          {showPhoneRefreshBanner && (
-            <div
-              className="card border flex items-center justify-between gap-4"
-              style={{ borderColor: "#F0C060", background: "#FFFBE6" }}
-            >
-              <div className="flex items-center gap-3">
-                <IconAlertTriangle size={18} style={{ color: "#B8860B" }} className="shrink-0" />
-                <div>
-                  <div className="font-semibold text-sm" style={{ color: "#7A5F00" }}>
-                    Sincronizar teléfonos
-                  </div>
-                  <div className="text-xs mt-0.5" style={{ color: "#A07A00" }}>
-                    Lemlist enriquece async. Solo{" "}
-                    {data.pipeline.contacts_with_phone.current} de{" "}
-                    {data.pipeline.contacts_in_lemlist.current} contactos tienen teléfono.
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {phoneRefreshMsg && (
-                  <span className="text-xs" style={{ color: "#7A5F00" }}>
-                    {phoneRefreshMsg}
-                  </span>
-                )}
-                <button
-                  onClick={handlePhoneRefresh}
-                  disabled={phoneRefreshBusy}
-                  className="btn-secondary text-sm"
-                  style={{ borderColor: "#F0C060" }}
-                >
-                  {phoneRefreshBusy ? "…" : "Sincronizar ahora"}
-                </button>
-              </div>
-            </div>
-          )}
+      {data?.migration_missing && (
+        <div className="card flex items-center gap-2 text-sm text-warning-fg bg-warning-bg">
+          <IconAlertTriangle size={16} className="shrink-0" />
+          Falta aplicar la migración <code>supabase/20261030_prospeccion_v3_migration.sql</code>: los contactos manuales y el estado de la búsqueda manual aún no se registran.
         </div>
       )}
+      {!data && !error && <IconLoader2 className="animate-spin text-ink-muted" />}
+
+      {data?.mode === "client" && <ClientReport data={data} onChanged={load} />}
+      {data?.mode === "all" && <AllClientsReport data={data} onOpen={openClient} />}
     </div>
+  );
+}
+
+// ── Piezas ───────────────────────────────────────────────────────────────
+
+function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: "warn" | "bad" }) {
+  const color = tone === "bad" ? "#993C1D" : tone === "warn" ? "#854F0B" : undefined;
+  return (
+    <div className="card">
+      <div className="label">{label}</div>
+      <div className="text-3xl font-bold mt-1" style={{ color: color ?? "#1A1733" }}>{value}</div>
+      {sub && <div className="text-xs text-ink-muted mt-1">{sub}</div>}
+    </div>
+  );
+}
+
+function SectionTitle({ children, hint }: { children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="flex items-baseline gap-2 mt-2">
+      <h2 className="font-semibold">{children}</h2>
+      {hint && <span className="text-xs text-ink-muted">{hint}</span>}
+    </div>
+  );
+}
+
+function Funnel({ steps }: { steps: { label: string; value: number }[] }) {
+  const max = Math.max(...steps.map((s) => s.value), 1);
+  return (
+    <div className="card space-y-2.5">
+      <h2 className="font-semibold mb-2">Embudo del período</h2>
+      {steps.map((s, i) => {
+        const prev = i > 0 ? steps[i - 1].value : null;
+        return (
+          <div key={s.label} className="flex items-center gap-3">
+            <div className="w-44 text-xs text-ink-muted text-right shrink-0">{s.label}</div>
+            <div className="flex-1 bg-gray-100 rounded-full h-6">
+              <div
+                className="h-6 rounded-full flex items-center px-2.5"
+                style={{ width: `${(s.value / max) * 100}%`, minWidth: s.value > 0 ? "2.25rem" : 0, background: i === 0 ? "#251762" : "#62E0D8" }}
+              >
+                {s.value > 0 && <span className="text-[11px] font-semibold" style={{ color: i === 0 ? "#fff" : "#251762" }}>{n(s.value)}</span>}
+              </div>
+            </div>
+            <div className="w-12 text-xs text-ink-muted text-right shrink-0">{prev ? pct((s.value / prev) * 100) : ""}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Evolution({ months }: { months: MonthPoint[] }) {
+  const series = [
+    { key: "proposed", label: "Propuestas", color: "#251762" },
+    { key: "approved", label: "Aprobadas", color: "#7F77DD" },
+    { key: "prospected", label: "Prospectadas", color: "#62E0D8" },
+  ] as const;
+  const max = Math.max(...months.flatMap((m) => series.map((s) => m[s.key])), 1);
+  return (
+    <div className="card">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h2 className="font-semibold">Evolución (últimos 6 meses)</h2>
+        <div className="flex gap-3 text-xs text-ink-muted">
+          {series.map((s) => (
+            <span key={s.key} className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} /> {s.label}
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-6 gap-3 items-end h-40">
+        {months.map((m) => (
+          <div key={m.month} className="flex items-end justify-center gap-1 h-full">
+            {series.map((s) => (
+              <div
+                key={s.key}
+                title={`${s.label}: ${m[s.key]}`}
+                className="w-3 rounded-t"
+                style={{ height: `${(m[s.key] / max) * 100}%`, minHeight: m[s.key] ? 3 : 0, background: s.color }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-6 gap-3 mt-2 text-center text-[11px] text-ink-muted">
+        {months.map((m) => (
+          <div key={m.month}>
+            <div className="font-medium text-ink">{MONTHS[Number(m.month.slice(5)) - 1]}</div>
+            <div>{n(m.auto_contacts)} auto · {n(m.manual_contacts)} man.</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Reporte de un cliente ────────────────────────────────────────────────
+
+function ClientReport({ data, onChanged }: { data: ClientDashboard & { range: { label: string } }; onChanged: () => void }) {
+  const k = data.kpis;
+  return (
+    <div className="space-y-4">
+      <SectionTitle hint={data.range.label}>Empresas</SectionTitle>
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <Kpi label="Recomendadas por IA" value={n(k.recommended_ai)} sub="fit ≥ 60%" />
+        <Kpi label="Propuestas al cliente" value={n(k.proposed)} />
+        <Kpi label="Aprobadas por el cliente" value={n(k.approved)} sub={`Tasa de aprobación ${pct(k.approval_rate)}`} />
+        <Kpi label="Rechazadas" value={n(k.rejected)} />
+        <Kpi label="Pedidas por el cliente" value={n(k.client_requested)} sub="desde su portal" />
+      </div>
+
+      <SectionTitle hint={data.range.label}>Prospección de contactos</SectionTitle>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kpi label="Empresas prospectadas" value={n(k.prospected)} sub={`${n(k.prospected_ok)} con contactos suficientes · ${n(k.prospected_few)} con pocos`} />
+        <Kpi label="Contactos automáticos" value={n(k.auto_contacts)} sub={`Promedio ${dec(k.avg_auto_per_company)} por empresa`} />
+        <Kpi label="Contactos manuales" value={n(k.manual_contacts)} sub="sumados en Búsqueda manual" />
+        <Kpi
+          label="Contactos aprobados"
+          value={n(k.contacts_approved)}
+          sub={`${n(k.contacts_with_email)} con email · ${n(k.contacts_with_phone)} con teléfono`}
+        />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Funnel
+          steps={[
+            { label: "Propuestas al cliente", value: k.proposed },
+            { label: "Aprobadas", value: k.approved },
+            { label: "Prospectadas", value: k.prospected },
+            { label: "Con contactos suficientes", value: k.prospected_ok },
+          ]}
+        />
+        <Evolution months={data.months} />
+      </div>
+
+      <SectionTitle hint="estado actual">Pendientes</SectionTitle>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Kpi
+          label="Esperando aprobación"
+          value={n(k.pending_approval)}
+          sub={k.pending_approval_oldest_days != null ? `la más antigua hace ${k.pending_approval_oldest_days} días` : "sin propuestas pendientes"}
+          tone={k.pending_approval_oldest_days != null && k.pending_approval_oldest_days > 7 ? "warn" : undefined}
+        />
+        <Kpi label="Por prospectar" value={n(k.pending_prospecting)} sub={`de ${n(k.total_active)} aprobadas · búsqueda automática`} />
+        <Link href="/busqueda-manual" className="block">
+          <Kpi label="En búsqueda manual" value={n(k.manual_queue)} sub="pocos contactos → LinkedIn ›" tone={k.manual_queue ? "warn" : undefined} />
+        </Link>
+        <Kpi label="Sin enviar a Lemlist" value={n(k.lemlist_errors)} sub="no se prospectan hasta reintentar" tone={k.lemlist_errors ? "bad" : undefined} />
+      </div>
+
+      {data.lemlist_errors.length > 0 && <LemlistErrors items={data.lemlist_errors} onChanged={onChanged} />}
+    </div>
+  );
+}
+
+function LemlistErrors({ items, onChanged }: { items: LemlistErrorItem[]; onChanged: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<Record<string, string>>({});
+  async function retry(id: string) {
+    setBusy(id);
+    const r = await fetch(`/api/portal-admin/wishlist/${id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "push_lemlist" }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setBusy(null);
+    if (r.ok) onChanged();
+    else setMsg((m) => ({ ...m, [id]: j.error ?? "Error" }));
+  }
+  return (
+    <div className="card">
+      <h2 className="font-semibold mb-1">Empresas aprobadas que no llegaron al Lemlist del cliente</h2>
+      <p className="text-xs text-ink-muted mb-3">Sin Lemlist no se buscan contactos. Revisa la API key en Config. cliente y reintenta.</p>
+      <div className="divide-y divide-gray-100">
+        {items.map((it) => (
+          <div key={it.id} className="py-2 flex items-center justify-between gap-3 text-sm">
+            <div className="min-w-0">
+              <div className="font-medium truncate">{it.company_name}</div>
+              <div className="text-xs text-danger-fg truncate">{msg[it.id] ?? it.error ?? "Error"}</div>
+            </div>
+            <button onClick={() => retry(it.id)} disabled={busy === it.id} className="btn-secondary py-1 px-3 text-xs shrink-0">
+              {busy === it.id ? <IconLoader2 size={13} className="animate-spin" /> : "Reintentar"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Todos los clientes ───────────────────────────────────────────────────
+
+function AllClientsReport({ data, onOpen }: { data: AllClientsDashboard & { range: { label: string } }; onOpen: (id: string) => void }) {
+  const t = data.totals;
+  return (
+    <div className="space-y-4">
+      <SectionTitle hint={`${data.range.label} · todos los clientes`}>Resumen general</SectionTitle>
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <Kpi label="Propuestas" value={n(t.proposed)} />
+        <Kpi label="Aprobadas" value={n(t.approved)} sub={`Tasa ${pct(t.approval_rate)}`} />
+        <Kpi label="Prospectadas" value={n(t.prospected)} />
+        <Kpi label="Contactos auto" value={n(t.auto_contacts)} sub={`Prom. ${dec(t.avg_auto_per_company)} / empresa`} />
+        <Kpi label="Contactos manuales" value={n(t.manual_contacts)} />
+        <Kpi label="Esperando aprobación" value={n(t.pending_approval)} sub={`${n(t.manual_queue)} en búsqueda manual`} />
+      </div>
+
+      <SectionTitle hint="clic en una tarjeta para ver el detalle del cliente">Por cliente</SectionTitle>
+      {data.clients.length === 0 && <div className="text-sm text-ink-muted">Ningún cliente tiene empresas en la wishlist todavía.</div>}
+      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+        {data.clients.map((c) => (
+          <ClientStatusCard key={c.client_id} card={c} onOpen={() => onOpen(c.client_id)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ClientStatusCard({ card, onOpen }: { card: ClientCard; onOpen: () => void }) {
+  const k: ProspectingKpis = card.kpis;
+  const rows: [string, string][] = [
+    ["Propuestas / aprobadas", `${n(k.proposed)} / ${n(k.approved)}`],
+    ["Contactos auto (prom.)", `${n(k.auto_contacts)} (${dec(k.avg_auto_per_company)})`],
+    ["Contactos manuales", n(k.manual_contacts)],
+  ];
+  const pending: { label: string; value: number; tone: string }[] = [
+    { label: "esperando aprobación", value: k.pending_approval, tone: "#854F0B" },
+    { label: "por prospectar", value: k.pending_prospecting, tone: "#185FA5" },
+    { label: "búsqueda manual", value: k.manual_queue, tone: "#854F0B" },
+    { label: "sin Lemlist", value: k.lemlist_errors, tone: "#993C1D" },
+  ].filter((p) => p.value > 0);
+
+  return (
+    <button onClick={onOpen} className="card text-left transition hover:ring-2 hover:ring-[#62E0D8] group">
+      <div className="flex items-start justify-between gap-2">
+        <div className="font-semibold truncate">{card.client_name}</div>
+        <IconArrowRight size={16} className="text-ink-subtle group-hover:text-brand shrink-0" />
+      </div>
+      <div className="flex items-baseline gap-2 mt-2">
+        <span className="text-3xl font-bold">{n(k.prospected)}</span>
+        <span className="text-xs text-ink-muted">empresas prospectadas</span>
+      </div>
+      <div className="mt-3 space-y-1 text-xs">
+        {rows.map(([l, v]) => (
+          <div key={l} className="flex justify-between gap-2">
+            <span className="text-ink-muted">{l}</span>
+            <span className="font-medium">{v}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {pending.length === 0 ? (
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-success-bg text-success-fg">Al día</span>
+        ) : (
+          pending.map((p) => (
+            <span key={p.label} className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100" style={{ color: p.tone }}>
+              {n(p.value)} {p.label}
+            </span>
+          ))
+        )}
+      </div>
+      {card.last_activity && (
+        <div className="text-[11px] text-ink-subtle mt-3">
+          Último movimiento {new Date(card.last_activity).toLocaleDateString("es-CL", { day: "numeric", month: "short" })}
+        </div>
+      )}
+    </button>
   );
 }

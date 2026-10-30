@@ -24,6 +24,8 @@ import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import HubspotConnection from "./HubspotConnection";
 import RadarSettings from "./RadarSettings";
 import PortalAccessManager from "@/components/portalAdmin/PortalAccessManager";
+import HubspotPoolPanel from "@/components/portalAdmin/HubspotPoolPanel";
+import PeithoSetting from "./PeithoSetting";
 
 type Config = {
   lemlist_api_key:                    string;
@@ -673,7 +675,7 @@ export default function ConfigClientePage() {
             />
             <Field
               label="Campaign ID puente — Búsqueda manual"
-              hint="Campaña sin pasos exclusiva para /busqueda-manual: acá el SDR agrega los leads encontrados a mano en Sales Navigator con la extensión de Lemlist. Si se deja vacío, se usa la campaña de Teléfonos de arriba (no recomendado)."
+              hint="Flujo anterior (contactos de la tabla contacts): campaña sin pasos donde se agregaban leads encontrados a mano en Sales Navigator. La nueva Búsqueda manual (wishlist) no la usa."
               placeholder="cam_xxxxxxxxxxxxxxxxxx"
               value={form.lemlist_manual_search_campaign_id}
               onChange={set("lemlist_manual_search_campaign_id")}
@@ -769,6 +771,9 @@ export default function ConfigClientePage() {
               <PortalAccessManager clientId={currentClient.id} clientName={currentClient.name} />
             </section>
           )}
+
+          {/* Peitho: feedback automático de reuniones (servicio contratado aparte) */}
+          {currentClient && currentClient.id !== ALL_CLIENTS.id && <PeithoSetting clientId={currentClient.id} clientName={currentClient.name} />}
 
           {/* Pulso ABM del cliente */}
           {currentClient && currentClient.id !== ALL_CLIENTS.id && <RadarSettings clientId={currentClient.id} clientName={currentClient.name} />}
@@ -1072,6 +1077,20 @@ export default function ConfigClientePage() {
                 </div>
               )}
             </div>
+          </section>
+
+          {/* Base HubSpot que usa la wishlist (global) + diagnóstico de la base Lemlist del cliente */}
+          <section className="card space-y-4">
+            <div>
+              <h2 className="font-semibold">Base de empresas para la wishlist</h2>
+              <p className="text-sm text-ink-muted mt-1">
+                Empresas de HubSpot que se usan para buscar y recomendar en la wishlist (es la misma base para todos los clientes).
+              </p>
+            </div>
+            <HubspotPoolPanel
+              clientId={currentClient && currentClient.id !== ALL_CLIENTS.id ? currentClient.id : null}
+              clientName={currentClient?.name ?? null}
+            />
           </section>
         </>
       )}
