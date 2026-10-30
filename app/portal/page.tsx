@@ -63,7 +63,7 @@ export default async function PortalHomePage() {
         <Card
           href="/portal/radar?vista=cuentas-objetivo"
           title="Cuentas objetivo"
-          body="Aprueba las empresas que te propone BullsEye, busca empresas con filtros y arma tu wishlist."
+          body="Aprueba las empresas que te propone BullsEye o sube tu propio listado para que lo prospectemos."
           badge={
             proposals
               ? `${proposals} propuesta${proposals > 1 ? "s" : ""} por aprobar`
