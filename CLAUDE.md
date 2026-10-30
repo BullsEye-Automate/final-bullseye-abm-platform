@@ -61,6 +61,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=                                      -- ⚠️ ve
 ALLO_API_KEY=                                                       -- ⚠️ pendiente: generar en Allo → Settings → API y setear en Vercel
 APP_CANONICAL_HOST=portal.bullseye-abm.com                          -- redirige las páginas del dominio vercel.app al subdominio
 NEXT_PUBLIC_APP_URL=https://portal.bullseye-abm.com                 -- URL pública (webhooks de Clay en onboarding, llamadas internas)
+PEITHO_BACKEND_URL=https://final-bullseye-abm-platform-production.up.railway.app   -- backend de Peitho (Railway), para Pulso ABM → Peitho
+PEITHO_INTEGRATION_KEY=                                             -- misma clave que en Railway (Peitho); solo aplica en un deploy nuevo
 ```
 
 ---
