@@ -31,10 +31,13 @@ async function refreshAccessToken(userId: string, refreshToken: string): Promise
 }
 
 function buildRawEmail(from: string, to: string, subject: string, body: string): string {
+  const encodedSubject = /[^\x00-\x7F]/.test(subject)
+    ? `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`
+    : subject;
   const lines = [
     `From: ${from}`,
     `To: ${to}`,
-    `Subject: ${subject}`,
+    `Subject: ${encodedSubject}`,
     `MIME-Version: 1.0`,
     `Content-Type: text/plain; charset=UTF-8`,
     ``,
