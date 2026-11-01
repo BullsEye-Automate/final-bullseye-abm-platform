@@ -157,6 +157,8 @@ ${contextBlock}${icpBlock}${styleBlock}${extraInstruction}
 
 Usa TODA la información disponible del contacto y la empresa para hiperpersonalizar el mensaje. Menciona detalles específicos de la industria, tamaño de empresa, cargo o situación del contacto.
 
+Si se indica el cargo del destinatario, adapta SIEMPRE el mensaje a ese cargo: el ángulo, el dolor relevante y el lenguaje deben reflejar su rol específico. Un CEO recibe un mensaje estratégico y de alto nivel; un gerente de operaciones, uno enfocado en eficiencia; un SDR o vendedor, uno orientado a resultados de ventas. Nunca generes un mensaje genérico cuando hay cargo disponible.
+
 ${channelInfo.hasSubject && !isMeetingBrief
       ? `Devuelve el mensaje en texto plano. Primera línea: "Asunto: [el asunto]". Luego una línea vacía. Luego el cuerpo. Sin markdown, sin JSON, sin asteriscos.`
       : isMeetingBrief
