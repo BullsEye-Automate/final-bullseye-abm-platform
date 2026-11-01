@@ -34,25 +34,32 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${appUrl}/chat-v2?gmail_error=1`);
   }
 
-  // Obtener email: primero del id_token (JWT de Google, siempre presente), luego userinfo como fallback
+  // Obtener email desde userinfo de Google
   let email = "";
-  if (tokens.id_token) {
+  try {
+    const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    const userInfo = await userRes.json();
+    console.log("[gmail/callback] userinfo status:", userRes.status, "body:", JSON.stringify(userInfo));
+    email = userInfo.email ?? "";
+  } catch (e) {
+    console.error("[gmail/callback] userinfo error:", e);
+  }
+
+  // Fallback: extraer email del id_token si userinfo no lo devolvió
+  if (!email && tokens.id_token) {
     try {
-      // base64url → base64 estándar antes de decodificar
       const b64 = tokens.id_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
       const payload = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
+      console.log("[gmail/callback] id_token payload:", JSON.stringify(payload));
       email = payload.email ?? "";
-    } catch {}
+    } catch (e) {
+      console.error("[gmail/callback] id_token decode error:", e);
+    }
   }
-  if (!email) {
-    try {
-      const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-        headers: { Authorization: `Bearer ${tokens.access_token}` },
-      });
-      const userInfo = await userRes.json();
-      email = userInfo.email ?? "";
-    } catch {}
-  }
+
+  console.log("[gmail/callback] final email:", email, "tokens keys:", Object.keys(tokens));
 
   const expiry = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString();
 
