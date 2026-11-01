@@ -38,7 +38,9 @@ export async function GET(req: NextRequest) {
   let email = "";
   if (tokens.id_token) {
     try {
-      const payload = JSON.parse(Buffer.from(tokens.id_token.split(".")[1], "base64url").toString());
+      // base64url → base64 estándar antes de decodificar
+      const b64 = tokens.id_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      const payload = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
       email = payload.email ?? "";
     } catch {}
   }

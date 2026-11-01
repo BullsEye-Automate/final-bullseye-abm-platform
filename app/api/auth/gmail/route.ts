@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const SCOPES = ["https://www.googleapis.com/auth/gmail.send"].join(" ");
+const SCOPES = ["https://www.googleapis.com/auth/gmail.send", "email", "profile"].join(" ");
 
 export async function GET(req: NextRequest) {
   const clientId = process.env.GOOGLE_CLIENT_ID;
