@@ -959,7 +959,7 @@ export default function ChatV2Page() {
                 <div>
                   <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Canal</label>
                   <div className="grid grid-cols-3 gap-2">
-                    {(Object.entries(CHANNEL_LABELS) as [Channel, string][]).map(([val, label]) => (
+                    {(Object.entries(CHANNEL_LABELS) as [Channel, string][]).filter(([val]) => val !== "meeting_brief").map(([val, label]) => (
                       <button type="button" key={val} onClick={() => setChannel(val)}
                         className="py-2.5 rounded-xl text-sm font-medium transition"
                         style={{ background: channel === val ? "#251762" : "#f4f2fb", border: `1px solid ${channel === val ? "#251762" : "#e2e0f0"}`, color: channel === val ? "#62E0D8" : "#6b66a3" }}>
