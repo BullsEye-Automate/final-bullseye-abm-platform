@@ -19,9 +19,10 @@ export async function GET(req: NextRequest) {
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
   const redirectUri  = `${appUrl}/api/auth/gmail/callback`;
 
-  // Intercambiar code por tokens
+  // Intercambiar code por tokens (cache: no-store para evitar que Next.js cachee la respuesta)
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
+    cache: "no-store",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code, client_id: clientId, client_secret: clientSecret,
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
   let email = "";
   try {
     const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      cache: "no-store",
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     const userInfo = await userRes.json();
