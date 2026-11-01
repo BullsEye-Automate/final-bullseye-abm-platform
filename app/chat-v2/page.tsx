@@ -420,15 +420,14 @@ export default function ChatV2Page() {
   useEffect(() => {
     fetch("/api/clients").then(r => r.json()).then(j => setClients(j.clients ?? [])).catch(() => {});
     // Verificar si ya hay Gmail conectado
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("gmail_ok")) { window.history.replaceState({}, "", "/chat-v2"); }
+    if (params.get("gmail_error")) { window.history.replaceState({}, "", "/chat-v2"); }
     fetch("/api/auth/gmail/status").then(r => r.json()).then(j => {
       setGmailEmail(j.email ?? null);
       setUserId(j.userId ?? null);
       setGmailChecked(true);
     }).catch(() => setGmailChecked(true));
-    // Leer resultado de conexión desde URL
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("gmail_ok")) { window.history.replaceState({}, "", "/chat-v2"); }
-    if (params.get("gmail_error")) { window.history.replaceState({}, "", "/chat-v2"); }
   }, []);
 
   useEffect(() => {
