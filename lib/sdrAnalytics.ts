@@ -92,6 +92,9 @@ export const SDR_NAME_ALIASES: Record<string, string> = {
   [normalizeSdrName("Jacqueline Fuentes")]: normalizeSdrName("Jaqueline Fuentes"),
   [normalizeSdrName("María José")]:         normalizeSdrName("María José Espinoza"),
   [normalizeSdrName("Pedro")]:              normalizeSdrName("Pedro Gallardo"),
+  // En Allo el usuario quedó como "Pamela Aveal"; en la planilla de
+  // reuniones es "Pamela Alveal" (sin esto sus reuniones no calzaban).
+  [normalizeSdrName("Pamela Alveal")]:      normalizeSdrName("Pamela Aveal"),
 };
 
 export function resolveSdrKey(name: string): string {

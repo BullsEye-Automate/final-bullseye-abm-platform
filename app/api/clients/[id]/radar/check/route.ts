@@ -4,7 +4,7 @@ import { checkClientHubspot } from "@/lib/radarAbm/server/check";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Radar ABM — prueba el HubSpot del cliente (permisos, propiedades y tamaño
+// Pulso ABM — prueba el HubSpot del cliente (permisos, propiedades y tamaño
 // del universo) sin sincronizar. Requiere sesión interna (middleware).
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {

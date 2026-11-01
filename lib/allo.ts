@@ -347,6 +347,7 @@ export async function fetchAlloConnectedCallIds(params: {
   try {
     let page = 1;
     const maxPages = 200; // 100/página — tope de seguridad, ver listAllHSCompanies en lib/hubspot.ts
+    let firstPageShape: string | null = null;
 
     while (page <= maxPages) {
       // Confirmado con soporte de Allo: las fechas van anidadas bajo "date"
@@ -363,19 +364,56 @@ export async function fetchAlloConnectedCallIds(params: {
           size: 100,
         }),
       });
-      const pageItems: any[] = d?.data?.items?.data ?? [];
+      // El formato documentado es data.items.data; se aceptan variantes
+      // equivalentes por si Allo cambia el envoltorio.
+      const itemsNode = d?.data?.items ?? d?.items;
+      const pageItems: any[] = Array.isArray(itemsNode?.data)
+        ? itemsNode.data
+        : Array.isArray(itemsNode)
+          ? itemsNode
+          : Array.isArray(d?.data)
+            ? d.data
+            : [];
+      if (page === 1) firstPageShape = describeShape(d);
       for (const it of pageItems) {
-        if (it?.id) ids.add(it.id);
+        const id = it?.id ?? it?.call_id ?? it?.conversation_id;
+        if (id) ids.add(id);
       }
-      const pagination = d?.data?.items?.pagination;
+      const pagination = itemsNode?.pagination ?? d?.pagination;
       if (!pagination?.has_more || pageItems.length === 0) break;
       page += 1;
+    }
+    // Sin ninguna "Conversación" la respuesta no es confiable: desde oct-2026
+    // este endpoint responde 200 pero vacío para todo el período (el portal
+    // mostraba 0 conectadas en 20.000+ llamadas). Se devuelve null para que
+    // los reportes usen el respaldo por duración en vez de mostrar 0, y se
+    // registra la estructura recibida para poder corregir el formato.
+    if (ids.size === 0) {
+      console.warn(
+        `fetchAlloConnectedCallIds: 0 conversaciones (${params.date_from}..${params.date_to}, ${allo_numbers.length} números). ` +
+          `Se usa el respaldo por duración. Estructura recibida: ${firstPageShape}`
+      );
+      return null;
     }
     return ids;
   } catch (err) {
     console.error("fetchAlloConnectedCallIds falló, se usa el respaldo por duración:", err);
     return null;
   }
+}
+
+// Describe las claves de una respuesta (2 niveles) sin datos personales, para
+// diagnosticar en los logs de Vercel cambios de formato de la API de Allo.
+function describeShape(v: any, depth = 0): string {
+  if (Array.isArray(v)) return `array(${v.length})${v.length && depth < 2 ? `[${describeShape(v[0], depth + 1)}]` : ""}`;
+  if (v && typeof v === "object") {
+    if (depth >= 2) return `{${Object.keys(v).slice(0, 12).join(",")}}`;
+    return `{${Object.keys(v)
+      .slice(0, 12)
+      .map((k) => `${k}:${describeShape(v[k], depth + 1)}`)
+      .join(",")}}`;
+  }
+  return typeof v;
 }
 
 export function resolveConnected(

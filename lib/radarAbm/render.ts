@@ -1,10 +1,11 @@
 import { G, CO_G, CO_DEFS, CO_ORDER, CT_DEFS, CT_G, CT_ORDER, PAUSA, PEND, POS, REJ, MIN_N } from "./dictionaries";
+import { SCORE_CARD_CATEGORIES } from "../callScoreCard";
 import {
   type Model, esc, by, cnt, sum, div, P, N, F1, USD, dmy, addDays,
-  seg, segCo, barrier, objectionPattern, insights, learnings, recsBE, recsCli, CHANNELS,
+  seg, segCo, barrier, objectionPattern, insights, learnings, recsBE, recsCli, CHANNELS, inBucket,
 } from "./engine";
 
-// Radar ABM — render de las secciones (§1 a §34 y A1 a A4) como HTML.
+// Pulso ABM — render de las secciones (§1 a §34 y A1 a A4) como HTML.
 // Port del render() del prototipo: mismos textos, misma lógica y mismas
 // clases (con prefijo ra- en el CSS del módulo, ver components/radar/radar.css,
 // donde todo vive bajo .ra-root). Todo dato que viene de HubSpot pasa por
@@ -15,25 +16,37 @@ import {
 export type Part = [string, string, [number | string, string, string][]];
 export const PARTS: Part[] = [
   ["I", "Visión ejecutiva", [[1, "resumen", "Resumen ejecutivo"], [2, "health", "Health Score"], [3, "kpis", "KPIs principales"]]],
-  ["II", "Cuentas y contactos", [[4, "cobertura", "Cobertura de cuentas"], [5, "profundidad", "Profundidad ABM"], [6, "multi", "Multi-threading"], [7, "funnel", "Funnel ABM"], [8, "est-emp", "Estados de empresas"], [9, "est-ct", "Estados de contactos"]]],
-  ["III", "Contacto y conversación", [[10, "contactab", "Contactabilidad"], [11, "conv", "Conversaciones"]]],
-  ["IV", "Reuniones", [[12, "reuniones", "Reuniones agendadas vs realizadas"], [13, "calidad", "Calidad de reuniones"]]],
-  ["V", "Potencial en curso", [[14, "seguimientos", "Seguimientos"], [15, "referrals", "Referrals"]]],
-  ["VI", "Voz del mercado", [[16, "objeciones", "Objeciones"], [17, "senales", "Señales de interés"]]],
-  ["VII", "Descarte e ICP", [[18, "descartadas", "Empresas descartadas"], [19, "icp", "Análisis ICP"]]],
-  ["VIII", "Segmentos", [[20, "rol", "Análisis por rol"], [21, "industria", "Análisis por industria"], [22, "pais", "Análisis por país"], [23, "sdr", "Análisis por SDR"]]],
-  ["IX", "Evolución y stock", [[24, "evolucion", "Evolución temporal"], [25, "stock-op", "Stock operativo"], [26, "stock-opp", "Stock de oportunidad"], [27, "recuperables", "Cuentas recuperables"]]],
-  ["X", "Inteligencia", [[28, "inteligencia", "Inteligencia comercial"], [29, "aprendizajes", "Lo que aprendimos del mercado"], [30, "oportunidades", "Oportunidades detectadas"]]],
-  ["XI", "Recomendaciones", [[31, "rec-be", "Recomendaciones BullsEye"], [32, "rec-cli", "Recomendaciones para el cliente"]]],
-  ["XII", "Tablas maestras", [[33, "tm-emp", "Tabla maestra de empresas"], [34, "tm-ct", "Tabla maestra de contactos"]]],
+  ["II", "Cuentas objetivo", [[4, "cobertura", "Cobertura de cuentas"], [5, "wishlist", "Wishlist y propuestas de BullsEye"]]],
+  ["III", "Avance en cuentas", [[6, "funnel", "Funnel ABM"], [7, "profundidad", "Profundidad ABM"], [8, "multi", "Multi-threading"], [9, "est-emp", "Estados de empresas"], [10, "est-ct", "Estados de contactos"], [11, "contactab", "Contactabilidad"], [12, "conv", "Conversaciones"], [13, "seguimientos", "Seguimientos"], [14, "referrals", "Referrals"]]],
+  ["IV", "Reuniones", [[15, "reuniones", "Reuniones agendadas vs realizadas"], [16, "reuniones-detalle", "Detalle de reuniones"]]],
+  ["V", "Feedback manual", [[17, "feedback-form", "Completar feedback"]]],
+  ["VI", "Resumen feedback", [[18, "feedback", "Feedback del cliente"], [19, "calidad", "Calidad de reuniones"]]],
+  ["VII", "Peitho", [["P", "peitho", "Peitho · feedback automático de reuniones"]]],
+  ["VIII", "Voz del mercado", [[20, "objeciones", "Objeciones"], [21, "senales", "Señales de interés"], [22, "score-sdr", "Score de desempeño SDR"], [23, "descartadas", "Empresas descartadas"], [24, "icp", "Ajuste al ICP"]]],
+  ["IX", "ICP del proyecto", [[25, "icp-vigente", "ICP y buyer persona vigentes"], [26, "icp-trabajo", "Lo que estamos trabajando"]]],
+  ["X", "Segmentos", [[27, "rol", "Análisis por rol"], [28, "industria", "Análisis por industria"], [29, "pais", "Análisis por país"], [30, "sdr", "Análisis por SDR"]]],
+  ["XI", "Evolución y stock", [[31, "evolucion", "Evolución temporal"], [32, "stock-op", "Stock operativo"], [33, "stock-opp", "Stock de oportunidad"], [34, "recuperables", "Cuentas recuperables"]]],
+  ["XII", "Recomendaciones", [[35, "rec-be", "Recomendaciones BullsEye"], [36, "rec-cli", "Recomendaciones para el cliente"]]],
+  ["XIII", "Inteligencia (KAM)", [[37, "inteligencia", "Inteligencia comercial"], [38, "aprendizajes", "Lo que aprendimos del mercado"], [39, "oportunidades", "Oportunidades detectadas"]]],
+  ["XIV", "Tablas maestras", [[40, "tm-emp", "Tabla maestra de empresas"], [41, "tm-ct", "Tabla maestra de contactos"]]],
   ["A", "Anexo · Validación de datos", [["A1", "datos-prop", "Propiedades y mapeo HubSpot"], ["A2", "datos-metr", "Qué se puede calcular"], ["A3", "datos-inc", "Inconsistencias detectadas"], ["A4", "datos-nuevas", "Propiedades a registrar"]]],
 ];
 
-// Slug de cada vista (URLs del portal: /portal/radar/<slug>)
+// Slug de cada vista (URLs del portal: /portal/radar?vista=<slug>)
 export const PART_SLUGS = [
-  "vision-ejecutiva", "cuentas-contactos", "contacto-conversacion", "reuniones", "potencial", "voz-mercado",
-  "descarte-icp", "segmentos", "evolucion-stock", "inteligencia", "recomendaciones", "tablas-maestras", "validacion-datos",
+  "vision-ejecutiva", "cuentas-objetivo", "avance-cuentas", "reuniones", "feedback-manual", "resumen-feedback", "peitho", "voz-mercado",
+  "icp-proyecto", "segmentos", "evolucion-stock", "recomendaciones", "inteligencia", "tablas-maestras", "validacion-datos",
 ];
+// Vistas solo para el equipo BullsEye (no se muestran en el portal)
+export const INTERNAL_PARTS = new Set(["inteligencia", "validacion-datos"]);
+// Slugs anteriores (links ya compartidos) → vista actual
+const SLUG_ALIASES: Record<string, string> = {
+  "feedback-comercial": "feedback-manual",
+  "cuentas-contactos": "avance-cuentas", "contacto-conversacion": "avance-cuentas", potencial: "avance-cuentas", "descarte-icp": "voz-mercado",
+};
+export const partIndex = (slug: string | null | undefined) => Math.max(0, PART_SLUGS.indexOf(SLUG_ALIASES[slug ?? ""] ?? slug ?? ""));
+// Secciones que arma React (no salen del HTML generado)
+export const REACT_SECTIONS = new Set(["wishlist", "feedback-form", "peitho", "icp-vigente", "tm-emp", "tm-ct"]);
 
 export const LEADS: Record<string, string> = {
   resumen: "Qué pasó con las cuentas, hasta dónde llegamos dentro de ellas y qué potencial queda abierto.",
@@ -42,19 +55,27 @@ export const LEADS: Record<string, string> = {
   cobertura: "¿Qué porcentaje del universo estamos trabajando?",
   profundidad: "¿Qué tan profundamente estamos penetrando cada empresa?",
   multi: "Cuántas cuentas tienen más de un interlocutor real y si eso se asocia a más reuniones.",
-  funnel: "Cuenta → contacto → conversación → interés → reunión → oportunidad.",
+  funnel: "Según el Status de la asignación de cada empresa: asignada → en gestión → respuesta → interés → reunión → oportunidad. Clic en una etapa para ver sus empresas.",
   "est-emp": "Status de la asignación - SDR, con su grupo analítico. Ningún grupo es falla automática del SDR.",
   "est-ct": "Asignación BullsEye por Llamar, con su grupo analítico.",
   contactab: "¿Qué tan fácil es llegar a los interlocutores?",
   conv: "¿Qué ocurre cuando logramos hablar con alguien?",
   reuniones: "Agendadas ≠ realizadas. Reunión ≠ oportunidad.",
   calidad: "Clasificación solo cuando hay información suficiente.",
+  wishlist: "Las cuentas que el cliente quiere trabajar: propuestas de BullsEye para aprobar, listado de empresas subido por el cliente y la lista de exclusión.",
+  "reuniones-detalle": "Todas las reuniones del período tal como están en la planilla de reuniones.",
+  feedback: "Lo que el cliente nos dice de cada reunión realizada: si la empresa y el contacto calificaban, la propuesta y la probabilidad de cierre.",
+  "feedback-form": "Reuniones realizadas que esperan tu evaluación.",
+  peitho: "Feedback automático de cada reunión: preparación, análisis de la conversación y fit con el ICP.",
+  "score-sdr": "Calidad de las conversaciones según el Score de Desempeño SDR que la IA de Allo asigna a las llamadas conectadas.",
+  "icp-vigente": "El perfil de empresa y de contacto con el que estamos prospectando.",
+  "icp-trabajo": "Cómo se ve, en los hechos, la base que estamos trabajando frente a ese ICP.",
   seguimientos: "Separa el potencial vivo del trabajo atrasado.",
   referrals: "Contactos que nos derivan al decisor: una señal de penetración ABM.",
   objeciones: "Por qué dicen que no, quién lo dice y dónde se concentra.",
   senales: "Qué tipo de interés aparece y qué perfil lo muestra.",
   descartadas: "Por qué salen las cuentas: cada motivo es un problema distinto.",
-  icp: "Ajuste de la base al perfil de cliente ideal.",
+  icp: "Descarte por ICP: cuánto de la base no calza con el perfil de cliente ideal.",
   rol: "Qué cargos responden, convierten, rechazan o derivan.",
   industria: "Resultados por industria en tasas comparables.",
   pais: "Cada mercado se lee por separado.",
@@ -75,6 +96,32 @@ export const LEADS: Record<string, string> = {
 
 /* ---------- componentes visuales ---------- */
 type BarItem = { l: string; v: number; c?: string; r?: string | null; tip?: string };
+// Cobertura de una industria a la vez: desplegable + panel por industria
+// (RadarReport alterna los paneles con el atributo data-ra-pick)
+// Lista de empresas que se abre al hacer clic (funnel, descartadas, cobertura)
+function coListHtml(A: any[]) {
+  return table([
+    { h: "Empresa", f: (c) => esc(c.n) }, { h: "Status", s: 1, f: (c) => esc(c.st) }, { h: "SDR", s: 1, f: (c) => esc(c.sdr) },
+    { h: "Contactos efectivos", n: 1, f: (c) => c.effK.length }, { h: "R. agendadas", n: 1, f: (c) => c.M.length }, { h: "R. realizadas", n: 1, f: (c) => c.mheld || 0 },
+    { h: "Última reunión", f: (c) => dmy(c.M.reduce((m: string, x: any) => (x.fecha > m ? x.fecha : m), "") || null) },
+  ], [...A].sort((a, b) => b.M.length - a.M.length || a.n.localeCompare(b.n)).slice(0, 500)) + (A.length > 500 ? `<p class="note">Se muestran 500 de ${N(A.length)}; la lista completa está en Tablas maestras.</p>` : "");
+}
+// Botones "Ver …" + listas ocultas (los alterna RadarReport: data-ra-stage / data-ra-stage-list dentro de la .rcard)
+function companyLists(prefix: string, groups: { l: string; A: any[] }[]) {
+  const g = groups.filter((x) => x.A.length);
+  if (!g.length) return "";
+  return `<div class="ra-lists">${g.map((x, i) => `<button type="button" class="ra-link" data-ra-stage="${prefix}${i}">Ver ${esc(x.l.toLowerCase())} (${N(x.A.length)})</button>`).join("")}</div>`
+    + g.map((x, i) => `<div class="fco-list" data-ra-stage-list="${prefix}${i}" hidden><h4>${esc(x.l)} · ${N(x.A.length)} empresas</h4>${coListHtml(x.A)}</div>`).join("");
+}
+
+function industryPicker(rows: any[], companiesOf?: (key: string) => any[]) {
+  if (!rows.length) return `<p class="note">Sin información disponible.</p>`;
+  const panel = (x: any, i: number) => `<div data-ra-panel="${i}"${i ? " hidden" : ""}>
+    ${stack([{ l: "Trabajadas", v: x.worked, c: "var(--accent)" }, { l: "Asignadas sin gestión", v: x.co - x.worked, c: "var(--g-pend)" }])}
+    ${companiesOf ? ((A: any[]) => companyLists(`ci${i}-`, [{ l: "Trabajadas", A: A.filter((c) => c.worked) }, { l: "Asignadas sin gestión", A: A.filter((c) => !c.worked) }]))(companiesOf(x.key)) : ""}
+    <div class="tiles" style="margin-top:12px">${tile("Cobertura", P(x.cov), `${N(x.worked)} de ${N(x.co)} empresas trabajadas`)}${tile("Con reunión", N(x.coMt), `${N(x.mt)} reuniones`)}${tile("Contactabilidad", P(x.cr), `${N(x.eff)} contactos efectivos`)}</div></div>`;
+  return `<select class="ra-select" data-ra-pick aria-label="Industria" style="margin-bottom:12px">${rows.map((x, i) => `<option value="${i}">${esc(x.key)} (${N(x.co)})</option>`).join("")}</select>${rows.map(panel).join("")}`;
+}
 export function bars(items: BarItem[], opt: { max?: number; pct?: boolean | number } = {}) {
   const max = opt.max || Math.max(1, ...items.map((i) => i.v));
   return `<div class="bars">${items.map((i) => `<div class="bar" data-tip="${esc(i.tip || (i.l + ": " + (opt.pct ? P(i.v, 1) : N(i.v))))}">
@@ -148,7 +195,10 @@ export function sec(no: number | string, id: string, title: string, lead: string
 }
 
 // Nota del mes en curso (en el prototipo: "Septiembre parcial")
-const partialNote = (M: Model) => (M.partial ? `* ${M.MLAB[M.MONTHS[M.MONTHS.length - 1]].replace("*", "")} parcial (corte ${dmy(M.TODAY)}). ` : "");
+const partialNote = (M: Model) => (M.partial ? `* ${M.gran === "week" ? "Semana del " : ""}${M.MLAB[M.MONTHS[M.MONTHS.length - 1]].replace("*", "")} parcial (corte ${dmy(M.TODAY)}). ` : "");
+// "por mes" / "por semana" / "por día" según el tramo de las series
+const perUnit = (M: Model) => ({ month: "por mes", week: "por semana", day: "por día" } as Record<string, string>)[M.gran] || "por mes";
+const evoTitle = (M: Model) => ({ month: "Evolución mensual", week: "Evolución semanal", day: "Evolución diaria" } as Record<string, string>)[M.gran] || "Evolución mensual";
 const monthLabels = (M: Model) => M.MONTHS.map((m: string) => M.MLAB[m]);
 
 /* ---------- profundidad por canales ---------- */
@@ -177,7 +227,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   s.resumen = `<div class="exec"><ul>
     <li>Trabajamos <b>${N(k.worked)} de ${N(k.universe)}</b> empresas objetivo (${P(k.coverage)} de cobertura) y logramos conversación efectiva con <b>${N(M.eff.length)} contactos</b> en <b>${N(M.coEff.length)} empresas</b>.</li>
-    <li>Se agendaron <b>${N(M.Mt.length)} reuniones</b> en ${N(M.coMt.length)} empresas (${F1(k.mPerAcc)} por empresa con reunión). Se realizaron <b>${N(M.held.length)}</b> (${P(k.realization)} de realización) y hay ${N(M.pendM.length)} pendientes.</li>
+    <li>Se agendaron <b>${N(M.agM.length)} reuniones</b> en ${N(M.coMt.length)} empresas (${F1(k.mPerAcc)} por empresa con reunión). Se realizaron <b>${N(M.held.length)}</b> (${P(k.realization)} de realización) y hay ${N(M.pendM.length)} pendientes.</li>
     <li>Profundidad: <b>${P(k.multi)}</b> de las empresas con contacto tiene 2 o más interlocutores y ${P(k.deep)} tiene cobertura profunda (3+ contactos o varias áreas).</li>
     ${b.tot ? `<li>${b.main[0] === "rechazo explícito" ? "La principal barrera es el rechazo explícito" : `La principal barrera no es el rechazo sino <b>${b.main[0]}</b>`} (${P(b.main[1] / b.tot)} de las empresas trabajadas sin avance).</li>` : ""}
     <li>Potencial vivo: <b>${N(liveCo.length)} empresas</b> con seguimiento activo, reunión próxima o referral por trabajar; ${N(C.filter((c) => c.st === "Sin interés ahora - Retomar").length)} más pidieron retomar más adelante.</li>
@@ -195,7 +245,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     ${tile("Contactabilidad", P(k.contactRate), "efectivos / gestionados", "", "phone")}
     ${tile("Multi-threading", P(k.multi), "empresas con 2+ interlocutores", "", "users")}
     ${tile("Conversación → reunión", P(k.convToMeet), "empresas con reunión / con conversación", "", "msg")}
-    ${tile("Reuniones agendadas", N(M.Mt.length), `${N(M.coMt.length)} empresas`, "", "cal")}
+    ${tile("Reuniones agendadas", N(M.agM.length), `${N(M.coMt.length)} empresas`, "", "cal")}
     ${tile("Reuniones realizadas", N(M.held.length), `realización ${P(k.realization)}`, "", "check", k.realization >= 0.85 ? "g" : k.realization >= 0.7 ? "y" : "r")}
     ${tile("Referral rate", P(k.referralRate), `${rf.refs.length} referrals`, "", "split")}
     ${tile("Oportunidades", N(k.opp), M.pipe ? `pipeline abierto ${USD(M.pipe.open)}` : "pipeline sin información", "", "star")}
@@ -205,8 +255,9 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   const covInd = segCo(M, (c) => c.ind || "Sin industria");
   s.cobertura = `<div class="grid2"><div class="rcard"><h4>Universo de cuentas</h4>${stack([{ l: "Trabajadas", v: k.worked, c: "var(--accent)" }, { l: "Asignadas sin gestión", v: k.universe - k.worked, c: "var(--g-pend)" }])}
+    ${companyLists("cu", [{ l: "Trabajadas", A: C.filter((c) => c.worked) }, { l: "Asignadas sin gestión", A: C.filter((c) => !c.worked) }])}
     <p class="note">Cuenta trabajada = empresa con estado distinto de "Asignada". Empresas asignadas hace más de 30 días sin gestión: <b>${N(cnt(C, (c) => c.st === "Asignada" && c.asg < d30))}</b>.</p></div>
-    <div class="rcard"><h4>Cobertura por industria</h4>${bars(covInd.map((x) => ({ l: `${x.key} (${x.co})`, v: x.cov, c: "var(--s1)", tip: `${x.key}: ${x.worked} de ${x.co} trabajadas` })), { pct: 1, max: 1 })}</div></div>`;
+    <div class="rcard"><h4>Cobertura por industria</h4>${industryPicker(covInd, (key) => C.filter((c) => (c.ind || "Sin industria") === key))}</div></div>`;
 
   const depthOrder = ["Profunda", "Multi-thread", "Single-thread", "Sin contacto efectivo"], depthC: Record<string, string> = { "Profunda": "var(--g-int)", "Multi-thread": "var(--s1)", "Single-thread": "var(--g-disp)", "Sin contacto efectivo": "var(--g-pend)" };
   const qualWorked = M.worked.filter((c: any) => c.st !== "No califica");
@@ -220,19 +271,41 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Empresas según número de contactos efectivos</h4>${bars(dist.map((d) => ({ l: d.n === 4 ? "4 o más" : d.n === 0 ? "Ninguno" : String(d.n), v: d.C.length, c: "var(--s1)" })))}</div>
   <div class="rcard"><h4>% de empresas con reunión según profundidad</h4>${bars(dist.filter((d) => d.n > 0).map((d) => ({ l: (d.n === 4 ? "4 o más" : d.n) + ` (n=${d.C.length})`, v: div(cnt(d.C, (c: any) => c.M.length), d.C.length) || 0, c: "var(--g-int)" })), { pct: 1, max: 1 })}<p class="note">Relación descriptiva; con pocos casos por barra no debe leerse como causalidad.</p></div></div>`;
 
-  const fsteps: [string, string, number | null][] = [
-    ["Empresas objetivo", "universo del cliente", C.length], ["Empresas asignadas", "con status de asignación", C.length], ["Empresas en gestión", "estado distinto de Asignada", k.worked],
-    ["Empresas con contacto", "1+ contacto efectivo", M.coEff.length], ["Conversaciones", "con interlocutor relevante (excluye No Fit)", cnt(C, (c) => c.conv)],
-    ["Interés", "reunión, seguimiento o referral", cnt(C, (c) => c.pos)], ["Reuniones agendadas", "empresas", M.coMt.length], ["Reuniones realizadas", "empresas", M.coHeld.length],
-    ["Oportunidades", "empresas", k.opp], ["Pipeline / negocio", M.pipe ? `${M.pipe.n} negocios registrados` : "sin información disponible", M.pipe ? M.pipe.open + M.pipe.won : null]];
+  // Funnel por Status de la asignación de la empresa. Las etapas son
+  // acumulativas (una empresa con reunión cuenta también en las anteriores);
+  // las reuniones salen de la planilla de reuniones. En cada etapa se ve qué
+  // status se quedan ahí y al hacer clic, la lista de empresas.
+  const RESP = new Set(["En seguimiento", "Reunión Agendada", "CONV", "Sin interés ahora - Retomar", "No interesados", "Clientes"]);
+  const INTR = new Set(["En seguimiento", "Reunión Agendada", "CONV"]);
+  const sResp = C.filter((c) => c.worked && (RESP.has(c.key) || c.M.length)), sInt = sResp.filter((c) => INTR.has(c.key) || c.M.length);
+  const sMt = C.filter((c) => c.M.length), sHeld = C.filter((c) => c.mheld), sOpp = C.filter((c) => c.opp);
+  const fsteps: { l: string; d: string; set: any[] }[] = [
+    { l: "Empresas asignadas", d: "con Status de la asignación", set: C },
+    { l: "Empresas en gestión", d: "status distinto de Asignada", set: M.worked },
+    { l: "Con respuesta", d: "seguimiento, reunión, conversación, retomar o no interesado", set: sResp },
+    { l: "Interés / avance", d: "en seguimiento, reunión agendada o en conversaciones", set: sInt },
+    { l: "Con reunión agendada", d: `${N(M.agM.length)} reuniones agendadas${M.source === "hubspot" ? " en la planilla" : ""}`, set: sMt },
+    { l: "Con reunión realizada", d: `${N(M.held.length)} reuniones realizadas`, set: sHeld },
+    { l: "Con oportunidad", d: "reunión con propuesta/oportunidad o negocio abierto", set: sOpp },
+  ];
   const fmax = C.length || 1;
+  const stColor = (c: any) => G[(CO_G[c.key] || ["pend"])[0]]?.c || "var(--g-pend)";
+  const stays = (i: number) => {
+    if (i >= fsteps.length - 1) return "";
+    const next = new Set(fsteps[i + 1].set);
+    const left = Object.entries(by(fsteps[i].set.filter((c: any) => !next.has(c)), (c: any) => c.st)).sort((a, b) => b[1].length - a[1].length);
+    return left.length ? `<div class="fstay">Se quedan aquí: ${left.map(([st, A]) => `<span><i style="background:${stColor(A[0])}"></i>${esc(st)} <b>${N(A.length)}</b></span>`).join("")}</div>` : "";
+  };
+  const coList = coListHtml;
+  const money = M.pipe ? `<div class="fconv" style="height:6px;padding:0"></div><div class="fst"><div class="fbar" style="width:60%;background:var(--good-fg)" data-tip="Pipeline / negocio: ${M.pipe.n} negocios registrados"><span>Pipeline / negocio<small>${M.pipe.n} negocios registrados</small></span><b>${USD(M.pipe.open + M.pipe.won)}</b></div></div>` : "";
   s.funnel = `<div class="rcard"><div class="fun">${fsteps.map((st, i) => {
-    const v = st[2], prev = i ? fsteps[i - 1][2] : null, isMoney = i === 9;
-    const w = v == null ? 100 : isMoney ? 60 : 36 + 64 * v / fmax, col = isMoney ? "var(--good)" : `color-mix(in srgb, var(--accent) ${100 - i * 11}%, var(--teal))`;
-    const conv = i > 2 && i < 9 && prev != null && v != null ? `<div class="fconv">↓ <b>${P(div(v, prev))}</b> pasa desde la etapa anterior</div>` : i > 0 ? `<div class="fconv" style="height:6px;padding:0"></div>` : "";
-    return `${conv}<div class="fst"><div class="fbar${v == null ? " na" : ""}" style="width:${w}%;background:${col}" data-tip="${esc(st[0] + ": " + st[1])}"><span>${st[0]}<small>${st[1]}</small></span><b>${v == null ? "Sin información" : isMoney ? USD(v) : N(v)}</b></div></div>`;
-  }).join("")}</div></div>
-  <p class="note">Unidad: empresas (salvo pipeline, en dólares). A nivel contacto: ${N(M.mg.length)} gestionados → ${N(M.eff.length)} efectivos → ${N(cnt(K, (x) => POS.has(x.st)))} con resultado positivo → ${N(cnt(K, (x) => x.st === "Reunión Agendada"))} con reunión.</p>`;
+    const v = st.set.length, prev = i ? fsteps[i - 1].set.length : null;
+    const w = 36 + 64 * v / fmax, col = `color-mix(in srgb, var(--accent) ${100 - i * 13}%, var(--teal-fg))`;
+    const conv = i > 0 && prev != null ? `<div class="fconv">↓ <b>${P(div(v, prev))}</b> pasa desde la etapa anterior</div>` : "";
+    return `${conv}<div class="fst"><button type="button" class="fbar" data-ra-stage="${i}" style="width:${w}%;background:${col}" data-tip="${esc(st.l + ": " + st.d + " · clic para ver las empresas")}"><span>${st.l}<small>${st.d}</small></span><b>${N(v)}</b></button></div>${stays(i)}`;
+  }).join("")}${money}</div>
+  ${fsteps.map((st, i) => `<div class="fco-list" data-ra-stage-list="${i}" hidden><h4>${esc(st.l)} · ${N(st.set.length)} empresas</h4>${coList(st.set)}</div>`).join("")}</div>
+  <p class="note">Unidad: empresas, según el Status de la asignación de cada una (las etapas son acumulativas: una empresa con reunión cuenta también en las anteriores). Reuniones desde la planilla de reuniones (una empresa puede tener varias). Haz clic en una etapa para ver sus empresas. A nivel contacto: ${N(M.mg.length)} gestionados → ${N(M.eff.length)} efectivos → ${N(cnt(K, (x) => POS.has(x.st)))} con resultado positivo.</p>`;
 
   const coCount = by(C, (c) => c.key);
   const coMax = Math.max(1, ...Object.values(coCount).map((a) => a.length));
@@ -269,23 +342,23 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   const mst: [string, string][] = [["Realizada", "var(--g-int)"], ["Pendiente", "var(--s1)"], ["Reprogramada", "var(--g-act)"], ["No-show", "var(--g-cont)"], ["Cancelada", "var(--g-rej)"]];
   const res: [string | null, string][] = [["Oportunidad", "var(--g-int)"], ["Seguimiento", "var(--s1)"], ["Sin avance", "var(--g-disp)"], ["Descartada", "var(--g-rej)"], [null, "var(--g-pend)"]];
-  s.reuniones = `<div class="tiles">${tile("Agendadas", N(M.Mt.length))}${tile("Realizadas", N(M.held.length))}${tile("Pendientes", N(M.pendM.length))}${tile("No-show", N(M.noshow.length))}${tile("Canceladas", N(M.canc.length))}${tile("Reprogramadas", N(M.reprog.length), "incluye las ya realizadas")}${tile("Tasa de realización", P(k.realization), "sobre reuniones con fecha pasada")}${tile("Empresas con reunión", N(M.coMt.length), `${F1(k.mPerAcc)} reuniones por empresa`)}${tile("Contactos con reunión", N(new Set(M.Mt.map((m: any) => m.ct)).size), `${F1(k.interlocutors)} interlocutores por empresa`)}</div>
-  <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Estado de las ${M.Mt.length} reuniones agendadas</h4>${stack(mst.map(([l, c]) => ({ l, v: cnt(M.Mt, (m: any) => m.st === l), c })))}</div>
+  s.reuniones = `<div class="tiles">${tile("Agendadas", N(M.agM.length), M.range ? "con fecha de reunión en el rango" : "")}${tile("Realizadas", N(M.held.length))}${tile("Pendientes", N(M.pendM.length))}${tile("No-show", N(M.noshow.length))}${tile("Canceladas", N(M.canc.length))}${tile("Reprogramadas", N(M.reprog.length), "incluye las ya realizadas")}${tile("Tasa de realización", P(k.realization), "sobre reuniones con fecha pasada")}${tile("Empresas con reunión", N(M.coMt.length), `${F1(k.mPerAcc)} reuniones por empresa`)}${tile("Contactos con reunión", N(new Set(M.Mt.map((m: any) => m.ct)).size), `${F1(k.interlocutors)} interlocutores por empresa`)}</div>
+  <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Estado de las ${M.agM.length} reuniones agendadas</h4>${stack(mst.map(([l, c]) => ({ l, v: cnt(M.agM, (m: any) => m.st === l), c })))}</div>
   <div class="rcard"><h4>Qué pasó después de las ${M.held.length} realizadas</h4>${bars(res.map(([l, c]) => ({ l: l || "Sin información de resultado", v: cnt(M.held, (m: any) => (m.res || null) === l), c })))}<p class="note">Agendada ≠ realizada, y reunión ≠ oportunidad: solo se cuenta oportunidad cuando hay resultado registrado o un negocio asociado.</p></div></div>
   ${M.pipe ? `<div class="rcard" style="margin-top:14px"><h4>Pipeline asociado (${M.pipe.n} negocios)</h4>${bars(["Calificación", "Propuesta enviada", "Negociación", "Ganado", "Perdido"].map((st) => ({ l: st, v: sum(M.pipe.byStage[st] || [], (d: any) => d.amount), c: st === "Perdido" ? "var(--g-rej)" : st === "Ganado" ? "var(--g-rel)" : "var(--s1)", r: `(${(M.pipe.byStage[st] || []).length})`, tip: `${st}: ${USD(sum(M.pipe.byStage[st] || [], (d: any) => d.amount))}` })))}<p class="note">Montos en dólares; barras en miles.</p></div>` : `<p class="note">Pipeline: sin información disponible para este cliente.</p>`}
-  <div class="rcard" style="margin-top:14px"><h4>Evolución mensual</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}<p class="note">${partialNote(M)}Agendadas por fecha de agendamiento; realizadas por fecha de la reunión.</p></div>`;
+  <div class="rcard" style="margin-top:14px"><h4>${evoTitle(M)}</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}<p class="note">${partialNote(M)}Agendadas por fecha de agendamiento; realizadas por fecha de la reunión.</p></div>`;
 
   const qd = by(M.held as any[], (m) => m.q), yn = (v: any) => (v === true ? "Sí" : v === false ? "No" : '<span class="flag">s/i</span>');
   s.calidad = `<div class="tiles">${["hi", "md", "lo", "na"].map((q) => tile(pill(q), N((qd[q] || []).length), P(div((qd[q] || []).length, M.held.length)))).join("")}</div>
   <p class="note">Criterios por reunión realizada: empresa en ICP (A/B), contacto correcto (gerente o superior en área decisora), necesidad identificada, próximo paso definido y resultado con avance. Alta = 4–5 · Media = 2–3 · Baja = 0–1. Si faltan 2 o más campos (necesidad, resultado, feedback), se marca "Sin info suficiente" y no se clasifica.</p>
-  ${table([{ h: "Empresa", f: (m) => esc(m.c?.n) }, { h: "Contacto", s: 1, f: (m) => `${esc(m.k?.n ?? "—")}<br>${esc(m.k?.cargo || "sin cargo")}` }, { h: "Fecha", f: (m) => dmy(m.fecha) }, { h: "ICP", f: (m) => yn(m.icpfit) }, { h: "Contacto correcto", f: (m) => yn(m.okct) }, { h: "Necesidad", s: 1, f: (m) => (m.need ? esc(m.need) : '<span class="flag">s/i</span>') }, { h: "Próximo paso", f: (m) => yn(m.next) }, { h: "Feedback cliente", s: 1, f: (m) => (m.fb ? esc(m.fb) : '<span class="flag">s/i</span>') }, { h: "Resultado", f: (m) => esc(m.res) || '<span class="flag">s/i</span>' }, { h: "Calidad", f: (m) => pill(m.q) }],
+  ${table([{ h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) }, { h: "Contacto", s: 1, f: (m) => `${esc(m.k?.n ?? m.ctn ?? "—")}<br>${esc(m.k?.cargo || "sin cargo")}` }, { h: "Fecha", f: (m) => dmy(m.fecha) }, { h: "ICP", f: (m) => yn(m.icpfit) }, { h: "Contacto correcto", f: (m) => yn(m.okct) }, { h: "Necesidad", s: 1, f: (m) => (m.need ? esc(m.need) : '<span class="flag">s/i</span>') }, { h: "Próximo paso", f: (m) => yn(m.next) }, { h: "Feedback cliente", s: 1, f: (m) => (m.fb ? esc(m.fb) : '<span class="flag">s/i</span>') }, { h: "Resultado", f: (m) => esc(m.res) || '<span class="flag">s/i</span>' }, { h: "Calidad", f: (m) => pill(m.q) }],
     M.held.slice().sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)).slice(0, 25))}${M.held.length > 25 ? `<p class="note">Se muestran las 25 más recientes de ${M.held.length}.</p>` : ""}`;
 
   const fuRow = (x: any) => ({ x, reason: x.sig || x.obj || "" });
   s.seguimientos = `<div class="grid2"><div class="rcard"><h4>Stock de oportunidad</h4><div class="tiles">${tile("Empresas en seguimiento", N(cnt(C, (c) => c.st === "En seguimiento")))}${tile("Empresas por retomar", N(cnt(C, (c) => c.st === "Sin interés ahora - Retomar")))}${tile("Contactos en seguimiento", N(f.K.length), `${cnt(f.K, (x: any) => x.fu === "interes")} con interés activo`)}${tile("Próximos 14 días", N(f.soon.length))}</div></div>
   <div class="rcard"><h4>Trabajo pendiente</h4><div class="tiles">${tile("Seguimientos vencidos", N(f.overdue.length), f.K.length ? P(f.overdue.length / f.K.length) + " del total" : "")}${tile("Sin próxima acción", N(f.none.length), "contactos sin fecha")}${tile("Empresas sin fecha", N(f.coNone.length), "en seguimiento o retomar")}${tile("Empresas vencidas", N(f.coOver.length))}</div></div></div>
   <h4 class="subh">Seguimientos que requieren acción (vencidos y sin fecha)</h4>
-  ${table([{ h: "Contacto", f: (r) => esc(r.x.n) }, { h: "Empresa", f: (r) => esc(r.x.c?.n) }, { h: "Cargo", s: 1, f: (r) => esc(r.x.cargo || "—") }, { h: "Motivo", s: 1, f: (r) => esc(r.reason) }, { h: "SDR", s: 1, f: (r) => esc(r.x.sdr) }, { h: "Último contacto", f: (r) => dmy(r.x.last) }, { h: "Próximo seguimiento", f: (r) => (r.x.next ? `<span style="color:var(--bad)">${dmy(r.x.next)}</span>` : '<span class="flag">sin fecha</span>') }, { h: "Próximo paso", s: 1, f: (r) => esc(r.x.ps) }],
+  ${table([{ h: "Contacto", f: (r) => esc(r.x.n) }, { h: "Empresa", f: (r) => esc(r.x.c?.n) }, { h: "Cargo", s: 1, f: (r) => esc(r.x.cargo || "—") }, { h: "Motivo", s: 1, f: (r) => esc(r.reason) }, { h: "SDR", s: 1, f: (r) => esc(r.x.sdr) }, { h: "Último contacto", f: (r) => dmy(r.x.last) }, { h: "Próximo seguimiento", f: (r) => (r.x.next ? `<span style="color:var(--bad-fg)">${dmy(r.x.next)}</span>` : '<span class="flag">sin fecha</span>') }, { h: "Próximo paso", s: 1, f: (r) => esc(r.x.ps) }],
     f.overdue.concat(f.none).sort((a: any, b: any) => (a.next || "0").localeCompare(b.next || "0")).slice(0, 30).map(fuRow))}`;
 
   const refArea = seg(M, (x) => x.area).filter((a) => a.eff >= 5);
@@ -293,6 +366,63 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Qué generan los referrals</h4>${bars([{ l: "Referrals", v: rf.refs.length }, { l: "Nuevo contacto creado", v: rf.refd.length }, { l: "Conversación con el referido", v: rf.conv.length }, { l: "Seguimiento", v: rf.fu.length }, { l: "Reunión", v: rf.meet.length }, { l: "Referido aún pendiente de gestión", v: rf.pend.length }].map((x, i) => ({ ...x, c: i < 5 ? "var(--g-int)" : "var(--g-pend)" })))}
   <p class="note">Un referral es avance dentro de la cuenta, no un contacto perdido.${rf.refs.length && !rf.refd.length ? " Sin el vínculo \"Referido por\" no se puede trazar qué generó cada referral (Anexo A4)." : ""}</p></div>
   <div class="rcard"><h4>Referral rate por área (áreas con 5+ contactos efectivos)</h4>${bars(refArea.map((a) => ({ l: `${a.key} (n=${a.eff})`, v: div(a.ref, a.eff) || 0, c: "var(--g-act)" })), { pct: 1 })}</div></div>`;
+
+  // §16 Detalle de reuniones (planilla de reuniones, completa)
+  const mtRows = [...(M.Mt as any[])].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  s["reuniones-detalle"] = mtRows.length
+    ? table([
+        { h: "Agendada", f: (m) => dmy(m.agendada) }, { h: "Reunión", f: (m) => dmy(m.fecha) }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) },
+        { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") }, { h: "Cargo", s: 1, f: (m) => esc(m.cargo || m.k?.cargo || "—") },
+        { h: "SDR", s: 1, f: (m) => esc(m.sdr) }, { h: "Estado", f: (m) => esc(m.st) }, { h: "Origen", s: 1, f: (m) => esc(m.org || "—") },
+        { h: "Propuesta / oportunidad", s: 1, f: (m) => esc(m.oppv || m.res || "—") },
+      ], mtRows.slice(0, 400)) + `<p class="note">${mtRows.length > 400 ? `Se muestran las 400 más recientes de ${N(mtRows.length)}. ` : ""}${M.source === "hubspot" ? "Fuente: planilla de reuniones (Excel de metas)." : ""} Una empresa puede tener varias reuniones.</p>`
+    : `<p class="note" style="margin-top:0">Sin reuniones en el período.</p>`;
+
+  // §17 Feedback del cliente (encuesta por reunión realizada)
+  const hasFb = (m: any) => !!m.fbk || (M.source === "demo" && m.fb != null);
+  const fbM = (M.held as any[]).filter(hasFb), fbPend = (M.held as any[]).filter((m) => !hasFb(m));
+  const avgOf = (a: any[], f: (x: any) => number | null | undefined) => { const v = a.map(f).filter((x): x is number => x != null && Number.isFinite(x)); return v.length ? sum(v, (x) => x) / v.length : null; };
+  const shareYes = (a: any[], f: (x: any) => boolean | null | undefined) => { const v = a.filter((x) => f(x) != null); return v.length ? div(cnt(v, (x) => f(x) === true), v.length) : null; };
+  const calAvg = avgOf(fbM, (m) => m.cal), probAvg = avgOf(fbM, (m) => m.prob);
+  const props = ["Si", "Falta otra reunión", "No aún", "No"], propC: Record<string, string> = { Si: "var(--g-int)", "Falta otra reunión": "var(--s1)", "No aún": "var(--g-fut)", No: "var(--g-rej)" };
+  const withProp = fbM.filter((m) => m.prop);
+  s.feedback = `<div class="tiles">${tile("Reuniones realizadas", N(M.held.length))}${tile("Con feedback del cliente", N(fbM.length), `${P(div(fbM.length, M.held.length))} de las realizadas`)}${tile("Calificación promedio", calAvg == null ? "—" : F1(calAvg) + "/10")}${tile("Empresa calificada", P(shareYes(fbM, (m) => m.icpfit)), "según el cliente")}${tile("Contacto calificado", P(shareYes(fbM, (m) => m.okct)), "según el cliente")}${tile("Con propuesta comercial", P(withProp.length ? div(cnt(withProp, (m) => m.prop === "Si"), withProp.length) : null))}${tile("Probabilidad de cierre", probAvg == null ? "—" : P(probAvg / 100), "promedio")}${tile("Pendientes de feedback", N(fbPend.length), "reuniones realizadas sin respuesta")}</div>
+  ${withProp.length ? `<div class="rcard" style="margin-top:14px"><h4>¿Hubo propuesta comercial? (n=${withProp.length})</h4>${bars(props.filter((x) => cnt(withProp, (m) => m.prop === x)).map((x) => ({ l: x === "Si" ? "Sí" : x, v: cnt(withProp, (m) => m.prop === x), c: propC[x], r: P(cnt(withProp, (m) => m.prop === x) / withProp.length) })))}</div>` : ""}
+  ${fbM.length ? `<h4 class="subh">Respuestas del cliente</h4>` + table([
+    { h: "Reunión", f: (m) => dmy(m.fecha) }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) }, { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") },
+    { h: "Calificación", n: 1, f: (m) => (m.cal == null ? '<span class="flag">s/i</span>' : `${m.cal}/10`) }, { h: "Empresa calificada", f: (m) => yn(m.icpfit) }, { h: "Contacto calificado", f: (m) => yn(m.okct) },
+    { h: "Propuesta", s: 1, f: (m) => esc(m.prop === "Si" ? "Sí" : m.prop || "—") }, { h: "Prob. cierre", n: 1, f: (m) => (m.prob == null ? "—" : P(m.prob / 100)) }, { h: "Comentarios", s: 1, f: (m) => esc(m.com || (M.source === "demo" ? m.fb : "") || "—") },
+  ], [...fbM].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "")).slice(0, 300)) : `<p class="note">Todavía no hay respuestas del cliente en el período.</p>`}`;
+
+  // §22 Score de Desempeño SDR (Allo)
+  const ev: any[] = M.cl.callEvals || [];
+  if (!ev.length) {
+    s["score-sdr"] = `<p class="note" style="margin-top:0"><b>Sin información disponible:</b> no hay llamadas evaluadas por la IA de Allo en el período (requiere números de Allo asignados al cliente en Configuración → Cliente → Allo).</p>`;
+  } else {
+    const critAvg = SCORE_CARD_CATEGORIES.map((c, i) => ({ l: c.label, v: avgOf(ev, (e) => e.crit?.[i]) })).filter((x) => x.v != null) as { l: string; v: number }[];
+    const best = [...critAvg].sort((a, b) => b.v - a.v)[0], worst = [...critAvg].sort((a, b) => a.v - b.v)[0];
+    const scoreAvg = avgOf(ev, (e) => e.score) ?? 0;
+    const bySdr = Object.entries(by(ev, (e) => e.s)).map(([l, a]) => ({ l, n: a.length, v: avgOf(a, (e) => e.score) ?? 0 })).sort((a, b) => b.v - a.v);
+    const sc = (v: number) => (v >= 80 ? "var(--good)" : v >= 60 ? "var(--warn)" : "var(--bad)");
+    s["score-sdr"] = `<div class="tiles">${tile("Llamadas evaluadas", N(ev.length), "conectadas con Score de Allo")}${tile("Puntaje promedio", N(Math.round(scoreAvg)) + "/100")}${best ? tile("Mejor criterio", esc(best.l), F1(best.v) + "/5") : ""}${worst ? tile("Criterio a reforzar", esc(worst.l), F1(worst.v) + "/5") : ""}</div>
+    <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Promedio por criterio (sobre 5)</h4>${bars(critAvg.map((x) => ({ l: x.l, v: Math.round(x.v * 10) / 10, c: x.v >= 4 ? "var(--good)" : x.v >= 3 ? "var(--s1)" : "var(--warn)" })), { max: 5 })}</div>
+    <div class="rcard"><h4>Puntaje promedio por SDR</h4>${bars(bySdr.map((x) => ({ l: `${x.l} (n=${x.n})`, v: Math.round(x.v), c: sc(x.v) })), { max: 100 })}</div></div>
+    ${M.B.length > 1 ? `<div class="rcard" style="margin-top:14px"><h4>Puntaje promedio ${perUnit(M)}</h4>${lineChart([{ n: "Puntaje promedio", c: "var(--s1)", v: (M.B as any[]).map((b) => Math.round(avgOf(ev.filter((e) => inBucket(e.d, b)), (e) => e.score) ?? 0)) }], monthLabels(M))}</div>` : ""}
+    <p class="note">El score mide la calidad de la conversación del SDR (apertura, discovery, propuesta de valor, manejo de objeciones, cierre…), no el interés del prospecto. Solo una parte de las llamadas conectadas trae el análisis completo de Allo. No se filtra por país, industria ni wishlist.</p>`;
+  }
+
+  // §26 Lo que estamos trabajando (frente al ICP vigente)
+  const topBars = (arr: any[], key: (x: any) => string, n = 8) => {
+    const g = Object.entries(by(arr, key)).map(([l, a]) => ({ l, v: a.length })).sort((a, b) => b.v - a.v).slice(0, n);
+    return g.length ? bars(g.map((x) => ({ ...x, c: "var(--s1)", r: P(x.v / arr.length) }))) : '<p class="note" style="margin-top:0">Sin información disponible.</p>';
+  };
+  const wk = M.worked as any[], effK = M.eff as any[];
+  s["icp-trabajo"] = `<div class="tiles">${tile("Empresas trabajadas", N(wk.length), `de ${N(C.length)} asignadas`)}${tile("Fuera de ICP", N(cnt(wk, (c) => c.st === "No califica")), "marcadas No califica por el SDR")}${tile("Sin contactos ICP", N(cnt(C, (c) => c.st === "Gestionada - sin contactos fit" || c.st === "Sin contactos - (ya nutrida)")))}${tile("Contactos efectivos", N(effK.length), `${N(cnt(K, (x) => x.st === "Contacto No Fit para gestión"))} contactos no fit`)}</div>
+  <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Empresas trabajadas por industria</h4>${topBars(wk, (c) => c.ind || "Sin industria")}</div>
+  <div class="rcard"><h4>Empresas trabajadas por país y tamaño</h4>${topBars(wk, (c) => c.pais || "Sin país", 5)}<div style="height:12px"></div>${topBars(wk, (c) => c.size || "Sin dato", 4)}</div>
+  <div class="rcard"><h4>Contactos efectivos por área</h4>${topBars(effK, (x) => x.area || "Sin área")}</div>
+  <div class="rcard"><h4>Contactos efectivos por seniority</h4>${topBars(effK, (x) => x.sen || "Sin dato")}</div></div>
+  <p class="note">Compáralo con el ICP y buyer persona de arriba: si aparecen industrias, tamaños o cargos que no están en el ICP, conviene ajustar la asignación o el ICP.</p>`;
 
   const ob = K.filter((x) => x.obj), obG = Object.entries(by(ob, (x) => x.obj)).sort((a, b) => b[1].length - a[1].length), op = objectionPattern(M);
   s.objeciones = (ob.length
@@ -311,7 +441,12 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   const discard: [string, string][] = [["No interesados", "Rechazo del decisor"], ["No califica", "Fuera de ICP (decisión del SDR)"], ["Gestionada - sin contactos fit", "No hay interlocutores ICP"], ["Sin contactos - (ya nutrida)", "Nutrida sin contactos nuevos"], ["Gestionada - sin comunicación", "No se logró hablar con nadie"], ["Clientes", "Ya es cliente del cliente"]];
   const recovTxt: Record<string, string> = { "No interesados": "Revisar en 6–12 meses si cambia contexto", "No califica": "No, salvo cambio de ICP", "Gestionada - sin contactos fit": "Sí, con nueva búsqueda de contactos", "Sin contactos - (ya nutrida)": "Sí, con otra fuente de datos", "Gestionada - sin comunicación": "Sí, con otro canal o nutrición", "Clientes": "Oportunidad de upsell para el cliente" };
   const rejObj = Object.entries(by(C.filter((c) => c.st === "No interesados").flatMap((c) => c.K.filter((x: any) => REJ.has(x.st) && x.obj)), (x: any) => x.obj)).sort((a, b) => b[1].length - a[1].length);
-  s.descartadas = table([{ h: "Motivo de salida", f: (r) => esc(r[0]) }, { h: "Qué significa", s: 1, f: (r) => r[1] }, { h: "Empresas", n: 1, f: (r) => cnt(C, (c) => c.st === r[0]) }, { h: "% trabajadas", n: 1, f: (r) => P(cnt(C, (c) => c.st === r[0]) / Math.max(1, k.worked)) }, { h: "¿Recuperable?", s: 1, f: (r) => recovTxt[r[0]] }], discard)
+  // Clic en un motivo (o su cantidad) muestra sus empresas (mismo mecanismo del funnel)
+  const dIdx = (r: [string, string]) => discard.indexOf(r);
+  const dBtn = (r: [string, string], label: string) => cnt(C, (c) => c.st === r[0]) ? `<button type="button" class="ra-link" data-ra-stage="d${dIdx(r)}" title="Ver empresas">${label}</button>` : label;
+  s.descartadas = `<div class="rcard">` + table([{ h: "Motivo de salida", f: (r) => dBtn(r, esc(r[0])) }, { h: "Qué significa", s: 1, f: (r) => r[1] }, { h: "Empresas", n: 1, f: (r) => dBtn(r, String(cnt(C, (c) => c.st === r[0]))) }, { h: "% trabajadas", n: 1, f: (r) => P(cnt(C, (c) => c.st === r[0]) / Math.max(1, k.worked)) }, { h: "¿Recuperable?", s: 1, f: (r) => recovTxt[r[0]] }], discard)
+    + discard.map((r, i) => `<div class="fco-list" data-ra-stage-list="d${i}" hidden><h4>${esc(r[0])} · ${N(cnt(C, (c) => c.st === r[0]))} empresas</h4>${coList(C.filter((c) => c.st === r[0]))}</div>`).join("")
+    + `<p class="note">Haz clic en un motivo o en su cantidad para ver las empresas.</p></div>`
     + `<div class="rcard" style="margin-top:14px"><h4>Motivo del rechazo en empresas "No interesados"</h4>${rejObj.length ? bars(rejObj.map(([l, a]) => ({ l, v: a.length, c: "var(--g-rej)" }))) : '<p class="note" style="margin-top:0">Sin información disponible.</p>'}</div>`;
 
   const icpS = segCo(M, (c) => "ICP " + c.icp).sort((a, b) => a.key.localeCompare(b.key));
@@ -358,11 +493,11 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     + table([{ h: "SDR", f: (r) => esc(r.sd) }, { h: "Hot Calling pendientes", n: 1, f: (r) => r.hot }, { h: "Seguim. vencidos", n: 1, f: (r) => r.over }, { h: "Conversaciones sin próxima acción", n: 1, f: (r) => r.none }, { h: "Empresas asignadas +30 días sin gestión", n: 1, f: (r) => r.idle }, { h: "Cuentas con 3+ contactos pendientes", n: 1, f: (r) => r.multiPend }, { h: "Llamadas (actividad)", n: 1, f: (r) => `<span style="color:var(--muted)">${N(r.calls)}</span>` }, { h: "Contactos con problema de base", n: 1, f: (r) => `<span style="color:var(--muted)">${r.base}</span>` }], sdrR)
     + `<p class="note">Las llamadas son actividad operativa, no indicador de éxito. "Problema de base" (sin teléfono o contacto no fit) se muestra como contexto y no penaliza al SDR.${cl.sdrs.length === 1 ? " Un solo SDR asignado: no hay comparación interna." : ""}</p>`;
 
-  const half = Math.floor(M.MONTHS.length / 2);
-  const trendLab = half ? `${M.MLAB[M.MONTHS[M.MONTHS.length - half]].replace("*", "")}–${M.MLAB[M.MONTHS[M.MONTHS.length - 1]].replace("*", "")} vs ${M.MLAB[M.MONTHS[M.MONTHS.length - 2 * half]]}–${M.MLAB[M.MONTHS[M.MONTHS.length - half - 1]]}` : "";
-  const actEvo = M.ad.dated ? `<div class="rcard" style="margin-top:16px"><h4>Actividades por mes y canal</h4>${lineChart(CHANNELS.filter((x) => M.ad.tot[x.k]).map((x) => ({ n: x.l, c: x.c, v: M.ad.months.map((m: any) => m[x.k]) })), monthLabels(M))}<p class="note">Actividades asociadas a las empresas del universo o a sus contactos, por fecha de la actividad.</p></div>` : "";
-  s.evolucion = `<div class="grid2"><div class="rcard"><h4>Reuniones por mes</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}</div>
-  <div class="rcard"><h4>Actividad de cuentas por mes</h4>${lineChart([{ n: "Empresas asignadas", c: "var(--s1)", v: M.month.map((m: any) => m.asg) }, { n: "Contactos efectivos (por última actividad)", c: "var(--s2)", v: M.month.map((m: any) => m.eff) }], monthLabels(M))}</div></div>
+  const TM: any[] = M.trendM, th = Math.floor(TM.length / 2);
+  const trendLab = th ? `${TM[TM.length - th].lab}–${TM[TM.length - 1].lab} vs ${TM[TM.length - 2 * th].lab}–${TM[TM.length - th - 1].lab}` : "";
+  const actEvo = M.ad.dated ? `<div class="rcard" style="margin-top:16px"><h4>Actividades ${perUnit(M)} y canal</h4>${lineChart(CHANNELS.filter((x) => M.ad.tot[x.k]).map((x) => ({ n: x.l, c: x.c, v: M.ad.months.map((m: any) => m[x.k]) })), monthLabels(M))}<p class="note">Actividades asociadas a las empresas del universo o a sus contactos, por fecha de la actividad.</p></div>` : "";
+  s.evolucion = `<div class="grid2"><div class="rcard"><h4>Reuniones ${perUnit(M)}</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: M.month.map((m: any) => m.sch) }, { n: "Realizadas", c: "var(--s2)", v: M.month.map((m: any) => m.held) }], monthLabels(M))}</div>
+  <div class="rcard"><h4>Actividad de cuentas ${perUnit(M)}</h4>${lineChart([{ n: "Empresas asignadas", c: "var(--s1)", v: M.month.map((m: any) => m.asg) }, { n: "Contactos efectivos (por última actividad)", c: "var(--s2)", v: M.month.map((m: any) => m.eff) }], monthLabels(M))}</div></div>
   <p class="note">${partialNote(M)}Tendencia de reuniones (${trendLab}, normalizado): ${h.ratio == null ? "sin datos" : (h.ratio >= 1 ? "+" : "") + P(h.ratio - 1)}. Los contactos efectivos usan la fecha de última actividad como aproximación; con el historial de cambios de estado de HubSpot se podrá fechar cada transición.</p>${actEvo}`;
 
   s["stock-op"] = `<div class="tiles">${tile("Empresas asignadas sin gestión", N(cnt(C, (c) => c.st === "Asignada")), `${cnt(C, (c) => c.st === "Asignada" && c.asg < d30)} con más de 30 días`)}${tile("Hot Calling 🔥", N(cnt(K, (x) => x.st === "Hot Calling 🔥")), "gestión inmediata")}${tile("Por gestionar", N(cnt(K, (x) => x.st === "Por gestionar")))}${tile("Buscar", N(cnt(K, (x) => x.st === "Buscar")), "búsqueda de teléfono")}${tile("Seguimientos vencidos", N(f.overdue.length))}${tile("Contactos pendientes", N(cnt(K, (x) => PEND.has(x.st))), "total Hot + Por gestionar + Buscar")}</div>
@@ -372,11 +507,13 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   s["stock-opp"] = `<div class="tiles">${tile("Empresas en seguimiento", N(cnt(C, (c) => c.st === "En seguimiento")))}${tile("Contactos con interés activo", N(cnt(K, (x) => x.fu === "interes")))}${tile("Referrals por trabajar", N(rf.noChild.length + rf.pend.length))}${tile("Reuniones pendientes", N(M.pendM.length))}${tile("Empresas multi-thread activas", N(multiLive.length))}${tile("Proyectos futuros", N(cnt(K, (x) => x.sig === "Indica proyecto futuro")), "contactos que anticipan proyecto")}${tile("Conversaciones activas", N(cnt(K, (x) => x.sig === "Conversación activa")), "WhatsApp abierto")}</div>
   <p class="note">Responde a: ¿cuánto potencial comercial está vivo hoy? Se separa del stock operativo para no mezclar oportunidad con carga de trabajo.</p>`;
 
-  const recReason: Record<string, [string, string]> = { "Sin interés ahora - Retomar": ["Pidió retomar: demanda con fecha", "Retomar en la fecha acordada con contenido nuevo"], "Nutrir": ["Nadie contestó: problema de canal, no de interés", "Nutrir y reasignar con nuevos contactos"], "Empresa ya nutrida": ["Tiene contactos nuevos listos", "Tomar como asignación nueva"], "Sin contactos - (ya nutrida)": ["Falta dato, no interés", "Buscar con otra fuente (LinkedIn Sales Nav, referidos)"], "Gestionada por LinkedIn": ["Canal alternativo en curso", "Seguir cadencia LinkedIn y volver a teléfono si responde"], "Gestionada - sin comunicación": ["Se agotaron intentos sin respuesta", "Reintentar en 90 días por otro canal"] };
+  // En orden de prioridad: primero lo más cercano a volver (pidió retomar), al final Nutrir
+  const recReason: Record<string, [string, string]> = { "Sin interés ahora - Retomar": ["Pidió retomar: demanda con fecha", "Retomar en la fecha acordada con contenido nuevo"], "Empresa ya nutrida": ["Tiene contactos nuevos listos", "Tomar como asignación nueva"], "Gestionada por LinkedIn": ["Canal alternativo en curso", "Seguir cadencia LinkedIn y volver a teléfono si responde"], "Gestionada - sin comunicación": ["Se agotaron intentos sin respuesta", "Reintentar en 90 días por otro canal"], "Sin contactos - (ya nutrida)": ["Falta dato, no interés", "Buscar con otra fuente (LinkedIn Sales Nav, referidos)"], "Nutrir": ["Nadie contestó: problema de canal, no de interés", "Nutrir y reasignar con nuevos contactos"] };
+  const recOrder = Object.keys(recReason), icpRank = (t: string) => ({ A: 0, B: 1, C: 2 } as Record<string, number>)[t] ?? 3;
   const recov = C.filter((c) => recReason[c.st]);
   s.recuperables = `<div class="tiles">${Object.keys(recReason).map((st) => tile(esc(st), N(cnt(C, (c) => c.st === st)))).join("")}</div>
-  <div style="margin-top:14px">${table([{ h: "Empresa", f: (c) => esc(c.n) }, { h: "Estado", s: 1, f: (c) => esc(c.st) }, { h: "Industria", s: 1, f: (c) => esc(c.ind || "—") }, { h: "ICP", f: (c) => esc(c.icp) }, { h: "Contactos", n: 1, f: (c) => c.nct || 0 }, { h: "Por qué puede volver", s: 1, f: (c) => recReason[c.st][0] }, { h: "Acción sugerida", s: 1, f: (c) => recReason[c.st][1] + (c.next ? ` (${dmy(c.next)})` : "") }], recov.sort((a, b) => String(a.icp).localeCompare(String(b.icp))).slice(0, 30))}</div>
-  <p class="note">${recov.length} cuentas recuperables en total; se muestran 30, ordenadas por ICP. Ninguna debe contarse como pérdida definitiva.</p>`;
+  <div style="margin-top:14px">${table([{ h: "Empresa", f: (c) => esc(c.n) }, { h: "Estado", s: 1, f: (c) => esc(c.st) }, { h: "Industria", s: 1, f: (c) => esc(c.ind || "—") }, { h: "ICP", f: (c) => esc(c.icp) }, { h: "Contactos", n: 1, f: (c) => c.nct || 0 }, { h: "Por qué puede volver", s: 1, f: (c) => recReason[c.st][0] }, { h: "Acción sugerida", s: 1, f: (c) => recReason[c.st][1] + (c.next ? ` (${dmy(c.next)})` : "") }], recov.sort((a, b) => recOrder.indexOf(a.st) - recOrder.indexOf(b.st) || icpRank(a.icp) - icpRank(b.icp) || (b.nct || 0) - (a.nct || 0)).slice(0, 30))}</div>
+  <p class="note">${recov.length} cuentas recuperables en total; se muestran 30, primero las más cercanas a volver (pidieron retomar, ya nutridas, en LinkedIn…) y Nutrir al final; dentro de cada estado, por ICP y número de contactos. Ninguna debe contarse como pérdida definitiva.</p>`;
 
   const ins = insights(M);
   s.inteligencia = ins.length ? `<div class="ins">${ins.map((x, i) => `<div class="in" style="--c:var(--accent)"><span class="ix">${String(i + 1).padStart(2, "0")}</span><p>${esc(x.t)}</p><div class="ev"><b>Dato:</b> ${esc(x.ev)}<br><b>Interpretación:</b> ${esc(x.i)}</div></div>`).join("")}</div>` : `<p class="note">No hay volumen suficiente para generar patrones confiables en este cliente.</p>`;
@@ -400,7 +537,8 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 /* ---------- tablas maestras (filas + columnas, el filtro/exportación va en React) ---------- */
 export function masterCompanyCols(M: Model): (Col & { x: (r: any) => any })[] {
   const cl = M.cl;
-  return [
+  const hasWl = (M.C as any[]).some((c) => c.wl);
+  const cols: (Col & { x: (r: any) => any })[] = [
     { h: "Empresa", f: (c) => esc(c.n), x: (c) => c.n },
     { h: "Cliente", s: 1, f: () => esc(cl.name), x: () => cl.name },
     { h: "País", s: 1, f: (c) => esc(c.pais), x: (c) => c.pais },
@@ -421,6 +559,9 @@ export function masterCompanyCols(M: Model): (Col & { x: (r: any) => any })[] {
     { h: "Profundidad", s: 1, f: (c) => esc(c.depth), x: (c) => c.depth },
     { h: "Prioridad", f: (c) => prioPill(c.prio), x: (c) => c.prio },
   ];
+  // Wishlist del cliente, solo si la propiedad trae valores
+  if (hasWl) cols.splice(4, 0, { h: "Wishlist", s: 1, f: (c) => esc(c.wl || "—"), x: (c) => c.wl || "" });
+  return cols;
 }
 export function masterContactCols(M: Model): (Col & { x: (r: any) => any })[] {
   const mByCt = new Map((M.Mt as any[]).map((m) => [m.ct, m]));
@@ -471,7 +612,7 @@ export function annex(M: Model, mapping?: { label: string; property: string | nu
     ["Negocio", "Oportunidad / pipeline", "objeto Deals: pipeline · dealstage · amount · createdate", "Oportunidades y pipeline (solo si el cliente lo registra)", "req"],
   ];
   const stt: Record<string, string> = { ok: '<span class="pill hi">Disponible</span>', req: '<span class="pill md">Requiere configuración</span>', new: '<span class="pill lo">No existe: crear</span>' };
-  s["datos-prop"] = `<p class="note" style="margin-top:0">Mapeo esperado a partir de la estructura estándar de HubSpot más las dos propiedades clave. Los nombres internos de las propiedades personalizadas se confirman en Configuración del Radar ABM.</p>`
+  s["datos-prop"] = `<p class="note" style="margin-top:0">Mapeo esperado a partir de la estructura estándar de HubSpot más las dos propiedades clave. Los nombres internos de las propiedades personalizadas se confirman en Configuración del Pulso ABM.</p>`
     + table([{ h: "Objeto", f: (r) => r[0] }, { h: "Dato", f: (r) => esc(r[1]) }, { h: "Propiedad HubSpot", s: 1, f: (r) => `<code>${esc(r[2])}</code>` }, { h: "Uso en el informe", s: 1, f: (r) => esc(r[3]) }, { h: "Estado", f: (r) => stt[r[4]] }], props)
     + (mapping && mapping.length
       ? `<h4 class="subh">Nombres internos usados en la última sincronización</h4>` + table([{ h: "Dato", f: (r) => esc(r.label) }, { h: "Nombre interno", s: 1, f: (r) => (r.property ? `<code>${esc(r.property)}</code>` : '<span class="flag">no encontrada: se muestra "Sin información disponible"</span>') }], mapping)
@@ -491,7 +632,7 @@ export function annex(M: Model, mapping?: { label: string; property: string | nu
     ["Empresas sin industria", cnt(C, (c) => !c.ind), "Quedan fuera del análisis por industria."],
     [`Contactos en "${PAUSA}"`, cnt(K, (x) => x.st === PAUSA), "Estado sin grupo analítico oficial; se propone tratarlo como pausa neutral."],
   ];
-  s["datos-inc"] = table([{ h: "Chequeo", f: (r) => esc(r[0]) }, { h: "Casos", n: 1, f: (r) => (r[1] ? `<b style="color:${r[1] > 5 ? "var(--bad)" : "var(--warn)"}">${r[1]}</b>` : '<span style="color:var(--good)">0</span>') }, { h: "Impacto", s: 1, f: (r) => esc(r[2]) }], inc)
+  s["datos-inc"] = table([{ h: "Chequeo", f: (r) => esc(r[0]) }, { h: "Casos", n: 1, f: (r) => (r[1] ? `<b style="color:${r[1] > 5 ? "var(--bad-fg)" : "var(--warn-fg)"}">${r[1]}</b>` : '<span style="color:var(--good-fg)">0</span>') }, { h: "Impacto", s: 1, f: (r) => esc(r[2]) }], inc)
     + `<p class="note">Otras definiciones a validar con el equipo: (1) "En conversaciones con [cliente]" figura en dos grupos (interés y relación existente); (2) "Nutrir" es a la vez problema de contactabilidad y reciclaje; (3) cuál es el universo "objetivo" de cada cliente (lista, propiedad o todas las empresas asociadas); (4) si "Contacto No Fit" debe contarse como conversación.</p>`;
   const nw: [string, string, string, string][] = [["Objeción principal", "Contacto", "Enumeración con las 10 categorías del informe", "Objeciones sin lectura manual de notas"], ["Señal de interés", "Contacto", "Enumeración (solicita info, propuesta, demo, proyecto futuro…)", "Señales de interés y priorización"], ["Referido por", "Contacto", "Etiqueta de asociación contacto → contacto", "Resultado de cada referral"], ["Tier ICP", "Empresa", "A / B / C acordado con el cliente", "Análisis ICP y priorización"], ["Área y seniority", "Contacto", "Enumeraciones normalizadas", "Análisis por rol comparable entre clientes"], ["Fecha de próximo seguimiento obligatoria", "Contacto / empresa", "Requerida al pasar a Hacer Seguimiento o En seguimiento", "Seguimientos vencidos confiables"], ["Resultado de la reunión", "Reunión", "Oportunidad / Seguimiento / Descartada / Sin avance", "Calidad y conversión a oportunidad"], ["Feedback del cliente", "Reunión", "Texto + calificación 1–5", "Calidad de reunión"], ["Canal del contacto efectivo", "Contacto", "Teléfono / WhatsApp / LinkedIn / Email", "Qué canal convierte"], ["Motivo de descarte", "Empresa", "Enumeración", "Empresas descartadas y recuperables"], ["Origen BullsEye en negocios", "Negocio", "Casilla o fuente del negocio", "Pipeline atribuible a BullsEye"]];
   s["datos-nuevas"] = table([{ h: "Propiedad", f: (r) => `<b>${esc(r[0])}</b>` }, { h: "Objeto", f: (r) => r[1] }, { h: "Formato", s: 1, f: (r) => esc(r[2]) }, { h: "Habilita", s: 1, f: (r) => esc(r[3]) }], nw);

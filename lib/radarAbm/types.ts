@@ -1,4 +1,4 @@
-// Radar ABM — forma de los datos de un cliente.
+// Pulso ABM — forma de los datos de un cliente.
 // Es la misma estructura que la constante RAW del prototipo
 // Radar_ABM_BullsEye_BETA.html (claves cortas para que el JSON pese poco):
 // cliente → companies, contacts, meetings, deals. La genera el sync de
@@ -7,6 +7,7 @@
 export type RadarCompany = {
   id: number | string;
   n: string;                 // nombre
+  dom?: string;              // dominio normalizado (excluir de la wishlist)
   ind?: string | null;       // industria
   pais: string;
   size: string;              // Pyme / Mid-market / Enterprise
@@ -14,6 +15,7 @@ export type RadarCompany = {
   sdr: string;
   asg: string;               // fecha de asignación (YYYY-MM-DD)
   st: string;                // Status de la asignación - SDR
+  wl?: string;               // valor de "Wish List - <cliente>" (sin él: fuera de la wishlist)
   next?: string;             // próximo seguimiento
   nct: number;               // contactos
   nmg: number;               // contactos gestionados
@@ -57,6 +59,17 @@ export type RadarContact = {
 export type RadarMeeting = {
   id: number | string;
   ct: number | string;
+  ctn?: string;              // nombre del contacto en la planilla de reuniones
+  emp?: string;              // empresa tal como está en la planilla de reuniones
+  cargo?: string;            // cargo del contacto (planilla)
+  org?: string;              // origen de la reunión (planilla)
+  pais?: string;             // país (planilla)
+  oppv?: string;             // Propuesta/Oportunidad tal cual en la planilla
+  fbk?: 1;                   // el cliente respondió la encuesta de feedback
+  cal?: number;              // calificación del cliente (1–10)
+  prob?: number;             // probabilidad de cierre (0–100)
+  prop?: string;             // propuesta comercial (Si / No / No aún / Falta otra reunión)
+  com?: string;              // comentarios del cliente
   co: number | string;
   sdr: string;
   agendada: string;
@@ -83,7 +96,7 @@ export type RadarDeal = {
 // Actividad asociada a la cuenta (profundidad por canal). Solo en datos
 // sincronizados desde HubSpot; los datos demo traen solo los conteos por
 // contacto (calls / wa / li / em).
-export type ActivityKind = "call" | "wa" | "li" | "em" | "sms";
+export type ActivityKind = "call" | "wa" | "li" | "em";
 export type RadarActivity = {
   id: string;
   k: ActivityKind;
@@ -92,6 +105,16 @@ export type RadarActivity = {
   d?: string;                // fecha (YYYY-MM-DD)
   in?: 1;                    // correo entrante (respuesta)
   conn?: 1;                  // llamada conectada
+};
+
+// Score de Desempeño SDR de las llamadas conectadas (IA de Allo), solo de
+// los números de Allo asignados al cliente. Sin datos del prospecto.
+export type RadarCallEval = {
+  d: string;                 // fecha (YYYY-MM-DD)
+  s: string;                 // SDR
+  score: number;             // puntaje total /100
+  crit: (number | null)[];   // puntaje por criterio /5 (SCORE_CARD_CATEGORIES)
+  nivel?: string | null;
 };
 
 export type RadarClientData = {
@@ -105,6 +128,9 @@ export type RadarClientData = {
   meetings: RadarMeeting[];
   deals: RadarDeal[];
   activities?: RadarActivity[];
+  callEvals?: RadarCallEval[];
+  meetingsTotal?: boolean;
+  refCases?: string;         // casos de éxito / clientes de referencia del ICP   // Reuniones = total de la planilla (no se recortan por filtros de empresa)
 };
 
 export type RadarSource = "demo" | "hubspot";
@@ -114,13 +140,15 @@ export type RadarDataset = {
   client: RadarClientData;
   generated: string;         // fecha de corte (YYYY-MM-DD)
   period: [string, string];  // inicio y fin del período
+  range?: { from: string; to: string }; // rango elegido en el selector de fechas (lo pone filterDataset)
+  trendBase?: { period: [string, string]; agendadas: string[] }; // con rango: reuniones del período completo para la tendencia por meses
   source: RadarSource;
   syncedAt?: string | null;  // última sincronización con HubSpot
   warnings?: string[];
   mapping?: { label: string; property: string | null }[]; // propiedades usadas (anexo A1)
 };
 
-// Parámetros editables (Configuración del Radar ABM)
+// Parámetros editables (Configuración del Pulso ABM)
 export type HealthComponentConfig = { weight: number; target: number };
 
 export type RadarConfig = {

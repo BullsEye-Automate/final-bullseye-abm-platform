@@ -1,6 +1,6 @@
 import type { RadarConfig } from "./types";
 
-// Radar ABM — diccionarios oficiales (textos exactos de HubSpot) y valores
+// Pulso ABM — diccionarios oficiales (textos exactos de HubSpot) y valores
 // por defecto de la configuración. Ver §4 del prompt maestro y el prototipo
 // Radar_ABM_BullsEye_BETA.html.
 
@@ -130,7 +130,7 @@ export const DEFAULT_TITLE_RULES: RadarConfig["titleRules"] = [
 
 // Propiedades de HubSpot: clave interna → etiqueta que se busca en el portal
 // para detectar el nombre interno automáticamente (§3.1, se confirma en
-// Configuración del Radar ABM).
+// Configuración del Pulso ABM).
 // perClient: en el HubSpot hay una propiedad por cliente ("Status de la
 // asignación - DSAC", "Status de la asignación - SDR AcidLab"…, nombres
 // internos status_de_la_asignacion_*): se elige la que calza con el cliente.
@@ -140,23 +140,30 @@ export const PROPERTY_DEFS: {
   label: string;
   required?: boolean;
   help: string;
-  perClient?: { labelPrefix: string; namePrefix?: string };
+  perClient?: { labelPrefix: string; alsoPrefixes?: string[]; namePrefix?: string };
 }[] = [
   { key: "companyStatus", object: "companies", label: "Status de la asignación - <cliente>", required: true, help: "Estado de gestión de la cuenta (una propiedad por cliente)", perClient: { labelPrefix: "Status de la asignación", namePrefix: "status_de_la_asignacion" } },
   { key: "companyClient", object: "companies", label: "Cliente BullsEye", help: "Opcional: filtro adicional del universo" },
   { key: "companySdr", object: "companies", label: "SDR - <cliente>", help: "SDR de la cuenta (una por cliente; sin ella, el propietario)", perClient: { labelPrefix: "SDR -" } },
+  { key: "universeCompanyClient", object: "companies", label: "Cliente BullsEye Empresa", help: "Titular de la cuenta (empresa): solo entran las empresas de este cliente", perClient: { labelPrefix: "Cliente BullsEye" } },
+  { key: "universeContactClient", object: "contacts", label: "Cliente BullsEye", help: "Titular de la cuenta (contacto): solo entran los contactos de este cliente", perClient: { labelPrefix: "Cliente BullsEye" } },
+  { key: "companyWishlist", object: "companies", label: "Wish List - <cliente>", help: "Empresas de la wishlist del cliente (una por cliente; filtro del informe)", perClient: { labelPrefix: "Wish List" } },
   { key: "companyAssignedAt", object: "companies", label: "Fecha de asignación", help: "Sin ella se usa la fecha de creación" },
   { key: "companyNextFollowUp", object: "companies", label: "Fecha de próximo seguimiento", help: "Empresas en seguimiento o por retomar" },
   { key: "companyIcpTier", object: "companies", label: "Tier ICP", help: "A / B / C (propuesta, Anexo A4)" },
   { key: "companyCountry", object: "companies", label: "País", help: "Sin ella se usa country" },
+  { key: "companyIndustry", object: "companies", label: "Industria BullsEye", help: "Industria de la empresa; si viene vacía (o no existe) se usa industry" },
   { key: "contactStatus", object: "contacts", label: "Asignación BullsEye por Llamar - <cliente>", required: true, help: "Estado de gestión del contacto (una propiedad por cliente)", perClient: { labelPrefix: "Asignación BullsEye por Llamar" } },
-  { key: "contactSdr", object: "contacts", label: "SDR Asignado - <cliente>", help: "SDR del contacto (una por cliente; sin ella, el propietario)", perClient: { labelPrefix: "SDR Asignado" } },
+  { key: "contactSdr", object: "contacts", label: "SDR Asignado - <cliente>", help: "SDR del contacto (\"SDR Asignado - <cliente>\" o \"SDR - <cliente>\"; sin ella, el propietario)", perClient: { labelPrefix: "SDR Asignado", alsoPrefixes: ["SDR -"] } },
   { key: "contactObjection", object: "contacts", label: "Objeción principal", help: "Propuesta (Anexo A4)" },
   { key: "contactSignal", object: "contacts", label: "Señal de interés", help: "Propuesta (Anexo A4)" },
   { key: "meetingResult", object: "meetings", label: "Resultado de la reunión", help: "Propuesta (Anexo A4)" },
   { key: "meetingFeedback", object: "meetings", label: "Feedback del cliente", help: "Propuesta (Anexo A4)" },
   { key: "meetingNeed", object: "meetings", label: "Necesidad", help: "Necesidad detectada en la reunión" },
 ];
+
+// Claves que se eligen por cliente (nunca salen del mapeo global)
+export const PER_CLIENT_KEYS = PROPERTY_DEFS.filter((d) => d.perClient).map((d) => d.key);
 
 // ── "La Biblia" BullsEye (docs/radar-abm/biblia-propiedades-*.csv) ───────
 // Equivalencias: etiquetas antiguas o propias de un cliente que siguen vivas

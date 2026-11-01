@@ -5,7 +5,7 @@ import { loadClientSettings, loadRadarConfig, loadSnapshot } from "@/lib/radarAb
 
 export const dynamic = "force-dynamic";
 
-// Radar ABM en el portal de clientes. El client_id sale SIEMPRE de
+// Pulso ABM en el portal de clientes. El client_id sale SIEMPRE de
 // client_users (requirePortalUser), así cada usuario ve solo su cuenta.
 // Solo se muestran datos reales sincronizados desde HubSpot: los datos demo
 // nunca llegan al portal. Las advertencias internas del sync y el mapeo de
@@ -24,7 +24,7 @@ export async function GET() {
     // Al cliente solo lo que necesita el cálculo (sin mapeo de propiedades)
     return NextResponse.json({ dataset, config: { ...config, properties: {}, contactAliases: {}, companyAliases: {} } });
   } catch (err) {
-    console.error("Radar ABM (portal):", err);
+    console.error("Pulso ABM (portal):", err);
     return NextResponse.json({ error: "No se pudo cargar el informe" }, { status: 500 });
   }
 }

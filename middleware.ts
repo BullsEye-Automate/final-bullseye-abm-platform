@@ -143,9 +143,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/portal", req.url));
   }
 
-  // El equipo interno no usa el portal: lo gestiona desde /solicitudes-clientes
+  // El equipo interno no usa el portal: lo gestiona desde /empresas (wishlist)
   if (isPortalPath && !pathname.startsWith("/api/")) {
-    return NextResponse.redirect(new URL("/solicitudes-clientes", req.url));
+    return NextResponse.redirect(new URL("/empresas", req.url));
   }
 
   return response;

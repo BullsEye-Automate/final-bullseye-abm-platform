@@ -15,6 +15,7 @@ import type {
   AlloMonthResponse, BaseResponse, CallDay, CallEval, CellLeader, CellsConfig, ChannelDay, Client,
   Goal, HubspotMonthResponse, Meeting, Sdr,
 } from "./types";
+import { pickAccount, type ClientAccount } from "./accounts";
 
 // ─── formato (chileno: 1.234 y 61,3%) ───────────────────────────────────────
 export const ok = (v: number | null | undefined): v is number => v != null && isFinite(v);
@@ -167,10 +168,19 @@ export function buildModel(
   const months = base.months;
   const loadedAllo = months.filter((m) => allo[m]);
   const loadedHs = months.filter((m) => hubspot[m]);
-  const calls = loadedAllo.flatMap((m) => allo[m].calls).filter((c) => keep(c.s));
-  const evals = loadedAllo.flatMap((m) => allo[m].evals).filter((e) => keep(e.s));
-  const channels = loadedHs.flatMap((m) => hubspot[m].channels).filter((h) => keep(h.s));
-  const hsClients = new Set(loadedHs.flatMap((m) => hubspot[m].connectedClients ?? []));
+  // Clientes partidos en cuentas (ej. Nisum Chile / Colombia / Perú, ver
+  // lib/celulasSdr/accounts.ts): llamadas y evaluaciones por el país del
+  // número de Allo; HubSpot a la cuenta principal.
+  const accByParent = new Map<string, ClientAccount[]>();
+  for (const a of rawBase.accounts ?? []) accByParent.set(a.parent, [...(accByParent.get(a.parent) ?? []), a]);
+  const acc = (c: string | null, k: string | null) => {
+    const accs = c ? accByParent.get(c) : undefined;
+    return accs ? pickAccount(accs, null, k).id : c;
+  };
+  const calls = loadedAllo.flatMap((m) => allo[m].calls).filter((c) => keep(c.s)).map((c) => (accByParent.has(c.c ?? "") ? { ...c, c: acc(c.c, c.k) } : c));
+  const evals = loadedAllo.flatMap((m) => allo[m].evals).filter((e) => keep(e.s)).map((e) => (accByParent.has(e.c ?? "") ? { ...e, c: acc(e.c, e.k) } : e));
+  const channels = loadedHs.flatMap((m) => hubspot[m].channels).filter((h) => keep(h.s)).map((h) => (accByParent.has(h.c ?? "") ? { ...h, c: acc(h.c, null) } : h));
+  const hsClients = new Set(loadedHs.flatMap((m) => hubspot[m].connectedClients ?? []).flatMap((p) => (accByParent.has(p) ? accByParent.get(p)!.map((a) => a.id) : [p])));
 
   // SDR: roster base + quienes solo aparecen en Allo (llamadas). Los
   // usuarios de HubSpot que no son SDR del roster no se agregan: solo suman

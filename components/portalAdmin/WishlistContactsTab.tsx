@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCheck, IconX, IconLoader2, IconSparkles, IconRefresh, IconExternalLink, IconChevronDown, IconBrandLinkedin } from "@tabler/icons-react";
 
-// Contactos de la wishlist con IA (Solicitudes clientes → Contactos IA):
+// Contactos de la wishlist con IA (Contactos → Contactos IA):
 // prospección elige empresas de la wishlist del cliente, la IA busca en el
 // Lemlist del cliente los empleados que calzan con su buyer persona (máx. 8
 // por empresa) y el equipo aprueba o rechaza cada uno. Aprobar crea el

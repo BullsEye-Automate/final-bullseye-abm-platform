@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Vercel Cron (diario, ver vercel.json): resincroniza el Radar ABM de los
+// Vercel Cron (diario, ver vercel.json): resincroniza el Pulso ABM de los
 // clientes que ya tienen informe (o configuración del Radar), empezando por
 // el más antiguo. Solo clientes con Status Cliente = Activo en la Maestra
 // (los demás se saltan). Si no alcanza el tiempo, los que quedan se toman en

@@ -15,8 +15,10 @@ export type GmailMessage = {
   fromName?: string;
   to: string[];
   cc?: string[];
+  replyTo?: string[];
   subject: string;
   html: string;
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
 };
 
 // Encabezados con tildes/ñ: codificación MIME "encoded-word" (RFC 2047).
@@ -38,19 +40,40 @@ export async function sendGmail(msg: GmailMessage): Promise<{ id: string }> {
   const gmail = google.gmail({ version: "v1", auth });
 
   const from = msg.fromName ? `${encodeHeader(msg.fromName)} <${msg.from}>` : msg.from;
-  const raw = [
+  const headers = [
     `From: ${from}`,
     `To: ${msg.to.join(", ")}`,
     msg.cc?.length ? `Cc: ${msg.cc.join(", ")}` : null,
+    msg.replyTo?.length ? `Reply-To: ${msg.replyTo.join(", ")}` : null,
     `Subject: ${encodeHeader(msg.subject)}`,
     "MIME-Version: 1.0",
+  ].filter((l): l is string => l !== null);
+  const htmlPart = [
     'Content-Type: text/html; charset="UTF-8"',
     "Content-Transfer-Encoding: base64",
     "",
     Buffer.from(msg.html, "utf8").toString("base64"),
-  ]
-    .filter((l) => l !== null)
-    .join("\r\n");
+  ];
+  let lines: string[];
+  if (!msg.attachments?.length) {
+    lines = [...headers, ...htmlPart];
+  } else {
+    // multipart/mixed: cuerpo HTML + adjuntos en base64.
+    const boundary = `bullseye_${Date.now().toString(36)}`;
+    lines = [...headers, `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, ...htmlPart];
+    for (const a of msg.attachments) {
+      lines.push(
+        `--${boundary}`,
+        `Content-Type: ${a.contentType}; name="${encodeHeader(a.filename)}"`,
+        `Content-Disposition: attachment; filename="${encodeHeader(a.filename)}"`,
+        "Content-Transfer-Encoding: base64",
+        "",
+        (a.content.toString("base64").match(/.{1,76}/g) ?? []).join("\r\n")
+      );
+    }
+    lines.push(`--${boundary}--`);
+  }
+  const raw = lines.join("\r\n");
 
   const res = await gmail.users.messages.send({
     userId: "me",

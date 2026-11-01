@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import ClientHubspotRadar from "./ClientHubspotRadar";
-import { IconAlertCircle, IconCheck, IconDeviceFloppy, IconLoader2, IconRadar, IconRefresh } from "@tabler/icons-react";
+import { IconAlertCircle, IconCheck, IconDeviceFloppy, IconLoader2, IconActivityHeartbeat, IconRefresh } from "@tabler/icons-react";
 
-// Radar ABM del cliente: de qué HubSpot se lee su universo, qué valor de
+// Pulso ABM del cliente: de qué HubSpot se lee su universo, qué valor de
 // "Cliente BullsEye" lo identifica y si el informe se ve en su portal.
 
 type Settings = {
@@ -24,12 +24,25 @@ const PER_CLIENT: [string, string, boolean][] = [
   ["contactStatus", "Status de contacto", true],
   ["companySdr", "SDR de la empresa", false],
   ["contactSdr", "SDR del contacto", false],
+  ["companyWishlist", "Wish List de la empresa", false],
+  ["universeCompanyClient", "Cliente de la empresa (titular)", false],
+  ["universeContactClient", "Cliente del contacto (titular)", false],
 ];
+// Sin elegir: qué usa el sync por defecto
+const DEFAULT_AUTO: Record<string, string> = {
+  companyWishlist: "sin wishlist",
+  universeCompanyClient: "Cliente BullsEye Empresa (cliente_bullseye_empresa)",
+  universeContactClient: "Cliente BullsEye (cliente_bullseye)",
+};
 
 const tri = (v: boolean | null) => (v === true ? "si" : v === false ? "no" : "auto");
 const fromTri = (v: string) => (v === "si" ? true : v === "no" ? false : null);
 
 export default function RadarSettings({ clientId, clientName }: { clientId: string; clientName: string }) {
+  // Qué resuelve "Automático" para este cliente (misma regla que el servidor, lib/radarAbm/server/store.ts)
+  const compactName = clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const isBullseye = compactName === "bullseye";
+  const isAcid = compactName.startsWith("acidlab");
   const [s, setS] = useState<Settings | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [stats, setStats] = useState<Record<string, number> | null>(null);
@@ -109,11 +122,11 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
     <section className="card space-y-4">
       <div>
         <h2 className="font-semibold flex items-center gap-2">
-          <IconRadar size={18} className="text-brand" /> Radar ABM
+          <IconActivityHeartbeat size={18} className="text-brand" /> Pulso ABM
         </h2>
         <p className="text-sm text-ink-muted mt-1">
           Informe ABM del cliente (cuentas, contactos, conversaciones, reuniones y oportunidades), leído de HubSpot una vez al día o con “Sincronizar ahora”.
-          Es el informe que el cliente ve en su portal. Ver en <Link href="/analisis/radar-abm" className="text-brand hover:underline">Análisis → Radar ABM</Link>.
+          Es el informe que el cliente ve en su portal. Ver en <Link href="/analisis/radar-abm" className="text-brand hover:underline">Análisis → Pulso ABM</Link>.
         </p>
       </div>
 
@@ -140,7 +153,56 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
             </span>
           </label>
 
-          <div />
+          <label className="text-sm">
+            <span className="label block mb-1">Universo del informe</span>
+            <select
+              className="input"
+              value={s.properties?.universeMode ?? ""}
+              onChange={(e) => {
+                const { universeMode: _m, ...rest } = s.properties ?? {};
+                setS({ ...s, properties: e.target.value ? { ...rest, universeMode: e.target.value } : rest });
+              }}
+            >
+              <option value="">Automático: {isBullseye ? "solo Cliente BullsEye (sin status de asignación)" : "Status de la asignación + Cliente"}</option>
+              <option value="status">Status de la asignación + Asignación BullsEye por llamar</option>
+              <option value="client">Propiedad “Cliente BullsEye” (sin status de asignación)</option>
+            </select>
+            <span className="text-xs text-ink-subtle block mt-1">
+              {(s.properties?.universeMode ?? (isBullseye ? "client" : "status")) === "client"
+                ? "Empresas y contactos solo por el Cliente (titular); la etapa sale del ciclo de vida y de la actividad."
+                : "Empresas con Status de la asignación y Cliente = este cliente; contactos con Cliente = este cliente (con o sin status de asignación)."}
+            </span>
+          </label>
+
+          <label className="text-sm">
+            <span className="label block mb-1">Valor del cliente (titular de la cuenta)</span>
+            <input
+              className="input"
+              placeholder={clientName}
+              value={s.hubspot_client_value ?? ""}
+              onChange={(e) => setS({ ...s, hubspot_client_value: e.target.value || null })}
+            />
+            <span className="text-xs text-ink-subtle block mt-1">
+              Solo entran empresas con “Cliente BullsEye Empresa” y contactos con “Cliente BullsEye” = <b>{(s.hubspot_client_value ?? "").trim() || clientName}</b>
+              {s.hubspot_source === "client" ? " (si existen esas propiedades en el HubSpot del cliente)" : ""}. Vacío = nombre del cliente; se compara sin espacios (“Acid Labs” = “AcidLab”).
+            </span>
+          </label>
+
+          <label className="text-sm">
+            <span className="label block mb-1">Reuniones con filtros de empresa</span>
+            <select
+              className="input"
+              value={s.properties?.meetingsTotal ?? ""}
+              onChange={(e) => {
+                const { meetingsTotal: _m, ...rest } = s.properties ?? {};
+                setS({ ...s, properties: e.target.value ? { ...rest, meetingsTotal: e.target.value } : rest });
+              }}
+            >
+              <option value="">Automático: {isAcid ? "total de la planilla" : "se filtran por wishlist, industria, etc."}</option>
+              <option value="si">Siempre el total de la planilla (solo fechas, SDR y país)</option>
+              <option value="no">Se filtran por wishlist, industria, etc.</option>
+            </select>
+          </label>
 
           {s.hubspot_source === "bullseye" && (
             <div className="sm:col-span-2 grid gap-3 sm:grid-cols-2">
@@ -158,9 +220,9 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
                       }}
                     >
                       <option value="">
-                        Automático{info ? `: ${info.auto ?? (required ? "sin coincidencia, elige una" : "propietario del registro")}` : ""}
+                        Automático{info || DEFAULT_AUTO[key] ? `: ${(DEFAULT_AUTO[key] && key !== "companyWishlist" ? DEFAULT_AUTO[key] : info?.auto) ?? (required ? "sin coincidencia, elige una" : DEFAULT_AUTO[key] ?? "propietario del registro")}` : ""}
                       </option>
-                      {(info?.candidates ?? []).map((o) => <option key={o.name} value={o.name}>{o.label}</option>)}
+                      {(info?.candidates ?? []).map((o) => <option key={o.name} value={o.name}>{key.startsWith("universe") ? `${o.label} (${o.name})` : o.label}</option>)}
                     </select>
                   </label>
                 );
@@ -189,7 +251,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
 
           <label className="flex items-center gap-2 text-sm sm:col-span-2">
             <input type="checkbox" checked={s.portal_enabled} onChange={(e) => setS({ ...s, portal_enabled: e.target.checked })} />
-            Mostrar el Radar ABM en el portal del cliente
+            Mostrar el Pulso ABM en el portal del cliente
           </label>
         </div>
       ) : null}

@@ -1,8 +1,8 @@
 import { supabaseAdmin } from "@/lib/supabase";
-import { mergeConfig } from "../dictionaries";
+import { mergeConfig, PER_CLIENT_KEYS } from "../dictionaries";
 import type { RadarConfig, RadarDataset } from "../types";
 
-// Radar ABM — lectura y escritura en Supabase (service role, solo servidor).
+// Pulso ABM — lectura y escritura en Supabase (service role, solo servidor).
 // Tablas en supabase/20261026_radar_abm_migration.sql.
 
 export type RadarClientSettings = {
@@ -35,9 +35,27 @@ export const PROPERTIES_MIGRATION_HINT = "Falta ejecutar la migración supabase/
 // solo el suyo (los nombres internos de BullsEye no existen en su cuenta).
 // En el HubSpot de BullsEye el status y el SDR de empresa y de contacto son
 // propiedades por cliente: nunca se toman del mapeo global.
+// Modo del universo: "status" (Status de la asignación, por defecto) o
+// "client" (propiedad Cliente BullsEye). El cliente BullsEye usa "client".
+// Reuniones = total de la planilla aunque haya filtros de empresa (wishlist,
+// industria): solo se filtran por fechas, SDR y país, que la planilla sí
+// tiene. Por ahora solo AcidLab (automático) o quien lo active en
+// Configuración → Cliente → Pulso ABM.
+export function meetingsTotal(s: { properties?: Record<string, string> }, clientName: string): boolean {
+  const m = s.properties?.meetingsTotal;
+  if (m === "si" || m === "no") return m === "si";
+  return clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith("acidlab");
+}
+
+export function universeMode(s: { properties?: Record<string, string> }, clientName: string): "status" | "client" {
+  const m = s.properties?.universeMode;
+  if (m === "client" || m === "status") return m;
+  return clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "") === "bullseye" ? "client" : "status";
+}
+
 export function effectiveProperties(cfg: RadarConfig, s: RadarClientSettings): Record<string, string> {
   if (s.hubspot_source === "client") return { ...(s.properties ?? {}) };
-  const { companyStatus: _st, contactStatus: _ct, companySdr: _cs, contactSdr: _ks, ...global } = cfg.properties;
+  const global = Object.fromEntries(Object.entries(cfg.properties).filter(([k]) => !PER_CLIENT_KEYS.includes(k)));
   return { ...global, ...(s.properties ?? {}) };
 }
 
