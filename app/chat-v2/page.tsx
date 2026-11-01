@@ -207,14 +207,15 @@ function InboxPreview({ subject, body, channel }: { subject: string; body: strin
   );
 }
 
-function EmailCard({ subject, body, showSubject = true, channel = "email", onSend, sending, sendResult }: {
+function EmailCard({ subject, body, showSubject = true, channel = "email", onSend, sending, sendResult, defaultTo }: {
   subject: string; body: string; showSubject?: boolean; channel?: string;
   onSend?: (subject: string, body: string) => void;
   sending?: boolean;
   sendResult?: { ok: boolean; msg?: string } | null;
+  defaultTo?: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const [sendTo, setSendTo] = useState("");
+  const [sendTo, setSendTo] = useState(defaultTo ?? "");
   const [showSendForm, setShowSendForm] = useState(false);
   const [preview, setPreview] = useState(false);
   const isBrief = channel === "meeting_brief";
@@ -333,11 +334,12 @@ function EmailCard({ subject, body, showSubject = true, channel = "email", onSen
   );
 }
 
-function Bubble({ msg, channel, onSend, sending, sendResult }: {
+function Bubble({ msg, channel, onSend, sending, sendResult, contactEmail }: {
   msg: Message; channel: string;
   onSend?: (subject: string, body: string) => void;
   sending?: boolean;
   sendResult?: { ok: boolean; msg?: string } | null;
+  contactEmail?: string;
 }) {
   const isUser = msg.role === "user";
   const effectiveChannel = msg.channel ?? channel;
@@ -356,7 +358,7 @@ function Bubble({ msg, channel, onSend, sending, sendResult }: {
         )}
         {parsed?.body ? (
           <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={effectiveChannel === "email"} channel={effectiveChannel}
-            onSend={onSend} sending={sending} sendResult={sendResult} />
+            onSend={onSend} sending={sending} sendResult={sendResult} defaultTo={contactEmail} />
         ) : (
           <div className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
             style={isUser ? { background: "#251762", color: "rgba(255,255,255,0.92)" } : { background: "#fff", color: "#2d2950", border: "1px solid #e2e0f0" }}>
@@ -1151,6 +1153,7 @@ export default function ChatV2Page() {
                   } : undefined}
                   sending={sendingEmail === i}
                   sendResult={sendResult?.idx === i ? sendResult : null}
+                  contactEmail={selectedContact?.email ?? ""}
                 />
               ))}
               {loading && (

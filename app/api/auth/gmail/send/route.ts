@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
+import { createServerClient } from "@supabase/ssr";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,7 +44,16 @@ function buildRawEmail(from: string, to: string, subject: string, body: string):
 }
 
 export async function POST(req: NextRequest) {
-  const userId = getUserIdFromRequest(req);
+  let userId: string | null = null;
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => req.cookies.getAll(), setAll: () => {} } }
+    );
+    const { data } = await supabase.auth.getUser();
+    userId = data.user?.id ?? null;
+  } catch {}
   if (!userId) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
   const { to, subject, body } = await req.json();
