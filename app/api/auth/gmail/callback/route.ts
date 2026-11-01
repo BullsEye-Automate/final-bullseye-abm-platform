@@ -34,18 +34,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.redirect(`${appUrl}/chat-v2?gmail_error=1`);
   }
 
-  // Obtener email de la cuenta Google
-  const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-    headers: { Authorization: `Bearer ${tokens.access_token}` },
-  });
-  const userInfo = await userRes.json();
+  // Obtener email: primero del id_token (JWT de Google, siempre presente), luego userinfo como fallback
+  let email = "";
+  if (tokens.id_token) {
+    try {
+      const payload = JSON.parse(Buffer.from(tokens.id_token.split(".")[1], "base64url").toString());
+      email = payload.email ?? "";
+    } catch {}
+  }
+  if (!email) {
+    try {
+      const userRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      const userInfo = await userRes.json();
+      email = userInfo.email ?? "";
+    } catch {}
+  }
 
   const expiry = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1000).toISOString();
 
   const db = supabaseAdmin();
   await db.from("user_gmail_tokens").upsert({
     user_id:       state,
-    email:         userInfo.email ?? "",
+    email,
     access_token:  tokens.access_token,
     refresh_token: tokens.refresh_token ?? "",
     token_expiry:  expiry,
