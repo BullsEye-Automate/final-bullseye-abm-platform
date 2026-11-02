@@ -169,9 +169,21 @@ export async function searchAll(
 }
 
 // Asociaciones en lote (v4): id de origen → ids asociados
+// Lotes de 100 en paralelo (de a BATCH_CONCURRENCY): con miles de registros
+// (ej. Crossnet, 1.000 empresas y 6.000 contactos) en serie no cabe en los 5 min
+const BATCH_CONCURRENCY = 4;
+async function forChunks(n: number, fn: (start: number) => Promise<void>) {
+  const starts: number[] = [];
+  for (let i = 0; i < n; i += 100) starts.push(i);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, starts.length) }, async () => {
+    while (next < starts.length) await fn(starts[next++]);
+  }));
+}
+
 export async function batchAssociations(fromType: string, toType: string, ids: string[], token?: string): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
-  for (let i = 0; i < ids.length; i += 100) {
+  await forChunks(ids.length, async (i) => {
     const inputs = ids.slice(i, i + 100).map((id) => ({ id }));
     const res = await hsFetchWithRetry(`${HS}/crm/v4/associations/${fromType}/${toType}/batch/read`, {
       method: "POST",
@@ -191,7 +203,7 @@ export async function batchAssociations(fromType: string, toType: string, ids: s
       for (const t of r.to ?? []) if (t.toObjectId != null) arr.push(String(t.toObjectId));
       out.set(from, arr);
     }
-  }
+  });
   return out;
 }
 
@@ -199,14 +211,14 @@ export async function batchAssociations(fromType: string, toType: string, ids: s
 export async function batchRead(objectType: string, ids: string[], properties: string[], token?: string) {
   const out: { id: string; properties: Record<string, string | null> }[] = [];
   const unique = Array.from(new Set(ids));
-  for (let i = 0; i < unique.length; i += 100) {
+  await forChunks(unique.length, async (i) => {
     const d = await hsJson(
       `${HS}/crm/v3/objects/${objectType}/batch/read`,
       { method: "POST", headers: hsHeaders(token), body: JSON.stringify({ properties, inputs: unique.slice(i, i + 100).map((id) => ({ id })) }) },
       `leyendo ${objectType}`
     );
     for (const r of d.results ?? []) out.push({ id: String(r.id), properties: r.properties ?? {} });
-  }
+  });
   return out;
 }
 

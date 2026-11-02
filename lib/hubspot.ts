@@ -235,16 +235,21 @@ export async function patchHSContact(contactId: string, props: Record<string, st
 // patrón que lib/allo.ts.
 const HS_MIN_INTERVAL_MS = 350; // ~2.8 req/s, con margen bajo el límite de HubSpot
 let hsLastRequestAt = 0;
+// El resto de la API (batch read, asociaciones, propiedades) tiene un límite
+// mucho más alto (~19 req/s por app privada): solo se espacia un poco
+const HS_BATCH_MIN_INTERVAL_MS = 90;
+let hsLastBatchAt = 0;
 
-async function throttleHS() {
+async function throttleHS(search: boolean) {
   const now = Date.now();
-  const nextSlot = Math.max(now, hsLastRequestAt + HS_MIN_INTERVAL_MS);
-  hsLastRequestAt = nextSlot;
+  const last = search ? hsLastRequestAt : hsLastBatchAt;
+  const nextSlot = Math.max(now, last + (search ? HS_MIN_INTERVAL_MS : HS_BATCH_MIN_INTERVAL_MS));
+  if (search) hsLastRequestAt = nextSlot; else hsLastBatchAt = nextSlot;
   if (nextSlot > now) await new Promise((r) => setTimeout(r, nextSlot - now));
 }
 
 export async function hsFetchWithRetry(url: string, init: RequestInit, retriesLeft = 5): Promise<Response> {
-  await throttleHS();
+  await throttleHS(/\/search(\?|$)/.test(url.split("#")[0]));
   const res = await fetch(url, init);
   if (res.status === 429 && retriesLeft > 0) {
     const retryAfterHeader = res.headers.get("Retry-After");
