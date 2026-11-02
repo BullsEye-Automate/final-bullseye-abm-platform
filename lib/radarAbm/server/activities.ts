@@ -32,17 +32,18 @@ export async function loadActivities(input: {
   contactCompany: Map<string, string>;
   catalog: PropertyCatalog;
   token?: string;
+  deadline?: number; // pasado este momento se deja de leer (informe parcial con aviso)
 }): Promise<{ activities: RadarActivity[]; warnings: string[] }> {
-  const { companyIds, contactIds, contactCompany, catalog, token } = input;
+  const { companyIds, contactIds, contactCompany, catalog, token, deadline } = input;
   const warnings: string[] = [];
 
   // Asociaciones: contactos y empresas (las reuniones salen de la planilla)
   const [ctAssoc, coAssoc] = await Promise.all([
-    Promise.all(OBJECTS.map((o) => batchAssociations("contacts", o, contactIds, token).catch((e) => {
+    Promise.all(OBJECTS.map((o) => batchAssociations("contacts", o, contactIds, token, deadline).catch((e) => {
       warnings.push(`No se pudieron leer ${o} de los contactos: ${(e as Error).message}`);
       return new Map<string, string[]>();
     }))),
-    Promise.all(OBJECTS.map((o) => batchAssociations("companies", o, companyIds, token).catch((e) => {
+    Promise.all(OBJECTS.map((o) => batchAssociations("companies", o, companyIds, token, deadline).catch((e) => {
       warnings.push(`No se pudieron leer ${o} de las empresas: ${(e as Error).message}`);
       return new Map<string, string[]>();
     }))),
@@ -80,7 +81,7 @@ export async function loadActivities(input: {
       const typeProp = (catalog.calls ?? []).find((p) => p.name === "hs_activity_type");
       const typeLabels = new Map((typeProp?.options ?? []).map((o) => [o.value, o.label]));
       const dispositions = await callDispositions(token).catch(() => new Map<string, string>());
-      for (const r of await batchRead("calls", byObj.calls, ["hs_timestamp", "hs_activity_type", "hs_call_disposition"], token)) {
+      for (const r of await batchRead("calls", byObj.calls, ["hs_timestamp", "hs_activity_type", "hs_call_disposition"], token, deadline)) {
         const p = r.properties;
         const ch = callChannel(typeLabels.get(p.hs_activity_type ?? "") ?? p.hs_activity_type);
         const conn = CONNECTED_DISPOSITION.test(dispositions.get(p.hs_call_disposition ?? "") ?? "");
@@ -93,7 +94,7 @@ export async function loadActivities(input: {
   }
   if (byObj.emails.length) {
     try {
-      for (const r of await batchRead("emails", byObj.emails, ["hs_timestamp", "hs_email_direction"], token)) {
+      for (const r of await batchRead("emails", byObj.emails, ["hs_timestamp", "hs_email_direction"], token, deadline)) {
         push("emails", r.id, "em", toDay(r.properties.hs_timestamp), r.properties.hs_email_direction === "INCOMING_EMAIL" ? { in: 1 } : {});
       }
     } catch (e) {
@@ -103,7 +104,7 @@ export async function loadActivities(input: {
   }
   if (byObj.communications.length) {
     try {
-      for (const r of await batchRead("communications", byObj.communications, ["hs_timestamp", "hs_communication_channel_type"], token)) {
+      for (const r of await batchRead("communications", byObj.communications, ["hs_timestamp", "hs_communication_channel_type"], token, deadline)) {
         const t = (r.properties.hs_communication_channel_type ?? "").toUpperCase();
         // BullsEye no trabaja SMS: otras comunicaciones no cuentan como actividad
         const k: ActivityKind | null = t.includes("WHATS") ? "wa" : t.includes("LINKEDIN") ? "li" : null;
@@ -112,6 +113,9 @@ export async function loadActivities(input: {
     } catch (e) {
       warnings.push(`No se pudo leer el detalle de WhatsApp / LinkedIn: ${(e as Error).message}`);
     }
+  }
+  if (deadline && Date.now() > deadline) {
+    warnings.push(`Actividades: se cortó la lectura por tiempo (límite de 5 min). Se guardaron ${activities.length} de ${owner.size}; los conteos por canal y por contacto quedan incompletos.`);
   }
   return { activities, warnings };
 }

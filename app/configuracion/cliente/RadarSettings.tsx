@@ -109,13 +109,15 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
     if (!(await save())) return;
     setBusy("sync");
     setOkMsg(null);
-    const r = await fetch(`/api/radar-abm?client_id=${clientId}`, { method: "POST" });
-    const d = await r.json().catch(() => ({}));
+    const r = await fetch(`/api/radar-abm?client_id=${clientId}`, { method: "POST" }).catch(() => null);
+    if (!r) { setBusy(null); return setError("No se pudo sincronizar: se perdió la conexión con el servidor (puede seguir corriendo; recarga en unos minutos)."); }
+    const raw = await r.text().catch(() => "");
+    const d = (() => { try { return JSON.parse(raw); } catch { return { error: r.ok ? null : `${r.status}: ${raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200)}` }; } })();
     setBusy(null);
-    if (!r.ok || d.error) return setError(d.error ?? (r.status === 504 ? "La sincronización superó el tiempo máximo (5 min). Vuelve a intentarlo; si se repite, avísale al equipo técnico." : "No se pudo sincronizar"));
+    if (!r.ok || d.error) return setError(r.status === 504 ? "La sincronización superó el tiempo máximo (5 min). Vuelve a intentarlo; si se repite, avísale al equipo técnico." : `No se pudo sincronizar: ${d.error ?? `error ${r.status}`}`);
     setSyncedAt(d.syncedAt);
     setStats(d.stats);
-    setOkMsg(`Sincronizado: ${d.stats?.companies ?? 0} empresas, ${d.stats?.contacts ?? 0} contactos, ${d.stats?.meetings ?? 0} reuniones.`);
+    setOkMsg(`Sincronizado: ${d.stats?.companies ?? 0} empresas, ${d.stats?.contacts ?? 0} contactos, ${d.stats?.meetings ?? 0} reuniones${d.stats?.seconds ? ` (${d.stats.seconds} s)` : ""}.${(d.warnings ?? []).some((w: string) => w.includes("por tiempo")) ? " Quedó parcial por tiempo: revisa los avisos." : ""}`);
   }
 
   return (
