@@ -75,7 +75,13 @@ function periodStart(today: string, months: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Topes de tiempo (la función tiene 300 s en Vercel): las actividades y los
+// negocios se cortan antes para alcanzar a guardar un informe parcial
+const ACTIVITIES_BUDGET_MS = 200_000;
+const DEALS_BUDGET_MS = 235_000;
+
 export async function syncClientRadar(clientId: string, by: string) {
+  const startedAt = Date.now();
   const db = supabaseAdmin();
   const { data: client } = await db.from("clients").select("id, name, slug").eq("id", clientId).maybeSingle();
   if (!client) throw new Error("Cliente no encontrado");
@@ -300,7 +306,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   const derivedCt = new Set<string>(); // contactos con status por actividad
 
   // ── Actividades de la cuenta (empresa + contactos): profundidad por canal
-  const act = await loadActivities({ companyIds, contactIds: keptIds, contactCompany, catalog, token });
+  const act = await loadActivities({ companyIds, contactIds: keptIds, contactCompany, catalog, token, deadline: startedAt + ACTIVITIES_BUDGET_MS });
   warnings.push(...act.warnings);
   const actByCt = new Map<string, RadarActivity[]>();
   for (const a of act.activities) {
@@ -410,12 +416,14 @@ export async function syncClientRadar(clientId: string, by: string) {
   // ── Negocios ───────────────────────────────────────────────────────────
   let deals: RadarDeal[] = [];
   try {
-    const coDeals = await batchAssociations("companies", "deals", companyIds, token);
+    const dealsDeadline = startedAt + DEALS_BUDGET_MS;
+    if (Date.now() > dealsDeadline) throw new Error("se omitieron por tiempo (límite de 5 min)");
+    const coDeals = await batchAssociations("companies", "deals", companyIds, token, dealsDeadline);
     const dealCompany = new Map<string, string>();
     for (const [co, ds] of coDeals) for (const d of ds) if (!dealCompany.has(d)) dealCompany.set(d, co);
     if (dealCompany.size) {
       const stages = await dealStages(token);
-      const raw = await batchRead("deals", Array.from(dealCompany.keys()), ["dealstage", "amount", "createdate"], token);
+      const raw = await batchRead("deals", Array.from(dealCompany.keys()), ["dealstage", "amount", "createdate"], token, dealsDeadline);
       deals = raw.map((r) => ({
         co: dealCompany.get(r.id)!,
         stage: dealStageName(stages.get(r.properties.dealstage ?? ""), r.properties.dealstage ?? ""),
@@ -457,6 +465,7 @@ export async function syncClientRadar(clientId: string, by: string) {
     mapping: detected.map((d) => ({ label: d.label, property: d.property })),
   };
   const stats = {
+    seconds: Math.round((Date.now() - startedAt) / 1000), // duración del sync (diagnóstico)
     companies: companies.length,
     contacts: contacts.length,
     meetings: meetings.length,
