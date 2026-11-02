@@ -30,6 +30,7 @@ const RULES: Rule[] = [
   { method: "GET", re: /^\/integration\/client$/, internalOnly: true },
   { method: "GET", re: /^\/integration\/users$/, internalOnly: true },
   { method: "POST", re: /^\/integration\/users$/, internalOnly: true },
+  { method: "POST", re: new RegExp(`^/integration/users/${ID}/password$`), internalOnly: true },
   { method: "DELETE", re: new RegExp(`^/integration/users/${ID}$`), internalOnly: true },
 ];
 
