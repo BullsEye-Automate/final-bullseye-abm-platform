@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const { data: client } = await supabaseAdmin().from("clients").select("id, name, slug").eq("id", params.id).maybeSingle();
     const [settings, snapshot, master] = await Promise.all([
       loadClientSettings(params.id),
-      loadSnapshot(params.id),
+      loadSnapshot(params.id, "meta"),
       client ? masterStatusFor(client) : Promise.resolve({ active: false, text: "Cliente no encontrado" }),
     ]);
     return NextResponse.json({ settings, syncedAt: snapshot?.synced_at ?? null, stats: snapshot?.stats ?? null, warnings: snapshot?.warnings ?? [], master });
