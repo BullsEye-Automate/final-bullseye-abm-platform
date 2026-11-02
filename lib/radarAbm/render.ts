@@ -116,11 +116,19 @@ function companyLists(prefix: string, groups: { l: string; A: any[] }[]) {
 
 function industryPicker(rows: any[], companiesOf?: (key: string) => any[]) {
   if (!rows.length) return `<p class="note">Sin información disponible.</p>`;
-  const panel = (x: any, i: number) => `<div data-ra-panel="${i}"${i ? " hidden" : ""}>
+  // Primera opción (por defecto): todas las industrias en una tabla; clic en
+  // una fila abre esa industria (data-ra-goto, lo maneja RadarReport)
+  const totCo = sum(rows, (x: any) => x.co), totW = sum(rows, (x: any) => x.worked);
+  const all = `<div data-ra-panel="all">
+    ${stack([{ l: "Trabajadas", v: totW, c: "var(--accent)" }, { l: "Asignadas sin gestión", v: totCo - totW, c: "var(--g-pend)" }])}
+    <div class="tw" style="margin-top:12px"><table><thead><tr><th>Industria</th><th class="n">Empresas</th><th class="n">Trabajadas</th><th class="n">Cobertura</th><th class="n">Con reunión</th><th class="n">Reuniones</th><th class="n">Contactabilidad</th></tr></thead><tbody>
+    ${rows.map((x: any, i: number) => `<tr class="ra-goto" data-ra-goto="${i}" title="Ver ${esc(x.key)}"><td><span class="ra-link">${esc(x.key)}</span></td><td class="n">${N(x.co)}</td><td class="n">${N(x.worked)}</td><td class="n">${P(x.cov)}</td><td class="n">${N(x.coMt)}</td><td class="n">${N(x.mt)}</td><td class="n">${P(x.cr)}</td></tr>`).join("")}
+    </tbody></table></div><p class="note">Haz clic en una industria (o elígela arriba) para ver su detalle y sus empresas.</p></div>`;
+  const panel = (x: any, i: number) => `<div data-ra-panel="${i}" hidden>
     ${stack([{ l: "Trabajadas", v: x.worked, c: "var(--accent)" }, { l: "Asignadas sin gestión", v: x.co - x.worked, c: "var(--g-pend)" }])}
     ${companiesOf ? ((A: any[]) => companyLists(`ci${i}-`, [{ l: "Trabajadas", A: A.filter((c) => c.worked) }, { l: "Asignadas sin gestión", A: A.filter((c) => !c.worked) }]))(companiesOf(x.key)) : ""}
     <div class="tiles" style="margin-top:12px">${tile("Cobertura", P(x.cov), `${N(x.worked)} de ${N(x.co)} empresas trabajadas`)}${tile("Con reunión", N(x.coMt), `${N(x.mt)} reuniones`)}${tile("Contactabilidad", P(x.cr), `${N(x.eff)} contactos efectivos`)}</div></div>`;
-  return `<select class="ra-select" data-ra-pick aria-label="Industria" style="margin-bottom:12px">${rows.map((x, i) => `<option value="${i}">${esc(x.key)} (${N(x.co)})</option>`).join("")}</select>${rows.map(panel).join("")}`;
+  return `<select class="ra-select" data-ra-pick aria-label="Industria" style="margin-bottom:12px"><option value="all">Todas las industrias (${N(totCo)})</option>${rows.map((x, i) => `<option value="${i}">${esc(x.key)} (${N(x.co)})</option>`).join("")}</select>${all}${rows.map(panel).join("")}`;
 }
 export function bars(items: BarItem[], opt: { max?: number; pct?: boolean | number } = {}) {
   const max = opt.max || Math.max(1, ...items.map((i) => i.v));

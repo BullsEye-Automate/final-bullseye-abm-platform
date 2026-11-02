@@ -170,6 +170,8 @@
 .ra-root .health > * { min-width: 0; }
 @media (max-width: 760px) { .ra-root .health { grid-template-columns: 1fr; } }
 .ra-root .ra-how { margin-top: 14px; }
+.ra-root tr.ra-goto { cursor: pointer; }
+.ra-root tr.ra-goto:hover td { background: var(--accent-soft); }
 .ra-root .ra-how > summary { cursor: pointer; font-size: 13px; font-weight: 500; color: var(--accent); list-style: revert; }
 .ra-root .ra-how[open] > summary { margin-bottom: 10px; }
 .ra-root .gauge { position: relative; width: 200px; height: 200px; margin: 0 auto; }
