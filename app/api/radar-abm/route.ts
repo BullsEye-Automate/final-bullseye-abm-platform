@@ -28,9 +28,11 @@ export async function GET(req: NextRequest) {
     if (req.nextUrl.searchParams.get("demo") === "1") {
       return NextResponse.json({ dataset: demoDataset(client.name), config });
     }
-    const [snapshot, settings, master] = await Promise.all([loadSnapshot(clientId), loadClientSettings(clientId), masterStatusFor(client)]);
+    const [snapshot, settings, master] = await Promise.all([loadSnapshot(clientId, "url"), loadClientSettings(clientId), masterStatusFor(client)]);
     return NextResponse.json({
       dataset: snapshot?.dataset ?? null,
+      // Informe grande en Storage: lo descarga el navegador (avisos y mapeo van aparte)
+      ...(snapshot?.datasetUrl ? { datasetUrl: snapshot.datasetUrl, datasetExtra: { warnings: snapshot.warnings ?? [], mapping: snapshot.mapping } } : {}),
       syncedAt: snapshot?.synced_at ?? null,
       warnings: snapshot?.warnings ?? [],
       stats: snapshot?.stats ?? null,

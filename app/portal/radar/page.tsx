@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveDataset } from "@/lib/radarAbm/fetchDataset";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { IconLoader2, IconActivityHeartbeat } from "@tabler/icons-react";
@@ -38,7 +39,8 @@ export default function PortalRadarPage() {
     fetch("/api/portal/radar", { cache: "no-store" })
       .then(async (r) => {
         const j = (await r.json().catch(() => ({}))) as Resp;
-        setData(r.ok ? j : { dataset: null, error: j.error ?? "No se pudo cargar el informe" });
+        if (!r.ok) return setData({ dataset: null, error: j.error ?? "No se pudo cargar el informe" });
+        setData({ ...j, dataset: await resolveDataset(j as any) });
       })
       .catch(() => setData({ dataset: null, error: "No se pudo cargar el informe" }));
   }, []);
