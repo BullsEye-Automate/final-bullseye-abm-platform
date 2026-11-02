@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveDataset } from "@/lib/radarAbm/fetchDataset";
 import "@/components/radar/radar.css";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -60,7 +61,7 @@ export default function RadarAbmPage() {
       const r = await fetch(`/api/radar-abm?client_id=${clientId}${demo ? "&demo=1" : ""}`, { cache: "no-store" });
       const j = (await r.json()) as ApiResponse;
       if (!r.ok || j.error) throw new Error(j.error || `Error ${r.status}`);
-      setData(j);
+      setData({ ...j, dataset: await resolveDataset(j as any) });
     } catch (e) {
       setError((e as Error).message);
       setData(null);
