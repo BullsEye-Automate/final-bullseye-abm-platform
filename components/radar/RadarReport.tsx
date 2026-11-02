@@ -155,6 +155,13 @@ export default function RadarReport({
     };
     // Funnel: clic en una etapa muestra (o esconde) la lista de sus empresas
     const onStage = (e: Event) => {
+      // Tabla "Todas las industrias": clic en una fila elige esa industria
+      const go = (e.target as HTMLElement).closest?.("[data-ra-goto]") as HTMLElement | null;
+      if (go) {
+        const sel = go.closest(".rcard")?.querySelector<HTMLSelectElement>("select[data-ra-pick]");
+        if (sel) { sel.value = go.dataset.raGoto!; sel.dispatchEvent(new Event("change", { bubbles: true })); sel.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+        return;
+      }
       const bar = (e.target as HTMLElement).closest?.("[data-ra-stage]") as HTMLElement | null;
       if (!bar) return;
       const card = bar.closest(".rcard");
