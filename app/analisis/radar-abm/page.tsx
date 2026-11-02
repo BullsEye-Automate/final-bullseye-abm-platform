@@ -79,7 +79,7 @@ export default function RadarAbmPage() {
     try {
       const r = await fetch(`/api/radar-abm?client_id=${clientId}`, { method: "POST" });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || j.error) throw new Error(j.error || `Error ${r.status}`);
+      if (!r.ok || j.error) throw new Error(j.error || (r.status === 504 ? "La sincronización superó el tiempo máximo (5 min). Vuelve a intentarlo; si se repite, avísale al equipo técnico." : `Error ${r.status}`));
       const s = j.stats ?? {};
       setSyncMsg(`Sincronizado: ${s.companies ?? 0} empresas, ${s.contacts ?? 0} contactos, ${s.meetings ?? 0} reuniones, ${s.deals ?? 0} negocios.`);
       setDemo(false);

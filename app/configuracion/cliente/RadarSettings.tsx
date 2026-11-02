@@ -112,7 +112,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
     const r = await fetch(`/api/radar-abm?client_id=${clientId}`, { method: "POST" });
     const d = await r.json().catch(() => ({}));
     setBusy(null);
-    if (!r.ok || d.error) return setError(d.error ?? "No se pudo sincronizar");
+    if (!r.ok || d.error) return setError(d.error ?? (r.status === 504 ? "La sincronización superó el tiempo máximo (5 min). Vuelve a intentarlo; si se repite, avísale al equipo técnico." : "No se pudo sincronizar"));
     setSyncedAt(d.syncedAt);
     setStats(d.stats);
     setOkMsg(`Sincronizado: ${d.stats?.companies ?? 0} empresas, ${d.stats?.contacts ?? 0} contactos, ${d.stats?.meetings ?? 0} reuniones.`);
