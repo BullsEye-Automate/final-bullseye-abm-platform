@@ -84,6 +84,31 @@ export async function syncClientRadar(clientId: string, by: string) {
   if (!master.active) throw new Error(master.reason);
 
   const cfg = await loadRadarConfig();
+  const today = chileToday();
+  const start = periodStart(today, cfg.periodMonths);
+
+  // ── Score de Desempeño SDR (Allo) ─────────────────────────────────────
+  // Llamadas evaluadas por la IA de Allo en los números asignados al cliente
+  // (Configuración → Cliente → Allo). Usa el mismo caché mensual de Células
+  // SDR; corre en paralelo con HubSpot y con tope de tiempo para no comerse el sync.
+  const alloP = (async () => {
+    const evals: RadarCallEval[] = [];
+    const warn: string[] = [];
+    try {
+      const deadline = Date.now() + 120_000;
+      for (const month of periodMonths([start, today], today)) {
+        if (Date.now() > deadline) { warn.push("Score SDR (Allo): se cortó por tiempo; faltan meses (vuelve a sincronizar)."); break; }
+        const r = await loadAlloMonth(month);
+        for (const e of r.evals) {
+          if (e.c !== clientId) continue;
+          evals.push({ d: e.d, s: r.sdrNames[e.s] ?? e.s, score: e.score, crit: e.crit, ...(e.nivel ? { nivel: e.nivel } : {}) });
+        }
+      }
+    } catch (e) {
+      warn.push(`Score SDR (Allo): ${(e as Error).message}`);
+    }
+    return { evals, warn };
+  })();
   const settings = await loadClientSettings(clientId);
   const token = await hubspotTokenFor(clientId, settings.hubspot_source);
   const warnings: string[] = [];
@@ -337,8 +362,6 @@ export async function syncClientRadar(clientId: string, by: string) {
   }
 
   // ── Reuniones del período ──────────────────────────────────────────────
-  const today = chileToday();
-  const start = periodStart(today, cfg.periodMonths);
   // Reuniones: planilla de reuniones (Excel de metas), no HubSpot
   let meetings: RadarMeeting[] = [];
   try {
@@ -379,24 +402,10 @@ export async function syncClientRadar(clientId: string, by: string) {
     warnings.push(`Modo "Cliente BullsEye": universo = empresas con "${uniCo!.label}" = ${uniValue} y sus contactos con "${uniCt!.label}" = ${uniValue}; etapa por ciclo de vida (Opportunity = en conversaciones, Customer = cliente) y por actividad.`);
   }
 
-  // ── Score de Desempeño SDR (Allo) ─────────────────────────────────────
-  // Llamadas evaluadas por la IA de Allo en los números asignados al cliente
-  // (Configuración → Cliente → Allo). Usa el mismo caché mensual de Células
-  // SDR; con tope de tiempo para no comerse el sync.
-  const callEvals: RadarCallEval[] = [];
-  try {
-    const deadline = Date.now() + 120_000;
-    for (const month of periodMonths([start, today], today)) {
-      if (Date.now() > deadline) { warnings.push("Score SDR (Allo): se cortó por tiempo; faltan meses (vuelve a sincronizar)."); break; }
-      const r = await loadAlloMonth(month);
-      for (const e of r.evals) {
-        if (e.c !== clientId) continue;
-        callEvals.push({ d: e.d, s: r.sdrNames[e.s] ?? e.s, score: e.score, crit: e.crit, ...(e.nivel ? { nivel: e.nivel } : {}) });
-      }
-    }
-  } catch (e) {
-    warnings.push(`Score SDR (Allo): ${(e as Error).message}`);
-  }
+  // Score SDR (Allo), lanzado al inicio en paralelo
+  const allo = await alloP;
+  const callEvals = allo.evals;
+  warnings.push(...allo.warn);
 
   // ── Negocios ───────────────────────────────────────────────────────────
   let deals: RadarDeal[] = [];
