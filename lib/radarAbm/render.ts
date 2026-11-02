@@ -15,7 +15,7 @@ import {
 /* ---------- estructura del informe ---------- */
 export type Part = [string, string, [number | string, string, string][]];
 export const PARTS: Part[] = [
-  ["I", "Visión ejecutiva", [[1, "resumen", "Resumen ejecutivo"], [2, "health", "Health Score"], [3, "kpis", "KPIs principales"]]],
+  ["I", "Visión ejecutiva", [[1, "resumen", "Resumen ejecutivo"], [2, "health", "Health Score y KPIs principales"], [3, "kpis", "Contexto operativo"]]],
   ["II", "Cuentas objetivo", [[4, "cobertura", "Cobertura de cuentas"], [5, "wishlist", "Wishlist y propuestas de BullsEye"]]],
   ["III", "Avance en cuentas", [[6, "funnel", "Funnel ABM"], [7, "profundidad", "Profundidad ABM"], [8, "multi", "Multi-threading"], [9, "est-emp", "Estados de empresas"], [10, "est-ct", "Estados de contactos"], [11, "contactab", "Contactabilidad"], [12, "conv", "Conversaciones"], [13, "seguimientos", "Seguimientos"], [14, "referrals", "Referrals"]]],
   ["IV", "Reuniones", [[15, "reuniones", "Reuniones agendadas vs realizadas"], [16, "reuniones-detalle", "Detalle de reuniones"]]],
@@ -235,12 +235,15 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     ${f.overdue.length + f.none.length ? `<li>Alerta operativa: <b>${N(f.overdue.length)} seguimientos vencidos</b> y ${N(f.none.length)} sin próxima acción.</li>` : ""}
   </ul></div><p class="note">Universo: ${cl.deep ? "cartera acotada de cuentas estratégicas; la lectura se centra en profundidad por cuenta más que en volumen." : "universo amplio; la lectura combina cobertura y profundidad."} SDR: ${esc(cl.sdrs.join(", ") || "—")}.</p>`;
 
-  s.health = `<div class="health"><div>${gauge(h.score, h.band)}<p style="margin:10px 0 0;text-align:center">${pill(h.band[1]).replace(/Alta|Media|Baja/, h.band[0])}</p></div>
-  <div>${table([{ h: "Componente", f: (c) => esc(c.n) }, { h: "Peso", n: 1, f: (c) => (c.s == null ? `<s>${c.w}</s>` : c.w) }, { h: "Valor", n: 1, f: (c) => P(c.v) }, { h: "Meta", n: 1, f: (c) => P(c.t) }, { h: "Puntaje", n: 1, f: (c) => (c.s == null ? '<span class="flag">sin datos</span>' : Math.round(c.s)) }, { h: "Fórmula", s: 1, f: (c) => esc(c.f) }], h.comp, { dim: (c) => c.s == null })}
-  <p class="note">Metodología: cada componente se expresa como avance hacia su meta (valor ÷ meta, tope 100) y se pondera por su peso. Los componentes sin datos suficientes se excluyen y el resto se re-pondera (peso usado: ${h.wt} de ${sum(h.comp, (c: any) => c.w)}). Saludable ≥ 75 · Requiere atención 55–74 · En riesgo &lt; 55. Las metas son supuestos iniciales a calibrar con histórico real de BullsEye; el puntaje no sirve para comparar clientes con universos o ICP distintos.</p></div></div>`;
-
+  // §2: puntaje + KPIs en un solo bloque; el detalle del cálculo queda plegado
+  const scored = h.comp.filter((c: any) => c.s != null);
+  const plus = [...scored].filter((c: any) => c.s >= 90).sort((a: any, b: any) => b.w * b.s - a.w * a.s).slice(0, 2);
+  const minus = [...scored].filter((c: any) => c.s < 60).sort((a: any, b: any) => b.w * (100 - b.s) - a.w * (100 - a.s)).slice(0, 2);
   const acts = M.ad.fromActivities ? M.ad.total : sum(K, (x) => (x.calls || 0) + (x.wa || 0) + (x.li || 0) + (x.em || 0)), calls = M.ad.fromActivities ? M.ad.tot.call : sum(K, (x) => x.calls || 0);
-  s.kpis = `<div class="tiles">
+  s.health = `<div class="health"><div>${gauge(h.score, h.band)}<p style="margin:10px 0 0;text-align:center">${pill(h.band[1]).replace(/Alta|Media|Baja/, h.band[0])}</p>
+    ${plus.length ? `<p class="note" style="text-align:center"><b>Suma:</b> ${plus.map((c: any) => esc(c.n)).join(" · ")}</p>` : ""}
+    ${minus.length ? `<p class="note" style="text-align:center"><b>Resta:</b> ${minus.map((c: any) => `${esc(c.n)} (${P(c.v)} vs meta ${P(c.t)})`).join(" · ")}</p>` : ""}</div>
+  <div><div class="tiles">
     ${tile("Cobertura de cuentas", P(k.coverage), `${N(k.worked)} de ${N(k.universe)} empresas`, "hl", "target")}
     ${tile("Contactabilidad", P(k.contactRate), "efectivos / gestionados", "", "phone")}
     ${tile("Multi-threading", P(k.multi), "empresas con 2+ interlocutores", "", "users")}
@@ -250,7 +253,12 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     ${tile("Referral rate", P(k.referralRate), `${rf.refs.length} referrals`, "", "split")}
     ${tile("Oportunidades", N(k.opp), M.pipe ? `pipeline abierto ${USD(M.pipe.open)}` : "pipeline sin información", "", "star")}
   </div>
-  <div class="ctxh">Contexto operativo · no son indicadores de éxito</div>
+  <details class="ra-how"><summary>¿Cómo se calcula el Health Score?</summary>
+  ${table([{ h: "Componente", f: (c) => esc(c.n) }, { h: "Peso", n: 1, f: (c) => (c.s == null ? `<s>${c.w}</s>` : c.w) }, { h: "Valor", n: 1, f: (c) => P(c.v) }, { h: "Meta", n: 1, f: (c) => P(c.t) }, { h: "Puntaje", n: 1, f: (c) => (c.s == null ? '<span class="flag">sin datos</span>' : Math.round(c.s)) }, { h: "Fórmula", s: 1, f: (c) => esc(c.f) }], h.comp, { dim: (c) => c.s == null })}
+  <p class="note">Cada componente se mide como avance hacia su meta (valor ÷ meta, tope 100) y se pondera por su peso. Los que no tienen datos suficientes se excluyen y el resto se re-pondera (peso usado: ${h.wt} de ${sum(h.comp, (c: any) => c.w)}). Saludable ≥ 75 · Requiere atención 55–74 · En riesgo &lt; 55. Las metas son supuestos iniciales a calibrar con el histórico de BullsEye; el puntaje no sirve para comparar clientes con universos o ICP distintos.</p>
+  </details></div></div>`;
+
+  s.kpis = `<div class="ctxh">Contexto operativo · no son indicadores de éxito</div>
   <div class="tiles">${tile("Empresas asignadas", N(C.length), "", 1)}${tile("Contactos en base", N(K.length), "", 1)}${tile("Actividades registradas", N(acts), `${N(calls)} llamadas`, 1)}${tile("Actividades por conversación", F1(div(acts, M.eff.length)), "esfuerzo para lograr 1 contacto efectivo", 1)}</div>`;
 
   const covInd = segCo(M, (c) => c.ind || "Sin industria");
