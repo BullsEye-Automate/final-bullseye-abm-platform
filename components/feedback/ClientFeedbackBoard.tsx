@@ -323,7 +323,7 @@ function FeedbackModal({ meeting, salesManagers, onClose, onSaved }: {
 
 // Feedback de reuniones del cliente: página pública por link
 // (/feedback-cliente/[token]) y, en modo embedded, dentro del portal
-// (Pulso ABM → Feedback comercial). Mismo formulario y misma tabla.
+// (Pulso ABM → Feedback manual). Mismo formulario y misma tabla.
 export default function ClientFeedbackBoard({ token, embedded = false }: { token: string; embedded?: boolean }) {
   const [client, setClient] = useState<ClientData | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>([]);

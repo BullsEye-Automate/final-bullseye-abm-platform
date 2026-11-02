@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { supabaseServer } from "@/lib/supabase/server";
 
-// Helpers para la gestión interna del portal (/solicitudes-clientes).
+// Helpers para la gestión interna del portal (Empresas, Config. cliente, ICP).
 // Estas rutas solo las alcanza el equipo BullsEye: el middleware bloquea a
 // los usuarios cliente fuera de /portal y /api/portal.
 

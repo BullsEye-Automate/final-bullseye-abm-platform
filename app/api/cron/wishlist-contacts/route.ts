@@ -10,7 +10,7 @@ export const maxDuration = 300;
 // ya quedaron en el Lemlist del cliente (lemlist_status = ok) y todavía no
 // tienen contactos buscados, y corre la búsqueda (Lemlist + IA) de a una,
 // hasta ~4 minutos por corrida. Los contactos quedan "suggested" para la
-// revisión de prospección en Solicitudes clientes → Contactos IA.
+// revisión de prospección en Contactos → Contactos IA.
 const TIME_BUDGET_MS = 230_000;
 const MAX_PER_RUN = 10;
 

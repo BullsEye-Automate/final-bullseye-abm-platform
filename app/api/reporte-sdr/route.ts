@@ -3,7 +3,7 @@ import { buildReportPng, sendDailySdrReport, reportRecipients } from "@/lib/repo
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // Vista previa y envío manual del Reporte SDR diario (requiere sesión del
 // equipo: no está en la lista pública de middleware.ts).

@@ -112,6 +112,7 @@ export type BaseResponse = {
   clients: Client[];
   goals: Goal[];
   meetings: Meeting[];
+  accounts?: import("./accounts").ClientAccount[]; // clientes partidos en cuentas (ver accounts.ts)
   oppValues: string[];      // valores distintos de Propuesta/Oportunidad (para Configurar)
   incomplete: { pastPending: number; invalidDates: number };
   warnings: DataWarning[];
@@ -197,4 +198,38 @@ export type MonthlyMeetingsResponse = {
   today: string;
   rows: MonthlyMeetingRow[];
   sdrNames: Record<string, string>;
+};
+
+// Registro de reuniones (vista "Registro de reuniones"): espejo de solo
+// lectura de la pestaña API Reuniones. Por decisión de BullsEye muestra
+// nombre y cargo del contacto, empresa, fechas y comentario, pero NUNCA
+// teléfono ni correo del prospecto.
+export type MeetingRecord = {
+  id: string;
+  sdr: string;              // Sdr.key
+  client: string | null;    // Client.id
+  country: string | null;   // país canónico
+  sd: string | null;        // fecha de agendamiento
+  md: string | null;        // fecha de la reunión
+  hour: string | null;
+  st: MeetingStatus;
+  opp: string;              // Propuesta/Oportunidad tal cual viene
+  origin: string;
+  company: string;
+  contact: string;
+  title: string;            // cargo
+  comment: string;          // Comentario de la reunión
+  editable: boolean;        // tiene "ID Reunión" en la planilla (se puede cambiar el estado desde la app)
+};
+
+export type MeetingRecordsResponse = {
+  from: string;
+  to: string;
+  field: "md" | "sd";
+  today: string;
+  rows: MeetingRecord[];
+  sdrNames: Record<string, string>;
+  clientNames: Record<string, string>;
+  truncated: boolean;
+  canEdit: boolean;         // el usuario puede cambiar estados (lib/celulasSdr/editors.ts)
 };

@@ -8,6 +8,7 @@ import { PARTS, PART_SLUGS, partIndex } from "@/lib/radarAbm/render";
 import WishlistWorkspace from "@/components/wishlist/WishlistWorkspace";
 import IcpPanel from "@/components/radar/IcpPanel";
 import FeedbackPanel from "@/components/radar/FeedbackPanel";
+import PeithoPanel from "@/components/peitho/PeithoPanel";
 import { DEFAULT_CONFIG } from "@/lib/radarAbm/dictionaries";
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 
@@ -19,7 +20,8 @@ import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 const STANDALONE: Record<string, () => JSX.Element> = {
   "cuentas-objetivo": () => <WishlistWorkspace />,
   "icp-proyecto": () => <IcpPanel audience="portal" />,
-  "feedback-comercial": () => <FeedbackPanel audience="portal" />,
+  "feedback-manual": () => <FeedbackPanel audience="portal" />,
+  peitho: () => <PeithoPanel audience="portal" />,
 };
 
 type Resp = { dataset: RadarDataset | null; config?: RadarConfig; reason?: "pending" | "disabled"; error?: string };
@@ -44,8 +46,8 @@ export default function PortalRadarPage() {
   if (!data) {
     return <div className="flex items-center gap-2 text-sm text-gray-500"><IconLoader2 size={16} className="animate-spin" /> Cargando informe…</div>;
   }
-  // Sin informe (aún no sincronizado o deshabilitado): la wishlist, el ICP y
-  // el feedback siguen disponibles porque no dependen de él
+  // Sin informe (aún no sincronizado o deshabilitado): la wishlist, el ICP,
+  // el feedback manual y Peitho siguen disponibles porque no dependen de él
   if (!data.dataset && STANDALONE[slug]) {
     const Panel = STANDALONE[slug];
     return (

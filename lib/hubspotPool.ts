@@ -138,7 +138,7 @@ export async function getSyncState(db: SupabaseClient): Promise<SyncState & { to
 
 // Procesa un tramo de la sincronización. `restart` empieza de cero.
 // Devuelve done = true cuando terminó la pasada completa. Se llama en loop
-// desde /solicitudes-clientes (cada llamada cabe en el límite de Vercel).
+// desde Config. cliente → Base HubSpot (cada llamada cabe en el límite de Vercel).
 export async function syncPoolChunk(
   db: SupabaseClient,
   restart: boolean

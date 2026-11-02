@@ -10,6 +10,7 @@ import MasterTables from "./MasterTables";
 import WishlistWorkspace from "@/components/wishlist/WishlistWorkspace";
 import IcpPanel from "./IcpPanel";
 import FeedbackPanel from "./FeedbackPanel";
+import PeithoPanel from "@/components/peitho/PeithoPanel";
 
 // Informe Pulso ABM de un cliente (una vista = una parte del informe, con
 // sus secciones numeradas). Lo usan la vista interna (Análisis → Pulso ABM)
@@ -107,7 +108,7 @@ export default function RadarReport({
 
   const parts = visibleParts(audience);
   const pi = parts.includes(view) ? view : parts[0];
-  const [pn, pt, items] = PARTS[pi];
+  const [, pt, items] = PARTS[pi];
   const pos = parts.indexOf(pi);
   const prev = pos > 0 ? parts[pos - 1] : null;
   const next = pos < parts.length - 1 ? parts[pos + 1] : null;
@@ -201,6 +202,7 @@ export default function RadarReport({
     }
     if (id === "icp-vigente") return <IcpPanel audience={audience} clientId={clientId} />;
     if (id === "feedback-form") return <FeedbackPanel audience={audience} clientId={clientId} />;
+    if (id === "peitho") return <PeithoPanel audience={audience} clientId={clientId} clientName={dataset.client.name} />;
     return null;
   };
 
@@ -314,7 +316,7 @@ export default function RadarReport({
         )}
       </header>
 
-      {pn === "XII" ? <MasterTables M={M} numbers={items.map((x) => x[0])} /> : blocks.map((b, i) => "html" in b
+      {PART_SLUGS[pi] === "tablas-maestras" ? <MasterTables M={M} numbers={items.map((x) => x[0])} /> : blocks.map((b, i) => "html" in b
         ? <div key={i} dangerouslySetInnerHTML={{ __html: b.html }} />
         : (
           <section key={i} className="s" id={b.react}>

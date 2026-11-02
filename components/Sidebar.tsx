@@ -4,15 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, useEffect } from "react";
 import {
-  IconInbox,
   IconLayoutDashboard,
   IconBuildingFactory2,
   IconUsers,
   IconMail,
   IconPhone,
   IconHeadset,
-  IconMessage2,
-  IconReportAnalytics,
   IconBrain,
   IconSettings,
   IconBuilding,
@@ -20,18 +17,17 @@ import {
   IconCheck,
   IconPlus,
   IconAdjustments,
-  IconStethoscope,
   IconLoader2,
   IconMessageStar,
   IconChartBar,
   IconFileText,
-  IconFlame,
   IconUserSearch,
   IconLogout,
   IconCalendarEvent,
-  IconBulb,
   IconUsersGroup,
   IconActivityHeartbeat,
+  IconSparkles,
+  IconLayoutSidebarLeftCollapse,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -48,7 +44,6 @@ const SECTIONS: Section[] = [
       { href: "/empresas",        label: "Empresas",        icon: IconBuildingFactory2 },
       { href: "/contactos",       label: "Contactos",       icon: IconUsers },
       { href: "/busqueda-manual", label: "Búsqueda manual", icon: IconUserSearch },
-      { href: "/solicitudes-clientes", label: "Solicitudes clientes", icon: IconInbox }
     ]
   },
   {
@@ -62,18 +57,16 @@ const SECTIONS: Section[] = [
   {
     label: "SDR",
     items: [
-      { href: "/sdr/calientes", label: "Contactos calientes", icon: IconFlame },
-      { href: "/sdr/senales",   label: "Señales comerciales", icon: IconBulb },
       { href: "/telefonos",     label: "Teléfonos",           icon: IconPhone },
       { href: "/llamadas",      label: "Llamadas",            icon: IconHeadset },
-      { href: "/respuestas",    label: "Respuestas",          icon: IconMessage2 },
     ]
   },
   {
     label: "Oportunidades",
     items: [
-      { href: "/oportunidades/feedback",               label: "Feedback",          icon: IconMessageStar },
+      { href: "/oportunidades/feedback",               label: "Feedback manual",   icon: IconMessageStar },
       { href: "/oportunidades/resumen-feedback",       label: "Resumen Feedback",  icon: IconChartBar },
+      { href: "/oportunidades/peitho",                 label: "Peitho",            icon: IconSparkles },
       { href: "/oportunidades/reuniones",              label: "Reuniones",         icon: IconCalendarEvent },
       { href: "/oportunidades/configuracion-feedback", label: "Config. feedback",  icon: IconSettings },
     ]
@@ -81,8 +74,6 @@ const SECTIONS: Section[] = [
   {
     label: "Análisis",
     items: [
-      { href: "/reporteria",          label: "Reportería",          icon: IconReportAnalytics },
-      { href: "/diagnostico-empresa", label: "Diagnóstico empresa", icon: IconStethoscope },
       { href: "/analisis/sdr",        label: "Análisis SDR",        icon: IconChartBar },
       { href: "/analisis/salud-numeros", label: "Salud de números", icon: IconPhone },
       { href: "/analisis/celulas-sdr", label: "Células SDR",        icon: IconUsersGroup },
@@ -230,7 +221,7 @@ function ClientSelector() {
   );
 }
 
-export default function Sidebar() {
+export default function Sidebar({ onCollapse }: { onCollapse: () => void }) {
   const pathname = usePathname();
   const { isGenerating, genProgress, contacts } = useGeneration();
 
@@ -246,15 +237,23 @@ export default function Sidebar() {
       className="w-[230px] shrink-0 h-screen overflow-y-auto text-white px-3 py-5 sticky top-0 flex flex-col"
       style={{ background: "#251762" }}
     >
-      {/* Logo */}
-      <div className="px-3 mb-5">
-        <div className="text-[22px] font-bold tracking-tight leading-none">
-          <span style={{ color: "#fff" }}>Bulls</span>
-          <span style={{ color: "#62E0D8" }}>Eye</span>
+      {/* Logo + ocultar menú */}
+      <div className="px-3 mb-5 flex items-start justify-between gap-2">
+        <div>
+          <img src="/brand/bullseye-logo-white.png" alt="BullsEye" className="h-[30px] w-auto" />
+          <div className="text-[10px] mt-1.5" style={{ color: "rgba(255,255,255,0.4)" }}>
+            B2B ABM Platform
+          </div>
         </div>
-        <div className="text-[10px] mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
-          B2B Prospecting Platform
-        </div>
+        <button
+          onClick={onCollapse}
+          title="Ocultar menú"
+          aria-label="Ocultar menú"
+          className="p-1 rounded-md transition hover:bg-white/10 shrink-0"
+          style={{ color: "rgba(255,255,255,0.5)" }}
+        >
+          <IconLayoutSidebarLeftCollapse size={18} stroke={1.5} />
+        </button>
       </div>
 
       {/* Selector de cliente */}

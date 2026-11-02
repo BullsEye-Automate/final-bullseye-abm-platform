@@ -19,31 +19,34 @@ export const PARTS: Part[] = [
   ["II", "Cuentas objetivo", [[4, "cobertura", "Cobertura de cuentas"], [5, "wishlist", "Wishlist y propuestas de BullsEye"]]],
   ["III", "Avance en cuentas", [[6, "funnel", "Funnel ABM"], [7, "profundidad", "Profundidad ABM"], [8, "multi", "Multi-threading"], [9, "est-emp", "Estados de empresas"], [10, "est-ct", "Estados de contactos"], [11, "contactab", "Contactabilidad"], [12, "conv", "Conversaciones"], [13, "seguimientos", "Seguimientos"], [14, "referrals", "Referrals"]]],
   ["IV", "Reuniones", [[15, "reuniones", "Reuniones agendadas vs realizadas"], [16, "reuniones-detalle", "Detalle de reuniones"]]],
-  ["V", "Feedback comercial", [[17, "feedback", "Feedback del cliente"], [18, "calidad", "Calidad de reuniones"], [19, "feedback-form", "Completar feedback"]]],
-  ["VI", "Voz del mercado", [[20, "objeciones", "Objeciones"], [21, "senales", "Señales de interés"], [22, "score-sdr", "Score de desempeño SDR"], [23, "descartadas", "Empresas descartadas"], [24, "icp", "Ajuste al ICP"]]],
-  ["VII", "ICP del proyecto", [[25, "icp-vigente", "ICP y buyer persona vigentes"], [26, "icp-trabajo", "Lo que estamos trabajando"]]],
-  ["VIII", "Segmentos", [[27, "rol", "Análisis por rol"], [28, "industria", "Análisis por industria"], [29, "pais", "Análisis por país"], [30, "sdr", "Análisis por SDR"]]],
-  ["IX", "Evolución y stock", [[31, "evolucion", "Evolución temporal"], [32, "stock-op", "Stock operativo"], [33, "stock-opp", "Stock de oportunidad"], [34, "recuperables", "Cuentas recuperables"]]],
-  ["X", "Recomendaciones", [[35, "rec-be", "Recomendaciones BullsEye"], [36, "rec-cli", "Recomendaciones para el cliente"]]],
-  ["XI", "Inteligencia (KAM)", [[37, "inteligencia", "Inteligencia comercial"], [38, "aprendizajes", "Lo que aprendimos del mercado"], [39, "oportunidades", "Oportunidades detectadas"]]],
-  ["XII", "Tablas maestras", [[40, "tm-emp", "Tabla maestra de empresas"], [41, "tm-ct", "Tabla maestra de contactos"]]],
+  ["V", "Feedback manual", [[17, "feedback-form", "Completar feedback"]]],
+  ["VI", "Resumen feedback", [[18, "feedback", "Feedback del cliente"], [19, "calidad", "Calidad de reuniones"]]],
+  ["VII", "Peitho", [["P", "peitho", "Peitho · feedback automático de reuniones"]]],
+  ["VIII", "Voz del mercado", [[20, "objeciones", "Objeciones"], [21, "senales", "Señales de interés"], [22, "score-sdr", "Score de desempeño SDR"], [23, "descartadas", "Empresas descartadas"], [24, "icp", "Ajuste al ICP"]]],
+  ["IX", "ICP del proyecto", [[25, "icp-vigente", "ICP y buyer persona vigentes"], [26, "icp-trabajo", "Lo que estamos trabajando"]]],
+  ["X", "Segmentos", [[27, "rol", "Análisis por rol"], [28, "industria", "Análisis por industria"], [29, "pais", "Análisis por país"], [30, "sdr", "Análisis por SDR"]]],
+  ["XI", "Evolución y stock", [[31, "evolucion", "Evolución temporal"], [32, "stock-op", "Stock operativo"], [33, "stock-opp", "Stock de oportunidad"], [34, "recuperables", "Cuentas recuperables"]]],
+  ["XII", "Recomendaciones", [[35, "rec-be", "Recomendaciones BullsEye"], [36, "rec-cli", "Recomendaciones para el cliente"]]],
+  ["XIII", "Inteligencia (KAM)", [[37, "inteligencia", "Inteligencia comercial"], [38, "aprendizajes", "Lo que aprendimos del mercado"], [39, "oportunidades", "Oportunidades detectadas"]]],
+  ["XIV", "Tablas maestras", [[40, "tm-emp", "Tabla maestra de empresas"], [41, "tm-ct", "Tabla maestra de contactos"]]],
   ["A", "Anexo · Validación de datos", [["A1", "datos-prop", "Propiedades y mapeo HubSpot"], ["A2", "datos-metr", "Qué se puede calcular"], ["A3", "datos-inc", "Inconsistencias detectadas"], ["A4", "datos-nuevas", "Propiedades a registrar"]]],
 ];
 
 // Slug de cada vista (URLs del portal: /portal/radar?vista=<slug>)
 export const PART_SLUGS = [
-  "vision-ejecutiva", "cuentas-objetivo", "avance-cuentas", "reuniones", "feedback-comercial", "voz-mercado",
+  "vision-ejecutiva", "cuentas-objetivo", "avance-cuentas", "reuniones", "feedback-manual", "resumen-feedback", "peitho", "voz-mercado",
   "icp-proyecto", "segmentos", "evolucion-stock", "recomendaciones", "inteligencia", "tablas-maestras", "validacion-datos",
 ];
 // Vistas solo para el equipo BullsEye (no se muestran en el portal)
 export const INTERNAL_PARTS = new Set(["inteligencia", "validacion-datos"]);
 // Slugs anteriores (links ya compartidos) → vista actual
 const SLUG_ALIASES: Record<string, string> = {
+  "feedback-comercial": "feedback-manual",
   "cuentas-contactos": "avance-cuentas", "contacto-conversacion": "avance-cuentas", potencial: "avance-cuentas", "descarte-icp": "voz-mercado",
 };
 export const partIndex = (slug: string | null | undefined) => Math.max(0, PART_SLUGS.indexOf(SLUG_ALIASES[slug ?? ""] ?? slug ?? ""));
 // Secciones que arma React (no salen del HTML generado)
-export const REACT_SECTIONS = new Set(["wishlist", "feedback-form", "icp-vigente", "tm-emp", "tm-ct"]);
+export const REACT_SECTIONS = new Set(["wishlist", "feedback-form", "peitho", "icp-vigente", "tm-emp", "tm-ct"]);
 
 export const LEADS: Record<string, string> = {
   resumen: "Qué pasó con las cuentas, hasta dónde llegamos dentro de ellas y qué potencial queda abierto.",
@@ -59,10 +62,11 @@ export const LEADS: Record<string, string> = {
   conv: "¿Qué ocurre cuando logramos hablar con alguien?",
   reuniones: "Agendadas ≠ realizadas. Reunión ≠ oportunidad.",
   calidad: "Clasificación solo cuando hay información suficiente.",
-  wishlist: "Las cuentas que el cliente quiere trabajar: propuestas de BullsEye para aprobar, búsqueda y solicitud de empresas, y la lista de exclusión.",
+  wishlist: "Las cuentas que el cliente quiere trabajar: propuestas de BullsEye para aprobar, listado de empresas subido por el cliente y la lista de exclusión.",
   "reuniones-detalle": "Todas las reuniones del período tal como están en la planilla de reuniones.",
   feedback: "Lo que el cliente nos dice de cada reunión realizada: si la empresa y el contacto calificaban, la propuesta y la probabilidad de cierre.",
   "feedback-form": "Reuniones realizadas que esperan tu evaluación.",
+  peitho: "Feedback automático de cada reunión: preparación, análisis de la conversación y fit con el ICP.",
   "score-sdr": "Calidad de las conversaciones según el Score de Desempeño SDR que la IA de Allo asigna a las llamadas conectadas.",
   "icp-vigente": "El perfil de empresa y de contacto con el que estamos prospectando.",
   "icp-trabajo": "Cómo se ve, en los hechos, la base que estamos trabajando frente a ese ICP.",
@@ -293,10 +297,10 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     return left.length ? `<div class="fstay">Se quedan aquí: ${left.map(([st, A]) => `<span><i style="background:${stColor(A[0])}"></i>${esc(st)} <b>${N(A.length)}</b></span>`).join("")}</div>` : "";
   };
   const coList = coListHtml;
-  const money = M.pipe ? `<div class="fconv" style="height:6px;padding:0"></div><div class="fst"><div class="fbar" style="width:60%;background:var(--good)" data-tip="Pipeline / negocio: ${M.pipe.n} negocios registrados"><span>Pipeline / negocio<small>${M.pipe.n} negocios registrados</small></span><b>${USD(M.pipe.open + M.pipe.won)}</b></div></div>` : "";
+  const money = M.pipe ? `<div class="fconv" style="height:6px;padding:0"></div><div class="fst"><div class="fbar" style="width:60%;background:var(--good-fg)" data-tip="Pipeline / negocio: ${M.pipe.n} negocios registrados"><span>Pipeline / negocio<small>${M.pipe.n} negocios registrados</small></span><b>${USD(M.pipe.open + M.pipe.won)}</b></div></div>` : "";
   s.funnel = `<div class="rcard"><div class="fun">${fsteps.map((st, i) => {
     const v = st.set.length, prev = i ? fsteps[i - 1].set.length : null;
-    const w = 36 + 64 * v / fmax, col = `color-mix(in srgb, var(--accent) ${100 - i * 13}%, var(--teal))`;
+    const w = 36 + 64 * v / fmax, col = `color-mix(in srgb, var(--accent) ${100 - i * 13}%, var(--teal-fg))`;
     const conv = i > 0 && prev != null ? `<div class="fconv">↓ <b>${P(div(v, prev))}</b> pasa desde la etapa anterior</div>` : "";
     return `${conv}<div class="fst"><button type="button" class="fbar" data-ra-stage="${i}" style="width:${w}%;background:${col}" data-tip="${esc(st.l + ": " + st.d + " · clic para ver las empresas")}"><span>${st.l}<small>${st.d}</small></span><b>${N(v)}</b></button></div>${stays(i)}`;
   }).join("")}${money}</div>
@@ -354,7 +358,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   s.seguimientos = `<div class="grid2"><div class="rcard"><h4>Stock de oportunidad</h4><div class="tiles">${tile("Empresas en seguimiento", N(cnt(C, (c) => c.st === "En seguimiento")))}${tile("Empresas por retomar", N(cnt(C, (c) => c.st === "Sin interés ahora - Retomar")))}${tile("Contactos en seguimiento", N(f.K.length), `${cnt(f.K, (x: any) => x.fu === "interes")} con interés activo`)}${tile("Próximos 14 días", N(f.soon.length))}</div></div>
   <div class="rcard"><h4>Trabajo pendiente</h4><div class="tiles">${tile("Seguimientos vencidos", N(f.overdue.length), f.K.length ? P(f.overdue.length / f.K.length) + " del total" : "")}${tile("Sin próxima acción", N(f.none.length), "contactos sin fecha")}${tile("Empresas sin fecha", N(f.coNone.length), "en seguimiento o retomar")}${tile("Empresas vencidas", N(f.coOver.length))}</div></div></div>
   <h4 class="subh">Seguimientos que requieren acción (vencidos y sin fecha)</h4>
-  ${table([{ h: "Contacto", f: (r) => esc(r.x.n) }, { h: "Empresa", f: (r) => esc(r.x.c?.n) }, { h: "Cargo", s: 1, f: (r) => esc(r.x.cargo || "—") }, { h: "Motivo", s: 1, f: (r) => esc(r.reason) }, { h: "SDR", s: 1, f: (r) => esc(r.x.sdr) }, { h: "Último contacto", f: (r) => dmy(r.x.last) }, { h: "Próximo seguimiento", f: (r) => (r.x.next ? `<span style="color:var(--bad)">${dmy(r.x.next)}</span>` : '<span class="flag">sin fecha</span>') }, { h: "Próximo paso", s: 1, f: (r) => esc(r.x.ps) }],
+  ${table([{ h: "Contacto", f: (r) => esc(r.x.n) }, { h: "Empresa", f: (r) => esc(r.x.c?.n) }, { h: "Cargo", s: 1, f: (r) => esc(r.x.cargo || "—") }, { h: "Motivo", s: 1, f: (r) => esc(r.reason) }, { h: "SDR", s: 1, f: (r) => esc(r.x.sdr) }, { h: "Último contacto", f: (r) => dmy(r.x.last) }, { h: "Próximo seguimiento", f: (r) => (r.x.next ? `<span style="color:var(--bad-fg)">${dmy(r.x.next)}</span>` : '<span class="flag">sin fecha</span>') }, { h: "Próximo paso", s: 1, f: (r) => esc(r.x.ps) }],
     f.overdue.concat(f.none).sort((a: any, b: any) => (a.next || "0").localeCompare(b.next || "0")).slice(0, 30).map(fuRow))}`;
 
   const refArea = seg(M, (x) => x.area).filter((a) => a.eff >= 5);
@@ -628,7 +632,7 @@ export function annex(M: Model, mapping?: { label: string; property: string | nu
     ["Empresas sin industria", cnt(C, (c) => !c.ind), "Quedan fuera del análisis por industria."],
     [`Contactos en "${PAUSA}"`, cnt(K, (x) => x.st === PAUSA), "Estado sin grupo analítico oficial; se propone tratarlo como pausa neutral."],
   ];
-  s["datos-inc"] = table([{ h: "Chequeo", f: (r) => esc(r[0]) }, { h: "Casos", n: 1, f: (r) => (r[1] ? `<b style="color:${r[1] > 5 ? "var(--bad)" : "var(--warn)"}">${r[1]}</b>` : '<span style="color:var(--good)">0</span>') }, { h: "Impacto", s: 1, f: (r) => esc(r[2]) }], inc)
+  s["datos-inc"] = table([{ h: "Chequeo", f: (r) => esc(r[0]) }, { h: "Casos", n: 1, f: (r) => (r[1] ? `<b style="color:${r[1] > 5 ? "var(--bad-fg)" : "var(--warn-fg)"}">${r[1]}</b>` : '<span style="color:var(--good-fg)">0</span>') }, { h: "Impacto", s: 1, f: (r) => esc(r[2]) }], inc)
     + `<p class="note">Otras definiciones a validar con el equipo: (1) "En conversaciones con [cliente]" figura en dos grupos (interés y relación existente); (2) "Nutrir" es a la vez problema de contactabilidad y reciclaje; (3) cuál es el universo "objetivo" de cada cliente (lista, propiedad o todas las empresas asociadas); (4) si "Contacto No Fit" debe contarse como conversación.</p>`;
   const nw: [string, string, string, string][] = [["Objeción principal", "Contacto", "Enumeración con las 10 categorías del informe", "Objeciones sin lectura manual de notas"], ["Señal de interés", "Contacto", "Enumeración (solicita info, propuesta, demo, proyecto futuro…)", "Señales de interés y priorización"], ["Referido por", "Contacto", "Etiqueta de asociación contacto → contacto", "Resultado de cada referral"], ["Tier ICP", "Empresa", "A / B / C acordado con el cliente", "Análisis ICP y priorización"], ["Área y seniority", "Contacto", "Enumeraciones normalizadas", "Análisis por rol comparable entre clientes"], ["Fecha de próximo seguimiento obligatoria", "Contacto / empresa", "Requerida al pasar a Hacer Seguimiento o En seguimiento", "Seguimientos vencidos confiables"], ["Resultado de la reunión", "Reunión", "Oportunidad / Seguimiento / Descartada / Sin avance", "Calidad y conversión a oportunidad"], ["Feedback del cliente", "Reunión", "Texto + calificación 1–5", "Calidad de reunión"], ["Canal del contacto efectivo", "Contacto", "Teléfono / WhatsApp / LinkedIn / Email", "Qué canal convierte"], ["Motivo de descarte", "Empresa", "Enumeración", "Empresas descartadas y recuperables"], ["Origen BullsEye en negocios", "Negocio", "Casilla o fuente del negocio", "Pipeline atribuible a BullsEye"]];
   s["datos-nuevas"] = table([{ h: "Propiedad", f: (r) => `<b>${esc(r[0])}</b>` }, { h: "Objeto", f: (r) => r[1] }, { h: "Formato", s: 1, f: (r) => esc(r[2]) }, { h: "Habilita", s: 1, f: (r) => esc(r[3]) }], nw);

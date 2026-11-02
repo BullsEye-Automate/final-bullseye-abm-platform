@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { IconAlertCircle, IconLoader2, IconRefresh, IconSettings } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
-import { PARTS } from "@/lib/radarAbm/render";
+import { PARTS, PART_SLUGS } from "@/lib/radarAbm/render";
 import { DEFAULT_CONFIG } from "@/lib/radarAbm/dictionaries";
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import RadarReport, { visibleParts } from "@/components/radar/RadarReport";
@@ -126,7 +126,7 @@ export default function RadarAbmPage() {
             const Icon = PART_ICONS[i];
             return (
               <div key={i} style={{ display: "contents" }}>
-                {PARTS[i][0] === "XII" && <div className="ra-grp">Datos</div>}
+                {PART_SLUGS[i] === "tablas-maestras" && <div className="ra-grp">Datos</div>}
                 <button className={i === view ? "on" : ""} onClick={() => changeView(i)}>
                   <Icon size={16} stroke={1.6} /> <span>{PARTS[i][1]}</span>
                 </button>
