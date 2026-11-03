@@ -255,7 +255,11 @@ const JS = `
   var KEY=document.body.getAttribute('data-key');
   function load(){try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){return []}}
   function save(v){try{localStorage.setItem(KEY,JSON.stringify(v))}catch(e){}}
-  var done=load();
+  // Avance guardado en la app (seguimiento por SDR): se suma al del navegador
+  var seed=[];try{seed=JSON.parse(document.body.getAttribute('data-done')||'[]')}catch(e){}
+  var done=load();seed.forEach(function(n){if(done.indexOf(n)<0)done.push(n)});
+  // Dentro de la app (iframe) avisa a la página para registrar el avance
+  function emit(m){try{if(window.parent!==window){m.source='academia-sdr';window.parent.postMessage(m,'*')}}catch(e){}}
   var tabs=[].slice.call(document.querySelectorAll('.tab'));
   var panels=[].slice.call(document.querySelectorAll('.panel'));
   var lights=[].slice.call(document.querySelectorAll('.light'));
@@ -274,9 +278,9 @@ const JS = `
   panels.forEach(function(p){
     var no=+p.getAttribute('data-no');
     var b=p.querySelector('[data-done]');
-    if(b)b.addEventListener('click',function(){var i=done.indexOf(no);if(i>=0)done.splice(i,1);else done.push(no);save(done);paint()});
+    if(b)b.addEventListener('click',function(){var i=done.indexOf(no);if(i>=0){done.splice(i,1);emit({type:'lap_undone',no:no})}else{done.push(no);emit({type:'lap_done',no:no})}save(done);paint()});
     var n=p.querySelector('[data-next]');
-    if(n)n.addEventListener('click',function(){if(done.indexOf(no)<0){done.push(no);save(done);paint()}var nx=panels[panels.indexOf(p)+1];if(nx)show(+nx.getAttribute('data-no'))});
+    if(n)n.addEventListener('click',function(){if(done.indexOf(no)<0){done.push(no);save(done);paint();emit({type:'lap_done',no:no})}var nx=panels[panels.indexOf(p)+1];if(nx)show(+nx.getAttribute('data-no'))});
   });
   document.querySelectorAll('[data-svc],[data-obj]').forEach(function(box){
     var chips=box.querySelectorAll('.chip'),cards=box.querySelectorAll('.svc-card,.obj-card');
@@ -316,6 +320,8 @@ const JS = `
         q.querySelectorAll('.opt').forEach(function(o){var v=o.querySelector('input').value;o.classList.toggle('right',v===a);o.classList.toggle('wrong',!!c&&c.value===v&&v!==a)});
         if(c&&c.value===a)ok++});
       var pass=+form.getAttribute('data-pass');
+      var lap=+form.closest('.panel').getAttribute('data-no');
+      emit({type:'quiz',no:lap,score:ok,total:fs.length});
       form.querySelector('.score').textContent=ok+' de '+fs.length+(ok>=pass?' — ¡Aprobaste! 🏁':' — Repasa y vuelve a intentarlo');
     });
   });
@@ -323,7 +329,7 @@ const JS = `
 })();
 `;
 
-export function renderAcademyHtml(opts: { clientName: string; clientKey: string; modules: AcademyModule[] }): string {
+export function renderAcademyHtml(opts: { clientName: string; clientKey: string; modules: AcademyModule[]; completed?: number[] }): string {
   const mods = opts.modules.slice().sort((a, b) => a.no - b.no);
   const first = mods[0]?.no ?? 1;
   const lights = mods.map((m) => `<span class="light" data-no="${m.no}" title="Vuelta ${m.no}"></span>`).join("");
@@ -353,7 +359,7 @@ export function renderAcademyHtml(opts: { clientName: string; clientKey: string;
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Sora:wght@400;600;700&display=swap" rel="stylesheet">
 <style>${CSS}</style>
 </head>
-<body data-key="academia-sdr:${esc(opts.clientKey)}">
+<body data-key="academia-sdr:${esc(opts.clientKey)}" data-done="${esc(JSON.stringify(opts.completed ?? []))}">
 <div class="wrap">
   <header class="top">
     <div><div class="logo">Bulls<b>Eye</b></div><div class="sub">Academia SDR · ${esc(opts.clientName)}</div></div>

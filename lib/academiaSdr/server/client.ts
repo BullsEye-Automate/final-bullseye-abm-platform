@@ -14,7 +14,7 @@ export async function resolveClient(db: SupabaseClient, clientId: string | null 
 export async function currentUserEmail(): Promise<string | null> {
   try {
     const { data } = await supabaseServer().auth.getUser();
-    return data.user?.email ?? null;
+    return data.user?.email?.toLowerCase() ?? null;
   } catch {
     return null;
   }

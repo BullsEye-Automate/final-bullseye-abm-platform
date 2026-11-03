@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAlertCircle,
+  IconChartBar,
+  IconSettings,
   IconCheck,
   IconDownload,
   IconExternalLink,
@@ -18,6 +20,26 @@ import { renderAcademyHtml } from "@/lib/academiaSdr/render";
 import { EMPTY_INPUTS, type AcademyInputs, type AcademyModule, type AcademyRecord } from "@/lib/academiaSdr/types";
 
 type ModState = "idle" | "running" | "error";
+type Tab = "capacitacion" | "seguimiento" | "configurar";
+
+type TrackingRow = {
+  email: string;
+  sdrName: string | null;
+  leaderName: string | null;
+  visits: number;
+  firstVisit: string | null;
+  lastVisit: string | null;
+  completed: number[];
+  lastCompletedAt: string | null;
+  quizScore: number | null;
+  quizTotal: number | null;
+  quizAttempts: number;
+};
+
+function fmtDate(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("es-CL", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
 
 // Cuántos módulos se generan a la vez (el 1 va solo primero: deja cacheado
 // el contexto del cliente para los demás).
@@ -35,6 +57,29 @@ export default function AcademiaSdrPage() {
   const [states, setStates] = useState<Record<number, ModState>>({});
   const [modErrors, setModErrors] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<Tab>("capacitacion");
+  // Vueltas ya completadas por el usuario (se cargan una vez: si cambiaran
+  // en cada evento el iframe se recargaría).
+  const [seedDone, setSeedDone] = useState<number[]>([]);
+  const [tracking, setTracking] = useState<TrackingRow[]>([]);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const visitedFor = useRef<string | null>(null);
+
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "seguimiento" || t === "configurar") setTab(t);
+  }, []);
+
+  function loadTracking(id: string, withSeed = false) {
+    return fetch(`/api/academia-sdr/progress?client_id=${id}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) return;
+        setTracking(data.tracking ?? []);
+        if (withSeed) setSeedDone(data.me ?? []);
+      })
+      .catch(() => {});
+  }
 
   useEffect(() => {
     if (!clientId) return;
@@ -44,14 +89,17 @@ export default function AcademiaSdrPage() {
     setAcademy(null);
     setStates({});
     setModErrors({});
-    fetch(`/api/academia-sdr?client_id=${clientId}`)
-      .then(async (r) => {
+    setSeedDone([]);
+    setTracking([]);
+    Promise.all([fetch(`/api/academia-sdr?client_id=${clientId}`), loadTracking(clientId, true)])
+      .then(async ([r]) => {
         const data = await r.json();
         if (cancelled) return;
         if (!r.ok) throw new Error(data.error || "No se pudo cargar la academia");
         setAcademy(data.academy);
         setMaterials(data.materials);
         setInputs(data.academy.inputs);
+        if (!data.academy.modules.some(Boolean)) setTab((t) => (t === "capacitacion" ? "configurar" : t));
       })
       .catch((e) => !cancelled && setError((e as Error).message))
       .finally(() => !cancelled && setLoading(false));
@@ -64,9 +112,40 @@ export default function AcademiaSdrPage() {
   const readyCount = modules.length;
   const openQuestions = useMemo(() => modules.flatMap((m) => (m.openQuestions ?? []).map((q) => ({ no: m.no, q }))), [modules]);
   const html = useMemo(
-    () => (modules.length && currentClient ? renderAcademyHtml({ clientName: currentClient.name, clientKey: currentClient.slug, modules }) : ""),
-    [modules, currentClient]
+    () => (modules.length && currentClient ? renderAcademyHtml({ clientName: currentClient.name, clientKey: currentClient.slug, modules, completed: seedDone }) : ""),
+    [modules, currentClient, seedDone]
   );
+
+  // Registra un ingreso cada vez que se abre la capacitación de un cliente.
+  useEffect(() => {
+    if (!clientId || !html || tab !== "capacitacion" || visitedFor.current === clientId) return;
+    visitedFor.current = clientId;
+    void fetch("/api/academia-sdr/progress", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ client_id: clientId, type: "visit" }),
+    });
+  }, [clientId, html, tab]);
+
+  // El HTML de la academia avisa (postMessage) cuando se completa una vuelta
+  // o se responde el quiz; se registra y, la primera vez que se completa una
+  // vuelta, el servidor avisa por correo a la líder del SDR.
+  useEffect(() => {
+    if (!clientId) return;
+    const id = clientId;
+    function onMessage(e: MessageEvent) {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const d = e.data as { source?: string; type?: string; no?: number; score?: number; total?: number };
+      if (d?.source !== "academia-sdr" || !["lap_done", "lap_undone", "quiz"].includes(d.type ?? "")) return;
+      void fetch("/api/academia-sdr/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: id, type: d.type, no: d.no, score: d.score, total: d.total }),
+      }).then(() => loadTracking(id));
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [clientId]);
 
   async function saveInputs(): Promise<boolean> {
     const r = await fetch(`/api/academia-sdr?client_id=${clientId}`, {
@@ -177,7 +256,7 @@ export default function AcademiaSdrPage() {
     <div className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="label">Análisis · SDR</div>
+          <div className="label">SDR</div>
           <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
             <IconSchool size={24} /> Academia SDR
           </h1>
@@ -203,7 +282,23 @@ export default function AcademiaSdrPage() {
         </div>
       )}
 
-      {loading ? (
+      <div className="flex gap-1 border-b border-[#EEEAF6]">
+        {([
+          ["capacitacion", "Capacitación", IconSchool],
+          ["seguimiento", "Seguimiento", IconChartBar],
+          ["configurar", "Configurar", IconSettings],
+        ] as const).map(([key, label, Icon]) => (
+          <button
+            key={key}
+            onClick={() => setTab(key)}
+            className={`px-3 py-2 text-sm flex items-center gap-1.5 border-b-2 -mb-px ${tab === key ? "border-brand text-brand font-medium" : "border-transparent text-ink-muted"}`}
+          >
+            <Icon size={15} /> {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "configurar" && (loading ? (
         <div className="card flex items-center gap-3 text-ink-muted">
           <IconLoader2 size={18} className="animate-spin" /> Cargando…
         </div>
@@ -275,9 +370,9 @@ export default function AcademiaSdrPage() {
             </div>
           </div>
         )
-      )}
+      ))}
 
-      {openQuestions.length > 0 && (
+      {tab === "configurar" && openQuestions.length > 0 && (
         <div className="card space-y-2">
           <h2 className="font-semibold">Confirmar con el cliente antes de usar la capacitación</h2>
           <ul className="list-disc pl-5 text-sm space-y-1">
@@ -290,9 +385,84 @@ export default function AcademiaSdrPage() {
         </div>
       )}
 
-      {html && (
+      {tab === "capacitacion" && !loading && !html && (
+        <div className="card text-center py-10">
+          <IconSchool size={36} className="mx-auto mb-3 text-ink-subtle" />
+          <p className="font-medium text-ink">La academia de {currentClient?.name} aún no está generada</p>
+          <button className="btn-primary mt-4 mx-auto" onClick={() => setTab("configurar")}>
+            Ir a Configurar
+          </button>
+        </div>
+      )}
+
+      {tab === "seguimiento" && (
+        <div className="card p-0 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-ink-muted border-b border-[#EEEAF6]">
+                <th className="px-4 py-2 font-medium">SDR</th>
+                <th className="px-4 py-2 font-medium">Líder</th>
+                <th className="px-4 py-2 font-medium text-right">Ingresos</th>
+                <th className="px-4 py-2 font-medium">Último ingreso</th>
+                <th className="px-4 py-2 font-medium">Vueltas</th>
+                <th className="px-4 py-2 font-medium">Quiz</th>
+                <th className="px-4 py-2 font-medium">Última vuelta</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tracking.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-ink-muted">
+                    Nadie ha ingresado todavía a la academia de este cliente.
+                  </td>
+                </tr>
+              )}
+              {tracking.map((r) => {
+                const passed = r.quizScore != null && r.quizTotal ? r.quizScore >= Math.ceil(r.quizTotal * 0.8) : false;
+                return (
+                  <tr key={r.email} className="border-b border-[#EEEAF6] last:border-0">
+                    <td className="px-4 py-2">
+                      <div className="font-medium">{r.sdrName ?? r.email}</div>
+                      {r.sdrName && <div className="text-xs text-ink-subtle">{r.email}</div>}
+                    </td>
+                    <td className="px-4 py-2">{r.leaderName ?? "—"}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{r.visits}</td>
+                    <td className="px-4 py-2 whitespace-nowrap">{fmtDate(r.lastVisit)}</td>
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-1" title={r.completed.map((n) => `Vuelta ${n}`).join(", ") || "Ninguna"}>
+                        {MODULES.map((m) => (
+                          <span key={m.no} className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: r.completed.includes(m.no) ? "#62E0D8" : "#E4E0F2" }} />
+                        ))}
+                        <span className="ml-2 tabular-nums text-ink-muted">
+                          {r.completed.length}/{MODULES.length}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap">
+                      {r.quizScore != null ? (
+                        <span className={passed ? "text-success-fg" : "text-danger-fg"}>
+                          {r.quizScore}/{r.quizTotal} {passed ? "✓" : ""}
+                          <span className="text-xs text-ink-subtle"> · {r.quizAttempts} intento(s)</span>
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-4 py-2 whitespace-nowrap">{fmtDate(r.lastCompletedAt)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="text-xs text-ink-subtle px-4 py-3 border-t border-[#EEEAF6]">
+            Solo se registra el avance hecho dentro de la plataforma (no el del .html descargado). Al completar una vuelta por primera vez se avisa por correo a la líder de célula del SDR, con copia a Ingri.
+          </p>
+        </div>
+      )}
+
+      {tab === "capacitacion" && html && (
         <div className="card p-0 overflow-hidden">
-          <iframe title="Academia SDR" srcDoc={html} className="w-full block" style={{ height: "80vh", border: 0 }} sandbox="allow-scripts allow-same-origin allow-popups" />
+          <iframe ref={iframeRef} title="Academia SDR" srcDoc={html} className="w-full block" style={{ height: "80vh", border: 0 }} sandbox="allow-scripts allow-same-origin allow-popups" />
         </div>
       )}
     </div>
