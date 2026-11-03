@@ -209,7 +209,7 @@ function InboxPreview({ subject, body, channel }: { subject: string; body: strin
 
 function EmailCard({ subject, body, showSubject = true, channel = "email", onSend, sending, sendResult, defaultTo }: {
   subject: string; body: string; showSubject?: boolean; channel?: string;
-  onSend?: (subject: string, body: string) => void;
+  onSend?: (subject: string, body: string, to: string) => void;
   sending?: boolean;
   sendResult?: { ok: boolean; msg?: string } | null;
   defaultTo?: string;
@@ -311,7 +311,7 @@ function EmailCard({ subject, body, showSubject = true, channel = "email", onSen
               placeholder="Email del destinatario"
               className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
               style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
-            <button onClick={() => { if (sendTo) onSend(subject, body); }} disabled={!sendTo || sending}
+            <button onClick={() => { if (sendTo) onSend(subject, body, sendTo); }} disabled={!sendTo || sending}
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium disabled:opacity-50"
               style={{ background: "#251762", color: "#62E0D8" }}>
               {sending ? "Enviando…" : <><IconSend size={13} /> Enviar</>}
@@ -336,7 +336,7 @@ function EmailCard({ subject, body, showSubject = true, channel = "email", onSen
 
 function Bubble({ msg, channel, onSend, sending, sendResult, contactEmail }: {
   msg: Message; channel: string;
-  onSend?: (subject: string, body: string) => void;
+  onSend?: (subject: string, body: string, to: string) => void;
   sending?: boolean;
   sendResult?: { ok: boolean; msg?: string } | null;
   contactEmail?: string;
@@ -1147,8 +1147,7 @@ export default function ChatV2Page() {
             <div className="flex-1 overflow-y-auto px-6 py-6">
               {messages.map((msg, i) => (
                 <Bubble key={i} msg={msg} channel={channel}
-                  onSend={gmailEmail && msg.role === "assistant" ? (subj, body) => {
-                    const to = selectedContact?.email ?? "";
+                  onSend={gmailEmail && msg.role === "assistant" ? (subj, body, to) => {
                     sendGmail(i, to, subj, body);
                   } : undefined}
                   sending={sendingEmail === i}
