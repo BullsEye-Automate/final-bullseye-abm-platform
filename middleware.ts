@@ -37,6 +37,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/auth/gmail/callback",      // callback OAuth Google — Google redirige sin sesión
   "/api/allo/contact-calls",  // llamadas Allo por teléfono — usada por /chat-v2
   "/api/training/segments",   // segmentos de estilo — requeridos por /chat sin sesión
+  "/api/centro/mcp",          // conector MCP del Centro de prospección — valida CENTRO_MCP_SECRET en la URL
 ];
 
 function isPublicPath(pathname: string, method: string): boolean {
