@@ -243,8 +243,8 @@ export default function SaludNumerosPage() {
           <section className="card space-y-2">
             <h2 className="text-sm font-semibold">Correo automático</h2>
             <p className="text-xs text-ink-muted">
-              Lunes a las 8:00: resumen semanal completo. Martes a viernes a las 8:00: solo si un número pasa a
-              “Reemplazar”.
+              Todos los días hábiles a las 8:00: números por reemplazar, por revisar y a vigilar. Las alertas que
+              aparecieron desde el último correo vienen marcadas como “Nueva”.
             </p>
             <MailRecipientsEditor reportKey="phone_health" />
           </section>
