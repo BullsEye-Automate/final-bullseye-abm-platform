@@ -1,10 +1,10 @@
-import { timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
   COLLECTIONS, deleteDoc, isCollection, isDocId, matches, readDoc, readDocs, sortRows, writeDoc,
   type Collection, type Where,
 } from "@/lib/centroProspeccion/store";
 import { signedAssetUrl } from "@/lib/centroProspeccion/assets";
+import { isValidMcpSecret } from "@/lib/centroProspeccion/mcpSecret";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -15,21 +15,13 @@ export const maxDuration = 120;
 // del artifact original: mismas colecciones, mismos campos y la misma regla
 // de versión (toda escritura sobre un documento existente lleva if_version).
 //
-// URL: https://portal.bullseye-abm.com/api/centro/mcp/<CENTRO_MCP_SECRET>
-// Es pública en el middleware: la protege el secreto de la URL (variable de
-// Vercel CENTRO_MCP_SECRET, mínimo 32 caracteres). Si el secreto se filtra,
-// basta con cambiar la variable y la URL del conector.
+// URL: https://portal.bullseye-abm.com/api/centro/mcp/<clave>
+// Es pública en el middleware: la protege la clave de la URL (la genera la
+// app y se ve en /centro-prospeccion/importar; ver lib/centroProspeccion/mcpSecret.ts).
 
 const PROTOCOLS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const BY = "automation@centro";
 
-function validSecret(given: string): boolean {
-  const expected = process.env.CENTRO_MCP_SECRET ?? "";
-  if (expected.length < 32) return false;
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
 
 const collectionSchema = { type: "string", enum: [...COLLECTIONS], description: "Colección del Centro de prospección" };
 const docIdSchema = { type: "string", description: "Id del documento" };
@@ -267,7 +259,7 @@ async function handle(msg: RpcMsg): Promise<Record<string, unknown> | null> {
 }
 
 export async function POST(req: NextRequest, { params }: { params: { secret: string } }) {
-  if (!validSecret(params.secret)) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (!(await isValidMcpSecret(params.secret))) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const body = await req.json().catch(() => undefined);
   if (body === undefined) {
     return NextResponse.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "JSON inválido" } }, { status: 400 });

@@ -26,6 +26,49 @@ async function post(body: unknown) {
   return j;
 }
 
+// URL del conector MCP para las tareas programadas de claude.ai
+// (se agrega en claude.ai → Configuración → Conectores → Agregar conector personalizado).
+function ConnectorUrl() {
+  const [url, setUrl] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  async function show() {
+    setErr(null);
+    try {
+      const res = await fetch("/api/centro/mcp-url", { cache: "no-store" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `Error ${res.status}`);
+      setUrl(j.url);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+  async function copy() {
+    if (!url) return;
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch { /* sin portapapeles */ }
+  }
+  return (
+    <div className="card space-y-3">
+      <div>
+        <h2 className="font-semibold">Conector para las tareas programadas</h2>
+        <p className="text-sm text-ink-muted mt-1">
+          Agrégalo en claude.ai → Configuración → Conectores → «Agregar conector personalizado», con el nombre
+          «Centro de prospección» y esta URL. La URL incluye una clave privada: no la compartas.
+        </p>
+      </div>
+      {!url ? (
+        <button className="btn-secondary w-fit" onClick={show}>Mostrar la URL del conector</button>
+      ) : (
+        <div className="flex gap-2 items-center">
+          <input className="input font-mono text-xs" readOnly value={url} onFocus={(e) => e.currentTarget.select()} />
+          <button className="btn-primary shrink-0" onClick={copy}>{copied ? "Copiada" : "Copiar"}</button>
+        </div>
+      )}
+      {err && <p className="text-sm text-danger-fg">{err}</p>}
+    </div>
+  );
+}
+
 export default function ImportarCentroPage() {
   const [bundle, setBundle] = useState<Bundle | null>(null);
   const [fileErr, setFileErr] = useState<string | null>(null);
@@ -124,6 +167,8 @@ export default function ImportarCentroPage() {
           {running ? <IconLoader2 size={16} className="animate-spin" /> : <IconUpload size={16} />} Importar
         </button>
       </div>
+
+      <ConnectorUrl />
 
       {(log.length > 0 || err || done) && (
         <div className="card text-sm space-y-1">

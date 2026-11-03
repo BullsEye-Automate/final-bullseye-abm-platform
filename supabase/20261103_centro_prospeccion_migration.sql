@@ -158,9 +158,20 @@ create table if not exists centro_assets (
   created_at    timestamptz not null default now()
 );
 
+-- Ajustes del módulo. Por ahora solo la clave del conector MCP
+-- (key = 'mcp_secret'), que la app genera sola la primera vez que el
+-- administrador abre /centro-prospeccion/importar. Si la variable de Vercel
+-- CENTRO_MCP_SECRET existe, manda la variable.
+create table if not exists centro_settings (
+  key         text        primary key,
+  value       text        not null,
+  updated_at  timestamptz not null default now()
+);
+
 alter table centro_docs     enable row level security;
 alter table centro_docs_log enable row level security;
 alter table centro_assets   enable row level security;
+alter table centro_settings enable row level security;
 
 -- Las funciones solo las llama el servidor (service role).
 revoke all on function centro_docs_write(text, text, jsonb, text, integer, text, text) from public, anon, authenticated;

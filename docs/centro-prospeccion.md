@@ -58,8 +58,8 @@ versión (la última escritura gana); el conector MCP exige `if_version`.
 
 ## Conector MCP
 
-URL: `https://portal.bullseye-abm.com/api/centro/mcp/<CENTRO_MCP_SECRET>`
-(variable de Vercel, mínimo 32 caracteres). Herramientas equivalentes a
+URL: `https://portal.bullseye-abm.com/api/centro/mcp/<clave>`. La clave la genera la app y queda en
+`centro_settings` (o la variable de Vercel `CENTRO_MCP_SECRET` si existe); el administrador copia la URL en `/centro-prospeccion/importar`. Herramientas equivalentes a
 ArtifactData: `centro_get`, `centro_list`, `centro_query`, `centro_set`,
 `centro_update`, `centro_delete`, `centro_batch` y `centro_asset_url` (link de
 1 h a un archivo de `docs_cliente`, para leer brochures en PDF).
