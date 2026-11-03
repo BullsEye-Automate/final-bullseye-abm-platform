@@ -1,62 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getReviewerEmail } from "@/lib/portalAdmin";
+import { addManualContact, listManualQueue, MANUAL_STATUSES, setManualStatus, type ManualStatus } from "@/lib/manualProspecting";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
-// Cola de empresas ya aprobadas donde Clay no pudo prospectar, en 3 buckets:
-// sin contactos, con solo 1 contacto, y sin contactos fit (marcadas a mano).
+// GET ?client_id=<id | __all__>&view=open|closed — empresas con pocos contactos
 export async function GET(req: NextRequest) {
-  const clientId      = req.nextUrl.searchParams.get("client_id") || null;
-  const includeRecent = req.nextUrl.searchParams.get("include_recent") === "1";
+  const raw = req.nextUrl.searchParams.get("client_id");
+  const clientId = !raw || raw === "__all__" ? null : raw;
+  const view = req.nextUrl.searchParams.get("view") === "closed" ? "closed" : "open";
+  try {
+    return NextResponse.json(await listManualQueue(supabaseAdmin(), { clientId, view }), { headers: { "Cache-Control": "no-store" } });
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Error inesperado" }, { status: 500 });
+  }
+}
+
+// POST
+//   { action: "status", wishlist_id, manual_status }
+//   { action: "add_contact", wishlist_id, full_name, title?, linkedin_url?, email?, phone? }
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => null);
+  if (typeof body?.wishlist_id !== "string") return NextResponse.json({ error: "Falta wishlist_id" }, { status: 400 });
   const db = supabaseAdmin();
-
-  let q = db
-    .from("companies")
-    .select("id, company_name, company_website, company_linkedin_url, company_city, company_country, company_size, company_type, cad_software, scanner_technology, fit_signals, research_summary, fit_score, clay_pushed_at, clay_no_contacts_at, sales_nav_status, created_at")
-    .not("clay_pushed_at", "is", null);
-  if (clientId) q = q.eq("client_id", clientId);
-  const { data: allCompanies } = await q.order("clay_pushed_at", { ascending: false }).limit(500);
-
-  let cq = db.from("contacts").select("company_id").neq("status", "discarded");
-  if (clientId) cq = cq.eq("client_id", clientId);
-  const { data: contactRows } = await cq;
-  const contactCountMap = new Map<string, number>();
-  for (const r of contactRows ?? []) {
-    if (r.company_id) contactCountMap.set(r.company_id, (contactCountMap.get(r.company_id) ?? 0) + 1);
-  }
-
-  const GRACE_HOURS = includeRecent ? 0 : 24;
-  const now = new Date();
-
-  const no_contacts: unknown[] = [];
-  const one_contact: unknown[] = [];
-  const no_fit: unknown[] = [];
-
-  for (const c of allCompanies ?? []) {
-    const count = contactCountMap.get(c.id) ?? 0;
-
-    if (c.sales_nav_status === "no_fit") {
-      no_fit.push({ company: c, contact_count: count });
-      continue;
+  const email = await getReviewerEmail();
+  try {
+    switch (body.action) {
+      case "status": {
+        if (!MANUAL_STATUSES.includes(body.manual_status)) return NextResponse.json({ error: "Estado inválido" }, { status: 400 });
+        await setManualStatus(db, body.wishlist_id, body.manual_status as ManualStatus, email);
+        return NextResponse.json({ ok: true });
+      }
+      case "add_contact": {
+        if (typeof body.full_name !== "string") return NextResponse.json({ error: "Falta el nombre" }, { status: 400 });
+        const r = await addManualContact(db, body.wishlist_id, body, email);
+        return r.id ? NextResponse.json(r) : NextResponse.json({ error: r.error }, { status: 400 });
+      }
+      default:
+        return NextResponse.json({ error: "Acción inválida" }, { status: 400 });
     }
-
-    const hasExplicitSignal = c.clay_no_contacts_at != null;
-    const pushedHoursAgo = c.clay_pushed_at
-      ? (now.getTime() - new Date(c.clay_pushed_at).getTime()) / 3600000
-      : 0;
-    const isInferred = !hasExplicitSignal && pushedHoursAgo > GRACE_HOURS && count === 0;
-
-    if (count === 0 && (hasExplicitSignal || isInferred)) {
-      no_contacts.push({
-        company: c,
-        contact_count: 0,
-        signal: hasExplicitSignal ? "clay" : "inferred",
-        recent: pushedHoursAgo < GRACE_HOURS
-      });
-    } else if (count === 1 && c.sales_nav_status == null) {
-      one_contact.push({ company: c, contact_count: count });
-    }
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Error inesperado" }, { status: 500 });
   }
-
-  return NextResponse.json({ no_contacts, one_contact, no_fit });
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { IconCopy, IconLoader2, IconUserPlus } from "@tabler/icons-react";
 
 // Accesos al portal de clientes (usuarios por cliente). Se usa en
-// Configuración → Cliente y en Solicitudes clientes → Accesos al portal.
+// Configuración → Cliente.
 // Cada usuario queda ligado a un solo cliente (client_users + rol "client"
 // en Supabase Auth) y en el portal solo ve la información de esa cuenta.
 // La contraseña temporal se muestra una sola vez.

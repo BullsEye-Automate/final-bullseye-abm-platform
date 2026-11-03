@@ -2,7 +2,7 @@ import type { RadarClientData, RadarCompany, RadarConfig, RadarContact, RadarDea
 import { EFF, PEND, PAUSA } from "./dictionaries";
 import { dmy } from "./engine";
 
-// Radar ABM — campos derivados (§3.2, §5 y §7 del prompt maestro).
+// Pulso ABM — campos derivados (§3.2, §5 y §7 del prompt maestro).
 // El sync de HubSpot entrega registros "planos" y acá se calculan los mismos
 // campos que el prototipo trae precalculados en sus datos demo: tamaño,
 // área / seniority desde el cargo, conteos por empresa, profundidad,
@@ -147,7 +147,7 @@ export function deriveClientData(input: {
 
     return {
       id: c.id, n: c.n, ind: c.ind, pais: c.pais, size: sizeFromEmployees(c.employees, cfg.sizeTiers), icp: c.icp, sdr: c.sdr,
-      asg: c.asg, st: c.st, ...(c.next ? { next: c.next } : {}),
+      asg: c.asg, st: c.st, ...(c.wl ? { wl: c.wl } : {}), ...(c.next ? { next: c.next } : {}),
       nct: K.length, nmg: K.filter((k) => !PEND.has(k.st) && k.st !== PAUSA).length, neff: eff.length, areas,
       msch: M.length, mheld: held.length, fu: K.some((k) => k.st === "Hacer Seguimiento"), opp, depth, prio, why: why.join(", "),
     };

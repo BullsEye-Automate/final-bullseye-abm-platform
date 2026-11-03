@@ -1,10 +1,10 @@
 import {
-  IconTarget, IconBuilding, IconPhone, IconCalendarEvent, IconRepeat, IconMessage2, IconFlag, IconLayoutGrid,
-  IconTrendingUp, IconBulb, IconAdjustmentsHorizontal, IconTable, IconDatabase,
+  IconTarget, IconBuildingStore, IconStairsUp, IconCalendarEvent, IconMessageStar, IconMessage2, IconUserSearch, IconLayoutGrid,
+  IconTrendingUp, IconAdjustmentsHorizontal, IconBulb, IconTable, IconDatabase, IconSparkles,
 } from "@tabler/icons-react";
 
-// Ícono de cada parte del informe Radar ABM (mismo orden que PARTS)
+// Ícono de cada parte del informe Pulso ABM (mismo orden que PARTS)
 export const PART_ICONS = [
-  IconTarget, IconBuilding, IconPhone, IconCalendarEvent, IconRepeat, IconMessage2, IconFlag, IconLayoutGrid,
-  IconTrendingUp, IconBulb, IconAdjustmentsHorizontal, IconTable, IconDatabase,
+  IconTarget, IconBuildingStore, IconStairsUp, IconCalendarEvent, IconMessageStar, IconSparkles, IconMessage2, IconUserSearch, IconLayoutGrid,
+  IconTrendingUp, IconAdjustmentsHorizontal, IconBulb, IconTable, IconDatabase,
 ];

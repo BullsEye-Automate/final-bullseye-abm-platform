@@ -1,8 +1,8 @@
 import { supabaseAdmin } from "@/lib/supabase";
-import { normalizeName } from "@/lib/syncMeetings";
 import { resolveSdrKey } from "@/lib/sdrAnalytics";
 import { readMaster, readAssignment, makePersonResolver } from "@/lib/celulasSdr/sheets";
 import { canonicalCountry } from "@/lib/celulasSdr/country";
+import { buildClientDirectory } from "./clientAccounts";
 import { chileToday, monthEnd, monthStart, shiftMonth } from "@/lib/celulasSdr/calendar";
 import type { BaseResponse, CellLeader, Client, DataWarning, Goal, Meeting, MeetingStatus, Sdr } from "@/lib/celulasSdr/types";
 
@@ -22,13 +22,8 @@ const MONTHS_LOADED = 3;
 const SDR_PALETTE = ["#3D2878", "#E0457B", "#14A39A", "#F08A3E", "#7F77DD", "#2F80ED", "#1F9D74", "#C2410C", "#B83280", "#0E7490", "#8B5CF6", "#4D7C0F", "#B45309", "#475569", "#DB2777", "#0369A1"];
 const CELL_COLORS = ["#5B4BD5", "#14A39A", "#F08A3E", "#E0457B"];
 
-// Nombres de cliente de la pestaña Asignación que difieren del nombre en la
-// tabla clients más allá de mayúsculas/tildes. Se agrega una línea cuando
-// la pantalla avise un cliente sin calzar.
-const CLIENT_NAME_ALIASES: Record<string, string> = {
-  ccch: "cchc",
-  "ccch - valle": "cchc - valle",
-};
+// Nombres de cliente que difieren entre la planilla y la tabla clients más
+// allá de mayúsculas/tildes: CLIENT_NAME_EQUIV en lib/celulasSdr/accounts.ts.
 
 function normStatus(v: string | null | undefined): string {
   return (v ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLowerCase();
@@ -80,38 +75,20 @@ export async function loadBase(monthParam: string | null): Promise<BaseResponse>
   // 2. Clientes
   const { data: clientRows, error: clientsErr } = await db.from("clients").select("id, name, slug");
   if (clientsErr) throw new Error(clientsErr.message);
-  const clientByNorm = new Map<string, Client>();
-  const clients = new Map<string, Client>();
-  for (const c of clientRows ?? []) {
-    const cl = { id: c.id as string, name: c.name as string };
-    clients.set(cl.id, cl);
-    clientByNorm.set(normalizeName(cl.name), cl);
-    if (c.slug) clientByNorm.set(normalizeName(c.slug), cl);
-  }
-  const unmatchedClients = new Set<string>();
-  const resolveClient = (raw: string): Client => {
-    const n0 = normalizeName(raw);
-    const n = CLIENT_NAME_ALIASES[n0] ?? n0;
-    const exact = clientByNorm.get(n);
-    if (exact) return exact;
-    const partial = [...clientByNorm.entries()].filter(([k]) => k.startsWith(n) || n.startsWith(k));
-    const uniq = [...new Set(partial.map(([, c]) => c.id))];
-    if (uniq.length === 1) return clients.get(uniq[0])!;
-    unmatchedClients.add(raw.trim());
-    const id = `name:${n}`;
-    if (!clients.has(id)) clients.set(id, { id, name: raw.trim() });
-    return clients.get(id)!;
-  };
+  const dir = buildClientDirectory((clientRows ?? []) as any, rawGoals);
+  const { clients, resolveClient, toAccount } = dir;
+  const unmatchedClients = dir.unmatched;
 
   // 3. Metas de los meses cargados
   const goals: Goal[] = [];
   const goalPeople = new Map<string, string>(); // key → nombre
   for (const g of rawGoals) {
     if (!months.includes(g.month)) continue;
-    const client = resolveClient(g.client);
+    resolveClient(g.client); // registra los que no calzan
+    const clientId = dir.goalClientId(g.client);
     const key = resolveSdrKey(g.person);
     goalPeople.set(key, g.person);
-    goals.push({ month: g.month, sdr: key, client: client.id, goal: g.goal });
+    goals.push({ month: g.month, sdr: key, client: clientId, goal: g.goal });
   }
   for (const m of months) {
     if (m <= today.slice(0, 7) && !goals.some((g) => g.month === m)) {
@@ -130,15 +107,23 @@ export async function loadBase(monthParam: string | null): Promise<BaseResponse>
   // corta en 1000 filas (ver /api/analisis/sdr).
   const PAGE = 1000;
   const rows: any[] = [];
+  // cliente_nombre (columna "Cliente" de la planilla) separa las cuentas que
+  // comparten ID Cliente; si la migración aún no se corrió, se lee sin ella
+  let cols = "id, responsable, sdr_nombre, client_id, cliente_nombre, empresa, pais, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, origen";
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
       .from("meetings")
-      .select("id, responsable, sdr_nombre, client_id, empresa, pais, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, origen")
+      .select(cols)
       // también las pendientes con reunión posterior a la ventana (siguen en
       // agenda y cuentan como "Pendientes" del período en curso)
       .or(`and(fecha_reunion.gte.${from},fecha_reunion.lte.${to}),and(fecha_agendamiento.gte.${from},fecha_agendamiento.lte.${to}),and(realizado.eq.Pendiente,fecha_reunion.gt.${to})`)
       .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
+    if (error && /cliente_nombre/.test(error.message) && cols.includes("cliente_nombre")) {
+      cols = cols.replace(" cliente_nombre,", "");
+      offset -= PAGE;
+      continue;
+    }
     if (error) throw new Error(error.message);
     rows.push(...(data ?? []));
     if (!data || data.length < PAGE) break;
@@ -153,11 +138,13 @@ export async function loadBase(monthParam: string | null): Promise<BaseResponse>
     if (!meetingPeople.has(key)) meetingPeople.set(key, person);
     const opp = normStatus(m.propuesta_oportunidad);
     if (opp) oppValues.add(opp);
-    if (m.client_id && !clients.has(m.client_id)) clients.set(m.client_id, { id: m.client_id, name: "Cliente desconocido" });
+    const country = canonicalCountry(m.pais);
+    const client = toAccount(m.client_id ?? null, m.cliente_nombre, country);
+    if (client && !clients.has(client)) clients.set(client, { id: client, name: "Cliente desconocido" });
     return {
       sdr: key,
-      client: m.client_id ?? null,
-      country: canonicalCountry(m.pais),
+      client,
+      country,
       sd: m.fecha_agendamiento ?? null,
       md: m.fecha_reunion ?? null,
       st: toStatus(m.realizado),
@@ -218,6 +205,7 @@ export async function loadBase(monthParam: string | null): Promise<BaseResponse>
     clients: [...clients.values()].sort((a, b) => a.name.localeCompare(b.name, "es")),
     goals,
     meetings,
+    accounts: dir.accounts,
     oppValues: [...oppValues].sort(),
     incomplete: { pastPending: pastPendingRes.count ?? 0, invalidDates: invalidRes.count ?? 0 },
     warnings,

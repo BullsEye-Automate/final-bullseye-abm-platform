@@ -1,0 +1,370 @@
+// Tipos de la API de Peitho (copiados de peitho-frontend/lib/peithoBackend.ts,
+// rama claude/peitho-backend-skeleton-4cin0n). Mantener sincronizados si cambia el backend.
+
+
+export interface MeetingListItem {
+  id: string;
+  ejecutivo: string | null;
+  contraparte: string | null;
+  // Nombre real del contacto según el excel de metas (ej. "Claudia Rodriguez
+  // Páez") — a diferencia de contraparte (lo que trajo Google Calendar del
+  // evento, que a veces es el nombre de la invitación y a veces solo el
+  // correo si Google no le asoció un nombre a ese asistente). Null si la
+  // reunión no hizo match en el excel todavía.
+  contacto_nombre: string | null;
+  // Solo viene poblado en scope=past ("Reuniones pasadas") — pedido
+  // explícito del usuario (09-10-2026) para ver el cargo del contacto sin
+  // entrar al detalle de cada reunión.
+  contacto_cargo?: string | null;
+  empresa_contraparte: string | null;
+  // Nombre real de la empresa según el excel de metas (ej. "CodersLab") — a
+  // diferencia de empresa_contraparte (el dominio, ej. "coderslab.io", que se
+  // sigue usando como base del link a su sitio). Null si la reunión no hizo
+  // match en el excel todavía.
+  empresa_nombre: string | null;
+  start_time: string | null;
+  // "no_show" (23-09-2026): Deepgram no detectó ninguna palabra en el audio
+  // — casi siempre porque el prospecto nunca llegó a la cita (confirmado
+  // real viendo la grabación en el dashboard de Recall). Estado final, no
+  // se reintenta solo (ver analyzeMeetingAudio en postMeetingAnalysis.ts).
+  status: "scheduled" | "captured" | "analyzed" | "no_show";
+  // Fase E — para el filtro de cliente en la vista admin.
+  client_id: string | null;
+  cliente_bullseye: string | null;
+  // Ejecutivo del CLIENTE de BullsEye (ej. CCHC) que toma la reunión — viene
+  // de la columna "Sales Manager" del excel de metas. Distinto de `ejecutivo`
+  // (reservado para un SDR/ejecutivo de BullsEye): en una reunión de
+  // invitación manual al bot no hay ningún BullsEye en la llamada, así que
+  // `ejecutivo` queda null y este es el único dato de "quién la toma".
+  cliente_sales_manager: string | null;
+  // Roster de ejecutivos por cliente (23-09-2026, migración 033) — vinculado
+  // automático por texto contra cliente_sales_manager (ver
+  // matchClientExecutiveName en el backend) o corregido a mano por
+  // cualquier usuario "client" de esa empresa (ver PUT /meetings/:id/executive).
+  // Cuando está seteado, reemplaza a cliente_sales_manager como fuente de
+  // "quién de este cliente tomó la reunión" — es más confiable porque viene
+  // de un roster mantenido a mano, no de una columna de texto libre del excel.
+  client_executive_id: string | null;
+  client_executive_name: string | null;
+  // Solo vienen pobladas en scope=upcoming (mini-dashboard de "Reuniones
+  // futuras") — el backend las omite en scope=past, quedan undefined ahí.
+  pre_brief_status?: PreBriefStatus;
+  has_bot?: boolean;
+  // Solo vienen pobladas en scope=past (columnas "Desempeño" y "Predicción de
+  // éxito" de "Reuniones pasadas") — extraídas del análisis; null si la
+  // reunión todavía no tiene análisis. desempeno_vendedor.puntaje es 1-10
+  // (habilidad del vendedor); prediccion_exito.puntaje es 1-5 (probabilidad
+  // de cierre del deal) — no confundir, son escalas y preguntas distintas.
+  puntaje?: number | null;
+  prediccion_exito?: number | null;
+  // Fit Score (10-09-2026) — igual que puntaje/prediccion_exito, solo vienen
+  // pobladas en scope=past, extraídas de analysis.fit_empresa/
+  // fit_cargo_contacto (fit_contacto es el nombre viejo, leído con coalesce
+  // del lado del backend para reuniones analizadas antes del 09-10-2026).
+  fit_empresa?: number | null;
+  fit_contacto?: number | null;
+  // fit_rol_contacto (09-10-2026) — sin equivalente viejo, null para
+  // cualquier reunión analizada antes de este cambio (correcto, no hay ese
+  // dato para esas).
+  fit_rol_contacto?: number | null;
+}
+
+// Forma del JSON que genera el prompt de análisis post-reunión (ver
+// peitho-backend/docs/peitho_prompt_analisis_v1.md). Todos los campos son
+// opcionales acá porque viene de una columna jsonb sin esquema forzado en la
+// base — más vale renderizar de menos que reventar la página si algo falta.
+export interface MeetingAnalysis {
+  // Presente cuando Claude detecta que la grabación no corresponde a una
+  // reunión real con la contraparte (coordinación interna, número
+  // equivocado, la contraparte nunca participó) — en ese caso es el ÚNICO
+  // campo guardado (ver postMeetingAnalysis.ts), el resto de la interfaz
+  // queda vacía a propósito.
+  reunion_valida?: {
+    es_reunion_con_prospecto?: boolean;
+    motivo?: string | null;
+  };
+  apuntes_clave?: {
+    resumen_general?: string;
+    contexto_cliente?: string[];
+    acuerdos_proximos_pasos?: string[];
+    propuesta_valor_presentada?: string[];
+  };
+  prediccion_exito?: {
+    puntaje?: number;
+    etiqueta?: string;
+    justificacion?: string;
+  };
+  // Fit Score (10-09-2026) — distinto de prediccion_exito: mide qué tan bien
+  // calza el prospecto contra el ICP real del cliente (base de
+  // conocimiento), no si el deal va a avanzar. puntaje null (con
+  // justificacion explicando por qué) si el cliente no tiene un ICP subido
+  // todavía — nunca un número inventado.
+  fit_empresa?: {
+    puntaje?: number | null;
+    justificacion?: string;
+  };
+  // fit_cargo_contacto/fit_rol_contacto (09-10-2026, pedido explícito del
+  // usuario) reemplazaron a fit_contacto — separar "el cargo en abstracto
+  // califica para el ICP" (fit_cargo_contacto) de "esta persona mostró
+  // poder de decisión real en la llamada" (fit_rol_contacto, puede ser
+  // otra persona presente en la reunión). fit_contacto se mantiene tipado
+  // para leer reuniones ya analizadas antes del cambio (ver AnalysisView).
+  fit_cargo_contacto?: {
+    puntaje?: number | null;
+    justificacion?: string;
+  };
+  fit_rol_contacto?: {
+    puntaje?: number | null;
+    justificacion?: string;
+  };
+  /** @deprecated reemplazado por fit_cargo_contacto (09-10-2026) — se mantiene solo para reuniones analizadas antes del cambio. */
+  fit_contacto?: {
+    puntaje?: number | null;
+    justificacion?: string;
+  };
+  metricas_desempeno_ejecutivo?: Record<string, { puntaje?: number; comentario?: string }>;
+  desempeno_vendedor?: {
+    puntaje?: number;
+    resumen?: string;
+    oportunidades_mejora?: Array<{ area?: string; sugerencia?: string }>;
+  };
+  objeciones?: Array<{ tipo?: string; contexto?: string }>;
+  compromisos?: Array<{ descripcion?: string; completado?: boolean }>;
+  dolores_cliente?: Array<{ dolor?: string; contexto?: string }>;
+  temas_pendientes?: Array<{ pregunta?: string; respuesta_sugerida?: string }>;
+  recomendaciones_proximos_pasos?: Array<{ titulo?: string; detalle?: string }>;
+  [key: string]: unknown;
+}
+
+// Forma del JSON del brief pre-reunión (ver
+// peitho-backend/docs/peitho_prompt_pre_reunion_v1.md). Igual de defensivo
+// que MeetingAnalysis — viene de una columna jsonb sin esquema forzado.
+export interface PreBrief {
+  resumen_contexto?: string;
+  perfil_empresa?: {
+    rubro?: string;
+    tamaño_estimado?: string | null;
+    senales_relevantes?: string[];
+    info_insuficiente?: boolean;
+  };
+  perfil_contacto?: {
+    cargo_estimado?: string;
+    rol_probable_en_decision?: string;
+  };
+  experiencia_contacto?: Array<{ empresa?: string; cargo?: string; periodo?: string | null }>;
+  icebreakers_sugeridos?: string[];
+  competidores_directos?: Array<{ nombre?: string; comentario?: string }>;
+  es_primera_reunion?: boolean;
+  hilos_abiertos?: Array<{ tema?: string; prioridad?: string; sugerencia?: string }>;
+  objeciones_ya_planteadas?: Array<{ objecion?: string; como_evitar_repetirla?: string }>;
+  objetivo_sugerido_reunion?: string;
+  preguntas_clave_a_indagar?: string[];
+  riesgos_a_considerar?: string[];
+  recomendacion_personalizacion?: string;
+  // Fase D — solo vienen con contenido si el cliente de BullsEye tiene
+  // documentos subidos en la base de conocimiento (ver /base-de-conocimiento).
+  temas_recomendados?: string[];
+  temas_evitar?: string[];
+  casos_exito_sugeridos?: Array<{ caso?: string; por_que_aplica?: string }>;
+  [key: string]: unknown;
+}
+
+export type PreBriefStatus = "none" | "running" | "done" | "failed";
+
+export interface MeetingDetail extends MeetingListItem {
+  analysis: MeetingAnalysis | null;
+  pre_brief: PreBrief | null;
+  pre_brief_status: PreBriefStatus;
+  // Cuántas veces se lanzó el research para esta reunión — solo importa para
+  // el rol "cliente" (tope de 2, ver POST /meetings/:id/research en el
+  // backend); un admin de BullsEye no tiene límite.
+  research_run_count: number;
+  // Datos confirmados desde el excel de metas (no adivinados por IA) — pueden
+  // venir null si todavía no hubo match contra esa planilla.
+  contacto_nombre: string | null;
+  contacto_cargo: string | null;
+  contacto_industria: string | null;
+  contacto_linkedin_url: string | null;
+  // 'none' (sin intentar/sin match), 'auto' (match confiable contra el
+  // excel), 'tentative' (2+ filas candidatas para la misma fecha, sin forma
+  // de elegir una sin adivinar — ver contacto_match_candidates) o 'manual'
+  // (un admin eligió un candidato o editó los campos a mano). Ver
+  // matchMeetingRow en metasSheet.ts (backend) para el criterio completo.
+  contacto_match_status?: 'none' | 'auto' | 'tentative' | 'manual';
+  // Solo poblado cuando contacto_match_status === 'tentative' — snapshot de
+  // las filas candidatas del excel para que TentativeMatchReview las muestre
+  // sin tener que releer la planilla.
+  contacto_match_candidates?: Array<{
+    idReunion: string;
+    cliente: string;
+    clienteId: string | null;
+    empresa: string;
+    contacto: string;
+    cargo: string;
+    industria: string;
+    fechaReunion: string;
+    salesManager: string;
+  }> | null;
+  // Transcripción real (Fase H — nombre real de cada hablante vía Recall, o
+  // Deepgram como fallback para la extensión de Chrome). Null si la reunión
+  // no se ha grabado/analizado todavía.
+  transcript_text: string | null;
+  // Usado por ReanalyzeButton para detectar cuándo terminó un recálculo
+  // manual del análisis — a diferencia de ReprocessButton (que espera un
+  // cambio de `status`), recalcular no cambia el status (ya estaba
+  // 'analyzed' antes y después), así que se compara este timestamp.
+  updated_at?: string;
+  // Respaldo de video de la reunión (30 días desde la fecha, después se
+  // borra solo — ver videoRetention.ts). true si todavía está disponible;
+  // el archivo en sí nunca se expone acá, se pide una URL firmada aparte
+  // vía GET /api/meetings/:id/video (proxy) cuando el usuario abre la
+  // pestaña de video.
+  video_available?: boolean;
+  // true si la reunión ya tiene un bot de Recall asociado (recall_bot_id) —
+  // habilita el botón "Reprocesar grabación" para recuperarla a mano si el
+  // proceso se cayó a mitad del webhook de /webhooks/recall (ver
+  // peitho-backend/src/routes/webhooks.ts) y quedó pegada en status='scheduled'
+  // pese a que Recall ya terminó de grabar.
+  recall_bot_available?: boolean;
+  // ID real del bot en Recall.ai — pedido explícito del usuario (30-09-2026)
+  // para poder buscar el bot/video de esta reunión directo en el dashboard
+  // de Recall sin tener que pedirlo por SQL cada vez.
+  recall_bot_id?: string | null;
+  // true si la reunión vino de una invitación manual al bot (Fase H,
+  // disparador b) — habilita el botón "Volver a sincronizar desde Calendar"
+  // (solo aplica a este flujo, no al calendario normal de un ejecutivo).
+  is_bot_invite?: boolean;
+  // Participantes reales de la llamada (nombre por diarización de Recall,
+  // no heurística) ordenados de mayor a menor por cuánto habló cada uno —
+  // el primero es quien el backend usó para detectar `ejecutivo` (ver
+  // computeParticipantStats en postMeetingAnalysis.ts). Null si la reunión
+  // no tiene transcript de Recall (ej. flujo viejo de la extensión de Chrome).
+  participantes?: Array<{ nombre: string; palabras: number }> | null;
+  // Link público de research (10-09-2026) — ver ShareResearchButton.tsx.
+  // Null hasta que un admin lo genera la primera vez con "Compartir con el
+  // cliente"; se usa para armar /research-compartido/<token>.
+  research_share_token?: string | null;
+  // Link público del análisis/feedback post-reunión (11-09-2026) — mismo
+  // patrón que research_share_token, ver ShareAnalysisButton.tsx. Se usa
+  // para armar /analisis-compartido/<token>.
+  analysis_share_token?: string | null;
+}
+
+export interface ClientListItem {
+  id: string;
+  name: string;
+  documentos: number;
+  // URL del sitio web del cliente (10-09-2026) — al guardarla, el backend
+  // trae su contenido y lo suma a la base de conocimiento como un documento
+  // más (ver fetchAndStoreWebsiteContent en knowledgeBase.ts).
+  website_url: string | null;
+}
+
+export interface KnowledgeBaseDocument {
+  id: string;
+  file_name: string;
+  file_type: string | null;
+  // Fase F — una de KB_CATEGORIES (lib/knowledgeBaseCategories.ts) o null si
+  // no se categorizó (documentos subidos antes de este cambio, o a propósito).
+  category: string | null;
+  uploaded_at: string;
+  content_extracted: boolean;
+}
+
+// Roster de ejecutivos por cliente (23-09-2026, migración 033).
+export interface ClientExecutive {
+  id: string;
+  name: string;
+}
+
+// Fase E — sesión de Peitho del usuario logueado (distinto del rol de
+// Supabase Auth en sí, que solo dice "hay sesión o no"). clientId/clientName
+// vienen null para un admin.
+export interface PeithoSession {
+  email: string;
+  role: "admin" | "client";
+  clientId: string | null;
+  clientName: string | null;
+  // Solo relevante cuando role === 'client' (23-09-2026, ver migración 032)
+  // — 'admin' ve todo lo que un cliente puede ver hoy (reuniones, panel,
+  // base de conocimiento); 'user' queda acotado a reuniones. Siempre null
+  // para role === 'admin' (BullsEye).
+  clientSubRole: "admin" | "user" | null;
+}
+
+export interface UserRoleItem {
+  user_id: string;
+  email: string;
+  role: "admin" | "client";
+  client_id: string | null;
+  client_sub_role: "admin" | "user" | null;
+  client_name: string | null;
+}
+
+// Paso 6 — Panel de control. `tasa`/`alta_prediccion` son sobre
+// prediccion_exito.puntaje (predicción de Claude, 1-5), NO una tasa de
+// conversión real de negocio (eso vive en HubSpot, fuera de Peitho) — se
+// muestran en el frontend etiquetadas explícitamente como "predicho".
+export interface FunnelStage {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface FunnelSegment {
+  label: string;
+  total: number;
+  alta_prediccion: number;
+  tasa: number;
+  puntaje_promedio: number | null;
+}
+
+// Desglose de prediccion_exito (1-5) — pedido explícito del usuario
+// (09-09-2026): "de 100 reuniones, 20% con predicción 1, 40% con
+// predicción 2, ...". Siempre 5 elementos (1 a 5), aunque algún puntaje
+// tenga 0 reuniones — así el reporte muestra la escala completa.
+export interface PrediccionBucket {
+  puntaje: number;
+  total: number;
+  pct: number;
+}
+
+// Ranking de ejecutivos por desempeño (desempeno_vendedor.puntaje, 1-10) —
+// a diferencia de FunnelSegment, no tiene tasa/alta_prediccion porque no
+// rankea por prediccion_exito sino por desempeno_vendedor.
+export interface EjecutivoRanking {
+  label: string;
+  total: number;
+  desempeno_promedio: number | null;
+  prediccion_promedio: number | null;
+}
+
+export interface FunnelData {
+  meta: {
+    from: string | null;
+    to: string | null;
+    threshold: number;
+    // client_ids (13-10-2026) — antes un solo client_id; ahora puede traer
+    // varios cuando el filtro es un rol "client" cuyo cliente comparte
+    // external_id con otra variante regional (ver resolveClientGroupIds en
+    // el backend, ej. CChC/CChC - Valle).
+    client_ids: string[] | null;
+    ejecutivo: string | null;
+  };
+  funnel: FunnelStage[];
+  // No es parte del funnel (no es subconjunto de "predicción alta") — KPI
+  // aparte. Ver comentario en peitho-backend/src/routes/panel.ts.
+  con_compromisos: number;
+  desempeno_vendedor_promedio: number | null;
+  // Fit Score (10-09-2026) — promedio de fit_empresa/fit_cargo_contacto/
+  // fit_rol_contacto (1-10) entre las reuniones analizadas del rango
+  // filtrado. Null si ninguna reunión del rango tiene el campo (ej. ningún
+  // cliente con ICP cargado).
+  fit_empresa_promedio: number | null;
+  fit_cargo_contacto_promedio: number | null;
+  fit_rol_contacto_promedio: number | null;
+  por_cargo: FunnelSegment[];
+  por_industria: FunnelSegment[];
+  distribucion_prediccion: PrediccionBucket[];
+  por_ejecutivo: EjecutivoRanking[];
+}

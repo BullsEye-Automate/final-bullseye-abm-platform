@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import IcpPublicForm from "@/app/forms/icp/[token]/IcpPublicForm";
 
@@ -55,7 +56,8 @@ export default function PortalIcpPage() {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>ICP y buyer persona</h1>
+          <Link href="/portal/radar?vista=icp-proyecto" className="text-xs text-gray-500 hover:text-gray-700 inline-block mb-1">← ICP del proyecto</Link>
+          <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>Proponer cambios al ICP</h1>
           <p className="text-sm text-gray-500 mt-1 max-w-2xl">
             Este es el perfil con el que BullsEye prospecta para ustedes. Puedes proponer ajustes:
             el equipo los revisa y, una vez aprobados, se aplican a la prospección.

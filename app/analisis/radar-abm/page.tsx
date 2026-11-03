@@ -1,17 +1,18 @@
 "use client";
 
+import { resolveDataset } from "@/lib/radarAbm/fetchDataset";
 import "@/components/radar/radar.css";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { IconAlertCircle, IconLoader2, IconRefresh, IconSettings } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
-import { PARTS } from "@/lib/radarAbm/render";
+import { PARTS, PART_SLUGS } from "@/lib/radarAbm/render";
 import { DEFAULT_CONFIG } from "@/lib/radarAbm/dictionaries";
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import RadarReport, { visibleParts } from "@/components/radar/RadarReport";
 import { PART_ICONS } from "@/components/radar/partIcons";
 
-// Análisis → Radar ABM: informe ABM integral por cliente (cuenta → contactos
+// Análisis → Pulso ABM: informe ABM integral por cliente (cuenta → contactos
 // → actividad → conversación → interés → reunión → seguimiento →
 // oportunidad). Mide cuentas, profundidad e inteligencia de mercado; no
 // reemplaza el reporte de productividad SDR (Células SDR). Un cliente a la
@@ -60,7 +61,7 @@ export default function RadarAbmPage() {
       const r = await fetch(`/api/radar-abm?client_id=${clientId}${demo ? "&demo=1" : ""}`, { cache: "no-store" });
       const j = (await r.json()) as ApiResponse;
       if (!r.ok || j.error) throw new Error(j.error || `Error ${r.status}`);
-      setData(j);
+      setData({ ...j, dataset: await resolveDataset(j as any) });
     } catch (e) {
       setError((e as Error).message);
       setData(null);
@@ -79,7 +80,7 @@ export default function RadarAbmPage() {
     try {
       const r = await fetch(`/api/radar-abm?client_id=${clientId}`, { method: "POST" });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok || j.error) throw new Error(j.error || `Error ${r.status}`);
+      if (!r.ok || j.error) throw new Error(j.error || (r.status === 504 ? "La sincronización superó el tiempo máximo (5 min). Vuelve a intentarlo; si se repite, avísale al equipo técnico." : `Error ${r.status}`));
       const s = j.stats ?? {};
       setSyncMsg(`Sincronizado: ${s.companies ?? 0} empresas, ${s.contacts ?? 0} contactos, ${s.meetings ?? 0} reuniones, ${s.deals ?? 0} negocios.`);
       setDemo(false);
@@ -94,9 +95,9 @@ export default function RadarAbmPage() {
   if (!clientId) {
     return (
       <div className="ra-root">
-        <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>Radar ABM</h1>
+        <h1 className="text-2xl font-semibold" style={{ color: "#251762" }}>Pulso ABM</h1>
         <div className="ra-empty" style={{ marginTop: 16 }}>
-          Elige un cliente en el menú lateral: el Radar ABM se lee un cliente a la vez (los universos e ICP de cada cliente no son comparables).
+          Elige un cliente en el menú lateral: el Pulso ABM se lee un cliente a la vez (los universos e ICP de cada cliente no son comparables).
         </div>
       </div>
     );
@@ -126,7 +127,7 @@ export default function RadarAbmPage() {
             const Icon = PART_ICONS[i];
             return (
               <div key={i} style={{ display: "contents" }}>
-                {PARTS[i][0] === "XII" && <div className="ra-grp">Datos</div>}
+                {PART_SLUGS[i] === "tablas-maestras" && <div className="ra-grp">Datos</div>}
                 <button className={i === view ? "on" : ""} onClick={() => changeView(i)}>
                   <Icon size={16} stroke={1.6} /> <span>{PARTS[i][1]}</span>
                 </button>
@@ -147,13 +148,13 @@ export default function RadarAbmPage() {
             <div className="ra-banner warn">{data.master.text} No se sincroniza ni se muestra en el portal mientras no esté activo.</div>
           )}
           {!demo && data?.settings && !data.settings.portal_enabled && (
-            <div className="ra-banner info">Este informe está oculto en el portal del cliente (Configuración → Cliente → Radar ABM).</div>
+            <div className="ra-banner info">Este informe está oculto en el portal del cliente (Configuración → Cliente → Pulso ABM).</div>
           )}
           <div style={{ height: 10 }} />
           {loading && !data ? (
             <div className="ra-empty"><IconLoader2 size={18} className="animate-spin" /> Cargando…</div>
           ) : data?.dataset ? (
-            <RadarReport dataset={data.dataset} config={data.config ?? DEFAULT_CONFIG} view={view} onView={changeView} audience="internal" actions={actions} />
+            <RadarReport dataset={data.dataset} config={data.config ?? DEFAULT_CONFIG} view={view} onView={changeView} audience="internal" actions={actions} clientId={clientId} />
           ) : data ? (
             <div className="ra-empty">
               <b style={{ color: "var(--ink)" }}>{currentClient?.name} todavía no tiene datos sincronizados.</b>

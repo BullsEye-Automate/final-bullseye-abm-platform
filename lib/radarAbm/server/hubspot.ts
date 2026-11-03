@@ -1,7 +1,7 @@
 import { hsFetchWithRetry, hsHeaders } from "@/lib/hubspot";
 import { PROPERTY_DEFS } from "../dictionaries";
 
-// Radar ABM — lectura de HubSpot (solo lectura, API CRM v3/v4). El token es
+// Pulso ABM — lectura de HubSpot (solo lectura, API CRM v3/v4). El token es
 // el de BullsEye (HUBSPOT_ACCESS_TOKEN) o el token propio del cliente
 // (client_configs.hubspot_access_token); nunca llega al navegador.
 
@@ -53,32 +53,50 @@ export async function loadPropertyCatalog(token?: string): Promise<{ catalog: Pr
 // Normalización suave que conserva el guion: distingue "SDR - Xarvis" (por
 // cliente) de otras propiedades que solo empiezan con "SDR"
 const softLabel = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-export const hasLabelPrefix = (label: string, prefix: string) => softLabel(label).startsWith(softLabel(prefix));
+// Prefijo de etiqueta sin importar los espacios internos ("Wish List" calza
+// con "WishList - SOVOS" y "Wishlist Webfleet"); devuelve el resto o null
+function afterPrefix(label: string, prefix: string): string | null {
+  const re = new RegExp("^" + softLabel(prefix).replace(/ /g, "").split("").map((ch) => ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*"));
+  const m = softLabel(label).match(re);
+  return m ? softLabel(label).slice(m[0].length) : null;
+}
+export const hasLabelPrefix = (label: string, prefix: string | string[]) => prefixIndex(label, prefix) >= 0;
+// Índice del primer prefijo que calza (-1 = ninguno). Varios prefijos: "SDR
+// Asignado - <cliente>" o "SDR - <cliente>" en contactos
+function prefixIndex(label: string, prefix: string | string[]): number {
+  return (Array.isArray(prefix) ? prefix : [prefix]).findIndex((x) => afterPrefix(label, x) !== null);
+}
 
 // Sufijo de cliente de una propiedad por cliente: "Status de la asignación -
 // SDR AcidLab" → "acidlab". Vacío = propiedad genérica (no es de un cliente).
-function clientSuffix(label: string, labelPrefix: string): string {
-  let rest = normLabel(softLabel(label).slice(softLabel(labelPrefix).length));
+function clientSuffix(label: string, labelPrefix: string | string[]): string {
+  const list = Array.isArray(labelPrefix) ? labelPrefix : [labelPrefix];
+  const i = prefixIndex(label, list);
+  let rest = normLabel(i >= 0 ? afterPrefix(label, list[i]) ?? "" : "");
   if (rest.startsWith("sdr ")) rest = rest.slice(4);
+  else if (rest === "sdr") rest = ""; // "Status de la asignación - SDR" (HubSpot propio del cliente) es genérica
   return rest;
 }
 
 // Entre las propiedades de cada cliente, la que calza con su nombre:
 // igual > una contiene a la otra ("Apply" ↔ "Apply Digital") > misma
 // primera palabra. Empate = ninguna (se elige a mano).
-export function matchClientProperty(cands: HSProperty[], labelPrefix: string, clientName: string): HSProperty | undefined {
+export function matchClientProperty(cands: HSProperty[], labelPrefix: string | string[], clientName: string): HSProperty | undefined {
   const client = normLabel(clientName);
   if (!client) return undefined;
   const scored = cands.map((p) => {
     const suf = clientSuffix(p.label, labelPrefix);
     const score = !suf ? 0
       : suf === client || suf.replace(/ /g, "") === client.replace(/ /g, "") ? 3
-      : (` ${client} `.includes(` ${suf} `) || ` ${suf} `.includes(` ${client} `)) ? 2
+      : (` ${client} `.includes(` ${suf} `) || ` ${suf} `.includes(` ${client} `)
+        || suf.replace(/ /g, "").startsWith(client.replace(/ /g, "")) || client.replace(/ /g, "").startsWith(suf.replace(/ /g, ""))) ? 2
       : suf.split(" ")[0] === client.split(" ")[0] ? 1 : 0;
-    return { p, score };
+    return { p, score, pi: Math.max(0, prefixIndex(p.label, labelPrefix)) };
   }).filter((x) => x.score > 0);
   const best = Math.max(0, ...scored.map((x) => x.score));
-  const top = scored.filter((x) => x.score === best);
+  let top = scored.filter((x) => x.score === best);
+  // Empate: manda el prefijo principal (ej. "SDR Asignado" antes que "SDR -")
+  if (top.length > 1) { const minPi = Math.min(...top.map((x) => x.pi)); top = top.filter((x) => x.pi === minPi); }
   return top.length === 1 ? top[0].p : undefined;
 }
 
@@ -95,14 +113,17 @@ export function detectProperties(configured: Record<string, string>, catalog: Pr
     let candidates: { name: string; label: string }[] = [];
     if (manual) prop = props.find((p) => p.name === manual);
     if (def.perClient) {
-      const { labelPrefix, namePrefix } = def.perClient;
+      const { namePrefix } = def.perClient;
+      const labelPrefix = [def.perClient.labelPrefix, ...(def.perClient.alsoPrefixes ?? [])];
       const cands = props.filter((p) => hasLabelPrefix(p.label, labelPrefix) || (namePrefix && p.name.startsWith(namePrefix)));
       candidates = cands.map((p) => ({ name: p.name, label: p.label })).sort((a, b) => a.label.localeCompare(b.label));
       if (!prop && !manual) {
         // La del cliente por nombre; una única propiedad genérica (sin
         // sufijo de cliente) sirve para todos
         prop = (clientName ? matchClientProperty(cands, labelPrefix, clientName) : undefined)
-          ?? (cands.length === 1 && !clientSuffix(cands[0].label, labelPrefix) ? cands[0] : undefined);
+          // Sin propiedad con el nombre del cliente: la genérica, si hay una sola
+          // (HubSpot propio del cliente: "Status de la asignación - SDR")
+          ?? ((g) => (g.length === 1 ? g[0] : undefined))(cands.filter((p) => !clientSuffix(p.label, labelPrefix)));
       }
     } else if (!prop && !manual) {
       const target = normLabel(def.label);
@@ -148,9 +169,23 @@ export async function searchAll(
 }
 
 // Asociaciones en lote (v4): id de origen → ids asociados
-export async function batchAssociations(fromType: string, toType: string, ids: string[], token?: string): Promise<Map<string, string[]>> {
+// Lotes de 100 en paralelo (de a BATCH_CONCURRENCY): con miles de registros
+// (ej. Crossnet, 1.000 empresas y 6.000 contactos) en serie no cabe en los 5 min
+const BATCH_CONCURRENCY = 4;
+// deadline (ms epoch): pasado ese momento no se piden más lotes y se devuelve
+// lo leído hasta ahí (el sync guarda un informe parcial en vez de caerse)
+async function forChunks(n: number, fn: (start: number) => Promise<void>, deadline?: number) {
+  const starts: number[] = [];
+  for (let i = 0; i < n; i += 100) starts.push(i);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, starts.length) }, async () => {
+    while (next < starts.length && !(deadline && Date.now() > deadline)) await fn(starts[next++]);
+  }));
+}
+
+export async function batchAssociations(fromType: string, toType: string, ids: string[], token?: string, deadline?: number): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
-  for (let i = 0; i < ids.length; i += 100) {
+  await forChunks(ids.length, async (i) => {
     const inputs = ids.slice(i, i + 100).map((id) => ({ id }));
     const res = await hsFetchWithRetry(`${HS}/crm/v4/associations/${fromType}/${toType}/batch/read`, {
       method: "POST",
@@ -170,22 +205,22 @@ export async function batchAssociations(fromType: string, toType: string, ids: s
       for (const t of r.to ?? []) if (t.toObjectId != null) arr.push(String(t.toObjectId));
       out.set(from, arr);
     }
-  }
+  }, deadline);
   return out;
 }
 
 // Lectura en lote de cualquier objeto (de a 100)
-export async function batchRead(objectType: string, ids: string[], properties: string[], token?: string) {
+export async function batchRead(objectType: string, ids: string[], properties: string[], token?: string, deadline?: number) {
   const out: { id: string; properties: Record<string, string | null> }[] = [];
   const unique = Array.from(new Set(ids));
-  for (let i = 0; i < unique.length; i += 100) {
+  await forChunks(unique.length, async (i) => {
     const d = await hsJson(
       `${HS}/crm/v3/objects/${objectType}/batch/read`,
       { method: "POST", headers: hsHeaders(token), body: JSON.stringify({ properties, inputs: unique.slice(i, i + 100).map((id) => ({ id })) }) },
       `leyendo ${objectType}`
     );
     for (const r of d.results ?? []) out.push({ id: String(r.id), properties: r.properties ?? {} });
-  }
+  }, deadline);
   return out;
 }
 

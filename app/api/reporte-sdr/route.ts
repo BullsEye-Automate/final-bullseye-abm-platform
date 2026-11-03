@@ -3,7 +3,7 @@ import { buildReportPng, sendDailySdrReport, reportRecipients } from "@/lib/repo
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 // Vista previa y envío manual del Reporte SDR diario (requiere sesión del
 // equipo: no está en la lista pública de middleware.ts).
@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    return NextResponse.json({ sent: await sendDailySdrReport(cutFrom(req)), recipients: reportRecipients() });
+    return NextResponse.json({ sent: await sendDailySdrReport(cutFrom(req)), recipients: await reportRecipients() });
   } catch (err) {
     console.error("Error en POST /api/reporte-sdr:", err);
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });

@@ -86,7 +86,7 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, re
 
 Canal de esta sesión: ${channelInfo.label}. Extensión: ${channelInfo.length}. Adapta el tono y formato al canal.${channelInfo.hasSubject ? "" : " No incluyas asunto."} No incluyas firma, despedida con nombre ni datos de contacto. El SDR añadirá su propia firma. Nunca uses el carácter — (guión largo o em dash) en ningún mensaje.
 
-${recipientBlock ? `Datos del destinatario de esta sesión:\n${recipientBlock}\n\nUsa estos datos en todos los mensajes sin pedirlos de nuevo.` : ""}
+${recipientBlock ? `Datos del destinatario de esta sesión:\n${recipientBlock}\n\nUsa estos datos en todos los mensajes sin pedirlos de nuevo. Si se indica el cargo del destinatario, adapta SIEMPRE el mensaje a ese cargo: el ángulo, el dolor relevante y el lenguaje deben reflejar su rol específico. Un CEO recibe un mensaje estratégico y de alto nivel; un gerente de operaciones, uno enfocado en eficiencia; un SDR o vendedor, uno orientado a resultados de ventas. Nunca generes un mensaje genérico cuando hay cargo disponible.` : ""}
 
 Contexto sobre ${ctx.clientName}:
 ${contextBlock}${icpBlock}${styleBlock}${meetingInstruction}

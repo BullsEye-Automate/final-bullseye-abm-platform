@@ -112,6 +112,7 @@ export type BaseResponse = {
   clients: Client[];
   goals: Goal[];
   meetings: Meeting[];
+  accounts?: import("./accounts").ClientAccount[]; // clientes partidos en cuentas (ver accounts.ts)
   oppValues: string[];      // valores distintos de Propuesta/Oportunidad (para Configurar)
   incomplete: { pastPending: number; invalidDates: number };
   warnings: DataWarning[];
@@ -176,4 +177,59 @@ export const DEFAULT_CONFIG: CellsConfig = {
   goalBase: "mes",
   oppValues: ["si"],
   clientWeights: {},
+};
+
+// Evolutivo mensual de reuniones desde enero (vista "Evolutivo mensual"):
+// conteos ya agregados por mes × SDR × cliente × país, para no bajar todas
+// las reuniones del año. Agendadas por fecha de agendamiento; realizadas por
+// fecha de la reunión.
+export type MonthlyMeetingRow = {
+  m: string;                // YYYY-MM
+  s: string;                // Sdr.key
+  c: string | null;         // Client.id
+  k: string | null;         // país canónico
+  sched: number;            // agendadas (fecha de agendamiento en el mes)
+  held: number;             // realizadas (fecha de la reunión en el mes)
+};
+
+export type MonthlyMeetingsResponse = {
+  year: number;
+  months: string[];         // ene → mes actual
+  today: string;
+  rows: MonthlyMeetingRow[];
+  sdrNames: Record<string, string>;
+};
+
+// Registro de reuniones (vista "Registro de reuniones"): espejo de solo
+// lectura de la pestaña API Reuniones. Por decisión de BullsEye muestra
+// nombre y cargo del contacto, empresa, fechas y comentario, pero NUNCA
+// teléfono ni correo del prospecto.
+export type MeetingRecord = {
+  id: string;
+  sdr: string;              // Sdr.key
+  client: string | null;    // Client.id
+  country: string | null;   // país canónico
+  sd: string | null;        // fecha de agendamiento
+  md: string | null;        // fecha de la reunión
+  hour: string | null;
+  st: MeetingStatus;
+  opp: string;              // Propuesta/Oportunidad tal cual viene
+  origin: string;
+  company: string;
+  contact: string;
+  title: string;            // cargo
+  comment: string;          // Comentario de la reunión
+  editable: boolean;        // tiene "ID Reunión" en la planilla (se puede cambiar el estado desde la app)
+};
+
+export type MeetingRecordsResponse = {
+  from: string;
+  to: string;
+  field: "md" | "sd";
+  today: string;
+  rows: MeetingRecord[];
+  sdrNames: Record<string, string>;
+  clientNames: Record<string, string>;
+  truncated: boolean;
+  canEdit: boolean;         // el usuario puede cambiar estados (lib/celulasSdr/editors.ts)
 };

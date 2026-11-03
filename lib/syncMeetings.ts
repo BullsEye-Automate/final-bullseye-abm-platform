@@ -122,6 +122,11 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
 
   const supabase = supabaseAdmin();
   const { data: clients } = await supabase.from("clients").select("id, name, slug");
+  // cliente_nombre (migración 20261030_meetings_cliente_nombre.sql): si la
+  // columna no existe todavía, el sync sigue sin ella
+  const { error: cliColErr } = await supabase.from("meetings").select("cliente_nombre").limit(1);
+  const withClienteNombre = !cliColErr;
+  const cliName = (row: Record<string, string>) => (withClienteNombre ? { cliente_nombre: row["Cliente"]?.trim() || null } : {});
   const clientByName = new Map<string, string>();
   const clientNameById = new Map<string, string>();
   (clients ?? []).forEach((c) => {
@@ -220,6 +225,7 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
         protectedBatch.set(sheetRowKey, {
           sheet_row_key:         sheetRowKey,
           realizado:             normalizeRealizado(row["Realizado"] ?? ""),
+          ...cliName(row),
           // responsable y origen también siguen a la planilla: si se
           // corrige el SDR de una reunión que ya tiene feedback, antes
           // quedaba atribuida al SDR anterior en la reportería
@@ -246,6 +252,7 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
     normalBatch.set(sheetRowKey, {
       sheet_row_key:         sheetRowKey,
       client_id:             clientId,
+      ...cliName(row),
       empresa,
       contacto_nombre:       row["Contacto"]                 || null,
       contacto_cargo:        row["Cargo"]                    || null,

@@ -5,7 +5,7 @@ import { loadClientSettings, loadRadarConfig, loadSnapshot } from "@/lib/radarAb
 
 export const dynamic = "force-dynamic";
 
-// Radar ABM en el portal de clientes. El client_id sale SIEMPRE de
+// Pulso ABM en el portal de clientes. El client_id sale SIEMPRE de
 // client_users (requirePortalUser), así cada usuario ve solo su cuenta.
 // Solo se muestran datos reales sincronizados desde HubSpot: los datos demo
 // nunca llegan al portal. Las advertencias internas del sync y el mapeo de
@@ -15,16 +15,19 @@ export async function GET() {
   const { user, response } = await requirePortalUser();
   if (!user) return response;
   try {
-    const [settings, snapshot, config] = await Promise.all([loadClientSettings(user.clientId), loadSnapshot(user.clientId), loadRadarConfig()]);
+    const [settings, snapshot, config] = await Promise.all([loadClientSettings(user.clientId), loadSnapshot(user.clientId, "url"), loadRadarConfig()]);
     if (!settings.portal_enabled) return NextResponse.json({ dataset: null, reason: "disabled" });
     // Solo clientes activos en la Maestra
     if (!(await isPortalClientActive(user.clientId, user.clientName))) return NextResponse.json({ dataset: null, reason: "disabled" });
     if (!snapshot) return NextResponse.json({ dataset: null, reason: "pending" });
+    const safeConfig = { ...config, properties: {}, contactAliases: {}, companyAliases: {} };
+    // Informe en Storage: el archivo no lleva avisos internos ni mapeo de propiedades
+    if (snapshot.datasetUrl) return NextResponse.json({ dataset: null, datasetUrl: snapshot.datasetUrl, config: safeConfig });
     const { warnings: _w, mapping: _m, ...dataset } = snapshot.dataset;
     // Al cliente solo lo que necesita el cálculo (sin mapeo de propiedades)
-    return NextResponse.json({ dataset, config: { ...config, properties: {}, contactAliases: {}, companyAliases: {} } });
+    return NextResponse.json({ dataset, config: safeConfig });
   } catch (err) {
-    console.error("Radar ABM (portal):", err);
+    console.error("Pulso ABM (portal):", err);
     return NextResponse.json({ error: "No se pudo cargar el informe" }, { status: 500 });
   }
 }

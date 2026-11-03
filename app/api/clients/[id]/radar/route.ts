@@ -5,9 +5,12 @@ import { masterStatusFor } from "@/lib/radarAbm/server/masterClients";
 import { PROPERTY_DEFS } from "@/lib/radarAbm/dictionaries";
 import { loadClientSettings, loadSnapshot, saveClientSettings, type RadarClientSettings } from "@/lib/radarAbm/server/store";
 
+
+// Modo del universo (status / client) y propiedades del modo "Cliente BullsEye"
+const UNIVERSE_KEYS = ["universeMode", "universeCompanyClient", "universeContactClient", "meetingsTotal"];
 export const dynamic = "force-dynamic";
 
-// Radar ABM — configuración del cliente (Configuración → Cliente → Radar ABM):
+// Pulso ABM — configuración del cliente (Configuración → Cliente → Pulso ABM):
 // de qué HubSpot se lee, valor de "Cliente BullsEye" y si se muestra en el
 // portal. Requiere sesión interna (middleware).
 
@@ -16,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const { data: client } = await supabaseAdmin().from("clients").select("id, name, slug").eq("id", params.id).maybeSingle();
     const [settings, snapshot, master] = await Promise.all([
       loadClientSettings(params.id),
-      loadSnapshot(params.id),
+      loadSnapshot(params.id, "meta"),
       client ? masterStatusFor(client) : Promise.resolve({ active: false, text: "Cliente no encontrado" }),
     ]);
     return NextResponse.json({ settings, syncedAt: snapshot?.synced_at ?? null, stats: snapshot?.stats ?? null, warnings: snapshot?.warnings ?? [], master });
@@ -40,7 +43,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       // internos válidos (letras, números y guion bajo)
       properties: Object.fromEntries(
         Object.entries((b.properties ?? {}) as Record<string, unknown>)
-          .filter(([k, v]) => PROPERTY_DEFS.some((d) => d.key === k) && typeof v === "string" && /^[a-z0-9_]+$/i.test(v.trim()))
+          .filter(([k, v]) => (PROPERTY_DEFS.some((d) => d.key === k) || UNIVERSE_KEYS.includes(k)) && typeof v === "string" && /^[a-z0-9_]+$/i.test(v.trim()))
           .map(([k, v]) => [k, (v as string).trim()])
       ),
     };
