@@ -28,6 +28,7 @@ import {
   IconActivityHeartbeat,
   IconSparkles,
   IconLayoutSidebarLeftCollapse,
+  IconTarget,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -44,6 +45,7 @@ const SECTIONS: Section[] = [
       { href: "/empresas",        label: "Empresas",        icon: IconBuildingFactory2 },
       { href: "/contactos",       label: "Contactos",       icon: IconUsers },
       { href: "/busqueda-manual", label: "Búsqueda manual", icon: IconUserSearch },
+      { href: "/centro-prospeccion", label: "Centro de prospección", icon: IconTarget },
     ]
   },
   {
