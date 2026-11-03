@@ -4,7 +4,7 @@ import "./radar.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconAlertTriangle, IconArrowLeft, IconArrowRight, IconMoon, IconSun } from "@tabler/icons-react";
 import { addDays, compute, dmy, filterDataset, mondayOf, N, NO_IND, NO_WL, periodMonths } from "@/lib/radarAbm/engine";
-import { INTERNAL_PARTS, LEADS, PARTS, PART_SLUGS, REACT_SECTIONS, render, sec } from "@/lib/radarAbm/render";
+import { FEEDBACK_TABS, INTERNAL_PARTS, LEADS, PARTS, PART_SLUGS, REACT_SECTIONS, render, sec } from "@/lib/radarAbm/render";
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import MasterTables from "./MasterTables";
 import WishlistWorkspace from "@/components/wishlist/WishlistWorkspace";
@@ -108,7 +108,11 @@ export default function RadarReport({
 
   const parts = visibleParts(audience);
   const pi = parts.includes(view) ? view : parts[0];
-  const [, pt, items] = PARTS[pi];
+  const [, pt, allItems] = PARTS[pi];
+  // Vista Feedback: solo las secciones del botón elegido
+  const [fbTab, setFbTab] = useState<"form" | "resumen">("form");
+  const isFeedback = PART_SLUGS[pi] === "feedback-manual";
+  const items = useMemo(() => (isFeedback ? allItems.filter(([, id]) => FEEDBACK_TABS.find((t) => t.key === fbTab)!.ids.includes(id)) : allItems), [allItems, isFeedback, fbTab]);
   const pos = parts.indexOf(pi);
   const prev = pos > 0 ? parts[pos - 1] : null;
   const next = pos < parts.length - 1 ? parts[pos + 1] : null;
@@ -129,6 +133,8 @@ export default function RadarReport({
 
   function jump(value: string) {
     const [p, id] = value.split("|");
+    const tab = FEEDBACK_TABS.find((t) => t.ids.includes(id));
+    if (tab) setFbTab(tab.key);
     if (Number(p) !== pi) {
       pendingJump.current = id;
       onView(Number(p));
@@ -239,7 +245,7 @@ export default function RadarReport({
         </div>
         <div className="ra-filters">
           <label htmlFor="ra-jump">Ir a</label>
-          <select id="ra-jump" className="ra-select" value={`${pi}|${items[0][1]}`} onChange={(e) => jump(e.target.value)}>
+          <select id="ra-jump" className="ra-select" value={`${pi}|${(items[0] ?? allItems[0])[1]}`} onChange={(e) => jump(e.target.value)}>
             {parts.map((i) => (
               <optgroup key={i} label={`${PARTS[i][0]} · ${PARTS[i][1]}`}>
                 {PARTS[i][2].map(([no, id, title]) => <option key={id} value={`${i}|${id}`}>§{no} {title}</option>)}
@@ -323,6 +329,13 @@ export default function RadarReport({
         )}
       </header>
 
+      {isFeedback && (
+        <div className="ra-tabs" role="tablist">
+          {FEEDBACK_TABS.map((t) => (
+            <button key={t.key} role="tab" aria-selected={fbTab === t.key} className={`ra-btn${fbTab === t.key ? " pri" : ""}`} onClick={() => setFbTab(t.key)}>{t.label}</button>
+          ))}
+        </div>
+      )}
       {PART_SLUGS[pi] === "tablas-maestras" ? <MasterTables M={M} numbers={items.map((x) => x[0])} /> : blocks.map((b, i) => "html" in b
         ? <div key={i} dangerouslySetInnerHTML={{ __html: b.html }} />
         : (
