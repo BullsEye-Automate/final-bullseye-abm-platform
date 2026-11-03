@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { provisionClientHubSpot } from "@/lib/hubspot";
+import { readMasterClients, findMasterRow } from "@/lib/radarAbm/server/masterClients";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const onlyActive = req.nextUrl.searchParams.get("active") === "true";
+
   const db = supabaseAdmin();
   const { data, error } = await db
     .from("clients")
@@ -12,7 +15,21 @@ export async function GET() {
     .order("name");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ clients: data ?? [] });
+  let clients = data ?? [];
+
+  if (onlyActive) {
+    try {
+      const masterRows = await readMasterClients();
+      clients = clients.filter((c) => {
+        const row = findMasterRow(masterRows, c);
+        return row?.active === true;
+      });
+    } catch {
+      // Si la Maestra no se puede leer, devolver todos para no romper la UI
+    }
+  }
+
+  return NextResponse.json({ clients });
 }
 
 export async function POST(req: NextRequest) {
