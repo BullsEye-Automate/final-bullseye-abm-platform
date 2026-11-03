@@ -420,7 +420,7 @@ export default function ChatV2Page() {
   const [userId, setUserId]               = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/api/clients").then(r => r.json()).then(j => setClients(j.clients ?? [])).catch(() => {});
+    fetch("/api/clients?active=true").then(r => r.json()).then(j => setClients(j.clients ?? [])).catch(() => {});
     // Verificar si ya hay Gmail conectado
     const params = new URLSearchParams(window.location.search);
     if (params.get("gmail_ok")) { window.history.replaceState({}, "", "/chat-v2"); }
