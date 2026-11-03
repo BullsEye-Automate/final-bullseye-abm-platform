@@ -521,7 +521,7 @@ export default function ChatV2Page() {
     if (recipientType !== "cliente") {
       setRecipientName(`${c.firstname} ${c.lastname}`.trim());
       if (c.jobtitle) setTitle(c.jobtitle);
-      if (c.company) setCompany(c.company);
+      if (c.company) setRecipientCompany(c.company);
     }
   }
 
