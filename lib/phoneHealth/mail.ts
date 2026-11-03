@@ -1,10 +1,9 @@
-// Correo de Alertas de Números. Se evalúa todos los días hábiles a las
-// 8:00 de Chile (cron /api/cron/alertas-numeros) y se envía:
-//   - siempre los lunes, como resumen semanal completo (por reemplazar, por
-//     revisar, vigilar y los que salieron de alerta), y
-//   - de martes a viernes SOLO si un número pasa a "Reemplazar" (rojo nuevo o
-//     amarillo que empeora). Lo demás queda para el resumen del lunes y en la
-//     página /analisis/salud-numeros.
+// Correo de Alertas de Números. Se envía todos los días hábiles a las 8:00
+// de Chile (cron /api/cron/alertas-numeros) con el estado completo: números
+// por reemplazar, por revisar, vigilar y los que salieron de alerta. Las
+// alertas que aparecieron desde el último envío llevan la etiqueta "Nueva".
+// (Antes, de martes a viernes solo se enviaba si un número pasaba a
+// "Reemplazar"; desde nov-2026 va a diario a pedido de BullsEye.)
 // El estado de cada alerta vive en la tabla phone_health_alerts para no
 // repetir el mismo aviso todos los días.
 //
@@ -155,7 +154,7 @@ export type AlertRunResult = {
   dataWarning: string | null;
 };
 
-// cron = true: guarda el estado y aplica la regla de envío (nuevas / lunes).
+// cron = true: guarda el estado y envía solo en días hábiles.
 // cron = false (botón "Enviarme el correo ahora"): envía siempre y no toca el estado.
 export async function runPhoneAlerts(opts: { cron: boolean; to?: string[]; today?: string } = { cron: true }): Promise<AlertRunResult> {
   const today = opts.today ?? chileToday();
@@ -173,21 +172,13 @@ export async function runPhoneAlerts(opts: { cron: boolean; to?: string[]; today
     return result(false, report.dataWarning);
   }
 
-  let shouldSend = true;
   let reason = "Envío manual";
   if (opts.cron) {
     if (!isBusinessDay(today)) return result(false, "No es día hábil");
-    const monday = dow(today) === 1;
-    // Martes a viernes: solo urgencias (un número que pasa a "Reemplazar").
-    const newRed = diff.newAlerts.some((h) => h.level === "red");
-    shouldSend = monday || newRed;
-    reason = monday ? "Resumen semanal (lunes)" : newRed ? "Hay números nuevos por reemplazar" : "Sin urgencias (queda para el resumen del lunes)";
+    // Todos los días hábiles: el correo trae lo que hay que reemplazar y
+    // también lo que hay que revisar, aunque no haya alertas nuevas.
+    reason = dow(today) === 1 ? "Resumen diario (lunes)" : "Resumen diario";
   }
-  if (!shouldSend) {
-    if (opts.cron) await saveAlertState(report, state, diff);
-    return result(false, reason);
-  }
-
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://portal.bullseye-abm.com";
   const { subject, html } = buildAlertEmail(report, diff, appUrl);
   const from =
