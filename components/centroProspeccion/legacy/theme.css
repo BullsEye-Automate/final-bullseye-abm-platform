@@ -4,6 +4,11 @@
    Outfit, morado BullsEye, tarjetas blancas de 12 px sobre fondo #F4F2FB,
    navegación interna en tarjeta blanca y encabezado en tarjeta. */
 
+/* Elementos con el atributo hidden: ocultos siempre. El artifact lo traía en
+   los estilos base de claude.ai; sin esta regla, clases con display propio
+   (.modal, .cx, #toast…) quedaban visibles aunque estuvieran ocultas. */
+.cp-root [hidden]:not([hidden=until-found i]) { display: none !important; }
+
 .cp-root {
   --bg: #F4F2FB; --surface: #ffffff; --surface-2: #F8F7FC; --surface-3: #EEEDF5; --border: #ECEAF4;
   --text: #1A1733; --muted: #6B6884; --faint: #9794AC;

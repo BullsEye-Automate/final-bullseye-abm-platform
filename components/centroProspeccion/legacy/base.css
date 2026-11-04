@@ -1,5 +1,6 @@
 /* Centro de prospección — estilos originales del artifact con alcance .cp-root
    (generado; sin modo oscuro). El tema del portal está en theme.css. */
+.cp-root [hidden]:not([hidden=until-found i]){display:none!important}
 .cp-root *,.cp-root *::before,.cp-root *::after{box-sizing:border-box}
 .cp-root{margin:0;background:var(--bg);color:var(--text);font-family:var(--body);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
 .cp-root button,.cp-root select,.cp-root input,.cp-root textarea{font:inherit;color:inherit}

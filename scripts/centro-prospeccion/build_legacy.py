@@ -180,6 +180,7 @@ def scope(css_text):
 scoped = scope(css)
 (OUT / "base.css").write_text(
     "/* Centro de prospección — estilos originales del artifact con alcance .cp-root\n"
-    "   (generado; sin modo oscuro). El tema del portal está en theme.css. */\n" + scoped + "\n",
+    "   (generado; sin modo oscuro). El tema del portal está en theme.css. */\n"
+    ".cp-root [hidden]:not([hidden=until-found i]){display:none!important}\n" + scoped + "\n",
     encoding="utf-8")
 print("ok", len(module), len(markup), len(scoped))
