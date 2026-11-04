@@ -25,6 +25,7 @@ import {
   IconLogout,
   IconCalendarEvent,
   IconUsersGroup,
+  IconSchool,
   IconActivityHeartbeat,
   IconSparkles,
   IconLayoutSidebarLeftCollapse,
@@ -61,6 +62,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/telefonos",     label: "Teléfonos",           icon: IconPhone },
       { href: "/llamadas",      label: "Llamadas",            icon: IconHeadset },
+      { href: "/sdr/academia",  label: "Academia SDR",        icon: IconSchool },
     ]
   },
   {

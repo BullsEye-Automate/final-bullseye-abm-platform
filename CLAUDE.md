@@ -212,6 +212,20 @@ Centro de mando del equipo SDR (14 vistas: Dirección / Operación / Análisis),
 
 ---
 
+### Academia SDR (`/sdr/academia`)
+
+Capacitación para SDRs nuevos **por cliente**, en el menú SDR, debajo de Teléfonos y Llamadas. Port del skill "academia-sdr-bullseye": 10 módulos ("vueltas", metáfora Fórmula 1) con las mismas reglas (cuentas ya filtradas, mensajes sin investigar cada cuenta, "Cuándo avisar a tu líder", tono simple con analogías, "Lo que debes recordar"). Solo la ve el equipo BullsEye (no está en `/portal`). Migración `supabase/20261028_academia_sdr_migration.sql` (`sdr_academies` = datos de entrada por cliente, `sdr_academy_modules` = un módulo por fila).
+
+- **Entrada:** servicio foco y países (obligatorios: en la app la IA no puede preguntar), industrias prioritarias e indicaciones (opcionales). La IA lee el Contexto IA del cliente (`client_ai_context`, incluido el ICP general), el ICP por industria (`icp_industry_sections`) y las notas de `icp_config` (`loadClientMaterials` en `lib/academiaSdr/server/generate.ts`). Sin documentos no se puede generar.
+- **Generación:** una llamada por módulo (`POST /api/academia-sdr/generate`, herramienta forzada `guardar_modulo`, bloques tipados de `lib/academiaSdr/types.ts`; qué bloques lleva cada vuelta en `lib/academiaSdr/modules.ts`). El navegador genera primero la vuelta 1 (deja el contexto cacheado con `cache_control`) y después las otras 9, de a 3 en paralelo. Se puede regenerar una vuelta sola. Lo que la IA no encuentra o ve contradictorio va a `openQuestions` y la página lo lista como "Confirmar con el cliente". Costo en `/admin/uso-ia` como `academia_sdr_module`.
+- **HTML interactivo** (`lib/academiaSdr/render.ts`, todo dato pasa por `esc()`): autocontenido, colores del skill (índigo #140F3D, cian #62E0D8…), Sora + Roboto, pestañas por vuelta y semáforo de avance (localStorage con try/catch), selector de servicios, diccionario con tarjetas que se dan vuelta, casos por industria, armador de mensajes de 4 piezas (contador < 80 palabras, copiar), simulador de objeciones, checklist de reunión y quiz (aprueba con 80%). Vista previa en iframe, "Abrir en pestaña" y descarga (`GET /api/academia-sdr/html?client_id=`).
+- **Pestañas:** Capacitación (la academia en iframe), Seguimiento y Configurar (formulario, vueltas, "Confirmar con el cliente"). `?tab=seguimiento` abre directo el seguimiento (link del correo).
+- **Seguimiento por SDR** (migración `supabase/20261103_academia_sdr_progress_migration.sql`, `lib/academiaSdr/server/progress.ts`, `/api/academia-sdr/progress`): cada vez que alguien abre la Capacitación se guarda un ingreso (`sdr_academy_visits`); el HTML avisa a la página por `postMessage` al completar/desmarcar una vuelta o responder el quiz y se guarda en `sdr_academy_progress` (por cliente + email de la sesión + vuelta; mejor puntaje e intentos del quiz). El avance guardado se precarga en el semáforo (`data-done`). Solo cuenta lo hecho dentro de la plataforma, no el `.html` descargado.
+- **SDR y líder:** se resuelven desde el email de la sesión contra la Maestra IA (inicial + apellido o nombre + apellido: nnazar@ = Nicolle Nazar; debe calzar con una sola persona) y su célula (columnas O y P). Sin calce se guarda solo el email.
+- **Correo a la líder:** la primera vez que un SDR completa cada vuelta (desmarcar y volver a marcar no reenvía; `notified_at`) va un correo a la líder de su célula (`leaderEmail` de `alertsMail.ts`) con copia a `CC_ALWAYS` (ihincapie@); al completar las 10 el asunto dice que terminó, con el puntaje del quiz. Sin líder identificada (o si quien avanza es la líder) va solo a ihincapie@ con el motivo. Mismo remitente y modo que las alertas de Células (`CELULAS_ALERTS_FROM`, `CELULAS_ALERTS_MODE=test` = todo a ihincapie@).
+
+---
+
 ### Reporte SDR diario por correo (`lib/reporteSdr/`)
 
 Correo automático con un **PNG vertical** (1080 px, para reenviar por WhatsApp) de las llamadas del día por SDR + reuniones agendadas hoy. **Lunes a viernes hábiles a las 13:00 y 18:30 de Chile.**
