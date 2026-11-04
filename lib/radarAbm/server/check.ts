@@ -64,6 +64,9 @@ export async function checkClientHubspot(clientId: string) {
     : { key: "schemas", label: "Propiedades de empresas, contactos y reuniones", ok: false, required: true, detail: errors[0]?.slice(0, 240), scopes: missingScopes(errors.join(" ")) });
 
   const detected = detectProperties(effectiveProperties(cfg, settings), catalog, client?.name);
+  // Todas las propiedades que la app ve en ese HubSpot (buscador de la pantalla)
+  const slim = (o: string) => (catalog[o] ?? []).map((x) => ({ name: x.name, label: x.label })).sort((a, b) => a.label.localeCompare(b.label));
+  const allProps = { companies: slim("companies"), contacts: slim("contacts") };
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
 
   // Modo "Cliente BullsEye" (ej. BullsEye): universo por "Cliente BullsEye Empresa" / "Cliente BullsEye"
@@ -86,7 +89,7 @@ export async function checkClientHubspot(clientId: string) {
     for (const [k, l] of [["owners", "Usuarios (SDR)"], ["calls", "Llamadas (intentos)"], ["emails", "Correos"], ["communications", "WhatsApp / LinkedIn"], ["deals", "Negocios (pipeline)"]] as const) {
       add(k, l, false, k === "owners" ? await probe(`${HS}/crm/v3/owners?limit=1`, { headers }) : await search(k));
     }
-    return { source: settings.hubspot_source, items, universe, contacts, properties: detected, ready: items.filter((i) => i.required).every((i) => i.ok) };
+    return { source: settings.hubspot_source, items, universe, contacts, properties: detected, allProps, ready: items.filter((i) => i.required).every((i) => i.ok) };
   }
 
   // Universo: empresas con status (con "Cliente BullsEye" si se configuró un valor)
@@ -132,6 +135,7 @@ export async function checkClientHubspot(clientId: string) {
     universe,
     contacts,
     properties: detected,
+    allProps,
     ready: items.filter((i) => i.required).every((i) => i.ok) && !!statusProp && !!P.contactStatus.property,
   };
 }
