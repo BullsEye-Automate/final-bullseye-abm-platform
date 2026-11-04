@@ -16,7 +16,7 @@ const GROW = 62;
 
 const C = {
   bg: "#f4f2fb", navy: "#251762", ink: "#1c1640", mute: "#6b6590", mute2: "#8a84ab",
-  line: "#eeecf6", teal: "#14b8a6", teal2: "#0f9488", bar: "#ddd6fe", mint: "#62E0D8", white: "#ffffff",
+  line: "#eeecf6", teal: "#14b8a6", teal2: "#0f9488", bar: "#ddd6fe", held: "#8b7cf6", mint: "#62E0D8", white: "#ffffff",
 };
 
 let fontsCache: { name: string; data: ArrayBuffer; weight: 400 | 700 | 800; style: "normal" }[] | null = null;
@@ -151,31 +151,33 @@ export async function renderReportPng(r: DailySdrReport): Promise<Buffer> {
       {r.clientGoals && r.clientGoals.rows.length ? (
         <div style={card}>
           <div style={{ display: "flex", fontSize: 30, fontWeight: 700, color: C.ink }}>{`Meta de ${monthName(r.clientGoals.month)} por cliente`}</div>
-          <div style={{ display: "flex", fontSize: 20, color: C.mute2, marginTop: 6, marginBottom: 22 }}>Clientes con reuniones hoy · avance = reuniones realizadas en el mes</div>
+          <div style={{ display: "flex", fontSize: 20, color: C.mute2, marginTop: 6, marginBottom: 22 }}>Clientes con reuniones hoy · Faltan = meta − realizadas (las por realizar aún no cuentan)</div>
           <div style={{ display: "flex", height: 36 }}>
             {head("CLIENTE", 290)}
-            <div style={{ display: "flex", width: 230 }} />
+            <div style={{ display: "flex", width: 170 }} />
             {head("META", 70)}
             {head("REALIZ.", 110)}
-            {head("HOY", 90)}
+            {head("POR REALIZAR", 150)}
             {head("FALTAN", 118)}
           </div>
           {r.clientGoals.rows.map((g, i) => {
             const done = g.goal > 0 && g.remaining === 0;
             const ratio = g.goal > 0 ? Math.min(1, g.held / g.goal) : 0;
+            const pRatio = g.goal > 0 ? Math.min(1 - ratio, g.pending / g.goal) : 0;
             return (
               <div key={`g${i}`} style={{ display: "flex", alignItems: "center", height: GROW, borderTop: `1px solid ${C.line}` }}>
                 <div style={{ display: "flex", width: 290, fontSize: 24, fontWeight: 700, color: C.ink, whiteSpace: "nowrap", overflow: "hidden" }}>{fitCompany(g.client, 20)}</div>
-                <div style={{ display: "flex", width: 230 }}>
+                <div style={{ display: "flex", width: 170 }}>
                   {g.goal > 0 ? (
-                    <div style={{ display: "flex", width: 210, height: 16, borderRadius: 8, background: C.line }}>
-                      <div style={{ display: "flex", width: Math.max(4, ratio * 210), height: 16, borderRadius: 8, background: done ? C.teal : C.bar }} />
+                    <div style={{ display: "flex", width: 150, height: 16, borderRadius: 8, background: C.line, overflow: "hidden" }}>
+                      <div style={{ display: "flex", width: Math.max(4, ratio * 150), height: 16, background: done ? C.teal : C.held }} />
+                      {pRatio > 0 ? <div style={{ display: "flex", width: pRatio * 150, height: 16, background: C.bar }} /> : null}
                     </div>
                   ) : null}
                 </div>
                 {cell(g.goal > 0 ? fmtGoal(g.goal) : "–", 70, { fontSize: 24, color: C.ink })}
                 {cell(String(g.held), 110, { fontSize: 24, fontWeight: 700, color: C.ink })}
-                {cell(String(g.today), 90, { fontSize: 24, color: C.mute })}
+                {cell(String(g.pending), 150, { fontSize: 24, color: C.mute })}
                 {cell(g.goal > 0 ? (done ? "Cumplida" : String(g.remaining)) : "Sin meta", 118, { fontSize: done || !g.goal ? 20 : 26, fontWeight: 800, color: g.goal ? C.teal2 : C.mute2 })}
               </div>
             );
