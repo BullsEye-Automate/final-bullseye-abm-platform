@@ -8,7 +8,7 @@ import { IconAlertTriangle, IconCheck, IconLoader2, IconPlugConnected, IconX } f
 // nombres internos pueden ser distintos a los del HubSpot de BullsEye).
 
 type CheckItem = { key: string; label: string; ok: boolean; required: boolean; detail?: string; scopes?: string[] };
-type Detected = { key: string; label: string; object: string; required: boolean; property: string | null; found: boolean; manual: boolean; propLabel: string | null; perClient?: boolean; candidates?: { name: string; label: string }[]; options: { label: string; value: string }[] };
+type Detected = { key: string; label: string; object: string; required: boolean; property: string | null; found: boolean; manual: boolean; propLabel: string | null; perClient?: boolean; candidates?: { name: string; label: string }[]; suggestions?: { name: string; label: string }[]; options: { label: string; value: string }[] };
 type CheckResult = { items: CheckItem[]; universe: number | null; contacts: number | null; properties: Detected[]; ready: boolean };
 
 const OBJ_LABEL: Record<string, string> = { companies: "Empresa", contacts: "Contacto", meetings: "Reunión" };
@@ -126,7 +126,7 @@ export default function ClientHubspotRadar({
       {own && <div>
         <div className="text-sm font-medium mb-1">Propiedades en el HubSpot del cliente</div>
         <p className="text-xs text-ink-muted mb-2">
-          Se buscan por su etiqueta. Si en su cuenta se llaman distinto, escribe el nombre interno (HubSpot → Configuración → Propiedades → la propiedad → “Nombre interno”). Se guarda solo para este cliente.
+          Se buscan por su etiqueta. Si en su cuenta se llaman distinto, escribe el nombre interno o la etiqueta tal como se ve (HubSpot → Configuración → Propiedades). Si acabas de crear la propiedad en HubSpot, vuelve a cargar esta página para detectarla. Se guarda solo para este cliente.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -152,7 +152,14 @@ export default function ClientHubspotRadar({
                     {d.found ? (
                       <span className="text-success-fg"><code>{d.property}</code> · {d.propLabel}{d.options.length ? ` · ${d.options.length} valores` : ""}</span>
                     ) : (
-                      <span className={d.required ? "text-danger-fg" : "text-ink-subtle"}>{d.manual ? "ese nombre interno no existe" : "no encontrada"}</span>
+                      <span className={d.required ? "text-danger-fg" : "text-ink-subtle"}>
+                        {d.manual ? "no existe en este HubSpot (ni como nombre interno ni como etiqueta)" : "no encontrada"}
+                        {d.suggestions?.length ? (
+                          <span className="block mt-1">¿Quisiste decir {d.suggestions.map((x, i) => (
+                            <span key={x.name}>{i ? ", " : ""}<button type="button" className="underline" onClick={() => setProp(d.key, x.name)}><code>{x.name}</code></button> ({x.label})</span>
+                          ))}?</span>
+                        ) : null}
+                      </span>
                     )}
                   </td>
                 </tr>
