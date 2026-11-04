@@ -3,9 +3,9 @@ import { readMaster, type MasterData } from "@/lib/celulasSdr/sheets";
 import { normalizeSdrName } from "@/lib/sdrAnalytics";
 import { CC_ALWAYS, TEST_RECIPIENT, leaderEmail } from "@/lib/celulasSdr/server/alertsMail";
 import { mailProvider, sendMail } from "@/lib/mailer";
-import { getModuleDef, MODULE_COUNT } from "../modules";
+import { LAP_COUNT } from "../catalog";
 
-// Seguimiento de la Academia SDR: ingresos y vueltas completadas por
+// Seguimiento del Entrenamiento cliente (antes "Academia SDR"): ingresos y vueltas completadas por
 // usuario (email de la sesión), y correo a la líder de célula del SDR con
 // copia a CC_ALWAYS la primera vez que completa cada vuelta.
 // Tablas: supabase/20261103_academia_sdr_progress_migration.sql
@@ -164,12 +164,11 @@ async function sendLapMail(opts: { db: SupabaseClient; clientId: string; clientN
   const doneCount = ((rows ?? []) as { completed: boolean }[]).filter((r) => r.completed).length;
   const quiz = ((rows ?? []) as { quiz_score: number | null; quiz_total: number | null }[]).find((r) => r.quiz_score != null);
 
-  const def = getModuleDef(moduleNo);
   const person = who.sdrName ?? email;
-  const finished = doneCount >= MODULE_COUNT;
+  const finished = doneCount >= LAP_COUNT;
   const subject = finished
-    ? `🏁 ${person} terminó la Academia SDR de ${clientName}`
-    : `${person} completó la vuelta ${moduleNo} de la Academia SDR de ${clientName}`;
+    ? `🏁 ${person} terminó el Entrenamiento cliente de ${clientName}`
+    : `${person} completó la vuelta ${moduleNo} del Entrenamiento cliente de ${clientName}`;
 
   // Destinatario: la líder de la célula del SDR, con copia a CC_ALWAYS.
   // Sin líder identificada (o si quien avanza es la líder) va solo en copia.
@@ -184,17 +183,17 @@ async function sendLapMail(opts: { db: SupabaseClient; clientId: string; clientN
   else if (!leaderTo && live) notes.push(`No se encontró la líder de célula de ${who.sdrName} (o no tiene correo configurado).`);
 
   const html = `<div style="font-family:Arial,sans-serif;color:#1d1640;max-width:560px">
-    <div style="background:#251762;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0;font-size:18px;font-weight:bold">Bulls<span style="color:#62E0D8">Eye</span> · Academia SDR</div>
+    <div style="background:#251762;color:#fff;padding:16px 20px;border-radius:12px 12px 0 0;font-size:18px;font-weight:bold">Bulls<span style="color:#62E0D8">Eye</span> · Entrenamiento cliente</div>
     <div style="border:1px solid #e4e0f2;border-top:0;padding:20px;border-radius:0 0 12px 12px">
-      <p style="margin:0 0 12px"><b>${escHtml(person)}</b> ${finished ? "terminó todas las vueltas" : `completó la <b>vuelta ${moduleNo}: ${escHtml(def?.title ?? "")}</b>`} de la capacitación de <b>${escHtml(clientName)}</b>.</p>
-      <p style="margin:0 0 6px">Avance: <b>${doneCount} de ${MODULE_COUNT} vueltas</b></p>
+      <p style="margin:0 0 12px"><b>${escHtml(person)}</b> ${finished ? "terminó todas las vueltas" : `completó la <b>vuelta ${moduleNo}</b>`} del Entrenamiento cliente de <b>${escHtml(clientName)}</b>.</p>
+      <p style="margin:0 0 6px">Avance: <b>${doneCount} de ${LAP_COUNT} vueltas</b></p>
       ${quiz ? `<p style="margin:0 0 6px">Quiz final: <b>${quiz.quiz_score} de ${quiz.quiz_total}</b>${quiz.quiz_total && quiz.quiz_score! >= Math.ceil(quiz.quiz_total * 0.8) ? " (aprobado)" : " (aún no aprueba)"}</p>` : ""}
       ${notes.map((n) => `<p style="margin:8px 0 0;color:#a3365c;font-size:13px">${escHtml(n)}</p>`).join("")}
-      <p style="margin:16px 0 0"><a href="${appUrl}/sdr/academia?tab=seguimiento" style="color:#251762">Ver el seguimiento en la plataforma</a></p>
+      <p style="margin:16px 0 0"><a href="${appUrl}/sdr/entrenamiento?tab=seguimiento" style="color:#251762">Ver el seguimiento en la plataforma</a></p>
     </div></div>`;
 
   const from = process.env.CELULAS_ALERTS_FROM || (mailProvider() === "resend" ? "onboarding@resend.dev" : "ihincapie@bullseye-abm.com");
-  await sendMail({ from, fromName: "BullsEye · Academia SDR", to, cc, subject: live ? subject : `[PRUEBA → ${leaderTo ?? "sin líder"}] ${subject}`, html });
+  await sendMail({ from, fromName: "BullsEye · Entrenamiento cliente", to, cc, subject: live ? subject : `[PRUEBA → ${leaderTo ?? "sin líder"}] ${subject}`, html });
 }
 
 // ── Lectura ─────────────────────────────────────────────────────────────

@@ -1,0 +1,440 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Academia SDR Otic CChC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: pit-wall header with semáforo de 10 luces, pestañas de vueltas, una vuelta visible a la vez */
+:root{
+  --bg:#140F3D; --s1:#1E1760; --s2:#2A2180; --line:#3A3196;
+  --fg:#F3F1FF; --muted:#B9B3E6; --cyan:#62E0D8; --purple:#9B4FC0; --magenta:#E0457B;
+  --ok:#62E0D8; --warn:#F2C14E; --bad:#E0457B;
+  --display:"Sora",system-ui,sans-serif; --body:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body);margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:16px;padding-block:24px 64px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.2;margin:0}
+h1{font-size:clamp(1.6rem,4.5vw,2.4rem);font-weight:800;letter-spacing:-.01em}
+h2{font-size:clamp(1.3rem,3.4vw,1.8rem);font-weight:700}
+h3{font-size:1.08rem;font-weight:600;color:var(--cyan)}
+p{margin:0}
+.eyebrow{font:600 .75rem/1 var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.eyebrow b{color:var(--magenta)}
+a{color:var(--cyan)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+/* header */
+.top{display:grid;gap:14px;margin-bottom:20px}
+.top p.lead{color:var(--muted);max-width:62ch}
+.lights{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.lightrow{display:flex;gap:6px;flex-wrap:wrap}
+.lamp{width:22px;height:22px;border-radius:50%;background:#241c63;border:2px solid var(--line);transition:background .3s,box-shadow .3s}
+.lamp.on{background:var(--magenta);box-shadow:0 0 10px var(--magenta);border-color:var(--magenta)}
+.lamp.all{background:var(--cyan);box-shadow:0 0 12px var(--cyan);border-color:var(--cyan)}
+.lighttxt{font:600 .85rem var(--display);color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
+
+/* tabs */
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);z-index:5;padding-top:8px;scrollbar-width:thin}
+.tab{flex:0 0 auto;background:var(--s1);border:1px solid var(--line);border-radius:999px;padding:7px 14px;font:600 .82rem var(--display);color:var(--muted);white-space:nowrap}
+.tab[aria-selected="true"]{background:var(--cyan);color:var(--bg);border-color:var(--cyan)}
+.tab.done:not([aria-selected="true"]){color:var(--cyan);border-color:var(--cyan)}
+
+.lap{display:grid;gap:22px;margin-top:18px}
+.lap>header{display:grid;gap:6px}
+.lap>header p{color:var(--muted);max-width:65ch}
+.block{display:grid;gap:12px}
+.text{max-width:68ch;display:grid;gap:10px}
+.text ul,.text ol{margin:0;padding-left:1.2em;display:grid;gap:6px}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:16px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr))}
+.grid>*{min-width:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:.92rem}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+th{background:var(--s2);font:600 .78rem var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+td b{color:var(--fg)}
+.quote{border-left:3px solid var(--purple);background:var(--s1);padding:12px 16px;border-radius:0 12px 12px 0;max-width:68ch}
+.remember{background:linear-gradient(135deg,var(--s2),var(--s1));border:1px solid var(--cyan);border-radius:14px;padding:16px 18px;display:grid;gap:4px}
+.remember .eyebrow{color:var(--cyan)}
+.remember p{font:500 1.02rem/1.5 var(--display)}
+.note{font-size:.85rem;color:var(--muted)}
+.pill{display:inline-block;font:600 .72rem var(--display);letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px;background:var(--s2);color:var(--cyan);border:1px solid var(--line)}
+.pill.mag{color:var(--magenta)}
+.complete{justify-self:start;background:var(--magenta);border:0;border-radius:999px;padding:11px 20px;font:700 .9rem var(--display);color:#fff}
+.complete.is{background:var(--s2);color:var(--cyan);border:1px solid var(--cyan)}
+.lapnav{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ghost{background:transparent;border:1px solid var(--line);border-radius:999px;padding:10px 16px;font:600 .85rem var(--display);color:var(--muted)}
+
+/* chips/selectors */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{background:var(--s1);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font:600 .88rem var(--display);color:var(--muted);text-align:left}
+.chip[aria-pressed="true"]{background:var(--s2);border-color:var(--cyan);color:var(--fg)}
+.panel{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:18px;display:grid;gap:10px}
+.panel dl{margin:0;display:grid;gap:10px}
+.panel dt{font:600 .75rem var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.panel dd{margin:0}
+
+/* flip cards */
+.flips{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),1fr))}
+.flip{perspective:900px;height:200px;background:none;border:0;padding:0;text-align:left}
+.flip .in{position:relative;width:100%;height:100%;transition:transform .5s;transform-style:preserve-3d}
+.flip.turned .in{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);overflow:auto}
+.front{background:var(--s1);justify-content:space-between}
+.front strong{font:700 1.25rem var(--display)}
+.front span{font-size:.78rem;color:var(--muted)}
+.back{background:var(--s2);transform:rotateY(180deg);font-size:.88rem}
+.back b{color:var(--cyan);font:600 .72rem var(--display);letter-spacing:.08em;text-transform:uppercase}
+
+/* builder */
+.builder{display:grid;gap:14px}
+.piece{display:grid;gap:6px}
+.piece label{font:600 .8rem var(--display);color:var(--muted);letter-spacing:.04em}
+.piece label i{font-style:normal;color:var(--magenta);margin-right:6px}
+select,textarea{width:100%;background:var(--s1);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-size:.92rem}
+textarea{resize:vertical;min-height:64px}
+.preview{background:var(--fg);color:var(--bg);border-radius:14px;padding:18px;white-space:pre-wrap;font-size:.95rem;line-height:1.55}
+.meter{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.bar{flex:1 1 160px;height:8px;border-radius:99px;background:var(--s2);overflow:hidden}
+.bar span{display:block;height:100%;background:var(--cyan);transition:width .2s,background .2s}
+.count{font:700 .95rem var(--display);font-variant-numeric:tabular-nums}
+.primary{background:var(--cyan);color:var(--bg);border:0;border-radius:999px;padding:10px 18px;font:700 .88rem var(--display)}
+
+/* checklist */
+.checks{display:grid;gap:10px}
+.check{display:flex;gap:12px;align-items:flex-start;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.check input{width:20px;height:20px;accent-color:var(--cyan);margin-top:3px;flex:0 0 auto}
+.result{border-radius:12px;padding:14px 16px;font:600 .98rem/1.45 var(--display);border:1px solid}
+.r0{border-color:var(--bad);color:var(--bad)}
+.r2{border-color:var(--warn);color:var(--warn)}
+.r3{border-color:var(--ok);color:var(--ok)}
+
+/* quiz */
+.q{display:grid;gap:10px}
+.q .opts{display:grid;gap:8px}
+.opt{background:var(--s1);border:1px solid var(--line);border-radius:10px;padding:10px 14px;text-align:left;font-size:.94rem}
+.opt.right{border-color:var(--ok);background:rgba(98,224,216,.12)}
+.opt.wrong{border-color:var(--bad);background:rgba(224,69,123,.12)}
+.opt:disabled{cursor:default}
+.qfb{font-size:.88rem;color:var(--muted)}
+.score{font:800 2rem var(--display);font-variant-numeric:tabular-nums}
+
+.foot{margin-top:40px;color:var(--muted);font-size:.8rem;border-top:1px solid var(--line);padding-top:14px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="eyebrow"><b>BullsEye</b> · Academia SDR · Fase Chile</div>
+    <h1>Academia SDR Otic CChC</h1>
+    <p class="lead">Diez vueltas para entender qué hace Otic CChC y conseguir reuniones de 15 minutos con quien decide en RRHH. Completa cada vuelta y enciende el semáforo.</p>
+    <div class="lights" aria-label="Avance">
+      <div class="lightrow" id="lights"></div>
+      <div class="lighttxt" id="lighttxt">0 / 10 vueltas</div>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Vueltas"></nav>
+  <main id="laps"></main>
+
+  <p class="foot">Preparado por BullsEye con el ICP de Otic CChC (10 sep 2026). Cifras y clientes de referencia: pendientes de confirmar con el cliente.</p>
+</div>
+
+<script>
+(function(){
+const KEY='bullseye-academia-otic-cchc';
+let state={done:[],tab:0};
+try{const s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s&&Array.isArray(s.done)) state=Object.assign(state,s);}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const table=(head,rows)=>`<div class="tablewrap"><table><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+const remember=t=>`<div class="remember"><span class="eyebrow">Lo que debes recordar</span><p>${t}</p></div>`;
+
+/* ---------- data ---------- */
+const SERVICES=[
+ {k:'SENCE',name:'Gestión de franquicia SENCE',tag:'Servicio foco',an:'El contador que hace bien tu trámite de impuestos.',means:'Otic CChC administra el beneficio tributario de capacitación para que la empresa lo use completo y bien.',ex:'Una constructora con muchas obras deja de perder parte del beneficio por trámites tardíos o incompletos.'},
+ {k:'Consultoría',name:'Acompañamiento consultivo',tag:'Crecer',an:'Un entrenador que te arma la rutina, no solo te abre el gimnasio.',means:'Ayuda a RRHH a conectar la empresa con programas de formación y desarrollo de habilidades.',ex:'Una minera necesita formar rápido a personal nuevo para una faena y recibe apoyo para elegir programas.'},
+ {k:'Datos',name:'Digitalización, reporting y trazabilidad',tag:'Crecer',an:'El tablero del auto: velocidad, combustible y alertas en un vistazo.',means:'Visibilidad en tiempo real de programas, uso de la franquicia y cumplimiento, con indicadores.',ex:'Una empresa de energía prepara una auditoría y tiene a mano quién se capacitó y en qué.'}
+];
+const DICT=[
+ ['SENCE','Servicio Nacional de Capacitación y Empleo: el organismo público que regula la capacitación con beneficio tributario.','Es el “árbitro”: sus reglas y fiscalizaciones presionan a RRHH.'],
+ ['Franquicia SENCE','Beneficio que permite a las empresas usar parte de sus impuestos para capacitar a sus trabajadores.','Es plata que la empresa ya tiene; si no la usa bien, la pierde.'],
+ ['OTIC','Organismo Técnico Intermedio para Capacitación: administra la franquicia por las empresas afiliadas.','Es lo que es Otic CChC: el intermediario experto.'],
+ ['Empresa afiliada','Empresa que trabaja con un OTIC para gestionar su capacitación.','Es lo que buscamos que sea el prospecto.'],
+ ['CChC','Cámara Chilena de la Construcción, el gremio asociado a este OTIC.','Explica su cercanía con construcción; atiende también otras industrias.'],
+ ['L&D','Learning & Development: el área de aprendizaje y desarrollo.','Su jefe suele ser influenciador clave.'],
+ ['LMS','Plataforma donde se hacen y registran cursos (Moodle, Cornerstone, Docebo).','Muchos lo tienen, pero sin integración con el OTIC.'],
+ ['HCM','Sistema de RRHH (SAP SuccessFactors, Oracle HCM, Workday).','Muestra la madurez digital del prospecto.'],
+ ['Faena','Lugar u obra donde se ejecuta el trabajo: mina, obra, planta.','Nuevas faenas = mucha gente nueva que capacitar.'],
+ ['Dotación','Cantidad de trabajadores de la empresa.','Alta dotación operativa = más necesidad de capacitar.'],
+ ['Rotación','Cuánta gente entra y sale de la empresa.','Alta rotación = capacitación constante.'],
+ ['Trazabilidad','Poder seguir el rastro: quién se capacitó, en qué, cuándo y con qué resultado.','Clave ante auditorías.'],
+ ['Compliance','Cumplir leyes y normas obligatorias.','Miedo a multas = urgencia.'],
+ ['ROI de formación','Demostrar que la capacitación dio resultados por lo invertido.','RRHH debe justificarlo ante la gerencia.'],
+ ['Upskilling','Enseñar nuevas habilidades al equipo actual.','Es un disparador de compra.'],
+ ['Prevención de Riesgos','Área que cuida la seguridad laboral.','Influye en industrias reguladas.']
+];
+const IND=[
+ {k:'Construcción',ctx:'En constructoras con varias obras activas, coordinar capacitación y certificaciones de seguridad suele volverse un trabajo de planillas.',tpl:'“Ayudamos a [constructora] a [resultado].”'},
+ {k:'Minería',ctx:'En minería, cada nueva faena trae personal que debe certificarse rápido, y la franquicia SENCE se termina gestionando a contrarreloj.',tpl:'“Con [minera] logramos [resultado] en sus faenas.”'},
+ {k:'Manufactura',ctx:'En plantas con mucha rotación, capacitar es constante y es fácil perder el rastro de qué se hizo y con qué presupuesto.',tpl:'“[Empresa] redujo [carga / tiempo] en su gestión de capacitación.”'},
+ {k:'Energía',ctx:'En energía, las exigencias de seguridad y compliance hacen que cada auditoría dependa de tener la capacitación bien documentada.',tpl:'“[Empresa] llegó a su auditoría con [resultado].”'},
+ {k:'Logística',ctx:'En logística, con equipos en varias sedes y turnos, ordenar la capacitación y usar bien la franquicia es un desafío diario.',tpl:'“[Empresa] ordenó la capacitación de [sedes / turnos].”'},
+ {k:'Gran empresa',ctx:'Cuando hay cientos de trabajadores operativos, gestionar la franquicia SENCE a mano suele dejar beneficio sobre la mesa.',tpl:'“[Empresa] aprovechó mejor su franquicia en [área].”'}
+];
+const ROLES=[
+ ['Gerente de RRHH / Personas','Muchos gerentes de Personas nos cuentan que les cuesta demostrar el impacto de la capacitación ante la gerencia.'],
+ ['Gerente de Adm. y Finanzas','Para finanzas, la pregunta suele ser si el presupuesto de capacitación y la franquicia se están aprovechando completos.'],
+ ['Gerente General','En empresas en crecimiento, capacitar rápido y cumplir la normativa sin sumar carga al equipo es una prioridad.'],
+ ['Jefe de Capacitación / L&D','Quienes lideran capacitación suelen pasar más tiempo en trámites y reportes que en diseñar formación.'],
+ ['Prevención de Riesgos','En industrias reguladas, tener al día las certificaciones obligatorias es clave para evitar multas y paradas.']
+];
+const HELP=['En Otic CChC ayudamos a ordenar ese proceso para aprovechar mejor el presupuesto y tener visibilidad del cumplimiento.','En Otic CChC ayudamos a gestionar la franquicia SENCE y a tener los indicadores de capacitación a mano.','En Otic CChC le quitamos carga operativa a RRHH y sumamos trazabilidad a cada capacitación.'];
+const PROOF=['Trabajamos con empresas de minería, construcción y energía.','Acompañamos a empresas afiliadas con operación intensiva en mano de obra.','[Caso autorizado por el cliente: pendiente]'];
+const ASK=['¿Te hace sentido conversar 15 minutos esta semana?','¿Tienes 15 minutos el martes o el jueves?','¿Eres tú quien ve estos temas o me recomiendas a alguien?'];
+const OBJ=[
+ ['Ya tenemos OTIC','Está cómodo o no sabe si hay algo mejor.','“Perfecto, muchos de los que conversan con nosotros también tenían. En 15 minutos puedes comparar si estás sacando todo el provecho a la franquicia.”'],
+ ['Lo hacemos internamente','Siente que lo tiene controlado, aunque le cueste tiempo.','“Justamente, la idea es quitarle carga al equipo y sumar visibilidad, no reemplazar lo que funciona.”'],
+ ['Ya tenemos un LMS','Cree que la plataforma resuelve todo.','“Buenísimo; lo que sumamos es la gestión de la franquicia integrada con el reporting. Somos complemento.”'],
+ ['No tengo tiempo','No ve urgencia todavía.','“Entiendo; por eso son solo 15 minutos. ¿Mejor la próxima semana?”'],
+ ['Mándame información','Quiere cortar la conversación con amabilidad.','“Te la envío. Para mandarte lo que te sirva, ¿qué te preocupa más hoy: el aprovechamiento de la franquicia o los reportes?”'],
+ ['No hay presupuesto','No ve que es plata que ya tiene.','“La conversación es sobre usar mejor la franquicia que ya tienen disponible.” (Confirmar con el cliente cómo se cobra el servicio.)'],
+ ['No soy yo quien ve esto','No es el contacto correcto.','“Gracias. ¿Quién ve capacitación o la franquicia SENCE? ¿Me podrías presentar?”'],
+ ['¿Cuánto cuesta?','Hay interés, pero quiere comparar.','“Depende de cómo trabajan hoy; eso lo vemos en la reunión con el especialista.”']
+];
+const QUIZ=[
+ ['¿Qué hace un OTIC?',['Vende cursos online','Administra la franquicia SENCE para empresas afiliadas','Fiscaliza a las empresas','Es un software de RRHH'],1],
+ ['¿Cuál es el servicio foco de la campaña?',['Venta de un LMS','Cursos de idiomas','Gestión y optimización de la franquicia SENCE','Reclutamiento'],2],
+ ['¿Quién decide normalmente?',['Gerente de RRHH o Subgerente de Personas','Asistente administrativo','Supervisor de turno','TI'],0],
+ ['¿Cuál es una buena apertura?',['“Vi que están buscando un OTIC…”','“En minería, cada nueva faena trae personal que debe capacitarse rápido…”','“Somos el mejor OTIC de Chile”','“Te envío nuestro brochure de 20 páginas”'],1],
+ ['¿Largo ideal de un mensaje?',['Más de 200 palabras','150 palabras','Menos de 80 palabras','No importa'],2],
+ ['Fórmula: contexto + cómo ayudamos + prueba + …',['precio','pregunta','brochure','firma larga'],1],
+ ['¿Qué hace sólida una reunión?',['Que el contacto sea simpático','Quien decide + necesidad confirmada + urgencia','Que la empresa sea grande','Que pida precio'],1],
+ ['Te dicen “Ya tenemos un LMS”. Tú…',['Criticas el LMS','Cortas la llamada','Te posicionas como complemento: gestión de franquicia + reporting integrado','Ofreces un descuento'],2],
+ ['El contacto dice que no usan la franquicia SENCE. Tú…',['Descartas la cuenta','Avisas a tu líder','Insistes con más mensajes','Inventas un beneficio'],1],
+ ['¿Cuándo puedes nombrar a un cliente de referencia?',['Siempre','Si lo viste en LinkedIn','Solo si Otic CChC autorizó su uso en campaña','Nunca, en ningún caso'],2]
+];
+
+/* ---------- laps ---------- */
+const LAPS=[
+{t:'Antes de empezar',lead:'Qué vas a aprender y cuál es el foco de esta campaña.',html:`
+<div class="text"><ol><li>Qué es Otic CChC y por qué existe.</li><li>Qué vende, explicado simple.</li><li>Las palabras del rubro: SENCE, franquicia, OTIC, L&amp;D.</li><li>A quién le escribimos y quién decide.</li><li>Qué problema resolvemos, sin investigar cada empresa.</li><li>Cómo escribir, llamar, manejar objeciones y saber si una reunión vale la pena.</li></ol></div>
+${table(['Tema','Definición'],[
+ ['Cliente','<b>Otic CChC</b>'],['Servicio foco','Gestión y optimización de la franquicia tributaria SENCE, con acompañamiento consultivo'],
+ ['Para crecer después','Digitalización de la gestión de capacitación: reporting, trazabilidad e indicadores'],
+ ['País de esta fase','Chile (prioridad absoluta)'],['Regiones clave','Región Metropolitana; Antofagasta, Atacama y Tarapacá (mineras); Valparaíso y Biobío (industriales)'],
+ ['Industrias','Construcción e infraestructura; minería y servicios asociados; manufactura industrial; energía; logística y transporte industrial; grandes empresas con mucha mano de obra'],
+ ['Tu meta','Una reunión de 15 minutos con quien decide']])}
+<div class="quote"><b>Tu rol en una frase:</b> las cuentas ya vienen filtradas. Tú no investigas si compran: entiendes la necesidad, llegas a quien decide y consigues la reunión.</div>
+${remember('Vendemos tranquilidad y mejor uso del presupuesto de capacitación. Tu trabajo no es vender el servicio completo: es conseguir 15 minutos.')}`},
+
+{t:'Quién es el cliente',lead:'Otic CChC administra la franquicia tributaria SENCE para que las empresas afiliadas capaciten a sus trabajadores.',html:`
+<div class="grid">
+ <div class="card"><span class="pill mag">Problema</span><p style="margin-top:8px">Una empresa con cientos de trabajadores en faenas tiene un beneficio para capacitar, pero lo gestiona con planillas y correos. Parte se pierde y nadie sabe bien qué cursos se hicieron.</p></div>
+ <div class="card"><span class="pill">Solución</span><p style="margin-top:8px">Otic CChC administra ese beneficio, acompaña a RRHH de forma consultiva y entrega un proceso ordenado con reporting e indicadores.</p></div>
+ <div class="card"><span class="pill">Resultado</span><p style="margin-top:8px">Mejor aprovechamiento del presupuesto, menos carga operativa en RRHH y visibilidad en tiempo real de programas y cumplimiento.</p></div>
+</div>
+<div class="quote"><b>Analogía:</b> tienes derecho a una devolución de impuestos, pero si haces el trámite solo y apurado, pierdes plata. El contador conoce las reglas y te muestra en qué se usó cada peso. Otic CChC es ese “contador” del beneficio de capacitación, y además asesora en qué capacitar.</div>
+<p class="note"><b>Cifras clave:</b> los materiales no incluyen cifras del cliente (años, empresas afiliadas, trabajadores capacitados). No uses números hasta que el cliente los confirme.</p>
+<div class="block"><h3>3 razones fáciles de recordar</h3>
+<div class="grid">
+ <div class="card"><strong>Control</strong><p class="note">Mejor visibilidad y control del uso de la franquicia.</p></div>
+ <div class="card"><strong>Acompañamiento</strong><p class="note">Consultivo, no solo administrativo.</p></div>
+ <div class="card"><strong>Todo junto</strong><p class="note">Capacitación + reporting + gestión, con foco en resultados medibles.</p></div>
+</div></div>
+${remember('Otic CChC ayuda a las empresas a sacarle el máximo a su beneficio SENCE, con orden, cumplimiento y datos.')}`},
+
+{t:'Qué vende',lead:'Tres servicios que se apoyan entre sí. La campaña entra por el primero.',html:`
+<div class="block"><h3>Selector de servicios</h3><div class="chips" id="svcChips"></div><div class="panel" id="svcPanel"></div>
+<p class="note">Los ejemplos son situaciones típicas del rubro, no casos reales del cliente.</p></div>
+<div class="block"><h3>El servicio foco, paso a paso</h3><div class="text"><ol>
+<li><b>Diagnóstico:</b> se revisa cómo usan hoy la franquicia y dónde se pierde.</li>
+<li><b>Plan:</b> qué capacitar, a quién y cuándo (seguridad, certificaciones, rotación).</li>
+<li><b>Gestión:</b> el OTIC administra el beneficio y los trámites.</li>
+<li><b>Seguimiento:</b> reportes de avance, presupuesto y cumplimiento.</li>
+<li><b>Mejora:</b> con los datos se ajusta el plan y se muestra el impacto.</li></ol>
+<p class="note">El detalle lo explica el especialista de Otic CChC en la reunión.</p></div></div>
+<div class="block"><h3>Entrar chico y crecer</h3>
+<div class="grid">
+ <div class="card"><span class="pill mag">Entrar</span><p style="margin-top:8px">15 minutos sobre cómo usan hoy la franquicia SENCE.</p></div>
+ <div class="card"><span class="pill">Primer paso</span><p style="margin-top:8px">Ordenar y optimizar la gestión de la franquicia.</p></div>
+ <div class="card"><span class="pill">Crecer</span><p style="margin-top:8px">Sumar consultoría y digitalización del reporting.</p></div>
+</div><p class="note">Como un restaurante que te invita a probar la entrada: si te gusta, vuelves por el menú completo.</p></div>
+${remember('Entramos por la franquicia SENCE, algo que ya usan y les cuesta gestionar, y crecemos hacia consultoría y datos.')}`},
+
+{t:'Diccionario',lead:'Toca cada tarjeta para ver qué significa y por qué te importa.',html:`
+<div class="flips" id="flips"></div>
+<div class="quote"><b>Si te hacen una pregunta muy técnica</b> (montos, reglas de SENCE, plazos legales): “Muy buena pregunta. Justo para eso es la reunión: el especialista te lo explica con tu caso. ¿Te acomoda el martes o el jueves?” Nunca inventes una respuesta técnica.</div>
+${remember('SENCE pone las reglas, la franquicia es la plata para capacitar y el OTIC ayuda a usarla bien.')}`},
+
+{t:'A quién le vendemos',lead:'Empresas chilenas grandes, con mucha mano de obra operativa, que ya usan la franquicia SENCE y tienen RRHH formal.',html:`
+${table(['Rasgo','Lo que define el ICP','Por qué importa'],[
+ ['Tamaño','201–500, 501–1.000 y 1.000+ trabajadores','Más gente = más capacitación que gestionar'],
+ ['Facturación','$10–50M y $50M+ (moneda por confirmar)','Presupuesto de capacitación relevante'],
+ ['Tipo','Establecida o corporativo; B2B, B2B2C, servicios','Procesos formales'],
+ ['Operación','Intensiva en mano de obra, multisede o en regiones','Capacitar en muchos lugares es difícil sin ayuda'],
+ ['Señales','Uso activo de SENCE, certificaciones obligatorias, alta rotación, RRHH y L&amp;D robustos, digitalización','La necesidad existe']])}
+<div class="quote"><b>La lista ya viene filtrada.</b> No verifiques si son buen cliente: dedica ese tiempo a llegar a la persona correcta.</div>
+<div class="grid">
+ <div class="card"><span class="pill">Decide</span><p style="margin-top:8px">Gerente de RRHH · Subgerente de Personas · Gerente de Adm. y Finanzas (a veces) · Gerente General (medianas)</p><p class="note">Tu objetivo para la reunión.</p></div>
+ <div class="card"><span class="pill" style="color:var(--purple)">Influye</span><p style="margin-top:8px">Jefe de Capacitación / L&amp;D · Jefe de Desarrollo Organizacional · Encargado de Bienestar o Formación · Prevención de Riesgos</p><p class="note">Aliados: pídeles que te presenten.</p></div>
+ <div class="card"><span class="pill mag">No decide</span><p style="margin-top:8px">Asistentes administrativos · encargados operativos sin presupuesto · supervisores sin rol en capacitación · TI (salvo digitalización de capacitación)</p><p class="note">Solo para pedir el contacto correcto.</p></div>
+</div>
+<div class="block"><h3>Qué le preocupa a quien decide</h3><div class="text"><ul>
+<li>Cumplir la normativa y evitar multas.</li><li>Usar bien cada peso del presupuesto de capacitación.</li><li>Demostrar el impacto (ROI) ante la gerencia.</li><li>Poco tiempo: mucha carga operativa y procesos manuales.</li><li>Compra por confianza y casos reales.</li></ul></div></div>
+${remember('Apunta al Gerente de RRHH o Personas; usa a Capacitación / L&amp;D como puerta de entrada.')}`},
+
+{t:'La necesidad',lead:'Tres problemas: la franquicia se aprovecha poco, la gestión es manual y no hay datos claros.',html:`
+${table(['Problema','Cómo se ve','Resultado que entregamos'],[
+ ['Baja eficiencia en uso de la franquicia SENCE','Beneficio sin usar o mal usado','Mayor aprovechamiento del presupuesto'],
+ ['Procesos manuales y fragmentados','Planillas, correos y trámites que consumen a RRHH','Menos carga operativa en RRHH'],
+ ['Falta de trazabilidad e indicadores','Nadie sabe con certeza quién se capacitó','Visibilidad en tiempo real de programas y cumplimiento']])}
+<div class="block"><h3>Frases generales por industria</h3>${table(['Industria','Frase'],IND.map(i=>[`<b>${i.k}</b>`,`“${i.ctx}”`]))}</div>
+<div class="block"><h3>Frases generales por rol</h3>${table(['Rol','Frase'],ROLES.map(r=>[`<b>${r[0]}</b>`,`“${r[1]}”`]))}</div>
+<p class="note"><b>Disparadores de urgencia:</b> auditorías, cambios en normativa SENCE o fiscalización, crecimiento rápido de dotación, nuevas faenas, digitalización de RRHH, implementación de LMS o upskilling, alta rotación, nuevas regiones o contratos grandes.</p>
+<div class="card"><h3 style="color:var(--magenta)">Cuándo avisar a tu líder</h3><div class="text" style="margin-top:8px"><ul>
+<li>Dicen que no usan la franquicia SENCE.</li><li>Tienen menos de 50 trabajadores o no hay RRHH formal.</li><li>No hay presupuesto de capacitación estructurado.</li><li>La empresa es solo administrativa, sin operación en terreno.</li><li>Ya están con otro OTIC y piden algo que no sabes responder.</li><li>Piden propuesta, precios o condiciones antes de la reunión.</li><li>Responde alguien de muy alto nivel o surge un tema sensible (reclamo, fiscalización).</li></ul>
+<p class="note">Tú no descartas la cuenta: avisas y tu líder decide.</p></div></div>
+${remember('Habla del problema típico de su industria o su cargo; no necesitas saber nada específico de la empresa.')}`},
+
+{t:'Clientes que puedes mencionar',lead:'Aún no hay clientes de referencia autorizados. Elige la industria del prospecto para ver qué decir hoy.',html:`
+<div class="chips" id="caseChips"></div><div class="panel" id="casePanel"></div>
+<div class="quote"><b>Competencia</b> (consultoras de capacitación, LMS sin integración OTIC, gestión interna manual, SOFOFA, PROFORMA): nunca hables mal de ellas. “Si ya tienen un LMS o una consultora, lo que sumamos es la gestión de la franquicia y la visibilidad integrada.”</div>
+${remember('Sin autorización, no hay nombres. Usa prueba general por industria.')}`},
+
+{t:'Cómo escribir y hablar',lead:'Mensajes de menos de 80 palabras, sobre el problema del rol o la industria, con una pregunta fácil al final.',html:`
+${table(['Haz esto','Evita esto'],[
+ ['Habla del problema típico de su industria o cargo','“Vi que están buscando…” o datos puntuales de la empresa'],
+ ['Palabras simples: “aprovechar mejor la franquicia”','Jerga o siglas sin explicar'],
+ ['Pide 15 minutos','Pedir una hora o mandar propuesta'],['Una sola idea por mensaje','Listar todos los servicios'],
+ ['Cierra con sí/no o dos horarios','“Quedo atento”'],['Prueba general por industria','Clientes o cifras no autorizadas'],['Respeta a la competencia','Criticar a otros OTIC o LMS']])}
+<div class="block"><h3>Armador de mensajes</h3>
+<div class="builder">
+ <div class="grid">
+  <div class="piece"><label for="b1"><i>1</i>Contexto general</label><select id="b1"></select></div>
+  <div class="piece"><label for="b2"><i>2</i>Cómo ayudamos</label><select id="b2"></select></div>
+  <div class="piece"><label for="b3"><i>3</i>Prueba</label><select id="b3"></select></div>
+  <div class="piece"><label for="b4"><i>4</i>Pregunta</label><select id="b4"></select></div>
+ </div>
+ <div class="piece"><label for="bText">Tu mensaje (puedes editarlo)</label><textarea id="bText" rows="6"></textarea></div>
+ <div class="meter"><div class="bar"><span id="bBar"></span></div><span class="count" id="bCount">0 palabras</span><button class="primary" id="bCopy" type="button">Copiar mensaje</button></div>
+ <p class="note" id="bMsg">Ideal: menos de 80 palabras. Reemplaza [Nombre] antes de enviar.</p>
+</div></div>
+<div class="block"><h3>Guion telefónico de 30 segundos</h3>
+<div class="quote">“Hola [Nombre], soy [tu nombre] de Otic CChC. Te llamo porque en empresas de [industria] con mucho personal operativo vemos que gestionar la franquicia SENCE a mano consume tiempo de RRHH y deja beneficio sin usar. Nosotros ayudamos a ordenarlo y a tener visibilidad del cumplimiento. No te quiero quitar tiempo ahora: ¿te acomoda una reunión de 15 minutos el martes o el jueves?”</div>
+<p class="note">Si dice “ahora no puedo”: “Perfecto, ¿te escribo y lo agendamos?”</p></div>
+<div class="block"><h3>Secuencia de 15 días</h3>${table(['Día','Canal','Qué hacer'],[
+ ['1','LinkedIn','Invitación a conectar, sin venta'],['2','Email','Email 1: fórmula de 4 piezas, problema de su industria'],
+ ['4','Llamada','Guion de 30 s; si no contesta, mensaje de voz de 15 s o nada'],['5','LinkedIn','Mensaje corto con el ángulo de su rol'],
+ ['7','Email','Email 2: otro dolor (trazabilidad o carga operativa)'],['9','Llamada','Segundo intento, otro horario'],
+ ['11','LinkedIn','Pregunta abierta: “¿cómo gestionan hoy la franquicia?”'],['13','Email','Email 3: pregunta por la persona correcta'],
+ ['15','Email + llamada','Cierre amable: “¿Lo dejo para más adelante?”']])}</div>
+${remember('Contexto + cómo ayudamos + prueba + pregunta, en menos de 80 palabras.')}`},
+
+{t:'Cuándo vale la pena',lead:'Una reunión vale la pena con quien decide, una necesidad confirmada y algo de urgencia.',html:`
+<div class="block"><h3>Checklist de reunión</h3><div class="checks">
+ <label class="check" for="c1"><input type="checkbox" id="c1"><span><b>Quien decide:</b> es Gerente de RRHH / Personas / Finanzas / General, o un influenciador que se compromete a sumarlo.</span></label>
+ <label class="check" for="c2"><input type="checkbox" id="c2"><span><b>Necesidad confirmada:</b> reconoce al menos uno de los tres problemas.</span></label>
+ <label class="check" for="c3"><input type="checkbox" id="c3"><span><b>Urgencia:</b> hay un disparador (auditoría, nueva faena, crecimiento, rotación, cambio normativo) o un plazo.</span></label>
+</div><div class="result r0" id="cRes"></div></div>
+<div class="block"><h3>Preguntas de descubrimiento</h3><div class="text"><ol>
+<li>¿Cómo gestionan hoy la franquicia SENCE?</li><li>¿Sienten que la están aprovechando completa?</li><li>¿Cuánto tiempo dedica RRHH a los trámites de capacitación?</li><li>Si mañana tuvieran una auditoría, ¿qué tan fácil sería mostrar quién se capacitó?</li><li>¿Viene algún cambio este año: nuevas faenas, más dotación, nuevas regiones?</li><li>¿Quién más participa en las decisiones de capacitación?</li></ol></div></div>
+<div class="block"><h3>Simulador de objeciones</h3><p class="note">Elige lo que te dijo el prospecto.</p><div class="chips" id="objChips"></div><div class="panel" id="objPanel"></div></div>
+${remember('Quien decide + necesidad + urgencia. Una objeción casi siempre es una pregunta disfrazada.')}`},
+
+{t:'Tu primera semana',lead:'En cinco días pasas de leer a agendar tu primera reunión.',html:`
+${table(['Día','Foco','Tareas'],[
+ ['1','Entender al cliente','Vueltas 1–4. Explica en 30 segundos qué hace Otic CChC con la analogía del contador'],
+ ['2','Entender al comprador','Vueltas 5–7. Marca quién decide e influye en 10 cuentas de tu lista'],
+ ['3','Escribir','Vuelta 8. Escribe 3 mensajes (uno por industria), bajo 80 palabras, y pide feedback a tu líder'],
+ ['4','Hablar','Vuelta 9. Role-play del guion y 4 objeciones con un compañero'],
+ ['5','Salir a la pista','Aprueba el quiz (8/10) e inicia la secuencia con tus primeras 20 cuentas']])}
+<div class="block"><h3>Quiz final · aprueba con 8 de 10</h3><div id="quiz" style="display:grid;gap:18px"></div>
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap"><span class="score" id="qScore">0 / 10</span><span id="qMsg" class="note">Responde las 10 preguntas.</span><button class="ghost" id="qReset" type="button">Reiniciar quiz</button></div></div>
+${remember('Practica antes de salir a la pista: la primera reunión llega por constancia, no por un mensaje perfecto.')}`}
+];
+
+/* ---------- render shell ---------- */
+const tabsEl=document.getElementById('tabs'),lapsEl=document.getElementById('laps'),lightsEl=document.getElementById('lights');
+LAPS.forEach((l,i)=>{
+  const b=document.createElement('button');b.className='tab';b.role='tab';b.id='tab'+i;b.type='button';
+  b.textContent=`V${i+1} · ${l.t}`;b.onclick=()=>show(i);tabsEl.appendChild(b);
+  const s=document.createElement('section');s.className='lap';s.id='lap'+i;s.setAttribute('role','tabpanel');s.hidden=true;
+  s.innerHTML=`<header><span class="eyebrow">Vuelta ${i+1} de 10</span><h2>${l.t}</h2><p>${l.lead}</p></header>${l.html}
+  <div class="lapnav"><button class="complete" type="button" data-i="${i}">Completar vuelta ${i+1}</button>${i<9?`<button class="ghost" type="button" data-next="${i+1}">Siguiente vuelta →</button>`:''}</div>`;
+  lapsEl.appendChild(s);
+  const lamp=document.createElement('span');lamp.className='lamp';lamp.title='Vuelta '+(i+1);lightsEl.appendChild(lamp);
+});
+lapsEl.addEventListener('click',e=>{
+  const c=e.target.closest('.complete');
+  if(c){const i=+c.dataset.i;const k=state.done.indexOf(i);if(k<0)state.done.push(i);else state.done.splice(k,1);save();paint();}
+  const n=e.target.closest('[data-next]');if(n){show(+n.dataset.next);window.scrollTo({top:0,behavior:'smooth'});}
+});
+function show(i){state.tab=i;save();LAPS.forEach((_,j)=>{document.getElementById('lap'+j).hidden=j!==i;document.getElementById('tab'+j).setAttribute('aria-selected',j===i);});
+  document.getElementById('tab'+i).scrollIntoView({block:'nearest',inline:'center'});}
+function paint(){
+  const n=state.done.length,all=n===10;
+  [...lightsEl.children].forEach((l,i)=>{l.className='lamp'+(i<n?(all?' all':' on'):'');});
+  document.getElementById('lighttxt').textContent=all?'¡Bandera a cuadros! 10 / 10':`${n} / 10 vueltas`;
+  LAPS.forEach((_,i)=>{const d=state.done.includes(i);document.getElementById('tab'+i).classList.toggle('done',d);
+    const b=document.querySelector(`.complete[data-i="${i}"]`);b.classList.toggle('is',d);b.textContent=d?`Vuelta ${i+1} completada ✓`:`Completar vuelta ${i+1}`;});
+}
+
+/* ---------- selectors ---------- */
+function chipGroup(elId,items,label,render,panelId){
+  const box=document.getElementById(elId),panel=document.getElementById(panelId);
+  items.forEach((it,i)=>{const b=document.createElement('button');b.type='button';b.className='chip';b.textContent=label(it);
+    b.onclick=()=>{[...box.children].forEach(x=>x.setAttribute('aria-pressed','false'));b.setAttribute('aria-pressed','true');panel.innerHTML=render(it);};box.appendChild(b);});
+  box.children[0].click();
+}
+chipGroup('svcChips',SERVICES,s=>s.name,s=>`<span class="pill${s.tag==='Servicio foco'?' mag':''}">${s.tag}</span><h3>${s.name}</h3><dl><div><dt>Analogía</dt><dd>${s.an}</dd></div><div><dt>Qué significa en la empresa</dt><dd>${s.means}</dd></div><div><dt>Ejemplo típico</dt><dd>${s.ex}</dd></div></dl>`,'svcPanel');
+chipGroup('caseChips',IND,i=>i.k,i=>`<h3>${i.k}</h3><dl><div><dt>Caso a usar</dt><dd><span class="pill mag">Pendiente de confirmar con el cliente</span></dd></div><div><dt>Qué decir hoy (prueba general)</dt><dd>“Trabajamos con empresas afiliadas de industrias como construcción, minería y energía para ordenar su franquicia SENCE y tener visibilidad de su capacitación.”</dd></div><div><dt>Plantilla cuando llegue el caso</dt><dd>${i.tpl}</dd></div></dl><p class="note">Usar solo si el cliente autorizó su uso en campaña.</p>`,'casePanel');
+chipGroup('objChips',OBJ,o=>'“'+o[0]+'”',o=>`<h3>“${o[0]}”</h3><dl><div><dt>Lo que realmente significa</dt><dd>${o[1]}</dd></div><div><dt>Qué responder</dt><dd>${o[2]}</dd></div></dl>`,'objPanel');
+
+/* flips */
+const flips=document.getElementById('flips');
+DICT.forEach(d=>{const b=document.createElement('button');b.type='button';b.className='flip';b.setAttribute('aria-label',d[0]+': ver significado');
+  b.innerHTML=`<div class="in"><div class="face front"><strong>${esc(d[0])}</strong><span>Toca para dar vuelta</span></div><div class="face back"><b>En simple</b><p>${esc(d[1])}</p><b>Para vender</b><p>${esc(d[2])}</p></div></div>`;
+  b.onclick=()=>b.classList.toggle('turned');flips.appendChild(b);});
+
+/* builder */
+const sel=[['b1',IND.map(i=>[i.k,i.ctx]).concat(ROLES.map(r=>['Rol: '+r[0],r[1]]))],['b2',HELP.map(h=>[h.slice(13,60)+'…',h])],['b3',PROOF.map(p=>[p.length>50?p.slice(0,50)+'…':p,p])],['b4',ASK.map(a=>[a,a])]];
+sel.forEach(([id,opts])=>{const s=document.getElementById(id);opts.forEach((o,i)=>{const op=document.createElement('option');op.value=i;op.textContent=o[0];s.appendChild(op);});s.onchange=compose;});
+const txt=document.getElementById('bText');
+function compose(){const v=sel.map(([id,opts])=>opts[+document.getElementById(id).value][1]);txt.value='Hola [Nombre], '+v[0].charAt(0).toLowerCase()+v[0].slice(1)+' '+v[1]+' '+v[2]+' '+v[3];count();}
+function count(){const n=(txt.value.trim().match(/\S+/g)||[]).length;document.getElementById('bCount').textContent=n+' palabras';
+  const bar=document.getElementById('bBar');bar.style.width=Math.min(100,n/120*100)+'%';bar.style.background=n<80?'var(--cyan)':'var(--magenta)';
+  document.getElementById('bMsg').textContent=n<80?'Bien: bajo 80 palabras. Reemplaza [Nombre] antes de enviar.':'Muy largo: recorta hasta quedar bajo 80 palabras.';}
+txt.oninput=count;compose();
+document.getElementById('bCopy').onclick=()=>{const m=document.getElementById('bMsg');
+  const fb=()=>{txt.focus();txt.select();m.textContent='Texto seleccionado: cópialo con Ctrl/Cmd + C.';};
+  try{navigator.clipboard.writeText(txt.value).then(()=>{m.textContent='Mensaje copiado.';},fb);}catch(e){fb();}};
+
+/* checklist */
+const cs=['c1','c2','c3'].map(id=>document.getElementById(id)),cRes=document.getElementById('cRes');
+function check(){const n=cs.filter(c=>c.checked).length;
+  if(n===3){cRes.className='result r3';cRes.textContent='3 de 3: reunión sólida. Agéndala y envía la invitación hoy.';}
+  else if(n===2){cRes.className='result r2';cRes.textContent='2 de 3: agéndala y avísale a tu líder qué falta.';}
+  else{cRes.className='result r0';cRes.textContent=n+' de 3: conversa con tu líder antes de agendar.';}}
+cs.forEach(c=>c.onchange=check);check();
+
+/* quiz */
+const qz=document.getElementById('quiz');let answers={};
+function renderQuiz(){answers={};qz.innerHTML='';QUIZ.forEach((q,i)=>{const d=document.createElement('div');d.className='q';
+  d.innerHTML=`<p><b>${i+1}. ${esc(q[0])}</b></p><div class="opts">${q[1].map((o,j)=>`<button type="button" class="opt" data-q="${i}" data-o="${j}">${String.fromCharCode(97+j)}) ${esc(o)}</button>`).join('')}</div><p class="qfb" id="fb${i}"></p>`;qz.appendChild(d);});score();}
+qz.addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b)return;const i=+b.dataset.q,o=+b.dataset.o;if(i in answers)return;
+  answers[i]=o;const right=QUIZ[i][2];b.parentNode.querySelectorAll('.opt').forEach(x=>{x.disabled=true;if(+x.dataset.o===right)x.classList.add('right');});
+  if(o!==right)b.classList.add('wrong');document.getElementById('fb'+i).textContent=o===right?'Correcto.':'No es esa. La correcta está marcada en cian.';score();});
+function score(){const n=Object.keys(answers).length,ok=Object.entries(answers).filter(([i,o])=>QUIZ[i][2]===o).length;
+  document.getElementById('qScore').textContent=ok+' / 10';
+  document.getElementById('qMsg').textContent=n<10?`Llevas ${n} de 10 respondidas.`:(ok>=8?'¡Aprobado! Completa la vuelta 10 y sal a la pista.':'Aún no: repasa las vueltas y vuelve a intentarlo.');}
+document.getElementById('qReset').onclick=renderQuiz;renderQuiz();
+
+paint();show(Math.min(9,Math.max(0,state.tab|0)));
+})();
+</script>
+
+</body></html>
