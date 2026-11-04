@@ -16,6 +16,10 @@ export const maxDuration = 300;
 // un cliente grande (ej. Crossnet) no deja sin sincronizar a los demás.
 
 const BUDGET_MS = 270_000;
+// Corre cada hora de 9 a 16 UTC (vercel.json): cada corrida toma solo los
+// clientes que no se sincronizaron en las últimas horas, así todos quedan al
+// día aunque en una sola corrida no alcancen todos. ?all=1 fuerza todos.
+const FRESH_MS = 18 * 3600_000;
 const PARALLEL = 2; // HubSpot comparte el límite de requests entre clientes
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -39,6 +43,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ client_id: one, ok: false, error: (e as Error).message });
     }
   }
+  const all = req.nextUrl.searchParams.get("all") === "1";
   try {
     const db = supabaseAdmin();
     const [{ data: snaps }, { data: settings }] = await Promise.all([
@@ -61,6 +66,11 @@ export async function GET(req: NextRequest) {
       const row = c ? findMasterRow(masterRows, c) : null;
       if (!row?.active) {
         skipped.push({ client_id: id, reason: !c ? "cliente no encontrado" : row ? `Maestra: ${row.status || "sin status"}` : "no figura en la Maestra" });
+        continue;
+      }
+      const syncedAt = last.get(id);
+      if (!all && syncedAt && Date.now() - new Date(syncedAt).getTime() < FRESH_MS) {
+        skipped.push({ client_id: id, reason: "ya sincronizado hoy" });
         continue;
       }
       queue.push(id);

@@ -26,7 +26,11 @@
     },
     {
       "path": "/api/cron/radar-abm-sync",
-      "schedule": "15 10 * * *"
+      "schedule": "15 9-16 * * *"
+    },
+    {
+      "path": "/api/cron/hubspot-pool",
+      "schedule": "40 4-9 * * *"
     },
     {
       "path": "/api/cron/reporte-sdr?slot=13",
@@ -71,6 +75,7 @@
     "app/api/radar-abm/route.ts": { "maxDuration": 300 },
     "app/api/radar-abm/detect/route.ts": { "maxDuration": 60 },
     "app/api/cron/radar-abm-sync/route.ts": { "maxDuration": 300 },
+    "app/api/cron/hubspot-pool/route.ts": { "maxDuration": 300 },
     "app/api/cron/reporte-sdr/route.ts": { "maxDuration": 300 },
     "app/api/reporte-sdr/route.ts": { "maxDuration": 300 },
     "app/api/cron/alertas-numeros/route.ts": { "maxDuration": 300 },
