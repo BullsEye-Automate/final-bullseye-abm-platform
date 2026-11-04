@@ -19,8 +19,8 @@ const LEADER_EMAILS: Record<string, string> = {
   nicolle: "nnazar@bullseye-abm.com",
   vanessa: "vabarzua@bullseye-abm.com",
 };
-const CC_ALWAYS = ["ihincapie@bullseye-abm.com"];
-const TEST_RECIPIENT = "ihincapie@bullseye-abm.com";
+export const CC_ALWAYS = ["ihincapie@bullseye-abm.com"];
+export const TEST_RECIPIENT = "ihincapie@bullseye-abm.com";
 
 export function leaderEmail(leaderName: string): string | null {
   const first = normalizeSdrName(leaderName).split(" ")[0];

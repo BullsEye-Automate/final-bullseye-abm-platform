@@ -1,0 +1,106 @@
+/* Centro de prospección — tema del portal BullsEye.
+   Se carga después de base.css (estilos originales del artifact) y los
+   adapta al sistema de diseño del portal, igual que Células SDR:
+   Outfit, morado BullsEye, tarjetas blancas de 12 px sobre fondo #F4F2FB,
+   navegación interna en tarjeta blanca y encabezado en tarjeta. */
+
+/* Elementos con el atributo hidden: ocultos siempre. El artifact lo traía en
+   los estilos base de claude.ai; sin esta regla, clases con display propio
+   (.modal, .cx, #toast…) quedaban visibles aunque estuvieran ocultas. */
+.cp-root [hidden]:not([hidden=until-found i]) { display: none !important; }
+
+.cp-root {
+  --bg: #F4F2FB; --surface: #ffffff; --surface-2: #F8F7FC; --surface-3: #EEEDF5; --border: #ECEAF4;
+  --text: #1A1733; --muted: #6B6884; --faint: #9794AC;
+  --ink: #251762; --ink-2: #33227A; --ink-text: #D9D4F2; --ink-hi: #ffffff;
+  --primary: #3D2878; --primary-soft: rgba(61, 40, 120, .08); --on-primary: #ffffff;
+  --magenta: #E0457B; --teal: #14A39A; --orange: #F08A3E;
+  --g: #1F9D74; --g-soft: #E1F5EE; --y: #D99A1E; --y-soft: #FAEEDA; --r: #D0583A; --r-soft: #FAECE7;
+  --o: #C2620F; --o-soft: rgba(240, 138, 62, .14);
+  --shadow: 0 1px 0 rgba(38, 33, 92, .04);
+  --overlay: rgba(26, 23, 51, .45);
+  --head: Outfit, ui-sans-serif, system-ui, sans-serif;
+  --body: Outfit, ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light;
+  background: transparent;
+  max-width: 1640px;
+}
+
+/* Tipografía del portal: semibold en vez de bold/extrabold */
+.cp-root h1, .cp-root h2, .cp-root h3, .cp-root h4 { font-weight: 600; letter-spacing: -.01em; }
+.cp-root .kv, .cp-root .mw-big, .cp-root .stat b { font-weight: 600; }
+.cp-root ul, .cp-root ol { list-style: revert; padding-left: 1.3em; margin: .4em 0; }
+.cp-root a { color: var(--primary); }
+
+/* Layout: navegación interna (como .cs-nav de Células SDR) + contenido */
+.cp-root .app { grid-template-columns: 212px minmax(0, 1fr); gap: 20px; min-height: 0; align-items: start; }
+.cp-root .side {
+  position: sticky; top: 16px; height: auto; max-height: calc(100vh - 32px); overflow: auto;
+  background: var(--surface); color: var(--muted); border-radius: 12px; padding: 10px 8px;
+  box-shadow: var(--shadow); gap: 8px;
+}
+.cp-root .brand { display: none; }
+.cp-root .nav { gap: 2px; }
+.cp-root .nav button { color: var(--muted); font-weight: 500; font-size: 13px; padding: 8px 10px; border-radius: 8px; }
+.cp-root .nav button:hover { background: var(--surface-2); color: var(--text); }
+.cp-root .nav button.on { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+.cp-root .nav button.on svg { color: var(--primary); }
+.cp-root .nav button .cnt { background: var(--surface-3); color: var(--muted); font-weight: 600; }
+.cp-root .nav button.on .cnt { background: rgba(61, 40, 120, .12); color: var(--primary); }
+.cp-root .nav .grp { font-size: 10px; letter-spacing: .08em; color: var(--faint); opacity: 1; font-weight: 600; padding: 10px 10px 4px; }
+.cp-root .side .foot { background: var(--surface-2); color: var(--muted); border-radius: 10px; font-size: 12px; }
+.cp-root .side .foot b { color: var(--text); }
+
+/* Encabezado en tarjeta (no fijo, como el resto del portal) */
+.cp-root .top {
+  position: static; background: var(--surface); border: 0; border-radius: 12px;
+  padding: 16px 18px 14px; box-shadow: var(--shadow); margin-bottom: 16px;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.cp-root .top h1 { font-size: 22px; }
+.cp-root .content { padding: 0; max-width: none; }
+.cp-root .banner { margin: 0 0 12px; border-radius: 10px; font-size: 12.5px; background: var(--y-soft); color: #854F0B; border: 0; }
+
+/* Controles */
+.cp-root .btn { border-radius: 8px; font-weight: 500; padding: 7px 12px; border-color: #E5E2F0; justify-content: center; }
+.cp-root .btn:hover { border-color: #7F77DD; }
+.cp-root .btn.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+.cp-root .btn.pri:hover { background: #322061; filter: none; }
+.cp-root .btn.sm { border-radius: 7px; }
+.cp-root .seg { border-radius: 8px; }
+.cp-root .seg button { border-radius: 6px; font-weight: 500; }
+.cp-root .seg button.on { font-weight: 600; box-shadow: 0 1px 3px rgba(26, 23, 51, .12); }
+.cp-root select { border-radius: 8px; border-color: #E5E2F0; }
+.cp-root select.act { border-color: #7F77DD; background-color: #EEEDFE; color: var(--primary); }
+
+/* Tarjetas: 12 px, sin borde visible, sombra del portal */
+.cp-root .card, .cp-root .kpi, .cp-root .ccard, .cp-root .step, .cp-root .mitem {
+  border-radius: 12px; border-color: transparent; box-shadow: var(--shadow);
+}
+.cp-root .kpi.hl { background: linear-gradient(160deg, #EEEDFE, var(--surface) 70%); border-color: #DCD8F5; }
+.cp-root .ccard:hover { border-color: #7F77DD; }
+.cp-root .mw-row { border-radius: 10px; }
+.cp-root .ctx { border-radius: 10px; }
+.cp-root .pill, .cp-root .tag { font-weight: 600; }
+
+/* Modal y avisos */
+.cp-root .modal { z-index: 60; }
+.cp-root .mbox { border-radius: 16px; border: 0; box-shadow: 0 20px 50px -20px rgba(26, 23, 51, .35); }
+.cp-root .mtop h2 { font-size: 19px; }
+.cp-root .form input, .cp-root .form textarea, .cp-root .form select { border-radius: 8px; border-color: #E5E2F0; font-size: 13.5px; }
+.cp-root .form input:focus, .cp-root .form textarea:focus, .cp-root .form select:focus { outline: none; border-color: #7F77DD; box-shadow: 0 0 0 3px #EEEDFE; }
+.cp-root #toast { border-radius: 10px; background: #1A1733; color: #fff; z-index: 70; }
+
+/* Responsivo (va después de las reglas de arriba para que mande en pantallas chicas) */
+@media (max-width: 1100px) {
+  .cp-root .app { grid-template-columns: minmax(0, 1fr); }
+  .cp-root .side { position: static; max-height: none; padding: 8px; }
+  .cp-root .nav { flex-direction: row; overflow-x: auto; gap: 4px; }
+  .cp-root .nav button { width: auto; white-space: nowrap; }
+  .cp-root .nav .grp, .cp-root .side .foot { display: none; }
+}
+@media (max-width: 900px) {
+  .cp-root .top, .cp-root .content, .cp-root .banner { padding-left: 16px; padding-right: 16px; }
+  .cp-root .content { padding-left: 0; padding-right: 0; }
+  .cp-root .banner { margin-left: 0; margin-right: 0; }
+}

@@ -1,0 +1,628 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Academia SDR Umine 2.0</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: cabina de pits. Semáforo de 10 luces arriba, pestañas por vuelta, una vuelta visible a la vez. Identidad BullsEye, un solo tema oscuro. */
+:root{
+  --bg:#140F3D; --surface:#1E1760; --surface-2:#2A2180; --line:#3A3196;
+  --ink:#F3F1FF; --ink-2:#B9B3E6; --cyan:#62E0D8; --purple:#9B4FC0; --magenta:#E0457B;
+  --ok:#62E0D8; --warn:#F2C14E;
+  --display:"Sora", "Segoe UI", system-ui, sans-serif;
+  --body:"Roboto", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--ink)}
+body{font-family:var(--body);font-size:16px;line-height:1.6;padding-inline:16px;padding-block:0 64px}
+.wrap{max-width:960px;margin:0 auto}
+h1,h2,h3{font-family:var(--display);line-height:1.2;text-wrap:balance;margin:0}
+h2{font-size:clamp(24px,4vw,32px);font-weight:700}
+h3{font-size:18px;font-weight:600}
+p{margin:0}
+.muted{color:var(--ink-2)}
+.eyebrow{font-family:var(--display);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);font-weight:600}
+
+/* cabecera */
+header{padding-block:28px 16px;display:grid;gap:16px}
+.brandrow{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+h1{font-size:clamp(28px,5vw,44px);font-weight:700}
+h1 span{color:var(--cyan)}
+.lights{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.light{width:22px;height:22px;border-radius:50%;background:var(--surface);border:2px solid var(--line);transition:background .3s,box-shadow .3s}
+.light.on{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 12px rgba(98,224,216,.55)}
+.light.all{background:var(--magenta);border-color:var(--magenta);box-shadow:0 0 12px rgba(224,69,123,.6)}
+.lapcount{font-family:var(--display);font-weight:600;font-variant-numeric:tabular-nums;color:var(--ink-2);margin-left:8px}
+
+/* pestañas */
+nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:thin}
+.tabs{display:flex;gap:4px;padding-block:8px;min-width:max-content}
+.tab{font:600 14px var(--display);color:var(--ink-2);background:none;border:1px solid transparent;border-radius:8px;padding:8px 12px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:8px}
+.tab .dot{width:8px;height:8px;border-radius:50%;background:var(--line)}
+.tab.done .dot{background:var(--cyan)}
+.tab[aria-selected="true"]{color:var(--ink);background:var(--surface);border-color:var(--line)}
+.tab:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+/* vueltas */
+main{padding-block:32px}
+.lap{display:grid;gap:24px}
+.lap > *{min-width:0}
+.lead{font-size:18px;max-width:65ch}
+.block{display:grid;gap:12px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+ul,ol{margin:0;padding-left:22px;display:grid;gap:6px;max-width:70ch}
+.story .panel h3{color:var(--cyan)}
+.story .panel:nth-child(2) h3{color:var(--purple)}
+.story .panel:nth-child(3) h3{color:var(--magenta)}
+.remember{border-left:4px solid var(--magenta);background:var(--surface-2);border-radius:0 12px 12px 0;padding:16px 20px}
+.remember b{display:block;font-family:var(--display);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--magenta);margin-bottom:4px}
+.note{font-size:14px;color:var(--ink-2)}
+.tag{display:inline-block;font:600 11px var(--display);letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-2);border:1px solid var(--line)}
+.tag.warn{color:var(--warn);border-color:rgba(242,193,78,.4)}
+.tag.cyan{color:var(--cyan);border-color:rgba(98,224,216,.4)}
+
+/* tablas */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:15px}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--display);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);background:var(--surface)}
+tr:last-child td{border-bottom:0}
+td.num{font-variant-numeric:tabular-nums;font-family:var(--display);color:var(--cyan);font-weight:600}
+
+/* botones */
+.btn{font:600 14px var(--display);border-radius:8px;padding:10px 16px;cursor:pointer;border:1px solid var(--line);background:var(--surface-2);color:var(--ink)}
+.btn:hover{border-color:var(--cyan)}
+.btn.primary{background:var(--cyan);color:var(--bg);border-color:var(--cyan)}
+.btn.primary:hover{filter:brightness(1.08)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:500 14px var(--body);border-radius:99px;padding:8px 14px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink-2)}
+.chip[aria-pressed="true"]{background:var(--purple);border-color:var(--purple);color:var(--ink)}
+.lapfoot{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:20px}
+
+/* tarjetas que se dan vuelta */
+.flipgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.flip{perspective:900px;background:none;border:0;padding:0;cursor:pointer;text-align:left;color:inherit;font:inherit;min-height:150px}
+.flip-in{position:relative;width:100%;height:100%;min-height:150px;transition:transform .5s;transform-style:preserve-3d}
+.flip.turned .flip-in{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;border-radius:12px;padding:16px;backface-visibility:hidden;display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);overflow:auto}
+.front{background:var(--surface);justify-content:center}
+.front h3{font-size:17px}
+.front small{color:var(--ink-2);font-size:12px}
+.back{background:var(--surface-2);transform:rotateY(180deg);font-size:14px}
+.back b{color:var(--cyan);font-weight:500}
+
+/* armador de mensajes */
+.builder{display:grid;gap:12px}
+.field{display:grid;gap:4px}
+label{font:600 13px var(--display);color:var(--ink-2)}
+select,textarea{font:15px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;width:100%}
+textarea{min-height:170px;resize:vertical;line-height:1.55}
+.counter{font-family:var(--display);font-variant-numeric:tabular-nums;font-weight:600}
+.counter.ok{color:var(--ok)} .counter.over{color:var(--magenta)}
+
+/* resultado y quiz */
+.result{border-radius:12px;padding:16px 20px;border:1px solid var(--line);background:var(--surface-2)}
+.result.good{border-color:var(--cyan)} .result.bad{border-color:var(--magenta)}
+.check{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+.check:last-child{border-bottom:0}
+.check input{width:20px;height:20px;accent-color:var(--cyan);margin-top:3px;flex:none}
+.q{display:grid;gap:8px;padding-block:16px;border-bottom:1px solid var(--line)}
+.q:last-child{border-bottom:0}
+.opts{display:grid;gap:6px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);cursor:pointer}
+.opt input{accent-color:var(--cyan);margin-top:5px}
+.opt.right{border-color:var(--cyan)} .opt.wrong{border-color:var(--magenta)}
+.score{font-family:var(--display);font-size:32px;font-weight:700;font-variant-numeric:tabular-nums}
+.obj-out{display:grid;gap:12px}
+.obj-out .panel h3{font-size:14px;letter-spacing:.08em;text-transform:uppercase}
+blockquote{margin:0;padding:16px 20px;border-radius:12px;background:var(--bg);border:1px solid var(--line);font-size:15px;max-width:70ch}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:520px){.panel{padding:16px} .lead{font-size:17px}}
+
+/* simulador de llamada */
+.steps{display:grid;gap:10px}
+.step{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--bg)}
+.step .n{font:700 14px var(--display);color:var(--bg);background:var(--cyan);border-radius:50%;width:28px;height:28px;display:grid;place-items:center}
+.step .t{font:600 12px var(--display);color:var(--ink-2);font-variant-numeric:tabular-nums;white-space:nowrap}
+.step h4{margin:0 0 4px;font:600 15px var(--display)}
+.bubble{padding:12px 16px;border-radius:12px 12px 12px 2px;background:var(--surface-2);border:1px solid var(--line);max-width:60ch}
+.bubble.me{border-radius:12px 12px 2px 12px;background:rgba(98,224,216,.08);border-color:rgba(98,224,216,.45);justify-self:end}
+.who{font:600 11px var(--display);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2);margin-bottom:4px}
+.chat{display:grid;gap:10px}
+.choice{display:block;width:100%;text-align:left;font:400 15px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer}
+.choice:hover{border-color:var(--cyan)}
+.choice.right{border-color:var(--cyan)} .choice.wrong{border-color:var(--magenta)}
+.choice:disabled{cursor:default}
+.timer{font:700 40px var(--display);font-variant-numeric:tabular-nums}
+@media (max-width:520px){.step{grid-template-columns:auto 1fr}.step .t{grid-column:2}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="brandrow">
+    <div style="display:grid;gap:6px">
+      <span class="eyebrow">BullsEye · Academia SDR</span>
+      <h1>Umine <span>2.0</span></h1>
+      <p class="muted">Agentes de voz con IA para entrenar equipos de venta y servicio. 10 vueltas para llegar listo a tu primera reunión.</p>
+    </div>
+    <div>
+      <div class="lights" id="lights" aria-label="Avance de vueltas"></div>
+    </div>
+  </div>
+</header>
+
+<nav aria-label="Vueltas"><div class="tabs" role="tablist" id="tabs"></div></nav>
+
+<main id="main">
+
+<!-- VUELTA 1 -->
+<section class="lap" id="lap-1" role="tabpanel">
+  <div class="block"><span class="eyebrow">Vuelta 1</span><h2>Antes de empezar</h2></div>
+  <p class="lead">Al terminar vas a explicar Umine 2.0 en una frase, saber a quién escribirle y conseguir una <b>reunión de 15 minutos</b> con quien decide.</p>
+  <div class="panel block">
+    <h3>El foco de la campaña</h3>
+    <p>Umine 2.0: los agentes de voz con IA de Umine para que equipos de venta y servicio practiquen conversaciones. Es un producto nuevo, distinto de la oferta que Umine ya vende hoy.</p>
+  </div>
+  <div class="grid3">
+    <div class="panel block"><span class="tag cyan">Cuentas filtradas</span><p>Si una empresa está en tu lista, ya encaja. No la investigas ni la calificas.</p></div>
+    <div class="panel block"><span class="tag cyan">Tu trabajo</span><p>Entender la necesidad, llegar a quien decide y agendar 15 minutos.</p></div>
+    <div class="panel block"><span class="tag cyan">Mensajes generales</span><p>Hablas del problema típico del cargo o la industria, nunca de datos puntuales de la empresa.</p></div>
+  </div>
+  <div class="remember"><b>Lo que debes recordar</b>No vendes el producto completo; vendes 15 minutos con quien decide.</div>
+</section>
+
+<!-- VUELTA 2 -->
+<section class="lap" id="lap-2" role="tabpanel" hidden>
+  <div class="block"><span class="eyebrow">Vuelta 2</span><h2>Quién es Umine 2.0</h2></div>
+  <p class="lead">Agentes de voz con inteligencia artificial que actúan como clientes o colaboradores, para que los equipos practiquen antes de la conversación real.</p>
+  <div class="grid3 story">
+    <div class="panel block"><h3>Problema</h3><p>Los vendedores aprenden frente al cliente real. Cada error es una venta perdida y nadie ve cómo fue esa conversación.</p></div>
+    <div class="panel block"><h3>Solución</h3><p>Practican en voz alta con un cliente IA con objeciones y personalidad. Se evalúa con la rúbrica de la empresa y reciben feedback con citas textuales.</p></div>
+    <div class="panel block"><h3>Resultado</h3><p>El líder ve las brechas de cada persona, no del promedio, y la capacitación va a lo que cada uno necesita.</p></div>
+  </div>
+  <div class="panel block"><span class="tag">Analogía</span><p>Es el simulador de vuelo de los equipos de venta. Un piloto no aprende a aterrizar con pasajeros: practica en el simulador, recibe nota y repite.</p></div>
+  <div class="block"><h3>3 razones fáciles de recordar</h3>
+    <ol><li><b>Practican antes, no frente al cliente.</b> La primera conversación difícil ya no es la real.</li><li><b>Feedback por persona, con citas.</b> Se sabe qué dijo cada uno y qué le faltó.</li><li><b>Cuando quieran, desde donde estén.</b> Computador o celular, sin depender de la agenda del capacitador.</li></ol>
+  </div>
+  <div class="panel block"><span class="tag cyan">Qué lo hace distinto</span><p>Convierte una conversación que hoy nadie ve en <b>evidencia por persona</b>, gracias a la rúbrica de la empresa y a las citas textuales. Un curso genérico o un role-play con el jefe no entregan eso.</p><p class="muted"><b>Para vender:</b> es tu respuesta cuando te digan “ya hacemos role-play”. No compites con eso; lo vuelves medible.</p></div>
+  <p class="note">Cifras clave: los materiales no traen cifras de resultados. No inventes porcentajes ni promesas. Umine 2.0 no reemplaza a nadie: es un copiloto de formación.</p>
+  <div class="remember"><b>Lo que debes recordar</b>Umine 2.0 es un simulador para practicar conversaciones con clientes, con nota y feedback por persona.</div>
+</section>
+
+<!-- VUELTA 3 -->
+<section class="lap" id="lap-3" role="tabpanel" hidden>
+  <div class="block"><span class="eyebrow">Vuelta 3</span><h2>Qué vende</h2></div>
+  <p class="lead">Cuatro casos de uso. El <b>simulador de ventas</b> es el foco de la campaña. Elige uno para verlo en simple.</p>
+  <div class="chips" id="svc-chips" role="group" aria-label="Casos de uso"></div>
+  <div class="panel grid2" id="svc-out"></div>
+  <div class="block"><h3>El simulador de ventas, paso a paso</h3>
+    <ol><li>La empresa define el caso: tipo de cliente, objeciones y rúbrica.</li><li>El vendedor conversa en voz alta con el cliente IA, desde el computador o el celular.</li><li>La conversación se evalúa dimensión por dimensión: apertura, diagnóstico, objeciones y cierre.</li><li>Recibe hallazgos con citas textuales: dónde se perdió el cierre y qué hizo bien.</li><li>Las brechas se cierran con microaprendizaje: cursos breves.</li><li>El líder ve la evolución semana a semana, con los mismos criterios para todos.</li></ol>
+  </div>
+  <div class="panel block"><h3>Entrar chico y crecer</h3><p>No intentes vender todo. Entra con un solo caso (el simulador de ventas para un equipo o una objeción) y deja que la reunión abra inducción, feedback y más equipos. Tu llamado a la acción siempre es una demo con los casos reales de su empresa.</p></div>
+  <div class="remember"><b>Lo que debes recordar</b>El caso estrella es el simulador de ventas. Entra con uno y deja que la reunión abra los demás.</div>
+</section>
+
+<!-- VUELTA 4 -->
+<section class="lap" id="lap-4" role="tabpanel" hidden>
+  <div class="block"><span class="eyebrow">Vuelta 4</span><h2>Diccionario</h2></div>
+  <p class="lead">Toca cada tarjeta para darla vuelta: qué significa en simple y por qué te importa para vender.</p>
+  <div class="flipgrid" id="dict"></div>
+  <div class="panel block"><h3>Si te hacen una pregunta muy técnica</h3><blockquote>“Buena pregunta. Justamente eso lo vemos con el especialista en la reunión, así te lo muestra con tu caso. ¿Te acomoda el martes o el jueves?”</blockquote></div>
+  <div class="remember"><b>Lo que debes recordar</b>Rúbrica, brecha y microaprendizaje son las tres palabras clave. Lo técnico se responde en la reunión.</div>
+</section>
+
+<!-- VUELTA 5 -->
+<section class="lap" id="lap-5" role="tabpanel" hidden>
+  <div class="block"><span class="eyebrow">Vuelta 5</span><h2>A quién le vendemos</h2></div>
+  <p class="lead">Empresas con <b>más de 120 empleados</b> y equipos grandes de venta o servicio, donde capacitar a cada persona una por una no da abasto.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Criterio</th><th>Qué buscamos</th></tr></thead>
+    <tbody>
+      <tr><td>Tamaño</td><td>Más de 120 empleados</td></tr>
+      <tr><td>Equipos</td><td>Grandes equipos de venta o servicio al cliente</td></tr>
+      <tr><td>Industrias foco</td><td>Retail con equipos extensos · call centers internos o externos</td></tr>
+      <tr><td>Secundario</td><td>Empresas con fuerza de venta en terreno</td></tr>
+      <tr><td>Relación con Umine</td><td>No es cliente actual de Umine</td></tr>
+      <tr><td>País</td><td>Chile <span class="tag warn">a confirmar</span></td></tr>
+    </tbody></table></div>
+  <p class="note">Tu lista ya viene filtrada. Este cuadro es para que entiendas por qué cada cuenta está ahí, no para descartarla.</p>
+  <div class="panel block"><h3>Señales que explican por qué la cuenta está en tu lista</h3><p class="muted">No son filtros: te ayudan a elegir de qué dolor hablar.</p><ul><li>Alta rotación y gente nueva que tarda en estar lista.</li><li>Aperturas de tiendas o lanzamientos de productos o servicios nuevos.</li><li>Metas de venta de servicios complementarios (instalación, garantía extendida, crédito).</li><li>Equipos repartidos en muchas tiendas, sucursales o turnos.</li><li>Venta asistida con objeciones repetidas: precio, “lo voy a pensar”, “mándamelo por correo”.</li></ul><p class="note">Otros rubros (seguros, banca, automotriz, telecom, inmobiliaria, farmacéutica) aparecen en un documento anterior. En esta fase el foco sigue siendo retail y call centers; si te llega una cuenta de esos rubros, ya viene filtrada: trátala igual.</p></div>
+  <h3>Quién decide, quién influye y quién no</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Persona</th><th>Rol</th><th>Qué le preocupa</th></tr></thead>
+    <tbody>
+      <tr><td>Gerente de Capacitación / L&amp;D</td><td><span class="tag cyan">Decide</span></td><td>Capacitar a mucha gente sin repetir la misma clase; saber qué aprendió cada uno</td></tr>
+      <tr><td>Gerente de RR.HH. / Personas</td><td><span class="tag cyan">Decide</span></td><td>Inducción de gente nueva, jefaturas que den buen feedback, consultas repetidas</td></tr>
+      <tr><td>Gerente Comercial / de Ventas</td><td><span class="tag cyan">Decide</span></td><td>Que el equipo cierre más y no pierda clientes por una mala conversación</td></tr>
+      <tr><td>Gerente General</td><td><span class="tag cyan">Decide</span></td><td>Que el equipo rinda sin sumar horas de capacitación (empresas más chicas del rango)</td></tr>
+      <tr><td>Gerente de Operaciones / Contact Center</td><td><span class="tag warn">Decide o influye · a validar</span></td><td>Calidad de atención llamada a llamada</td></tr>
+      <tr><td>Jefes de tienda, supervisores</td><td><span class="tag">Influyen</span></td><td>Tener al equipo preparado sin sacarlo de la operación</td></tr>
+      <tr><td>Vendedores, ejecutivos</td><td><span class="tag">No deciden</span></td><td>Son los usuarios del agente, no los compradores</td></tr>
+    </tbody></table></div>
+  <div class="remember"><b>Lo que debes recordar</b>+120 empleados, mucha gente hablando con clientes, y le escribes a la gerencia que decide.</div>
+</section>
+
+<!-- VUELTA 6 -->
+<section class="lap" id="lap-6" role="tabpanel" hidden>
+  <div class="block"><span class="eyebrow">Vuelta 6</span><h2>La necesidad</h2></div>
+  <p class="lead">El problema central: los equipos aprenden a conversar frente al cliente real, y nadie sabe bien quién necesita reforzar qué.</p>
+  <div class="block"><h3>Elige el cargo y mira qué frase usar</h3>
+    <div class="chips" id="role-chips" role="group" aria-label="Cargo del contacto"></div>
+    <div class="panel block" id="role-out"></div>
+  </div>
+  <div class="panel block"><h3>Cuándo avisar a tu líder</h3>
+    <ul><li>La empresa ya es cliente actual de Umine.</li><li>Tiene claramente menos de 120 empleados.</li><li>Te preguntan precios, contratos o condiciones.</li><li>Te preguntan por SENCE (no lo ofrezcas tú).</li><li>Te hacen preguntas técnicas que no sabes responder.</li><li>Les molesta la idea de usar IA con su equipo.</li><li>La empresa es de otro país distinto al de la campaña.</li></ul>
+  </div>
+  <div class="remember"><b>Lo que debes recordar</b>Elige la frase según el cargo y úsala como pregunta, no como afirmación sobre su empresa.</div>
+</section>
+
+<!-- VUELTA 7 -->
+<section class="lap" id="lap-7" role="tabpanel" hidden>
+  <div class="block"><span class="eyebrow">Vuelta 7</span><h2>Clientes que puedes mencionar</h2></div>
+  <p class="lead">Hoy los materiales nombran un solo cliente: Sodimac, como ejemplo de inducción de tiendas. Elige la industria del prospecto.</p>
+  <div class="chips" id="case-chips" role="group" aria-label="Industria del prospecto"></div>
+  <div class="panel block" id="case-out"></div>
+  <div class="grid2"><div class="panel block"><h3>Por qué Sodimac importa</h3><p>Es el primer cliente de Umine con este producto. Muestra que una empresa grande de retail confía en Umine, que sirve para equipos grandes y repartidos, y que “practica cuando quieras” funciona con turnos.</p></div><div class="panel block"><h3>Cómo usarlo hoy</h3><ol><li>Solo 1 a 1 (llamada o mensaje directo) y solo si Umine confirma la autorización: “Ya trabajamos con Sodimac”.</li><li>Sin logo, sin cifras, sin detalles del proyecto.</li><li>Si no sabes si está autorizado, usa el caso genérico.</li></ol></div></div>
+  <p class="note">Nunca hables mal de otras soluciones ni de la capacitación que ya tienen. Umine 2.0 es complemento: “no reemplaza tu capacitación, la potencia”.</p>
+  <div class="remember"><b>Lo que debes recordar</b>Si no está confirmado que puedes nombrar un cliente, usa el caso genérico.</div>
+</section>
+
+<!-- VUELTA 8 -->
+<section class="lap" id="lap-8" role="tabpanel" hidden>
+  <div class="block"><span class="eyebrow">Vuelta 8</span><h2>Cómo escribir y hablar</h2></div>
+  <p class="lead">Menos de 80 palabras, un problema del cargo y una pregunta fácil de responder.</p>
+  <div class="grid2">
+    <div class="panel block"><span class="tag cyan">Haz esto</span><ul><li>Habla del problema típico del cargo o la industria</li><li>Usa “practicar”, “feedback por persona”, “rúbrica de tu empresa”</li><li>Presenta Umine 2.0 como copiloto</li><li>Ofrece una demo con sus casos reales</li></ul></div>
+    <div class="panel block"><span class="tag" style="color:var(--magenta)">Evita esto</span><ul><li>“Vi que están buscando…” o datos puntuales de la empresa</li><li>Prometer cifras o resultados</li><li>Decir que la IA reemplaza vendedores</li><li>Párrafos largos o listas de funciones</li></ul></div>
+  </div>
+  <div class="panel block"><span class="tag cyan">Adapta la demo al dolor</span><p>En vez de “¿te muestro una demo?”, ofrece algo concreto: <b>“Te armamos una demo con las 3 objeciones que más le cuestan a tu equipo.”</b> Para RR.HH. o Personas el mensaje es otro (feedback a jefaturas): no lo mezcles con el de ventas.</p></div>
+  <div class="panel builder">
+    <h3>Armador de mensajes</h3>
+    <p class="muted">Contexto general + cómo ayudamos + prueba + pregunta. Elige cada pieza y ajusta el texto.</p>
+    <div class="grid2">
+      <div class="field"><label for="p1">1 · Contexto general</label><select id="p1"></select></div>
+      <div class="field"><label for="p2">2 · Cómo ayudamos</label><select id="p2"></select></div>
+      <div class="field"><label for="p3">3 · Prueba</label><select id="p3"></select></div>
+      <div class="field"><label for="p4">4 · Pregunta</label><select id="p4"></select></div>
+    </div>
+    <div class="field"><label for="msg">Tu mensaje</label><textarea id="msg"></textarea></div>
+    <div class="lapfoot" style="border:0;padding:0"><span class="counter" id="wc">0 palabras</span><button class="btn primary" id="copy" type="button">Copiar mensaje</button></div>
+  </div>
+  <div class="block"><h3>Guion telefónico de 30 segundos</h3>
+    <blockquote>“Hola [Nombre], soy [tu nombre] de Umine. Te llamo corto: trabajamos con equipos grandes de venta y servicio que hoy aprenden las objeciones frente al cliente real. Creamos agentes de voz con IA que actúan como clientes, para que cada persona practique y reciba feedback con lo que dijo. No reemplaza tu capacitación, la potencia. ¿Te acomoda verlo 15 minutos con un caso de tu empresa, el martes o el jueves?”</blockquote>
+  </div>
+  <div class="panel block" id="call">
+    <span class="tag cyan">Discurso tipo para simular</span>
+    <h3>La llamada completa, paso a paso</h3>
+    <p class="muted">Dura entre 2 y 3 minutos. La meta no es vender Umine 2.0: es agendar 15 minutos con quien decide. Elige el cargo de tu prospecto y el paso 2 cambia.</p>
+    <div class="chips" id="call-roles" role="group" aria-label="Cargo del prospecto"></div>
+    <div class="steps" id="call-steps"></div>
+    <div class="grid3">
+      <div class="panel block" style="background:var(--bg)"><h3>Si contesta recepción</h3><p>“Hola, habla [tu nombre] de Umine. Busco a [Nombre] por un tema de capacitación de su equipo de ventas. ¿Me lo puedes comunicar o me dices a qué hora lo encuentro?”</p></div>
+      <div class="panel block" style="background:var(--bg)"><h3>Buzón de voz · máx. 15 s</h3><p>“Hola [Nombre], habla [tu nombre] de Umine. Ayudamos a equipos de venta a practicar sus objeciones con agentes de voz de IA antes de estar frente al cliente. Te escribo hoy por correo con el detalle. Gracias.”</p></div>
+      <div class="panel block" style="background:var(--bg)"><h3>“Ahora no puedo”</h3><p>“Te entiendo. ¿Te llamo mañana a primera hora o prefieres el jueves?”</p></div>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="panel block">
+      <h3>Cronómetro: dilo en voz alta</h3>
+      <p class="muted">Pasos 1 a 3 (apertura, motivo y qué hacemos) en menos de 45 segundos.</p>
+      <div class="timer" id="tm" aria-live="off">0:00</div>
+      <div class="chips"><button class="btn primary" type="button" id="tm-go">Empezar</button><button class="btn" type="button" id="tm-reset">Reiniciar</button></div>
+      <p class="note" id="tm-msg" aria-live="polite"></p>
+    </div>
+    <div class="panel block">
+      <h3>Práctica en parejas · 20 min</h3>
+      <ol><li>Uno es SDR; el otro, el prospecto. El prospecto elige cargo y personalidad: <b>apurado</b>, <b>escéptico</b> o <b>interesado</b>.</li><li>El prospecto usa al menos una objeción de la Vuelta 9.</li><li>Al terminar evalúa con la rúbrica (sí o no) y da feedback con citas: “dijiste X; faltaba Y”.</li><li>Cambien de rol y repitan con otra personalidad.</li></ol>
+      <p class="note">Rúbrica: pidió permiso · motivo en menos de 20 s · hizo una pregunta y escuchó · respondió la objeción sin discutir · propuso dos horarios · confirmó el correo.</p>
+    </div>
+  </div>
+  <div class="panel block">
+    <span class="tag cyan">Simulador</span>
+    <h3>Simula la llamada</h3>
+    <p class="muted">El prospecto te habla; elige la mejor respuesta. Usa el cargo elegido arriba.</p>
+    <div class="chat" id="sim-chat" aria-live="polite"></div>
+    <div class="grid3" id="sim-opts"></div>
+    <div class="lapfoot" style="border:0;padding:0"><span class="counter" id="sim-score"></span><button class="btn" type="button" id="sim-restart">Reiniciar simulación</button></div>
+  </div>
+  <div class="block"><h3>Secuencia de 15 días</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Día</th><th>Canal</th><th>Qué hacer</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>LinkedIn</td><td>Invitación a conectar, sin mensaje de venta</td></tr>
+      <tr><td class="num">2</td><td>Email</td><td>Mensaje 1: dolor principal del cargo + demo</td></tr>
+      <tr><td class="num">4</td><td>Llamada</td><td>Guion de 30 segundos</td></tr>
+      <tr><td class="num">5</td><td>LinkedIn</td><td>Mensaje corto con otro dolor (si aceptó la conexión)</td></tr>
+      <tr><td class="num">8</td><td>Email</td><td>Mensaje 2: cómo funciona (rúbrica y citas textuales)</td></tr>
+      <tr><td class="num">10</td><td>Llamada</td><td>Segundo intento</td></tr>
+      <tr><td class="num">12</td><td>LinkedIn</td><td>Comparte o comenta un reel de Umine ligado a su dolor</td></tr>
+      <tr><td class="num">15</td><td>Email</td><td>Cierre amable: “¿Lo dejo para más adelante o hay otra persona que vea capacitación?”</td></tr>
+    </tbody></table></div></div>
+  <div class="remember"><b>Lo que debes recordar</b>Contexto + cómo ayudamos + prueba + pregunta, en menos de 80 palabras.</div>
+</section>
+
+<!-- VUELTA 9 -->
+<section class="lap" id="lap-9" role="tabpanel" hidden>
+  <div class="block"><span class="eyebrow">Vuelta 9</span><h2>Cuándo una reunión vale la pena</h2></div>
+  <p class="lead">Tres cosas: hablas con quien decide, la necesidad está confirmada y hay urgencia.</p>
+  <div class="panel block">
+    <h3>Checklist antes de agendar</h3>
+    <div id="checklist"></div>
+    <div class="result" id="check-out" aria-live="polite"></div>
+  </div>
+  <div class="block"><h3>Preguntas de descubrimiento</h3>
+    <ol><li>¿Cómo practican hoy tus vendedores o ejecutivos las conversaciones difíciles?</li><li>¿Cómo sabes hoy qué necesita reforzar cada persona?</li><li>¿Cuánto toma preparar a una persona nueva antes de atender clientes?</li><li>¿Qué objeción es la que más le cuesta a tu equipo?</li><li>¿Quién más participa en decidir cómo se capacita al equipo?</li></ol>
+  </div>
+  <div class="block"><h3>Simulador de objeciones</h3>
+    <p class="muted">Elige lo que te dijeron. Piensa tu respuesta y luego revela.</p>
+    <div class="chips" id="obj-chips" role="group" aria-label="Objeciones"></div>
+    <div class="obj-out" id="obj-out"></div>
+  </div>
+  <div class="remember"><b>Lo que debes recordar</b>Quien decide + necesidad dicha por él + urgencia = reunión que vale la pena.</div>
+</section>
+
+<!-- VUELTA 10 -->
+<section class="lap" id="lap-10" role="tabpanel" hidden>
+  <div class="block"><span class="eyebrow">Vuelta 10</span><h2>Tu primera semana</h2></div>
+  <p class="lead">En cinco días pasas de leer a tener tus primeras reuniones en agenda.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Día</th><th>Qué haces</th><th>Tarea práctica</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>Lees esta guía y ves los reels de Umine</td><td>Explica Umine 2.0 en una frase a tu líder</td></tr>
+      <tr><td class="num">2</td><td>Estudias el diccionario y las personas</td><td>Haz el quiz y apruébalo con 8 de 10</td></tr>
+      <tr><td class="num">3</td><td>Practicas mensajes</td><td>Escribe 3 mensajes (Comercial, Capacitación, RR.HH.) de menos de 80 palabras</td></tr>
+      <tr><td class="num">4</td><td>Practicas la llamada</td><td>Role-play del guion de 30 segundos y 3 objeciones con un compañero</td></tr>
+      <tr><td class="num">5</td><td>Arrancas la secuencia</td><td>Carga tus cuentas en HubSpot con la etiqueta Umine 2.0 y envía los primeros mensajes</td></tr>
+    </tbody></table></div>
+  <div class="panel block">
+    <h3>Quiz final · apruebas con 8 de 10</h3>
+    <form id="quiz"></form>
+    <div class="lapfoot" style="border:0;padding:0"><button class="btn primary" type="button" id="grade">Ver mi puntaje</button><button class="btn" type="button" id="retry">Reintentar</button></div>
+    <div class="result" id="quiz-out" aria-live="polite" hidden></div>
+  </div>
+  <div class="remember"><b>Lo que debes recordar</b>Practica antes de escribir: tu primera semana es para llegar preparado, igual que los equipos que entrena Umine 2.0.</div>
+</section>
+
+<div class="lapfoot" id="lapfoot">
+  <button class="btn" type="button" id="prev">← Vuelta anterior</button>
+  <button class="btn primary" type="button" id="complete">Completar vuelta</button>
+  <button class="btn" type="button" id="next">Siguiente vuelta →</button>
+</div>
+<p class="note" style="margin-top:24px">Actualizada el 14 oct 2026. Pendiente de confirmar con Umine: países de la fase (Chile o LATAM), tamaño mínimo (50+ en doc de sep. vs +120 acordado el 5 oct; se usa +120), rubros adicionales, lista de clientes a excluir, uso de Sodimac como caso, disponibilidad del simulador de feedback y del asistente de RR.HH., y el rol de Operaciones / Contact Center. Fuentes: reunión Umine – Agente (5 oct 2026), guiones de reels Umine y documento «Umine · Propuesta de valor e ICP» (22 sep 2026).</p>
+</main>
+</div>
+
+<script>
+(function(){
+var LAPS=["Antes de empezar","Quién es","Qué vende","Diccionario","A quién","La necesidad","Clientes","Escribir y hablar","Reunión","Primera semana"];
+var KEY="umine2-academia-laps";
+var done=[];
+try{done=JSON.parse(localStorage.getItem(KEY)||"[]")||[]}catch(e){done=[]}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(done))}catch(e){}}
+var cur=1;
+var tabs=document.getElementById("tabs"),lights=document.getElementById("lights");
+
+LAPS.forEach(function(n,i){
+  var b=document.createElement("button");b.type="button";b.className="tab";b.setAttribute("role","tab");b.id="tab-"+(i+1);
+  b.innerHTML='<span class="dot"></span>'+(i+1)+' · '+n;
+  b.addEventListener("click",function(){go(i+1)});tabs.appendChild(b);
+  var l=document.createElement("span");l.className="light";l.title="Vuelta "+(i+1);lights.appendChild(l);
+});
+var cnt=document.createElement("span");cnt.className="lapcount";lights.appendChild(cnt);
+
+function paint(){
+  var all=done.length===10;
+  Array.prototype.forEach.call(lights.querySelectorAll(".light"),function(l,i){l.className="light"+(done.indexOf(i+1)>-1?(all?" on all":" on"):"")});
+  cnt.textContent=done.length+"/10 vueltas";
+  for(var i=1;i<=10;i++){var t=document.getElementById("tab-"+i);t.classList.toggle("done",done.indexOf(i)>-1);t.setAttribute("aria-selected",i===cur?"true":"false")}
+  var c=document.getElementById("complete");var d=done.indexOf(cur)>-1;
+  c.textContent=d?"Vuelta completada ✓":"Completar vuelta";
+  document.getElementById("prev").disabled=cur===1;document.getElementById("next").disabled=cur===10;
+}
+function go(n){
+  cur=n;for(var i=1;i<=10;i++)document.getElementById("lap-"+i).hidden=i!==n;
+  paint();var t=document.getElementById("tab-"+n);if(t.scrollIntoView)t.scrollIntoView({block:"nearest",inline:"center"});
+  window.scrollTo({top:0});
+}
+document.getElementById("complete").addEventListener("click",function(){
+  var i=done.indexOf(cur);if(i>-1)done.splice(i,1);else done.push(cur);save();paint();
+});
+document.getElementById("prev").addEventListener("click",function(){if(cur>1)go(cur-1)});
+document.getElementById("next").addEventListener("click",function(){if(cur<10)go(cur+1)});
+
+function chips(el,items,onPick){
+  items.forEach(function(it,i){var b=document.createElement("button");b.type="button";b.className="chip";b.textContent=it.name;b.setAttribute("aria-pressed",i===0?"true":"false");
+    b.addEventListener("click",function(){Array.prototype.forEach.call(el.children,function(c){c.setAttribute("aria-pressed","false")});b.setAttribute("aria-pressed","true");onPick(it)});el.appendChild(b)});
+  onPick(items[0]);
+}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+
+/* Vuelta 3 */
+var SVC=[
+ {name:"Simulador de ventas",tag:"Foco",an:"Un sparring de boxeo que te lanza los golpes que vas a recibir.",que:"El vendedor le vende a un cliente IA, enfrenta objeciones y recibe nota con la rúbrica de la empresa.",ej:"Practicar “está muy caro, lo voy a pensar” antes de escucharlo de un cliente real.",who:"Gerencia comercial, capacitación"},
+ {name:"Inducción de tiendas",tag:"Retail",an:"Las clases de manejo antes de salir a la calle.",que:"Las personas nuevas practican atención y venta antes de enfrentar público.",ej:"Inducción de tiendas en retail (las notas mencionan Sodimac).",who:"Capacitación, RR.HH., operaciones de tienda"},
+ {name:"Simulador de feedback",tag:"A confirmar",an:"Ensayar frente al espejo una conversación difícil.",que:"Las jefaturas practican dar feedback a un colaborador IA que se defiende, se calla o se molesta.",ej:"Un jefe ensaya cómo hablarle a alguien con bajo desempeño.",who:"RR.HH., capacitación"},
+ {name:"Asistente de RR.HH.",tag:"A confirmar",an:"Un mesón de información abierto todo el día.",que:"Responde las preguntas frecuentes del personal.",ej:"Preguntas repetidas sobre procesos internos.",who:"RR.HH."}];
+chips(document.getElementById("svc-chips"),SVC,function(s){
+  document.getElementById("svc-out").innerHTML='<div class="block"><span class="tag '+(s.tag==="A confirmar"?"warn":"cyan")+'">'+esc(s.tag)+'</span><h3>'+esc(s.name)+'</h3><p><b>Analogía:</b> '+esc(s.an)+'</p></div><div class="block"><p><b>Qué significa en la empresa:</b> '+esc(s.que)+'</p><p><b>Ejemplo:</b> '+esc(s.ej)+'</p><p class="muted"><b>A quién le duele:</b> '+esc(s.who)+'</p></div>';
+});
+
+/* Vuelta 4 */
+var DICT=[
+ ["Agente de voz con IA","Un programa que conversa hablando, como una persona.","Es lo que vende Umine 2.0: un “cliente” con quien practicar."],
+ ["Role-play","Practicar una conversación actuando los roles.","Es el uso principal del producto."],
+ ["Rúbrica","La pauta con que se evalúa: apertura, diagnóstico, objeciones, cierre.","La define cada empresa; por eso la demo se arma con sus casos."],
+ ["Brecha","La diferencia entre cómo lo hace la persona y cómo debería hacerlo.","Umine 2.0 muestra la brecha de cada persona, no del promedio."],
+ ["Feedback","La devolución sobre cómo lo hiciste.","El agente da feedback con citas textuales."],
+ ["Microaprendizaje","Cursos muy cortos, enfocados en una sola cosa.","Así se cierran brechas sin sacar a la gente de su trabajo."],
+ ["Onboarding","Preparar a una persona nueva.","Dolor fuerte en retail, donde entra mucha gente."],
+ ["Objeción","La razón que da un cliente para no comprar.","Lo que más practican los vendedores en el simulador."],
+ ["Call center interno / externo","Equipo telefónico propio, o una empresa que atiende para otras marcas.","Ambos son parte del ICP."],
+ ["L&D","El área que forma a los colaboradores (Learning & Development).","Es una de las gerencias que decide."],
+ ["Copiloto","Ayuda a la persona; no la reemplaza.","Calma el miedo a que la IA reemplace al equipo."],
+ ["SENCE","Organismo chileno que permite financiar capacitación.","No lo ofrezcas; solo si el cliente lo pide."],
+ ["HubSpot / embudo","El CRM donde registramos contactos y su avance.","Todo Umine 2.0 va con su etiqueta y embudo propio."]];
+var dict=document.getElementById("dict");
+DICT.forEach(function(d){var b=document.createElement("button");b.type="button";b.className="flip";b.setAttribute("aria-label",d[0]+": toca para ver el significado");
+  b.innerHTML='<div class="flip-in"><div class="face front"><h3>'+esc(d[0])+'</h3><small>Toca para dar vuelta</small></div><div class="face back"><p><b>En simple:</b> '+esc(d[1])+'</p><p><b>Para vender:</b> '+esc(d[2])+'</p></div></div>';
+  b.addEventListener("click",function(){b.classList.toggle("turned")});dict.appendChild(b)});
+
+/* Vuelta 6 */
+var ROLES=[
+ {name:"Gerente Comercial",pain:"Las objeciones se aprenden en vivo y nadie ve la conversación con el cliente.",f:["¿Cuántas veces tu equipo escuchó “está muy caro” esta semana, y cuántas lo practicó antes?","En la mayoría de los equipos de venta, la conversación con el cliente no la ve nadie más."]},
+ {name:"Gerente de Capacitación",pain:"El promedio esconde brechas y faltan horas para capacitar a todos.",f:["El promedio de tu equipo dice una cosa, pero nadie en tu equipo es el promedio.","No es que falten horas para capacitar; es que se reparten igual entre todos y no todos necesitan lo mismo."]},
+ {name:"Gerente de RR.HH.",pain:"El feedback difícil se improvisa y la inducción toma tiempo.",f:["Evaluar es lo fácil. Decirlo de frente, no.","Muchos equipos de RR.HH. pasan horas respondiendo las mismas preguntas."]},
+ {name:"Retail (cualquier rol)",pain:"La gente nueva atiende público antes de haber practicado.",f:["En retail, la primera conversación de un vendedor nuevo suele ser con un cliente real.","En una tienda, el cliente compara, pregunta y se va sin comprar, y nadie sabe qué pasó en esa conversación."]},
+ {name:"Call center (cualquier rol)",pain:"Cada ejecutivo tiene una brecha distinta y el reporte muestra una sola nota.",f:["En un call center, cada ejecutivo tiene una brecha distinta, pero el reporte muestra una sola nota."]}];
+chips(document.getElementById("role-chips"),ROLES,function(r){
+  document.getElementById("role-out").innerHTML='<p><b>Qué le duele:</b> '+esc(r.pain)+'</p>'+r.f.map(function(x){return '<blockquote>“'+esc(x)+'”</blockquote>'}).join("");
+});
+
+/* Vuelta 7 */
+var CASES=[
+ {name:"Retail",tag:"Usar solo si el cliente autorizó su uso en campaña",c:"Sodimac · inducción de tiendas",f:"Trabajamos la inducción de tiendas en retail, por ejemplo con Sodimac, para que la gente nueva practique antes de atender."},
+ {name:"Retail sin autorización",tag:"Caso genérico",c:"Equipos de tienda",f:"Ayudamos a equipos de tienda a practicar la venta antes de estar frente al cliente."},
+ {name:"Call center",tag:"Caso genérico",c:"Ejecutivos telefónicos",f:"Ayudamos a que cada ejecutivo practique sus llamadas difíciles y vea su propia brecha."},
+ {name:"Venta en terreno",tag:"Caso genérico",c:"Vendedores que visitan clientes",f:"Ayudamos a que el vendedor ensaye la visita antes de salir."}];
+chips(document.getElementById("case-chips"),CASES,function(c){
+  document.getElementById("case-out").innerHTML='<span class="tag '+(c.name==="Retail"?"warn":"cyan")+'">'+esc(c.tag)+'</span><h3>'+esc(c.c)+'</h3><blockquote>“'+esc(c.f)+'”</blockquote>';
+});
+
+/* Vuelta 8: armador */
+var P=[
+ ["En la mayoría de los equipos de venta, objeciones como “está muy caro” se aprenden frente al cliente real.","El promedio de un equipo dice una cosa, pero nadie es el promedio.","Evaluar es lo fácil; decirlo de frente, no."],
+ ["En Umine creamos agentes de voz con IA que actúan como tus clientes, para que tu equipo practique antes.","En Umine ayudamos a que cada persona practique conversaciones con clientes IA y reciba feedback propio.","En Umine creamos agentes de voz con IA para que las jefaturas ensayen conversaciones de feedback antes de tenerlas."],
+ ["Cada conversación se evalúa con tu rúbrica y cada persona recibe feedback con citas de lo que dijo.","Así ves las brechas de cada uno, no del promedio.","No reemplaza tu capacitación: la potencia."],
+ ["¿Te muestro en 15 minutos una demo con objeciones de tu empresa?","¿Te armamos una demo con las 3 objeciones que más le cuestan a tu equipo?","¿Te hace sentido verlo 15 minutos?","¿Te acomoda verlo el martes o el jueves, con un caso de tu empresa?"]];
+var sels=["p1","p2","p3","p4"].map(function(id,i){var s=document.getElementById(id);P[i].forEach(function(o,j){var op=document.createElement("option");op.value=j;op.textContent=o;s.appendChild(op)});s.addEventListener("change",build);return s});
+var msg=document.getElementById("msg"),wc=document.getElementById("wc");
+function build(){msg.value="Hola [Nombre]: "+sels.map(function(s,i){return P[i][s.value]}).join(" ");count()}
+function count(){var n=(msg.value.trim().match(/\S+/g)||[]).length;wc.textContent=n+" palabras · ideal menos de 80";wc.className="counter "+(n<80?"ok":"over")}
+msg.addEventListener("input",count);build();
+document.getElementById("copy").addEventListener("click",function(){var b=this;
+  function ok(){b.textContent="Copiado";setTimeout(function(){b.textContent="Copiar mensaje"},1400)}
+  function fb(){msg.focus();msg.select();b.textContent="Texto seleccionado: copia con Ctrl/Cmd + C"}
+  try{navigator.clipboard.writeText(msg.value).then(ok,fb)}catch(e){fb()}
+});
+
+
+/* Vuelta 8: discurso de llamada */
+var CROLES=[
+ {name:"Gerente Comercial",m:"Te llamo porque en la mayoría de los equipos de venta, objeciones como “está muy caro, lo voy a pensar” se aprenden frente al cliente real, y cada intento fallido es una venta que se va."},
+ {name:"Capacitación / L&D",m:"Te llamo porque en equipos grandes el promedio esconde quién necesita reforzar qué, y las horas no alcanzan para capacitar a todos por igual."},
+ {name:"RR.HH. / Personas",m:"Te llamo porque en muchas empresas el feedback difícil se improvisa el mismo día: evaluar es lo fácil, decirlo de frente no.",warn:"Úsalo solo si el simulador de feedback está confirmado."},
+ {name:"Call center",m:"Te llamo porque en un call center cada ejecutivo tiene una brecha distinta, pero el reporte muestra una sola nota."},
+ {name:"Retail",m:"Te llamo porque en retail la primera conversación de un vendedor nuevo suele ser con un cliente real."}];
+var crole=CROLES[0],simReady=false;
+var WHAT="En Umine creamos agentes de voz con IA que actúan como tus clientes. Tu equipo practica en voz alta, cada conversación se evalúa con la rúbrica de tu empresa y cada persona recibe feedback con citas de lo que dijo. No reemplaza tu capacitación: la potencia.";
+function steps(){return [
+ ["Apertura con permiso","Hola [Nombre], habla [tu nombre] de Umine. Te pido 30 segundos y tú decides si seguimos, ¿te parece?","10 s"],
+ ["Motivo de la llamada",crole.m+(crole.warn?" ("+crole.warn+")":""),"15 s"],
+ ["Qué hacemos",WHAT,"20 s"],
+ ["Pregunta de descubrimiento","¿Cómo practican hoy tus vendedores las conversaciones más difíciles? (Calla y escucha.)","30–60 s"],
+ ["Segunda pregunta","¿Y cómo sabes hoy qué necesita reforzar cada persona?","30 s"],
+ ["Puente y cierre","Justo por eso te propongo 15 minutos: te armamos una demo con las 3 objeciones que más le cuestan a tu equipo. ¿Te acomoda el martes a las 10 o el jueves a las 16?","15 s"],
+ ["Confirmación","Perfecto. Te envío la invitación a tu correo. ¿Hay alguien más de capacitación o del área comercial que debería estar?","15 s"]]}
+function renderSteps(){document.getElementById("call-steps").innerHTML=steps().map(function(s,i){return '<div class="step"><span class="n">'+(i+1)+'</span><div><h4>'+esc(s[0])+'</h4><p>“'+esc(s[1])+'”</p></div><span class="t">'+esc(s[2])+'</span></div>'}).join("")}
+chips(document.getElementById("call-roles"),CROLES,function(r){crole=r;renderSteps();if(simReady)simStart()});
+
+/* cronómetro */
+var t0=null,tid=null,tm=document.getElementById("tm"),tmGo=document.getElementById("tm-go"),tmMsg=document.getElementById("tm-msg");
+function fmt(sec){return Math.floor(sec/60)+":"+("0"+(sec%60)).slice(-2)}
+tmGo.addEventListener("click",function(){
+  if(tid){clearInterval(tid);tid=null;var sec=Math.round((Date.now()-t0)/1000);tmGo.textContent="Empezar";
+    tmMsg.textContent=sec<=45?"Bien: "+sec+" s. Ahora pasa a la pregunta y escucha.":sec+" s. Recorta: di solo el motivo de su cargo y qué hacemos en una frase.";}
+  else{t0=Date.now();tmMsg.textContent="";tmGo.textContent="Detener";tid=setInterval(function(){tm.textContent=fmt(Math.floor((Date.now()-t0)/1000))},250)}});
+document.getElementById("tm-reset").addEventListener("click",function(){if(tid)clearInterval(tid);tid=null;tm.textContent="0:00";tmMsg.textContent="";tmGo.textContent="Empezar"});
+
+/* simulador */
+function turns(){return [
+ {p:"¿Aló? ¿Quién habla?",o:[["Hola [Nombre], habla [tu nombre] de Umine. Te pido 30 segundos y tú decides si seguimos, ¿te parece?",1,"Pides permiso y le das el control: baja la guardia."],["Hola, ¿cómo estás? Te llamo para presentarte nuestra empresa y todos nuestros servicios.",0,"Suena a venta larga. Nadie quiere “toda la presentación”."],["Hola, vi que están contratando vendedores y quería ofrecerte algo.",0,"No uses datos puntuales de la empresa: habla del problema típico del cargo."]]},
+ {p:"Ya, dale, pero rápido.",o:[[crole.m,1,"Motivo corto y ligado a su cargo."],["Somos una plataforma con IA, rúbricas, microaprendizaje, reportes, integraciones y mucho más.",0,"Lista de funciones: lo pierdes en 5 segundos."],["Te cuento los precios primero para que sepas.",0,"Precios no: eso lo ve el especialista. Avisa a tu líder si los piden."]]},
+ {p:"¿Y qué hacen ustedes exactamente?",o:[[WHAT,1,"Qué es, cómo funciona y que no reemplaza a nadie, en 20 segundos."],["Reemplazamos a tus vendedores con agentes de inteligencia artificial.",0,"Falso y asusta: Umine 2.0 es un copiloto de formación."],["Es difícil de explicar por teléfono, mejor te mando un PDF.",0,"Pierdes la llamada. Explícalo en una frase."]]},
+ {p:"Mmm, interesante.",o:[["¿Cómo practican hoy tus vendedores las conversaciones más difíciles?",1,"Pregunta abierta: ahora él habla y tú escuchas."],["¿Entonces te interesa comprarlo?",0,"Muy pronto. Primero entiende su necesidad."],["Perfecto, te mando información por correo.",0,"Cierras sin descubrir nada ni agendar."]]},
+ {p:"Ya tenemos capacitación, la verdad.",o:[["Perfecto, no la reemplaza: la potencia. Permite que cada persona practique y veas qué reforzar. ¿Lo vemos 15 minutos con sus casos?",1,"No discutes; lo posicionas como complemento y vuelves a la reunión."],["Sí, pero la nuestra es mucho mejor que la que tienen.",0,"Nunca hables mal de lo que ya tienen."],["Ah, ok. Gracias igual.",0,"Te rendiste en la primera objeción."]]},
+ {p:"Puede ser… ¿cuánto cuesta?",o:[["Depende del tamaño del equipo y del caso; lo ve el especialista en 15 minutos, con una demo con tus objeciones. ¿Martes a las 10 o jueves a las 16?",1,"No inventas precio y conviertes el interés en reunión. (Luego avisa a tu líder.)"],["Te doy un precio aproximado ahora mismo, para que lo tengas.",0,"Nunca inventes cifras ni precios."],["Es baratísimo, no te preocupes.",0,"Promesa vacía y sin reunión."]]},
+ {p:"El jueves a las 16 me sirve.",o:[["Perfecto. Te envío la invitación a tu correo. ¿Hay alguien más de capacitación o del área comercial que debería estar?",1,"Confirmas y sumas a otros que deciden o influyen."],["Genial, nos vemos. ¡Chao!",0,"No confirmaste correo ni invitados: la reunión se puede caer."],["¿Y no prefieres comprarlo de una vez?",0,"Tu meta era la reunión: ya la tienes."]]}]}
+var simI=0,simOk=0,chat=document.getElementById("sim-chat"),opts=document.getElementById("sim-opts"),sc=document.getElementById("sim-score");
+function bubble(txt,me,extra){var d=document.createElement("div");d.className="bubble"+(me?" me":"");d.innerHTML='<div class="who">'+(me?"Tú (SDR)":"Prospecto · "+esc(crole.name))+'</div>'+esc(txt)+(extra||"");chat.appendChild(d)}
+function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t}return a}
+function simStart(){simI=0;simOk=0;chat.innerHTML="";sc.textContent="";simTurn()}
+function simTurn(){
+  var T=turns();opts.innerHTML="";
+  if(simI>=T.length){var good=simOk>=6;sc.className="counter "+(good?"ok":"over");sc.textContent=simOk+"/"+T.length+" respuestas correctas";
+    var r=document.createElement("div");r.className="result "+(good?"good":"bad");r.innerHTML=good?"<b>Reunión agendada.</b> Ahora practícalo en voz alta con un compañero.":"<b>Repite la simulación.</b> Revisa los pasos de la llamada y las objeciones de la Vuelta 9.";chat.appendChild(r);return}
+  var t=T[simI];bubble(t.p,false);
+  shuffle(t.o).forEach(function(o){var b=document.createElement("button");b.type="button";b.className="choice";b.textContent=o[0];
+    b.addEventListener("click",function(){
+      Array.prototype.forEach.call(opts.children,function(x){x.disabled=true});
+      if(o[1])simOk++;
+      bubble(o[0],true,'<p class="note" style="margin-top:6px;color:'+(o[1]?'var(--cyan)':'var(--magenta)')+'">'+(o[1]?"✓ ":"✗ ")+esc(o[2])+'</p>');
+      simI++;setTimeout(simTurn,o[1]?500:1400)});
+    opts.appendChild(b)});
+  sc.className="counter";sc.textContent="Paso "+(simI+1)+" de "+T.length;
+}
+document.getElementById("sim-restart").addEventListener("click",simStart);
+simReady=true;simStart();
+/* Vuelta 9: checklist */
+var CHK=["La persona es de una gerencia que decide (capacitación, RR.HH., comercial, general).","Dijo con sus palabras que tiene el problema.","Hay un motivo para hacerlo pronto (entra gente nueva, metas de venta, temporada alta).","Aceptó una fecha y hora concreta."];
+var cl=document.getElementById("checklist");
+CHK.forEach(function(t,i){var d=document.createElement("label");d.className="check";d.setAttribute("for","chk"+i);d.innerHTML='<input type="checkbox" id="chk'+i+'"><span style="font:400 15px var(--body);color:var(--ink)">'+esc(t)+'</span>';cl.appendChild(d);d.querySelector("input").addEventListener("change",chk)});
+function chk(){var n=cl.querySelectorAll("input:checked").length,o=document.getElementById("check-out");
+  if(n===4){o.className="result good";o.innerHTML="<b>Reunión que vale la pena.</b> Agéndala y regístrala en HubSpot con la etiqueta Umine 2.0."}
+  else if(n>=2){o.className="result";o.innerHTML="<b>"+n+" de 4.</b> Te falta confirmar algo. Usa las preguntas de descubrimiento o pide que te presenten a quien decide."}
+  else{o.className="result bad";o.innerHTML="<b>"+n+" de 4.</b> Todavía no. Primero llega a quien decide y deja que te cuente su necesidad."}}
+chk();
+
+/* Vuelta 9: objeciones */
+var OBJ=[
+ {name:"Ya tenemos capacitación",m:"No ve qué suma algo nuevo.",r:"Perfecto, no la reemplaza: la potencia. Permite que cada persona practique y veas qué reforzar. ¿Lo vemos 15 minutos con sus casos?"},
+ {name:"¿La IA reemplaza a mi gente?",m:"Miedo o rechazo a la IA.",r:"No, es un copiloto de formación. Tu equipo sigue atendiendo; el agente solo les sirve para practicar."},
+ {name:"No tenemos tiempo",m:"Teme sacar a la gente de la operación.",r:"Se practica desde el celular o el computador, cuando cada uno puede, con cursos breves."},
+ {name:"Mándame info por correo",m:"No ve aún el valor o quiere cortar.",r:"Te lo envío. Lo más útil es una demo con objeciones reales de tu empresa. ¿Martes o jueves?"},
+ {name:"¿Cuánto cuesta?",m:"Hay interés.",r:"Depende del caso y del tamaño del equipo; lo vemos en la reunión con el especialista. (Avisa a tu líder.)"},
+ {name:"Ya hacemos role-play con los jefes",m:"Cree que ya lo tiene resuelto.",r:"Buenísimo, eso es lo más parecido. La diferencia es que cada persona practica sin esperar al jefe, y cada práctica queda evaluada con tu rúbrica y con citas de lo que dijo. ¿Lo vemos 15 minutos?"},
+ {name:"¿Quién más lo usa?",m:"Quiere prueba social antes de dar tiempo.",r:"Si está autorizado: Ya trabajamos con Sodimac en retail. Si no: Trabajamos con equipos grandes de retail; en la reunión te mostramos cómo funciona con tus casos."},
+ {name:"No soy la persona indicada",m:"Puede ser un influenciador.",r:"Gracias. ¿Quién ve la capacitación del equipo de ventas o servicio? ¿Me ayudas a llegar a esa persona?"},
+ {name:"¿Se paga con SENCE?",m:"Busca financiamiento.",r:"Lo revisamos en la reunión con el especialista. (Avisa a tu líder; no lo impulses.)"}];
+chips(document.getElementById("obj-chips"),OBJ,function(o){
+  var out=document.getElementById("obj-out");
+  out.innerHTML='<blockquote>“'+esc(o.name)+'”</blockquote><button class="btn" type="button" id="reveal">Revelar respuesta</button><div class="grid2" id="ans" hidden><div class="panel block"><h3 style="color:var(--purple)">Lo que realmente significa</h3><p>'+esc(o.m)+'</p></div><div class="panel block"><h3 style="color:var(--cyan)">Qué responder</h3><p>“'+esc(o.r)+'”</p></div></div>';
+  document.getElementById("reveal").addEventListener("click",function(){document.getElementById("ans").hidden=false;this.hidden=true});
+});
+
+/* Vuelta 10: quiz */
+var Q=[
+ ["¿Qué es Umine 2.0?",["Un curso SENCE de ventas","Agentes de voz con IA que actúan como clientes para practicar","Un CRM","Un bot que reemplaza vendedores"],1],
+ ["¿Desde qué tamaño una empresa entra en el ICP?",["20 empleados","50 empleados","Más de 120 empleados","Más de 1.000 empleados"],2],
+ ["¿Cuáles son las industrias foco?",["Retail y call centers","Minería y construcción","Startups tecnológicas","Sector público"],0],
+ ["¿Quién decide la compra?",["Gerente de Capacitación","Vendedor de tienda","Ejecutivo de call center","Practicante de RR.HH."],0],
+ ["¿Qué es una rúbrica?",["Un tipo de IA","La pauta con que se evalúa la conversación","Un reporte de ventas","Un curso largo"],1],
+ ["Una cuenta de tu lista ya es cliente de Umine. ¿Qué haces?",["Le escribes igual","Le ofreces descuento","Avisas a tu líder: se excluye","La cargas en otro embudo"],2],
+ ["Te preguntan si se puede pagar con SENCE.",["Dices que sí y lo destacas","No lo impulsas y avisas a tu líder","Dices que no existe","Cortas la llamada"],1],
+ ["¿Qué frase debes evitar?",["“En muchos equipos de venta…”","“Vi que están buscando vendedores…”","“¿Te acomoda el martes?”","“No reemplaza tu capacitación”"],1],
+ ["¿Cuál es la fórmula del mensaje?",["Precio + descuento + urgencia","Contexto + cómo ayudamos + prueba + pregunta","Saludo + lista de funciones","Datos de la empresa + propuesta"],1],
+ ["¿Cuándo una reunión vale la pena?",["Cuando cualquiera acepta","Cuando piden información","Quien decide + necesidad confirmada + urgencia","Cuando la empresa es grande"],2]];
+var qf=document.getElementById("quiz");
+Q.forEach(function(q,i){var d=document.createElement("fieldset");d.className="q";d.style.border="0";d.style.margin="0";
+  d.innerHTML='<legend style="font:600 16px var(--display);padding:0;margin-bottom:8px">'+(i+1)+'. '+esc(q[0])+'</legend><div class="opts">'+q[1].map(function(o,j){return '<label class="opt" for="q'+i+'o'+j+'"><input type="radio" name="q'+i+'" id="q'+i+'o'+j+'" value="'+j+'"><span style="font:400 15px var(--body);color:var(--ink)">'+esc(o)+'</span></label>'}).join("")+'</div>';
+  qf.appendChild(d)});
+qf.addEventListener("submit",function(e){e.preventDefault()});
+document.getElementById("grade").addEventListener("click",function(){var s=0;
+  Q.forEach(function(q,i){var pick=qf.querySelector('input[name="q'+i+'"]:checked');
+    Array.prototype.forEach.call(qf.querySelectorAll('input[name="q'+i+'"]'),function(inp){var l=inp.parentNode;l.classList.remove("right","wrong");if(+inp.value===q[2])l.classList.add("right");else if(inp.checked)l.classList.add("wrong")});
+    if(pick&&+pick.value===q[2])s++});
+  var o=document.getElementById("quiz-out");o.hidden=false;
+  if(s>=8){o.className="result good";o.innerHTML='<div class="score">'+s+'/10</div><p>Aprobado. Ya puedes arrancar tu secuencia.</p>';if(done.indexOf(10)<0){done.push(10);save();paint()}}
+  else{o.className="result bad";o.innerHTML='<div class="score">'+s+'/10</div><p>Te faltan '+(8-s)+' para aprobar. Revisa las respuestas marcadas en cian y vuelve a intentarlo.</p>'}
+});
+document.getElementById("retry").addEventListener("click",function(){qf.reset();Array.prototype.forEach.call(qf.querySelectorAll(".opt"),function(l){l.classList.remove("right","wrong")});document.getElementById("quiz-out").hidden=true});
+
+var h=(location.hash||"").replace("#","");var m=h.match(/^vuelta(\d+)$/);go(m&&+m[1]>=1&&+m[1]<=10?+m[1]:1);
+})();
+</script>
+
+</body></html>

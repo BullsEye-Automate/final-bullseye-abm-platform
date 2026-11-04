@@ -1,0 +1,974 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Academia SDR CodersLab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@500&display=swap">
+<style>
+/* Layout: pista de carrera — un tablero oscuro BullsEye con 10 "vueltas" (módulos) en una barra de navegación, contenido al centro y progreso tipo semáforo arriba */
+:root{
+  --night:#140f3d;      /* fondo índigo profundo */
+  --panel:#1e1760;      /* superficies */
+  --panel-2:#2a2180;    /* superficies elevadas */
+  --line:#3a3196;       /* bordes */
+  --ink:#f3f1ff;        /* texto principal */
+  --ink-2:#b9b3e6;      /* texto secundario */
+  --cyan:#62e0d8;       /* acento BullsEye */
+  --purple:#9b4fc0;     /* morado BullsEye */
+  --magenta:#e0457b;    /* magenta BullsEye */
+  --good:#62e0a0;
+  --f-display:"Sora", "Segoe UI", system-ui, sans-serif;
+  --f-body:"Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"Roboto Mono", ui-monospace, Menlo, monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{background:var(--night);color:var(--ink)}
+body{font-family:var(--f-body);font-size:16px;line-height:1.6;margin:0}
+a{color:var(--cyan)}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:0 64px}
+
+/* HERO */
+.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--line);
+  background:
+   radial-gradient(900px 300px at 85% -10%, rgba(155,79,192,.35), transparent 60%),
+   radial-gradient(600px 260px at 0% 120%, rgba(98,224,216,.18), transparent 60%),
+   var(--night)}
+.hero::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.25;
+  background-image:repeating-linear-gradient(115deg, transparent 0 22px, rgba(98,224,216,.08) 22px 23px)}
+.hero-in{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:40px 28px;display:grid;gap:24px;grid-template-columns:1.4fr 1fr;align-items:end}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--f-display);font-weight:700;letter-spacing:.02em}
+.brand .dot{width:26px;height:26px;border-radius:50%;border:3px solid var(--cyan);display:grid;place-items:center}
+.brand .dot::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--cyan)}
+.brand small{font-family:var(--f-body);font-weight:500;color:var(--ink-2);letter-spacing:.12em;text-transform:uppercase;font-size:11px;margin-left:6px}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(30px,5vw,52px);line-height:1.05;margin:14px 0 10px;text-wrap:balance}
+h1 em{font-style:normal;color:var(--cyan)}
+.lead{color:var(--ink-2);max-width:56ch;margin:0;font-size:17px}
+.progress-card{background:rgba(30,23,96,.75);border:1px solid var(--line);border-radius:14px;padding:18px}
+.progress-card .lbl{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2)}
+.progress-card .big{font-family:var(--f-display);font-size:34px;font-weight:700;font-variant-numeric:tabular-nums}
+.progress-card .big span{color:var(--ink-2);font-size:18px;font-weight:500}
+.lights{display:flex;gap:6px;margin-top:10px}
+.lights i{flex:1;height:10px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);transition:background .3s}
+.lights i.on{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 10px rgba(98,224,216,.6)}
+.progress-card p{margin:10px 0 0;font-size:13px;color:var(--ink-2)}
+
+/* NAV */
+.nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:rgba(20,15,61,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.nav-in{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:10px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:thin}
+.tab{flex:0 0 auto;display:flex;align-items:center;gap:8px;font:500 14px var(--f-body);color:var(--ink-2);background:transparent;border:1px solid var(--line);border-radius:999px;padding:7px 14px;cursor:pointer;white-space:nowrap}
+.tab .n{font-family:var(--f-mono);font-size:11px;color:var(--ink-2)}
+.tab:hover{border-color:var(--cyan);color:var(--ink)}
+.tab[aria-selected="true"]{background:var(--cyan);border-color:var(--cyan);color:var(--night)}
+.tab[aria-selected="true"] .n{color:var(--night)}
+.tab.done:not([aria-selected="true"])::after{content:"✓";color:var(--good);font-weight:700}
+.tab:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--magenta);outline-offset:2px}
+
+/* MODULE */
+.mod{padding-top:34px}
+.eyebrow{font-family:var(--f-mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--magenta)}
+h2{font-family:var(--f-display);font-size:clamp(26px,3.6vw,38px);line-height:1.15;margin:6px 0 12px;text-wrap:balance}
+h3{font-family:var(--f-display);font-size:20px;margin:34px 0 12px}
+.intro{font-size:18px;color:var(--ink);max-width:68ch}
+.intro b,.mod p b{color:var(--cyan);font-weight:700}
+.mod p{max-width:70ch}
+.muted{color:var(--ink-2)}
+
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;min-width:0}
+.card h4{font-family:var(--f-display);font-size:16px;margin:0 0 6px}
+.card p{margin:0;color:var(--ink-2);font-size:15px}
+.card .tag{display:inline-block;font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--night);background:var(--cyan);border-radius:6px;padding:2px 7px;margin-bottom:10px}
+.card.hot{border-color:var(--cyan);background:linear-gradient(160deg, rgba(98,224,216,.14), var(--panel) 55%)}
+
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}
+.stat .v{font-family:var(--f-display);font-size:30px;font-weight:800;color:var(--cyan);font-variant-numeric:tabular-nums;line-height:1.1}
+.stat .k{font-size:14px;color:var(--ink-2)}
+
+.story{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.story > div{padding:18px;background:var(--panel);min-width:0}
+.story > div + div{border-left:1px solid var(--line)}
+.story .st{font:500 12px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+.story .s1 .st{color:var(--magenta)} .story .s2 .st{color:var(--purple)} .story .s3 .st{color:var(--cyan)}
+.story p{margin:0;font-size:15px}
+
+.remember{margin-top:34px;border-radius:14px;padding:18px 20px;background:linear-gradient(110deg, rgba(224,69,123,.22), rgba(155,79,192,.18));border:1px solid rgba(224,69,123,.6);display:flex;gap:14px;align-items:flex-start}
+.remember .ico{flex:0 0 auto;width:36px;height:36px;border-radius:50%;background:var(--magenta);display:grid;place-items:center;font-family:var(--f-display);font-weight:800;color:#fff}
+.remember b{display:block;font-family:var(--f-display);font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:#ffd1e1;margin-bottom:2px}
+.remember p{margin:0;font-size:17px}
+
+.done-row{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:22px;padding-top:18px;border-top:1px dashed var(--line)}
+.btn{font:600 15px var(--f-body);border-radius:10px;padding:10px 16px;cursor:pointer;border:1px solid var(--cyan);background:var(--cyan);color:var(--night)}
+.btn.ghost{background:transparent;color:var(--cyan)}
+.btn.done{background:var(--good);border-color:var(--good)}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:14px}
+table{width:100%;border-collapse:collapse;font-size:15px;min-width:560px}
+th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:500 12px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);background:var(--panel-2)}
+tr:last-child td{border-bottom:0}
+td{background:var(--panel)}
+td b{color:var(--cyan)}
+
+/* service selector */
+.svc-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.svc-tabs button{font:500 14px var(--f-body);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer}
+.svc-tabs button[aria-pressed="true"]{border-color:var(--cyan);background:var(--panel-2);box-shadow:inset 0 -3px 0 var(--cyan)}
+.svc-detail{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.svc-detail .card h4{color:var(--cyan);font-size:12px;font-family:var(--f-mono);letter-spacing:.1em;text-transform:uppercase}
+.svc-detail .card p{color:var(--ink);font-size:16px}
+
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;counter-reset:s}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;position:relative;min-width:0}
+.step::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--purple);font-family:var(--f-display);font-weight:700;margin-bottom:8px}
+.step h4{font-family:var(--f-display);font-size:15px;margin:0 0 4px}
+.step p{margin:0;font-size:14px;color:var(--ink-2)}
+.step.key{border-color:var(--cyan)} .step.key::before{background:var(--cyan);color:var(--night)}
+
+/* flip cards */
+.flips{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.flip{perspective:900px;height:150px;cursor:pointer;background:none;border:0;padding:0;text-align:left;font:inherit;color:inherit}
+.flip .in{position:relative;width:100%;height:100%;transition:transform .5s;transform-style:preserve-3d}
+.flip.on .in{transform:rotateY(180deg)}
+.flip .f,.flip .b{position:absolute;inset:0;backface-visibility:hidden;border-radius:12px;padding:14px;border:1px solid var(--line);display:flex;flex-direction:column;justify-content:space-between}
+.flip .f{background:var(--panel)}
+.flip .f strong{font-family:var(--f-display);font-size:18px}
+.flip .f small{color:var(--ink-2);font-size:12px}
+.flip .b{background:var(--panel-2);border-color:var(--cyan);transform:rotateY(180deg);font-size:14px}
+.flip .b em{font-style:normal;color:var(--cyan);font-size:13px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.chip{font:500 13px var(--f-body);color:var(--ink-2);border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 12px;cursor:pointer}
+.chip[aria-pressed="true"]{color:var(--night);background:var(--cyan);border-color:var(--cyan)}
+
+/* ICP fit checker */
+.fit{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+.q{display:flex;flex-direction:column;gap:12px}
+.q label{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.q input{width:20px;height:20px;accent-color:var(--cyan);margin-top:2px;flex:0 0 auto}
+.q label:has(input:checked){border-color:var(--cyan)}
+.meter{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.meter .bar{height:14px;border-radius:8px;background:var(--panel-2);overflow:hidden}
+.meter .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--magenta),var(--purple),var(--cyan));transition:width .35s}
+.meter .verdict{font-family:var(--f-display);font-size:22px;font-weight:700}
+
+.people{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.person{border-radius:14px;padding:18px;border:1px solid var(--line);background:var(--panel)}
+.person .who{font-family:var(--f-display);font-size:18px;font-weight:700;margin-bottom:4px}
+.person.yes{border-color:var(--cyan)} .person.yes .who{color:var(--cyan)}
+.person.mid .who{color:#c99bff}
+.person.no{opacity:.85} .person.no .who{color:var(--magenta)}
+.person ul{margin:8px 0 0;padding-left:18px;color:var(--ink-2);font-size:14px}
+.person .act{margin-top:10px;font-size:14px;font-weight:500}
+
+/* pistas */
+.clues{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.clue{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.clue .where{font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--purple)}
+.clue h4{margin:0;font-family:var(--f-display);font-size:16px}
+.clue p{margin:0;font-size:14px;color:var(--ink-2)}
+.clue p q{color:var(--ink)}
+.redlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;padding:0;list-style:none}
+.redlist li{border-left:3px solid var(--magenta);background:var(--panel);padding:10px 12px;border-radius:0 10px 10px 0;font-size:15px}
+
+/* casos */
+.case-pick{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.case{display:grid;grid-template-columns:1fr 1.3fr;gap:14px}
+.quote{font-family:var(--f-display);font-size:20px;line-height:1.35;border-left:4px solid var(--cyan);padding:6px 0 6px 16px;margin:0}
+.logos{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.logos span{border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:14px;color:var(--ink-2)}
+
+/* builder */
+.builder{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.field label{font-weight:500;font-size:14px}
+.field label span{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--purple);font-size:12px;margin-right:6px}
+select,textarea,input[type=text],input[type=date],input[type=time]{font:15px var(--f-body);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+textarea{resize:vertical;min-height:70px}
+.preview{background:#fff;color:#1d1a3a;border-radius:14px;padding:20px;font-size:15px;line-height:1.6;display:flex;flex-direction:column;gap:12px}
+.preview .hdr{font:500 12px var(--f-mono);color:#6b6593;border-bottom:1px solid #e3e0f2;padding-bottom:8px}
+.preview .msg span{border-radius:4px;padding:0 2px}
+.preview .p1{background:#ffe0ea} .preview .p2{background:#efe1f7} .preview .p3{background:#d9f6f3} .preview .p4{background:#fff1c9}
+.wc{font:500 13px var(--f-mono);color:#6b6593}
+.wc.bad{color:#b0244f}
+
+/* haz / evita */
+.dodont{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.dd{border-radius:14px;padding:18px;border:1px solid var(--line);background:var(--panel)}
+.dd.do{border-color:var(--good);background:linear-gradient(160deg, rgba(98,224,160,.12), var(--panel) 60%)}
+.dd.dont{border-color:var(--magenta);background:linear-gradient(160deg, rgba(224,69,123,.14), var(--panel) 60%)}
+.dd .head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.dd .badge{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:800 18px var(--f-display);flex:0 0 auto}
+.dd.do .badge{background:var(--good);color:var(--night)}
+.dd.dont .badge{background:var(--magenta);color:#fff}
+.dd .head b{font-family:var(--f-display);font-size:18px}
+.dd.do .head b{color:var(--good)} .dd.dont .head b{color:#ff8db3}
+.dd .head small{display:block;font:500 11px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.dd ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.dd li{display:flex;gap:10px;align-items:flex-start;font-size:15px;padding:8px 10px;border-radius:10px;background:rgba(20,15,61,.45)}
+.dd li::before{flex:0 0 auto;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font:700 12px var(--f-body);margin-top:1px}
+.dd.do li::before{content:"✓";background:rgba(98,224,160,.2);color:var(--good)}
+.dd.dont li::before{content:"✕";background:rgba(224,69,123,.22);color:#ff8db3}
+/* foco llamada */
+.focus{display:grid;grid-template-columns:1fr auto 1.2fr auto 1fr;gap:10px;align-items:stretch}
+.focus .node{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.focus .node .t{font:500 11px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.focus .node h4{margin:4px 0;font-family:var(--f-display);font-size:17px}
+.focus .node p{margin:0;font-size:14px;color:var(--ink-2)}
+.focus .node.you{border:2px solid var(--cyan);background:linear-gradient(160deg, rgba(98,224,216,.16), var(--panel) 60%)}
+.focus .node.you h4{color:var(--cyan);font-size:20px}
+.focus .arrow{display:grid;place-items:center;color:var(--cyan);font:700 22px var(--f-display)}
+/* guion */
+.script{display:flex;flex-direction:column;gap:10px}
+.script .ln{display:grid;grid-template-columns:110px 1fr;gap:10px;align-items:start}
+.script .lb{font:500 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:#6b6593;padding-top:3px}
+.script .tx{border-left:4px solid;padding:2px 0 2px 10px}
+.script .s1 .tx{border-color:#e0457b} .script .s2 .tx{border-color:#9b4fc0} .script .s3 .tx{border-color:#3fb8b0}
+.script .s4 .tx{border-color:#e0a82e} .script .s5 .tx{border-color:#2f2081} .script .s6 .tx{border-color:#1f9d63}
+.script .pause{font-style:italic;color:#6b6593;font-size:14px;padding-left:120px}
+/* speech oficial */
+.speech{background:#fff;color:#1d1a3a;border-radius:16px;padding:22px;display:grid;gap:14px;border-top:6px solid var(--cyan)}
+.speech .sh{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.speech .sh b{font:700 18px var(--f-display);color:#140f3d}
+.speech .sh span{font:500 11px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:#6b6593}
+.speech .row{display:grid;grid-template-columns:150px 1fr;gap:12px;align-items:start}
+.speech .lb{font:500 11px var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:#6b6593;padding-top:4px}
+.speech .say{border-left:4px solid #9b4fc0;padding:2px 0 2px 12px;font-size:16px;line-height:1.6}
+.speech .row.key .say{border-color:#e0457b;background:#fff4f8;border-radius:0 8px 8px 0;padding:8px 12px}
+.speech .row.close .say{border-color:#1f9d63;background:#effaf4;border-radius:0 8px 8px 0;padding:8px 12px}
+.speech .ph{background:#d9f6f3;color:#0f5f5a;border-radius:6px;padding:1px 6px;font-weight:600;white-space:nowrap}
+.speech .note{font-size:13px;color:#6b6593;font-style:italic}
+.faq{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.faq summary{cursor:pointer;padding:14px 16px;font:600 16px var(--f-display);list-style:none;display:flex;justify-content:space-between;gap:10px}
+.faq summary::after{content:"+";color:var(--cyan);font-size:22px;line-height:1}
+.faq[open] summary::after{content:"–"}
+.faq .body{padding:0 16px 16px;display:grid;gap:10px}
+.faq .svc{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.faq .svc div{background:var(--panel-2);border-radius:10px;padding:12px;font-size:14px;color:var(--ink-2)}
+.faq .svc b{display:block;color:var(--ink);font-family:var(--f-display);font-size:15px;margin-bottom:2px}
+/* generadores y confirmación */
+.gen{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:16px;align-items:start}
+.gen .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px}
+.gen .fields .full{grid-column:1/-1}
+.panel-tag{display:inline-flex;align-items:center;gap:8px;font:500 11px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--night);background:var(--cyan);border-radius:6px;padding:3px 8px;margin-bottom:8px}
+.resp{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;display:grid;gap:10px}
+.resp .k{font:500 12px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.resp .say{font-family:var(--f-display);font-size:18px;line-height:1.45}
+.resp .tip{font-size:14px;color:var(--cyan)}
+.confirm-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.confirm-steps .c{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+.confirm-steps .c .n{font:700 13px var(--f-display);color:var(--cyan)}
+.confirm-steps .c p{margin:6px 0 0;font-size:15px}
+.confirm-steps .c p q{color:var(--ink)}
+.msgout{white-space:pre-wrap;font-size:15px;line-height:1.6}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.seg button{font:500 14px var(--f-body);background:var(--panel);color:var(--ink-2);border:0;padding:8px 14px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--cyan);color:var(--night)}
+/* herramientas BullsEye */
+.tool{margin:22px 0;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;justify-content:space-between;background:linear-gradient(160deg, rgba(155,79,192,.22), var(--panel) 60%);border:1px solid var(--purple);border-left:6px solid var(--purple);border-radius:14px;padding:18px}
+.tool>div{flex:1 1 380px;min-width:0}
+.tool .eyebrow{color:#d9b3ef}
+.tool h4{font-family:var(--f-display);font-size:19px;margin:4px 0 6px}
+.tool ol{margin:8px 0;padding-left:20px;display:grid;gap:6px}
+.tool .note{font-size:13px;color:var(--ink-2);margin:6px 0 0}
+.tool-btn{flex:0 0 auto;display:inline-block;font:700 15px var(--f-body);background:var(--cyan);color:var(--night);text-decoration:none;border-radius:999px;padding:12px 20px}
+.tool-btn:hover{background:#fff}
+.tool.post{background:linear-gradient(160deg, rgba(98,224,216,.16), var(--panel) 60%);border-color:var(--cyan);border-left-color:var(--cyan)}
+.tool.post .eyebrow{color:var(--cyan)}
+.tool .wa{background:rgba(20,15,61,.6);border:1px dashed var(--line);border-radius:10px;padding:10px 12px;font-size:14px;margin-top:6px}
+/* sequence */
+.seq{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}
+.seq .d{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+.seq .d .day{font:500 12px var(--f-mono);color:var(--ink-2)}
+.seq .d .ch{font-family:var(--f-display);font-weight:700;font-size:15px;margin:2px 0 6px}
+.seq .d p{margin:0;font-size:13px;color:var(--ink-2)}
+.seq .email .ch{color:var(--cyan)} .seq .li .ch{color:#c99bff} .seq .call .ch{color:var(--magenta)}
+
+/* objeciones */
+.obj{display:grid;grid-template-columns:.9fr 1.1fr;gap:16px}
+.obj-list{display:flex;flex-direction:column;gap:8px}
+.obj-list button{text-align:left;font:500 16px var(--f-body);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;cursor:pointer}
+.obj-list button[aria-pressed="true"]{border-color:var(--magenta);background:var(--panel-2)}
+.obj-ans{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px;display:flex;flex-direction:column;gap:12px}
+.obj-ans .k{font:500 12px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-2)}
+.obj-ans .say{font-family:var(--f-display);font-size:19px;line-height:1.4;color:var(--ink)}
+.obj-ans .mean{color:var(--cyan)}
+
+.checks{display:grid;gap:8px}
+.checks label{display:flex;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.checks input{width:18px;height:18px;accent-color:var(--cyan)}
+.qual{margin-top:10px;font-family:var(--f-display);font-weight:700}
+
+/* week */
+.week{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.week .d{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;min-width:0}
+.week .d .day{font-family:var(--f-display);font-size:22px;font-weight:800;color:var(--cyan)}
+.week .d h4{margin:4px 0;font-size:14px;color:var(--ink-2);font-weight:500}
+.week .d p{margin:0;font-size:14px}
+
+/* quiz */
+.quiz{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;max-width:760px}
+.quiz .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font:500 13px var(--f-mono);color:var(--ink-2)}
+.quiz .qtext{font-family:var(--f-display);font-size:21px;margin:14px 0}
+.opts{display:grid;gap:8px}
+.opts button{text-align:left;font:16px var(--f-body);color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;cursor:pointer}
+.opts button:disabled{cursor:default}
+.opts button.ok{border-color:var(--good);background:rgba(98,224,160,.15)}
+.opts button.ko{border-color:var(--magenta);background:rgba(224,69,123,.15)}
+.fb{margin-top:12px;font-size:15px;min-height:1.6em}
+.qnav{display:flex;justify-content:flex-end;margin-top:12px}
+.score{font-family:var(--f-display);font-size:44px;font-weight:800;color:var(--cyan)}
+
+.foot{margin-top:48px;font-size:13px;color:var(--ink-2);border-top:1px solid var(--line);padding-top:16px}
+
+@media (max-width:900px){
+  .gen{grid-template-columns:1fr} .confirm-steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .focus{grid-template-columns:1fr} .focus .arrow{transform:rotate(90deg);padding:2px 0}
+  .dodont{grid-template-columns:1fr}
+  .hero-in,.fit,.builder,.obj,.case{grid-template-columns:1fr}
+  .g3,.g4,.people,.svc-detail{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .steps,.week{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .seq{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .story{grid-template-columns:1fr} .story > div + div{border-left:0;border-top:1px solid var(--line)}
+}
+@media (max-width:560px){
+  .gen .fields{grid-template-columns:1fr} .confirm-steps{grid-template-columns:1fr}
+  .speech .row{grid-template-columns:1fr;gap:2px} .faq .svc{grid-template-columns:1fr}
+  .script .ln{grid-template-columns:1fr;gap:2px} .script .pause{padding-left:0}
+  .g2,.g3,.g4,.people,.svc-detail,.steps,.week,.seq{grid-template-columns:1fr}
+  .wrap,.hero-in,.nav-in{padding-inline:16px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header class="hero">
+  <div class="hero-in">
+    <div>
+      <div class="brand"><span class="dot" aria-hidden="true"></span>BullsEye <small>Academia SDR</small></div>
+      <h1>Aprende a vender <em>CodersLab</em> en 10 vueltas</h1>
+      <p class="lead">No necesitas saber programar. Necesitas entender un problema muy humano: las empresas tienen más trabajo tecnológico que personas para hacerlo.</p>
+    </div>
+    <div class="progress-card" aria-live="polite">
+      <div class="lbl">Tu avance</div>
+      <div class="big" id="pcount">0<span> / 10 vueltas</span></div>
+      <div class="lights" id="lights" aria-hidden="true"></div>
+      <p id="pmsg">Parte por la vuelta 1. Marca cada módulo al terminarlo.</p>
+    </div>
+  </div>
+</header>
+
+<nav class="nav" aria-label="Módulos">
+  <div class="nav-in" id="nav" role="tablist"></div>
+</nav>
+
+<main class="wrap" id="main"></main>
+
+<script>
+const MODS = [
+ {id:"inicio", t:"Antes de empezar"},
+ {id:"quien", t:"Quién es CodersLab"},
+ {id:"vende", t:"Qué vende"},
+ {id:"dicc", t:"Diccionario"},
+ {id:"icp", t:"A quién le vendemos"},
+ {id:"pistas", t:"La necesidad"},
+ {id:"casos", t:"Clientes"},
+ {id:"mensaje", t:"La llamada"},
+ {id:"reunion", t:"Reunión y objeciones"},
+ {id:"semana", t:"Semana 1 y quiz"}
+];
+
+const remember = txt => `<div class="remember"><div class="ico" aria-hidden="true">!</div><div><b>Lo que debes recordar</b><p>${txt}</p></div></div>`;
+
+const HTML = {
+inicio: `
+ <p class="intro">Esta academia te explica qué hace CodersLab, a quién le sirve y cómo abrir una conversación con quien lo necesita. Cada vuelta termina con <b>lo que debes recordar</b>.</p>
+ <h3>Al terminar podrás</h3>
+ <div class="grid g3">
+  <div class="card"><span class="tag">Entender</span><h4>Explicar CodersLab</h4><p>Como se lo contarías a un amigo, en 30 segundos.</p></div>
+  <div class="card"><span class="tag">Conectar</span><h4>Llegar a la persona correcta</h4><p>Entender la necesidad de cada cuenta y a quién escribirle.</p></div>
+  <div class="card"><span class="tag">Llamar</span><h4>Llamar y responder</h4><p>Tu guion de llamada y las respuestas a las dudas más comunes.</p></div>
+ </div>
+ <h3>El foco de esta campaña</h3>
+ <div class="grid g3">
+  <div class="stat"><div class="v">Staffing IT</div><div class="k">Prestar profesionales de tecnología</div></div>
+  <div class="stat"><div class="v">CL · AR · CO</div><div class="k">Chile, Argentina y Colombia en la fase 1</div></div>
+  <div class="stat"><div class="v">Empresas grandes</div><div class="k">Banca, fintech y retail primero</div></div>
+ </div>
+ ${remember("En esta campaña vendemos principalmente <b>Staffing IT</b> a empresas grandes en <b>Chile, Argentina y Colombia</b>. Todo lo demás viene después.")}`,
+
+quien: `
+ <p class="intro">CodersLab es una empresa latinoamericana que <b>le presta profesionales de tecnología a otras empresas</b> cuando a estas no les alcanza su propio equipo.</p>
+ <h3>Una historia para entenderlo</h3>
+ <div class="story">
+  <div class="s1"><div class="st">El problema</div><p>El jefe de tecnología de un banco prometió lanzar una app en junio. Necesita 3 programadores más, pero contratarlos le toma 3 o 4 meses.</p></div>
+  <div class="s2"><div class="st">Entra CodersLab</div><p>En 48 horas le presenta 3 candidatos ya evaluados. El elegido empieza en pocos días, dentro del equipo del banco.</p></div>
+  <div class="s3"><div class="st">El resultado</div><p>El banco llega a junio. Paga una tarifa mensual y, si alguien no funciona, CodersLab lo reemplaza sin costo.</p></div>
+ </div>
+ <p class="muted" style="margin-top:14px"><b>Analogía:</b> CodersLab es como una agencia de músicos para una orquesta. Si falta un violinista para la gira, no se contrata uno de por vida: se pide uno excelente que llega listo para ensayar.</p>
+ <h3>CodersLab en números</h3>
+ <div class="grid g4">
+  <div class="stat"><div class="v">+1.200</div><div class="k">Proyectos realizados</div></div>
+  <div class="stat"><div class="v">+500</div><div class="k">Empresas que han confiado</div></div>
+  <div class="stat"><div class="v">+170</div><div class="k">Colaboradores activos</div></div>
+  <div class="stat"><div class="v">8</div><div class="k">Países, de EE.UU. a Argentina</div></div>
+  <div class="stat"><div class="v">1,2 M</div><div class="k">Postulantes al año</div></div>
+  <div class="stat"><div class="v">1%</div><div class="k">Talento seleccionado</div></div>
+  <div class="stat"><div class="v">10–12</div><div class="k">Años de experiencia promedio</div></div>
+  <div class="stat"><div class="v">48 h</div><div class="k">Para presentar candidatos</div></div>
+ </div>
+ <h3>Por qué lo eligen: 3 razones</h3>
+ <div class="grid g3">
+  <div class="card hot"><h4>Rápido</h4><p>Empieza en días, no en semanas.</p></div>
+  <div class="card hot"><h4>Seguro</h4><p>Prueba técnicamente a cada profesional y lo reemplaza gratis si no funciona.</p></div>
+  <div class="card hot"><h4>Cercano</h4><p>Talento latinoamericano, mismo horario que el cliente y buen inglés.</p></div>
+ </div>
+ <p style="margin-top:14px">Y un plus: CodersLab no "coloca y desaparece". Acompaña al profesional y al cliente, y si el cliente necesita más, le arma un equipo completo. Internamente lo llaman <b>Staffing con ADN de delivery</b>.</p>
+ ${remember("CodersLab = profesionales de tecnología buenos, rápidos y con respaldo, para empresas a las que no les alcanza el equipo.")}`,
+
+vende: `
+ <p class="intro">CodersLab tiene cinco servicios. Para entenderlos, piensa en alguien que quiere arreglar o construir su casa. <b>Toca cada servicio.</b></p>
+ <div class="svc-tabs" id="svcTabs"></div>
+ <div class="svc-detail" id="svcDetail"></div>
+ <h3>Cómo funciona el Staffing, paso a paso</h3>
+ <div class="steps">
+  <div class="step"><h4>El cliente pide</h4><p>"Necesito un programador con tal experiencia".</p></div>
+  <div class="step"><h4>Entender el perfil</h4><p>Qué debe saber hacer y con qué experiencia.</p></div>
+  <div class="step"><h4>Buscar y evaluar</h4><p>Entrevistas, pruebas online, escritas y técnicas.</p></div>
+  <div class="step key"><h4>3 candidatos en 48 h</h4><p>A esto se le llama "terna".</p></div>
+  <div class="step key"><h4>Empieza en días</h4><p>Con acompañamiento y reemplazo gratis.</p></div>
+ </div>
+ <h3>La estrategia: entrar chico y crecer</h3>
+ <div class="grid g3">
+  <div class="card hot"><span class="tag">Tú abres aquí</span><h4>1 o 2 profesionales</h4><p>Staffing: el servicio más simple y rápido de vender.</p></div>
+  <div class="card"><span class="tag" style="background:var(--purple);color:#fff">Después</span><h4>Un equipo completo</h4><p>Si el cliente queda contento, CodersLab ofrece un squad.</p></div>
+  <div class="card"><span class="tag" style="background:var(--magenta);color:#fff">Más adelante</span><h4>Proyecto u outsourcing</h4><p>La relación crece sin cambiar de proveedor.</p></div>
+ </div>
+ ${remember("Staffing = prestar profesionales que trabajan dentro del equipo del cliente. Es el servicio más rápido de vender y el que abre la relación. No tienes que vender todo en la primera llamada.")}`,
+
+dicc: `
+ <p class="intro">Tus prospectos usarán palabras técnicas. No tienes que dominarlas, solo reconocerlas. Si te preguntan algo muy técnico, responde: <b>"Buena pregunta, eso lo vemos con nuestro equipo técnico en la reunión."</b></p>
+ <h3>Tarjetas de estudio: toca para dar vuelta</h3>
+ <div class="filters" id="dfilters"></div>
+ <div class="flips" id="flips"></div>
+ <h3>Nombres de tecnologías que CodersLab cubre</h3>
+ <p class="muted">No necesitas saber qué son. Si los ves en una vacante o un perfil, es una buena señal.</p>
+ <div class="logos">${["Java",".NET","Python","Golang","React","Angular","iOS","Android","AWS","Google Cloud","Azure","Oracle Cloud","Kubernetes","SAP","VTEX","Salesforce","Power BI"].map(x=>`<span>${x}</span>`).join("")}</div>
+ ${remember("No tienes que ser técnico. Tu trabajo es entender qué gente le falta al cliente; el detalle técnico lo resuelve CodersLab en la reunión.")}`,
+
+icp: `
+ <p class="intro">El <b>ICP</b> (perfil de cliente ideal) describe la empresa que más probablemente comprará: <b>una empresa grande en Chile, Argentina o Colombia, con un área de tecnología fuerte, que ya trabaja con proveedores externos.</b></p>
+ <h3>Tu lista de cuentas ya viene filtrada</h3>
+ <p>No tienes que averiguar si una empresa compra o no. <b>Las cuentas que te asignamos ya sabemos que tienen esta necesidad.</b> Tu trabajo empieza después: entender esa necesidad, llegar a la persona correcta y conseguir la reunión.</p>
+ <div class="grid g3">
+  <div class="card"><span class="tag" style="background:var(--ink-2)">Ya hecho</span><h4>Elegir la cuenta</h4><p>BullsEye y CodersLab seleccionan empresas que necesitan talento tech.</p></div>
+  <div class="card hot"><span class="tag">Tu trabajo</span><h4>Entender y conectar</h4><p>Saber qué necesita la cuenta y encontrar a quien decide.</p></div>
+  <div class="card hot"><span class="tag">Tu meta</span><h4>La reunión</h4><p>Una conversación de 15 minutos con el equipo de CodersLab.</p></div>
+ </div>
+ <p class="muted" style="margin-top:12px">Igual conviene que reconozcas el perfil: empresas grandes (más de 500 empleados) de banca, fintech, retail / eCommerce, aerolíneas o seguros, en Chile, Argentina o Colombia, que ya trabajan con proveedores externos.</p>
+ <h3>A qué persona escribirle</h3>
+ <p class="muted">Piensa en una casa: está quien firma el cheque, quien recomienda al maestro y quien no decide.</p>
+ <div class="people">
+  <div class="person yes"><div class="who">Quien decide</div><div class="muted">Firma el cheque</div><ul><li>Gerente o Director de Tecnología</li><li>CIO, CTO, Head of Engineering</li><li>Head of Data, Digital o Cloud</li><li>A veces Compras o el gerente de personas</li></ul><div class="act">Tu contacto principal</div></div>
+  <div class="person mid"><div class="who">Quien influye</div><div class="muted">Recomienda</div><ul><li>Jefes de equipos de desarrollo</li><li>Tech Leads</li><li>Jefes de Data, Cloud, QA o Producto</li><li>Talent Acquisition</li></ul><div class="act">Te ayuda a llegar a quien decide</div></div>
+  <div class="person no"><div class="who">Quien no decide</div><div class="muted">No tiene poder de compra</div><ul><li>Programadores individuales</li><li>Reclutadores junior</li><li>Administrativos</li><li>Marketing sin vínculo TI</li></ul><div class="act">No inviertas tu secuencia aquí</div></div>
+ </div>
+ <h3>Qué le quita el sueño a quien decide</h3>
+ <div class="grid g4">
+  <div class="card"><p>Prometió proyectos y no le alcanza el equipo.</p></div>
+  <div class="card"><p>Tiene vacantes abiertas hace meses.</p></div>
+  <div class="card"><p>Le cambian a los consultores externos cada rato.</p></div>
+  <div class="card"><p>Pierde tiempo revisando CVs que no sirven.</p></div>
+ </div>
+ ${remember("Empresa grande de banca, fintech o retail en Chile, Argentina o Colombia. Escríbele al jefe de tecnología y háblale de su problema: le falta gente. Lo que quiere es rapidez, continuidad y cero riesgo.")}`,
+
+pistas: `
+ <p class="intro">Las cuentas que trabajas <b>ya tienen esta necesidad</b>. No tienes que adivinarla: tienes que entenderla, para hablar de ella con propiedad y que la persona sienta que la conoces.</p>
+ <h3>Los 3 problemas que resuelve CodersLab</h3>
+ <div class="grid g3">
+  <div class="card"><h4>"No llegamos con las fechas"</h4><p>No les alcanza el equipo → CodersLab suma profesionales en días.</p></div>
+  <div class="card"><h4>"Llevamos 4 meses buscando"</h4><p>No encuentran a la persona → 3 candidatos evaluados en 48 horas.</p></div>
+  <div class="card"><h4>"Nos cambian al consultor"</h4><p>Su proveedor falla → acompañamiento y reemplazo gratis.</p></div>
+ </div>
+ <h3>Cómo se ve la necesidad en tus cuentas</h3>
+ <p class="muted">Estas son situaciones típicas detrás de cada cuenta. No necesitas investigar cada empresa: habla del problema típico de su industria o de su rol, con frases generales como estas.</p>
+ <div class="clues">
+  <div class="clue"><div class="where">Equipo</div><h4>Más proyectos que gente</h4><p>Ej: <q>Muchos equipos de tecnología hoy tienen más proyectos que personas para sacarlos.</q></p></div>
+  <div class="clue"><div class="where">Contratación</div><h4>Perfiles difíciles de encontrar</h4><p>Ej: <q>Encontrar perfiles senior de tecnología está tomando meses.</q></p></div>
+  <div class="clue"><div class="where">Proyectos</div><h4>Fechas comprometidas</h4><p>Ej: <q>Cuando hay fechas comprometidas, esperar un proceso de contratación no siempre es opción.</q></p></div>
+  <div class="clue"><div class="where">Proveedores</div><h4>Consultores que rotan</h4><p>Ej: <q>Es común que los consultores externos cambien seguido y el equipo pierda continuidad.</q></p></div>
+  <div class="clue"><div class="where">Banca</div><h4>Modernización y regulación</h4><p>Ej: <q>Los bancos están modernizando sistemas y apps al mismo tiempo.</q></p></div>
+  <div class="clue"><div class="where">Retail</div><h4>Fechas de alta demanda</h4><p>Ej: <q>Antes de Cyber Day o Navidad, los equipos de tecnología quedan al límite.</q></p></div>
+ </div>
+ <h3>Cuándo avisar a tu líder</h3>
+ <ul class="redlist">
+  <li>Te dicen que no trabajan con proveedores externos.</li>
+  <li>Tu contacto no decide y no te deriva a nadie.</li>
+  <li>La necesidad ya está cubierta o el proyecto se canceló.</li>
+  <li>Te enteras de que CodersLab ya trabaja esa cuenta.</li>
+ </ul>
+ ${remember("La necesidad ya existe. Tu trabajo es entenderla, nombrarla en tu mensaje y llegar a quien decide.")}`,
+
+casos: `
+ <p class="intro"><b>Regla de oro:</b> menciona un cliente de la misma industria que tu prospecto. Usa nombres solo si CodersLab autorizó su uso en la campaña.</p>
+ <h3>¿A quién le vas a escribir?</h3>
+ <div class="case-pick" id="casePick"></div>
+ <div class="case" id="caseBox"></div>
+ <h3>Otras marcas que confían en CodersLab</h3>
+ <div class="logos">${["Ripley","Paris","Nestlé","Payless","Grupo EFE","Tenpo","Banco de América Central"].map(x=>`<span>${x}</span>`).join("")}</div>
+ <h3>La competencia</h3>
+ <p>Vas a escuchar nombres como Kibernum, BC Tecnología, 23people, 3IT, AcidLabs, Stefanini, Tecnova, SmartJob e Imagemaker. Nunca hables mal de ellos: di que CodersLab puede <b>complementarlos</b>.</p>
+ ${remember("Un banco quiere escuchar de bancos; un retailer, de retailers. Elige el caso antes de escribir.")}`,
+
+mensaje: `
+ <p class="intro">Tu herramienta principal es <b>el teléfono</b>. Habla como un asesor que quiere ayudar, no como un vendedor ni un reclutador: frases cortas, sobre <b>su</b> problema.</p>
+ <h3>Tu foco es la llamada</h3>
+ <div class="focus">
+  <div class="node"><div class="t">Ya está activo</div><h4>Email + LinkedIn</h4><p>La gestión omnicanal de BullsEye ya está corriendo. No tienes que escribir correos ni mensajes.</p></div>
+  <div class="arrow" aria-hidden="true">→</div>
+  <div class="node you"><div class="t">Tu trabajo</div><h4>La llamada</h4><p>Llamas a quien decide, conectas con su problema y propones una reunión.</p></div>
+  <div class="arrow" aria-hidden="true">→</div>
+  <div class="node"><div class="t">Tu meta</div><h4>Reunión de 15 min</h4><p>Con el equipo de CodersLab, con día y hora confirmados.</p></div>
+ </div>
+ <h3>El speech oficial de CodersLab</h3>
+ <p class="muted">Este es el speech aprobado para tus llamadas. Completa los datos del contacto y se llena solo, listo para leer y copiar. Lo que cambia según el contacto aparece en <span style="color:var(--cyan)">celeste</span>.</p>
+ <div class="gen">
+  <div class="fields">
+   <div class="field"><label for="spName">Contacto</label><input type="text" id="spName" value="Sergio"></div>
+   <div class="field"><label for="spSdr">Tu nombre</label><input type="text" id="spSdr" value="Vanessa"></div>
+   <div class="field full"><label for="spCargo">Cargo del contacto</label><input type="text" id="spCargo" value="Director de Tecnología"></div>
+   <div class="field"><label for="spEmp">Empresa</label><input type="text" id="spEmp" value="[empresa]"></div>
+   <div class="field"><label for="spInd">Industria</label><select id="spInd"></select></div>
+  </div>
+  <div>
+ <div class="speech" id="speechBox">
+  <div class="sh"><b>Speech CodersLab</b><span>Videollamada exploratoria · objetivo</span></div>
+  <div class="row"><div class="lb">1. Saludo</div><div class="say">Hola, buen día, ¿me comunico con <span class="ph" data-k="name">[nombre]</span>?</div></div>
+  <div class="row"><div class="lb">2. Presentación</div><div class="say">¡Mucho gusto! Te habla <span class="ph" data-k="sdr">[tu nombre]</span> de CodersLab. ¿Cómo estás el día de hoy?<br><span class="note">(Escucha y responde con calidez: "¡Qué bueno, me alegra mucho!")</span></div></div>
+  <div class="row"><div class="lb">3. Enganche</div><div class="say">¿Has escuchado hablar sobre CodersLab?</div></div>
+  <div class="row key"><div class="lb">4. Qué es CodersLab</div><div class="say">Es una empresa global de servicios tecnológicos y desarrollo de software a medida, que ayuda a las empresas a transformar y hacer crecer sus negocios.</div></div>
+  <div class="row key"><div class="lb">5. Por qué te llamo</div><div class="say">Te llamo porque tengo entendido que eres <span class="ph" data-k="cargo">[cargo]</span> en <span class="ph" data-k="emp">[empresa]</span>. Nosotros podemos apoyarte a alinear los objetivos de TI con los equipos que necesiten sumar capacidad especializada en el rubro, evitando ciclos largos de contratación.</div></div>
+  <div class="row"><div class="lb">6. Prueba</div><div class="say" id="spProof">Hoy trabajamos con equipos de tecnología en banca y retail como Banco Falabella, Cencosud y Coca-Cola Andina.</div></div>
+  <div class="row close"><div class="lb">7. Cierre</div><div class="say">Nos encantaría generar un espacio de conversación a través de una videollamada, a modo exploratorio, para que puedas conocer nuestros servicios y ver si nos pueden considerar como un potencial proveedor en el futuro. <b>¿Qué día te acomoda esta semana?</b></div></div>
+  <div style="display:flex;justify-content:flex-end"><button class="btn" id="spCopy" type="button">Copiar speech</button></div>
+ </div>
+  </div>
+ </div>
+ <details class="faq">
+  <summary>Si te preguntan: "¿Qué hace CodersLab?"</summary>
+  <div class="body">
+   <div class="svc">
+    <div><b>Desarrollo de software a medida</b>Diseña, crea y actualiza aplicaciones web, móviles y plataformas empresariales.</div>
+    <div><b>Staff Augmentation</b>Integra expertos en tecnología de forma temporal a los equipos internos del cliente.</div>
+    <div><b>Equipos dedicados</b>Grupos completos de ingenieros que trabajan solo en los proyectos de la empresa.</div>
+    <div><b>Cloud y DevOps</b>Gestiona infraestructura en la nube, migraciones y optimización de operaciones.</div>
+    <div><b>Inteligencia artificial</b>Soluciones con IA y machine learning para automatizar procesos y anticipar tendencias.</div>
+    <div><b>Reclutamiento especializado</b>Evalúa rigurosamente a desarrolladores de Latinoamérica para conectarlos con empresas.</div>
+   </div>
+   <p class="muted" style="margin:0">También trabaja ciberseguridad, Big Data y tecnologías como React, Node.js, Python y SAP.</p>
+   <p style="margin:0"><b>Mensaje central:</b> CodersLab ayuda a empresas a acelerar su roadmap tecnológico cuando la capacidad interna o el talento especializado se vuelven cuello de botella.</p>
+  </div>
+ </details>
+ <h3>Generador: qué decir según lo que pasa en la llamada</h3>
+ <p class="muted">Elige la situación y obtén la respuesta con los datos del contacto que pusiste arriba.</p>
+ <div class="gen">
+  <div class="field"><label for="rSit">¿Qué te dijo el contacto?</label><select id="rSit"></select></div>
+  <div class="resp" id="rOut"></div>
+ </div>
+ <div class="tool">
+  <div><span class="eyebrow">Herramienta BullsEye</span>
+   <h4>¿Te piden más información? Usa el generador de contenido</h4>
+   <p style="margin:0">Cuando el contacto te pida que le mandes información, no envíes material genérico. Crea un mensaje personalizado en el generador de contenido de BullsEye, que sirve para cualquier canal (WhatsApp, email, LinkedIn).</p>
+   <ol>
+    <li>Antes de colgar, intenta dejar la reunión igual: "Te lo envío, y para que te sirva, ¿lo conversamos 15 minutos el martes o el jueves?"</li>
+    <li>Abre el generador y crea el mensaje con su cargo, su industria y la necesidad que te contó (perfil, proyecto o vacante).</li>
+    <li>Envíalo el mismo día y propón de nuevo dos horarios.</li>
+   </ol>
+  </div>
+  <a class="tool-btn" href="https://bullseye-abm-platform-eq6f.vercel.app/chat" target="_blank" rel="noopener">Abrir generador de contenido ↗</a>
+ </div>
+ <h3>En la llamada</h3>
+ <div class="dodont">
+  <div class="dd do"><div class="head"><span class="badge" aria-hidden="true">✓</span><div><small>Acción</small><b>Haz esto</b></div></div>
+   <ul>
+    <li>Pide permiso y ve al grano en los primeros 10 segundos.</li>
+    <li>Habla del problema típico de su industria o de su rol.</li>
+    <li>Menciona un cliente de su misma industria.</li>
+    <li>Haz una pregunta y escucha la respuesta completa.</li>
+    <li>Cierra proponiendo la reunión con día y hora.</li>
+   </ul></div>
+  <div class="dd dont"><div class="head"><span class="badge" aria-hidden="true">✕</span><div><small>Evita</small><b>No hagas esto</b></div></div>
+   <ul>
+    <li>Abrir con "Somos líderes en soluciones tecnológicas".</li>
+    <li>Mencionar datos de la empresa que no verificaste.</li>
+    <li>Recitar la lista de todos los servicios.</li>
+    <li>Hablar más de 45 segundos sin hacer una pregunta.</li>
+    <li>Cortar sin proponer un próximo paso.</li>
+   </ul></div>
+ </div>
+ <h3>Practica variantes de tu guion</h3>
+ <p class="muted">Cuando ya domines el speech, prueba otras formas de decir cada paso. El guion se arma solo y te dice cuánto dura leído en voz alta.</p>
+ <div class="builder">
+  <div>
+   <div class="field"><label for="bName">Nombre del contacto</label><input type="text" id="bName" value="María"></div>
+   <div class="field"><label for="bSdr">Tu nombre</label><input type="text" id="bSdr" value="Camila"></div>
+   <div class="field"><label for="g1"><span>1</span>Apertura</label><select id="g1"></select></div>
+   <div class="field"><label for="g2"><span>2</span>Motivo (su industria o su rol)</label><select id="g2"></select></div>
+   <div class="field"><label for="g3"><span>3</span>Cómo ayudamos</label><select id="g3"></select></div>
+   <div class="field"><label for="g4"><span>4</span>La prueba (cliente parecido)</label><select id="g4"></select></div>
+   <div class="field"><label for="g5"><span>5</span>Pregunta para descubrir</label><select id="g5"></select></div>
+   <div class="field"><label for="g6"><span>6</span>Cierre: pedir la reunión</label><select id="g6"></select></div>
+  </div>
+  <div class="preview">
+   <div class="hdr">Tu guion · léelo en voz alta</div>
+   <div class="script" id="bOut"></div>
+   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+    <span class="wc" id="bWc"></span>
+    <button class="btn" id="bCopy" type="button">Copiar guion</button>
+   </div>
+  </div>
+ </div>
+ <p style="margin-top:14px">Si te dice que no o te pone una objeción, usa el simulador de la vuelta 9. Tu objetivo no es vender: es <b>conseguir la reunión</b>.</p>
+ ${remember("Tu foco es la llamada: apertura, motivo, cómo ayudamos, prueba, pregunta y cierre. El email y LinkedIn ya están activos; tú conviertes esa gestión en reuniones de 15 minutos.")}`,
+
+reunion: `
+ <p class="intro">Una reunión es <b>buena</b> cuando hablas con quien decide, la necesidad está confirmada y hay algo de urgencia. Es mejor una buena reunión que tres que no llevan a nada.</p>
+ <h3>Checklist antes de agendar</h3>
+ <div class="checks" id="qchecks">
+  <label><input type="checkbox"> Conozco la necesidad que trae la cuenta.</label>
+  <label><input type="checkbox"> Hablo con quien decide, o con alguien que me lleva a quien decide.</label>
+  <label><input type="checkbox"> La persona confirmó la necesidad: un proyecto, una vacante o un perfil.</label>
+  <label><input type="checkbox"> Sé qué perfiles o cuántas personas necesitan, aunque sea aproximado.</label>
+  <label><input type="checkbox"> Hay una fecha o urgencia.</label>
+  <label><input type="checkbox"> Sé quién más participa en la decisión.</label>
+ </div>
+ <div class="qual" id="qres">0 de 6 · Sigue descubriendo antes de agendar</div>
+ <h3>Preguntas para descubrir la necesidad</h3>
+ <div class="grid g2">
+  <div class="card"><p>¿Qué proyectos tienen para los próximos meses?</p></div>
+  <div class="card"><p>¿Hay algún proyecto donde el trabajo crezca más rápido que el equipo?</p></div>
+  <div class="card"><p>¿Qué perfiles les ha costado más encontrar? ¿Hace cuánto buscan?</p></div>
+  <div class="card"><p>¿Trabajan hoy con algún proveedor? ¿Cómo les ha ido?</p></div>
+ </div>
+ <h3>Simulador de objeciones: elige lo que te dijeron</h3>
+ <div class="obj">
+  <div class="obj-list" id="objList"></div>
+  <div class="obj-ans" id="objAns"></div>
+ </div>
+ <h3>Confirma la reunión antes de cortar</h3>
+ <p class="muted">Cuando el contacto dice que sí, no cortes todavía. Repite y confirma estos datos en la misma llamada.</p>
+ <div class="confirm-steps">
+  <div class="c"><div class="n">1 · Fecha y hora</div><p><q>Entonces quedamos el jueves 8 a las 10:00, hora de Chile, ¿correcto?</q></p></div>
+  <div class="c"><div class="n">2 · Correo</div><p><q>¿A qué correo te envío la invitación? Te lo repito para confirmar.</q></p></div>
+  <div class="c"><div class="n">3 · Asistentes</div><p><q>¿Te gustaría que se sume alguien más de tu equipo?</q></p></div>
+  <div class="c"><div class="n">4 · Formato</div><p><q>Es una videollamada de 15 minutos por Google Meet o Teams, ¿cuál te acomoda?</q></p></div>
+  <div class="c"><div class="n">5 · Tema</div><p><q>Para preparar la reunión, ¿qué perfil o proyecto te gustaría conversar?</q></p></div>
+  <div class="c"><div class="n">6 · Aviso</div><p><q>En unos minutos te llega a tu correo la confirmación con el detalle. ¡Gracias por tu tiempo!</q></p></div>
+ </div>
+ <h3>Checklist: datos de la reunión</h3>
+ <div class="checks" id="cchecks">
+  <label><input type="checkbox"> Nombre completo y cargo del contacto.</label>
+  <label><input type="checkbox"> Empresa y país.</label>
+  <label><input type="checkbox"> Correo confirmado (repetido en voz alta).</label>
+  <label><input type="checkbox"> Teléfono directo.</label>
+  <label><input type="checkbox"> Fecha y hora, con la zona horaria del país.</label>
+  <label><input type="checkbox"> Plataforma: Meet, Teams o Zoom.</label>
+  <label><input type="checkbox"> Otros asistentes de su equipo.</label>
+  <label><input type="checkbox"> Perfil, proyecto o necesidad que mencionó.</label>
+  <label><input type="checkbox"> Mail de confirmación enviado desde el generador BullsEye.</label>
+  <label><input type="checkbox"> Reunión registrada en el CRM.</label>
+ </div>
+ <div class="qual" id="cres">0 de 10 · Completa los datos antes de dar la reunión por confirmada</div>
+ <div class="tool post">
+  <div><span class="eyebrow">Después de agendar · paso obligatorio</span>
+   <h4>Envía el mail de confirmación desde el generador BullsEye</h4>
+   <ol>
+    <li><b>Envía el mail de confirmación de reunión el mismo día.</b> Lo creas en el generador de BullsEye, para que el contacto llegue con contexto: quién eres, qué es CodersLab, qué conversaron y qué verán en la reunión.</li>
+    <li><b>Completa en el generador</b> lo que te contó: cargo, industria, perfil o proyecto que necesita, fecha, hora (con zona horaria), plataforma y asistentes.</li>
+    <li><b>Avisa por WhatsApp</b> que le enviaste el correo:
+     <div class="wa">"Hola [nombre], gracias por tu tiempo hoy. Te acabo de enviar a tu correo la confirmación de nuestra reunión del [día] a las [hora], con el detalle de lo que veremos. ¡Nos vemos!"</div></li>
+   </ol>
+   <p class="note">Sin mail de confirmación la reunión no está cerrada: es el puente entre tu llamada y la reunión con el equipo de CodersLab.</p>
+  </div>
+  <a class="tool-btn" href="https://bullseye-abm-platform-eq6f.vercel.app/chat" target="_blank" rel="noopener">Crear mail de confirmación ↗</a>
+ </div>
+ ${remember("Decide + necesidad confirmada + urgencia = buena reunión. Ante un \"no\", entiende qué hay detrás y responde con una pregunta. Si dice que sí, confirma todos los datos antes de cortar y envía el mail de confirmación desde el generador BullsEye.")}`,
+
+semana: `
+ <p class="intro">En 5 días pasas de estudiar a enviar tus primeros mensajes, con apoyo de tu líder.</p>
+ <div class="week">
+  <div class="d"><div class="day">Día 1</div><h4>Vueltas 1 a 4</h4><p>Explica CodersLab en 30 segundos a un compañero, sin leer.</p></div>
+  <div class="d"><div class="day">Día 2</div><h4>Vueltas 5 y 6</h4><p>Revisa tus cuentas asignadas: anota la necesidad de cada una y a quién escribirle.</p></div>
+  <div class="d"><div class="day">Día 3</div><h4>Vuelta 7</h4><p>Asigna un cliente de referencia a cada cuenta.</p></div>
+  <div class="d"><div class="day">Día 4</div><h4>Vueltas 8 y 9</h4><p>Arma tu guion y practica 3 llamadas en roleplay, con objeciones.</p></div>
+  <div class="d"><div class="day">Día 5</div><h4>Lanzamiento</h4><p>Haz tus primeras 10 llamadas, con tu líder al lado.</p></div>
+ </div>
+ <h3>Quiz final: 10 preguntas</h3>
+ <p class="muted">Necesitas 8 de 10 para estar listo.</p>
+ <div class="quiz" id="quiz"></div>`
+};
+
+/* ---------- datos interactivos ---------- */
+const SVC = [
+ {n:"IT Staffing", focus:true, casa:"Pides un maestro experto que trabaje en tu obra, bajo tus instrucciones, por los meses que lo necesites.", emp:"CodersLab presta un profesional que se suma al equipo del cliente. Se paga mensual.", ej:"Un banco necesita 2 programadores por 6 meses para terminar su app."},
+ {n:"Hunting", casa:"Te buscan un maestro para que lo contrates tú, de forma permanente.", emp:"CodersLab encuentra al candidato; el cliente lo contrata en su planilla.", ej:"Un retailer busca un jefe de datos para su equipo propio."},
+ {n:"Equipo dedicado", casa:"Contratas una cuadrilla completa: maestro, ayudante y capataz.", emp:"Un equipo pequeño y completo (squad) trabaja solo para el cliente.", ej:"Una fintech necesita un equipo para construir un producto nuevo."},
+ {n:"Outsourcing", casa:"Le entregas a una empresa toda la mantención de la casa.", emp:"CodersLab se hace cargo de una operación tecnológica completa: desarrollo, mantenimiento, nube, ciberseguridad.", ej:"Mantener y cuidar los sistemas de una empresa."},
+ {n:"Proyecto llave en mano", casa:"Pides la ampliación terminada, con precio y fecha.", emp:"CodersLab entrega una solución terminada, de la estrategia a la ejecución.", ej:"La app B2B de Coca-Cola Andina para distribuidores en 4 países."}
+];
+const DICT = [
+ {c:"rol", w:"Front-end", s:"Construye lo que el usuario ve y toca", e:"En una app de delivery: las pantallas, botones y menús."},
+ {c:"rol", w:"Back-end", s:"Construye lo que funciona por detrás", e:"Hace que el pedido llegue al restaurante y se cobre."},
+ {c:"rol", w:"Fullstack", s:"Hace front-end y back-end", e:"Hace ambas cosas."},
+ {c:"rol", w:"Mobile (iOS / Android)", s:"Construye apps para celular", e:"La app de iPhone y la de Android."},
+ {c:"rol", w:"Cloud / DevOps", s:"Mantiene los servidores en la nube y todo en línea", e:"Evita que la app se caiga un viernes en la noche."},
+ {c:"rol", w:"Data / BI", s:"Ordena y analiza los datos", e:"Descubre qué se pide más y a qué hora."},
+ {c:"rol", w:"QA / Tester", s:"Prueba que todo funcione antes de lanzar", e:"Revisa que el botón Pagar no falle."},
+ {c:"rol", w:"Arquitecto", s:"Diseña cómo encajan todas las piezas", e:"Como el arquitecto de un edificio."},
+ {c:"rol", w:"Scrum Master", s:"Organiza el trabajo del equipo", e:"Un coordinador de proyecto."},
+ {c:"rol", w:"UX/UI", s:"Diseña la experiencia para que sea fácil", e:"Logra que pedir tome 3 clics y no 10."},
+ {c:"palabra", w:"Roadmap", s:"El plan de proyectos tecnológicos del año", e:"Roadmap grande = necesitan más gente."},
+ {c:"palabra", w:"Backlog", s:"La lista de tareas pendientes", e:"Si crece, el equipo está sobrepasado: oportunidad."},
+ {c:"palabra", w:"Legacy / core", s:"Sistemas antiguos y centrales", e:"Modernizarlos requiere mucha gente especializada."},
+ {c:"palabra", w:"Migración cloud", s:"Mover sistemas propios a la nube (AWS, Google, Azure, Oracle)", e:"Proyectos grandes que suelen necesitar refuerzos."},
+ {c:"palabra", w:"Squad / célula", s:"Equipo pequeño con un objetivo común", e:"El paso siguiente al Staffing."},
+ {c:"palabra", w:"Terna", s:"3 candidatos para un mismo cargo", e:"CodersLab la entrega en 48 horas."},
+ {c:"palabra", w:"Seniority", s:"Nivel de experiencia: junior, semi senior, senior", e:"CodersLab destaca en perfiles senior."},
+ {c:"palabra", w:"Headcount", s:"Personas contratadas en planilla", e:"Si no pueden sumar headcount, el Staffing es la salida."},
+ {c:"palabra", w:"Time-to-value", s:"Cuánto tarda el cliente en ver resultados", e:"CodersLab promete días, no semanas."},
+ {c:"palabra", w:"Proveedor", s:"Empresa externa que presta servicios", e:"Si ya usan proveedores, saben comprar Staffing."}
+];
+const CASES = [
+ {k:"Un banco", n:"Falabella Banco", d:"Movió sus sistemas centrales a la nube y construyó su app móvil para 4 países.", q:"Apoyamos a Falabella Banco en su app móvil y en llevar sus sistemas a la nube."},
+ {k:"Una fintech", n:"Tenpo · Banco Ripley · BAC", d:"Clientes del mundo financiero en Chile y Centroamérica.", q:"Trabajamos con bancos y fintech como Tenpo."},
+ {k:"Un retailer", n:"Cencosud", d:"Probó automáticamente sus apps (como Mi Mall) y mejoró sistemas de Jumbo.", q:"En Cencosud reforzamos sus equipos de calidad y tecnología."},
+ {k:"Un eCommerce", n:"Frávega (Argentina)", d:"Renovó su tienda online para que funcione más rápido.", q:"Para Frávega modernizamos su tienda online."},
+ {k:"Retail con puntos", n:"Falabella (CMR)", d:"Movió su programa de puntos a Google Cloud.", q:"Llevamos el programa de puntos de Falabella a la nube."},
+ {k:"Consumo masivo", n:"Coca-Cola Andina", d:"Hizo una app para que los distribuidores hagan pedidos en 4 países.", q:"Construimos la app de pedidos de Coca-Cola Andina."},
+ {k:"Habla de IA", n:"Polpaico · Veris", d:"Usó inteligencia artificial para leer documentos legales y crear publicidad.", q:"Ya usamos IA en procesos reales de clientes."}
+];
+const OBJ = [
+ {o:"\"Ya tenemos proveedores\"", m:"Están acostumbrados a comprar esto. ¡Es una buena señal!", a:"Perfecto, no buscamos reemplazarlos. Muchos clientes nos usan cuando sus proveedores no dan abasto o para perfiles difíciles. ¿Tienen alguno así hoy?"},
+ {o:"\"Preferimos contratar gente propia\"", m:"Quieren un equipo estable.", a:"Tiene sentido. Podemos cubrir la urgencia mientras contratan, o ayudarles a encontrar a esa persona con nuestro servicio de Hunting."},
+ {o:"\"Es caro\"", m:"No ven el costo de no hacerlo.", a:"Entiendo. ¿Cuánto les cuesta tener ese cargo vacío 4 meses y el proyecto atrasado? Muchas veces sale más caro esperar."},
+ {o:"\"No necesitamos nada ahora\"", m:"El momento no es el correcto.", a:"Perfecto. ¿Cuándo planifican los proyectos del próximo año? Me gustaría volver a escribirte en ese momento."},
+ {o:"\"Envíame información\"", m:"Te quiere sacar de encima, o sí le interesa.", a:"Con gusto. Para mandarte algo útil, ¿qué tipo de perfil te interesa más? Luego propón 15 minutos."}
+];
+const B = {
+ g1:["Hola {name}, te habla {sdr} de CodersLab. ¿Tienes 30 segundos? Prometo ser breve.","Hola {name}, soy {sdr} de CodersLab. Te llamo corto, ¿es un buen momento?","Hola {name}, {sdr} de CodersLab. Sé que te llamo sin aviso; ¿me das medio minuto?"],
+ g2:["Hablo con líderes de tecnología de bancos y fintech que tienen más proyectos que equipo.","Muchos equipos de tecnología en retail nos cuentan que les cuesta encontrar perfiles especializados.","En roles como el tuyo, el roadmap suele crecer más rápido que el equipo.","En empresas como la tuya es común tener vacantes de tecnología abiertas por meses."],
+ g3:["En CodersLab sumamos profesionales evaluados en pocos días, sin esperar procesos largos de contratación.","Presentamos 3 candidatos evaluados en 48 horas y, si alguno no funciona, lo reemplazamos sin costo.","Apoyamos a equipos que tienen más proyectos que gente, con profesionales senior que se integran rápido."],
+ g4:["Lo hicimos con Falabella Banco en su app.","Trabajamos con Cencosud y Coca-Cola Andina.","Apoyamos a bancos y fintech como Tenpo.","(sin caso)"],
+ g5:["¿Hoy tienen algún proyecto donde les esté faltando equipo?","¿Hay algún perfil que les esté costando encontrar?","¿Cómo están resolviendo hoy los picos de trabajo?"],
+ g6:["Si te hace sentido, agendemos 15 minutos con nuestro equipo para ver tu caso. ¿Te acomoda el jueves o el viernes?","Te propongo una reunión corta de 15 minutos con nuestro equipo. ¿Qué día te queda mejor esta semana?","¿Te parece si te envío una invitación de 15 minutos para mañana o pasado?"]
+};
+const QUIZ = [
+ {q:"¿Qué hace CodersLab?", o:["Vende software de recursos humanos","Presta profesionales y equipos de tecnología a otras empresas","Hace publicidad digital para bancos"], a:1, e:"CodersLab suma talento tech cuando al cliente no le alcanza su equipo."},
+ {q:"¿Qué servicio vendemos primero en esta campaña?", o:["Outsourcing","Proyecto llave en mano","IT Staffing"], a:2, e:"El Staffing es el más simple y rápido de vender, y abre la relación."},
+ {q:"¿En qué se diferencia el Hunting del Staffing?", o:["En Hunting el cliente contrata a la persona en su planilla","En Hunting CodersLab gestiona todo el equipo","No hay diferencia"], a:0, e:"Hunting = te buscan al candidato y tú lo contratas. Staffing = CodersLab te lo presta."},
+ {q:"¿Cuáles son las 3 razones por las que eligen CodersLab?", o:["Barato, grande y antiguo","Rápido, seguro y cercano","Local, junior y flexible"], a:1, e:"Empieza en días, reemplaza gratis y tiene talento LATAM en el mismo horario."},
+ {q:"¿En qué países vendemos en esta primera fase?", o:["Solo Chile","Chile, Argentina y Colombia","Perú y México"], a:1, e:"La fase 1 cubre Chile, Argentina y Colombia."},
+ {q:"¿A quién le escribes primero?", o:["Al Gerente o Director de Tecnología","A un programador del equipo","Al área de marketing"], a:0, e:"Quien decide es tu contacto principal."},
+ {q:"Te asignan una cuenta nueva. ¿Qué haces primero?", o:["Investigas si de verdad necesita talento","Entiendes su necesidad y buscas a quien decide","Le envías el catálogo de servicios"], a:1, e:"La cuenta ya tiene la necesidad: tu trabajo es entenderla y llegar a la persona correcta."},
+ {q:"Le escribes a un retailer. ¿Qué caso mencionas?", o:["Falabella Banco","Cencosud","Polpaico"], a:1, e:"Siempre un cliente de la misma industria."},
+ {q:"Te dicen \"ya tenemos proveedores\". ¿Qué haces?", o:["Agradeces y cierras","Hablas mal del proveedor actual","Propones complementarlos en picos o perfiles difíciles"], a:2, e:"Que ya compren a proveedores es una buena señal."},
+ {q:"¿Qué hace que una reunión valga la pena?", o:["Que dure más de una hora","Quien decide + necesidad confirmada + urgencia","Que la empresa sea famosa"], a:1, e:"Decide + necesidad confirmada + urgencia = buena reunión."}
+];
+
+/* ---------- estado ---------- */
+let done = new Set();
+try{ done = new Set(JSON.parse(localStorage.getItem("cl-done")||"[]")); }catch(e){}
+const save = () => { try{ localStorage.setItem("cl-done", JSON.stringify([...done])); }catch(e){} };
+let cur = MODS[0].id;
+try{ const h=location.hash.slice(1); if(MODS.some(m=>m.id===h)) cur=h; else { const s=localStorage.getItem("cl-cur"); if(s && MODS.some(m=>m.id===s)) cur=s; } }catch(e){}
+
+const nav = document.getElementById("nav"), main = document.getElementById("main");
+
+function renderNav(){
+  nav.innerHTML = MODS.map((m,i)=>`<button class="tab ${done.has(m.id)?"done":""}" role="tab" id="tab-${m.id}" aria-selected="${m.id===cur}" data-id="${m.id}"><span class="n">${String(i+1).padStart(2,"0")}</span>${m.t}</button>`).join("");
+  nav.querySelectorAll(".tab").forEach(b=>b.onclick=()=>go(b.dataset.id));
+  const lights = document.getElementById("lights");
+  lights.innerHTML = MODS.map(m=>`<i class="${done.has(m.id)?"on":""}"></i>`).join("");
+  document.getElementById("pcount").innerHTML = `${done.size}<span> / 10 vueltas</span>`;
+  const msg = done.size===0 ? "Parte por la vuelta 1. Marca cada módulo al terminarlo." : done.size<10 ? `Vas bien. Te quedan ${10-done.size} vueltas.` : "¡Bandera a cuadros! Completaste la academia.";
+  document.getElementById("pmsg").textContent = msg;
+}
+
+function go(id){
+  cur = id;
+  try{ localStorage.setItem("cl-cur", id); }catch(e){}
+  const i = MODS.findIndex(m=>m.id===id), m = MODS[i];
+  const next = MODS[i+1];
+  main.innerHTML = `<section class="mod" role="tabpanel" aria-labelledby="tab-${id}">
+    <div class="eyebrow">Vuelta ${i+1} de 10</div><h2>${m.t}</h2>${HTML[id]}
+    <div class="done-row">
+      <button class="btn ${done.has(id)?"done":"ghost"}" id="markDone" type="button">${done.has(id)?"✓ Vuelta completada":"Marcar vuelta como completada"}</button>
+      ${next?`<button class="btn" id="nextBtn" type="button">Siguiente: ${next.t} →</button>`:""}
+    </div></section>`;
+  document.getElementById("markDone").onclick = () => { done.has(id)?done.delete(id):done.add(id); save(); renderNav(); go(id); };
+  if(next) document.getElementById("nextBtn").onclick = () => { done.add(id); save(); renderNav(); go(next.id); window.scrollTo({top:0,behavior:"smooth"}); };
+  renderNav();
+  const t = document.getElementById("tab-"+id); if(t) t.scrollIntoView({block:"nearest",inline:"center"});
+  (INIT[id]||(()=>{}))();
+}
+
+const INIT = {
+ vende(){
+  const tabs = document.getElementById("svcTabs"), det = document.getElementById("svcDetail");
+  const show = i => {
+    tabs.querySelectorAll("button").forEach((b,j)=>b.setAttribute("aria-pressed", i===j));
+    const s = SVC[i];
+    det.innerHTML = `<div class="card"><h4>En la casa sería…</h4><p>${s.casa}</p></div><div class="card"><h4>En una empresa</h4><p>${s.emp}</p></div><div class="card ${s.focus?"hot":""}"><h4>Ejemplo real</h4><p>${s.ej}</p></div>`;
+  };
+  tabs.innerHTML = SVC.map((s,i)=>`<button type="button" aria-pressed="false">${s.n}${s.focus?" · foco":""}</button>`).join("");
+  tabs.querySelectorAll("button").forEach((b,i)=>b.onclick=()=>show(i));
+  show(0);
+ },
+ dicc(){
+  const f = document.getElementById("dfilters"), box = document.getElementById("flips");
+  const cats = [["todo","Todo"],["rol","Profesionales"],["palabra","Palabras"]];
+  let sel = "todo";
+  const draw = () => {
+    f.innerHTML = cats.map(([k,l])=>`<button class="chip" type="button" aria-pressed="${k===sel}" data-k="${k}">${l}</button>`).join("");
+    f.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{sel=c.dataset.k;draw();});
+    box.innerHTML = DICT.filter(d=>sel==="todo"||d.c===sel).map(d=>`<button class="flip" type="button" aria-label="${d.w}: toca para ver qué significa"><div class="in"><div class="f"><small>${d.c==="rol"?"Profesional":"Palabra"}</small><strong>${d.w}</strong><small>Toca para ver →</small></div><div class="b"><div>${d.s}</div><em>${d.e}</em></div></div></button>`).join("");
+    box.querySelectorAll(".flip").forEach(c=>c.onclick=()=>c.classList.toggle("on"));
+  };
+  draw();
+ },
+ casos(){
+  const p = document.getElementById("casePick"), box = document.getElementById("caseBox");
+  const show = i => {
+    p.querySelectorAll("button").forEach((b,j)=>b.setAttribute("aria-pressed", i===j));
+    const c = CASES[i];
+    box.innerHTML = `<div class="card"><span class="tag">Menciona a</span><h4 style="font-size:22px">${c.n}</h4><p>${c.d}</p></div><div class="card"><span class="tag" style="background:var(--magenta);color:#fff">Cómo decirlo</span><p class="quote" style="color:var(--ink)">"${c.q}"</p></div>`;
+  };
+  p.innerHTML = CASES.map(c=>`<button class="chip" type="button" aria-pressed="false">${c.k}</button>`).join("");
+  p.querySelectorAll("button").forEach((b,i)=>b.onclick=()=>show(i));
+  show(0);
+ },
+ mensaje(){
+  const STEPS = [["g1","Apertura"],["g2","Motivo"],["g3","Cómo ayudamos"],["g4","Prueba"],["g5","Pregunta"],["g6","Cierre"]];
+  STEPS.forEach(([k])=>{ document.getElementById(k).innerHTML = B[k].map((t,i)=>`<option value="${i}">${t.replace(/\{name\}/g,"[contacto]").replace(/\{sdr\}/g,"[tu nombre]")}</option>`).join(""); });
+  const esc = s => s.replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  /* --- speech personalizado --- */
+  const IND = {"Banca":"Hoy trabajamos con equipos de tecnología en banca como Banco Falabella, Banco Ripley y Tenpo.","Fintech":"Hoy trabajamos con equipos de tecnología de bancos y fintech como Tenpo y Banco Falabella.","Retail / eCommerce":"Hoy trabajamos con equipos de tecnología en retail como Cencosud, Falabella y Frávega.","Consumo masivo":"Hoy trabajamos con equipos de tecnología en consumo masivo como Coca-Cola Andina.","Aerolíneas":"Hoy trabajamos con equipos de tecnología en banca y retail como Banco Falabella, Cencosud y Coca-Cola Andina.","Seguros":"Hoy trabajamos con equipos de tecnología en banca y retail como Banco Falabella, Cencosud y Coca-Cola Andina.","Otra":"Hoy trabajamos con equipos de tecnología en banca y retail como Banco Falabella, Cencosud y Coca-Cola Andina."};
+  const ind = document.getElementById("spInd");
+  ind.innerHTML = Object.keys(IND).map(k=>`<option>${k}</option>`).join("");
+  const val = (id,def) => (document.getElementById(id).value.trim() || def);
+  const fillSpeech = () => {
+    document.querySelectorAll('#speechBox [data-k]').forEach(el=>{
+      const k = el.dataset.k;
+      el.textContent = k==="name"?val("spName","[nombre]"):k==="sdr"?val("spSdr","[tu nombre]"):k==="cargo"?val("spCargo","[cargo]"):val("spEmp","[empresa]");
+    });
+    document.getElementById("spProof").textContent = IND[ind.value];
+    renderResp();
+  };
+  /* --- respuestas --- */
+  const SIT = [
+   {s:"No es la persona correcta", a:"Entiendo, {name}, muchas gracias. ¿Quién en {emp} lidera los equipos de tecnología o la contratación de proveedores? ¿Me podrías dar su nombre para contactarle de tu parte?", t:"Anota el nombre y el cargo, y pide su correo o teléfono si te lo da."},
+   {s:"Estoy ocupado, llámame después", a:"Por supuesto, {name}. ¿Te acomoda que te llame mañana a las 10:00 o prefieres otro horario? Son solo 2 minutos.", t:"Deja la nueva hora fija y cumple el llamado puntual."},
+   {s:"¿De dónde sacaste mi número?", a:"Buena pregunta, {name}. Estamos contactando a líderes de tecnología de empresas como {emp}, a través de bases profesionales. Si prefieres, te escribo por correo.", t:"Responde con calma y vuelve rápido al motivo de la llamada."},
+   {s:"¿Qué es CodersLab? / No los conozco", a:"Somos una empresa global de servicios tecnológicos y desarrollo de software a medida. Sumamos talento tech validado que empieza en días y, si la necesidad crece, armamos equipos completos. Trabajamos con Banco Falabella, Cencosud y Coca-Cola Andina.", t:"Luego vuelve a la pregunta: ¿tienen algún proyecto donde les falte equipo?"},
+   {s:"Ya tenemos proveedores", a:"Perfecto, {name}, no buscamos reemplazarlos. Muchos clientes nos usan cuando sus proveedores no dan abasto o para perfiles difíciles. ¿Tienen hoy algún perfil así en {emp}?", t:"Que ya compren a proveedores es una buena señal."},
+   {s:"Envíame información", a:"Con gusto te envío algo, {name}. Para que te sirva, ¿qué perfil o proyecto te interesa más? Y si te parece, lo vemos en 15 minutos con nuestro equipo esta semana.", t:"No cortes sin proponer la reunión. Después crea el mensaje en el generador de contenido de BullsEye (botón de abajo) y envíalo el mismo día."},
+   {s:"¿Cuánto cuesta?", a:"Depende del perfil, la experiencia y la duración, por eso lo vemos en la reunión con nuestro equipo para darte un valor real. ¿Te acomoda el jueves o el viernes?", t:"No des precios: tu objetivo es la reunión."},
+   {s:"Preferimos contratar gente propia", a:"Tiene sentido, {name}. Podemos cubrir la urgencia mientras contratan, o ayudarles a encontrar a esa persona con nuestro servicio de reclutamiento especializado.", t:"Ofrece la reunión para ver cuál de las dos opciones les sirve."},
+   {s:"No necesitamos nada ahora", a:"Entendido, {name}. ¿Cuándo planifican los proyectos del próximo período en {emp}? Me gustaría volver a llamarte en ese momento.", t:"Anota la fecha de seguimiento y avísale a tu líder."}
+  ];
+  const sit = document.getElementById("rSit");
+  sit.innerHTML = SIT.map((x,i)=>`<option value="${i}">${x.s}</option>`).join("");
+  function renderResp(){
+    const x = SIT[sit.value||0];
+    const f = t => t.replace(/\{name\}/g,val("spName","[nombre]")).replace(/\{emp\}/g,val("spEmp","[empresa]"));
+    document.getElementById("rOut").innerHTML = `<div class="k">Tú respondes</div><div class="say">"${esc(f(x.a))}"</div><div class="tip">${esc(x.t)}</div>`;
+  }
+  sit.onchange = renderResp;
+  ["spName","spSdr","spCargo","spEmp","spInd"].forEach(id=>document.getElementById(id).addEventListener("input",fillSpeech));
+  fillSpeech();
+  const build = () => {
+    const name = document.getElementById("bName").value.trim() || "[contacto]";
+    const sdr = document.getElementById("bSdr").value.trim() || "[tu nombre]";
+    const fill = t => t.replace(/\{name\}/g,name).replace(/\{sdr\}/g,sdr);
+    const lines = STEPS.map(([k,l],i)=>[i+1,l,fill(B[k][document.getElementById(k).value])]).filter(x=>x[2]!=="(sin caso)");
+    let html = "", plain = [];
+    lines.forEach(([n,l,t])=>{
+      html += `<div class="ln s${n}"><div class="lb">${n}. ${l}</div><div class="tx">${esc(t)}</div></div>`;
+      plain.push(`${n}. ${l}: ${t}`);
+      if(l==="Pregunta"){ html += `<div class="pause">(Pausa: escucha la respuesta. Si hay interés, sigue con el cierre.)</div>`; plain.push("(Pausa: escucha la respuesta. Si hay interés, sigue con el cierre.)"); }
+    });
+    document.getElementById("bOut").innerHTML = html;
+    const words = lines.map(x=>x[2]).join(" ").split(/\s+/).filter(Boolean).length;
+    const secs = Math.round(words/2.5), w = document.getElementById("bWc");
+    w.textContent = `≈ ${secs} segundos en voz alta ${secs<=45?"· duración ideal":"· acórtalo a menos de 45 s"}`;
+    w.className = "wc"+(secs>45?" bad":"");
+    return plain.join("\n");
+  };
+  ["bName","bSdr","g1","g2","g3","g4","g5","g6"].forEach(k=>document.getElementById(k).addEventListener("input",build));
+  build();
+  const btn = document.getElementById("bCopy");
+  btn.onclick = () => {
+    const t = build();
+    const ok = () => { btn.textContent="Copiado"; setTimeout(()=>btn.textContent="Copiar guion",1600); };
+    try{ navigator.clipboard.writeText(t).then(ok).catch(()=>{ selectOut(); }); }catch(e){ selectOut(); }
+  };
+  const sp = document.getElementById("spCopy");
+  if(sp) sp.onclick = () => {
+    const t = [...document.querySelectorAll("#speechBox .row")].map(r=>r.querySelector(".lb").textContent+": "+r.querySelector(".say").innerText.replace(/\s+/g," ").trim()).join("\n");
+    const ok = () => { sp.textContent="Copiado"; setTimeout(()=>sp.textContent="Copiar speech",1600); };
+    const fail = () => { const r=document.createRange(); r.selectNodeContents(document.getElementById("speechBox")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); sp.textContent="Texto seleccionado: cópialo"; };
+    try{ navigator.clipboard.writeText(t).then(ok).catch(fail); }catch(e){ fail(); }
+  };
+  function selectOut(){ const r=document.createRange(); r.selectNodeContents(document.getElementById("bOut")); const s=getSelection(); s.removeAllRanges(); s.addRange(r); btn.textContent="Texto seleccionado: cópialo"; }
+ },
+ reunion(){
+  const boxes = [...document.querySelectorAll("#qchecks input")], r = document.getElementById("qres");
+  const upd = () => { const n = boxes.filter(b=>b.checked).length;
+    r.textContent = n===6 ? "6 de 6 · ¡Reunión calificada! Agéndala." : n>=4 ? `${n} de 6 · Casi: confirma lo que falta en la llamada` : `${n} de 6 · Sigue descubriendo antes de agendar`;
+    r.style.color = n===6 ? "var(--cyan)" : n>=4 ? "#c99bff" : "var(--ink)"; };
+  boxes.forEach(b=>b.onchange=upd);
+  const list = document.getElementById("objList"), ans = document.getElementById("objAns");
+  const show = i => { list.querySelectorAll("button").forEach((b,j)=>b.setAttribute("aria-pressed", i===j));
+    const o = OBJ[i];
+    ans.innerHTML = `<div class="k">Lo que realmente significa</div><div class="mean">${o.m}</div><div class="k">Tú respondes</div><div class="say">"${o.a}"</div>`; };
+  list.innerHTML = OBJ.map(o=>`<button type="button" aria-pressed="false">${o.o}</button>`).join("");
+  list.querySelectorAll("button").forEach((b,i)=>b.onclick=()=>show(i));
+  show(0);
+  /* --- confirmación --- */
+  const cb = [...document.querySelectorAll("#cchecks input")], cr = document.getElementById("cres");
+  const cupd = () => { const n = cb.filter(b=>b.checked).length;
+    cr.textContent = n===10 ? "10 de 10 · ¡Reunión confirmada y lista!" : `${n} de 10 · Completa los datos antes de dar la reunión por confirmada`;
+    cr.style.color = n===10 ? "var(--cyan)" : "var(--ink)"; };
+  cb.forEach(b=>b.onchange=cupd);
+ },
+ semana(){
+  const box = document.getElementById("quiz"); let i=0, score=0;
+  const q = () => {
+    if(i>=QUIZ.length){
+      const ok = score>=8;
+      box.innerHTML = `<div class="top"><span>Resultado</span></div><div class="score">${score} / 10</div><p style="font-size:18px">${ok?"¡Listo para salir a pista! Avisa a tu líder para lanzar tu primera secuencia.":"Casi. Repasa las vueltas donde fallaste y vuelve a intentarlo."}</p><div class="qnav"><button class="btn" type="button" id="qr">Repetir quiz</button></div>`;
+      document.getElementById("qr").onclick=()=>{i=0;score=0;q();};
+      if(ok){ done.add("semana"); save(); renderNav(); }
+      return;
+    }
+    const it = QUIZ[i];
+    box.innerHTML = `<div class="top"><span>Pregunta ${i+1} de ${QUIZ.length}</span><span>Puntaje: ${score}</span></div><div class="qtext">${it.q}</div><div class="opts">${it.o.map((o,j)=>`<button type="button" data-j="${j}">${o}</button>`).join("")}</div><div class="fb" id="fb" aria-live="polite"></div><div class="qnav"></div>`;
+    box.querySelectorAll(".opts button").forEach(b=>b.onclick=()=>{
+      const j=+b.dataset.j, right=j===it.a; if(right) score++;
+      box.querySelectorAll(".opts button").forEach((x,k)=>{x.disabled=true; if(k===it.a)x.classList.add("ok"); else if(k===j)x.classList.add("ko");});
+      document.getElementById("fb").innerHTML = `<b style="color:${right?"var(--good)":"var(--magenta)"}">${right?"¡Correcto!":"No exactamente."}</b> ${it.e}`;
+      box.querySelector(".qnav").innerHTML = `<button class="btn" type="button" id="qn">${i<QUIZ.length-1?"Siguiente →":"Ver resultado"}</button>`;
+      document.getElementById("qn").onclick=()=>{i++;q();};
+    });
+  };
+  q();
+ }
+};
+
+go(cur);
+</script>
+<footer class="wrap foot" style="padding-block:0 32px">Preparado por BullsEye para el equipo SDR · Fuentes: ICP Base, OnePage, brochure IT Staffing y Portfolio de Proyectos de CodersLab. Usa logos y nombres de clientes solo si CodersLab los autorizó.</footer>
+
+</body></html>

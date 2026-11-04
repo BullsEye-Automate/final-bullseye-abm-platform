@@ -1,0 +1,464 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Academia SDR Apply Digital</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: pit wall — header with a 10-light starting gantry, lap tabs, one lap panel at a time. Single dark BullsEye look. */
+:root{
+  --bg:#140F3D; --s1:#1E1760; --s2:#2A2180; --line:#3A3196;
+  --fg:#F3F1FF; --mute:#B9B3E6; --cyan:#62E0D8; --purple:#9B4FC0; --magenta:#E0457B;
+  --off:#2a2350;
+  --display:"Sora",system-ui,sans-serif; --body:"Roboto",system-ui,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--body);font-size:16px;line-height:1.55;margin:0}
+.wrap{max-width:1040px;margin:0 auto;padding-inline:16px;padding-block:20px 64px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.2}
+h1{font-size:clamp(1.6rem,4.5vw,2.4rem);font-weight:800}
+h2{font-size:clamp(1.3rem,3.4vw,1.8rem);font-weight:700}
+h3{font-size:1.05rem;font-weight:600}
+p{margin:0}
+a{color:var(--cyan)}
+.eyebrow{font-family:var(--display);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan);font-weight:600}
+.muted{color:var(--mute)}
+header.top{display:grid;gap:14px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.brand{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.brand b{font-family:var(--display);letter-spacing:.04em}
+.brand b span{color:var(--magenta)}
+/* gantry */
+.gantry{display:grid;gap:8px;background:#0d0a2b;border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.lights{display:grid;grid-template-columns:repeat(10,1fr);gap:6px}
+.light{aspect-ratio:1;max-width:100%;border-radius:50%;background:var(--off);border:2px solid #0d0a2b;box-shadow:inset 0 2px 4px #0008;transition:background .4s,box-shadow .4s;cursor:pointer;padding:0}
+.light.on{background:var(--cyan);box-shadow:0 0 12px var(--cyan),inset 0 -2px 4px #0004}
+.light.all{background:var(--magenta);box-shadow:0 0 14px var(--magenta)}
+.light:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.gantry-row{display:flex;justify-content:space-between;font-size:.85rem;color:var(--mute);gap:8px;flex-wrap:wrap}
+.gantry-row strong{color:var(--fg);font-variant-numeric:tabular-nums}
+/* tabs */
+nav.tabs{display:flex;gap:6px;overflow-x:auto;padding-block:14px;scrollbar-width:thin;position:sticky;top:env(safe-area-inset-top,0px);background:var(--bg);z-index:5}
+.tab{flex:0 0 auto;font-family:var(--display);font-size:.85rem;font-weight:600;background:var(--s1);color:var(--mute);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer;display:flex;gap:6px;align-items:center}
+.tab .dot{width:8px;height:8px;border-radius:50%;background:var(--off)}
+.tab.done .dot{background:var(--cyan)}
+.tab[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tab:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+/* panel */
+.panel{display:grid;gap:22px;padding-top:8px}
+.panel-head{display:grid;gap:8px}
+.lead{font-size:1.08rem;color:var(--mute);max-width:65ch}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:8px;align-content:start;min-width:0}
+.card ul,.card ol{margin:0;padding-left:1.2em;display:grid;gap:4px}
+.stat{display:grid;gap:2px}
+.stat b{font-family:var(--display);font-size:1.6rem;color:var(--cyan);font-variant-numeric:tabular-nums}
+.stat span{font-size:.85rem;color:var(--mute)}
+.remember{border:1px solid var(--cyan);background:linear-gradient(90deg,rgba(98,224,216,.12),rgba(155,79,192,.08));border-radius:12px;padding:14px 16px;display:grid;gap:4px}
+.remember .eyebrow{color:var(--cyan)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:.92rem}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--display);font-size:.78rem;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);background:var(--s1)}
+tr:last-child td{border-bottom:0}
+.btn{font-family:var(--display);font-weight:600;font-size:.9rem;border-radius:10px;border:1px solid var(--line);background:var(--s2);color:var(--fg);padding:10px 16px;cursor:pointer}
+.btn:hover{border-color:var(--cyan)}
+.btn.primary{background:var(--cyan);color:var(--bg);border-color:var(--cyan)}
+.btn.magenta{background:var(--magenta);border-color:var(--magenta);color:#fff}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-family:var(--display);font-size:.85rem;font-weight:500;background:var(--s1);border:1px solid var(--line);color:var(--fg);border-radius:999px;padding:8px 14px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--purple);border-color:var(--purple)}
+.detail{background:var(--s2);border:1px solid var(--line);border-radius:12px;padding:18px;display:grid;gap:10px}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 14px}
+.kv dt{color:var(--mute);font-size:.85rem}
+.kv dd{margin:0}
+@media (max-width:520px){.kv{grid-template-columns:1fr}.kv dd{margin-bottom:6px}}
+.tag{display:inline-block;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;font-weight:700;padding:3px 8px;border-radius:6px;background:rgba(224,69,123,.18);color:#ff9fbf}
+.tag.ok{background:rgba(98,224,216,.15);color:var(--cyan)}
+.steps{display:grid;gap:10px;counter-reset:s;list-style:none;padding:0;margin:0}
+.steps li{display:grid;grid-template-columns:36px 1fr;gap:12px;align-items:start}
+.steps li::before{counter-increment:s;content:counter(s);font-family:var(--display);font-weight:700;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--s2);border:1px solid var(--cyan);color:var(--cyan)}
+/* flip cards */
+.flip{perspective:900px;min-height:150px;cursor:pointer;background:none;border:0;padding:0;color:inherit;text-align:left;font:inherit}
+.flip-inner{position:relative;width:100%;height:100%;min-height:150px;transition:transform .5s;transform-style:preserve-3d}
+.flip.flipped .flip-inner{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;border-radius:12px;padding:14px;display:grid;gap:6px;align-content:center;border:1px solid var(--line)}
+.front{background:var(--s1)}
+.front h3{font-size:1.05rem}
+.front small{color:var(--mute);font-size:.78rem}
+.back{background:var(--s2);transform:rotateY(180deg);font-size:.9rem;align-content:start;overflow:auto}
+.back b{color:var(--cyan);font-size:.75rem;letter-spacing:.06em;text-transform:uppercase}
+/* builder */
+.builder{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.builder{grid-template-columns:1fr}}
+label{font-family:var(--display);font-size:.82rem;font-weight:600;color:var(--mute);display:block;margin-bottom:4px}
+select,textarea{width:100%;background:var(--s1);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;font-size:.92rem}
+textarea{min-height:240px;resize:vertical;line-height:1.5}
+.counter{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.count{font-family:var(--display);font-weight:700;font-variant-numeric:tabular-nums}
+.count.good{color:var(--cyan)} .count.bad{color:var(--magenta)}
+.meter{height:8px;background:var(--off);border-radius:99px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--cyan);transition:width .3s}
+.meter i.bad{background:var(--magenta)}
+/* checklist */
+.check{display:flex;gap:12px;align-items:flex-start;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.check input{width:20px;height:20px;accent-color:var(--cyan);margin-top:2px;flex:0 0 auto}
+.result{border-radius:12px;padding:14px 16px;font-weight:500;border:1px solid var(--line);background:var(--s2)}
+.result.go{border-color:var(--cyan);color:var(--cyan)}
+.result.wait{border-color:var(--magenta);color:#ffb3cb}
+/* quiz */
+.q{display:grid;gap:10px}
+.opts{display:grid;gap:8px}
+.opt{text-align:left;font:inherit;background:var(--s1);border:1px solid var(--line);color:var(--fg);border-radius:10px;padding:12px 14px;cursor:pointer}
+.opt:hover:not([disabled]){border-color:var(--cyan)}
+.opt.right{border-color:var(--cyan);background:rgba(98,224,216,.14)}
+.opt.wrong{border-color:var(--magenta);background:rgba(224,69,123,.14)}
+.opt[disabled]{cursor:default}
+.qbar{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;font-family:var(--display);font-size:.9rem}
+.panel-foot{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:18px}
+.say{font-style:italic;color:var(--fg);border-left:3px solid var(--purple);padding-left:12px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--cyan);color:var(--bg);font-family:var(--display);font-weight:600;padding:10px 18px;border-radius:999px;z-index:20}
+.dodont{display:grid;gap:12px;grid-template-columns:1fr 1fr}
+@media (max-width:640px){.dodont{grid-template-columns:1fr}}
+.card.do{background:rgba(98,224,216,.10);border:1px solid var(--cyan);border-top:5px solid var(--cyan)}
+.card.dont{background:rgba(224,69,123,.08);border:1px solid var(--magenta);border-top:5px solid var(--magenta)}
+.card.do h3{color:var(--cyan)} .card.dont h3{color:#ff8fb3}
+ul.ticks,ul.crosses{list-style:none;padding-left:0}
+ul.ticks li,ul.crosses li{padding-left:1.6em;position:relative}
+ul.ticks li::before{content:"✓";position:absolute;left:0;color:var(--cyan);font-weight:700}
+ul.crosses li::before{content:"✕";position:absolute;left:0;color:var(--magenta);font-weight:700}
+.card.gen{border:1px solid var(--cyan);background:linear-gradient(135deg,rgba(98,224,216,.14),rgba(155,79,192,.14))}
+a.linkbtn{display:inline-block;text-decoration:none}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div class="brand">
+    <b>BULLS<span>EYE</span> · Academia SDR</b>
+    <span class="eyebrow">Cliente: Apply Digital · Foco: ACx</span>
+  </div>
+  <div style="display:grid;gap:6px">
+    <h1>Academia SDR Apply Digital</h1>
+    <p class="lead">10 vueltas para entender qué hace Apply, a quién le escribes y cómo conseguir una reunión de 15 minutos. Completa cada vuelta y enciende el semáforo.</p>
+  </div>
+  <div class="gantry" aria-label="Avance de vueltas">
+    <div class="lights" id="lights"></div>
+    <div class="gantry-row"><span>Semáforo de avance</span><span><strong id="doneCount">0</strong> de 10 vueltas completas</span></div>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs" role="tablist" aria-label="Vueltas"></nav>
+<main id="panels"></main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function(){
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+const KEY='academia-apply-v1';
+let done=store.get(KEY,[]);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>el.hidden=true,1800)}
+function remember(t){return `<div class="remember"><span class="eyebrow">Lo que debes recordar</span><p>${t}</p></div>`}
+function table(head,rows){return `<div class="tablewrap"><table><thead><tr>${head.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`}
+
+/* ---------- DATA ---------- */
+const SERVICES=[
+ {n:'ACx · Agentic Customer Experience',foco:true,a:'Un equipo de "empleados digitales" que trabajan con la receta de la casa',e:'Sistemas de agentes de IA integrados en los procesos reales, con la marca y las reglas del cliente, que aprenden con cada interacción.',x:'TasteMaker de Kraft Heinz: agentes que crean el brief, generan el contenido, revisan la marca, hacen el escaneo legal y envían las piezas a los canales.'},
+ {n:'SPARK (entrada en banca)',foco:true,a:'El chequeo médico antes del tratamiento',e:'Engagement de 3 semanas que termina con un roadmap de IA priorizado y acordado con la alta gerencia.',x:'Entregables: Principios Rectores de IA, AI Maturity Assessment, Opportunity Radar y AI Action Plan.'},
+ {n:'TORQ AI (ejecución en banca)',foco:true,a:'Una agencia interna que nunca duerme y conoce el manual de marca de memoria',e:'Agentes (Director de Marca, Redactor, Director de Arte, Revisor Legal) que producen contenido con la voz del banco y hacen el primer pase legal. Se instala en la nube del banco, el banco es dueño del código y funciona en 30 días.',x:'Módulos GenContent, GenInnovation y GenMedia. Aparece como consecuencia de SPARK, nunca en frío.'},
+ {n:'Estrategia de Negocios',a:'El GPS antes del viaje',e:'Roadmap, casos de negocio, cálculo de ROI y gestión del cambio.',x:'Ideación de iniciativas estratégicas y evaluación del retorno.'},
+ {n:'Marca y Experiencia',a:'La decoración y el trato en una tienda',e:'Diseño de experiencia, sistemas de diseño y auditoría de accesibilidad.',x:'Estrategias go-to-market y desarrollo de marca.'},
+ {n:'Inteligencia Artificial',a:'Contratar un equipo que nunca duerme',e:'Diseño y desarrollo de agentes, escalamiento de contenido con IA, cálculo del retorno de la IA.',x:'Adopción de IA de punta a punta.'},
+ {n:'Desarrollo de Producto',a:'Construir la casa, no solo dibujarla',e:'Apps, web y productos digitales con su roadmap.',x:'NFL: nueva app móvil; el engagement de fans subió 17% interanual.'},
+ {n:'Tecnología e Ingeniería',a:'Cambiar la cañería vieja por una moderna',e:'Pasar de sistemas antiguos a plataformas modernas: e-commerce, CMS, CDP, fidelización.',x:'50+ implementaciones de tecnología composable.'},
+ {n:'Inteligencia de Datos',a:'Ordenar la bodega para encontrar todo',e:'Estrategia e ingeniería de datos, analítica con IA y medición en web y apps.',x:'Auditoría de "data readiness".'},
+ {n:'Servicios de Marketing',a:'Hablarle a cada cliente por su nombre',e:'Campañas por email, SMS, push y app, personalizadas con IA.',x:'Sistema de diseño de email escalable.'},
+ {n:'Servicios Gestionados',a:'El mecánico de confianza',e:'Mantenimiento, soporte y mejoras continuas.',x:'Monitoreo y alertas con IA.'}
+];
+const DICT=[
+ ['Agente de IA','Un "empleado digital" que hace una tarea completa, no solo responde preguntas.','Es la base de ACx.'],
+ ['ACx','Varios agentes de IA trabajando juntos para mejorar la experiencia del cliente.','Es lo que vendemos.'],
+ ['Piloto','Una prueba chica de IA.','El dolor: la mayoría no escala.'],
+ ['Escalar','Pasar de la prueba a toda la empresa.','Lo que Apply promete lograr.'],
+ ['Time-to-market','Tiempo desde la idea hasta que la pieza sale publicada.','El dolor de velocidad.'],
+ ['Asset / pieza','Cualquier contenido: banner, post, email, video.','El volumen que aplasta al equipo.'],
+ ['Brief','Las instrucciones para crear una pieza.','Ahí parte el flujo de TORQ.'],
+ ['Compliance','Cumplir las reglas legales y regulatorias.','En banca, cada pieza pasa por Legal.'],
+ ['CAE','Carga Anual Equivalente: el costo total de un crédito en Chile, de muestra obligatoria.','Ejemplo de por qué Copilot no basta en banca.'],
+ ['Disclaimer','La letra chica legal de un producto financiero.','TORQ lo incluye automáticamente.'],
+ ['Omnicanal','La misma experiencia en tienda, app, web y redes.','Dolor central en retail.'],
+ ['Personalización 1:1','Un mensaje distinto para cada cliente, no por grupos.','Lo que busca el Gerente de Clientes.'],
+ ['Stack','El conjunto de herramientas tecnológicas de la empresa.','ACx se conecta a lo que ya tienen.'],
+ ['Composable','Tecnología armada como piezas de Lego que se cambian sin romper todo.','Fortaleza de Apply.'],
+ ['CMS / CDP','Gestor de contenidos / base unificada de datos de clientes.','Herramientas que Apply implementa.'],
+ ['Contentful / Braze','Plataformas de contenido y de mensajería a clientes.','Los agentes publican directo ahí.'],
+ ['GCP','Google Cloud, la nube donde se instala TORQ.','Si el banco no puede usar GCP, avisa a tu líder.'],
+ ['Single-tenant','Instalación exclusiva del cliente, sin compartir con nadie.','Responde dudas de seguridad.'],
+ ['Fork-and-own','El cliente se queda con el código.','Baja el miedo a depender del proveedor.'],
+ ['NPS','Cuánto recomiendan los clientes a la marca.','Métrica del Gerente de Clientes.'],
+ ['ROI','Cuánto se gana por cada peso invertido.','Lo que el decisor necesita mostrar.'],
+ ['SAL','Reunión válida aceptada por el equipo comercial de Apply.','Es tu meta.'],
+ ['CMO / Gerente de Marketing','Dueño de la marca y del presupuesto de marketing.','En banca es el decisor principal.'],
+ ['CDO','Chief Digital Officer: lidera canales y estrategia digital.','Decide o co-decide.'],
+ ['Champion','La persona que defiende el proyecto por dentro.','Suele ser el Gerente Digital o de Clientes.'],
+ ['CIO / CTO / CISO','Responsables de tecnología y seguridad.','En banca no se contactan sin aprobación de Raimundo.']
+];
+const CASES={
+ 'Banca y seguros':{c:'Kraft Heinz — TasteMaker',w:'Muchas marcas, reglas por producto y equipos distribuidos: no es el mismo sector, es el mismo problema.',s:'"No es el mismo sector, es el mismo problema. Con un líder global de consumo masivo redujimos el time-to-market en un 80%."',m:['70% de adopción','+1.200 usuarios','ROI en 5 meses']},
+ 'Retail':{c:'Kraft Heinz — TasteMaker',w:'Cientos de productos y formatos, contenido con la marca incorporada.',s:'"Para una empresa con cientos de productos construimos agentes que crean y revisan el contenido; hoy lo usan más de 1.200 personas."',m:['+100 marcas','130.000+ outputs','80% menos time-to-market']},
+ 'Retail · personalización':{c:"Arc'teryx",w:'Personalización por comportamiento real del cliente.',s:'"Con personalización basada en el comportamiento real del cliente lograron +39% en conversión eCommerce."',m:['+39% conversión eCommerce']},
+ 'Retail · campañas':{c:'Parkland',w:'Campañas con promociones frecuentes.',s:'"Redujeron los tiempos de sus campañas en 75% con flujos agénticos."',m:['-75% tiempo de campaña']},
+ 'Consumo masivo':{c:'Kraft Heinz, Coca-Cola',w:'Líderes globales del mismo rubro.',s:'"Trabajamos con líderes globales de consumo masivo en contenido con IA a escala."',m:['Caso destacado por Google']},
+ 'Entretenimiento / digital':{c:'NBA, NFL',w:'Experiencias digitales de fans unificadas.',s:'"Unificamos la experiencia digital de fans; en NFL el engagement subió 17% interanual."',m:['+17% engagement NFL']}
+};
+const GEN='https://bullseye-abm-platform-eq6f.vercel.app/chat';
+const SCRIPT=[
+ {label:'1 · Apertura y permiso',opts:[
+  'Hola {nombre}, soy {tu nombre}, te llamo de parte de Apply Digital. ¿Tienes 30 segundos?',
+  'Hola {nombre}, habla {tu nombre} de Apply Digital. Seré breve: ¿te tomo 30 segundos?']},
+ {label:'2 · Gancho (prueba genérica)',opts:[
+  'Ayudamos a equipos de marketing de marcas globales de consumo masivo y banca a producir contenido más rápido con agentes de IA que trabajan con su marca y sus reglas.',
+  'Construimos agentes de IA que llevan los pilotos a la operación diaria, conectados a las herramientas que la empresa ya tiene.',
+  'Construimos agentes de IA que detectan cuándo un cliente está listo y actúan en ese momento, sin campañas manuales.']},
+ {label:'3 · Dolor del cargo',opts:[
+  'En muchos bancos una pieza tarda entre 5 y 15 días hábiles en pasar por Legal, y el mismo equipo produce para varios productos a la vez.',
+  'Es común que lo que se publica en cada canal no suene igual, porque varias agencias interpretan la marca distinto.',
+  'Es común ver varios pilotos de IA en distintas áreas que no conversan entre sí.',
+  'El desafío ya no es si usar IA, sino cómo pasar de experimentos a algo que opere en toda la empresa sin perder gobernanza.',
+  'Muchos clientes tienen un solo producto, y las campañas llegan por calendario, no cuando el cliente está listo.']},
+ {label:'4 · Pregunta (y escucha)',opts:[
+  '¿Cuánto tarda hoy una pieza en tu equipo, desde el brief hasta que se publica?',
+  '¿Lo que publican en Instagram suena igual que lo que envían por email?',
+  '¿Cuántas iniciativas de IA tienen hoy y cuáles llegaron a operar en el día a día?',
+  '¿Tienen claro en qué iniciativa de IA invertir primero, con la gerencia alineada?',
+  '¿Cómo detectan hoy el momento en que un cliente está listo para otro producto?']},
+ {label:'5 · Cierre con reunión',opts:[
+  'Te propongo 15 minutos con nuestro equipo para mostrarte cómo lo resuelven otros. ¿Martes a las 10 o jueves a las 16?',
+  'Tenemos un diagnóstico que les muestra por dónde partir. ¿Lo vemos 15 minutos el martes o el jueves?']}
+];
+const PRESETS=[
+ ['Gerente de Marketing · banca',[0,0,0,0,0]],
+ ['Gerente Digital · banca',[1,0,1,1,0]],
+ ['CDO · retail',[0,1,2,2,1]],
+ ['Director de Transformación',[0,1,3,3,1]],
+ ['Gerente de Clientes',[1,2,4,4,0]]
+];
+const WA=[
+ ['Después de una llamada sin respuesta','Hola {nombre}, soy {tu nombre} de Apply Digital. Te llamé recién. Ayudamos a equipos de marketing a producir contenido más rápido con IA, cuidando la marca y con Legal en el loop. ¿Te puedo llamar mañana 2 minutos?'],
+ ['Confirmar la reunión','Hola {nombre}, gracias por tu tiempo hoy. Te acabo de enviar a tu correo la confirmación de nuestra reunión de 15 minutos el {día} a las {hora}, con el detalle de lo que veremos. ¡Nos vemos!'],
+ ['Retomar un "llámame después"','Hola {nombre}, quedamos en conversar esta semana sobre cómo acelerar la producción de contenido sin perder control de marca. ¿Te acomoda que te llame hoy en la tarde o mañana en la mañana?']
+];
+const OBJ=[
+ ['"La IA no puede tocar contenido regulado"','Miedo a un error legal.','"Totalmente de acuerdo, y por eso Legal sigue decidiendo. El sistema solo hace el primer pase para que Legal revise menos y más rápido."'],
+ ['"Ya tenemos IA (Copilot, Gemini)"','No ve la diferencia.','"Copilot ayuda a escribir. Esto es un equipo de agentes configurado con tu marca, tus reglas y tus productos, conectado a tu proceso de aprobación. En 15 minutos te mostramos la diferencia."'],
+ ['"No tenemos presupuesto"','No sabe de qué línea saldría.','"Tiene sentido. ¿Tienen una línea de consultoría estratégica activa? El diagnóstico suele calzar ahí."'],
+ ['"Mándame información"','Quiere cortar la llamada amablemente.','"Te lo envío, y para que sea útil, ¿lo revisamos juntos 15 minutos el martes o el jueves?" Luego crea un mensaje personalizado en el generador de contenido de BullsEye y envíalo por WhatsApp el mismo día.'],
+ ['"Ya trabajamos con otra consultora"','Teme duplicar esfuerzos.','"Muchas empresas tienen varios socios. Nosotros nos enfocamos en llevar la IA a la operación diaria; puede complementar lo que ya tienen."'],
+ ['"¿Dónde quedan los datos?"','Riesgo de seguridad.','"Se instala en la nube del propio cliente, exclusiva para ustedes, y el código es suyo. El detalle técnico lo ve nuestro equipo en la reunión."'],
+ ['"No es prioridad ahora"','No ve urgencia.','"Entiendo. ¿Qué tendría que pasar para que lo fuera? Te propongo 15 minutos para que al menos tengas el diagnóstico a mano."']
+];
+const QUIZ=[
+ ['¿Qué es ACx?',['Un chatbot de atención','Un sistema de agentes de IA integrados en los procesos reales de la empresa','Una agencia creativa','Un CRM'],1],
+ ['¿Cuál es la puerta de entrada en banca?',['TORQ AI','Una propuesta con precio','SPARK','Una demo técnica con IT'],2],
+ ['¿Quién decide la compra en banca?',['El Gerente de Marketing o CMO','El CTO','Legal','Un analista de marketing'],0],
+ ['¿Puedes nombrar a Kraft Heinz o dar sus métricas por WhatsApp?',['Sí, siempre','Solo la métrica','No: por escrito, sin nombres ni cifras salvo aprobación','Solo si el lead lo pide'],2],
+ ['Te toca contactar a Bancolombia. ¿Qué haces?',['Lo llamo igual','No lo contacto y aviso a mi líder: es cliente activo','Lo dejo para el final','Uso su caso como referencia'],1],
+ ['Te dicen "ya tenemos Copilot". ¿Qué respondes?',['"Copilot es malo"','"Copilot ayuda a escribir; esto es un equipo de agentes con tu marca, tus reglas y tu proceso de aprobación"','"Entonces no les sirve"','"Es lo mismo pero más barato"'],1],
+ ['¿Qué canales manejas tú como SDR?',['Email, LinkedIn y llamada','La llamada como foco y WhatsApp como apoyo; email y LinkedIn los cubre la gestión omnicanal','Solo LinkedIn','Solo WhatsApp'],1],
+ ['El lead te dice "mándame más información". ¿Qué haces?',['Le mando el PDF de Apply','Cuelgo y espero','Intento la reunión y luego le envío por WhatsApp un mensaje personalizado creado en el generador de BullsEye','Le mando el caso de Kraft Heinz'],2],
+ ['Acabas de agendar una reunión. ¿Qué haces después?',['Nada, ya está lista','Envío el mail de confirmación desde el generador de BullsEye y aviso por WhatsApp','Le mando una propuesta','Espero a que el lead confirme'],1],
+ ['¿Cuánto debería durar tu guion leído en voz alta?',['2 minutos','90 segundos','40 segundos o menos','No importa'],2]
+];
+
+/* ---------- LAPS ---------- */
+const LAPS=[
+{t:'Antes de empezar',h:()=>`
+ <p class="lead">Al terminar vas a poder explicar en 30 segundos qué hace Apply Digital, a quién le escribes y cómo conseguir una reunión de 15 minutos.</p>
+ <div class="grid2">
+  <div class="card"><h3>Qué vas a aprender</h3><ol><li>Quién es Apply y por qué lo contratan.</li><li>Qué vende, con foco en ACx.</li><li>Las palabras técnicas, en simple.</li><li>A quién le escribes y quién decide.</li><li>Qué problemas resuelve.</li><li>Qué casos puedes mencionar.</li><li>Cómo hablar en la llamada y apoyarte en WhatsApp.</li><li>Cuándo una reunión vale y cómo responder objeciones.</li></ol></div>
+  <div class="card"><h3>El foco de la campaña</h3><dl class="kv">
+   <dt>Servicio foco</dt><dd>ACx: agentes de IA para la experiencia del cliente y el marketing</dd>
+   <dt>Entrada banca</dt><dd>SPARK (diagnóstico de 3 semanas). TORQ AI viene después</dd>
+   <dt>Entrada retail</dt><dd>ACx Readiness Index (diagnóstico gratuito)</dd>
+   <dt>Países</dt><dd>Chile, Perú, Colombia, Ecuador, Guatemala, Bolivia, El Salvador, Honduras, Costa Rica, Panamá, Rep. Dominicana, Uruguay, Paraguay</dd>
+   <dt>Industrias</dt><dd>Banca y Servicios Financieros; Retail</dd>
+   <dt>Tu meta</dt><dd>Reunión de 15 minutos con quien decide</dd></dl></div>
+ </div>
+ <div class="card"><h3>Tu rol en una frase</h3><p>Las cuentas ya llegan filtradas. Tú no investigas si la empresa compra: entiendes la necesidad, llegas a quien decide y consigues la reunión.</p></div>
+ ${remember('Vendes una conversación de 15 minutos, no un proyecto. La puerta es un diagnóstico: SPARK en banca, Readiness Index en retail.')}`},
+{t:'Quién es Apply',h:()=>`
+ <p class="lead">Una consultora global de transformación digital que combina estrategia, diseño, desarrollo e IA en un solo socio, y se hace cargo del resultado.</p>
+ <div class="grid3">
+  <div class="card"><span class="tag">Problema</span><p>Las grandes empresas ya usan IA, pero la mayoría se queda en pilotos que no llegan a la operación diaria.</p></div>
+  <div class="card"><span class="tag" style="background:rgba(155,79,192,.25);color:#e2b8ff">Solución</span><p>Sistemas de agentes de IA (ACx) a la medida, conectados a sus herramientas, con su marca y sus reglas.</p></div>
+  <div class="card"><span class="tag ok">Resultado</span><p>Contenido y experiencias más rápidas, con la marca cuidada e impacto medido en ventas, costo o conversión.</p></div>
+ </div>
+ <div class="card"><h3>La analogía de la cocina</h3><p>Muchas empresas compraron electrodomésticos sueltos (herramientas de IA). Apply diseña la cocina completa: quién hace qué, en qué orden y con la receta de la casa. Así cada plato sale igual de bien, aunque lleguen 100 pedidos a la vez.</p></div>
+ <div class="grid3">
+  ${[['2016','Año de creación'],['+650','Especialistas'],['9','Oficinas (incl. Santiago)'],['1.000+','Proyectos entregados'],['60+','Clientes globales'],['9/10','Satisfacción del cliente']].map(s=>`<div class="card stat"><b>${s[0]}</b><span>${s[1]}</span></div>`).join('')}
+ </div>
+ <div class="card"><h3>3 razones fáciles de recordar</h3><ol><li><b>Un solo socio:</b> estrategia, diseño, tecnología e IA en el mismo equipo.</li><li><b>No se queda en el piloto:</b> sistemas que operan en el día a día.</li><li><b>Experiencia probada:</b> marcas globales de consumo, entretenimiento y banca; caso TasteMaker destacado por Google.</li></ol></div>
+ ${remember('Apply no vende herramientas de IA sueltas: diseña la "cocina completa" para que la IA funcione en la operación.')}`},
+{t:'Qué vende',h:()=>`
+ <p class="lead">Apply tiene 8 líneas de servicio, pero en esta campaña vendemos una conversación: ACx, que entra por un diagnóstico. Toca un servicio para ver qué es.</p>
+ <div class="chips" id="svcChips" role="group" aria-label="Servicios">${SERVICES.map((s,i)=>`<button class="chip" data-svc="${i}" aria-pressed="${i===0}">${s.foco?'★ ':''}${esc(s.n)}</button>`).join('')}</div>
+ <div class="detail" id="svcDetail" aria-live="polite"></div>
+ <div class="card"><h3>Paso a paso de SPARK</h3><ol class="steps">
+  <li><div><b>Semana 1 · Pre-work.</b> Entrevistas con ejecutivos, análisis del negocio y del stack de IA. El banco no prepara nada especial.</div></li>
+  <li><div><b>Semana 2 · Workshop de 1 día con la alta gerencia.</b> Mañana: negocio y mercado, con demo de TORQ. Tarde: priorizar iniciativas por deseabilidad, viabilidad y factibilidad.</div></li>
+  <li><div><b>Semana 3 · Readout ejecutivo.</b> Principios Rectores de IA, AI Maturity Assessment, Opportunity Radar y AI Action Plan.</div></li></ol></div>
+ <div class="card"><h3>Entrar chico y crecer</h3><ol class="steps">
+  <li><div><b>Entrar:</b> la reunión de 15 minutos que consigues tú.</div></li>
+  <li><div><b>Diagnosticar:</b> SPARK (banca) o ACx Readiness Index (retail; promedio de mercado 2,9 sobre 10).</div></li>
+  <li><div><b>Ejecutar:</b> TORQ AI o un sistema ACx, como consecuencia del diagnóstico.</div></li>
+  <li><div><b>Crecer:</b> otras líneas de servicio de Apply.</div></li></ol>
+  <p class="muted">Nunca ofrezcas SPARK y TORQ juntos en el primer contacto, y no llames "workshop" a SPARK.</p></div>
+ ${remember('SPARK diagnostica, TORQ ejecuta. Tú solo abres la puerta al diagnóstico.')}`,init:()=>{
+  const show=i=>{const s=SERVICES[i];document.getElementById('svcDetail').innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><h3>${esc(s.n)}</h3>${s.foco?'<span class="tag ok">Foco de campaña</span>':'<span class="tag">Contexto</span>'}</div><dl class="kv"><dt>Analogía</dt><dd>${esc(s.a)}</dd><dt>En la empresa</dt><dd>${esc(s.e)}</dd><dt>Ejemplo</dt><dd>${esc(s.x)}</dd></dl>`;document.querySelectorAll('#svcChips .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.svc==i))};
+  document.getElementById('svcChips').addEventListener('click',e=>{const b=e.target.closest('[data-svc]');if(b)show(+b.dataset.svc)});show(0)}},
+{t:'Diccionario',h:()=>`
+ <p class="lead">No necesitas ser experto en IA; necesitas entender estas palabras para no perderte. Toca una tarjeta para darla vuelta.</p>
+ <div class="grid3" id="dict">${DICT.map(d=>`<button class="flip" aria-label="${esc(d[0])}: ver significado"><div class="flip-inner"><div class="face front"><h3>${esc(d[0])}</h3><small>Toca para ver qué significa</small></div><div class="face back"><b>En simple</b><p>${esc(d[1])}</p><b>Por qué te importa</b><p>${esc(d[2])}</p></div></div></button>`).join('')}</div>
+ <div class="card"><h3>Si te hacen una pregunta muy técnica</h3><p class="say">"Buena pregunta, y justo por eso vale la pena la reunión: ahí está el equipo de Apply que diseña estos sistemas y te lo puede mostrar con tu caso. ¿Te acomoda el martes o el jueves?"</p></div>
+ ${remember('Un agente es un empleado digital; ACx es un equipo de ellos trabajando con la marca y las reglas del cliente.')}`,init:()=>{document.getElementById('dict').addEventListener('click',e=>{const f=e.target.closest('.flip');if(f)f.classList.toggle('flipped')})}},
+{t:'A quién le vendemos',h:()=>`
+ <p class="lead">Grandes empresas establecidas (500+ empleados) con muchos canales, mucha producción de contenido y presión por usar bien la IA.</p>
+ <div class="grid2">
+  <div class="card"><h3>Por qué estas cuentas están en tu lista</h3><ul><li>501 a 1.000+ empleados; facturación USD 10M+ (retail desde ~USD 800M).</li><li>Estrategia digital, iniciativas de IA, varios canales, uso intensivo de datos.</li><li><b>Banca:</b> varios productos con campañas a la vez, revisión legal activa, presión de fintechs, 10+ personas en marketing y 100+ piezas al mes.</li><li><b>Retail:</b> supermercados, tiendas por departamento, hogar, malls y farmacias.</li></ul></div>
+  <div class="card"><h3>La lista ya está filtrada</h3><p>Las 81 cuentas de banca están en HubSpot, segmento "[Segment] Banks". No decides si califican: llegas a la persona correcta.</p><p><b>Prioridad inmediata:</b> Falabella Financiero, Santander Chile, Banco Itaú Chile · BCP, BBVA Perú, Interbank · Davivienda, Grupo Aval, Banco de Bogotá.</p><p class="muted">Fintechs (MachBank, Tapp, Yape) van al final.</p></div>
+ </div>
+ ${table(['Nivel','Banca','Retail'],[['<span class="tag ok">Decide</span>','Gerente de Marketing / CMO','CDO, VP/Director de Marketing, VP Transformación Digital, CCO, CXO'],['<span class="tag" style="background:rgba(155,79,192,.25);color:#e2b8ff">Influye</span>','Gerente Digital / Head de Canales, Gerente de Clientes','Gerente de Clientes/CX, Directores de eCommerce, Data, Innovación'],['<span class="tag">Bloquea</span>','IT y Legal (anticipar, no contactar)','Tecnología, Finanzas'],['<span class="tag">Evitar</span>','Analistas, coordinadores, especialistas, asistentes','Igual']])}
+ <p class="muted">Puedes abordar head, manager, subgerente, gerente y director. En LATAM un "Gerente" puede equivaler a un VP.</p>
+ ${table(['Persona','Le preocupa','Le abre la puerta'],[['Gerente de Marketing / CMO','Time-to-market, marca a escala, aprobaciones lentas, más con el mismo presupuesto','Que la tecnología absorba el trabajo pesado y proteja la marca'],['CDO','Pilotos aislados que no escalan; herramientas que no conversan','Orquestar lo que ya tiene'],['Director de Transformación','Silos de datos, stack fragmentado, gobernanza sin perder velocidad','Arquitectura conectada y ROI medible'],['Gerente de Clientes (retail)','Personalizar sin más gente; demostrar ROI de CX','Que lo que ya funciona opere solo'],['Gerente de Clientes (finanzas)','Clientes con un solo producto; campañas a destiempo','Actuar cuando el cliente está listo']])}
+ ${remember('En banca entras siempre por Marketing o Digital. IT y Legal se anticipan, no se contactan.')}`},
+{t:'La necesidad',h:()=>`
+ <p class="lead">Todas tus cuentas comparten tres problemas: velocidad, volumen y consistencia de marca. Nombrarlos en general basta para abrir la conversación.</p>
+ <div class="grid3">
+  ${[['Velocidad','En banca, 5 a 15 días hábiles por pieza en revisión legal.','Esperar 2 semanas para que te aprueben un WhatsApp.'],['Volumen','El mismo equipo produce para muchos productos y canales.','Un cocinero atendiendo 4 restaurantes.'],['Consistencia','Varias agencias interpretan la marca distinto.','El mismo plato sabe distinto en cada sucursal.'],['Pilotos que no escalan','La IA funciona en la demo, no en el día a día.','La bicicleta estática que termina de perchero.'],['Experiencia fragmentada','El cliente no es reconocido igual en tienda, app y web.','Que tu banco te trate como desconocido en la app.'],['Personalización genérica','Mensajes por grupos grandes, no por persona.','Una promo de pañales a alguien sin hijos.']].map(p=>`<div class="card"><h3>${p[0]}</h3><p>${p[1]}</p><p class="muted"><i>${p[2]}</i></p></div>`).join('')}
+ </div>
+ <div class="grid2">
+  <div class="card"><h3>Frases por industria</h3><ul><li><b>Banca:</b> "En muchos bancos, una pieza tarda entre 5 y 15 días hábiles en pasar por Legal, mientras las fintechs publican todos los días."</li><li><b>Banca:</b> "El mismo equipo suele producir para hipotecario, tarjeta, cuenta digital y consumo al mismo tiempo."</li><li><b>Retail:</b> "Es común que la experiencia en tienda, app y web no se conecte."</li><li><b>Retail:</b> "Temporadas, cambios de precio y nuevos SKUs generan trabajo manual que no escala."</li></ul></div>
+  <div class="card"><h3>Frases por rol</h3><ul><li><b>Marketing:</b> "¿Cuánto tarda hoy una pieza desde el brief hasta que se publica?"</li><li><b>Digital / CDO:</b> "Es común ver varios pilotos de IA que no conversan entre sí."</li><li><b>Transformación:</b> "El desafío ya no es si usar IA, sino cómo pasar de experimentos a algo que opere en toda la empresa."</li><li><b>Clientes:</b> "¿Cómo actúas cuando el cliente está listo, no cuando tu campaña está programada?"</li></ul></div>
+ </div>
+ <div class="card" style="border-color:var(--magenta)"><h3>Cuándo avisar a tu líder</h3><ul>
+  <li>La cuenta es <b>Bancolombia</b> u otro cliente actual (Kraft Heinz, Coca-Cola, NBA, NFL, Disney).</li>
+  <li>La cuenta es <b>BCI o Banco de Chile</b>: confirma antes de contactar.</li>
+  <li>Te responde alguien de <b>Tecnología, IT o Seguridad</b> en un banco.</li>
+  <li>El banco <b>no puede usar Google Cloud</b>.</li>
+  <li>Te piden precio, propuesta o documento formal.</li>
+  <li>Ya trabajan con otra consultora en el mismo tema.</li>
+  <li>Parece fintech nativa, cooperativa o banco pequeño.</li>
+  <li>Te piden usar nombres de clientes o métricas por escrito.</li></ul></div>
+ ${remember('Nombra el problema típico de la industria o del rol; nunca necesitas un dato puntual de la cuenta.')}`},
+{t:'Casos',h:()=>`
+ <p class="lead">Elige la industria de tu prospecto y te mostramos qué caso usar y cómo decirlo en una frase. Por escrito, cero nombres y cero métricas.</p>
+ <div class="chips" id="caseChips" role="group" aria-label="Industria del prospecto">${Object.keys(CASES).map((k,i)=>`<button class="chip" data-case="${esc(k)}" aria-pressed="${i===0}">${esc(k)}</button>`).join('')}</div>
+ <div class="detail" id="caseDetail" aria-live="polite"></div>
+ <div class="card" style="border-color:var(--magenta)"><h3>Lo que nunca debes hacer</h3><ul><li>Mencionar a <b>Bancolombia</b> como caso: cliente activo, no autorizado.</li><li>Presentar a <b>Mall Plaza</b> como cliente: el material lo describe "en el pipeline".</li><li>Hablar mal de la competencia. Si ya trabajan con otra consultora: "Nosotros entramos donde la IA tiene que llegar a la operación".</li></ul></div>
+ ${remember('Por escrito, cero nombres y cero métricas. Hablando, un caso y una cifra, siempre la conservadora.')}`,init:()=>{
+  const show=k=>{const c=CASES[k];document.getElementById('caseDetail').innerHTML=`<span class="eyebrow">Caso recomendado</span><h3>${esc(c.c)}</h3><p class="muted">${esc(c.w)}</p><p class="say">${esc(c.s)}</p><div class="chips">${c.m.map(m=>`<span class="tag ok">${esc(m)}</span>`).join('')}</div><p class="muted" style="font-size:.85rem">Solo hablado, en llamada o reunión. Usar solo si el cliente autorizó su uso en campaña.</p>`;document.querySelectorAll('#caseChips .chip').forEach(b=>b.setAttribute('aria-pressed',b.dataset.case===k))};
+  document.getElementById('caseChips').addEventListener('click',e=>{const b=e.target.closest('[data-case]');if(b)show(b.dataset.case)});show(Object.keys(CASES)[0])}},
+{t:'Cómo hablar en la llamada',h:()=>`
+ <p class="lead">Tu foco es la llamada y WhatsApp es tu apoyo. Email y LinkedIn ya los cubre la gestión omnicanal de BullsEye: tú levantas el teléfono, sigues por WhatsApp, llegas a quien decide y sales con una reunión de 15 minutos.</p>
+ <p class="muted">Tono profesional amigable y consultivo. Un guion de 40 segundos o menos, que suene a conversación y no a lectura.</p>
+ <div class="dodont">
+  <div class="card do"><h3>✓ Haz esto</h3><ul class="ticks"><li>Pide permiso: "¿Tienes 30 segundos?"</li><li>Habla del dolor típico del cargo: velocidad, volumen, marca o pilotos que no escalan</li><li>Haz una pregunta y escucha la respuesta</li><li>Presenta a Apply como complemento de lo que ya tienen</li><li>Ofrece el diagnóstico: SPARK en banca, Readiness Index en retail</li><li>Presenta la IA como apoyo a Legal</li><li>Cierra siempre con dos opciones de horario</li></ul></div>
+  <div class="card dont"><h3>✕ Evita esto</h3><ul class="crosses"><li>Leer el guion como robot</li><li>"Vi que están buscando…" o datos puntuales de la cuenta</li><li>Ofrecer SPARK y TORQ juntos, o llamar "workshop" a SPARK</li><li>Decir que reemplazamos a Legal o Compliance</li><li>Precios, tickets o "somos una plataforma de IA"</li><li>Nombrar clientes o cifras sin autorización</li><li>Hablar mal de otras consultoras</li><li>Cortar sin proponer una fecha</li></ul></div>
+ </div>
+ <div class="card"><span class="eyebrow">Armador de guion · 5 piezas</span><h3>Elige el cargo y ajusta cada pieza</h3>
+  <div class="chips" id="presetChips" role="group" aria-label="Cargo">${PRESETS.map((p,i)=>`<button class="chip" data-preset="${i}" aria-pressed="${i===0}">${esc(p[0])}</button>`).join('')}</div>
+  <div class="builder">
+   <div style="display:grid;gap:10px">${SCRIPT.map((p,k)=>`<div><label for="sp${k}">${p.label}</label><select id="sp${k}" data-sp="${k}">${p.opts.map((o,j)=>`<option value="${j}">${esc(o.length>70?o.slice(0,68)+'…':o)}</option>`).join('')}</select></div>`).join('')}</div>
+   <div style="display:grid;gap:8px;align-content:start"><label for="msg">Tu guion (puedes editarlo)</label><textarea id="msg"></textarea>
+    <div class="meter"><i id="meterBar"></i></div>
+    <div class="counter"><span class="count" id="wc">0 s</span><button class="btn primary" id="copyBtn">Copiar guion</button></div>
+    <p class="muted" style="font-size:.85rem">Tiempo estimado leyendo en voz alta a ritmo de conversación. Ideal: 40 segundos o menos.</p></div>
+  </div></div>
+ <div class="card"><span class="eyebrow">WhatsApp · tu segundo canal</span><h3>Úsalo para apoyar la llamada, nunca para reemplazarla</h3><p class="muted">Después de una llamada sin respuesta, para confirmar la reunión o para retomar un "llámame después". Es un canal escrito: sin nombres de clientes ni cifras.</p>
+  <div class="grid3">${WA.map((w,i)=>`<div class="detail"><b>${esc(w[0])}</b><p class="say" id="wa${i}">${esc(w[1])}</p><div><button class="btn" data-wa="${i}">Copiar</button></div></div>`).join('')}</div>
+  <div class="dodont">
+   <div class="card do"><h3>✓ En WhatsApp haz esto</h3><ul class="ticks"><li>Escribe después de haber llamado</li><li>Mensajes de 2 a 3 líneas</li><li>Preséntate siempre: tu nombre y Apply Digital</li><li>Termina con una pregunta de sí o no, o con dos horarios</li><li>Escribe en horario laboral</li></ul></div>
+   <div class="card dont"><h3>✕ En WhatsApp evita esto</h3><ul class="crosses"><li>Escribir en frío sin haber llamado antes</li><li>Mandar audios largos, PDFs o presentaciones</li><li>Insistir si no responde: máximo un mensaje por intento</li><li>Hablar de precios, temas técnicos o clientes por chat</li><li>Escribir de noche o en fin de semana</li></ul></div>
+  </div></div>
+ <div class="card gen"><span class="eyebrow">Herramienta BullsEye</span><h3>¿Te piden más información? Usa el generador de contenido</h3>
+  <p>No envíes material genérico. Crea un mensaje personalizado en el generador de contenido de BullsEye y envíalo por WhatsApp.</p>
+  <ol class="steps"><li><div>Antes de colgar, intenta igual la reunión: <i>"Te lo envío, y para que sea útil, ¿lo revisamos juntos 15 minutos el martes o el jueves?"</i></div></li><li><div>Abre el generador y crea el mensaje con su cargo, su industria y el dolor que te contó.</div></li><li><div>Envíalo por WhatsApp el mismo día y propón de nuevo dos horarios. Sin nombres de clientes, cifras ni precios.</div></li></ol>
+  <div><a class="btn primary linkbtn" href="${GEN}" target="_blank" rel="noopener">Abrir generador de contenido ↗</a></div></div>
+ <div class="grid3">
+  <div class="card"><span class="eyebrow">"Ahora no puedo"</span><p class="say">"Sin problema. ¿Te llamo mañana a esta hora o prefieres el jueves?"</p></div>
+  <div class="card"><span class="eyebrow">Buzón de voz · 15 s</span><p class="say">"Hola {nombre}, soy {tu nombre} de Apply Digital. Ayudamos a equipos de marketing a producir contenido más rápido con IA, cuidando la marca. Te vuelvo a llamar el {día}."</p></div>
+  <div class="card"><span class="eyebrow">"¿Quién eres?"</span><p class="say">"Te llamo de parte de Apply Digital, una consultora global que construye agentes de IA para marketing y experiencia de cliente, con oficina en Santiago."</p></div>
+ </div>
+ ${remember('La llamada es tu cancha y WhatsApp tu apoyo: pide permiso, nombra el dolor del cargo, pregunta y cierra con dos horarios.')}`,init:()=>{
+  const ta=document.getElementById('msg');
+  const val=k=>SCRIPT[k].opts[+document.getElementById('sp'+k).value];
+  const build=()=>{ta.value=val(0)+'\n\n'+val(1)+' '+val(2)+'\n\n'+val(3)+'\n(… escucha …)\n\n'+val(4);count()};
+  const count=()=>{const t=ta.value.replace(/\(…[^)]*\)/g,'');const n=(t.trim().match(/\S+/g)||[]).length;const sec=Math.round(n/2.5);const wc=document.getElementById('wc');const ok=sec<=40;wc.textContent='≈ '+sec+' s de habla · '+(ok?'ideal':'recorta bajo 40 s');wc.className='count '+(ok?'good':'bad');const bar=document.getElementById('meterBar');bar.style.width=Math.min(100,sec/60*100)+'%';bar.className=ok?'':'bad'};
+  const preset=i=>{PRESETS[i][1].forEach((v,k)=>document.getElementById('sp'+k).value=v);document.querySelectorAll('#presetChips .chip').forEach(c=>c.setAttribute('aria-pressed',c.dataset.preset==i));build()};
+  document.getElementById('presetChips').addEventListener('click',e=>{const b=e.target.closest('[data-preset]');if(b)preset(+b.dataset.preset)});
+  document.querySelectorAll('[data-sp]').forEach(s=>s.addEventListener('change',build));ta.addEventListener('input',count);preset(0);
+  const copy=(t,el)=>{const fb=()=>{if(el.select){el.focus();el.select()}else{const r=document.createRange();r.selectNodeContents(el);const sel=getSelection();sel.removeAllRanges();sel.addRange(r)}toast('Texto seleccionado: cópialo con Ctrl/Cmd+C')};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(()=>toast('Copiado'),fb)}else fb()};
+  document.getElementById('copyBtn').addEventListener('click',()=>copy(ta.value,ta));
+  document.querySelectorAll('[data-wa]').forEach(b=>b.addEventListener('click',()=>{const el=document.getElementById('wa'+b.dataset.wa);copy(el.textContent,el)}))}},
+{t:'Reunión y objeciones',h:()=>`
+ <p class="lead">Una reunión vale cuando hay quien decide, una necesidad confirmada y un siguiente paso con fecha. Marca lo que tienes.</p>
+ <div class="grid2">
+  <div style="display:grid;gap:8px" id="checks">
+   ${[['Quien decide','Gerente de Marketing, CMO o Gerente Digital (banca); CDO, VP/Director o CCO (retail).'],['Necesidad confirmada','Reconoce al menos un dolor: velocidad, volumen, consistencia o pilotos que no escalan.'],['Urgencia','Hay una iniciativa de IA, presión competitiva o un plazo del negocio.'],['Siguiente paso agendado','Fecha y hora en el calendario con el equipo de Apply.']].map((c,i)=>`<label class="check" for="ck${i}"><input type="checkbox" id="ck${i}"><span><b style="color:var(--fg)">${c[0]}</b><br><span class="muted" style="font-family:var(--body);font-weight:400">${c[1]}</span></span></label>`).join('')}
+   <div class="result" id="checkResult" aria-live="polite"></div>
+  </div>
+  <div class="card"><h3>Preguntas de descubrimiento</h3><ol><li>¿Cuánto tarda hoy una pieza desde el brief hasta que se publica?</li><li>¿El mismo equipo produce para varios productos a la vez?</li><li>¿Lo que publican en Instagram suena igual que lo del email?</li><li>¿Cuántas agencias o equipos producen contenido?</li><li>¿Tienen iniciativas de IA en distintas áreas? ¿Conversan entre sí?</li><li>¿Tienen claro en qué iniciativa de IA invertir primero?</li><li>¿Hay un piloto que funcionó pero no escaló?</li></ol><p class="muted">Si alguna respuesta incomoda, el problema existe.</p></div>
+ </div>
+ <div class="card gen"><span class="eyebrow">✓ Después de agendar · paso obligatorio</span><h3>Envía el mail de confirmación el mismo día</h3>
+  <p>Lo obtienes en el generador de BullsEye. Así el lead llega con contexto: quién eres, qué es Apply Digital, qué conversaron y qué verán en la reunión.</p>
+  <ol class="steps"><li><div>Completa en el generador lo que te contó: cargo, industria, dolor, fecha, hora y asistentes.</div></li><li><div>Envía el mail de confirmación.</div></li><li><div>Avisa por WhatsApp que le enviaste el correo (plantilla "Confirmar la reunión" de la Vuelta 8).</div></li></ol>
+  <p class="muted">Sin mail de confirmación, la reunión no está cerrada: es el puente entre tu llamada y la reunión con el equipo de Apply.</p>
+  <div><a class="btn primary linkbtn" href="${GEN}" target="_blank" rel="noopener">Crear mail de confirmación ↗</a></div></div>
+ <div class="card"><span class="eyebrow">Simulador de objeciones</span><h3>El prospecto te dice…</h3>
+  <div class="chips" id="objChips">${OBJ.map((o,i)=>`<button class="chip" data-obj="${i}" aria-pressed="false">${esc(o[0])}</button>`).join('')}</div>
+  <div class="detail" id="objDetail" aria-live="polite"><p class="muted">Elige una objeción. Piensa tu respuesta y luego revela la sugerida.</p></div></div>
+ ${remember('Sin decisor, sin dolor reconocido o sin fecha agendada, todavía no es una reunión válida; y toda reunión agendada se confirma por mail desde el generador.')}`,init:()=>{
+  const upd=()=>{const v=[0,1,2,3].map(i=>document.getElementById('ck'+i).checked);const n=v.filter(Boolean).length;const r=document.getElementById('checkResult');
+   if(n===4){r.className='result go';r.textContent='Reunión válida (SAL). Ahora envía el mail de confirmación desde el generador y avisa por WhatsApp.'}
+   else if(v[0]&&v[1]&&v[3]){r.className='result go';r.textContent='Reunión válida, aunque sin urgencia clara. Anótalo para el equipo de Apply.'}
+   else{r.className='result wait';const miss=['quien decide','necesidad confirmada','urgencia','siguiente paso agendado'].filter((_,i)=>!v[i]);r.textContent='Todavía no. Falta: '+miss.join(', ')+'.'}};
+  document.getElementById('checks').addEventListener('change',upd);upd();
+  document.getElementById('objChips').addEventListener('click',e=>{const b=e.target.closest('[data-obj]');if(!b)return;const o=OBJ[+b.dataset.obj];document.querySelectorAll('#objChips .chip').forEach(c=>c.setAttribute('aria-pressed',c===b));
+   document.getElementById('objDetail').innerHTML=`<h3>${esc(o[0])}</h3><dl class="kv"><dt>Lo que realmente significa</dt><dd>${esc(o[1])}</dd></dl><button class="btn magenta" id="reveal">Revelar respuesta</button><p class="say" id="ans" hidden>${esc(o[2])}</p>`;
+   document.getElementById('reveal').addEventListener('click',ev=>{document.getElementById('ans').hidden=false;ev.target.hidden=true})})}},
+{t:'Primera semana',h:()=>`
+ <p class="lead">En 5 días pasas de leer a tener tus primeras conversaciones. El viernes rindes el quiz: apruebas con 8 de 10.</p>
+ ${table(['Día','Foco','Tareas prácticas'],[['Lunes','Entender a Apply','Vueltas 1 a 4. Explica a tu líder en 30 segundos qué es ACx, SPARK y TORQ'],['Martes','Entender al comprador','Vueltas 5 a 7. En HubSpot, segmento "[Segment] Banks", ubica 10 decisores de Marketing o Digital'],['Miércoles','Armar tu guion','Vuelta 8. Arma 3 guiones en el armador (Marketing banca, CDO retail, Gerente de Clientes), de 40 segundos o menos. Léelos en voz alta y pide feedback'],['Jueves','Hablar','Vuelta 9. Role play del guion, las situaciones rápidas y las 7 objeciones. Prueba el generador con un caso de "mándame información"'],['Viernes','Salir a pista','Rinde el quiz. Llama a 20 contactos, sigue por WhatsApp a quien no contestó, envía el mail de confirmación de cada reunión agendada y registra cada intento']])}
+ <div class="card" id="quiz"></div>
+ ${remember('El viernes ya deberías tener tu secuencia activa y el quiz aprobado.')}`,init:()=>{
+  let i=0,score=0;const box=document.getElementById('quiz');
+  const render=()=>{if(i>=QUIZ.length){const ok=score>=8;box.innerHTML=`<span class="eyebrow">Resultado</span><h2 style="color:${ok?'var(--cyan)':'var(--magenta)'}">${score} / 10 · ${ok?'Aprobado':'Aún no'}</h2><p>${ok?'Bandera a cuadros. Estás listo para tu primera secuencia.':'Necesitas 8 de 10. Repasa las vueltas y vuelve a intentarlo.'}</p><div><button class="btn primary" id="retry">Volver a intentar</button></div>`;document.getElementById('retry').onclick=()=>{i=0;score=0;render()};if(ok)markDone(9,true);return}
+   const q=QUIZ[i];box.innerHTML=`<div class="q"><div class="qbar"><span class="eyebrow">Pregunta ${i+1} de 10</span><span>Puntaje: <b style="color:var(--cyan)">${score}</b></span></div><h3>${esc(q[0])}</h3><div class="opts">${q[1].map((o,j)=>`<button class="opt" data-j="${j}">${esc(o)}</button>`).join('')}</div><div id="qnext"></div></div>`;
+   box.querySelector('.opts').addEventListener('click',e=>{const b=e.target.closest('.opt');if(!b||b.disabled)return;const j=+b.dataset.j;box.querySelectorAll('.opt').forEach((o,k)=>{o.disabled=true;if(k===q[2])o.classList.add('right')});if(j===q[2])score++;else b.classList.add('wrong');
+    document.getElementById('qnext').innerHTML=`<p style="margin-bottom:10px" class="${j===q[2]?'':'muted'}">${j===q[2]?'Correcto.':'No es esa. La correcta está marcada en cian.'}</p><button class="btn primary" id="nx">${i<9?'Siguiente':'Ver resultado'}</button>`;document.getElementById('nx').onclick=()=>{i++;render()}})};
+  render()}}
+];
+
+/* ---------- SHELL ---------- */
+const tabs=document.getElementById('tabs'),panels=document.getElementById('panels'),lights=document.getElementById('lights');
+LAPS.forEach((l,i)=>{
+ const t=document.createElement('button');t.className='tab';t.setAttribute('role','tab');t.id='tab'+i;t.setAttribute('aria-controls','p'+i);t.innerHTML=`<span class="dot"></span>V${i+1} · ${esc(l.t)}`;t.onclick=()=>go(i);tabs.appendChild(t);
+ const p=document.createElement('section');p.className='panel';p.id='p'+i;p.setAttribute('role','tabpanel');p.setAttribute('aria-labelledby','tab'+i);p.hidden=true;
+ p.innerHTML=`<div class="panel-head"><span class="eyebrow">Vuelta ${i+1} de 10</span><h2>${esc(l.t)}</h2></div>${l.h()}<div class="panel-foot"><button class="btn" data-prev ${i===0?'hidden':''}>← Vuelta anterior</button><button class="btn primary" data-done="${i}">${i===9?'Marcar vuelta completa':'Completar vuelta y seguir →'}</button></div>`;
+ panels.appendChild(p);if(l.init)l.init();
+ const b=document.createElement('button');b.className='light';b.title='Vuelta '+(i+1)+': '+l.t;b.setAttribute('aria-label','Ir a vuelta '+(i+1));b.onclick=()=>go(i);lights.appendChild(b);
+});
+panels.addEventListener('click',e=>{const d=e.target.closest('[data-done]');if(d){const i=+d.dataset.done;markDone(i);if(i<9)go(i+1)}if(e.target.closest('[data-prev]')){go(cur-1)}});
+let cur=0;
+function go(i){cur=Math.max(0,Math.min(9,i));document.querySelectorAll('.panel').forEach((p,k)=>p.hidden=k!==cur);document.querySelectorAll('.tab').forEach((t,k)=>{t.setAttribute('aria-selected',k===cur);if(k===cur)t.scrollIntoView({block:'nearest',inline:'center'})});store.set(KEY+'-tab',cur);window.scrollTo({top:0})}
+function markDone(i,quiet){if(!done.includes(i)){done.push(i);store.set(KEY,done)}paint();if(!quiet)toast('Vuelta '+(i+1)+' completa')}
+function paint(){const all=done.length===10;document.querySelectorAll('.light').forEach((l,k)=>{l.classList.toggle('on',done.includes(k));l.classList.toggle('all',all)});document.querySelectorAll('.tab').forEach((t,k)=>t.classList.toggle('done',done.includes(k)));document.getElementById('doneCount').textContent=done.length}
+paint();go(store.get(KEY+'-tab',0));
+})();
+</script>
+
+</body></html>

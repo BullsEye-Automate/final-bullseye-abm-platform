@@ -11,6 +11,8 @@
 import { NextRequest } from "next/server";
 import { GET as sdrAnalyticsGET } from "@/app/api/analisis/sdr/route";
 import { resolveSdrKey, normalizeSdrName } from "@/lib/sdrAnalytics";
+import { chileToday } from "@/lib/celulasSdr/calendar";
+import { buildClientGoals, type ClientGoals } from "./goals";
 
 // Personas fuera de la reportería (mismo criterio que Células SDR:
 // EXCLUDED_PEOPLE en lib/celulasSdr/engine.ts — no se importa de ahí para
@@ -43,11 +45,20 @@ export type DailySdrReport = {
   rows: ReportRow[];
   meetings: ReportMeeting[];
   totals: { calls: number; contacts: number; connected: number; meetings: number };
+  // Avance de la meta mensual de los clientes con reuniones hoy (null si no
+  // se pudo calcular: el reporte se envía igual, sin esa sección).
+  clientGoals: ClientGoals | null;
 };
 
 export async function buildDailySdrReport(opts: { cutLabel: string; baseUrl?: string }): Promise<DailySdrReport> {
   const base = opts.baseUrl || "http://localhost";
   const req = new NextRequest(`${base}/api/analisis/sdr?client_id=__all__&rangeKey=today`);
+  // Las metas (planilla de metas + reuniones) se calculan en paralelo; si
+  // fallan no se cae el reporte.
+  const goalsP = buildClientGoals(chileToday()).catch((err) => {
+    console.error("Reporte SDR: no se pudo calcular el avance de metas:", err);
+    return null;
+  });
   const res = await sdrAnalyticsGET(req);
   const body: any = await res.json();
   if (!res.ok || body?.error) throw new Error(`Ranking SDR: ${body?.error || res.status}`);
@@ -104,7 +115,8 @@ export async function buildDailySdrReport(opts: { cutLabel: string; baseUrl?: st
     (t, r) => ({ calls: t.calls + r.calls, contacts: t.contacts + r.contacts, connected: t.connected + r.connected, meetings: t.meetings }),
     { calls: 0, contacts: 0, connected: 0, meetings: meetings.length }
   );
-  return { day, cutLabel: opts.cutLabel, rows, meetings, totals };
+  const clientGoals = await goalsP;
+  return { day, cutLabel: opts.cutLabel, rows, meetings, totals, clientGoals };
 }
 
 // ─── Formato ────────────────────────────────────────────────────────────────

@@ -10,6 +10,9 @@ const nextConfig = {
     outputFileTracingIncludes: {
       "/api/cron/reporte-sdr": ["./lib/reporteSdr/fonts/**"],
       "/api/reporte-sdr": ["./lib/reporteSdr/fonts/**"],
+      // Academias del Entrenamiento cliente (se leen con fs en lib/academiaSdr/server/source.ts).
+      "/api/academia-sdr": ["./content/entrenamiento/**"],
+      "/api/academia-sdr/html": ["./content/entrenamiento/**"],
     },
   }
 };
