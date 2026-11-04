@@ -111,11 +111,16 @@ export function detectProperties(configured: Record<string, string>, catalog: Pr
     const manual = (configured[def.key] ?? "").trim();
     let prop: HSProperty | undefined;
     let candidates: { name: string; label: string }[] = [];
-    if (manual) prop = props.find((p) => p.name === manual);
+    // A mano se acepta el nombre interno o la etiqueta tal como se ve en HubSpot
+    if (manual) prop = props.find((p) => p.name === manual) ?? props.find((p) => p.name.toLowerCase() === manual.toLowerCase())
+      ?? ((byLabel) => (byLabel.length === 1 ? byLabel[0] : undefined))(props.filter((p) => normLabel(p.label) === normLabel(manual)));
     if (def.perClient) {
       const { namePrefix } = def.perClient;
       const labelPrefix = [def.perClient.labelPrefix, ...(def.perClient.alsoPrefixes ?? [])];
-      const cands = props.filter((p) => hasLabelPrefix(p.label, labelPrefix) || (namePrefix && p.name.startsWith(namePrefix)));
+      // Genérica sin cliente: la etiqueta es solo el prefijo ("SDR", "SDR Asignado",
+      // "Wish List"), como en el HubSpot propio de un cliente (Simplex)
+      const bases = new Set(labelPrefix.map((x) => normLabel(x)));
+      const cands = props.filter((p) => hasLabelPrefix(p.label, labelPrefix) || bases.has(normLabel(p.label)) || (namePrefix && p.name.startsWith(namePrefix)));
       candidates = cands.map((p) => ({ name: p.name, label: p.label })).sort((a, b) => a.label.localeCompare(b.label));
       if (!prop && !manual) {
         // La del cliente por nombre; una única propiedad genérica (sin
@@ -140,6 +145,10 @@ export function detectProperties(configured: Record<string, string>, catalog: Pr
       found: !!prop,
       manual: !!manual,
       propLabel: prop?.label ?? null,
+      // Escrito a mano y no encontrado: propiedades parecidas (por nombre o etiqueta)
+      suggestions: manual && !prop
+        ? props.filter((p) => p.name.toLowerCase().includes(manual.toLowerCase()) || normLabel(p.label).includes(normLabel(manual))).slice(0, 4).map((p) => ({ name: p.name, label: p.label }))
+        : [],
       type: prop?.type ?? null,
       fieldType: prop?.fieldType ?? null,
       options: (prop?.options ?? []).filter((o) => !o.hidden).map((o) => ({ label: o.label, value: o.value })),
