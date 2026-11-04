@@ -9,7 +9,7 @@ import { IconAlertTriangle, IconCheck, IconLoader2, IconPlugConnected, IconX } f
 
 type CheckItem = { key: string; label: string; ok: boolean; required: boolean; detail?: string; scopes?: string[] };
 type Detected = { key: string; label: string; object: string; required: boolean; property: string | null; found: boolean; manual: boolean; propLabel: string | null; perClient?: boolean; candidates?: { name: string; label: string }[]; suggestions?: { name: string; label: string }[]; options: { label: string; value: string }[] };
-type CheckResult = { items: CheckItem[]; universe: number | null; contacts: number | null; properties: Detected[]; ready: boolean };
+type CheckResult = { items: CheckItem[]; universe: number | null; contacts: number | null; properties: Detected[]; allProps?: Record<string, { name: string; label: string }[]>; ready: boolean };
 
 const OBJ_LABEL: Record<string, string> = { companies: "Empresa", contacts: "Contacto", meetings: "Reunión" };
 
@@ -128,6 +128,10 @@ export default function ClientHubspotRadar({
         <p className="text-xs text-ink-muted mb-2">
           Se buscan por su etiqueta. Si en su cuenta se llaman distinto, escribe el nombre interno o la etiqueta tal como se ve (HubSpot → Configuración → Propiedades). Si acabas de crear la propiedad en HubSpot, vuelve a cargar esta página para detectarla. Se guarda solo para este cliente.
         </p>
+        {result?.allProps && <PropSearch all={result.allProps} />}
+        {Object.entries(result?.allProps ?? {}).map(([obj, list]) => (
+          <datalist key={obj} id={`hs-props-${obj}`}>{list.map((x) => <option key={x.name} value={x.name}>{x.label}</option>)}</datalist>
+        ))}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-ink-muted border-b border-[#ECEAF4]">
@@ -145,7 +149,7 @@ export default function ClientHubspotRadar({
                         {d.candidates!.map((c) => <option key={c.name} value={c.name}>{c.label}</option>)}
                       </select>
                     ) : (
-                      <input className="input w-52 font-mono text-xs" placeholder="automático" value={properties[d.key] ?? ""} onChange={(e) => setProp(d.key, e.target.value)} />
+                      <input className="input w-52 font-mono text-xs" placeholder="automático · escribe para buscar" list={`hs-props-${d.object}`} value={properties[d.key] ?? ""} onChange={(e) => setProp(d.key, e.target.value)} />
                     )}
                   </td>
                   <td className="py-2 text-xs">
@@ -171,6 +175,37 @@ export default function ClientHubspotRadar({
           </table>
         </div>
       </div>}
+    </div>
+  );
+}
+
+// Buscador sobre todas las propiedades que la app ve en el HubSpot del
+// cliente: si una propiedad no aparece aquí, la API no la entrega (no está
+// guardada, es de otro objeto o el token no tiene permiso)
+function PropSearch({ all }: { all: Record<string, { name: string; label: string }[]> }) {
+  const [q, setQ] = useState("");
+  const norm = (x: string) => x.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const hits = q.trim()
+    ? Object.entries(all).flatMap(([obj, list]) => list.filter((x) => norm(x.label).includes(norm(q)) || norm(x.name).includes(norm(q))).map((x) => ({ ...x, obj }))).slice(0, 30)
+    : [];
+  return (
+    <div className="mb-3 rounded-lg border border-[#ECEAF4] p-3">
+      <div className="text-xs text-ink-muted mb-2">
+        Buscar en el HubSpot del cliente ({(all.companies ?? []).length} propiedades de empresa, {(all.contacts ?? []).length} de contacto). Haz clic en el nombre interno para copiarlo.
+      </div>
+      <input className="input w-full text-sm" placeholder="Ej.: SDR" value={q} onChange={(e) => setQ(e.target.value)} />
+      {q.trim() && (
+        hits.length ? (
+          <ul className="mt-2 space-y-1 text-xs">
+            {hits.map((x) => (
+              <li key={x.obj + x.name}>
+                <span className="text-ink-muted">{OBJ_LABEL[x.obj] ?? x.obj} · </span>{x.label} ·{" "}
+                <button type="button" className="font-mono underline" onClick={() => navigator.clipboard?.writeText(x.name)}>{x.name}</button>
+              </li>
+            ))}
+          </ul>
+        ) : <p className="mt-2 text-xs text-danger-fg">Ninguna propiedad con ese texto: en este HubSpot no existe (o no está guardada / el token no la ve).</p>
+      )}
     </div>
   );
 }
