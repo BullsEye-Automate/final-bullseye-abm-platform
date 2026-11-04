@@ -62,7 +62,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/telefonos",     label: "Teléfonos",           icon: IconPhone },
       { href: "/llamadas",      label: "Llamadas",            icon: IconHeadset },
-      { href: "/sdr/academia",  label: "Academia SDR",        icon: IconSchool },
+      { href: "/sdr/entrenamiento", label: "Entrenamiento cliente", icon: IconSchool },
     ]
   },
   {

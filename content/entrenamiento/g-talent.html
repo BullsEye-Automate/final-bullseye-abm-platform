@@ -1,0 +1,580 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Academia SDR G-Talent</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: pit-wall de F1. Cabecera fija con semáforo de 10 luces, pestañas por vuelta, una vuelta por pantalla. Identidad BullsEye, un solo tema oscuro. */
+:root{
+  --bg:#140F3D; --s1:#1E1760; --s2:#2A2180; --line:#3A3196;
+  --fg:#F3F1FF; --mute:#B9B3E6;
+  --cyan:#62E0D8; --purple:#9B4FC0; --magenta:#E0457B;
+  --ok:#62E0D8; --warn:#F2C14E; --bad:#E0457B;
+  --display:"Sora",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --body:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--body);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+p{margin:0}
+a{color:var(--cyan)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+/* Header */
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+header.top .wrap{padding-block:14px 10px;display:grid;gap:10px}
+.brandrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.brand h1{font-size:clamp(20px,3.2vw,26px);font-weight:800;letter-spacing:-.01em}
+.brand .tag{font-family:var(--display);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+.lights{display:flex;align-items:center;gap:6px}
+.light{width:14px;height:14px;border-radius:50%;background:var(--s2);border:1px solid var(--line);transition:background .3s,box-shadow .3s}
+.light.on{background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+.light.on.last{background:var(--magenta);box-shadow:0 0 10px var(--magenta)}
+.lap-count{font-family:var(--display);font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums;margin-left:6px;white-space:nowrap}
+.tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:thin;padding-bottom:4px}
+.tab{flex:0 0 auto;border:1px solid var(--line);background:var(--s1);color:var(--mute);border-radius:999px;padding:6px 12px;font-family:var(--display);font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.tab .n{font-variant-numeric:tabular-nums;color:var(--fg)}
+.tab.done .n{color:var(--cyan)}
+.tab[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tab[aria-selected="true"] .n{color:var(--bg)}
+
+main .wrap{padding-block:28px 64px}
+.lap-head{display:grid;gap:8px;margin-bottom:22px}
+.eyebrow{font-family:var(--display);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--purple);font-weight:700}
+.lap-head h2{font-size:clamp(26px,4.4vw,40px);font-weight:800;letter-spacing:-.02em}
+.lead{color:var(--mute);font-size:18px;max-width:65ch}
+section.lap{display:grid;gap:22px}
+.block{display:grid;gap:12px;min-width:0}
+.block h3{font-size:19px;font-weight:700}
+.block p,.block li{max-width:68ch}
+.block ul,.block ol{margin:0;padding-left:20px;display:grid;gap:6px}
+.panel{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:18px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font-family:var(--display);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);background:var(--s1);font-weight:600}
+tr:last-child td{border-bottom:0}
+.remember{border:1px solid var(--cyan);background:color-mix(in srgb,var(--cyan) 10%,var(--bg));border-radius:12px;padding:14px 16px;display:grid;gap:4px}
+.remember b{font-family:var(--display);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+.chip{display:inline-block;border:1px solid var(--line);background:var(--s2);border-radius:999px;padding:2px 10px;font-size:13px;color:var(--fg)}
+.stat{display:grid;gap:2px}
+.stat .v{font-family:var(--display);font-size:30px;font-weight:800;color:var(--cyan);font-variant-numeric:tabular-nums}
+.stat .k{color:var(--mute);font-size:14px}
+.btn{border:1px solid var(--line);background:var(--s2);border-radius:10px;padding:9px 14px;font-weight:500}
+.btn:hover{border-color:var(--cyan)}
+.btn.primary{background:var(--cyan);color:var(--bg);border-color:var(--cyan);font-family:var(--display);font-weight:700}
+.btn.primary:hover{filter:brightness(1.08)}
+.finish{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:20px;margin-top:6px}
+.finish .msg{color:var(--mute);font-size:14px}
+.warnbox{border-left:3px solid var(--magenta);padding:4px 0 4px 12px;color:var(--fg)}
+
+/* Selector de servicios */
+.seg{display:flex;flex-wrap:wrap;gap:8px}
+.seg button{border:1px solid var(--line);background:var(--s1);border-radius:10px;padding:8px 12px;font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--purple);border-color:var(--purple);color:#fff}
+.svc{display:grid;gap:10px}
+.svc dl{display:grid;grid-template-columns:140px 1fr;gap:8px 14px;margin:0}
+.svc dt{font-family:var(--display);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding-top:3px}
+.svc dd{margin:0;min-width:0}
+@media (max-width:560px){.svc dl{grid-template-columns:1fr}.svc dt{padding-top:6px}}
+
+/* Flip cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.flip{perspective:900px;border:0;background:none;padding:0;text-align:left;min-height:170px}
+.flip .in{position:relative;width:100%;height:100%;min-height:170px;transition:transform .5s;transform-style:preserve-3d}
+.flip.open .in{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:12px;border:1px solid var(--line);padding:14px;display:grid;align-content:space-between;gap:8px;overflow:auto}
+.front{background:var(--s1)}
+.front .w{font-family:var(--display);font-size:18px;font-weight:700}
+.front .hint{font-size:12px;color:var(--mute)}
+.back{background:var(--s2);transform:rotateY(180deg);font-size:14px}
+.back .why{color:var(--cyan);font-size:13px}
+.filter{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Builder */
+.builder{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.builder{grid-template-columns:1fr}}
+.piece{display:grid;gap:6px}
+.piece label{font-family:var(--display);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.piece label span{color:var(--cyan)}
+select,textarea{width:100%;background:var(--s1);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;font-size:15px}
+textarea{min-height:220px;resize:vertical;line-height:1.5}
+.meter{display:flex;align-items:center;gap:10px;font-variant-numeric:tabular-nums}
+.bar{flex:1;height:8px;border-radius:4px;background:var(--s2);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--cyan);width:0;transition:width .2s,background .2s}
+.bar.over i{background:var(--magenta)}
+
+/* Objeciones */
+.obj-list{display:flex;flex-wrap:wrap;gap:8px}
+.obj-list button{border:1px solid var(--line);background:var(--s1);border-radius:999px;padding:7px 12px;font-size:14px}
+.obj-list button[aria-pressed="true"]{border-color:var(--magenta);background:color-mix(in srgb,var(--magenta) 22%,var(--s1))}
+.sim{display:grid;gap:12px}
+.bubble{background:var(--s2);border-radius:14px 14px 14px 4px;padding:12px 14px;max-width:560px;font-size:17px}
+.reveal{display:grid;gap:10px}
+.reveal .lbl{font-family:var(--display);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.answer{border-left:3px solid var(--cyan);padding-left:12px}
+
+/* Checklist */
+.check{display:grid;gap:10px}
+.check label{display:flex;gap:12px;align-items:flex-start;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.check input{width:20px;height:20px;accent-color:var(--cyan);margin-top:2px;flex:0 0 auto}
+.verdict{border-radius:12px;padding:14px 16px;font-weight:500;border:1px solid var(--line)}
+.verdict.go{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,var(--bg))}
+.verdict.mid{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,var(--bg))}
+.verdict.no{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,var(--bg))}
+
+/* Quiz */
+.q{display:grid;gap:10px}
+.q .qn{font-family:var(--display);font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums}
+.q h3{font-size:20px}
+.opts{display:grid;gap:8px}
+.opt{text-align:left;border:1px solid var(--line);background:var(--s1);border-radius:10px;padding:10px 14px}
+.opt:hover:not([disabled]){border-color:var(--cyan)}
+.opt.right{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--s1))}
+.opt.wrong{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 16%,var(--s1))}
+.opt[disabled]{cursor:default}
+.qprog{display:flex;gap:4px}
+.qprog i{flex:1;height:6px;border-radius:3px;background:var(--s2)}
+.qprog i.r{background:var(--ok)}.qprog i.w{background:var(--bad)}
+.score{font-family:var(--display);font-size:44px;font-weight:800;font-variant-numeric:tabular-nums}
+
+.case-out{display:grid;gap:8px}
+.case-out .name{font-family:var(--display);font-size:22px;font-weight:700}
+.quote{font-size:17px;border-left:3px solid var(--purple);padding-left:12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:999px;font-weight:500;font-size:14px;z-index:20}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="brand"><span class="tag">BullsEye · Academia SDR</span><h1>G-Talent</h1></div>
+      <div class="lights" id="lights" aria-label="Progreso de vueltas"></div>
+    </div>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Vueltas"></nav>
+  </div>
+</header>
+
+<main><div class="wrap" id="main"></div></main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const LAPS = [
+ {t:"Antes de empezar", eyebrow:"Vuelta 1 · Formación de salida"},
+ {t:"Quién es G-Talent", eyebrow:"Vuelta 2"},
+ {t:"Qué vende", eyebrow:"Vuelta 3"},
+ {t:"Diccionario", eyebrow:"Vuelta 4"},
+ {t:"A quién le vendemos", eyebrow:"Vuelta 5"},
+ {t:"La necesidad", eyebrow:"Vuelta 6"},
+ {t:"Clientes que puedes mencionar", eyebrow:"Vuelta 7"},
+ {t:"Cómo escribir y hablar", eyebrow:"Vuelta 8"},
+ {t:"Cuándo una reunión vale la pena", eyebrow:"Vuelta 9"},
+ {t:"Tu primera semana", eyebrow:"Vuelta 10 · Bandera a cuadros"}
+];
+
+const SERVICES = {
+ staffing:{name:"Staffing / Outsourcing TI", line:"Grandes empresas · abrir con esto",
+  analogy:"Arrendar maestros especialistas para tu obra. La obra sigue siendo tuya; los maestros los contrata otro.",
+  means:"G-Talent busca, contrata y se hace responsable legal de profesionales TI que trabajan para el cliente: desarrolladores, jefes de proyecto, QA, IA, datos, ciberseguridad y cloud.",
+  pain:"Falta de perfiles, no pueden aumentar planilla, proyectos atrasados, necesidad de escalar el equipo rápido.",
+  example:"Células de desarrollo para JetSMART desde su llegada a Chile."},
+ factory:{name:"Software Factory", line:"Grandes empresas · abrir con esto",
+  analogy:"Encargar la casa llave en mano: tú dices qué necesitas y te entregan la casa terminada.",
+  means:"G-Talent recibe el requerimiento y entrega el software terminado: desarrollo a medida, modernización, integraciones y mantención. El código fuente queda 100% del cliente.",
+  pain:"Requerimientos que el área TI no alcanza a desarrollar, sistemas antiguos que mantener, temor a depender del proveedor.",
+  example:"Portal de contratistas y proveedores de Lipigas."},
+ ti360:{name:"Gestión TI 360", line:"Medianas empresas (50 a 200 colaboradores)",
+  analogy:"Tener un médico de cabecera de la tecnología: alguien que piensa la salud de tus sistemas y te atiende cuando algo falla.",
+  means:"Gerente tecnológico externo part-time (visión estratégica) más soporte nivel 1 y 2, remoto y en terreno. Un área TI sin el costo de un departamento completo. Proyectos como un ERP se cotizan aparte.",
+  pain:"Nadie piensa la tecnología en la empresa; el soporte es improvisado; no alcanza para contratar un área TI.",
+  example:"Oferta nueva, todavía sin caso publicado. Apóyate en los 21 años y la trinorma ISO."},
+ otros:{name:"Los otros servicios", line:"Para conocer, no para abrir",
+  analogy:"El resto del taller: está disponible cuando el cliente ya confía en ti.",
+  means:"Soporte e Infraestructura (24/7 o 5x8, niveles 1 a 3), Soluciones Digitales (consultoría, RPA, medios de pago), Datos y Compliance, Inteligencia Artificial (nuevo: IA agéntica, MLOps), housing y recuperación de proyectos abandonados.",
+  pain:"Aparecen después, cuando G-Talent ya está adentro y la cuenta crece.",
+  example:"Estrategia entrar chico y crecer: un perfil o un proyecto primero; luego más perfiles, una célula, soporte o IA."}
+};
+
+const DICT = [
+ ["rol","CIO / Gerente de Tecnología","El máximo responsable de la tecnología en la empresa.","Suele decidir. Le importan plazos, presupuesto y riesgo."],
+ ["rol","Gerente de Arquitectura","Diseña cómo se conectan los sistemas.","Influye mucho en Software Factory; sabe qué proyectos están trabados."],
+ ["rol","CISO","Responsable de la seguridad de la información.","Valora la ISO 27001:2022 más que nadie."],
+ ["rol","Jefe de Proyectos / Coordinador","Lleva los proyectos del día a día.","Es el piso mínimo de cargo. Siente el dolor de los atrasos y te abre la puerta."],
+ ["rol","Compras / Abastecimiento","Homologa y contrata proveedores.","Participa en empresas grandes, pero no decide la parte técnica."],
+ ["palabra","Staffing","Arrendar profesionales TI que trabajan para tu empresa, contratados por otro.","Es la puerta de entrada más rápida en grandes."],
+ ["palabra","Software Factory","Encargar un software terminado, llave en mano.","Ideal cuando el cliente tiene un proyecto y no un perfil."],
+ ["palabra","Célula de desarrollo","Un equipo pequeño completo (programadores, QA, líder) dedicado a un cliente.","Así trabaja G-Talent con JetSMART."],
+ ["palabra","QA","Las personas que prueban el software antes de que salga.","Responde al dolor de «sale con errores»."],
+ ["palabra","Backlog","La lista de desarrollos pendientes.","Backlog grande = falta de capacidad = necesidad."],
+ ["palabra","Sistema legado","Un sistema antiguo que todavía funciona y nadie quiere tocar.","Señal de modernización."],
+ ["palabra","Integración","Hacer que dos sistemas conversen entre sí.","Muy común en bancos y minería."],
+ ["palabra","ERP","El sistema central de ventas, inventario y finanzas.","Integrar con el ERP es trabajo típico de G-Talent."],
+ ["palabra","Soporte N1 / N2 / N3","Niveles de ayuda: básico, técnico y experto.","Gestión TI 360 incluye N1 y N2."],
+ ["palabra","Go-Live","El día en que el sistema empieza a usarse de verdad.","G-Talent acompaña después del Go-Live."],
+ ["palabra","ISO 9001","Norma de calidad: procesos ordenados y medidos.","Prueba de que cumplen lo que prometen."],
+ ["palabra","ISO 20000-1","Norma de gestión de servicios TI.","Prueba de que el servicio es estable y medido."],
+ ["palabra","ISO 27001:2022","Norma de seguridad de la información.","La más relevante para bancos. Cubre a todo el personal y proveedores de G-Talent."],
+ ["palabra","Trinorma","Tener las tres normas ISO a la vez.","Diferenciador clave. Dilo siempre con los números."],
+ ["palabra","UF","Unidad de Fomento, unidad de valor chilena que se reajusta.","Así se habla de precios en Chile."]
+];
+
+const CASES = {
+ banca:{label:"Banco, AFP o financiera", name:"Banco Central, Banco de Chile y tarjetas de flota de Copec", say:"Trabajamos con Banco Central y Banco de Chile, y desarrollamos el backend de las tarjetas de flota de Copec, que controlan consumos en línea."},
+ escalar:{label:"Necesita escalar un equipo rápido", name:"JetSMART", say:"A JetSMART la acompañamos con células de desarrollo desde su llegada a Chile."},
+ mineria:{label:"Minería, energía o muchos contratistas", name:"Lipigas", say:"Para Lipigas construimos el portal donde sus contratistas y proveedores gestionan órdenes de compra y credenciales digitales."},
+ terreno:{label:"Operación en terreno o zonas remotas", name:"Gili", say:"Para Gili hicimos una app que funciona sin internet en zonas remotas y se sincroniza con su ERP."},
+ planta:{label:"Industria o planta con normativa", name:"OxyChile", say:"Para OxyChile desarrollamos una app que controla la mantención de envases según la normativa, más un portal con indicadores."},
+ transporte:{label:"Transporte o logística", name:"Transcom (sistema CONECTA)", say:"Para Transcom digitalizamos procesos de RRHH, finanzas y operaciones, como peajes y remuneraciones."},
+ legado:{label:"Sistemas antiguos o integraciones", name:"Copec (desarrollo y soporte)", say:"Con Copec trabajamos en desarrollo y soporte de software para resolver errores más rápido."}
+};
+
+const PIECES = {
+ contexto:[
+  "En banca, los equipos de tecnología suelen tener más proyectos que personas para ejecutarlos.",
+  "En minería, muchos sistemas necesitan integrarse o modernizarse, y encontrar los perfiles para hacerlo a tiempo cuesta.",
+  "Muchos gerentes de tecnología nos cuentan que el problema no es la idea, es tener el equipo para ejecutarla a tiempo.",
+  "Cuando hay que integrar sistemas nuevos con sistemas antiguos, los plazos suelen alargarse más de lo planeado.",
+  "Para un área de seguridad, sumar un proveedor externo es un riesgo si no está certificado.",
+  "Muchas empresas medianas necesitan a alguien que piense la tecnología, pero no les alcanza para un departamento completo."
+ ],
+ ayuda:[
+  "En G-Talent sumamos perfiles TI especializados que se integran a tu equipo.",
+  "En G-Talent desarrollamos software a medida llave en mano, y el código queda 100% de tu empresa.",
+  "Con Gestión TI 360 de G-Talent tienes un gerente tecnológico part-time y soporte nivel 1 y 2."
+ ],
+ prueba:[
+  "Tenemos certificación ISO 27001:2022 en seguridad de la información.",
+  "Trabajamos con Banco Central y Banco de Chile.",
+  "Acompañamos a JetSMART con células de desarrollo desde su llegada a Chile.",
+  "Lo hicimos con el portal de contratistas de Lipigas.",
+  "Llevamos 21 años y tenemos certificación ISO 9001, 20000 y 27001."
+ ],
+ pregunta:[
+  "¿Te hace sentido conversar 15 minutos con Enrique Gatica, nuestro gerente general?",
+  "¿Tienes algún desarrollo trabado este año?",
+  "¿Hoy les está faltando capacidad en algún proyecto?",
+  "¿Conversamos 15 minutos?"
+ ]
+};
+
+const OBJ = [
+ ["Es muy caro / no hay presupuesto","Teme un gasto grande de una vez, o no ve el costo de seguir igual.","Lo entiendo. Enrique suele ver modalidades de pago mensual o en cuotas, y comparar con lo que cuesta un proyecto atrasado. ¿Lo vemos en 15 minutos?"],
+ ["Ya tenemos equipo interno","Hoy no siente urgencia.","Perfecto. ¿En qué proyectos se apoyan en especialistas externos cuando necesitan más capacidad?"],
+ ["Trabajamos con otro proveedor","Está cubierto, quizás no del todo.","Bien, no buscamos reemplazar a nadie. ¿Hay perfiles o desarrollos que les cueste cubrir?"],
+ ["No tenemos proyectos ahora","No hay algo inmediato.","¿Hay alguna iniciativa planificada para los próximos meses que vaya a necesitar más capacidad?"],
+ ["Mándame información","Quiere cortar la llamada o no sabe si le sirve.","Claro. Para mandarte lo justo: ¿te interesa más sumar personas al equipo o encargar un desarrollo completo? (Y luego propones los 15 minutos.)"],
+ ["¿Y la seguridad de nuestros datos?","Teme el riesgo de un externo.","Tenemos ISO 27001:2022, que cubre a todo nuestro personal y a los proveedores con acceso a datos."],
+ ["¿De quién es el código?","Teme quedar amarrado al proveedor.","El código fuente es 100% de ustedes."],
+ ["¿Cuánto cuesta?","Interés real.","Depende del alcance; eso lo ve Enrique contigo. ¿Te acomoda esta semana? (Nunca des precios.)"]
+];
+
+const QUIZ = [
+ ["¿Cuántos años tiene G-Talent en el mercado?",["10","15","21","30"],2,"Fundada en 2005: 21 años."],
+ ["¿Qué norma pesa más para un banco?",["ISO 9001","ISO 20000-1","ISO 27001:2022","ISO 14001"],2,"La 27001:2022 es la de seguridad de la información."],
+ ["¿Qué es Staffing?",["Entregar software terminado","G-Talent busca, contrata y responde legalmente por profesionales que trabajan para el cliente","Soporte 24/7","Consultoría de IA"],1,"Staffing = personas; Software Factory = producto terminado."],
+ ["En Software Factory, ¿de quién es el código?",["De G-Talent","Compartido","100% del cliente","Del proveedor de nube"],2,"Todo el código fuente queda en propiedad del cliente."],
+ ["¿Cuáles son las industrias foco para grandes?",["Retail y salud","Financiera y minería","Educación y gobierno","Agrícola"],1,"Se parte por financiera (AFP y banca) y minería."],
+ ["¿Para quién es Gestión TI 360?",["Bancos grandes","Empresas medianas que necesitan un área TI sin el costo de un departamento","Mercado Público","Startups sin empleados"],1,"Medianas de 50 a 200 colaboradores."],
+ ["¿Qué haces con Copec?",["La prospectas","La citas como caso, pero no la contactas","Ni la citas ni la contactas","Solo por LinkedIn"],1,"Es cliente actual: se cita, no se llama."],
+ ["¿Cuál es el cargo mínimo a contactar?",["Analista","Jefe de proyecto o coordinador","Solo gerente general","Cualquiera"],1,"Desde jefe de proyecto o coordinador hacia arriba."],
+ ["¿Qué apertura es correcta?",["«Vi que están buscando programadores…»","«Ofrecemos soluciones TI integrales»","«En banca, los equipos de tecnología suelen tener más proyectos que personas…»","«Tenemos certificaciones de calidad»"],2,"Frase general sobre la industria, sin datos puntuales de la cuenta."],
+ ["Te piden precio en la primera llamada. ¿Qué haces?",["Das un valor aproximado","Dices que depende del alcance y propones 15 minutos con Enrique","Envías el brochure y esperas","Terminas la llamada"],1,"El precio lo ve Enrique. Tú consigues la reunión."]
+];
+
+/* ---------- estado ---------- */
+const KEY="academia-gtalent-v1";
+let state={done:[],cur:0};
+try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&Array.isArray(s.done))state=Object.assign(state,s)}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}}
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,1800)}
+function copyText(text,fallbackEl){
+  const ok=()=>toast("Copiado");
+  try{navigator.clipboard.writeText(text).then(ok,()=>{selectEl(fallbackEl)})}catch(e){selectEl(fallbackEl)}
+}
+function selectEl(el){if(!el)return;if(el.select){el.focus();el.select()}else{const r=document.createRange();r.selectNodeContents(el);const s=getSelection();s.removeAllRanges();s.addRange(r)}toast("Texto seleccionado: cópialo con Ctrl/Cmd + C")}
+
+/* ---------- vistas ---------- */
+const remember=t=>`<div class="remember"><b>Lo que debes recordar</b><p>${t}</p></div>`;
+const tbl=(head,rows)=>`<div class="tbl"><table><thead><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+
+const VIEWS=[
+()=>`
+<p class="lead">Al terminar vas a poder explicar en 30 segundos qué hace G-Talent, a quién ayuda y por qué vale la pena una reunión de 15 minutos con Enrique Gatica, su gerente general.</p>
+<div class="block"><h3>Qué vas a aprender</h3><ul>
+<li>Quién es G-Talent y por qué una empresa grande confía en ellos.</li>
+<li>Qué vende, explicado con ejemplos de la vida diaria.</li>
+<li>Las palabras técnicas que vas a escuchar, en simple.</li>
+<li>A quién llamar, qué decir y qué responder cuando te digan que no.</li>
+<li>Cuándo una reunión está lista para agendar.</li></ul></div>
+<div class="block"><h3>El foco de esta campaña</h3>
+<div class="grid2">
+<div class="panel"><span class="chip">Línea 1 · Grandes</span><h3 style="margin-top:10px">Staffing / Outsourcing TI y Software Factory</h3><p style="margin-top:8px;color:var(--mute)">Primero financiero (prioridad A: AFP y banca) y minería; también transporte, aerolíneas, energía, telecomunicaciones, salud y retail. Desde jefes de proyecto hacia arriba: CIO, gerentes de tecnología y arquitectura, CISO.</p></div>
+<div class="panel"><span class="chip">Línea 2 · Medianas</span><h3 style="margin-top:10px">Gestión TI 360</h3><p style="margin-top:8px;color:var(--mute)">Empresas de 50 a 200 colaboradores que necesitan un área TI y no pueden costear un departamento completo.</p></div>
+</div>
+<p>País: Chile. Tu meta no es vender: es una reunión de 15 minutos donde Enrique conozca la necesidad. El equipo apunta a 10 reuniones al mes, con subida gradual al principio.</p></div>
+${remember("Vendes una conversación, no un servicio. Grandes = Staffing y Software Factory; medianas = Gestión TI 360.")}`,
+
+()=>`
+<p class="lead">G-Talent (Asesorías Gatica Limitada) es una empresa chilena de servicios de tecnología, fundada en 2005, que se presenta como el partner tecnológico de empresas grandes y medianas.</p>
+<div class="grid3">
+<div class="panel"><span class="eyebrow">Problema</span><p style="margin-top:6px">Una empresa tiene proyectos de tecnología que no avanzan: faltan programadores, los plazos se atrasan o lo entregado sale con errores.</p></div>
+<div class="panel"><span class="eyebrow">Solución</span><p style="margin-top:6px">G-Talent pone el talento que falta o construye el software completo, bajo normas ISO de calidad y seguridad.</p></div>
+<div class="panel"><span class="eyebrow">Resultado</span><p style="margin-top:6px">El proyecto avanza a tiempo y con calidad, sin que la empresa tenga que contratar y administrar a todo ese equipo.</p></div>
+</div>
+<div class="block"><h3>Una analogía</h3><p>Piensa en una constructora. A veces una empresa solo necesita maestros extra para su obra: eso es Staffing. Otras veces encarga la casa completa, llave en mano: eso es Software Factory. G-Talent hace las dos cosas, pero con software.</p></div>
+<div class="block"><h3>Cifras clave</h3>
+<div class="grid3">
+<div class="stat"><span class="v">21</span><span class="k">años en el mercado (desde 2005)</span></div>
+<div class="stat"><span class="v">3</span><span class="k">normas ISO: 9001:2015, 20000-1:2018, 27001:2022</span></div>
+<div class="stat"><span class="v">100%</span><span class="k">del código fuente queda en manos del cliente</span></div>
+<div class="stat"><span class="v">2011</span><span class="k">inicio del servicio de outsourcing TI</span></div>
+<div class="stat"><span class="v">2015</span><span class="k">proveedor del Estado (Mercado Público)</span></div>
+<div class="stat"><span class="v">2028</span><span class="k">vigencia de la ISO 27001:2022 (otorgada nov 2025)</span></div>
+</div></div>
+<p class="warnbox"><b>Regla de oro:</b> di siempre los números de las normas (9001, 20000, 27001). Nunca «tenemos certificaciones de calidad». Enrique lo pidió así.</p>
+<div class="block"><h3>3 razones fáciles de recordar</h3><ol>
+<li><b>Experiencia:</b> 21 años con empresas como JetSMART, Copec, Lipigas y bancos.</li>
+<li><b>Seguridad certificada:</b> trinorma ISO, con la 27001:2022, la que más pesa en bancos.</li>
+<li><b>Involucramiento:</b> se meten en la estrategia y los dolores del negocio, y son agnósticos de proveedor.</li></ol></div>
+${remember("21 años, trinorma ISO (9001, 20000, 27001) y el código es 100% del cliente.")}`,
+
+()=>`
+<p class="lead">G-Talent tiene seis servicios, pero en esta campaña abres con tres. Elige uno para ver cómo explicarlo.</p>
+<div class="block"><div class="seg" id="svcSeg" role="group" aria-label="Servicios">${Object.entries(SERVICES).map(([k,s],i)=>`<button type="button" data-k="${k}" aria-pressed="${i===0}">${s.name}</button>`).join("")}</div>
+<div class="panel svc" id="svcOut" aria-live="polite"></div></div>
+<div class="block"><h3>Cómo trabaja G-Talent</h3><ol>
+<li><b>Entendimiento del desafío:</b> analizan la necesidad y la arquitectura actual antes de proponer.</li>
+<li><b>Implementación:</b> Staffing o Fábrica, con pruebas de calidad (QA) y estándares ISO 27001.</li>
+<li><b>Seguimiento y evolución:</b> continuidad, transferencia de conocimiento y soporte después del Go-Live.</li></ol></div>
+<div class="grid2">
+<div class="panel"><h3>Staffing</h3><p style="margin-top:6px;color:var(--mute)">El cliente dirige el trabajo. G-Talent pone a las personas y responde por ellas legalmente.</p></div>
+<div class="panel"><h3>Software Factory</h3><p style="margin-top:6px;color:var(--mute)">G-Talent dirige el trabajo y entrega el producto terminado.</p></div>
+</div>
+${remember("Staffing = personas; Software Factory = producto terminado; Gestión TI 360 = un área TI a medida para medianas. Entra por un dolor, no por el catálogo.")}`,
+
+()=>`
+<p class="lead">No necesitas ser técnico. Toca una tarjeta para darla vuelta.</p>
+<div class="filter seg" id="dictSeg" role="group" aria-label="Filtro"><button type="button" data-f="all" aria-pressed="true">Todas</button><button type="button" data-f="rol" aria-pressed="false">Roles</button><button type="button" data-f="palabra" aria-pressed="false">Palabras técnicas</button></div>
+<div class="cards" id="cards"></div>
+<div class="block"><h3>Si te hacen una pregunta muy técnica</h3><p>No inventes. Responde: «Muy buena pregunta. Justamente eso lo ve Enrique, nuestro gerente general, que tiene 21 años diseñando este tipo de soluciones. ¿Te parece si lo vemos en una reunión de 15 minutos?» Una pregunta técnica es una señal de interés.</p></div>
+${remember("Entiende lo justo. Si la pregunta es muy técnica, conviértela en motivo para la reunión.")}`,
+
+()=>`
+<p class="lead">Las cuentas que recibes ya vienen filtradas: sabemos que tienen la necesidad. Tu trabajo es llegar a quien decide y conseguir la reunión.</p>
+<div class="block"><h3>El ICP en simple: por qué estas empresas están en tu lista</h3><ul>
+<li><b>Industria:</b> financiera (AFP, banca y otras) y minería como foco; también transporte, aerolíneas, energía, telecomunicaciones, salud y retail.</li>
+<li><b>Tamaño:</b> desde 501 colaboradores y facturación anual sobre US$10 millones, con equipo TI propio.</li>
+<li><b>Actitud:</b> visión de negocio, ganas de crecer y necesidad de optimizar o desarrollar tecnología.</li>
+<li><b>Mercado:</b> Chile. Mercado Público queda fuera de esta campaña.</li>
+<li><b>Medianas (Gestión TI 360):</b> 50 a 200 colaboradores.</li></ul></div>
+<div class="block"><h3>Tus listas</h3><ol>
+<li><b>Empresas a trabajar:</b> la lista oficial de cuentas aprobadas, con prioridad; parte por AFP y banca.</li>
+<li><b>Clientes antiguos:</b> verde = contactar, rojo = no contactar.</li>
+<li><b>Leads históricos del CRM:</b> personas que alguna vez mostraron interés.</li></ol></div>
+<div class="block"><h3>Quién decide, quién influye</h3>
+${tbl(["Tipo","Cargos típicos","Cómo tratarlo"],[
+["<span class='chip' style='border-color:var(--cyan)'>Decide</span>","CIO, Gerente de Tecnología, Gerente de Operaciones y Tecnología, Gerente de Arquitectura y Transformación","Tu objetivo principal. Mensaje corto, enfocado en plazos y riesgo."],
+["<span class='chip' style='border-color:var(--purple)'>Influye</span>","Subgerente TI, Jefe de Proyectos, Jefe de Arquitectura, CISO, Gerente de IA y Datos","Te abre la puerta y te cuenta el dolor real. Pídele que te conecte o que participe."],
+["<span class='chip'>Participa</span>","Compras / Abastecimiento","Aparece al final, para homologar. No es tu primer contacto."],
+["<span class='chip' style='border-color:var(--magenta)'>No es tu contacto</span>","Marketing, RRHH, pago a proveedores, cargos bajo jefe de proyecto","Agradece y pide el nombre del responsable de tecnología."]])}
+<p style="color:var(--mute)">En medianas, quien decide suele ser el gerente general, el dueño o el gerente de finanzas.</p></div>
+<div class="block"><h3>Qué le preocupa a quien decide</h3><ul>
+<li>Que los proyectos se atrasen y el negocio lo note.</li><li>Que lo entregado salga con errores.</li>
+<li>No encontrar ni retener los perfiles que necesita.</li><li>Que un externo ponga en riesgo la seguridad de los datos.</li><li>Que el costo se dispare.</li></ul></div>
+${remember("No calificas cuentas: llegas a quien decide. Si contesta alguien que no decide, pide el nombre correcto.")}`,
+
+()=>`
+<p class="lead">G-Talent resuelve tres dolores que Enrique repite siempre: velocidad, plazos que no se cumplen y calidad.</p>
+<div class="block">${tbl(["Dolor","Cómo se ve","Qué resuelve G-Talent"],[
+["Falta de capacidad","Muchos proyectos, poco equipo; el backlog crece","Staffing: suma perfiles rápido sin contratar internamente"],
+["Plazos que no se cumplen","Proyectos atrasados o abandonados","Software Factory o célula de desarrollo; también recuperan proyectos abandonados"],
+["Calidad","El software sale con errores y hay retrabajo","Pruebas QA y procesos ISO 9001 / 20000"],
+["Riesgo de seguridad","Miedo a dar acceso a datos sensibles a un externo","ISO 27001:2022, que cubre a todo su personal y proveedores"],
+["Sin área TI (medianas)","Nadie piensa la tecnología; soporte improvisado","Gestión TI 360: gerente TI part-time + soporte N1 y N2"]])}</div>
+<div class="block"><h3>Frases generales por industria o rol</h3><p style="color:var(--mute)">Sirven para cualquier cuenta, sin investigarla.</p>
+<div class="grid2">
+${[["Banca y financieras","En banca, los equipos de tecnología suelen tener más proyectos que manos, y además no pueden darle acceso a datos a cualquier proveedor."],
+["Minería","En minería, muchos sistemas necesitan integrarse o modernizarse, y encontrar los perfiles para hacerlo a tiempo cuesta."],
+["CIO / Gerente de Tecnología","Muchos gerentes de tecnología nos cuentan que el problema no es la idea, es tener el equipo para ejecutarla a tiempo."],
+["Arquitectura / Transformación","Cuando hay que integrar sistemas nuevos con sistemas antiguos, los plazos suelen alargarse más de lo planeado."],
+["CISO","Para un área de seguridad, sumar un proveedor externo es un riesgo si no está certificado en ISO 27001."],
+["Jefe de Proyectos","Los jefes de proyecto suelen cargar con los atrasos cuando falta un perfil clave en el equipo."],
+["Gerente general de empresa mediana","Muchas empresas medianas necesitan a alguien que piense la tecnología, pero no les alcanza para un departamento completo."]].map(([k,v])=>`<div class="panel"><span class="eyebrow">${k}</span><p style="margin-top:6px">«${v}»</p></div>`).join("")}
+</div></div>
+<div class="block"><h3>Cuándo avisar a tu líder</h3><p>Avisa a Nicolle Nazar o Vanessa Abarzua cuando:</p><ul>
+<li>Te contesta alguien de <b>Copec</b>. Es cliente actual: no se prospecta.</li>
+<li>Te contesta un cliente antiguo marcado en <b>rojo</b>, o alguien cuenta una mala experiencia con G-Talent.</li>
+<li>Piden <b>precio, propuesta formal o licitación</b> antes de la reunión.</li>
+<li>Preguntan por <b>Brasil</b> u otro país, o por Mercado Público.</li>
+<li>La empresa es claramente <b>muy pequeña</b> para grandes (puede calzar con Gestión TI 360).</li>
+<li>Quieren trabajar con G-Talent como <b>proveedor o candidato</b>, no como cliente.</li>
+<li>Te piden algo que no está en esta academia.</li></ul></div>
+${remember("Velocidad, plazos y calidad. Usa frases sobre la industria o el rol, nunca sobre la empresa puntual.")}`,
+
+()=>`
+<p class="lead">G-Talent autorizó nombrar a sus clientes en prospección y reuniones. Elige cómo es tu prospecto y te damos el caso y la frase.</p>
+<div class="block"><label for="caseSel" class="eyebrow">Mi prospecto es…</label>
+<select id="caseSel">${Object.entries(CASES).map(([k,c])=>`<option value="${k}">${c.label}</option>`).join("")}</select>
+<div class="panel case-out" id="caseOut" aria-live="polite"></div></div>
+<div class="block"><h3>Reglas para usar casos</h3><ul>
+<li><b>Copec se puede citar, pero nunca contactar.</b> Es cliente actual.</li>
+<li>No inventes cifras ni resultados. Si piden números de un caso, eso lo ve Enrique.</li>
+<li>Nombra un caso, no cinco.</li>
+<li>Gasco también es citable, pero solo en la lista de clientes hasta confirmar qué se hizo.</li></ul></div>
+${remember("Un caso parecido al prospecto, en una frase. Copec se cita, no se llama.")}`,
+
+()=>`
+<p class="lead">Un buen mensaje tiene menos de 80 palabras, habla del problema del rol y termina en una pregunta fácil de contestar.</p>
+<div class="block">${tbl(["Haz esto","Evita esto"],[
+["Habla de un dolor concreto: plazos, capacidad, calidad","«Ofrecemos soluciones TI integrales»"],
+["Di los números: ISO 27001:2022, 20000, 9001","«Tenemos certificaciones de calidad»"],
+["Un caso con nombre, parecido al prospecto","Una lista de diez clientes"],
+["Pide 15 minutos con Enrique","Pedir una hora o mandar el brochure de entrada"],
+["Frases generales sobre la industria o el rol","«Vi que están buscando…» o datos puntuales de la empresa"],
+["Respeta el «no me interesa» y agradece","Prometer resultados técnicos o precios"]])}</div>
+<div class="block"><h3>Armador de mensajes</h3><p style="color:var(--mute)">Contexto general + cómo ayudamos + prueba + pregunta. Edita el texto final como quieras.</p>
+<div class="builder">
+<div class="block">
+${[["contexto","1 · Contexto general"],["ayuda","2 · Cómo ayudamos"],["prueba","3 · Prueba"],["pregunta","4 · Pregunta"]].map(([k,l])=>`<div class="piece"><label for="p-${k}"><span>${l.split(" · ")[0]}</span> · ${l.split(" · ")[1]}</label><select id="p-${k}" data-k="${k}">${PIECES[k].map((t,i)=>`<option value="${i}">${esc(t)}</option>`).join("")}</select></div>`).join("")}
+</div>
+<div class="block">
+<label for="msgOut" class="eyebrow">Tu mensaje</label>
+<textarea id="msgOut"></textarea>
+<div class="meter"><div class="bar" id="wBar"><i></i></div><span id="wCount">0 palabras</span></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary" id="copyMsg">Copiar mensaje</button><button type="button" class="btn" id="resetMsg">Volver a armar</button></div>
+</div></div></div>
+<div class="block"><h3>Guion telefónico de 30 segundos</h3><div class="panel" style="display:grid;gap:8px">
+<p>«Hola [Nombre], te habla [tu nombre] de G-Talent. ¿Tienes 30 segundos?» <span style="color:var(--mute)">(espera el sí)</span></p>
+<p>«Te llamo porque trabajamos con equipos de tecnología en banca y minería que tienen más proyectos que personas para sacarlos a tiempo. Sumamos especialistas TI o desarrollamos el software completo, con ISO 27001:2022. Lo hacemos con empresas como JetSMART y Banco de Chile.»</p>
+<p>«¿Hoy tienen algún proyecto donde les esté faltando capacidad o que vaya atrasado?»</p>
+<p style="color:var(--cyan)">Si dice sí: «Justamente eso lo ve Enrique Gatica, nuestro gerente general. ¿Te acomoda el jueves o el viernes, 15 minutos?»</p>
+</div><p style="color:var(--mute)">Para agendar, usa el enlace de agenda del sitio de G-Talent: se sincroniza con el calendario de Enrique.</p></div>
+<div class="block"><h3>Secuencia de 15 días</h3>${tbl(["Día","Canal","Qué hacer"],[
+["1","LinkedIn","Invitación a conectar, sin mensaje de venta"],["1","Email","Email 1: fórmula de 4 piezas, dolor principal"],
+["3","Llamada","Guion de 30 segundos; si no contesta, no dejes un mensaje largo"],["5","LinkedIn","Si aceptó: mensaje corto con un caso de su industria"],
+["7","Email","Email 2: otro ángulo (ISO 27001 o calidad), mismo hilo"],["9","Llamada","Segundo intento, otra franja horaria"],
+["11","LinkedIn","Una idea útil o una pregunta corta, sin presión"],["13","Llamada","Tercer intento; pregunta si hay otra persona a cargo"],
+["15","Email","Cierre amable: «¿Lo dejamos para más adelante o hay alguien más con quien hablar?»"]])}</div>
+${remember("Contexto + cómo ayudamos + prueba + pregunta, en menos de 80 palabras. Siempre pides 15 minutos con Enrique.")}`,
+
+()=>`
+<p class="lead">Una reunión calificada tiene una necesidad real y deja espacio para una segunda reunión. Revisa tres cosas antes de agendar.</p>
+<div class="block"><h3>Checklist de reunión</h3>
+<div class="check" id="check">
+<label for="c1"><input type="checkbox" id="c1"><span><b>Quien decide:</b> hablas con quien decide o con alguien que lo llevará a la reunión (jefe de proyecto o superior).</span></label>
+<label for="c2"><input type="checkbox" id="c2"><span><b>Necesidad confirmada:</b> nombró un dolor concreto: perfiles que faltan, proyecto atrasado, errores, o (en medianas) sin área TI.</span></label>
+<label for="c3"><input type="checkbox" id="c3"><span><b>Urgencia:</b> es para este año o tiene fecha, no un «algún día».</span></label>
+</div>
+<div class="verdict" id="verdict" aria-live="polite"></div></div>
+<div class="block"><h3>Preguntas de descubrimiento</h3><ol>
+<li>«¿Qué proyectos de tecnología tienen este año que les preocupen por plazo?»</li>
+<li>«Cuando necesitan un perfil especializado, ¿cuánto les cuesta encontrarlo?»</li>
+<li>«¿Hoy trabajan con algún proveedor externo para desarrollo o personas?»</li>
+<li>«¿Qué les pide su área de seguridad cuando suman a un externo?»</li>
+<li>«¿Quién más participa cuando deciden sumar un proveedor?»</li>
+<li>(Medianas) «¿Quién se encarga hoy de la tecnología y del soporte?»</li></ol></div>
+<div class="block"><h3>Simulador de objeciones</h3><p style="color:var(--mute)">Elige lo que te dijeron. Piensa tu respuesta y luego revela la sugerida.</p>
+<div class="obj-list" id="objList">${OBJ.map((o,i)=>`<button type="button" data-i="${i}" aria-pressed="${i===0}">${esc(o[0])}</button>`).join("")}</div>
+<div class="panel sim" id="objOut" aria-live="polite"></div></div>
+<p class="warnbox">Nunca hables mal de otro proveedor. G-Talent es complemento: «sumamos donde hoy les falta».</p>
+${remember("Quien decide + necesidad + urgencia. Ante una objeción, pregunta y vuelve a los 15 minutos.")}`,
+
+()=>`
+<p class="lead">En cinco días pasas de cero a tus primeros llamados, que parten el viernes 30 de octubre.</p>
+<div class="block">${tbl(["Día","Qué estudiar","Tarea práctica"],[
+["1 · mié 28 oct","Vueltas 1 a 4","Explica G-Talent en 30 segundos a un compañero, con los números de las tres ISO"],
+["2 · jue 29 oct","Vueltas 5 a 7","Marca quién decide e influye en 10 cuentas de tu lista y elige un caso para cada una"],
+["3 · jue 29 oct (tarde)","Vuelta 8","Escribe 3 mensajes con el armador, menos de 80 palabras cada uno; pide feedback a tu líder"],
+["4 · vie 30 oct (mañana)","Vuelta 9","Roleplay de objeciones (precio, «ya tenemos equipo», «mándame info») y aprueba el quiz"],
+["5 · vie 30 oct y lun 2 nov","Todo","Primeros llamados y primera secuencia de 15 días. Al cerrar, anota qué objeciones escuchaste"]])}</div>
+<div class="block"><h3>Quiz final · apruebas con 8 de 10</h3><div class="panel" id="quiz"></div></div>
+${remember("Practica en voz alta antes de llamar. El quiz se aprueba con 8 de 10.")}`
+];
+
+/* ---------- interactivos ---------- */
+const MOUNT={
+ 2(){const seg=$("#svcSeg"),out=$("#svcOut");
+  const show=k=>{const s=SERVICES[k];out.innerHTML=`<span class="chip">${s.line}</span><h3>${s.name}</h3><dl><dt>Analogía</dt><dd>${s.analogy}</dd><dt>En la empresa</dt><dd>${s.means}</dd><dt>Dolor que abre</dt><dd>${s.pain}</dd><dt>Ejemplo</dt><dd>${s.example}</dd></dl>`;
+   seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.k===k))};
+  seg.addEventListener("click",e=>{const b=e.target.closest("button");if(b)show(b.dataset.k)});show("staffing")},
+ 3(){const seg=$("#dictSeg"),box=$("#cards");
+  const draw=f=>{box.innerHTML=DICT.filter(d=>f==="all"||d[0]===f).map(d=>`<button type="button" class="flip" aria-label="${esc(d[1])}: ver significado"><div class="in"><div class="face front"><span class="chip">${d[0]==="rol"?"Rol":"Palabra"}</span><span class="w">${esc(d[1])}</span><span class="hint">Toca para dar vuelta</span></div><div class="face back"><p>${esc(d[2])}</p><p class="why"><b>Para vender:</b> ${esc(d[3])}</p></div></div></button>`).join("");
+   seg.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.f===f))};
+  seg.addEventListener("click",e=>{const b=e.target.closest("button");if(b)draw(b.dataset.f)});
+  box.addEventListener("click",e=>{const c=e.target.closest(".flip");if(c)c.classList.toggle("open")});draw("all")},
+ 6(){const sel=$("#caseSel"),out=$("#caseOut");
+  const show=()=>{const c=CASES[sel.value];out.innerHTML=`<span class="eyebrow">Caso a usar</span><span class="name">${esc(c.name)}</span><p class="quote" id="caseQuote">«${esc(c.say)}»</p><div><button type="button" class="btn" id="copyCase">Copiar frase</button></div>`;
+   $("#copyCase").onclick=()=>copyText(c.say,$("#caseQuote"))};
+  sel.addEventListener("change",show);show()},
+ 7(){const sels=[...document.querySelectorAll(".piece select")],ta=$("#msgOut"),bar=$("#wBar"),cnt=$("#wCount");
+  const build=()=>{ta.value="Hola [Nombre], "+sels.map(s=>PIECES[s.dataset.k][s.value]).join(" ").replace(/^./,c=>c.toLowerCase());count()};
+  const count=()=>{const n=(ta.value.trim().match(/\S+/g)||[]).length;cnt.textContent=n+" palabras"+(n>80?" · recorta":" · ideal < 80");bar.querySelector("i").style.width=Math.min(100,n/100*100)+"%";bar.classList.toggle("over",n>80)};
+  sels.forEach(s=>s.addEventListener("change",build));ta.addEventListener("input",count);
+  $("#copyMsg").onclick=()=>copyText(ta.value,ta);$("#resetMsg").onclick=build;build()},
+ 8(){const boxes=[...document.querySelectorAll("#check input")],v=$("#verdict");
+  const upd=()=>{const n=boxes.filter(b=>b.checked).length;
+   if(n===3){v.className="verdict go";v.textContent="3 de 3: agenda la reunión con Enrique."}
+   else if(n===2){v.className="verdict mid";v.textContent="2 de 3: agenda y anota lo que falta para que Enrique lo sepa."}
+   else{v.className="verdict no";v.textContent=n+" de 3: todavía no. Sigue la secuencia o avisa a tu líder."}};
+  boxes.forEach(b=>b.addEventListener("change",upd));upd();
+  const list=$("#objList"),out=$("#objOut");
+  const show=i=>{const o=OBJ[i];out.innerHTML=`<div class="bubble">«${esc(o[0])}»</div><button type="button" class="btn" id="revealBtn">Revelar respuesta</button><div class="reveal" id="revealBox" hidden><span class="lbl">Lo que realmente significa</span><p>${esc(o[1])}</p><span class="lbl">Qué responder</span><p class="answer">«${esc(o[2])}»</p></div>`;
+   $("#revealBtn").onclick=e=>{$("#revealBox").hidden=false;e.target.hidden=true};
+   list.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",+b.dataset.i===i))};
+  list.addEventListener("click",e=>{const b=e.target.closest("button");if(b)show(+b.dataset.i)});show(0)},
+ 9(){const box=$("#quiz");let i=0,res=[];
+  const render=()=>{
+   const prog=`<div class="qprog">${QUIZ.map((_,k)=>`<i class="${res[k]===true?"r":res[k]===false?"w":""}"></i>`).join("")}</div>`;
+   if(i>=QUIZ.length){const sc=res.filter(Boolean).length,ok=sc>=8;
+    box.innerHTML=`<div class="q">${prog}<span class="score" style="color:${ok?"var(--cyan)":"var(--magenta)"}">${sc}/10</span><h3>${ok?"Aprobado. Listo para tus primeros llamados.":"Aún no. Repasa las vueltas donde fallaste y vuelve a intentarlo."}</h3><div><button type="button" class="btn primary" id="qAgain">Intentar de nuevo</button></div></div>`;
+    $("#qAgain").onclick=()=>{i=0;res=[];render()};
+    if(ok&&!state.done.includes(9)){state.done.push(9);save();paintProgress()}return}
+   const q=QUIZ[i];
+   box.innerHTML=`<div class="q">${prog}<span class="qn">Pregunta ${i+1} de 10</span><h3>${esc(q[0])}</h3><div class="opts">${q[1].map((o,k)=>`<button type="button" class="opt" data-k="${k}">${esc(o)}</button>`).join("")}</div><p id="qExp" hidden></p><div><button type="button" class="btn primary" id="qNext" hidden>${i===9?"Ver resultado":"Siguiente"}</button></div></div>`;
+   box.querySelector(".opts").addEventListener("click",e=>{const b=e.target.closest(".opt");if(!b||b.disabled)return;const k=+b.dataset.k,right=k===q[2];res[i]=right;
+    box.querySelectorAll(".opt").forEach(x=>{x.disabled=true;if(+x.dataset.k===q[2])x.classList.add("right")});if(!right)b.classList.add("wrong");
+    const ex=$("#qExp");ex.hidden=false;ex.innerHTML=`<b style="color:${right?"var(--cyan)":"var(--magenta)"}">${right?"Correcto.":"No exactamente."}</b> ${esc(q[3])}`;
+    const n=$("#qNext");n.hidden=false;n.focus();n.onclick=()=>{i++;render()}})};
+  render()}
+};
+
+/* ---------- navegación ---------- */
+function paintProgress(){
+ $("#lights").innerHTML=LAPS.map((_,k)=>`<span class="light ${state.done.includes(k)?"on":""} ${k===9?"last":""}" title="Vuelta ${k+1}"></span>`).join("")+`<span class="lap-count">${state.done.length}/10</span>`;
+ document.querySelectorAll(".tab").forEach((t,k)=>t.classList.toggle("done",state.done.includes(k)));
+ const f=$("#finishMsg");if(f)f.textContent=state.done.includes(state.cur)?"Vuelta completada. La luz quedó encendida.":"Marca la vuelta cuando la termines: se enciende una luz del semáforo.";
+ const b=$("#doneBtn");if(b)b.textContent=state.done.includes(state.cur)?(state.cur<9?"Siguiente vuelta":"Vuelta completada"):(state.cur===9?"Completa el quiz para cerrar":"Vuelta completada");
+}
+function go(k,push){
+ state.cur=k;save();
+ document.querySelectorAll(".tab").forEach((t,j)=>t.setAttribute("aria-selected",j===k));
+ const L=LAPS[k];
+ $("#main").innerHTML=`<section class="lap" role="tabpanel" aria-labelledby="tab-${k}"><div class="lap-head"><span class="eyebrow">${L.eyebrow}</span><h2>${L.t}</h2></div>${VIEWS[k]()}<div class="finish"><span class="msg" id="finishMsg"></span><button type="button" class="btn primary" id="doneBtn"></button></div></section>`;
+ if(MOUNT[k])MOUNT[k]();
+ $("#doneBtn").onclick=()=>{
+  if(k===9){if(!state.done.includes(9)){toast("Aprueba el quiz con 8 o más");$("#quiz").scrollIntoView({behavior:"smooth",block:"center"})}return}
+  if(!state.done.includes(k)){state.done.push(k);save();paintProgress();toast("Vuelta "+(k+1)+" completada")}
+  else go(Math.min(9,k+1),true)};
+ paintProgress();
+ if(push){try{history.replaceState(null,"","#vuelta-"+(k+1))}catch(e){}window.scrollTo({top:0})}
+ const t=document.getElementById("tab-"+k);if(t&&t.scrollIntoView)t.scrollIntoView({block:"nearest",inline:"center"});
+}
+$("#tabs").innerHTML=LAPS.map((l,k)=>`<button type="button" class="tab" role="tab" id="tab-${k}" aria-selected="false"><span class="n">${String(k+1).padStart(2,"0")}</span>${l.t}</button>`).join("");
+$("#tabs").addEventListener("click",e=>{const b=e.target.closest(".tab");if(b)go(+b.id.split("-")[1],true)});
+function fromHash(){const m=/^#vuelta-(\d+)$/.exec(location.hash);return m?Math.min(9,Math.max(0,+m[1]-1)):null}
+window.addEventListener("hashchange",()=>{const h=fromHash();if(h!==null&&h!==state.cur)go(h,false)});
+const h=fromHash();go(h!==null?h:(state.cur||0),false);
+</script>
+
+</body></html>

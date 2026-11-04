@@ -1,28 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { loadAcademy } from "@/lib/academiaSdr/server/generate";
 import { resolveClient } from "@/lib/academiaSdr/server/client";
-import { renderAcademyHtml } from "@/lib/academiaSdr/render";
-import type { AcademyModule } from "@/lib/academiaSdr/types";
+import { getTraining } from "@/lib/academiaSdr/server/source";
 
 export const dynamic = "force-dynamic";
 
-// Descarga la Academia SDR del cliente como un .html autocontenido.
+// HTML del Entrenamiento cliente tal cual (la página le agrega el puente de
+// avance antes de mostrarlo). ?download=1 lo entrega como archivo.
 export async function GET(request: NextRequest) {
   try {
     const db = supabaseAdmin();
     const client = await resolveClient(db, request.nextUrl.searchParams.get("client_id"));
     if (!client) return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
-    const academy = await loadAcademy(db, client.id);
-    const modules = academy.modules.filter((m): m is AcademyModule => m !== null);
-    if (!modules.length) return NextResponse.json({ error: "La academia aún no está generada" }, { status: 404 });
-    const html = renderAcademyHtml({ clientName: client.name, clientKey: client.slug, modules });
-    return new NextResponse(html, {
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Content-Disposition": `attachment; filename="academia-sdr-${client.slug.replace(/[^a-z0-9-]/gi, "")}.html"`,
-      },
-    });
+    const t = await getTraining(db, client, true);
+    if (!t?.html) return NextResponse.json({ error: "Este cliente aún no tiene Entrenamiento cliente" }, { status: 404 });
+    const headers: Record<string, string> = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" };
+    if (request.nextUrl.searchParams.get("download") === "1") {
+      headers["Content-Disposition"] = `attachment; filename="entrenamiento-${client.slug.replace(/[^a-z0-9-]/gi, "")}.html"`;
+    }
+    return new NextResponse(t.html, { headers });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });
   }
