@@ -12,6 +12,7 @@ const W = 1080;
 const PAD = 48;
 const ROW = 56;
 const MROW = 54;
+const GROW = 62;
 
 const C = {
   bg: "#f4f2fb", navy: "#251762", ink: "#1c1640", mute: "#6b6590", mute2: "#8a84ab",
@@ -41,10 +42,22 @@ function fitCompany(name: string, max: number): string {
   return s.length > lim ? s.slice(0, lim - 1).trimEnd() + "…" : s;
 }
 
+const MONTH_NAMES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+function monthName(ym: string): string {
+  const m = Number(ym.slice(5, 7));
+  return MONTH_NAMES[m - 1] ?? ym;
+}
+// Metas con decimales (p. ej. 7.5) se muestran con coma.
+function fmtGoal(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1).replace(".", ",");
+}
+
 export function reportImageHeight(r: DailySdrReport): number {
   const tableH = 34 + 50 + 40 + r.rows.length * ROW + ROW + 34;
   const meetH = 34 + 50 + Math.max(1, r.meetings.length) * MROW + 34;
-  return PAD + 190 + 28 + 150 + 28 + tableH + 28 + meetH + 28 + 30 + PAD;
+  const goalRows = r.clientGoals?.rows.length ?? 0;
+  const goalH = goalRows ? 28 + 34 + 50 + 30 + 36 + goalRows * GROW + 34 : 0;
+  return PAD + 190 + 28 + 150 + 28 + tableH + 28 + meetH + goalH + 28 + 30 + PAD;
 }
 
 export async function renderReportPng(r: DailySdrReport): Promise<Buffer> {
@@ -133,6 +146,42 @@ export async function renderReportPng(r: DailySdrReport): Promise<Buffer> {
           ))
         )}
       </div>
+
+      {/* Avance de meta del mes por cliente (solo clientes con reuniones hoy) */}
+      {r.clientGoals && r.clientGoals.rows.length ? (
+        <div style={card}>
+          <div style={{ display: "flex", fontSize: 30, fontWeight: 700, color: C.ink }}>{`Meta de ${monthName(r.clientGoals.month)} por cliente`}</div>
+          <div style={{ display: "flex", fontSize: 20, color: C.mute2, marginTop: 6, marginBottom: 22 }}>Clientes con reuniones hoy · avance = reuniones realizadas en el mes</div>
+          <div style={{ display: "flex", height: 36 }}>
+            {head("CLIENTE", 290)}
+            <div style={{ display: "flex", width: 230 }} />
+            {head("META", 70)}
+            {head("REALIZ.", 110)}
+            {head("HOY", 90)}
+            {head("FALTAN", 118)}
+          </div>
+          {r.clientGoals.rows.map((g, i) => {
+            const done = g.goal > 0 && g.remaining === 0;
+            const ratio = g.goal > 0 ? Math.min(1, g.held / g.goal) : 0;
+            return (
+              <div key={`g${i}`} style={{ display: "flex", alignItems: "center", height: GROW, borderTop: `1px solid ${C.line}` }}>
+                <div style={{ display: "flex", width: 290, fontSize: 24, fontWeight: 700, color: C.ink, whiteSpace: "nowrap", overflow: "hidden" }}>{fitCompany(g.client, 20)}</div>
+                <div style={{ display: "flex", width: 230 }}>
+                  {g.goal > 0 ? (
+                    <div style={{ display: "flex", width: 210, height: 16, borderRadius: 8, background: C.line }}>
+                      <div style={{ display: "flex", width: Math.max(4, ratio * 210), height: 16, borderRadius: 8, background: done ? C.teal : C.bar }} />
+                    </div>
+                  ) : null}
+                </div>
+                {cell(g.goal > 0 ? fmtGoal(g.goal) : "–", 70, { fontSize: 24, color: C.ink })}
+                {cell(String(g.held), 110, { fontSize: 24, fontWeight: 700, color: C.ink })}
+                {cell(String(g.today), 90, { fontSize: 24, color: C.mute })}
+                {cell(g.goal > 0 ? (done ? "Cumplida" : String(g.remaining)) : "Sin meta", 118, { fontSize: done || !g.goal ? 20 : 26, fontWeight: 800, color: g.goal ? C.teal2 : C.mute2 })}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       <div style={{ display: "flex", justifyContent: "center", marginTop: 28, fontSize: 19, color: C.mute2 }}>
         Fuente: portal.bullseye-abm.com/analisis/sdr (Allo) · % conexión = llamadas conectadas / llamadas
