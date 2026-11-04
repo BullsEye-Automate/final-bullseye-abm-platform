@@ -12,11 +12,11 @@ const W = 1080;
 const PAD = 48;
 const ROW = 56;
 const MROW = 54;
-const GROW = 62;
+const GROW = 50;
 
 const C = {
   bg: "#f4f2fb", navy: "#251762", ink: "#1c1640", mute: "#6b6590", mute2: "#8a84ab",
-  line: "#eeecf6", teal: "#14b8a6", teal2: "#0f9488", bar: "#ddd6fe", held: "#8b7cf6", mint: "#62E0D8", white: "#ffffff",
+  line: "#eeecf6", teal: "#14b8a6", teal2: "#0f9488", bar: "#ddd6fe", held: "#8b7cf6", green: "#22c55e", yellow: "#f5b300", red: "#ef4444", mint: "#62E0D8", white: "#ffffff",
 };
 
 let fontsCache: { name: string; data: ArrayBuffer; weight: 400 | 700 | 800; style: "normal" }[] | null = null;
@@ -56,7 +56,7 @@ export function reportImageHeight(r: DailySdrReport): number {
   const tableH = 34 + 50 + 40 + r.rows.length * ROW + ROW + 34;
   const meetH = 34 + 50 + Math.max(1, r.meetings.length) * MROW + 34;
   const goalRows = r.clientGoals?.rows.length ?? 0;
-  const goalH = goalRows ? 28 + 34 + 50 + 30 + 36 + goalRows * GROW + 34 : 0;
+  const goalH = goalRows ? 28 + 34 + 36 + 27 + 27 + 20 + 34 + goalRows * GROW + 34 : 0;
   return PAD + 190 + 28 + 150 + 28 + tableH + 28 + meetH + goalH + 28 + 30 + PAD;
 }
 
@@ -87,6 +87,10 @@ export async function renderReportPng(r: DailySdrReport): Promise<Buffer> {
       {cell(pct(connected, calls), 90, { fontWeight: total ? 800 : 400, color: C.mute })}
       {cell(meetings ? String(meetings) : "·", 118, { fontWeight: 800, color: C.teal2 })}
     </div>
+  );
+
+  const dot = (color: string, marginLeft: number) => (
+    <div style={{ display: "flex", width: 16, height: 16, borderRadius: 8, background: color, marginLeft, marginRight: marginLeft ? 6 : 0 }} />
   );
 
   const head = (text: string, width: number) => (
@@ -147,38 +151,38 @@ export async function renderReportPng(r: DailySdrReport): Promise<Buffer> {
         )}
       </div>
 
-      {/* Avance de meta del mes por cliente (solo clientes con reuniones hoy) */}
+      {/* Meta del mes por cliente: todos los clientes con meta + semáforo de
+          días hábiles sin reunión agendada (lib/reporteSdr/goals.ts) */}
       {r.clientGoals && r.clientGoals.rows.length ? (
         <div style={card}>
           <div style={{ display: "flex", fontSize: 30, fontWeight: 700, color: C.ink }}>{`Meta de ${monthName(r.clientGoals.month)} por cliente`}</div>
-          <div style={{ display: "flex", fontSize: 20, color: C.mute2, marginTop: 6, marginBottom: 22 }}>Clientes con reuniones hoy · Faltan = meta − realizadas (las por realizar aún no cuentan)</div>
-          <div style={{ display: "flex", height: 36 }}>
+          <div style={{ display: "flex", fontSize: 19, color: C.mute2, marginTop: 6 }}>Faltan = meta − realizadas (las por realizar aún no cuentan)</div>
+          <div style={{ display: "flex", alignItems: "center", fontSize: 19, color: C.mute2, marginTop: 4, marginBottom: 20 }}>
+            <span>Sin reunión = días hábiles desde la última reunión agendada:</span>
+            {dot(C.green, 8)}<span>0–2</span>{dot(C.yellow, 8)}<span>3–5</span>{dot(C.red, 8)}<span>6 o más</span>
+          </div>
+          <div style={{ display: "flex", height: 34 }}>
+            <div style={{ display: "flex", width: 34 }} />
             {head("CLIENTE", 290)}
-            <div style={{ display: "flex", width: 170 }} />
             {head("META", 70)}
-            {head("REALIZ.", 110)}
-            {head("POR REALIZAR", 150)}
-            {head("FALTAN", 118)}
+            {head("REALIZ.", 100)}
+            {head("POR REALIZAR", 140)}
+            {head("FALTAN", 110)}
+            {head("SIN REUNIÓN", 166)}
           </div>
           {r.clientGoals.rows.map((g, i) => {
-            const done = g.goal > 0 && g.remaining === 0;
-            const ratio = g.goal > 0 ? Math.min(1, g.held / g.goal) : 0;
-            const pRatio = g.goal > 0 ? Math.min(1 - ratio, g.pending / g.goal) : 0;
+            const done = g.remaining === 0;
+            const color = g.level === "r" ? C.red : g.level === "y" ? C.yellow : C.green;
+            const idle = g.idleDays === null ? "Sin reuniones" : g.idleDays === 0 ? "Hoy" : `${g.idleDays} ${g.idleDays === 1 ? "día" : "días"}`;
             return (
               <div key={`g${i}`} style={{ display: "flex", alignItems: "center", height: GROW, borderTop: `1px solid ${C.line}` }}>
-                <div style={{ display: "flex", width: 290, fontSize: 24, fontWeight: 700, color: C.ink, whiteSpace: "nowrap", overflow: "hidden" }}>{fitCompany(g.client, 20)}</div>
-                <div style={{ display: "flex", width: 170 }}>
-                  {g.goal > 0 ? (
-                    <div style={{ display: "flex", width: 150, height: 16, borderRadius: 8, background: C.line, overflow: "hidden" }}>
-                      <div style={{ display: "flex", width: Math.max(4, ratio * 150), height: 16, background: done ? C.teal : C.held }} />
-                      {pRatio > 0 ? <div style={{ display: "flex", width: pRatio * 150, height: 16, background: C.bar }} /> : null}
-                    </div>
-                  ) : null}
-                </div>
-                {cell(g.goal > 0 ? fmtGoal(g.goal) : "–", 70, { fontSize: 24, color: C.ink })}
-                {cell(String(g.held), 110, { fontSize: 24, fontWeight: 700, color: C.ink })}
-                {cell(String(g.pending), 150, { fontSize: 24, color: C.mute })}
-                {cell(g.goal > 0 ? (done ? "Cumplida" : String(g.remaining)) : "Sin meta", 118, { fontSize: done || !g.goal ? 20 : 26, fontWeight: 800, color: g.goal ? C.teal2 : C.mute2 })}
+                <div style={{ display: "flex", width: 34 }}>{dot(color, 0)}</div>
+                <div style={{ display: "flex", width: 290, fontSize: 23, fontWeight: 700, color: C.ink, whiteSpace: "nowrap", overflow: "hidden" }}>{fitCompany(g.client, 21)}</div>
+                {cell(fmtGoal(g.goal), 70, { fontSize: 23, color: C.ink })}
+                {cell(String(g.held), 100, { fontSize: 23, fontWeight: 700, color: C.ink })}
+                {cell(String(g.pending), 140, { fontSize: 23, color: C.mute })}
+                {cell(done ? "Cumplida" : String(g.remaining), 110, { fontSize: done ? 19 : 24, fontWeight: 800, color: C.teal2 })}
+                {cell(idle, 166, { fontSize: 22, fontWeight: 700, color: g.level === "g" ? C.mute : color })}
               </div>
             );
           })}
