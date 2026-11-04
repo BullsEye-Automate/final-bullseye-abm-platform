@@ -26,6 +26,10 @@ export type ClientAccount = {
 const CLIENT_NAME_EQUIV: Record<string, string> = {
   cchc: "ccch",
   "cchc - valle": "ccch - valle",
+  // Pestaña Asignación (nov-2026) vs tabla clients: sin esto sus metas
+  // quedaban como cliente aparte, sin reuniones.
+  acidlab: "acid labs",
+  "umine agente": "umine agentes",
 };
 
 export function normClientName(s: string): string {
