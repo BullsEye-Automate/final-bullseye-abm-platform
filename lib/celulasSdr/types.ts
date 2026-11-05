@@ -8,7 +8,7 @@
 
 // Grupo al que pertenece cada SDR en los filtros y en la comparación de
 // células:
-// - "cell": integrante de la célula de un líder (pestaña "Maestra IA", col. O:P)
+// - "cell": integrante de la célula de un líder (pestaña "Maestra IA", bajo "Lideres de celulas")
 // - "leader": el propio líder de célula. Tiene meta propia, pero por
 //   definición de BullsEye su meta y sus reuniones NO suman a su célula.
 // - "none": responsable con meta / reuniones / llamadas que no está en

@@ -37,7 +37,7 @@ export async function getSheetRows(
 // Lectura "cruda" (matriz de celdas tal cual, sin asumir que la primera fila
 // es un encabezado). La necesitan pestañas con estructura de matriz como
 // "Asignación" (un bloque por mes, con su propio encabezado de SDR) o
-// columnas sueltas de la pestaña "Maestra IA" (líderes de célula en O:P).
+// columnas sueltas de la pestaña "Maestra IA" (líderes de célula bajo "Lideres de celulas").
 export async function getSheetValues(spreadsheetId: string, range: string): Promise<string[][]> {
   const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!credentialsJson) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON no configurado");
