@@ -43,7 +43,12 @@ export function pickSub(subs: string[], name: string | null | undefined, country
     if (exact.length === 1) return exact[0];
     const partial = subs.filter((s) => { const c = compact(s); return c.length >= 3 && (c.startsWith(n) || n.startsWith(c)); });
     if (partial.length === 1) return partial[0];
-    if (partial.length > 1) return byCountry(partial, true);
+    if (partial.length > 1) {
+      // Sin país: el nombre a secas es la cuenta de Chile (confirmado con
+      // BullsEye: "Nisum" sin país = Nisum Chile)
+      if (!ctry) { const cl = partial.filter((s) => subCountry(s) === "Chile"); return cl.length === 1 ? cl[0] : null; }
+      return byCountry(partial, true);
+    }
     return null;
   }
   // Sin nombre (ej. llamadas de Allo, solo con el país del número): solo una
