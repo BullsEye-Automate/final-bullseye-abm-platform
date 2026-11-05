@@ -45,6 +45,10 @@
       "schedule": "0 11,12 * * 1-5"
     },
     {
+      "path": "/api/cron/respuestas-lemlist",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/alerta-feriados",
       "schedule": "30 11,12,13 * * 1-5"
     }
@@ -53,6 +57,7 @@
   "buildCommand": "next build",
   "functions": {
     "app/api/cron/wishlist-contacts/route.ts": { "maxDuration": 300 },
+    "app/api/cron/respuestas-lemlist/route.ts": { "maxDuration": 300 },
     "app/api/portal-admin/wishlist-contacts/route.ts": { "maxDuration": 60 },
     "app/api/lemlist/csv-generate/route.ts": { "maxDuration": 60 },
     "app/api/contacts/[id]/preview-messages/route.ts": { "maxDuration": 60 },

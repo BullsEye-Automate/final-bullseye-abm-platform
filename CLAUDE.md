@@ -269,6 +269,21 @@ Detección proactiva de números de Allo que caen en spam o pierden conectividad
 
 ---
 
+### Respuestas Lemlist → SDR asignado (`lib/respuestasLemlist/`, `/analisis/respuestas-lemlist`)
+
+Automatiza las respuestas de los prospectos en Lemlist (email y LinkedIn) de **todos los clientes activos en la Maestra** (misma regla que Pulso ABM; Xarvis excluido por decisión de BullsEye, `RESPUESTAS_LEMLIST_EXCLUDE`). Migración `supabase/20261105_lemlist_replies_migration.sql` (tabla `lemlist_replies`, una fila por actividad de Lemlist, `activity_id` único).
+
+- **Cron** `/api/cron/respuestas-lemlist` cada 15 min (`CRON_SECRET`; `?client_id=` uno solo). Por cliente lee sus campañas: `client_lemlist_campaigns` + `client_configs.lemlist_campaign_id`; si tiene key propia de Lemlist y ninguna campaña asignada, todas las de su cuenta; con la key compartida de BullsEye y sin campañas asignadas no se lee nada (se mezclarían clientes). Actividades `emailsReplied` / `linkedinReplied` de las últimas `RESPUESTAS_LEMLIST_LOOKBACK_HOURS` (72 h), máx. 30 por cliente y corrida.
+- **Clasificación** (Haiku, `classify.ts`): interesado, referido, tibio (solo con señal explícita de interés futuro), no_interesado, fuera_oficina (incluye "ya no trabajo en la empresa"), baja, ambigua (agradecimientos genéricos). Ambigua, confianza < 0,6 o sin texto → revisión del KAM. Ajustado nov-2026 tras el primer resumen en sombra: "gracias" sin más quedaba como tibio y se asignaba.
+- **SDR = lógica de Pulso ABM** (`hubspot.ts`): `hubspotTokenFor` (HubSpot de BullsEye o el propio del cliente) + `detectProperties` (`companySdr` "SDR - <cliente>", `contactSdr` "SDR Asignado - <cliente>", `contactStatus` "Asignación BullsEye por llamar - <cliente>"). Contacto por email → empresa asociada → SDR de la empresa; si está vacío, el del contacto.
+- **Nombre → correo** (`directory.ts`): pestaña "Maestra IA", columnas "Responsable | Status Responsable | Correo". Cruce por equivalencia (`SDR_ALIASES`: Nico/Nicolle/Nicolle N → Nicolle Nazar, Angeles → María de los Ángeles Pérez, Vanesa → Vanessa Abarzua, Consuelo C → Consuelo Contador), nombre completo o primer nombre único. SDR inactivo, sin correo o sin calce → alerta al KAM.
+- **KAM** (`kamFor`): Robin (rarredondo@) para Nisum y KI; el resto Ingri (ihincapie@). Mover a la Maestra cuando tenga columna de KAM.
+- **Acciones:** interesado / referido / tibio con SDR activo → contacto en **"Hot Calling"** (opción de la propiedad de estado), lead pausado en Lemlist (`POST /api/leads/pause/{email}?campaignId=`) y correo al SDR. Sin SDR → correo al KAM. Baja → solo se pausa. No interesado / fuera de oficina → sin acción. HubSpot propio del cliente con token de solo lectura: no se puede marcar Hot Calling (falta `crm.objects.contacts.write`), el resto sigue.
+- **Modo** `RESPUESTAS_LEMLIST_MODE`: `sombra` por defecto (clasifica y registra; no escribe en HubSpot, no pausa ni avisa a SDR/KAM; manda un resumen por corrida a `RESPUESTAS_LEMLIST_SHADOW_TO`, por defecto amadriz@). `activo` hace todo. Remitente `RESPUESTAS_LEMLIST_FROM` → `CELULAS_ALERTS_FROM`.
+- **Bandeja** `/analisis/respuestas-lemlist` (menú Análisis), API con sesión `GET /api/respuestas-lemlist?client_id=&action=&days=`.
+
+---
+
 ### Pulso ABM — antes "Radar ABM" (`/analisis/radar-abm` y portal `/portal/radar`)
 
 Nombre visible: **Pulso ABM** (se cambió por conflicto de nombre). El código, las URLs (`radar-abm`, `/portal/radar`), `lib/radarAbm/` y las tablas `radar_abm_*` mantienen el nombre interno "radar".
