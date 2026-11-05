@@ -10,12 +10,11 @@ import { sendKamMail, sendSdrMail, type ReplyMailData } from "./mail";
 // (misma regla que Pulso ABM): trae las respuestas nuevas de sus campañas,
 // las clasifica, busca el SDR de la empresa en HubSpot y asigna o alerta al KAM.
 //
-// Modo (RESPUESTAS_LEMLIST_MODE): "sombra" por defecto = clasifica y registra,
-// sin escribir en HubSpot, sin pausar en Lemlist y sin correos a SDR/KAM (solo
-// el resumen de la corrida). "activo" = hace todo.
-
-export type Mode = "sombra" | "activo";
-export const currentMode = (): Mode => (process.env.RESPUESTAS_LEMLIST_MODE === "activo" ? "activo" : "sombra");
+// Modo (RESPUESTAS_LEMLIST_MODE): "activo" por defecto desde el 5-nov-2026
+// (pedido de BullsEye) = Hot Calling en HubSpot, pausa en Lemlist y correo al
+// SDR o al KAM. "sombra" = solo clasifica y registra, sin escribir en HubSpot,
+// sin pausar en Lemlist y sin correos a SDR/KAM (solo el resumen de la corrida).
+export const currentMode = (): Mode => (process.env.RESPUESTAS_LEMLIST_MODE === "sombra" ? "sombra" : "activo");
 
 // Solo respuestas de las últimas N horas: al activar no se procesa el histórico
 const LOOKBACK_HOURS = Number(process.env.RESPUESTAS_LEMLIST_LOOKBACK_HOURS) || 72;
