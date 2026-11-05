@@ -18,7 +18,7 @@ type Row = {
 
 const CATEGORY: Record<string, string> = {
   interesado: "Interesado", referido: "Referido", tibio: "Tibio / más adelante", no_interesado: "No interesado",
-  fuera_oficina: "Fuera de oficina", baja: "Baja", sin_texto: "Sin texto",
+  fuera_oficina: "Fuera de oficina", baja: "Baja", ambigua: "Ambigua", sin_texto: "Sin texto",
 };
 const ACTION: Record<string, { label: string; cls: string }> = {
   asignada: { label: "Asignada al SDR", cls: "bg-emerald-100 text-emerald-900" },
