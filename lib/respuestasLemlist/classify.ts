@@ -3,7 +3,7 @@ import { logAiUsage } from "@/lib/aiUsageLogger";
 
 // Respuestas Lemlist → SDR: clasificación del interés con Claude.
 
-export const CATEGORIES = ["interesado", "referido", "tibio", "no_interesado", "fuera_oficina", "baja"] as const;
+export const CATEGORIES = ["interesado", "referido", "tibio", "no_interesado", "fuera_oficina", "baja", "ambigua"] as const;
 export type Category = (typeof CATEGORIES)[number] | "sin_texto";
 
 export const CATEGORY_LABEL: Record<Category, string> = {
@@ -13,6 +13,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   no_interesado: "No interesado",
   fuera_oficina: "Fuera de oficina",
   baja: "Baja / no contactar",
+  ambigua: "Ambigua",
   sin_texto: "Sin texto",
 };
 
@@ -27,10 +28,11 @@ const SYSTEM = `Clasificas respuestas de prospectos B2B a campañas de prospecci
 Categorías:
 - interesado: quiere reunión, llamada, demo, propuesta o más información; pregunta precio o detalles con intención.
 - referido: deriva a otra persona ("habla con X", "te copio a Y") o da otro contacto.
-- tibio: no ahora pero deja la puerta abierta ("escríbeme en marzo", "estamos en otro proyecto, más adelante").
+- tibio: no ahora pero deja la puerta abierta de forma EXPLÍCITA, con una señal concreta de interés futuro ("escríbeme en marzo", "retomemos el próximo trimestre", "ahora no tenemos presupuesto, pero me interesa para 2027").
 - no_interesado: rechaza sin pedir que no lo contacten más ("no nos interesa", "ya tenemos proveedor").
-- fuera_oficina: respuesta automática (vacaciones, licencia, ya no trabaja aquí sin derivar).
+- fuera_oficina: respuesta automática (vacaciones, licencia) o la persona ya no trabaja en la empresa ("ya no estoy en X", "dejé la compañía"), aunque ofrezca contactar en el futuro desde otra empresa, siempre que no derive a otra persona.
 - baja: pide no ser contactado, darse de baja o borrar sus datos.
+- ambigua: no se puede saber qué quiere (agradecimiento genérico como "gracias", "recibido", "saludos", una pregunta sin contexto, un emoji). Nunca uses "tibio" para un simple agradecimiento.
 Responde SOLO un JSON: {"category": "...", "confidence": 0.0-1.0, "summary": "una línea en español con lo que dijo"}`;
 
 export async function classifyReply(text: string, ctx: { clientId: string; clientName: string }): Promise<Classification> {
@@ -48,9 +50,9 @@ export async function classifyReply(text: string, ctx: { clientId: string; clien
   try {
     const p = JSON.parse(json ?? "{}") as { category?: string; confidence?: number; summary?: string };
     const category = (CATEGORIES as readonly string[]).includes(p.category ?? "") ? (p.category as Category) : null;
-    if (!category) return { category: "tibio", confidence: 0, summary: `No se pudo clasificar: ${raw.slice(0, 120)}` };
+    if (!category) return { category: "ambigua", confidence: 0, summary: `No se pudo clasificar: ${raw.slice(0, 120)}` };
     return { category, confidence: Math.max(0, Math.min(1, Number(p.confidence) || 0)), summary: (p.summary ?? "").slice(0, 300) };
   } catch {
-    return { category: "tibio", confidence: 0, summary: `No se pudo clasificar: ${raw.slice(0, 120)}` };
+    return { category: "ambigua", confidence: 0, summary: `No se pudo clasificar: ${raw.slice(0, 120)}` };
   }
 }

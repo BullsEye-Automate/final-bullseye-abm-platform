@@ -126,9 +126,9 @@ export async function processClientReplies(client: AppClient, deadline: number):
         action = "baja";
         detail = "Pidió no ser contactado: se pausa en Lemlist.";
         if (live) { const p = await pauseLead(src.apiKey, r.campaignId, r.leadEmail); update.lemlist_paused = p.ok; if (!p.ok) detail += ` ${p.error}`; }
-      } else if (cls.category === "sin_texto" || cls.confidence < MIN_CONFIDENCE) {
+      } else if (cls.category === "sin_texto" || cls.category === "ambigua" || cls.confidence < MIN_CONFIDENCE) {
         action = "revision_kam";
-        detail = `Clasificación dudosa: revisión del KAM (${kam}).`;
+        detail = `${cls.category === "ambigua" ? "Respuesta ambigua" : "Clasificación dudosa"}: revisión del KAM (${kam}).`;
         if (live) { await sendKamMail(kam, { ...mail, reason: detail }, "revision"); update.notified_to = [kam]; }
       } else if (ASSIGN_CATEGORIES.includes(cls.category)) {
         const sdr = lead.contactId ? resolveSdr(people, lead.sdrValue) : { ok: false as const, reason: "El contacto no está en HubSpot." };
