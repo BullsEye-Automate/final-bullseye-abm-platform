@@ -93,50 +93,178 @@ async function findReunionesTabTitle(sheets: sheets_v4.Sheets, spreadsheetId: st
   );
 }
 
+// Pedido explícito del usuario (05-11-2026): el formulario de reuniones de
+// BullsEye (Apps Script) ahora empuja cada reunión agendada directo a Peitho
+// por webhook (POST /webhooks/bullseye-form) en el mismo momento en que la
+// escribe en el excel de metas — mapeado al mismo esquema SheetRow para
+// poder reusar exactamente la misma lógica de matching (matchByEmail,
+// matchMeetingRow) sin duplicar nada. 120 días de ventana: de sobra para
+// cualquier reunión que todavía no haya sincronizado desde Calendar.
+async function loadFormReservationRows(): Promise<SheetRow[]> {
+  const { rows } = await pool.query(
+    `select id_reunion, cliente, id_cliente, empresa, contacto, cargo, industria,
+            pais, sales_manager, correo, linkedin_url, fecha_reunion, realizado
+     from form_reservations
+     where created_at > now() - interval '120 days'`
+  );
+  return rows.map((r) => ({
+    cliente: r.cliente ?? '',
+    clienteId: r.id_cliente || null,
+    empresa: r.empresa ?? '',
+    contacto: r.contacto ?? '',
+    cargo: r.cargo ?? '',
+    industria: r.industria ?? '',
+    fechaReunion: r.fecha_reunion ?? '',
+    pais: r.pais ?? '',
+    salesManager: r.sales_manager ?? '',
+    idReunion: r.id_reunion ?? '',
+    correo: r.correo ?? '',
+    linkedinUrl: r.linkedin_url ?? '',
+    realizado: r.realizado ?? '',
+  }));
+}
+
+// Llamado desde POST /webhooks/bullseye-form — upsert por id_reunion (el
+// mismo UUID que el Apps Script ya genera para la columna "ID Reunión" del
+// excel) para que un reintento de red del lado del formulario nunca duplique
+// la fila.
+export interface FormReservationPayload {
+  idReunion: string;
+  cliente?: string | null;
+  idCliente?: string | null;
+  origen?: string | null;
+  sdr?: string | null;
+  empresa?: string | null;
+  contacto?: string | null;
+  cargo?: string | null;
+  industria?: string | null;
+  pais?: string | null;
+  salesManager?: string | null;
+  correo?: string | null;
+  telefono?: string | null;
+  linkedinUrl?: string | null;
+  fechaAgendamiento?: string | null;
+  fechaReunion?: string | null;
+  hora?: string | null;
+  comentario?: string | null;
+  propuesta?: string | null;
+  realizado?: string | null;
+}
+
+export async function upsertFormReservation(payload: FormReservationPayload): Promise<void> {
+  await pool.query(
+    `insert into form_reservations (
+       id_reunion, cliente, id_cliente, origen, sdr, empresa, contacto, cargo, industria, pais,
+       sales_manager, correo, telefono, linkedin_url, fecha_agendamiento, fecha_reunion, hora,
+       comentario, propuesta, realizado, updated_at
+     ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20, now())
+     on conflict (id_reunion) do update set
+       cliente = excluded.cliente, id_cliente = excluded.id_cliente, origen = excluded.origen,
+       sdr = excluded.sdr, empresa = excluded.empresa, contacto = excluded.contacto,
+       cargo = excluded.cargo, industria = excluded.industria, pais = excluded.pais,
+       sales_manager = excluded.sales_manager, correo = excluded.correo, telefono = excluded.telefono,
+       linkedin_url = excluded.linkedin_url, fecha_agendamiento = excluded.fecha_agendamiento,
+       fecha_reunion = excluded.fecha_reunion, hora = excluded.hora, comentario = excluded.comentario,
+       propuesta = excluded.propuesta, realizado = excluded.realizado, updated_at = now()`,
+    [
+      payload.idReunion,
+      payload.cliente ?? null,
+      payload.idCliente ?? null,
+      payload.origen ?? null,
+      payload.sdr ?? null,
+      payload.empresa ?? null,
+      payload.contacto ?? null,
+      payload.cargo ?? null,
+      payload.industria ?? null,
+      payload.pais ?? null,
+      payload.salesManager ?? null,
+      payload.correo ?? null,
+      payload.telefono ?? null,
+      payload.linkedinUrl ?? null,
+      payload.fechaAgendamiento ?? null,
+      payload.fechaReunion ?? null,
+      payload.hora ?? null,
+      payload.comentario ?? null,
+      payload.propuesta ?? null,
+      payload.realizado ?? null,
+    ]
+  );
+}
+
 async function loadReunionesRows(forceRefresh = false): Promise<SheetRow[]> {
   if (!forceRefresh && cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.rows;
   }
 
-  const spreadsheetId = process.env.METAS_SHEET_ID;
-  const accountEmail = process.env.METAS_SHEET_GOOGLE_ACCOUNT_EMAIL;
-  if (!spreadsheetId || !accountEmail) {
-    throw new Error('Faltan METAS_SHEET_ID o METAS_SHEET_GOOGLE_ACCOUNT_EMAIL en las variables de entorno');
+  let rows: SheetRow[];
+  let tabTitle = cache?.tabTitle;
+  try {
+    const spreadsheetId = process.env.METAS_SHEET_ID;
+    const accountEmail = process.env.METAS_SHEET_GOOGLE_ACCOUNT_EMAIL;
+    if (!spreadsheetId || !accountEmail) {
+      throw new Error('Faltan METAS_SHEET_ID o METAS_SHEET_GOOGLE_ACCOUNT_EMAIL en las variables de entorno');
+    }
+
+    const { sheets } = await getSheetsClientByEmail(accountEmail);
+    tabTitle = tabTitle ?? (await findReunionesTabTitle(sheets, spreadsheetId));
+
+    const { data } = await sheets.spreadsheets.values.get(
+      {
+        spreadsheetId,
+        range: `'${tabTitle}'!A:W`,
+      },
+      { timeout: SHEETS_TIMEOUT_MS }
+    );
+
+    const values = data.values ?? [];
+    const header = (values[0] ?? []).map((h) => String(h).trim());
+    const col = (name: string) => header.indexOf(name);
+
+    rows = values.slice(1).map((raw) => ({
+      cliente: String(raw[col('Cliente')] ?? '').trim(),
+      clienteId: raw[col('ID Cliente')] ? String(raw[col('ID Cliente')]).trim() : null,
+      empresa: String(raw[col('Empresa')] ?? '').trim(),
+      contacto: String(raw[col('Contacto')] ?? '').trim(),
+      cargo: String(raw[col('Cargo')] ?? '').trim(),
+      industria: String(raw[col('Industria')] ?? '').trim(),
+      fechaReunion: String(raw[col('Fecha de la reunión')] ?? '').trim(),
+      pais: String(raw[col('País')] ?? '').trim(),
+      salesManager: String(raw[col('Sales Manager')] ?? '').trim(),
+      idReunion: String(raw[col('ID Reunión')] ?? '').trim(),
+      correo: String(raw[col('Correo')] ?? '').trim(),
+      linkedinUrl: String(raw[col('URL Linkedin')] ?? '').trim(),
+      realizado: String(raw[col('Realizado')] ?? '').trim(),
+    }));
+    console.log(`[metas-sheet] ${rows.length} filas cargadas de la hoja "${tabTitle}"`);
+  } catch (error) {
+    // Pedido explícito del usuario (05-11-2026): si la lectura en vivo del
+    // excel falla por cualquier motivo (token de Google muerto — ya pasó una
+    // vez con el calendario del bot — cuota de la API, timeout), Peitho ya no
+    // queda completamente ciego: usa la copia que llegó por webhook del
+    // mismo formulario que escribe el excel (form_reservations). No
+    // reemplaza al excel — sigue siendo la fuente completa, con ediciones de
+    // "Realizado"/comentario que el webhook todavía no cubre — es solo la
+    // red de contención para cuando el excel no se puede leer en absoluto.
+    console.error(
+      '[metas-sheet] no se pudo leer el excel de metas en vivo — usando el respaldo de reuniones recibidas por webhook',
+      error
+    );
+    const fallbackRows = await loadFormReservationRows();
+    cache = { tabTitle: tabTitle ?? '', rows: fallbackRows, fetchedAt: Date.now() };
+    return fallbackRows;
   }
 
-  const { sheets } = await getSheetsClientByEmail(accountEmail);
-  const tabTitle = cache?.tabTitle ?? (await findReunionesTabTitle(sheets, spreadsheetId));
+  // Cualquier reunión que ya llegó por webhook pero todavía no aparece en
+  // esta lectura del excel (recién se mandó el formulario y el excel tardó
+  // un poco en reflejarlo) se agrega también — nunca pisa una fila que SÍ
+  // viene del excel (esa puede tener ediciones más recientes).
+  const seenIds = new Set(rows.map((r) => r.idReunion).filter(Boolean));
+  const formRows = await loadFormReservationRows();
+  for (const fr of formRows) {
+    if (fr.idReunion && !seenIds.has(fr.idReunion)) rows.push(fr);
+  }
 
-  const { data } = await sheets.spreadsheets.values.get(
-    {
-      spreadsheetId,
-      range: `'${tabTitle}'!A:W`,
-    },
-    { timeout: SHEETS_TIMEOUT_MS }
-  );
-
-  const values = data.values ?? [];
-  const header = (values[0] ?? []).map((h) => String(h).trim());
-  const col = (name: string) => header.indexOf(name);
-
-  const rows: SheetRow[] = values.slice(1).map((raw) => ({
-    cliente: String(raw[col('Cliente')] ?? '').trim(),
-    clienteId: raw[col('ID Cliente')] ? String(raw[col('ID Cliente')]).trim() : null,
-    empresa: String(raw[col('Empresa')] ?? '').trim(),
-    contacto: String(raw[col('Contacto')] ?? '').trim(),
-    cargo: String(raw[col('Cargo')] ?? '').trim(),
-    industria: String(raw[col('Industria')] ?? '').trim(),
-    fechaReunion: String(raw[col('Fecha de la reunión')] ?? '').trim(),
-    pais: String(raw[col('País')] ?? '').trim(),
-    salesManager: String(raw[col('Sales Manager')] ?? '').trim(),
-    idReunion: String(raw[col('ID Reunión')] ?? '').trim(),
-    correo: String(raw[col('Correo')] ?? '').trim(),
-    linkedinUrl: String(raw[col('URL Linkedin')] ?? '').trim(),
-    realizado: String(raw[col('Realizado')] ?? '').trim(),
-  }));
-
-  cache = { tabTitle, rows, fetchedAt: Date.now() };
-  console.log(`[metas-sheet] ${rows.length} filas cargadas de la hoja "${tabTitle}"`);
+  cache = { tabTitle: tabTitle!, rows, fetchedAt: Date.now() };
   return rows;
 }
 

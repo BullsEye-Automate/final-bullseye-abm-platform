@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { Router } from 'express';
@@ -9,6 +10,7 @@ import { getRecallRecordingUrl, getRecallTranscriptUrl, getRecallVideoUrl } from
 import { analyzeMeetingAudio, buildTranscriptFromRecall, computeParticipantStats } from '../postMeetingAnalysis';
 import { getSupabaseAdminClient } from '../supabaseAdmin';
 import { runAudioJob } from '../audioJobLimiter';
+import { upsertFormReservation } from '../metasSheet';
 
 // Bucket privado de Supabase Storage para el respaldo de video de 30 días
 // (a diferencia de audio/transcript, que se usan para el análisis y no
@@ -405,5 +407,64 @@ webhooksRouter.post('/webhooks/recall', async (req, res) => {
     // });
   } catch (error) {
     console.error(`[webhooks/recall] error procesando el bot ${botId}`, error);
+  }
+});
+
+function safeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
+// Pedido explícito del usuario (05-11-2026): el formulario de reuniones de
+// BullsEye (Apps Script, Hubspot-y-SDR-Dashboard) ahora empuja cada reunión
+// agendada directo acá, en el mismo momento en que la escribe en el excel de
+// metas — ver loadReunionesRows/upsertFormReservation en metasSheet.ts para
+// cómo se usa esto en el matching. Mismo patrón de clave compartida que
+// bullseyeIntegration.ts (comparación a tiempo constante), no la firma Svix
+// que usa el webhook de Recall arriba — mucho más simple de calcular desde
+// Apps Script (un solo header fijo, no HMAC).
+webhooksRouter.post('/webhooks/bullseye-form', async (req, res) => {
+  const expected = process.env.BULLSEYE_FORM_WEBHOOK_SECRET;
+  const given = req.headers['x-bullseye-form-secret'];
+  if (!expected || typeof given !== 'string' || !safeEqual(given, expected)) {
+    res.status(401).json({ error: 'Clave de webhook inválida' });
+    return;
+  }
+
+  const body = req.body ?? {};
+  const idReunion = typeof body.id_reunion === 'string' ? body.id_reunion.trim() : '';
+  if (!idReunion) {
+    res.status(400).json({ error: 'Falta id_reunion' });
+    return;
+  }
+
+  try {
+    await upsertFormReservation({
+      idReunion,
+      cliente: body.cliente,
+      idCliente: body.id_cliente,
+      origen: body.origen,
+      sdr: body.responsable,
+      empresa: body.empresa,
+      contacto: body.contactos,
+      cargo: body.cargo,
+      industria: body.industria,
+      pais: body.pais,
+      salesManager: body.sales_manager,
+      correo: body.correo,
+      telefono: body.telefono,
+      linkedinUrl: body.linkedin_contacto,
+      fechaAgendamiento: body.fecha_agendamiento,
+      fechaReunion: body.fecha_reunion,
+      hora: body.hora,
+      comentario: body.comentario,
+      propuesta: body.propuesta,
+      realizado: body.realizado,
+    });
+    res.json({ status: 'ok' });
+  } catch (error) {
+    console.error('[webhooks/bullseye-form] error guardando la reunión del formulario', error);
+    res.status(500).json({ error: 'Error guardando la reunión' });
   }
 });
