@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   let q = db
     .from("lemlist_replies")
-    .select("id, client_id, client_name, campaign_name, channel, lead_email, lead_name, company_name, reply_text, replied_at, category, confidence, summary, sdr_value, sdr_name, sdr_email, kam_email, action, action_detail, mode, hubspot_updated, lemlist_paused, error, created_at")
+    .select("id, client_id, client_name, campaign_name, channel, lead_email, lead_name, company_name, reply_text, replied_at, category, confidence, summary, sdr_value, sdr_name, sdr_email, kam_email, action, action_detail, mode, hubspot_updated, lemlist_paused, notified_to, hs_contact_id, error, created_at")
     .gte("created_at", new Date(Date.now() - days * 86400_000).toISOString())
     .order("created_at", { ascending: false })
     .limit(500);
