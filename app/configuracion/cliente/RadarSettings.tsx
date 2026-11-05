@@ -1,5 +1,6 @@
 "use client";
 
+import { runRadarSync } from "@/lib/radarAbm/clientSync";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import ClientHubspotRadar from "./ClientHubspotRadar";
@@ -109,15 +110,12 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
     if (!(await save())) return;
     setBusy("sync");
     setOkMsg(null);
-    const r = await fetch(`/api/radar-abm?client_id=${clientId}`, { method: "POST" }).catch(() => null);
-    if (!r) { setBusy(null); return setError("No se pudo sincronizar: se perdió la conexión con el servidor (puede seguir corriendo; recarga en unos minutos)."); }
-    const raw = await r.text().catch(() => "");
-    const d = (() => { try { return JSON.parse(raw); } catch { return { error: r.ok ? null : `${r.status}: ${raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200)}` }; } })();
+    const res = await runRadarSync(clientId, (m) => setOkMsg(m));
     setBusy(null);
-    if (!r.ok || d.error) return setError(r.status === 504 ? "La sincronización superó el tiempo máximo (5 min). Vuelve a intentarlo; si se repite, avísale al equipo técnico." : `No se pudo sincronizar: ${d.error ?? `error ${r.status}`}`);
-    setSyncedAt(d.syncedAt);
-    setStats(d.stats);
-    setOkMsg(`Sincronizado: ${d.stats?.companies ?? 0} empresas, ${d.stats?.contacts ?? 0} contactos, ${d.stats?.meetings ?? 0} reuniones${d.stats?.seconds ? ` (${d.stats.seconds} s)` : ""}.${(d.warnings ?? []).some((w: string) => w.includes("por tiempo")) ? " Quedó parcial por tiempo: revisa los avisos." : ""}`);
+    if (!res.ok) { setOkMsg(null); return setError(res.message); }
+    if (res.syncedAt) setSyncedAt(res.syncedAt);
+    if (res.stats) setStats(res.stats as any);
+    setOkMsg(res.message);
   }
 
   return (
@@ -152,6 +150,23 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
               {s.hubspot_source === "client"
                 ? "Usa el token de “HubSpot del cliente” (arriba). Universo = empresas con su propiedad “Status de la asignación - …” con algún valor."
                 : "Universo = empresas con la propiedad “Status de la asignación - <cliente>” de este cliente con algún valor."}
+            </span>
+          </label>
+
+          <label className="text-sm sm:col-span-2">
+            <span className="label block mb-1">Clientes dentro de este HubSpot (opcional)</span>
+            <textarea
+              className="input font-mono text-xs"
+              rows={3}
+              placeholder={"Nisum Chile\nNisum Colombia\nNisum Perú\nKI Technologies"}
+              value={s.properties?.subAccounts ?? ""}
+              onChange={(e) => {
+                const { subAccounts: _x, ...rest } = s.properties ?? {};
+                setS({ ...s, properties: e.target.value.trim() ? { ...rest, subAccounts: e.target.value } : rest });
+              }}
+            />
+            <span className="text-xs text-ink-subtle block mt-1">
+              Uno por línea, con el nombre tal como aparece al final de sus propiedades (“Status de la asignación - <b>Nisum Colombia</b>”, “SDR - <b>Nisum Colombia</b>”…). Cada uno se sincroniza con sus propias propiedades y el informe tiene un selector para cambiar entre ellos. Sus reuniones salen de la columna Cliente de la planilla (y del país); el Score SDR, del país del número de Allo. Vacío = un solo cliente.
             </span>
           </label>
 

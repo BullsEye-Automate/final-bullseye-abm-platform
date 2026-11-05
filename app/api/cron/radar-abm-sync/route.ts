@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { syncClientRadar } from "@/lib/radarAbm/server/sync";
+import { parseSubs } from "@/lib/radarAbm/subAccounts";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 
 export const runtime = "nodejs";
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
   if (one) {
     if (!UUID_RE.test(one)) return NextResponse.json({ error: "client_id inválido" }, { status: 400 });
     try {
-      await syncClientRadar(one, "cron");
+      await syncClientRadar(one, "cron", req.nextUrl.searchParams.get("sub") || undefined);
       return NextResponse.json({ client_id: one, ok: true });
     } catch (e) {
       return NextResponse.json({ client_id: one, ok: false, error: (e as Error).message });
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
     const db = supabaseAdmin();
     const [{ data: snaps }, { data: settings }] = await Promise.all([
       db.from("radar_abm_snapshots").select("client_id, synced_at"),
-      db.from("radar_abm_clients").select("client_id"),
+      db.from("radar_abm_clients").select("client_id, properties"),
     ]);
     const last = new Map((snaps ?? []).map((s: { client_id: string; synced_at: string }) => [s.client_id, s.synced_at]));
     const ids = Array.from(new Set([...(snaps ?? []).map((s: { client_id: string }) => s.client_id), ...(settings ?? []).map((s: { client_id: string }) => s.client_id)]));
@@ -59,8 +60,10 @@ export async function GET(req: NextRequest) {
     const { data: clients } = await db.from("clients").select("id, name, slug").in("id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"]);
     const byId = new Map((clients ?? []).map((c: { id: string; name: string; slug: string | null }) => [c.id, c]));
     const skipped: { client_id: string; reason: string }[] = [];
-    const results: { client_id: string; ok: boolean; error?: string }[] = [];
-    const queue: string[] = [];
+    // Varios clientes en la cuenta: una invocación por cada uno
+    const subsOf = new Map((settings ?? []).map((s: { client_id: string; properties?: Record<string, string> | null }) => [s.client_id, parseSubs(s.properties?.subAccounts)]));
+    const results: { client_id: string; sub?: string; ok: boolean; error?: string }[] = [];
+    const queue: { id: string; sub?: string }[] = [];
     for (const id of ids) {
       const c = byId.get(id);
       const row = c ? findMasterRow(masterRows, c) : null;
@@ -73,22 +76,25 @@ export async function GET(req: NextRequest) {
         skipped.push({ client_id: id, reason: "ya sincronizado hoy" });
         continue;
       }
-      queue.push(id);
+      const subs = subsOf.get(id) ?? [];
+      if (subs.length) for (const sub of subs) queue.push({ id, sub });
+      else queue.push({ id });
     }
     // Si esta corrida se acaba, las invocaciones ya lanzadas siguen hasta terminar
     const self = new URL(req.nextUrl.pathname, req.nextUrl.origin);
     let next = 0;
     await Promise.all(Array.from({ length: Math.min(PARALLEL, queue.length) }, async () => {
       while (next < queue.length && Date.now() - startedAt < BUDGET_MS) {
-        const id = queue[next++];
+        const { id, sub } = queue[next++];
         try {
           const url = new URL(self);
           url.searchParams.set("client_id", id);
+          if (sub) url.searchParams.set("sub", sub);
           const r = await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store" });
           const j = await r.json().catch(() => ({}));
-          results.push({ client_id: id, ok: r.ok && !!j.ok, ...(j.error || !r.ok ? { error: j.error ?? `HTTP ${r.status}` } : {}) });
+          results.push({ client_id: id, ...(sub ? { sub } : {}), ok: r.ok && !!j.ok, ...(j.error || !r.ok ? { error: j.error ?? `HTTP ${r.status}` } : {}) });
         } catch (e) {
-          results.push({ client_id: id, ok: false, error: (e as Error).message });
+          results.push({ client_id: id, ...(sub ? { sub } : {}), ok: false, error: (e as Error).message });
         }
       }
     }));

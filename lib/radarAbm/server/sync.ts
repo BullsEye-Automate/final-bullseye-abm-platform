@@ -1,12 +1,13 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { fetchHSOwners } from "@/lib/hubspot";
 import { chileToday } from "@/lib/celulasSdr/calendar";
-import { CO_ORDER, CT_ORDER, EXCLUDE } from "../dictionaries";
+import { CO_ORDER, CT_ORDER, EXCLUDE, PER_CLIENT_KEYS } from "../dictionaries";
 import { deriveClientData, type FlatCompany, type FlatContact } from "../derive";
 import type { RadarActivity, RadarCallEval, RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { loadActivities } from "./activities";
 import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
-import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, universeMode } from "./store";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, subAccounts, universeMode } from "./store";
+import { pickSub } from "../subAccounts";
 import { checkClientActive } from "./masterClients";
 import { loadSheetMeetings } from "./sheetMeetings";
 import { loadClientIcps } from "./icp";
@@ -80,7 +81,10 @@ function periodStart(today: string, months: number): string {
 const ACTIVITIES_BUDGET_MS = 200_000;
 const DEALS_BUDGET_MS = 235_000;
 
-export async function syncClientRadar(clientId: string, by: string) {
+// sub: uno de los clientes de la cuenta (subAccounts, ej. "Nisum Colombia"):
+// sus propiedades se detectan por su nombre y sus reuniones y llamadas se
+// separan por la columna Cliente de la planilla y el país.
+export async function syncClientRadar(clientId: string, by: string, sub?: string) {
   const startedAt = Date.now();
   const db = supabaseAdmin();
   const { data: client } = await db.from("clients").select("id, name, slug").eq("id", clientId).maybeSingle();
@@ -90,6 +94,18 @@ export async function syncClientRadar(clientId: string, by: string) {
   if (!master.active) throw new Error(master.reason);
 
   const cfg = await loadRadarConfig();
+  const settings = await loadClientSettings(clientId);
+  const subs = subAccounts(settings);
+  if (subs.length && !sub) throw new Error(`Esta cuenta tiene varios clientes (${subs.join(", ")}): se sincroniza uno a la vez.`);
+  if (sub && !subs.includes(sub)) throw new Error(`"${sub}" no está en los clientes de esta cuenta.`);
+  // Nombre con el que se detectan las propiedades por cliente y se filtra
+  const name = sub ?? client.name;
+  // Otros registros de cliente que son esta cuenta (ej. un cliente "KI Technologies" en la app)
+  const subClientIds = new Set<string>();
+  if (sub) {
+    const { data: all } = await db.from("clients").select("id, name");
+    for (const c of all ?? []) if (c.id !== clientId && pickSub(subs, c.name, null) === sub) subClientIds.add(c.id);
+  }
   const today = chileToday();
   const start = periodStart(today, cfg.periodMonths);
 
@@ -106,7 +122,10 @@ export async function syncClientRadar(clientId: string, by: string) {
         if (Date.now() > deadline) { warn.push("Score SDR (Allo): se cortó por tiempo; faltan meses (vuelve a sincronizar)."); break; }
         const r = await loadAlloMonth(month);
         for (const e of r.evals) {
-          if (e.c !== clientId) continue;
+          if (sub) {
+            // Del registro del cliente: por el país del número de Allo; de otro registro con su nombre: todas
+            if (!(e.c && subClientIds.has(e.c)) && !(e.c === clientId && pickSub(subs, null, e.k) === sub)) continue;
+          } else if (e.c !== clientId) continue;
           evals.push({ d: e.d, s: r.sdrNames[e.s] ?? e.s, score: e.score, crit: e.crit, ...(e.nivel ? { nivel: e.nivel } : {}) });
         }
       }
@@ -115,13 +134,14 @@ export async function syncClientRadar(clientId: string, by: string) {
     }
     return { evals, warn };
   })();
-  const settings = await loadClientSettings(clientId);
   const token = await hubspotTokenFor(clientId, settings.hubspot_source);
   const warnings: string[] = [];
 
   const { catalog, errors } = await loadPropertyCatalog(token);
   warnings.push(...errors);
-  const detected = detectProperties(effectiveProperties(cfg, settings), catalog, client.name);
+  // Con varios clientes en la cuenta, las propiedades por cliente se eligen por el nombre de cada uno
+  const mapping = Object.fromEntries(Object.entries(effectiveProperties(cfg, settings)).filter(([k]) => !sub || !PER_CLIENT_KEYS.includes(k)));
+  const detected = detectProperties(mapping, catalog, name);
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
   // Dónde se corrige el mapeo según el HubSpot que se lee
   const where = settings.hubspot_source === "client" ? " en el HubSpot del cliente" : "";
@@ -141,7 +161,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   // de este cliente (en el modo Cliente BullsEye es el único filtro)
   const uniCo = findProp("companies", settings.properties?.universeCompanyClient, ["cliente_bullseye_empresa"], "Cliente BullsEye Empresa");
   const uniCt = findProp("contacts", settings.properties?.universeContactClient, ["cliente_bullseye"], "Cliente BullsEye");
-  const uniValue = (settings.hubspot_client_value ?? "").trim() || client.name;
+  const uniValue = (sub ? "" : (settings.hubspot_client_value ?? "").trim()) || name;
   if (clientMode && !uniCo) throw new Error(`No se encontró la propiedad de empresa "Cliente BullsEye Empresa"${where}.`);
   if (clientMode && !uniCt) throw new Error(`No se encontró la propiedad de contacto "Cliente BullsEye"${where}.`);
   // Valor interno de la opción cuyo nombre es el del cliente
@@ -164,13 +184,13 @@ export async function syncClientRadar(clientId: string, by: string) {
   if (!clientMode && !P.companyStatus.property) {
     const n = P.companyStatus.candidates.length;
     throw new Error(n
-      ? `No se pudo elegir cuál de las ${n} propiedades "Status de la asignación - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
+      ? `No se pudo elegir cuál de las ${n} propiedades "Status de la asignación - …" es la de ${name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
       : `No se encontró ninguna propiedad de empresa "Status de la asignación - …"${where}. Indica su nombre interno en Configuración → Cliente → Pulso ABM.`);
   }
   if (!clientMode && !P.contactStatus.property) {
     const n = P.contactStatus.candidates.length;
     throw new Error(n
-      ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${client.name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
+      ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
       : `No se encontró ninguna propiedad de contacto "Asignación BullsEye por Llamar - …"${where}. Indica su nombre interno en Configuración → Cliente → Pulso ABM.`);
   }
   for (const d of detected) if (d.manual && !d.found) warnings.push(`El nombre interno "${d.property}" de "${d.label}" no existe${where}.`);
@@ -237,7 +257,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   for (const r of rawCompanies) {
     const p = r.properties;
     if (p.domain) companyDomain.set(String(r.id), p.domain);
-    const label = clientMode ? lifecycleStatus(p.lifecyclestage, client.name) : statusLabel(p[statusProp]);
+    const label = clientMode ? lifecycleStatus(p.lifecyclestage, name) : statusLabel(p[statusProp]);
     if (!label) continue; // sin status: no es parte del trabajo de BullsEye
     const st = clientMode ? label : companyStatusCanon(label)!;
     if (clientMode && st === "Asignada") pendingStage.add(String(r.id)); // se completa con la actividad
@@ -373,6 +393,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   try {
     const sheet = await loadSheetMeetings({
       clientId, start,
+      ...(sub ? { sub: { subs, sub, clientIds: Array.from(subClientIds) } } : {}),
       companies: companies.map((c) => ({ id: c.id, n: c.n, domain: companyDomain.get(String(c.id)) })),
       contacts: contacts.map((k) => ({ id: k.id, co: k.co, n: k.n })),
       sdrOf: (co) => coById.get(co)?.sdr ?? "Sin SDR",
@@ -441,7 +462,7 @@ export async function syncClientRadar(clientId: string, by: string) {
   if (!companies.length) warnings.push("No se encontraron empresas con status para este cliente en HubSpot.");
 
   const clientData = deriveClientData({
-    name: client.name,
+    name,
     deep: settings.deep ?? undefined,
     pipeline: settings.pipeline ?? deals.length > 0,
     companies, contacts, meetings, deals, cfg, today,
@@ -475,6 +496,6 @@ export async function syncClientRadar(clientId: string, by: string) {
     excludedCompanies,
     excludedContacts,
   };
-  await saveSnapshot(clientId, dataset, stats, by);
+  await saveSnapshot(clientId, dataset, stats, by, sub, subs);
   return { stats, warnings, syncedAt: dataset.syncedAt };
 }

@@ -22,7 +22,11 @@ export async function GET() {
     if (!snapshot) return NextResponse.json({ dataset: null, reason: "pending" });
     const safeConfig = { ...config, properties: {}, contactAliases: {}, companyAliases: {} };
     // Informe en Storage: el archivo no lleva avisos internos ni mapeo de propiedades
-    if (snapshot.datasetUrl) return NextResponse.json({ dataset: null, datasetUrl: snapshot.datasetUrl, config: safeConfig });
+    if (snapshot.datasetUrl) {
+      // Varios clientes en la cuenta: solo nombre y link de cada informe (sin avisos internos ni mapeo)
+      const subs = snapshot.subs?.map((x) => ({ name: x.name, url: x.url }));
+      return NextResponse.json({ dataset: null, datasetUrl: snapshot.datasetUrl, config: safeConfig, ...(subs?.length ? { subs } : {}) });
+    }
     const { warnings: _w, mapping: _m, ...dataset } = snapshot.dataset;
     // Al cliente solo lo que necesita el cálculo (sin mapeo de propiedades)
     return NextResponse.json({ dataset, config: safeConfig });

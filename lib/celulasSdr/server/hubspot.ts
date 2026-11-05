@@ -26,9 +26,13 @@ async function loadAccounts(): Promise<Account[]> {
     .from("client_configs")
     .select("client_id, hubspot_access_token, clients(name)")
     .not("hubspot_access_token", "is", null);
+  // Un mismo HubSpot conectado en dos clientes (ej. la cuenta de Nisum) se lee
+  // una sola vez: si no, sus actividades se contarían dos veces
+  const seenTokens = new Set<string>();
   for (const r of (data ?? []) as any[]) {
     const token = (r.hubspot_access_token ?? "").trim();
-    if (!token) continue;
+    if (!token || seenTokens.has(token)) continue;
+    seenTokens.add(token);
     const name = Array.isArray(r.clients) ? r.clients[0]?.name : r.clients?.name;
     accounts.push({ clientId: r.client_id, label: name ?? r.client_id, token });
   }

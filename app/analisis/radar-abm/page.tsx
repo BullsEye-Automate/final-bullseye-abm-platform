@@ -1,6 +1,7 @@
 "use client";
 
 import { resolveDataset } from "@/lib/radarAbm/fetchDataset";
+import { runRadarSync } from "@/lib/radarAbm/clientSync";
 import "@/components/radar/radar.css";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -28,6 +29,8 @@ type ApiResponse = {
   master?: { active: boolean; text: string };
   config: RadarConfig;
   error?: string;
+  // Varios clientes dentro del mismo HubSpot: un informe por cada uno
+  subs?: { name: string; url: string; warnings: string[]; mapping?: RadarDataset["mapping"]; syncedAt: string | null }[];
 };
 
 export default function RadarAbmPage() {
@@ -40,6 +43,8 @@ export default function RadarAbmPage() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [sub, setSub] = useState<string | null>(null);
+  useEffect(() => { setSub(null); }, [clientId]);
 
   // Última vista vista (preferencia local)
   useEffect(() => {
@@ -61,14 +66,18 @@ export default function RadarAbmPage() {
       const r = await fetch(`/api/radar-abm?client_id=${clientId}${demo ? "&demo=1" : ""}`, { cache: "no-store" });
       const j = (await r.json()) as ApiResponse;
       if (!r.ok || j.error) throw new Error(j.error || `Error ${r.status}`);
-      setData({ ...j, dataset: await resolveDataset(j as any) });
+      if (j.subs?.length && !demo) {
+        const pick = j.subs.find((x) => x.name === sub) ?? j.subs[0];
+        const dataset = await resolveDataset({ datasetUrl: pick.url, datasetExtra: { warnings: pick.warnings, mapping: pick.mapping } });
+        setData({ ...j, dataset, warnings: pick.warnings, syncedAt: pick.syncedAt });
+      } else setData({ ...j, dataset: await resolveDataset(j as any) });
     } catch (e) {
       setError((e as Error).message);
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [clientId, demo]);
+  }, [clientId, demo, sub]);
 
   useEffect(() => { setSyncMsg(null); load(); }, [load]);
 
@@ -78,11 +87,9 @@ export default function RadarAbmPage() {
     setError(null);
     setSyncMsg(null);
     try {
-      const r = await fetch(`/api/radar-abm?client_id=${clientId}`, { method: "POST" });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok || j.error) throw new Error(j.error || (r.status === 504 ? "La sincronización superó el tiempo máximo (5 min). Vuelve a intentarlo; si se repite, avísale al equipo técnico." : `Error ${r.status}`));
-      const s = j.stats ?? {};
-      setSyncMsg(`Sincronizado: ${s.companies ?? 0} empresas, ${s.contacts ?? 0} contactos, ${s.meetings ?? 0} reuniones, ${s.deals ?? 0} negocios.`);
+      const res = await runRadarSync(clientId, (m) => setSyncMsg(m));
+      if (!res.ok) throw new Error(res.message);
+      setSyncMsg(res.message);
       setDemo(false);
       await load();
     } catch (e) {
@@ -104,8 +111,14 @@ export default function RadarAbmPage() {
   }
 
   const parts = visibleParts("internal");
+  const subs = !demo ? data?.subs ?? [] : [];
   const actions = (
     <>
+      {subs.length > 1 && (
+        <select className="ra-select" aria-label="Cliente de la cuenta" value={sub ?? subs[0].name} onChange={(e) => setSub(e.target.value)} title="Esta cuenta de HubSpot tiene varios clientes">
+          {subs.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+        </select>
+      )}
       <button className="ra-btn" onClick={() => setDemo((d) => !d)} title="Alterna entre los datos sincronizados y los datos demo del prototipo">
         {demo ? "Ver datos reales" : "Ver datos demo"}
       </button>

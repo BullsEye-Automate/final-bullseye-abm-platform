@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getReviewerEmail } from "@/lib/portalAdmin";
 import { supabaseAdmin } from "@/lib/supabase";
 import { masterStatusFor } from "@/lib/radarAbm/server/masterClients";
+import { parseSubs } from "@/lib/radarAbm/subAccounts";
 import { PROPERTY_DEFS } from "@/lib/radarAbm/dictionaries";
 import { loadClientSettings, loadSnapshot, saveClientSettings, type RadarClientSettings } from "@/lib/radarAbm/server/store";
 
@@ -39,12 +40,17 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       deep: triState(b.deep),
       pipeline: triState(b.pipeline),
       portal_enabled: b.portal_enabled !== false,
-      // Mapeo propio (HubSpot del cliente): solo claves conocidas y nombres
-      // internos válidos (letras, números y guion bajo)
+      // Mapeo propio (HubSpot del cliente): solo claves conocidas; nombre
+      // interno o etiqueta (letras, números, espacios, guion). subAccounts =
+      // clientes de la cuenta, uno por línea.
       properties: Object.fromEntries(
         Object.entries((b.properties ?? {}) as Record<string, unknown>)
-          .filter(([k, v]) => (PROPERTY_DEFS.some((d) => d.key === k) || UNIVERSE_KEYS.includes(k)) && typeof v === "string" && /^[a-z0-9_]+$/i.test(v.trim()))
-          .map(([k, v]) => [k, (v as string).trim()])
+          .filter(([k, v]) => typeof v === "string" && v.trim() && (
+            k === "subAccounts"
+              ? v.length <= 600
+              : (PROPERTY_DEFS.some((d) => d.key === k) || UNIVERSE_KEYS.includes(k)) && /^[\p{L}\p{N}_ .\-]{1,100}$/u.test(v.trim())
+          ))
+          .map(([k, v]) => [k, k === "subAccounts" ? parseSubs(v as string).join("\n") : (v as string).trim()])
       ),
     };
     await saveClientSettings(settings, await getReviewerEmail());

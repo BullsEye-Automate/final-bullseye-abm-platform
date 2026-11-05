@@ -1,7 +1,8 @@
 import { hsFetchWithRetry, hsHeaders } from "@/lib/hubspot";
 import { supabaseAdmin } from "@/lib/supabase";
 import { detectProperties, loadPropertyCatalog, type DetectedProperty } from "./hubspot";
-import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, universeMode } from "./store";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, subAccounts, universeMode } from "./store";
+import { PER_CLIENT_KEYS } from "../dictionaries";
 
 // Pulso ABM — prueba del HubSpot de un cliente antes de sincronizar.
 // Hace una llamada mínima (limit 1) por cada cosa que lee el sync y reporta
@@ -63,7 +64,18 @@ export async function checkClientHubspot(clientId: string) {
     ? { key: "schemas", label: "Propiedades de empresas, contactos y reuniones", ok: true, required: true }
     : { key: "schemas", label: "Propiedades de empresas, contactos y reuniones", ok: false, required: true, detail: errors[0]?.slice(0, 240), scopes: missingScopes(errors.join(" ")) });
 
-  const detected = detectProperties(effectiveProperties(cfg, settings), catalog, client?.name);
+  // Varios clientes en la cuenta: las propiedades por cliente se buscan por el
+  // nombre de cada uno; el resto de la prueba usa el primero
+  const subs = subAccounts(settings);
+  const baseMapping = Object.fromEntries(Object.entries(effectiveProperties(cfg, settings)).filter(([k]) => !subs.length || !PER_CLIENT_KEYS.includes(k)));
+  for (const sub of subs) {
+    const d = Object.fromEntries(detectProperties(baseMapping, catalog, sub).map((x) => [x.key, x]));
+    const show = (k: string) => (d[k]?.property ? `"${d[k].propLabel ?? d[k].property}"` : "no encontrada");
+    const ok = !!d.companyStatus?.property && !!d.contactStatus?.property;
+    items.push({ key: `sub:${sub}`, label: `Cliente de la cuenta: ${sub}`, ok, required: true,
+      detail: `Status empresa ${show("companyStatus")} · status contacto ${show("contactStatus")} · SDR empresa ${show("companySdr")} · SDR contacto ${show("contactSdr")}` });
+  }
+  const detected = detectProperties(baseMapping, catalog, subs[0] ?? client?.name);
   // Todas las propiedades que la app ve en ese HubSpot (buscador de la pantalla)
   const slim = (o: string) => (catalog[o] ?? []).map((x) => ({ name: x.name, label: x.label })).sort((a, b) => a.label.localeCompare(b.label));
   const allProps = { companies: slim("companies"), contacts: slim("contacts") };
