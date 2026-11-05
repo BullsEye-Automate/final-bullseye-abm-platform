@@ -280,7 +280,7 @@ Automatiza las respuestas de los prospectos en Lemlist (email y LinkedIn) de **t
 - **KAM** (`kamFor`): Robin (rarredondo@) para Nisum y KI; el resto Ingri (ihincapie@). Mover a la Maestra cuando tenga columna de KAM.
 - **Acciones:** interesado / referido / tibio con SDR activo → contacto en **"Hot Calling"** (opción de la propiedad de estado), lead pausado en Lemlist (`POST /api/leads/pause/{email}?campaignId=`) y correo al SDR. Sin SDR → correo al KAM. Baja → solo se pausa. No interesado / fuera de oficina → sin acción. HubSpot propio del cliente con token de solo lectura: no se puede marcar Hot Calling (falta `crm.objects.contacts.write`), el resto sigue.
 - **Modo** `RESPUESTAS_LEMLIST_MODE`: **`activo` por defecto desde el 5-nov-2026** (pedido de BullsEye, tras un día en sombra) = hace todo. `sombra` = clasifica y registra; no escribe en HubSpot, no pausa ni avisa a SDR/KAM; manda un resumen por corrida a `RESPUESTAS_LEMLIST_SHADOW_TO` (por defecto amadriz@). Las respuestas ya registradas en sombra no se reprocesan (`activity_id` único). Remitente `RESPUESTAS_LEMLIST_FROM` → `CELULAS_ALERTS_FROM`.
-- **Bandeja** `/analisis/respuestas-lemlist` (menú Análisis), API con sesión `GET /api/respuestas-lemlist?client_id=&action=&days=`.
+- **Bandeja** `/analisis/respuestas-lemlist` (menú Análisis), API con sesión `GET /api/respuestas-lemlist?client_id=&action=&days=`. Trazabilidad (nov-2026): columnas **Aviso enviado** (`notified_to` + hora de procesamiento = `created_at`) y **Estado actual HubSpot** (valor vigente de "Asignación BullsEye por llamar - <cliente>", leído en vivo por `POST /api/respuestas-lemlist/hubspot-status` con el HubSpot de cada cliente; Hot Calling en rojo = SDR aún no gestiona).
 
 ---
 
