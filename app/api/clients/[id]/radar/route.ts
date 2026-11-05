@@ -48,7 +48,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
           .filter(([k, v]) => typeof v === "string" && v.trim() && (
             k === "subAccounts"
               ? v.length <= 600
-              : (PROPERTY_DEFS.some((d) => d.key === k) || UNIVERSE_KEYS.includes(k)) && /^[\p{L}\p{N}_ .\-]{1,100}$/u.test(v.trim())
+              : (PROPERTY_DEFS.some((d) => d.key === k) || UNIVERSE_KEYS.includes(k) || /^sub:[a-z0-9]+:(companyStatus|companySdr|contactStatus|contactSdr|companyWishlist)$/.test(k)) && /^[\p{L}\p{N}_ .\-]{1,100}$/u.test(v.trim())
           ))
           .map(([k, v]) => [k, k === "subAccounts" ? parseSubs(v as string).join("\n") : (v as string).trim()])
       ),

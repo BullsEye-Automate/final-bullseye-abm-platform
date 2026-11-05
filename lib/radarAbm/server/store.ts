@@ -69,6 +69,16 @@ export function subAccounts(s: { properties?: Record<string, string> }): string[
   return parseSubs(s.properties?.subAccounts);
 }
 
+// Propiedades elegidas a mano para un cliente de la cuenta: claves
+// "sub:<slug>:<clave>" (ej. sub:nisumchile:companyStatus). Solo las por cliente.
+export const SUB_KEYS = ["companyStatus", "companySdr", "contactStatus", "contactSdr", "companyWishlist"];
+export const subKey = (sub: string, key: string) => `sub:${subSlug(sub)}:${key}`;
+export function subMapping(cfg: RadarConfig, s: RadarClientSettings, sub: string): Record<string, string> {
+  const base = Object.fromEntries(Object.entries(effectiveProperties(cfg, s)).filter(([k]) => !PER_CLIENT_KEYS.includes(k) && !k.startsWith("sub:")));
+  for (const k of SUB_KEYS) { const v = (s.properties?.[subKey(sub, k)] ?? "").trim(); if (v) base[k] = v; }
+  return base;
+}
+
 export function effectiveProperties(cfg: RadarConfig, s: RadarClientSettings): Record<string, string> {
   if (s.hubspot_source === "client") return { ...(s.properties ?? {}) };
   const global = Object.fromEntries(Object.entries(cfg.properties).filter(([k]) => !PER_CLIENT_KEYS.includes(k)));

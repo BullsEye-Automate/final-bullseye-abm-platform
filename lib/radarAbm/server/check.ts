@@ -1,8 +1,7 @@
 import { hsFetchWithRetry, hsHeaders } from "@/lib/hubspot";
 import { supabaseAdmin } from "@/lib/supabase";
 import { detectProperties, loadPropertyCatalog, type DetectedProperty } from "./hubspot";
-import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, subAccounts, universeMode } from "./store";
-import { PER_CLIENT_KEYS } from "../dictionaries";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, SUB_KEYS, subAccounts, subKey, subMapping, universeMode } from "./store";
 
 // Pulso ABM — prueba del HubSpot de un cliente antes de sincronizar.
 // Hace una llamada mínima (limit 1) por cada cosa que lee el sync y reporta
@@ -67,11 +66,15 @@ export async function checkClientHubspot(clientId: string) {
   // Varios clientes en la cuenta: las propiedades por cliente se buscan por el
   // nombre de cada uno; el resto de la prueba usa el primero
   const subs = subAccounts(settings);
-  const baseMapping = Object.fromEntries(Object.entries(effectiveProperties(cfg, settings)).filter(([k]) => !subs.length || !PER_CLIENT_KEYS.includes(k)));
+  const baseMapping = subs.length ? subMapping(cfg, settings, subs[0]) : effectiveProperties(cfg, settings);
+  // Por cliente de la cuenta: lo detectado de cada propiedad por cliente (para la tabla de la pantalla)
+  const subsDetected: { name: string; key: string; props: DetectedProperty[] }[] = [];
   for (const sub of subs) {
-    const d = Object.fromEntries(detectProperties(baseMapping, catalog, sub).map((x) => [x.key, x]));
-    const show = (k: string) => (d[k]?.property ? `"${d[k].propLabel ?? d[k].property}"` : "no encontrada");
-    const ok = !!d.companyStatus?.property && !!d.contactStatus?.property;
+    const all = detectProperties(subMapping(cfg, settings, sub), catalog, sub);
+    const d = Object.fromEntries(all.map((x) => [x.key, x]));
+    subsDetected.push({ name: sub, key: subKey(sub, ""), props: SUB_KEYS.map((k) => d[k]).filter(Boolean) });
+    const show = (k: string) => (d[k]?.property && d[k].found ? `"${d[k].propLabel ?? d[k].property}"` : "no encontrada");
+    const ok = !!d.companyStatus?.found && !!d.contactStatus?.found;
     items.push({ key: `sub:${sub}`, label: `Cliente de la cuenta: ${sub}`, ok, required: true,
       detail: `Status empresa ${show("companyStatus")} · status contacto ${show("contactStatus")} · SDR empresa ${show("companySdr")} · SDR contacto ${show("contactSdr")}` });
   }
@@ -101,7 +104,7 @@ export async function checkClientHubspot(clientId: string) {
     for (const [k, l] of [["owners", "Usuarios (SDR)"], ["calls", "Llamadas (intentos)"], ["emails", "Correos"], ["communications", "WhatsApp / LinkedIn"], ["deals", "Negocios (pipeline)"]] as const) {
       add(k, l, false, k === "owners" ? await probe(`${HS}/crm/v3/owners?limit=1`, { headers }) : await search(k));
     }
-    return { source: settings.hubspot_source, items, universe, contacts, properties: detected, allProps, ready: items.filter((i) => i.required).every((i) => i.ok) };
+    return { source: settings.hubspot_source, items, universe, contacts, properties: detected, allProps, subsDetected, ready: items.filter((i) => i.required).every((i) => i.ok) };
   }
 
   // Universo: empresas con status (con "Cliente BullsEye" si se configuró un valor)
@@ -148,6 +151,7 @@ export async function checkClientHubspot(clientId: string) {
     contacts,
     properties: detected,
     allProps,
+    subsDetected,
     ready: items.filter((i) => i.required).every((i) => i.ok) && !!statusProp && !!P.contactStatus.property,
   };
 }
