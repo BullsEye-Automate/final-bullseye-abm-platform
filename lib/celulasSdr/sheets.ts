@@ -95,18 +95,32 @@ export async function readMaster(spreadsheetId: string, warnings: DataWarning[])
     warnings.push({ source: "Maestra IA", message: "No se encontró la columna \"Responsable\"." });
   }
 
-  // Líderes de célula: columnas O y P. En cada columna, el primer nombre
-  // bajo el encabezado "Lideres de celulas" es el líder y los siguientes
-  // son los integrantes de su célula.
+  // Líderes de célula: bajo el encabezado "Lideres de celulas", una columna
+  // por célula (el encabezado está combinado sobre todas ellas). En cada
+  // columna el primer nombre es el líder y los siguientes, sus integrantes.
+  // Se ubica por el encabezado y no por letra: al insertar una columna en la
+  // Maestra (oct-2026) pasaron de O:P a P:Q y la célula de Nicolle se perdía.
+  // Se toman la columna del encabezado y las siguientes con nombres, hasta
+  // la primera columna vacía. Sin encabezado, se usan O y P como antes.
+  const isCellHeader = (v: string) => /^lideres? de c[eé]lulas?$/i.test(v.normalize("NFD").replace(/\p{Diacritic}/gu, "").trim());
+  let hRow = -1, hCol = -1;
+  rows.some((r, i) => r.some((c, j) => (isCellHeader(c ?? "") ? ((hRow = i), (hCol = j), true) : false)));
+  const colVals = (col: number, from: number) =>
+    rows.slice(from).map((r) => (r[col] ?? "").replace(/​/g, "").trim()).filter((v) => v && !isCellHeader(v));
+  const cellCols: number[] = [];
+  if (hCol >= 0) {
+    for (let col = hCol; col < hCol + 10 && colVals(col, hRow + 1).length > 0; col++) cellCols.push(col);
+  } else {
+    cellCols.push(14, 15);
+  }
   const cellsRaw: { leader: string; members: string[] }[] = [];
-  for (const col of [14, 15]) {
-    const vals = rows.map((r) => (r[col] ?? "").replace(/​/g, "").trim()).filter(Boolean);
-    const list = vals.filter((v) => !/^lideres? de c[eé]lulas?$/i.test(v.normalize("NFD").replace(/\p{Diacritic}/gu, "")));
+  for (const col of cellCols) {
+    const list = colVals(col, hCol >= 0 ? hRow + 1 : 0);
     if (list.length === 0) continue;
     cellsRaw.push({ leader: list[0], members: list.slice(1) });
   }
   if (cellsRaw.length === 0) {
-    warnings.push({ source: "Maestra IA", message: "No se encontraron líderes de célula en las columnas O y P." });
+    warnings.push({ source: "Maestra IA", message: "No se encontraron líderes de célula (encabezado \"Lideres de celulas\")." });
   }
 
   // Los integrantes de célula también son personas conocidas aunque no
