@@ -14,6 +14,7 @@ import { sendKamMail, sendSdrMail, type ReplyMailData } from "./mail";
 // (pedido de BullsEye) = Hot Calling en HubSpot, pausa en Lemlist y correo al
 // SDR o al KAM. "sombra" = solo clasifica y registra, sin escribir en HubSpot,
 // sin pausar en Lemlist y sin correos a SDR/KAM (solo el resumen de la corrida).
+export type Mode = "sombra" | "activo";
 export const currentMode = (): Mode => (process.env.RESPUESTAS_LEMLIST_MODE === "sombra" ? "sombra" : "activo");
 
 // Solo respuestas de las últimas N horas: al activar no se procesa el histórico
