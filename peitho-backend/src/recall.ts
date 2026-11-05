@@ -606,6 +606,16 @@ export async function checkAndScheduleMissingRecallBots(): Promise<void> {
 // directo, sin intentar descargar nada (no hay nada que descargar). El
 // cruce con la columna "Realizado" del excel de metas vive aparte, ver
 // checkStuckMeetingsAgainstMetasSheet más abajo.
+//
+// Pedido explícito del usuario (05-11-2026): distinguir dentro de este mismo
+// chequeo el caso puntual de "nunca lo admitieron de la sala de espera"
+// (sub_code `timeout_exceeded_waiting_room`, visible en el dashboard de
+// Recall como "This bot was never admitted from the waiting room or lobby")
+// con su propio status ('bot_no_admitido', migración 037) — a diferencia del
+// resto de las causas de "no_show" (reagendado según el excel, Deepgram sin
+// nada que transcribir), acá el problema es que alguien tenía que admitir al
+// bot y no lo hizo, así que vale la pena poder filtrarlo aparte para ver
+// cuánto está pasando esto en particular.
 export async function checkStuckMeetingsWithoutRecording(): Promise<void> {
   if (!process.env.RECALL_API_KEY || !process.env.RECALL_REGION) return; // Recall no configurado — no-op
 
@@ -632,10 +642,11 @@ export async function checkStuckMeetingsWithoutRecording(): Promise<void> {
       const hasRecording = !!bot?.recordings?.[0]?.media_shortcuts?.audio_mixed?.data?.download_url;
       if (hasRecording) continue; // sí grabó algo — que lo agarre el flujo normal (reintento de webhook, etc.)
 
+      const newStatus = lastStatus?.sub_code === 'timeout_exceeded_waiting_room' ? 'bot_no_admitido' : 'no_show';
       console.log(
-        `[recall] reunión ${meeting.id}: bot ${meeting.recall_bot_id} terminó (${lastStatus.code}) sin ninguna grabación utilizable — se marca como no_show`
+        `[recall] reunión ${meeting.id}: bot ${meeting.recall_bot_id} terminó (${lastStatus.code}/${lastStatus?.sub_code ?? 'sin sub_code'}) sin ninguna grabación utilizable — se marca como ${newStatus}`
       );
-      await pool.query(`update meetings set status = 'no_show', updated_at = now() where id = $1`, [meeting.id]);
+      await pool.query(`update meetings set status = $1, updated_at = now() where id = $2`, [newStatus, meeting.id]);
     } catch (error) {
       console.error(`[recall] error revisando si la reunión ${meeting.id} quedó sin grabación`, error);
     }

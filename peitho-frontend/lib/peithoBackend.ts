@@ -25,7 +25,7 @@ export interface MeetingListItem {
   // — casi siempre porque el prospecto nunca llegó a la cita (confirmado
   // real viendo la grabación en el dashboard de Recall). Estado final, no
   // se reintenta solo (ver analyzeMeetingAudio en postMeetingAnalysis.ts).
-  status: "scheduled" | "captured" | "analyzed" | "no_show";
+  status: "scheduled" | "captured" | "analyzed" | "no_show" | "bot_no_admitido";
   // Fase E — para el filtro de cliente en la vista admin.
   client_id: string | null;
   cliente_bullseye: string | null;

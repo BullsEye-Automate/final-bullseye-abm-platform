@@ -11,6 +11,11 @@ export const STATUS_LABEL: Record<MeetingListItem["status"], string> = {
   captured: "Capturada",
   analyzed: "Analizada",
   no_show: "No show",
+  // Pedido explícito del usuario (05-11-2026): distinguir el caso puntual de
+  // "a Recall nunca lo dejaron entrar de la sala de espera" del resto de los
+  // "no show" (reagendado, sin nada que transcribir) — ver
+  // checkStuckMeetingsWithoutRecording en el backend.
+  bot_no_admitido: "Bot no admitido",
 };
 
 // Misma prioridad que la celda "Ejecutivo" de la tabla (ver comentario abajo)

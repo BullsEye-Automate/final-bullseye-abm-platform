@@ -5,6 +5,7 @@ import { checkAndRetryFailedRecallBots, checkAndFixStaleRecallBots, checkAndSche
 import { retryStuckAnalyses } from './routes/webhooks';
 import { deleteExpiredMeetingVideos } from './videoRetention';
 import { renewExpiringCalendarWatches, catchUpAllActiveChannels } from './calendarWatchRenewal';
+import { sendDailyMeetingAlerts } from './dailyAlerts';
 
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
 
@@ -40,6 +41,66 @@ function everyGuarded(label: string, fn: () => Promise<void>, intervalMs: number
   };
   setInterval(tick, intervalMs);
   return tick;
+}
+
+// Pedido explícito del usuario (05-11-2026): correo diario de alertas (ver
+// dailyAlerts.ts), a una hora fija del día (no cada N horas como los
+// chequeos de arriba). `setInterval` de 24h puro se desalinearía con el
+// horario de Chile apenas hubiera un cambio de horario de verano — acá se
+// recalcula el delay hasta la próxima ocurrencia de la hora pedida en
+// America/Santiago en cada corrida (vía el offset UTC real de ese instante,
+// no un offset fijo hardcodeado), así que un cambio de horario de verano a
+// lo sumo corre el envío una hora ese día puntual, nunca lo deja desalineado
+// para siempre.
+function getUtcOffsetMinutes(date: Date, timeZone: string): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+      .formatToParts(date)
+      .map((p) => [p.type, p.value])
+  );
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return (asUtc - date.getTime()) / 60_000;
+}
+
+function nextDailyRunAt(hour: number, minute: number, timeZone: string): Date {
+  const now = new Date();
+  const offsetMin = getUtcOffsetMinutes(now, timeZone);
+  const nowInZone = new Date(now.getTime() + offsetMin * 60_000);
+  const candidateInZone = new Date(
+    Date.UTC(nowInZone.getUTCFullYear(), nowInZone.getUTCMonth(), nowInZone.getUTCDate(), hour, minute, 0)
+  );
+  let target = new Date(candidateInZone.getTime() - offsetMin * 60_000);
+  if (target <= now) target = new Date(target.getTime() + 24 * 60 * 60 * 1000);
+  return target;
+}
+
+function scheduleDaily(label: string, hour: number, minute: number, timeZone: string, fn: () => Promise<void>) {
+  function arm() {
+    const target = nextDailyRunAt(hour, minute, timeZone);
+    const delayMs = target.getTime() - Date.now();
+    setTimeout(() => {
+      fn()
+        .catch((error) => console.error(`[startup] error en ${label}`, error))
+        .finally(arm);
+    }, delayMs);
+  }
+  arm();
 }
 
 // Cada 1 min, revisa bots de Recall que ya deberían haber intentado unirse y
@@ -148,6 +209,13 @@ everyGuarded('sincronización de respaldo de Calendar', catchUpAllActiveChannels
 catchUpAllActiveChannels().catch((error) =>
   console.error('[startup] error en la sincronización inicial de respaldo de Calendar', error)
 );
+
+// Correo diario de alertas (05-11-2026, pedido explícito del usuario) — ver
+// dailyAlerts.ts para las 3 categorías que reporta (reuniones vencidas que
+// siguen "Agendada", bot no admitido, sin match contra el excel de metas).
+// 8am hora de Chile: después de que cualquier reunión del día anterior ya
+// tuvo tiempo de sobra de pasar por los chequeos automáticos de arriba.
+scheduleDaily('correo diario de alertas', 8, 0, 'America/Santiago', sendDailyMeetingAlerts);
 
 // Si el proceso anterior murió a mitad de un research (ej. Ctrl+C, o un
 // crash) el fire-and-forget nunca llegó a marcar 'failed', y esa reunión
