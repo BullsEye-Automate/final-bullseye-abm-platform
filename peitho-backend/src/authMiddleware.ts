@@ -5,6 +5,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { pool } from './db';
 import { getSupabaseAdminClient } from './supabaseAdmin';
+import { authenticateIntegration, hasIntegrationKey } from './bullseyeIntegration';
 
 export interface PeithoUser {
   id: string;
@@ -32,6 +33,25 @@ declare global {
 // Chrome (/meetings/lookup, /meetings/:id/audio) ni a los webhooks/OAuth de
 // Google Calendar — esos no tienen (ni deberían tener) sesión de usuario.
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  // Portal de BullsEye (ver bullseyeIntegration.ts): clave compartida + cliente
+  // en headers en vez de sesión de Supabase — queda como usuario "client" de
+  // ese cliente, nunca admin.
+  if (hasIntegrationKey(req)) {
+    try {
+      const result = await authenticateIntegration(req);
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error });
+        return;
+      }
+      req.peithoUser = result.user;
+      next();
+    } catch (error) {
+      console.error('Error verificando la integración con BullsEye', error);
+      res.status(500).json({ error: 'Error verificando la integración' });
+    }
+    return;
+  }
+
   const header = req.headers.authorization;
   const token = header?.startsWith('Bearer ') ? header.slice('Bearer '.length) : null;
   if (!token) {

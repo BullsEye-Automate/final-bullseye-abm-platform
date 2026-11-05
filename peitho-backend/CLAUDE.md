@@ -372,3 +372,15 @@ Pedido explícito del usuario, tras encontrar 4 reuniones del 3 de noviembre que
 
 **Pendiente de correr en Supabase:** migración `037_add_bot_no_admitido_status_to_meetings.sql`.
 **Pendiente en Railway:** agregar `RESEND_API_KEY` (y opcionalmente `PEITHO_ALERTS_FROM_EMAIL`/`PEITHO_DAILY_ALERTS_EMAILS` si se quiere cambiar algo del default).
+
+---
+
+## Integración con el portal de BullsEye (30-10-2026)
+
+Pedido explícito del usuario: los clientes que contratan Peitho **junto con** los servicios de BullsEye ven Peitho dentro del portal de BullsEye (`portal.bullseye-abm.com`, Pulso ABM → Peitho y Oportunidades → Peitho); `app.peithob2b.com` queda para quienes contratan solo Peitho. El equipo de BullsEye también crea los usuarios de Peitho de cada cliente desde el portal (Configuración → Cliente).
+
+- **Auth servidor a servidor** (`src/bullseyeIntegration.ts`): el portal manda `x-peitho-integration-key` (= env **`PEITHO_INTEGRATION_KEY`**, la misma clave en Railway y en Vercel del portal) + el cliente en `x-bullseye-client-id` / `x-bullseye-client-slug` / `x-bullseye-client-name` (URI-encoded). `requireAuth` (authMiddleware.ts) acepta esa clave en vez del JWT de Supabase y deja la request como un usuario **`role='client'`, `client_sub_role='admin'`** de ese cliente — mismo scoping por grupo de `external_id` que ya aplican todas las rutas; nunca puede pasar un `requireAdmin`. Sin la variable configurada, la clave nunca se acepta.
+- **Match del cliente:** `clients.external_id` = id o slug del cliente en el portal de BullsEye (el "ID Cliente" de la Maestra, el mismo que trae `clientesMaestra.ts`); con varias variantes regionales gana la de nombre igual (si ninguna, la primera — las rutas ven todo el grupo igual). Sin external_id que calce: nombre exacto.
+- **Rutas nuevas** (`src/routes/integration.ts`, solo con la clave): `GET /integration/client` (a qué cliente de Peitho se resolvió), `GET/POST /integration/users`, `DELETE /integration/users/:userId` — usuarios `role='client'` del cliente (sub-rol admin/user), misma lógica de invitación por correo que `POST /admin/user-roles` (duplicada a propósito para no tocar admin.ts); no puede crear ni degradar un admin de BullsEye.
+- El resto de lo que muestra el portal usa las rutas de siempre con la clave: `/me`, `/meetings`, `/meetings/:id`, `/meetings/:id/video`, `/meetings/:id/research` (POST, mismo tope de 2 por reunión de un rol cliente), `/meetings/:id/executive` (PUT), `/clients/:id/executives`, `/panel/funnel`, `/panel/funnel/rows`, `/panel/ejecutivos`. El portal llama server-side (sin CORS).
+- **⚠️ Pendiente operativo:** generar una clave larga aleatoria y cargarla como `PEITHO_INTEGRATION_KEY` en Railway (este backend) y en Vercel (portal de BullsEye), junto con `PEITHO_BACKEND_URL` en el portal. No requiere migración.
