@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { syncClientRadar } from "@/lib/radarAbm/server/sync";
+import { recordCronStatus } from "@/lib/radarAbm/server/store";
 import { parseSubs } from "@/lib/radarAbm/subAccounts";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 
@@ -37,10 +38,13 @@ export async function GET(req: NextRequest) {
   const one = req.nextUrl.searchParams.get("client_id");
   if (one) {
     if (!UUID_RE.test(one)) return NextResponse.json({ error: "client_id inválido" }, { status: 400 });
+    const sub = req.nextUrl.searchParams.get("sub") || undefined;
     try {
-      await syncClientRadar(one, "cron", req.nextUrl.searchParams.get("sub") || undefined);
+      const r = await syncClientRadar(one, "cron", sub);
+      await recordCronStatus(one, sub, { state: "ok", detail: `${r.stats.companies} empresas, ${r.stats.contacts} contactos, ${r.stats.meetings} reuniones (${r.stats.seconds} s)` });
       return NextResponse.json({ client_id: one, ok: true });
     } catch (e) {
+      await recordCronStatus(one, sub, { state: "error", detail: (e as Error).message.slice(0, 400) });
       return NextResponse.json({ client_id: one, ok: false, error: (e as Error).message });
     }
   }
@@ -68,7 +72,9 @@ export async function GET(req: NextRequest) {
       const c = byId.get(id);
       const row = c ? findMasterRow(masterRows, c) : null;
       if (!row?.active) {
-        skipped.push({ client_id: id, reason: !c ? "cliente no encontrado" : row ? `Maestra: ${row.status || "sin status"}` : "no figura en la Maestra" });
+        const reason = !c ? "cliente no encontrado" : row ? `Maestra: ${row.status || "sin status"}` : "no figura en la Maestra";
+        skipped.push({ client_id: id, reason });
+        if (c) await recordCronStatus(id, undefined, { state: "skipped", detail: reason });
         continue;
       }
       const syncedAt = last.get(id);
@@ -90,9 +96,13 @@ export async function GET(req: NextRequest) {
           const url = new URL(self);
           url.searchParams.set("client_id", id);
           if (sub) url.searchParams.set("sub", sub);
+          // "started": si queda así, la invocación no terminó (se pasó de los 5 min)
+          await recordCronStatus(id, sub, { state: "started" });
           const r = await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store" });
           const j = await r.json().catch(() => ({}));
           results.push({ client_id: id, ...(sub ? { sub } : {}), ok: r.ok && !!j.ok, ...(j.error || !r.ok ? { error: j.error ?? `HTTP ${r.status}` } : {}) });
+          // La invocación del cliente no llegó a responder (ej. bloqueo del dominio o 5xx)
+          if (!r.ok && !j.error) await recordCronStatus(id, sub, { state: "error", detail: `La sincronización automática no pudo llamar a la invocación del cliente (HTTP ${r.status}).` });
         } catch (e) {
           results.push({ client_id: id, ...(sub ? { sub } : {}), ok: false, error: (e as Error).message });
         }

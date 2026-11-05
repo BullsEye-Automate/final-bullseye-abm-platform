@@ -160,6 +160,11 @@ export default function RadarAbmPage() {
           {!demo && data?.dataset && data.syncedAt && Date.now() - new Date(data.syncedAt).getTime() > 36 * 3600_000 && (
             <div className="ra-banner warn">
               La última sincronización es del {new Date(data.syncedAt).toLocaleDateString("es-CL", { timeZone: "America/Santiago" })}: el informe no incluye lo posterior (meses, reuniones nuevas). Pulsa “Actualizar”; si falla, el mensaje dice por qué.
+              {((data as any).cron ?? []).filter((c: any) => c.state && c.state !== "ok").map((c: any, i: number) => (
+                <div key={i} style={{ marginTop: 4 }}>
+                  Sincronización automática{c.sub ? ` (${c.sub})` : ""} del {new Date(c.at).toLocaleString("es-CL", { timeZone: "America/Santiago" })}: {c.state === "started" ? "no terminó (se pasó de los 5 minutos)" : c.state === "skipped" ? `saltada — ${c.detail}` : `falló — ${c.detail}`}
+                </div>
+              ))}
             </div>
           )}
           {!demo && data?.master && !data.master.active && (

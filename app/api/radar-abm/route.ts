@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getReviewerEmail } from "@/lib/portalAdmin";
 import { demoDataset } from "@/lib/radarAbm/demo";
-import { loadClientSettings, loadRadarConfig, loadSnapshot, subAccounts } from "@/lib/radarAbm/server/store";
+import { loadClientSettings, loadRadarConfig, loadSnapshot, readCronStatus, subAccounts } from "@/lib/radarAbm/server/store";
 import { syncClientRadar } from "@/lib/radarAbm/server/sync";
 import { masterStatusFor } from "@/lib/radarAbm/server/masterClients";
 import { loadFeedbackOverlay } from "@/lib/radarAbm/server/sheetMeetings";
@@ -38,6 +38,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       dataset: snapshot?.dataset ?? null,
       feedback,
+      // Última sincronización automática (para ver por qué no se actualiza)
+      cron: subAccounts(settings0).length
+        ? await Promise.all(subAccounts(settings0).map(async (x) => ({ sub: x, ...(await readCronStatus(clientId, x).catch(() => null)) })))
+        : [{ ...(await readCronStatus(clientId).catch(() => null)) }],
       // Informe grande en Storage: lo descarga el navegador (avisos y mapeo van aparte)
       ...(snapshot?.datasetUrl ? { datasetUrl: snapshot.datasetUrl, datasetExtra: { warnings: snapshot.warnings ?? [], mapping: snapshot.mapping } } : {}),
       // Varios clientes en la cuenta: un informe por cada uno (selector interno)
