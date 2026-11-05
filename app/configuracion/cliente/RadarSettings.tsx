@@ -44,6 +44,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
   const compactName = clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const isBullseye = compactName === "bullseye";
   const isAcid = compactName.startsWith("acidlab");
+  const isNisum = compactName.startsWith("nisum");
   const [s, setS] = useState<Settings | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [stats, setStats] = useState<Record<string, number> | null>(null);
@@ -203,6 +204,23 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
               Solo entran empresas con “Cliente BullsEye Empresa” y contactos con “Cliente BullsEye” = <b>{(s.hubspot_client_value ?? "").trim() || clientName}</b>
               {s.hubspot_source === "client" ? " (si existen esas propiedades en el HubSpot del cliente)" : ""}. Vacío = nombre del cliente; se compara sin espacios (“Acid Labs” = “AcidLab”).
             </span>
+          </label>
+
+          <label className="text-sm">
+            <span className="label block mb-1">Solo empresas de la wishlist</span>
+            <select
+              className="input"
+              value={s.properties?.wishlistOnly ?? ""}
+              onChange={(e) => {
+                const { wishlistOnly: _w, ...rest } = s.properties ?? {};
+                setS({ ...s, properties: e.target.value ? { ...rest, wishlistOnly: e.target.value } : rest });
+              }}
+            >
+              <option value="">Automático ({isNisum ? "sí" : "no"} para {clientName})</option>
+              <option value="si">Sí: solo empresas con “Wish List - …” = Sí</option>
+              <option value="no">No: todas las empresas con status</option>
+            </select>
+            <span className="text-xs text-ink-subtle block mt-1">Con “Sí”, el informe solo considera las empresas cuya wishlist del cliente (o de cada mercado) dice Sí.</span>
           </label>
 
           <label className="text-sm">

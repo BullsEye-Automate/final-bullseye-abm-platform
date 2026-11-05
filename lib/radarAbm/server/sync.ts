@@ -6,7 +6,7 @@ import { deriveClientData, type FlatCompany, type FlatContact } from "../derive"
 import type { RadarActivity, RadarCallEval, RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { loadActivities } from "./activities";
 import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
-import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, subAccounts, universeMode } from "./store";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, subAccounts, universeMode, wishlistOnly } from "./store";
 import { pickSub } from "../subAccounts";
 import { checkClientActive } from "./masterClients";
 import { loadSheetMeetings } from "./sheetMeetings";
@@ -240,6 +240,12 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   const companySdrLabel = optionLabeler(P.companySdr);
   const contactSdrLabel = optionLabeler(P.contactSdr);
   const wishlistLabel = optionLabeler(P.companyWishlist);
+  // Universo = solo empresas de la wishlist con valor "Sí" (ej. Nisum, una
+  // wishlist por mercado: "Wish List - Nisum Chile"…)
+  const wlOnly = wishlistOnly(settings, client.name);
+  const isYes = (v: string | null) => ["si", "yes", "true", "1"].includes(normLabel(v ?? ""));
+  if (wlOnly && !P.companyWishlist.property) warnings.push(`"Solo empresas de la wishlist" está activo pero no se encontró la propiedad "Wish List - ${name}": no se filtró por wishlist.`);
+  let outOfWishlist = 0;
 
   const industryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === "industry") as DetectedProperty | undefined);
   const bullseyeIndustryLabel = optionLabeler(P.companyIndustry);
@@ -259,6 +265,7 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
     if (p.domain) companyDomain.set(String(r.id), p.domain);
     const label = clientMode ? lifecycleStatus(p.lifecyclestage, name) : statusLabel(p[statusProp]);
     if (!label) continue; // sin status: no es parte del trabajo de BullsEye
+    if (wlOnly && P.companyWishlist.property && !isYes(wishlistLabel(p[P.companyWishlist.property]))) { outOfWishlist++; continue; }
     const st = clientMode ? label : companyStatusCanon(label)!;
     if (clientMode && st === "Asignada") pendingStage.add(String(r.id)); // se completa con la actividad
     if (st === EXCLUDE) { excludedCompanies++; continue; } // ej. "No gestionar - Cliente"
@@ -279,6 +286,7 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
       ...(P.companyNextFollowUp.property && toDay(p[P.companyNextFollowUp.property]) ? { next: toDay(p[P.companyNextFollowUp.property]) } : {}),
     });
   }
+  if (outOfWishlist) warnings.push(`${outOfWishlist} empresas con status quedaron fuera por no tener "${P.companyWishlist.propLabel ?? "Wish List"}" = Sí.`);
   const companyIds = companies.map((c) => c.id as string);
   const coById = new Map(companies.map((c) => [c.id, c]));
 

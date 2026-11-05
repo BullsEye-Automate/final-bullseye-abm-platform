@@ -8,7 +8,7 @@ import { loadClientSettings, loadSnapshot, saveClientSettings, type RadarClientS
 
 
 // Modo del universo (status / client) y propiedades del modo "Cliente BullsEye"
-const UNIVERSE_KEYS = ["universeMode", "universeCompanyClient", "universeContactClient", "meetingsTotal"];
+const UNIVERSE_KEYS = ["universeMode", "universeCompanyClient", "universeContactClient", "meetingsTotal", "wishlistOnly"];
 export const dynamic = "force-dynamic";
 
 // Pulso ABM — configuración del cliente (Configuración → Cliente → Pulso ABM):

@@ -48,6 +48,15 @@ export function meetingsTotal(s: { properties?: Record<string, string> }, client
   return clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith("acidlab");
 }
 
+// Universo = solo empresas con la wishlist del cliente en "Sí". Automático
+// para Nisum (una wishlist por mercado); configurable en Configuración →
+// Cliente → Pulso ABM.
+export function wishlistOnly(s: { properties?: Record<string, string> }, clientName: string): boolean {
+  const m = s.properties?.wishlistOnly;
+  if (m === "si" || m === "no") return m === "si";
+  return clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith("nisum");
+}
+
 export function universeMode(s: { properties?: Record<string, string> }, clientName: string): "status" | "client" {
   const m = s.properties?.universeMode;
   if (m === "client" || m === "status") return m;
