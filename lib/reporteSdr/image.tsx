@@ -13,6 +13,7 @@ const PAD = 48;
 const ROW = 56;
 const MROW = 54;
 const GROW = 50;
+const NOTICE_H = 72;
 
 const C = {
   bg: "#f4f2fb", navy: "#251762", ink: "#1c1640", mute: "#6b6590", mute2: "#8a84ab",
@@ -57,7 +58,8 @@ export function reportImageHeight(r: DailySdrReport): number {
   const meetH = 34 + 50 + Math.max(1, r.meetings.length) * MROW + 34;
   const goalRows = r.clientGoals?.rows.length ?? 0;
   const goalH = goalRows ? 28 + 34 + 36 + 27 + 27 + 20 + 34 + goalRows * GROW + 34 : 0;
-  return PAD + 190 + 28 + 150 + 28 + tableH + 28 + meetH + goalH + 28 + 30 + PAD;
+  const noticeH = r.notice ? 20 + NOTICE_H : 0;
+  return PAD + 190 + noticeH + 28 + 150 + 28 + tableH + 28 + meetH + goalH + 28 + 30 + PAD;
 }
 
 export async function renderReportPng(r: DailySdrReport): Promise<Buffer> {
@@ -107,6 +109,12 @@ export async function renderReportPng(r: DailySdrReport): Promise<Buffer> {
         <div style={{ display: "flex", fontSize: 52, fontWeight: 800, color: C.white, marginTop: 8 }}>Llamadas del día</div>
         <div style={{ display: "flex", fontSize: 26, color: "#c9c4e6", marginTop: 6 }}>{`${formatLongDate(r.day)} · corte ${r.cutLabel} hrs`}</div>
       </div>
+
+      {r.notice ? (
+        <div style={{ display: "flex", alignItems: "center", height: NOTICE_H, marginTop: 20, borderRadius: 18, padding: "0 28px", background: "#fff4d6", border: "2px solid #f5b300", fontSize: 21, fontWeight: 700, color: "#6b4e00" }}>
+          {r.notice}
+        </div>
+      ) : null}
 
       {/* KPIs */}
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 28 }}>
