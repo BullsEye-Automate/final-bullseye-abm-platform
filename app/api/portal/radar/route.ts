@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { requirePortalUser } from "@/lib/portalAuth";
 import { isPortalClientActive } from "@/lib/radarAbm/server/masterClients";
-import { loadClientSettings, loadRadarConfig, loadSnapshot } from "@/lib/radarAbm/server/store";
+import { loadClientSettings, loadRadarConfig, loadSnapshot, subAccounts } from "@/lib/radarAbm/server/store";
+import { loadFeedbackOverlay } from "@/lib/radarAbm/server/sheetMeetings";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,8 @@ export async function GET() {
   if (!user) return response;
   try {
     const [settings, snapshot, config] = await Promise.all([loadClientSettings(user.clientId), loadSnapshot(user.clientId, "url"), loadRadarConfig()]);
+    // Feedback del cliente en vivo (lo que acaba de completar se ve sin esperar al sync)
+    const feedback = snapshot ? await loadFeedbackOverlay(user.clientId, subAccounts(settings)).catch(() => ({})) : {};
     if (!settings.portal_enabled) return NextResponse.json({ dataset: null, reason: "disabled" });
     // Solo clientes activos en la Maestra
     if (!(await isPortalClientActive(user.clientId, user.clientName))) return NextResponse.json({ dataset: null, reason: "disabled" });
@@ -25,11 +28,11 @@ export async function GET() {
     if (snapshot.datasetUrl) {
       // Varios clientes en la cuenta: solo nombre y link de cada informe (sin avisos internos ni mapeo)
       const subs = snapshot.subs?.map((x) => ({ name: x.name, url: x.url }));
-      return NextResponse.json({ dataset: null, datasetUrl: snapshot.datasetUrl, config: safeConfig, ...(subs?.length ? { subs } : {}) });
+      return NextResponse.json({ dataset: null, datasetUrl: snapshot.datasetUrl, config: safeConfig, feedback, ...(subs?.length ? { subs } : {}) });
     }
     const { warnings: _w, mapping: _m, ...dataset } = snapshot.dataset;
     // Al cliente solo lo que necesita el cálculo (sin mapeo de propiedades)
-    return NextResponse.json({ dataset, config: safeConfig });
+    return NextResponse.json({ dataset, config: safeConfig, feedback });
   } catch (err) {
     console.error("Pulso ABM (portal):", err);
     return NextResponse.json({ error: "No se pudo cargar el informe" }, { status: 500 });
