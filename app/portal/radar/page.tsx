@@ -54,7 +54,7 @@ export default function PortalRadarPage() {
     setSub(name);
     setSwitching(true);
     try {
-      setData({ ...data, dataset: await resolveDataset({ datasetUrl: target.url }) });
+      setData({ ...data, dataset: await resolveDataset({ datasetUrl: target.url, feedback: (data as any).feedback }) });
     } catch {
       setData({ ...data, dataset: null, error: "No se pudo cargar el informe" });
     } finally {

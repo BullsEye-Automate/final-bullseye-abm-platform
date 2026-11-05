@@ -40,6 +40,64 @@ function meetingResult(opp: string | null | undefined, propuesta: string | null 
   }
 }
 
+// Campos de la reunión que salen de la encuesta del cliente (meeting_feedback)
+// y del resultado; se usan en el sync y en el "feedback en vivo" del informe
+export const FEEDBACK_COLS = "meeting_id, calificacion, empresa_calificada, contacto_calificado, propuesta_comercial, comentarios_adicionales, probabilidad_cierre";
+export function feedbackPatch(f: any, propuestaOportunidad: string | null | undefined): Partial<RadarMeeting> {
+  const res = meetingResult(propuestaOportunidad, f?.propuesta_comercial);
+  const fb = f ? [f.calificacion != null ? `Calificación ${f.calificacion}/10` : "", (f.comentarios_adicionales ?? "").trim()].filter(Boolean).join(" · ") : "";
+  return {
+    ...(f ? { fbk: 1 as const } : {}),
+    ...(f?.calificacion != null ? { cal: Number(f.calificacion) } : {}),
+    ...(f?.probabilidad_cierre != null ? { prob: Number(f.probabilidad_cierre) } : {}),
+    ...(f?.propuesta_comercial ? { prop: String(f.propuesta_comercial) } : {}),
+    ...(f?.comentarios_adicionales?.trim() ? { com: String(f.comentarios_adicionales).trim().slice(0, 600) } : {}),
+    ...(f?.empresa_calificada != null ? { icpfit: !!f.empresa_calificada } : {}),
+    ...(f?.contacto_calificado != null ? { okct: !!f.contacto_calificado } : {}),
+    ...(res ? { res } : {}),
+    ...(f?.propuesta_comercial === "Falta otra reunión" ? { next: true } : {}),
+    ...(fb ? { fb } : {}),
+  };
+}
+
+// Feedback en vivo: la encuesta del cliente de las reuniones del cliente (y de
+// sus registros con nombre equivalente o de sus cuentas), para aplicarla sobre
+// el informe guardado sin esperar al próximo sync. id de reunión → campos.
+export async function loadFeedbackOverlay(clientId: string, subs: string[] = []): Promise<Record<string, Partial<RadarMeeting>>> {
+  const supabase = supabaseAdmin();
+  const { data: allClients } = await supabase.from("clients").select("id, name");
+  const compactName = (s: string | null | undefined) => normCompany(s).replace(/ /g, "");
+  const ownKey = compactName((allClients ?? []).find((c: any) => c.id === clientId)?.name);
+  const ids = new Set<string>([clientId]);
+  for (const c of allClients ?? []) {
+    const k = compactName(c.name);
+    if (ownKey.length >= 4 && k.length >= 4 && (k.startsWith(ownKey) || ownKey.startsWith(k))) ids.add(c.id);
+    if (subs.length && pickSub(subs, c.name, null)) ids.add(c.id);
+  }
+  const since = new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 10);
+  const meetings: { id: string; propuesta_oportunidad: string | null; realizado: string | null }[] = [];
+  for (let offset = 0; offset < 20000; offset += 1000) {
+    const { data } = await supabase.from("meetings").select("id, propuesta_oportunidad, realizado")
+      .in("client_id", [...ids]).gte("fecha_reunion", since).order("id", { ascending: true }).range(offset, offset + 999);
+    meetings.push(...((data ?? []) as any[]));
+    if (!data || data.length < 1000) break;
+  }
+  const opp = new Map(meetings.map((m) => [m.id, m.propuesta_oportunidad]));
+  const out: Record<string, Partial<RadarMeeting>> = {};
+  // Estado actual de la planilla (si cambió después del último sync) y resultado
+  for (const m of meetings) {
+    const st = meetingState(m.realizado);
+    const res = meetingResult(m.propuesta_oportunidad, null);
+    out[m.id] = { st, ...(st === "Reprogramada" ? { reprog: true } : {}), ...(res ? { res } : {}) };
+  }
+  const mids = meetings.map((m) => m.id);
+  for (let i = 0; i < mids.length; i += 300) {
+    const { data } = await supabase.from("meeting_feedback").select(FEEDBACK_COLS).in("meeting_id", mids.slice(i, i + 300));
+    for (const f of data ?? []) out[f.meeting_id] = { ...out[f.meeting_id], ...feedbackPatch(f, opp.get(f.meeting_id)) };
+  }
+  return out;
+}
+
 export async function loadSheetMeetings(input: {
   clientId: string;
   start: string;
@@ -98,7 +156,7 @@ export async function loadSheetMeetings(input: {
   for (let i = 0; i < ids.length; i += 300) {
     const { data } = await supabase
       .from("meeting_feedback")
-      .select("meeting_id, calificacion, empresa_calificada, contacto_calificado, propuesta_comercial, comentarios_adicionales, probabilidad_cierre")
+      .select(FEEDBACK_COLS)
       .in("meeting_id", ids.slice(i, i + 300));
     for (const f of data ?? []) feedback.set(f.meeting_id, f);
   }
@@ -148,8 +206,6 @@ export async function loadSheetMeetings(input: {
     const ct = pn ? (ctByCo.get(String(co)) ?? []).find((k) => k.n === pn || k.n.startsWith(pn + " ") || pn.startsWith(k.n + " "))?.id : undefined;
     const st = meetingState(r.realizado);
     const f = feedback.get(r.id);
-    const res = meetingResult(r.propuesta_oportunidad, f?.propuesta_comercial);
-    const fb = f ? [f.calificacion != null ? `Calificación ${f.calificacion}/10` : "", (f.comentarios_adicionales ?? "").trim()].filter(Boolean).join(" · ") : "";
     meetings.push({
       id: r.id,
       // Sin contacto en HubSpot: un id propio para no fusionar interlocutores
@@ -161,21 +217,12 @@ export async function loadSheetMeetings(input: {
       ...(r.origen ? { org: String(r.origen).trim() } : {}),
       ...(r.pais ? { pais: String(r.pais).trim() } : {}),
       ...(r.propuesta_oportunidad ? { oppv: String(r.propuesta_oportunidad).trim() } : {}),
-      // Encuesta del cliente (vista Resumen feedback)
-      ...(f ? { fbk: 1 as const } : {}),
-      ...(f?.calificacion != null ? { cal: Number(f.calificacion) } : {}),
-      ...(f?.probabilidad_cierre != null ? { prob: Number(f.probabilidad_cierre) } : {}),
-      ...(f?.propuesta_comercial ? { prop: String(f.propuesta_comercial) } : {}),
-      ...(f?.comentarios_adicionales?.trim() ? { com: String(f.comentarios_adicionales).trim().slice(0, 600) } : {}),
       co,
       sdr: (r.responsable || r.sdr_nombre || "").trim() || input.sdrOf(co),
       agendada, fecha, st,
       ...(st === "Reprogramada" ? { reprog: true } : {}),
-      ...(f?.empresa_calificada != null ? { icpfit: !!f.empresa_calificada } : {}),
-      ...(f?.contacto_calificado != null ? { okct: !!f.contacto_calificado } : {}),
-      ...(res ? { res } : {}),
-      ...(f?.propuesta_comercial === "Falta otra reunión" ? { next: true } : {}),
-      ...(fb ? { fb } : {}),
+      // Encuesta del cliente (vista Resumen feedback) y resultado
+      ...feedbackPatch(f, r.propuesta_oportunidad),
     });
   }
   const perClient = new Map<string, number>();

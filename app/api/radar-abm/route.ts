@@ -5,6 +5,7 @@ import { demoDataset } from "@/lib/radarAbm/demo";
 import { loadClientSettings, loadRadarConfig, loadSnapshot, subAccounts } from "@/lib/radarAbm/server/store";
 import { syncClientRadar } from "@/lib/radarAbm/server/sync";
 import { masterStatusFor } from "@/lib/radarAbm/server/masterClients";
+import { loadFeedbackOverlay } from "@/lib/radarAbm/server/sheetMeetings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,9 +29,15 @@ export async function GET(req: NextRequest) {
     if (req.nextUrl.searchParams.get("demo") === "1") {
       return NextResponse.json({ dataset: demoDataset(client.name), config });
     }
-    const [snapshot, settings, master] = await Promise.all([loadSnapshot(clientId, "url"), loadClientSettings(clientId), masterStatusFor(client)]);
+    const settings0 = await loadClientSettings(clientId);
+    const [snapshot, settings, master, feedback] = await Promise.all([
+      loadSnapshot(clientId, "url"), Promise.resolve(settings0), masterStatusFor(client),
+      // Feedback del cliente en vivo (no espera al próximo sync)
+      loadFeedbackOverlay(clientId, subAccounts(settings0)).catch(() => ({})),
+    ]);
     return NextResponse.json({
       dataset: snapshot?.dataset ?? null,
+      feedback,
       // Informe grande en Storage: lo descarga el navegador (avisos y mapeo van aparte)
       ...(snapshot?.datasetUrl ? { datasetUrl: snapshot.datasetUrl, datasetExtra: { warnings: snapshot.warnings ?? [], mapping: snapshot.mapping } } : {}),
       // Varios clientes en la cuenta: un informe por cada uno (selector interno)

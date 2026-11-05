@@ -68,7 +68,7 @@ export default function RadarAbmPage() {
       if (!r.ok || j.error) throw new Error(j.error || `Error ${r.status}`);
       if (j.subs?.length && !demo) {
         const pick = j.subs.find((x) => x.name === sub) ?? j.subs[0];
-        const dataset = await resolveDataset({ datasetUrl: pick.url, datasetExtra: { warnings: pick.warnings, mapping: pick.mapping } });
+        const dataset = await resolveDataset({ datasetUrl: pick.url, datasetExtra: { warnings: pick.warnings, mapping: pick.mapping }, feedback: (j as any).feedback });
         setData({ ...j, dataset, warnings: pick.warnings, syncedAt: pick.syncedAt });
       } else setData({ ...j, dataset: await resolveDataset(j as any) });
     } catch (e) {
@@ -156,6 +156,11 @@ export default function RadarAbmPage() {
               <summary style={{ cursor: "pointer" }}>Avisos de la última sincronización ({data.warnings.length})</summary>
               <ul className="clean" style={{ marginTop: 6 }}>{data.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
             </details>
+          )}
+          {!demo && data?.dataset && data.syncedAt && Date.now() - new Date(data.syncedAt).getTime() > 36 * 3600_000 && (
+            <div className="ra-banner warn">
+              La última sincronización es del {new Date(data.syncedAt).toLocaleDateString("es-CL", { timeZone: "America/Santiago" })}: el informe no incluye lo posterior (meses, reuniones nuevas). Pulsa “Actualizar”; si falla, el mensaje dice por qué.
+            </div>
           )}
           {!demo && data?.master && !data.master.active && (
             <div className="ra-banner warn">{data.master.text} No se sincroniza ni se muestra en el portal mientras no esté activo.</div>
