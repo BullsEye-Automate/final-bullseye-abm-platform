@@ -227,3 +227,17 @@ export async function hubspotTokenFor(clientId: string, source: RadarClientSetti
   if (!token) throw new Error("El cliente no tiene conectado su HubSpot (Configuración → Cliente → HubSpot del cliente).");
   return token;
 }
+
+// Resultado de la última sincronización automática (cron) por cliente y
+// cuenta: se guarda en allo_response_cache para mostrarlo en el informe, ya
+// que los logs de Vercel no se ven desde la app.
+export type CronStatus = { at: string; state: "started" | "ok" | "error" | "skipped"; detail?: string };
+const cronKey = (clientId: string, sub?: string) => `radar_cron:${clientId}${sub ? `:${subSlug(sub)}` : ""}`;
+export async function recordCronStatus(clientId: string, sub: string | undefined, status: Omit<CronStatus, "at">): Promise<void> {
+  const { writeMonthCache } = await import("@/lib/celulasSdr/cache");
+  await writeMonthCache(cronKey(clientId, sub), { ...status, at: new Date().toISOString() }, 14 * 86400_000);
+}
+export async function readCronStatus(clientId: string, sub?: string): Promise<CronStatus | null> {
+  const { readMonthCache } = await import("@/lib/celulasSdr/cache");
+  return (await readMonthCache<CronStatus>(cronKey(clientId, sub))) ?? null;
+}
