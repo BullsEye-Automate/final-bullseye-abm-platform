@@ -9,7 +9,7 @@ import { IconAlertTriangle, IconCheck, IconLoader2, IconPlugConnected, IconX } f
 
 type CheckItem = { key: string; label: string; ok: boolean; required: boolean; detail?: string; scopes?: string[] };
 type Detected = { key: string; label: string; object: string; required: boolean; property: string | null; found: boolean; manual: boolean; propLabel: string | null; perClient?: boolean; candidates?: { name: string; label: string }[]; suggestions?: { name: string; label: string }[]; options: { label: string; value: string }[] };
-type CheckResult = { items: CheckItem[]; universe: number | null; contacts: number | null; properties: Detected[]; allProps?: Record<string, { name: string; label: string }[]>; ready: boolean };
+type CheckResult = { items: CheckItem[]; universe: number | null; contacts: number | null; properties: Detected[]; allProps?: Record<string, { name: string; label: string }[]>; subsDetected?: { name: string; key: string; props: Detected[] }[]; ready: boolean };
 
 const OBJ_LABEL: Record<string, string> = { companies: "Empresa", contacts: "Contacto", meetings: "Reunión" };
 
@@ -132,13 +132,51 @@ export default function ClientHubspotRadar({
         {Object.entries(result?.allProps ?? {}).map(([obj, list]) => (
           <datalist key={obj} id={`hs-props-${obj}`}>{list.map((x) => <option key={x.name} value={x.name}>{x.label}</option>)}</datalist>
         ))}
+        {(result?.subsDetected?.length ?? 0) > 0 && (
+          <div className="mb-4 space-y-3">
+            <div className="text-sm font-medium">Propiedades de cada cliente de la cuenta</div>
+            <p className="text-xs text-ink-muted">Automático = la que lleva el nombre del cliente al final. Si no la encuentra o eligió otra, elígela aquí. Guarda y vuelve a probar.</p>
+            {result!.subsDetected!.map((sd) => (
+              <div key={sd.key} className="rounded-lg border border-[#ECEAF4] p-3">
+                <div className="text-sm font-semibold mb-2" style={{ color: "#251762" }}>{sd.name}</div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {sd.props.map((d) => {
+                        const k = `${sd.key}${d.key}`;
+                        const opts = (result?.allProps?.[d.object] ?? []);
+                        return (
+                          <tr key={k} className="border-b border-[#ECEAF4] last:border-0 align-top">
+                            <td className="py-2 pr-3 text-xs text-ink-muted w-20">{OBJ_LABEL[d.object] ?? d.object}</td>
+                            <td className="py-2 pr-3 w-56">{d.label.replace("<cliente>", sd.name)}{d.required && <span className="text-danger-fg"> *</span>}</td>
+                            <td className="py-2 pr-3">
+                              <select className="input w-72 text-xs" value={properties[k] ?? ""} onChange={(e) => setProp(k, e.target.value)}>
+                                <option value="">automático (por nombre: {sd.name})</option>
+                                {(d.candidates?.length ? d.candidates : opts).map((c) => <option key={c.name} value={c.name}>{c.label} ({c.name})</option>)}
+                              </select>
+                            </td>
+                            <td className="py-2 text-xs">
+                              {d.found
+                                ? <span className="text-success-fg"><code>{d.property}</code> · {d.propLabel}{d.options.length ? ` · ${d.options.length} valores` : ""}</span>
+                                : <span className={d.required ? "text-danger-fg" : "text-ink-subtle"}>{d.manual ? "no existe en este HubSpot" : "no encontrada"}</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-ink-muted border-b border-[#ECEAF4]">
               <tr><th className="py-2 pr-3">Objeto</th><th className="py-2 pr-3">Etiqueta</th><th className="py-2 pr-3">Nombre interno (manual)</th><th className="py-2">Detectado</th></tr>
             </thead>
             <tbody>
-              {(result?.properties ?? []).map((d) => (
+              {(result?.properties ?? []).filter((d) => !(result?.subsDetected?.length && d.perClient)).map((d) => (
                 <tr key={d.key} className="border-b border-[#ECEAF4] last:border-0 align-top">
                   <td className="py-2 pr-3 text-xs text-ink-muted">{OBJ_LABEL[d.object] ?? d.object}</td>
                   <td className="py-2 pr-3">{d.label}{d.required && <span className="text-danger-fg"> *</span>}</td>

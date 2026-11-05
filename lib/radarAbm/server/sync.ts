@@ -1,12 +1,12 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { fetchHSOwners } from "@/lib/hubspot";
 import { chileToday } from "@/lib/celulasSdr/calendar";
-import { CO_ORDER, CT_ORDER, EXCLUDE, PER_CLIENT_KEYS } from "../dictionaries";
+import { CO_ORDER, CT_ORDER, EXCLUDE } from "../dictionaries";
 import { deriveClientData, type FlatCompany, type FlatContact } from "../derive";
 import type { RadarActivity, RadarCallEval, RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { loadActivities } from "./activities";
 import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
-import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, subAccounts, universeMode, wishlistOnly } from "./store";
+import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, subAccounts, subMapping, universeMode, wishlistOnly } from "./store";
 import { pickSub } from "../subAccounts";
 import { checkClientActive } from "./masterClients";
 import { loadSheetMeetings } from "./sheetMeetings";
@@ -140,7 +140,7 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   const { catalog, errors } = await loadPropertyCatalog(token);
   warnings.push(...errors);
   // Con varios clientes en la cuenta, las propiedades por cliente se eligen por el nombre de cada uno
-  const mapping = Object.fromEntries(Object.entries(effectiveProperties(cfg, settings)).filter(([k]) => !sub || !PER_CLIENT_KEYS.includes(k)));
+  const mapping = sub ? subMapping(cfg, settings, sub) : effectiveProperties(cfg, settings);
   const detected = detectProperties(mapping, catalog, name);
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
   // Dónde se corrige el mapeo según el HubSpot que se lee
