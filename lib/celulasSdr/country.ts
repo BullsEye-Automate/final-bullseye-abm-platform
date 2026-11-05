@@ -22,6 +22,13 @@ export function canonicalCountry(label: string | null | undefined): string | nul
   return CANONICAL[key] ?? resolved.charAt(0).toUpperCase() + resolved.slice(1);
 }
 
+// Solo si es un país conocido (sin devolver el texto tal cual)
+export function knownCountry(label: string | null | undefined): string | null {
+  const raw = (label ?? "").trim();
+  if (!raw) return null;
+  return CANONICAL[normalizeCountryKey(resolveCountryLabel(raw))] ?? null;
+}
+
 // Prefijos E.164 (de más largo a más corto para que "+593" gane sobre "+5").
 const PHONE_PREFIXES: [string, string][] = [
   ["+593", "Ecuador"], ["+591", "Bolivia"], ["+595", "Paraguay"], ["+598", "Uruguay"],

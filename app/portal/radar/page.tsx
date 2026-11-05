@@ -25,7 +25,7 @@ const STANDALONE: Record<string, () => JSX.Element> = {
   peitho: () => <PeithoPanel audience="portal" />,
 };
 
-type Resp = { dataset: RadarDataset | null; config?: RadarConfig; reason?: "pending" | "disabled"; error?: string };
+type Resp = { dataset: RadarDataset | null; config?: RadarConfig; reason?: "pending" | "disabled"; error?: string; subs?: { name: string; url: string }[] };
 
 export default function PortalRadarPage() {
   const router = useRouter();
@@ -34,6 +34,9 @@ export default function PortalRadarPage() {
   const view = partIndex(params?.get("vista"));
   const slug = PART_SLUGS[view];
   const [data, setData] = useState<Resp | null>(null);
+  // Varios clientes en la cuenta (ej. Nisum Chile / Colombia / Perú y KI): selector
+  const [sub, setSub] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     fetch("/api/portal/radar", { cache: "no-store" })
@@ -44,6 +47,20 @@ export default function PortalRadarPage() {
       })
       .catch(() => setData({ dataset: null, error: "No se pudo cargar el informe" }));
   }, []);
+
+  async function pickSub(name: string) {
+    const target = data?.subs?.find((x) => x.name === name);
+    if (!target || !data) return;
+    setSub(name);
+    setSwitching(true);
+    try {
+      setData({ ...data, dataset: await resolveDataset({ datasetUrl: target.url }) });
+    } catch {
+      setData({ ...data, dataset: null, error: "No se pudo cargar el informe" });
+    } finally {
+      setSwitching(false);
+    }
+  }
 
   if (!data) {
     return <div className="flex items-center gap-2 text-sm text-gray-500"><IconLoader2 size={16} className="animate-spin" /> Cargando informe…</div>;
@@ -82,6 +99,11 @@ export default function PortalRadarPage() {
       view={view}
       onView={(v) => router.push(`${pathname}?vista=${PART_SLUGS[v]}`, { scroll: false })}
       audience="portal"
+      actions={(data.subs?.length ?? 0) > 1 ? (
+        <select className="ra-select" aria-label="Cliente" value={sub ?? data.subs![0].name} disabled={switching} onChange={(e) => pickSub(e.target.value)}>
+          {data.subs!.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
+        </select>
+      ) : undefined}
     />
   );
 }

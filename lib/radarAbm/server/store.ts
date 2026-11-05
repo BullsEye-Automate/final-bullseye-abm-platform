@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { mergeConfig, PER_CLIENT_KEYS } from "../dictionaries";
 import type { RadarConfig, RadarDataset } from "../types";
+import { parseSubs, subSlug } from "../subAccounts";
 
 // Pulso ABM — lectura y escritura en Supabase (service role, solo servidor).
 // Tablas en supabase/20261026_radar_abm_migration.sql.
@@ -53,6 +54,12 @@ export function universeMode(s: { properties?: Record<string, string> }, clientN
   return clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "") === "bullseye" ? "client" : "status";
 }
 
+// Varios clientes dentro del mismo HubSpot (ej. Nisum Chile / Colombia / Perú
+// y KI Technologies): uno por línea en Configuración → Cliente → Pulso ABM
+export function subAccounts(s: { properties?: Record<string, string> }): string[] {
+  return parseSubs(s.properties?.subAccounts);
+}
+
 export function effectiveProperties(cfg: RadarConfig, s: RadarClientSettings): Record<string, string> {
   if (s.hubspot_source === "client") return { ...(s.properties ?? {}) };
   const global = Object.fromEntries(Object.entries(cfg.properties).filter(([k]) => !PER_CLIENT_KEYS.includes(k)));
@@ -90,6 +97,7 @@ export async function saveClientSettings(s: RadarClientSettings, by: string): Pr
   if (error) throw new Error(missingTable(error.message) ? MIGRATION_HINT : missingColumn(error.message) ? PROPERTIES_MIGRATION_HINT : error.message);
 }
 
+export type RadarSubSnapshot = { name: string; url: string; warnings: string[]; mapping?: RadarDataset["mapping"]; syncedAt: string | null };
 export type RadarSnapshot = {
   dataset: RadarDataset;
   synced_at: string;
@@ -97,6 +105,7 @@ export type RadarSnapshot = {
   stats: Record<string, number>;
   datasetUrl?: string; // modo "url": el navegador descarga el informe desde Storage
   mapping?: RadarDataset["mapping"]; // modo "url": mapeo de propiedades (solo vista interna)
+  subs?: RadarSubSnapshot[]; // modo "url": un informe por cliente de la cuenta (selector)
 };
 
 // El informe completo se guarda comprimido en Supabase Storage (con miles de
@@ -105,11 +114,16 @@ export type RadarSnapshot = {
 // fila queda una referencia + las empresas (id, nombre, dominio) para la
 // exclusión de la wishlist y el mapeo de propiedades (solo uso interno: el
 // archivo no lleva avisos ni mapeo, así el portal puede descargarlo tal cual).
+// Con varios clientes en la cuenta (subAccounts) hay un archivo por cliente y
+// la fila guarda la lista (subs).
 const BUCKET = "radar-abm";
+type SlimCompany = { id: string | number; n: string; dom?: string };
+type StoredSub = { name: string; $storage: string; mapping?: RadarDataset["mapping"]; syncedAt: string | null; stats: Record<string, number>; warnings: string[]; companies: SlimCompany[] };
 type StoredRef = {
   $storage: string;
   mapping?: RadarDataset["mapping"];
-  client: { companies: { id: string | number; n: string; dom?: string }[] };
+  client: { companies: SlimCompany[] };
+  subs?: StoredSub[];
 };
 const isRef = (d: unknown): d is StoredRef => !!d && typeof (d as StoredRef).$storage === "string";
 
@@ -125,6 +139,12 @@ async function downloadDataset(path: string): Promise<RadarDataset> {
   return JSON.parse(gunzipSync(Buffer.from(await data.arrayBuffer())).toString("utf8")) as RadarDataset;
 }
 
+async function signedUrl(path: string): Promise<string> {
+  const { data, error } = await supabaseAdmin().storage.from(BUCKET).createSignedUrl(path, 3600);
+  if (error || !data) throw new Error(`No se pudo preparar el informe: ${error?.message ?? "sin link"}`);
+  return data.signedUrl;
+}
+
 // mode: "full" = informe completo (servidor), "url" = link firmado para que lo
 // descargue el navegador, "meta" = solo fecha, avisos y conteos
 export async function loadSnapshot(clientId: string, mode: "full" | "url" | "meta" = "full"): Promise<RadarSnapshot | null> {
@@ -138,27 +158,41 @@ export async function loadSnapshot(clientId: string, mode: "full" | "url" | "met
   if (!snap || mode === "meta" || !isRef(snap.dataset)) return snap as RadarSnapshot | null;
   const ref = snap.dataset;
   if (mode === "url") {
-    const { data: signed, error: e } = await supabaseAdmin().storage.from(BUCKET).createSignedUrl(ref.$storage, 3600);
-    if (e || !signed) throw new Error(`No se pudo preparar el informe: ${e?.message ?? "sin link"}`);
-    return { ...snap, dataset: null as unknown as RadarDataset, datasetUrl: signed.signedUrl, ...(ref.mapping ? { mapping: ref.mapping } : {}) };
+    if (ref.subs?.length) {
+      const urls = await Promise.all(ref.subs.map((x) => signedUrl(x.$storage)));
+      const subs = ref.subs.map((x, i) => ({ name: x.name, url: urls[i], warnings: x.warnings ?? [], ...(x.mapping ? { mapping: x.mapping } : {}), syncedAt: x.syncedAt }));
+      return { ...snap, dataset: null as unknown as RadarDataset, datasetUrl: urls[0], warnings: subs[0].warnings, ...(subs[0].mapping ? { mapping: subs[0].mapping } : {}), subs };
+    }
+    return { ...snap, dataset: null as unknown as RadarDataset, datasetUrl: await signedUrl(ref.$storage), ...(ref.mapping ? { mapping: ref.mapping } : {}) };
   }
-  const ds = await downloadDataset(ref.$storage);
-  return { ...snap, dataset: { ...ds, warnings: snap.warnings ?? [], ...(ref.mapping ? { mapping: ref.mapping } : {}) } };
+  const first = ref.subs?.[0];
+  const ds = await downloadDataset(first ? first.$storage : ref.$storage);
+  const mapping = first ? first.mapping : ref.mapping;
+  return { ...snap, dataset: { ...ds, warnings: (first ? first.warnings : snap.warnings) ?? [], ...(mapping ? { mapping } : {}) } };
 }
 
-export async function saveSnapshot(clientId: string, ds: RadarDataset, stats: Record<string, number>, by: string): Promise<void> {
+// sub: cliente de la cuenta (subAccounts); order: orden configurado de las cuentas
+export async function saveSnapshot(clientId: string, ds: RadarDataset, stats: Record<string, number>, by: string, sub?: string, order: string[] = []): Promise<void> {
   const { warnings, mapping, ...file } = ds;
   await ensureBucket();
   const { gzipSync } = await import("zlib");
-  const path = `${clientId}.json.gz`;
+  const path = sub ? `${clientId}/${subSlug(sub)}.json.gz` : `${clientId}.json.gz`;
   const { error: upErr } = await supabaseAdmin().storage.from(BUCKET)
     .upload(path, gzipSync(Buffer.from(JSON.stringify(file), "utf8")), { contentType: "application/gzip", upsert: true });
   if (upErr) throw new Error(`No se pudo guardar el informe en Storage: ${upErr.message}`);
-  const ref: StoredRef = {
-    $storage: path,
-    ...(mapping ? { mapping } : {}),
-    client: { companies: ds.client.companies.map((c) => ({ id: c.id, n: c.n, ...(c.dom ? { dom: c.dom } : {}) })) },
-  };
+  const companies: SlimCompany[] = ds.client.companies.map((c) => ({ id: c.id, n: c.n, ...(c.dom ? { dom: c.dom } : {}) }));
+  let ref: StoredRef;
+  if (sub) {
+    const { data: prev } = await supabaseAdmin().from("radar_abm_snapshots").select("dataset").eq("client_id", clientId).maybeSingle();
+    const prevSubs = isRef(prev?.dataset) ? (prev!.dataset as StoredRef).subs ?? [] : [];
+    const entry: StoredSub = { name: sub, $storage: path, ...(mapping ? { mapping } : {}), syncedAt: ds.syncedAt ?? new Date().toISOString(), stats, warnings: warnings ?? [], companies };
+    const rank = (n: string) => { const i = order.indexOf(n); return i < 0 ? 99 : i; };
+    // Solo las cuentas que siguen configuradas
+    const subs = [...prevSubs.filter((x) => x.name !== sub && (!order.length || order.includes(x.name))), entry].sort((a, b) => rank(a.name) - rank(b.name));
+    ref = { $storage: subs[0].$storage, ...(subs[0].mapping ? { mapping: subs[0].mapping } : {}), client: { companies: subs.flatMap((x) => x.companies) }, subs };
+  } else {
+    ref = { $storage: path, ...(mapping ? { mapping } : {}), client: { companies } };
+  }
   const { error } = await supabaseAdmin().from("radar_abm_snapshots").upsert(
     { client_id: clientId, dataset: ref, synced_at: ds.syncedAt ?? new Date().toISOString(), synced_by: by, warnings: warnings ?? [], stats },
     { onConflict: "client_id" }

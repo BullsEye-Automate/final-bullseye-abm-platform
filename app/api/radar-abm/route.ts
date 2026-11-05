@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getReviewerEmail } from "@/lib/portalAdmin";
 import { demoDataset } from "@/lib/radarAbm/demo";
-import { loadClientSettings, loadRadarConfig, loadSnapshot } from "@/lib/radarAbm/server/store";
+import { loadClientSettings, loadRadarConfig, loadSnapshot, subAccounts } from "@/lib/radarAbm/server/store";
 import { syncClientRadar } from "@/lib/radarAbm/server/sync";
 import { masterStatusFor } from "@/lib/radarAbm/server/masterClients";
 
@@ -33,6 +33,8 @@ export async function GET(req: NextRequest) {
       dataset: snapshot?.dataset ?? null,
       // Informe grande en Storage: lo descarga el navegador (avisos y mapeo van aparte)
       ...(snapshot?.datasetUrl ? { datasetUrl: snapshot.datasetUrl, datasetExtra: { warnings: snapshot.warnings ?? [], mapping: snapshot.mapping } } : {}),
+      // Varios clientes en la cuenta: un informe por cada uno (selector interno)
+      ...(snapshot?.subs?.length ? { subs: snapshot.subs } : {}),
       syncedAt: snapshot?.synced_at ?? null,
       warnings: snapshot?.warnings ?? [],
       stats: snapshot?.stats ?? null,
@@ -49,7 +51,13 @@ export async function POST(req: NextRequest) {
   const clientId = req.nextUrl.searchParams.get("client_id") ?? "";
   if (!UUID_RE.test(clientId)) return NextResponse.json({ error: "Elige un cliente" }, { status: 400 });
   try {
-    const result = await syncClientRadar(clientId, await getReviewerEmail());
+    const sub = req.nextUrl.searchParams.get("sub")?.trim() || undefined;
+    // Varios clientes en la cuenta: el navegador sincroniza uno por llamada
+    if (!sub) {
+      const subs = subAccounts(await loadClientSettings(clientId));
+      if (subs.length) return NextResponse.json({ needsSubs: subs }, { status: 409 });
+    }
+    const result = await syncClientRadar(clientId, await getReviewerEmail(), sub);
     return NextResponse.json(result);
   } catch (err) {
     console.error("Pulso ABM: error sincronizando", clientId, err);

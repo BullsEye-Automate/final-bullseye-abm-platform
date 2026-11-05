@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import type { RadarMeeting } from "../types";
+import { pickSub } from "../subAccounts";
 
 // Pulso ABM — reuniones desde la planilla de reuniones (tabla meetings, la
 // misma de Células SDR y del Excel de metas), no desde HubSpot: hay clientes
@@ -45,6 +46,9 @@ export async function loadSheetMeetings(input: {
   companies: { id: string | number; n: string; domain?: string | null }[];
   contacts: { id: string | number; co: string | number; n: string }[];
   sdrOf: (co: string | number) => string;
+  // Varios clientes en la cuenta: solo las reuniones de `sub` (por la columna
+  // Cliente de la planilla y el país) + las de otros registros con su nombre
+  sub?: { subs: string[]; sub: string; clientIds: string[] };
 }): Promise<{ meetings: RadarMeeting[]; unmatched: { empresa: string; n: number }[]; total: number; byClient: { name: string; n: number }[] }> {
   const supabase = supabaseAdmin();
   // La planilla puede tener el mismo cliente bajo otro registro con nombre
@@ -61,20 +65,31 @@ export async function loadSheetMeetings(input: {
       if (k.length >= 4 && (k.startsWith(ownKey) || ownKey.startsWith(k))) clientIds.add(c.id);
     }
   }
+  const ownIds = new Set(clientIds);
+  for (const id of input.sub?.clientIds ?? []) clientIds.add(id);
   const nameOf = new Map((allClients ?? []).map((c: any) => [c.id, c.name as string]));
   const rows: any[] = [];
   const PAGE = 1000;
   for (let offset = 0; offset < 100000; offset += PAGE) {
-    const { data, error } = await supabase
+    const query = (cols: string) => supabase
       .from("meetings")
-      .select("id, client_id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais")
+      .select(cols)
       .in("client_id", [...clientIds])
       .or(`fecha_reunion.gte.${input.start},fecha_agendamiento.gte.${input.start}`)
       .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
+    const COLS = "id, client_id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais";
+    // cliente_nombre (columna Cliente de la planilla) solo hace falta con varios clientes en la cuenta
+    let { data, error } = input.sub ? await query(`${COLS}, cliente_nombre`) : await query(COLS);
+    if (error && input.sub && /cliente_nombre/.test(error.message)) ({ data, error } = await query(COLS));
     if (error) throw new Error(`No se pudieron leer las reuniones de la planilla: ${error.message}`);
-    rows.push(...(data ?? []));
-    if (!data || data.length < PAGE) break;
+    const page = (data ?? []) as any[];
+    // Varios clientes en la cuenta: del registro principal, solo las que la
+    // columna Cliente (o el país) asigna a esta cuenta
+    rows.push(...(input.sub
+      ? page.filter((r) => !ownIds.has(r.client_id) || pickSub(input.sub!.subs, r.cliente_nombre, r.pais) === input.sub!.sub)
+      : page));
+    if (page.length < PAGE) break;
   }
 
   // Encuesta de feedback del cliente (calidad de la reunión, §7)
