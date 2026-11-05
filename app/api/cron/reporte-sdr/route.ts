@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendDailySdrReport, markReportSent, wasReportSent, sendReportFailureNotice } from "@/lib/reporteSdr/send";
+import { sendDailySdrReport, markReportSent, wasReportSent, sendReportFailureNotice, markReportFailure, lastReportFailure, failureCause, delayNotice } from "@/lib/reporteSdr/send";
 import { isBusinessDay } from "@/lib/celulasSdr/calendar";
 
 export const runtime = "nodejs";
@@ -7,28 +7,33 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 // Vercel Cron: Reporte SDR diario por correo (PNG adjunto) a las 13:00 y
-// 18:30 de Chile, lunes a viernes hábiles. Vercel agenda en UTC y Chile
-// cambia de horario (UTC-3 en verano, UTC-4 en invierno), así que vercel.json
-// dispara cada corte en las DOS horas UTC posibles y acá se envía solo la que
-// coincide con la hora real de Chile (America/Santiago) — nunca se duplica.
-// Parámetros: ?slot=13 | ?slot=18 (el corte). ?force=1 se salta el chequeo
-// de hora/día hábil (pruebas manuales con el CRON_SECRET).
+// 18:30 de Chile, lunes a viernes hábiles. Parámetros: ?slot=13 | ?slot=18.
+// ?force=1 (con CRON_SECRET) se salta el chequeo de hora / día hábil / ya
+// enviado.
 //
-// Reintento: vercel.json agenda además la hora UTC siguiente. Si el envío de
-// la hora del corte falló (p. ej. Allo lento y se acabó el tiempo), una hora
-// después se vuelve a intentar; si también falla, se avisa por correo a los
-// destinatarios. El registro de lo enviado está en allo_response_cache.
-const SLOTS: Record<string, { hour: number; label: string }> = {
-  "13": { hour: 13, label: "13:00" },
-  "18": { hour: 18, label: "18:30" },
+// Reintentos cada 15 minutos (confirmado con BullsEye, nov-2026, tras la
+// caída de Allo del 5-nov): vercel.json dispara cada 15 min en las horas UTC
+// que cubren el corte en verano (UTC-3) e invierno (UTC-4). Cada disparo
+// mira la hora real de Chile: entre el corte y 2 horas después
+// (WINDOW_MIN), si el corte de hoy aún no quedó registrado como enviado, lo
+// intenta. Si un intento falla se guarda el motivo; el envío posterior que
+// sí resulte lleva el aviso "Enviado a las HH:MM por una falla en … en el
+// horario habitual". Si el último intento de la ventana también falla, se
+// avisa por correo a los destinatarios (una vez).
+const SLOTS: Record<string, { min: number; label: string }> = {
+  "13": { min: 13 * 60, label: "13:00" },
+  "18": { min: 18 * 60 + 30, label: "18:30" },
 };
+const WINDOW_MIN = 120;      // se reintenta hasta 2 h después del corte
+const STEP_MIN = 15;         // cada 15 minutos
+const ON_TIME_MIN = 10;      // un envío dentro de 10 min del corte no lleva aviso
 
-function chileNow(now = new Date()): { day: string; hour: number } {
+function chileNow(now = new Date()): { day: string; minutes: number } {
   const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23",
+    timeZone: "America/Santiago", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
   }).formatToParts(now);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  return { day: `${get("year")}-${get("month")}-${get("day")}`, hour: Number(get("hour")) };
+  return { day: `${get("year")}-${get("month")}-${get("day")}`, minutes: Number(get("hour")) * 60 + Number(get("minute")) };
 }
 
 export async function GET(req: NextRequest) {
@@ -45,29 +50,35 @@ export async function GET(req: NextRequest) {
 
   const force = req.nextUrl.searchParams.get("force") === "1";
   const cl = chileNow();
-  // Intento principal a la hora del corte; reintento una hora después solo si
-  // el principal no quedó registrado como enviado.
-  const isRetry = cl.hour === slot.hour + 1;
+  // Minutos desde el corte (los disparos llegan con unos segundos de atraso).
+  const since = cl.minutes - slot.min;
   if (!force) {
-    if (cl.hour !== slot.hour && !isRetry) {
-      return NextResponse.json({ skipped: `Hora de Chile ${cl.hour}:xx no corresponde al corte ${slot.label} ni a su reintento` });
+    if (since < 0 || since >= WINDOW_MIN) {
+      return NextResponse.json({ skipped: `Fuera de la ventana del corte ${slot.label} (${since} min)` });
     }
     if (!isBusinessDay(cl.day)) return NextResponse.json({ skipped: `No es día hábil (${cl.day})` });
-    if (isRetry && (await wasReportSent(cl.day, slotKey))) {
+    if (await wasReportSent(cl.day, slotKey)) {
       return NextResponse.json({ skipped: `El corte ${slot.label} de hoy ya se envió` });
     }
   }
 
+  // Aviso de atraso solo si hubo una falla registrada antes de este intento.
+  const prevFailure = since >= ON_TIME_MIN ? await lastReportFailure(cl.day, slotKey) : null;
+  const notice = prevFailure ? delayNotice(slot.label, failureCause(prevFailure)) : undefined;
   try {
-    const sent = await sendDailySdrReport(slot.label);
+    const sent = await sendDailySdrReport(slot.label, { notice });
     await markReportSent(cl.day, slotKey);
-    return NextResponse.json({ sent, retry: isRetry });
+    return NextResponse.json({ sent, late: !!notice });
   } catch (err) {
     const reason = (err as Error).message || "Error interno";
-    console.error(`Error en /api/cron/reporte-sdr (corte ${slot.label}${isRetry ? ", reintento" : ""}):`, err);
-    if (isRetry && !force) {
-      await sendReportFailureNotice(slot.label, reason).catch((e) => console.error("No se pudo enviar el aviso de falla:", e));
+    console.error(`Error en /api/cron/reporte-sdr (corte ${slot.label}, ${since} min):`, err);
+    if (!force) {
+      await markReportFailure(cl.day, slotKey, reason);
+      // Último disparo de la ventana: avisar (una sola vez).
+      if (since >= WINDOW_MIN - STEP_MIN) {
+        await sendReportFailureNotice(slot.label, reason).catch((e) => console.error("No se pudo enviar el aviso de falla:", e));
+      }
     }
-    return NextResponse.json({ error: reason, retry: isRetry }, { status: 500 });
+    return NextResponse.json({ error: reason, minutesSinceCut: since }, { status: 500 });
   }
 }

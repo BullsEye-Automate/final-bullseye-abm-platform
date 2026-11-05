@@ -48,6 +48,9 @@ export type DailySdrReport = {
   // Avance de la meta mensual de los clientes con reuniones hoy (null si no
   // se pudo calcular: el reporte se envía igual, sin esa sección).
   clientGoals: ClientGoals | null;
+  // Aviso de envío atrasado (p. ej. por una falla de Allo en el horario
+  // habitual); se muestra bajo el encabezado del PNG y al inicio del correo.
+  notice?: string;
 };
 
 export async function buildDailySdrReport(opts: { cutLabel: string; baseUrl?: string }): Promise<DailySdrReport> {

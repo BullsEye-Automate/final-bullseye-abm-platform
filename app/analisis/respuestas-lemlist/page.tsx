@@ -13,7 +13,7 @@ type Row = {
   replied_at: string | null; category: string | null; confidence: number | null; summary: string | null;
   sdr_value: string | null; sdr_name: string | null; kam_email: string | null; action: string | null;
   action_detail: string | null; mode: string | null; hubspot_updated: boolean | null; lemlist_paused: boolean | null;
-  error: string | null; created_at: string;
+  notified_to: string[] | null; hs_contact_id: string | null; error: string | null; created_at: string;
 };
 
 const CATEGORY: Record<string, string> = {
@@ -32,12 +32,12 @@ const ACTION: Record<string, { label: string; cls: string }> = {
 
 const fmt = (d: string | null) => (d ? new Date(d).toLocaleString("es-CL", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");
 
-function ReplyRow({ r }: { r: Row }) {
+function ReplyRow({ r, hsStatus }: { r: Row; hsStatus: string | null | undefined }) {
   const [open, setOpen] = useState(false);
   const a = ACTION[r.action ?? ""] ?? { label: r.action ?? "—", cls: "bg-gray-100 text-gray-700" };
   return (
     <div className={`border-b ${open ? "bg-black/[0.02]" : ""}`}>
-      <button onClick={() => setOpen(!open)} className="w-full grid grid-cols-[96px_minmax(0,1.2fr)_minmax(0,1.6fr)_140px_20px] gap-3 items-center py-2.5 px-2 text-left hover:bg-black/[0.03]">
+      <button onClick={() => setOpen(!open)} className="w-full grid grid-cols-[96px_minmax(0,1.2fr)_minmax(0,1.4fr)_140px_150px_130px_20px] gap-3 items-center py-2.5 px-2 text-left hover:bg-black/[0.03]">
         <div className="text-xs text-ink-muted">{fmt(r.replied_at ?? r.created_at)}</div>
         <div className="min-w-0">
           <div className="text-sm font-medium truncate">{r.lead_name || r.lead_email}</div>
@@ -50,6 +50,19 @@ function ReplyRow({ r }: { r: Row }) {
         <div>
           <span className={`inline-block text-xs px-2 py-0.5 rounded ${a.cls}`}>{a.label}</span>
           {r.sdr_name && <div className="text-xs text-ink-muted truncate mt-0.5">{r.sdr_name}</div>}
+        </div>
+        <div className="min-w-0 text-xs">
+          {r.notified_to?.length ? (
+            <>
+              <div className="truncate">{r.notified_to.join(", ")}</div>
+              <div className="text-ink-muted">{fmt(r.created_at)}</div>
+            </>
+          ) : <span className="text-ink-muted">Sin aviso</span>}
+        </div>
+        <div className="min-w-0 text-xs">
+          {!r.hs_contact_id ? <span className="text-ink-muted">No está en HubSpot</span>
+            : hsStatus === undefined ? <span className="text-ink-muted">…</span>
+            : <span className={`inline-block px-2 py-0.5 rounded truncate max-w-full ${/hot calling/i.test(hsStatus ?? "") ? "bg-red-100 text-red-900" : /reuni/i.test(hsStatus ?? "") ? "bg-emerald-100 text-emerald-900" : "bg-gray-100 text-gray-700"}`}>{hsStatus || "Sin estado"}</span>}
         </div>
         {open ? <IconChevronUp size={16} className="text-ink-muted" /> : <IconChevronDown size={16} className="text-ink-muted" />}
       </button>
@@ -74,6 +87,9 @@ export default function RespuestasLemlistPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("");
+  // Estado actual en HubSpot ("Asignación BullsEye por llamar"), se carga después de la lista
+  const [hsStatus, setHsStatus] = useState<Record<string, string | null>>({});
+  const [hsLoaded, setHsLoaded] = useState(false);
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -84,6 +100,12 @@ export default function RespuestasLemlistPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
       setRows(d.rows); setMode(d.mode);
+      setHsLoaded(false);
+      const ids = (d.rows as Row[]).filter((r) => r.hs_contact_id).map((r) => r.id);
+      if (ids.length) {
+        fetch("/api/respuestas-lemlist/hubspot-status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) })
+          .then((x) => x.json()).then((j) => setHsStatus(j.status ?? {})).catch(() => {}).finally(() => setHsLoaded(true));
+      } else setHsLoaded(true);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -101,7 +123,7 @@ export default function RespuestasLemlistPage() {
   const shown = filter ? rows.filter((r) => r.action === filter) : rows;
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-6xl">
       <header className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="label">Reportería</div>
@@ -132,10 +154,13 @@ export default function RespuestasLemlistPage() {
       </div>
 
       <section className="card">
+        <div className="grid grid-cols-[96px_minmax(0,1.2fr)_minmax(0,1.4fr)_140px_150px_130px_20px] gap-3 px-2 py-2 border-b text-[11px] uppercase tracking-wide text-ink-muted">
+          <div>Respondió</div><div>Contacto</div><div>Interés</div><div>Acción</div><div>Aviso enviado</div><div>Estado actual HubSpot</div><div />
+        </div>
         {loading && !rows.length ? (
           <div className="flex items-center gap-2 text-sm text-ink-muted p-4"><IconLoader2 size={16} className="animate-spin" /> Cargando…</div>
         ) : shown.length ? (
-          shown.map((r) => <ReplyRow key={r.id} r={r} />)
+          shown.map((r) => <ReplyRow key={r.id} r={r} hsStatus={hsLoaded ? (hsStatus[r.id] ?? null) : undefined} />)
         ) : (
           <p className="text-sm text-ink-muted p-4">Sin respuestas en este período.</p>
         )}

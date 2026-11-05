@@ -291,7 +291,7 @@ export function ViewLeaders() {
   const rowsAll = useMemo(() => sdrRows(M, { ...f, leader: "" }, P, null).filter((r) => r.s.group === "cell"), [M, f, P]);
 
   if (L.length < 2) {
-    return <div className="cs-card"><p className="cs-muted">Se necesitan al menos dos células en la pestaña Maestra (columnas O y P) para comparar líderes.</p></div>;
+    return <div className="cs-card"><p className="cs-muted">Se necesitan al menos dos células en la pestaña Maestra (bajo "Lideres de celulas") para comparar líderes.</p></div>;
   }
   const [A, B] = L;
   const cfg = M.cfg;
