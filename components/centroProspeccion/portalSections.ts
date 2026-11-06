@@ -181,12 +181,13 @@ export function createPortalSections(week: (wk: string) => Promise<Week | null>)
     if (!r.linked) { el.innerHTML = card("Cuentas y wishlist del portal", "", `<p class="muted">Esta ficha no está vinculada a un cliente del portal.</p>`); return; }
     const faltan = r.faltan as number;
     const btn = faltan && r.puedePasar
-      ? `<div class="actions" style="margin-top:10px"><button class="btn pri" data-cp-pass="1">Pasar las ${n(faltan)} al portal</button><span class="muted" style="font-size:12.5px" data-cp-pass-msg></span></div>`
+      ? `<div class="actions" style="margin-top:10px"><button class="btn pri" data-cp-pass="1">Pasar las ${n(faltan)} sin tocar al portal</button><span class="muted" style="font-size:12.5px" data-cp-pass-msg></span></div>`
       : "";
     el.innerHTML = card(
       `Cuentas y wishlist del portal · ${r.cliente}`,
       "Un solo universo de empresas por cliente",
-      `<p style="font-size:13.5px">${n(r.aprobadas)} cuentas aprobadas por el cliente en el Centro: <b>${n(r.enWishlist)}</b> ya están en su wishlist del portal${faltan ? ` y <b>${n(faltan)}</b> faltan` : " (todas)"}.</p>
+      `<p style="font-size:13.5px">${n(r.aprobadas)} cuentas aprobadas por el cliente en el Centro: <b>${n(r.enWishlist)}</b> ya están en su wishlist del portal, <b>${n(r.enHubspot)}</b> ya se trabajan en HubSpot (asignadas a un SDR) y <b>${n(faltan)}</b> nadie las ha tocado.</p>
+       ${r.enHubspot ? `<p class="muted" style="font-size:12.5px;margin-top:4px">Las de HubSpot siguen su gestión ahí y no se pasan. Ejemplos: ${esc((r.enHubspotEjemplos || []).join(", "))}${r.enHubspot > (r.enHubspotEjemplos || []).length ? "…" : ""}</p>` : ""}
        ${faltan ? `<p class="muted" style="font-size:12.5px;margin-top:4px">Al pasarlas quedan como «Aprobadas para prospectar» en Empresas (igual que un listado subido por el cliente): se envían a su Lemlist y la búsqueda automática de contactos las toma. No se borra nada del Centro.</p>` : ""}${btn}`
     );
     const b = el.querySelector<HTMLButtonElement>("[data-cp-pass]");

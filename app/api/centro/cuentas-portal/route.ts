@@ -5,12 +5,15 @@ import { readDocs } from "@/lib/centroProspeccion/store";
 import { supabaseAdmin } from "@/lib/supabase";
 import { normalizeDomain } from "@/lib/hubspotPool";
 import { pushWishlistItemToLemlist } from "@/lib/wishlistLemlist";
+import { getClientExclusions, isExcluded } from "@/lib/wishlist";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 // Un solo universo de empresas (fase 2): las cuentas que el cliente aprobó en
-// el Centro de prospección (colección "cuentas", respuesta «Sí») pasan a la
+// el Centro de prospección (colección "cuentas", respuesta «Sí») que nadie
+// ha trabajado aún (no están en el universo de HubSpot del Pulso ABM ni en la
+// exclusión del cliente) pasan a la
 // wishlist del portal del cliente con el mismo flujo de un listado subido por
 // el cliente: origin client, status new (aprobada para prospectar), source
 // manual, envío a su Lemlist y luego el cron de contactos las toma.
@@ -39,7 +42,7 @@ async function load(fichaId: string) {
       data: d.data,
     }))
     .filter((c) => c.empresa);
-  if (!client) return { client: null, total: docs.length, aprobadas, pending: [] as Cuenta[], inWishlist: 0 };
+  if (!client) return { client: null, total: docs.length, aprobadas, pending: [] as Cuenta[], worked: [] as Cuenta[], inWishlist: 0 };
 
   const { data: existing, error } = await supabaseAdmin()
     .from("client_wishlist").select("company_name, domain").eq("client_id", client.id);
@@ -50,8 +53,14 @@ async function load(fichaId: string) {
     const d = normalizeDomain(c.web);
     return (d && domains.has(d)) || names.has(norm(c.empresa));
   };
-  const pending = aprobadas.filter((c) => !isIn(c));
-  return { client, total: docs.length, aprobadas, pending, inWishlist: aprobadas.length - pending.length };
+  const missing = aprobadas.filter((c) => !isIn(c));
+  // Las que BullsEye ya trabaja con el cliente en HubSpot (universo del último
+  // sync de Pulso ABM) o que el cliente excluyó no se pasan: siguen su gestión
+  // en HubSpot. Solo pasan las que nadie ha tocado.
+  const ex = await getClientExclusions(supabaseAdmin(), client.id);
+  const worked = missing.filter((c) => isExcluded(ex, c.empresa, normalizeDomain(c.web)));
+  const pending = missing.filter((c) => !isExcluded(ex, c.empresa, normalizeDomain(c.web)));
+  return { client, total: docs.length, aprobadas, pending, worked, inWishlist: aprobadas.length - missing.length };
 }
 
 export async function GET(req: NextRequest) {
@@ -67,6 +76,8 @@ export async function GET(req: NextRequest) {
       cuentas: r.total,
       aprobadas: r.aprobadas.length,
       enWishlist: r.inWishlist,
+      enHubspot: r.worked.length,
+      enHubspotEjemplos: r.worked.slice(0, 12).map((c) => c.empresa),
       faltan: r.pending.length,
       puedePasar: isCentroOwner(u.email),
     });
