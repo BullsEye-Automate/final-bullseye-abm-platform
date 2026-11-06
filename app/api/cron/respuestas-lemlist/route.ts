@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { currentMode, listReplyClients, processClientReplies, type ClientRunResult, type ProcessedRow } from "@/lib/respuestasLemlist/process";
+import { currentMode, listReplyClients, processClientReplies, sendQueuedMails, type ClientRunResult, type ProcessedRow } from "@/lib/respuestasLemlist/process";
+import { inBusinessHours } from "@/lib/respuestasLemlist/hours";
 import { sendShadowDigest } from "@/lib/respuestasLemlist/mail";
 
 export const runtime = "nodejs";
@@ -20,6 +21,8 @@ export async function GET(req: NextRequest) {
   const deadline = Date.now() + BUDGET_MS;
   const mode = currentMode();
   try {
+    // Dentro del horario laboral primero salen los avisos que quedaron en cola
+    const queued = mode === "activo" && inBusinessHours() ? await sendQueuedMails(Date.now() + 60_000) : null;
     const { clients, skipped } = await listReplyClients();
     const only = req.nextUrl.searchParams.get("client_id");
     const list = only ? clients.filter((c) => c.id === only) : clients;
@@ -39,7 +42,7 @@ export async function GET(req: NextRequest) {
       const to = (process.env.RESPUESTAS_LEMLIST_SHADOW_TO ?? "amadriz@bullseye-abm.com").split(",").map((x) => x.trim()).filter(Boolean);
       try { await sendShadowDigest(to, rows); digest = `enviado a ${to.join(", ")}`; } catch (e) { digest = `error: ${(e as Error).message}`; }
     }
-    return NextResponse.json({ ok: true, mode, clients: list.length, skipped, processed: rows.length, digest, results });
+    return NextResponse.json({ ok: true, mode, businessHours: inBusinessHours(), queued, clients: list.length, skipped, processed: rows.length, digest, results });
   } catch (e) {
     return NextResponse.json({ ok: false, mode, error: (e as Error).message }, { status: 500 });
   }

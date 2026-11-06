@@ -5,6 +5,7 @@ import { kamFor, normName, readMasterPeople, resolveSdr } from "./directory";
 import { findLead, hubspotContactUrl, loadClientHubspot, markHotCalling, type ClientHubspot, type LeadInHubspot } from "./hubspot";
 import { clientReplySources, fetchCampaignReplies, pauseLead, type LemlistReply } from "./lemlist";
 import { sendKamMail, sendSdrMail, type ReplyMailData } from "./mail";
+import { inBusinessHours } from "./hours";
 
 // Respuestas Lemlist → SDR asignado. Para cada cliente activo en la Maestra
 // (misma regla que Pulso ABM): trae las respuestas nuevas de sus campañas,
@@ -115,8 +116,12 @@ export async function processClientReplies(client: AppClient, deadline: number):
         companyName: lead.companyName || r.companyName, channel: r.channel, campaignName: r.campaignName,
         category: cls.category, summary: cls.summary, replyText: r.text,
         hubspotUrl: hs ? hubspotContactUrl(hs, lead.contactId) : null,
+        repliedAt: r.createdAt,
       };
       const live = mode === "activo";
+      // Correos solo en horario laboral (hours.ts); fuera de horario quedan en cola
+      const mailNow = live && inBusinessHours();
+      const QUEUED = " Aviso en cola: se envía en el próximo horario laboral (L-V 9:00–18:00).";
       let action = "sin_accion";
       let detail = "";
 
@@ -129,7 +134,8 @@ export async function processClientReplies(client: AppClient, deadline: number):
       } else if (cls.category === "sin_texto" || cls.category === "ambigua" || cls.confidence < MIN_CONFIDENCE) {
         action = "revision_kam";
         detail = `${cls.category === "ambigua" ? "Respuesta ambigua" : "Clasificación dudosa"}: revisión del KAM (${kam}).`;
-        if (live) { await sendKamMail(kam, { ...mail, reason: detail }, "revision"); update.notified_to = [kam]; }
+        if (mailNow) { await sendKamMail(kam, { ...mail, reason: detail }, "revision"); update.notified_to = [kam]; }
+        else if (live) detail += QUEUED;
       } else if (ASSIGN_CATEGORIES.includes(cls.category)) {
         const sdr = lead.contactId ? resolveSdr(people, lead.sdrValue) : { ok: false as const, reason: "El contacto no está en HubSpot." };
         if (sdr.ok) {
@@ -140,15 +146,16 @@ export async function processClientReplies(client: AppClient, deadline: number):
             const notes: string[] = [];
             if (hs && lead.contactId) { const h = await markHotCalling(hs, lead.contactId); update.hubspot_updated = h.ok; if (!h.ok) notes.push(h.error ?? "HubSpot no actualizado"); }
             const p = await pauseLead(src.apiKey, r.campaignId, r.leadEmail); update.lemlist_paused = p.ok; if (!p.ok) notes.push(p.error ?? "Lemlist no pausado");
-            await sendSdrMail(sdr.person.email!, { ...mail, sdrName: sdr.person.name });
-            update.notified_to = [sdr.person.email];
+            if (mailNow) { await sendSdrMail(sdr.person.email!, { ...mail, sdrName: sdr.person.name }); update.notified_to = [sdr.person.email]; }
+            else notes.push(QUEUED.trim());
             if (notes.length) detail += ` Avisos: ${notes.join(" · ")}`;
           }
         } else {
           action = "alerta_kam";
           detail = `${sdr.reason} Alerta al KAM (${kam}).`;
           if ("person" in sdr && sdr.person) update.sdr_name = sdr.person.name;
-          if (live) { await sendKamMail(kam, { ...mail, reason: sdr.reason }, "sin_sdr"); update.notified_to = [kam]; }
+          if (mailNow) { await sendKamMail(kam, { ...mail, reason: sdr.reason }, "sin_sdr"); update.notified_to = [kam]; }
+          else if (live) detail += QUEUED;
         }
       }
       Object.assign(update, { action, action_detail: detail });
@@ -160,4 +167,47 @@ export async function processClientReplies(client: AppClient, deadline: number):
     await db.from("lemlist_replies").update(update).eq("activity_id", r.activityId);
   }
   return out;
+}
+
+// Avisos en cola (respuestas procesadas fuera de horario laboral): se envían
+// en la primera corrida dentro del horario. Pendiente = modo activo, acción
+// que avisa a alguien y notified_to vacío. Solo los últimos 7 días.
+export async function sendQueuedMails(deadline: number): Promise<{ sent: number; errors: string[] }> {
+  const db = supabaseAdmin();
+  const errors: string[] = [];
+  let sent = 0;
+  const { data } = await db
+    .from("lemlist_replies")
+    .select("id, client_id, client_name, campaign_name, channel, lead_email, lead_name, company_name, reply_text, replied_at, category, summary, sdr_name, sdr_email, kam_email, hs_contact_id, action, action_detail")
+    .eq("mode", "activo")
+    .in("action", ["asignada", "alerta_kam", "revision_kam"])
+    .is("notified_to", null)
+    .gte("created_at", new Date(Date.now() - 7 * 86400_000).toISOString())
+    .order("created_at", { ascending: true })
+    .limit(200);
+  const rows = (data ?? []) as Record<string, any>[];
+  const hsByClient = new Map<string, ClientHubspot | null>();
+  for (const r of rows) {
+    if (Date.now() > deadline) { errors.push("Se cortó por tiempo: el resto de la cola sigue en la próxima corrida."); break; }
+    try {
+      if (!hsByClient.has(r.client_id)) hsByClient.set(r.client_id, await loadClientHubspot({ id: r.client_id, name: r.client_name }).catch(() => null));
+      const hs = hsByClient.get(r.client_id) ?? null;
+      const reason = String(r.action_detail ?? "").replace(/ ?Aviso en cola[^.]*\.(?: \(L-V 9:00–18:00\)\.)?/g, "").replace(/ ?Avisos: ?$/, "").trim();
+      const mail: ReplyMailData = {
+        clientName: r.client_name, leadName: r.lead_name ?? "", leadEmail: r.lead_email, companyName: r.company_name ?? "",
+        channel: r.channel === "linkedin" ? "linkedin" : "email", campaignName: r.campaign_name ?? "",
+        category: r.category as Category, summary: r.summary ?? "", replyText: r.reply_text ?? "",
+        hubspotUrl: hs ? hubspotContactUrl(hs, r.hs_contact_id) : null, repliedAt: r.replied_at,
+      };
+      let to: string | null = null;
+      if (r.action === "asignada" && r.sdr_email) { to = r.sdr_email; await sendSdrMail(to!, { ...mail, sdrName: r.sdr_name }); }
+      else if (r.kam_email) { to = r.kam_email; await sendKamMail(to!, { ...mail, reason }, r.action === "revision_kam" ? "revision" : "sin_sdr"); }
+      if (!to) continue;
+      await db.from("lemlist_replies").update({ notified_to: [to], action_detail: `${reason} Aviso enviado al iniciar el horario laboral.`.trim() }).eq("id", r.id);
+      sent++;
+    } catch (e) {
+      errors.push(`${r.lead_email}: ${(e as Error).message}`);
+    }
+  }
+  return { sent, errors };
 }
