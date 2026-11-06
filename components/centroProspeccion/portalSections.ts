@@ -34,11 +34,15 @@ const fecha = (iso: string) => {
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("es-CL", { day: "numeric", month: "short", timeZone: "America/Santiago" });
 };
 
-// Abre una página del portal con el cliente ya elegido (mismo selector que
-// usa todo el portal: localStorage "bullseye_client_id")
+// Abre Empresas / Contactos / Búsqueda manual / Dashboard con el cliente ya
+// elegido: dentro del Centro como pestaña (evento "cp:go" que atiende la
+// página); si nadie lo atiende, navega a la ruta (mismo selector de cliente
+// del portal: localStorage "bullseye_client_id")
 function goPortal(path: string, clientId: string) {
   try { localStorage.setItem("bullseye_client_id", clientId); } catch { /* sin almacenamiento */ }
-  window.location.href = path;
+  const detail: { path: string; clientId: string; handled?: boolean } = { path, clientId };
+  window.dispatchEvent(new CustomEvent("cp:go", { detail }));
+  if (!detail.handled) window.location.href = path;
 }
 
 const kpiBox = (t: string, v: string, sub = "", hl = false) =>
