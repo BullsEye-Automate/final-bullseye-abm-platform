@@ -145,9 +145,10 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
           </Link>
           <h1 className="text-xl font-semibold text-gray-900 mt-2">
             {meeting.contacto_nombre ?? meeting.contraparte ?? "Reunión"}
-            {(meeting.empresa_nombre ?? meeting.empresa_contraparte)
-              ? ` — ${meeting.empresa_nombre ?? meeting.empresa_contraparte}`
-              : ""}
+            {/* Pedido explícito del usuario (06-11-2026): nunca mostrar el
+                dominio crudo (empresa_contraparte) como nombre de empresa —
+                solo el nombre real del excel/formulario (empresa_nombre). */}
+            {meeting.empresa_nombre ? ` — ${meeting.empresa_nombre}` : ""}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
             {formatDate(meeting.start_time)} · {meeting.ejecutivo ?? "—"} ·{" "}

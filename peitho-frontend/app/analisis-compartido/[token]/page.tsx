@@ -36,7 +36,10 @@ export default async function SharedAnalysisPage({ params }: { params: { token: 
     );
   }
 
-  const empresa = data.empresa_nombre ?? data.empresa_contraparte;
+  // Pedido explícito del usuario (06-11-2026): nunca mostrar el dominio
+  // crudo (empresa_contraparte) como nombre de empresa en este link
+  // compartido con el cliente — solo el nombre real del excel/formulario.
+  const empresa = data.empresa_nombre;
 
   return (
     <div className="min-h-screen" style={{ background: "#FAF8FC" }}>

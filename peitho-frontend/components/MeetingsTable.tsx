@@ -39,12 +39,19 @@ function formatDate(value: string | null): string {
   });
 }
 
-// Muestra el nombre real de la empresa (excel de metas) en vez del dominio
-// crudo cuando está disponible, y lo linkea a ese dominio como sitio web — no
-// hay una columna de URL propia en el excel, pero empresa_contraparte ya ES
-// un dominio (derivado del calendario/email), así que sirve como base del
-// link sin necesitar un dato nuevo. stopPropagation para no disparar el
-// click-through a la página de detalle que tiene la fila entera.
+// Muestra el nombre real de la empresa (excel/formulario de reuniones) y lo
+// linkea a su dominio como sitio web — no hay una columna de URL propia en
+// el excel, pero empresa_contraparte ya ES un dominio (derivado del
+// calendario/email), así que sirve como base del link sin necesitar un dato
+// nuevo. stopPropagation para no disparar el click-through a la página de
+// detalle que tiene la fila entera.
+//
+// Pedido explícito del usuario (06-11-2026): nunca mostrar el dominio crudo
+// como si fuera el nombre de la empresa (ej. "gmail.com" para una reunión
+// cuyo contacto escribió desde su correo personal) — antes, sin
+// empresa_nombre (todavía sin match contra el excel/formulario), la celda
+// caía a mostrar el dominio tal cual. Ahora, sin empresa_nombre, se muestra
+// "—" en vez de adivinar con el dominio.
 function EmpresaCell({
   nombre,
   dominio,
@@ -52,9 +59,8 @@ function EmpresaCell({
   nombre: string | null | undefined;
   dominio: string | null | undefined;
 }) {
-  const label = nombre ?? dominio;
-  if (!label) return <span className="text-gray-300">—</span>;
-  if (!dominio || !dominio.includes(".")) return <>{label}</>;
+  if (!nombre) return <span className="text-gray-300">—</span>;
+  if (!dominio || !dominio.includes(".")) return <>{nombre}</>;
   return (
     <a
       href={`https://${dominio}`}
@@ -64,7 +70,7 @@ function EmpresaCell({
       className="hover:underline"
       style={{ color: "#251762" }}
     >
-      {label}
+      {nombre}
     </a>
   );
 }
