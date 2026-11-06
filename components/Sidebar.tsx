@@ -4,9 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, useEffect } from "react";
 import {
-  IconLayoutDashboard,
-  IconBuildingFactory2,
-  IconUsers,
   IconMail,
   IconPhone,
   IconHeadset,
@@ -21,7 +18,6 @@ import {
   IconMessageStar,
   IconChartBar,
   IconFileText,
-  IconUserSearch,
   IconLogout,
   IconCalendarEvent,
   IconUsersGroup,
@@ -36,18 +32,18 @@ import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
-type Item = { href: string; label: string; icon: any; disabled?: boolean };
+type Item = { href: string; label: string; icon: any; disabled?: boolean; also?: string[] };
 type Section = { label: string; items: Item[] };
 
 const SECTIONS: Section[] = [
   {
     label: "Prospección",
     items: [
-      { href: "/dashboard",       label: "Dashboard",       icon: IconLayoutDashboard },
-      { href: "/empresas",        label: "Empresas",        icon: IconBuildingFactory2 },
-      { href: "/contactos",       label: "Contactos",       icon: IconUsers },
-      { href: "/busqueda-manual", label: "Búsqueda manual", icon: IconUserSearch },
-      { href: "/centro-prospeccion", label: "Centro de prospección", icon: IconTarget },
+      // Fusión (nov-2026): Dashboard, Empresas, Contactos y Búsqueda manual
+      // viven como pestañas dentro del Centro de prospección; sus rutas
+      // siguen funcionando y marcan este ítem como activo.
+      { href: "/centro-prospeccion", label: "Centro de prospección", icon: IconTarget,
+        also: ["/dashboard", "/empresas", "/contactos", "/busqueda-manual"] },
     ]
   },
   {
@@ -271,7 +267,7 @@ export default function Sidebar({ onCollapse }: { onCollapse: () => void }) {
           <div key={section.label}>
             <div className="sb-section-label">{section.label}</div>
             {section.items.map((item) => {
-              const active = pathname?.startsWith(item.href);
+              const active = pathname?.startsWith(item.href) || !!item.also?.some((p) => pathname?.startsWith(p));
               const Icon = item.icon;
               if (item.disabled) {
                 return (

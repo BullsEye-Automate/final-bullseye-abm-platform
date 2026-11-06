@@ -149,3 +149,21 @@ cuentas, que usa el flujo de un listado subido por el cliente.
   `portalSections.ts`), `data-cp-ficha` y `data-cp-queue`.
 - **Pendiente de decisión**: retirar del menú las pantallas duplicadas (Dashboard,
   Búsqueda manual) cuando el equipo trabaje desde el Centro; hoy siguen igual.
+
+## Fusión en un solo lugar (nov-2026)
+
+Decisión de la líder de prospección: todo el trabajo de prospección en el
+Centro. Sin tocar el código de las pantallas del motor de prospección.
+
+- **Menú lateral**: Prospección queda con un solo ítem, «Centro de
+  prospección» (`components/Sidebar.tsx`, `also` marca activo el ítem también
+  en las rutas antiguas). `/dashboard`, `/empresas`, `/contactos` y
+  `/busqueda-manual` siguen funcionando como rutas.
+- **Pestañas dentro del Centro** (`components/centroProspeccion/CentroTabs.tsx`):
+  Centro · Empresas · Contactos · Búsqueda manual · Dashboard. Las cuatro
+  últimas son las páginas de esas rutas importadas tal cual (`next/dynamic`),
+  con el selector de cliente del menú lateral. El Centro (código legacy) queda
+  montado y oculto mientras se usa otra pestaña. `?tab=empresas|contactos|busqueda|dashboard`.
+- **Botones del Centro** (tablero, ficha, cola de «Mi semana», bandeja) cambian
+  de pestaña con el cliente elegido (evento `cp:go` que atiende
+  `app/centro-prospeccion/page.tsx`); fuera del Centro navegan a la ruta.
