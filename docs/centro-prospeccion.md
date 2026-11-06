@@ -116,6 +116,36 @@ agrega; no cambia el flujo de Empresas, Contactos, Dashboard ni Búsqueda manual
   (borrado de claude.ai el 4-nov-2026) quedó en
   `scripts/centro-prospeccion/artifact-source.html` para poder regenerar:
   `python3 scripts/centro-prospeccion/build_legacy.py scripts/centro-prospeccion/artifact-source.html components/centroProspeccion/legacy`.
-- **Próximas fases**: un solo universo de empresas (cuentas del Centro →
-  wishlist), una bandeja de solicitudes, un tablero, Búsqueda manual como cola
-  del plan y metas por resultado; retirar pantallas duplicadas al final.
+## Fases 2 y 3 (nov-2026)
+
+Mismo principio: solo agrega y lee; lo único que escribe es el botón de pasar
+cuentas, que usa el flujo de un listado subido por el cliente.
+
+- **Un solo tablero** (Resumen del Centro, arriba): `GET /api/centro/portal-summary?days=30`
+  reutiliza `computeAllClientsDashboard` del Dashboard (mismas cifras) + contactos
+  IA por revisar (`wishlist_contacts.status = suggested`). KPIs y tabla por
+  cliente con botones a Contactos / Empresas (abren el portal con el cliente
+  elegido vía `localStorage.bullseye_client_id`). Con filtro de cliente muestra solo ese.
+- **Una bandeja** (Solicitudes del Centro, arriba): pedidos de clientes desde el
+  portal en 30 días (empresas pedidas o subidas en listado, `origin = client`, y
+  propuestas rechazadas con su motivo).
+- **Cola en el plan**: en «Mi semana», bajo cada cliente, contactos por revisar y
+  búsquedas manuales pendientes con enlace directo.
+- **Metas por resultado** (Plan semanal, al final): contactos aprobados (y % de
+  los revisados), agregados a mano, búsquedas manuales cerradas y empresas
+  propuestas de la semana, total y por prospectora. Métricas por defecto
+  elegidas sin confirmación de la líder; ajustar si cambia el criterio.
+- **Un universo de empresas** (Cuentas del Centro, con un cliente elegido):
+  `GET /api/centro/cuentas-portal?clienteId=` cruza las cuentas aprobadas («Sí»)
+  con la wishlist del portal (dominio o nombre). `POST` (solo administrador del
+  Centro, botón con doble confirmación) pasa las que faltan en tandas de 20:
+  `client_wishlist` origin client, status new, source manual,
+  `source_ref = centro:<id>`, snapshot con lista / prioridad / motivos, envío a su
+  Lemlist (`pushWishlistItemToLemlist`); el cron de contactos las toma. No toca
+  las cuentas del Centro.
+- **Ficha**: tarjeta «En el portal» (empresas en prospección, por revisar,
+  búsqueda manual, esperando al cliente, aprobación 30 días).
+- Marcadores nuevos en `build_legacy.py`: `data-cp-view` (uno por vista, lo ubica
+  `portalSections.ts`), `data-cp-ficha` y `data-cp-queue`.
+- **Pendiente de decisión**: retirar del menú las pantallas duplicadas (Dashboard,
+  Búsqueda manual) cuando el equipo trabaje desde el Centro; hoy siguen igual.

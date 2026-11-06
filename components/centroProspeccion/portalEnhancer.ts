@@ -1,3 +1,5 @@
+import { createPortalSections } from "./portalSections";
+
 // Completa los marcadores que el código del Centro deja vacíos
 // (ver scripts/centro-prospeccion/build_legacy.py, "Enganches del portal"):
 //  - [data-cp-icp="<ficha>"]: ICP vigente del portal dentro de la ficha.
@@ -87,7 +89,9 @@ export function startPortalEnhancer(root: HTMLElement): () => void {
     }
   };
 
+  const sections = createPortalSections(week);
   const scan = () => {
+    sections.scan(root);
     root.querySelectorAll<HTMLElement>("[data-cp-icp]:not([data-cp-done])").forEach((el) => {
       el.dataset.cpDone = "1";
       void fillIcp(el);
