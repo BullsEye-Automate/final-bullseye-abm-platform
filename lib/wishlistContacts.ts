@@ -5,6 +5,7 @@ import { anthropic, getClientModel } from "./claude";
 import { logAiUsage } from "./aiUsageLogger";
 import { normalizeDomain } from "./hubspotPool";
 import { getClientIcpText } from "./wishlist";
+import { safeFichaContext } from "./centroProspeccion/fichaContext";
 import { COUNTRIES } from "./unifiedFilterDefs";
 import { pushContactToHubspot, updateHubspotContactData } from "./wishlistHubspot";
 import { batchReadHSContacts, getHSCompanyContactIds, searchHSCompany, searchHSCompanyByDomain } from "./hubspot";
@@ -362,6 +363,9 @@ async function scoreTitles(
     : "(sin revisiones todavía)";
 
   const model = await getClientModel(db, clientId);
+  // Ficha del Centro de prospección (cargos y aprendizajes del equipo):
+  // contexto extra que no entra al hash del caché
+  const ficha = await safeFichaContext(clientId, "cargos");
   const batches: string[][] = [];
   for (let i = 0; i < pending.length; i += TITLE_BATCH) batches.push(pending.slice(i, i + TITLE_BATCH));
 
@@ -381,7 +385,7 @@ async function scoreTitles(
               // ICP + revisiones se repiten en cada lote: van cacheados
               {
                 type: "text",
-                text: `<icp>\n${icpText}\n</icp>\n\n<revisiones_prospeccion>\n${feedbackText}\n</revisiones_prospeccion>`,
+                text: `<icp>\n${icpText}\n</icp>${ficha ? `\n\n${ficha}` : ""}\n\n<revisiones_prospeccion>\n${feedbackText}\n</revisiones_prospeccion>`,
                 cache_control: { type: "ephemeral" },
               },
               { type: "text", text: `<cargos>\n${batch.map((t, idx) => `${idx + 1}. ${t}`).join("\n")}\n</cargos>` },

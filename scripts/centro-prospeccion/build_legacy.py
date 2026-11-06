@@ -80,6 +80,24 @@ js = rep(js, "Disponible al abrir la página con tu sesión de claude.ai.", "Dis
 js = rep(js, "Abre esta página desde claude.ai para ver y guardar los datos del equipo. El cruce de contactos funciona igual.", "No pudimos conectar con los datos del equipo. Recarga la página. El cruce de contactos funciona igual.")
 js = rep(js, "No pudimos conectar con los datos del equipo. Inicia sesión en claude.ai con tu correo corporativo y vuelve a abrir el enlace.", "No pudimos conectar con los datos del equipo. Vuelve a iniciar sesión en el portal con tu correo corporativo.")
 js = rep(js, "Tienes acceso de solo lectura. Para crear solicitudes o registrar avance, pide a quien te compartió la página que te invite como Editora.", "Tienes acceso de solo lectura. Para crear solicitudes o registrar avance, pide acceso al líder de prospección.")
+# Enganches del portal (fase 1, nov-2026): marcadores vacíos que completa
+# components/centroProspeccion/portalEnhancer.ts con datos del portal.
+#  - data-cp-icp: ICP vigente del portal dentro de la ficha del cliente.
+#  - data-cp-auto: lo hecho en Empresas / Contactos / Búsqueda manual por
+#    cliente, prospectora y semana (tabla del plan y «Mi semana»).
+js = rep(js,
+    "Abrir en Google Drive</a></dd>`:''}</dl>`;",
+    "Abrir en Google Drive</a></dd>`:''}</dl><div data-cp-icp=\"${esc(id)}\"></div>`;")
+js = rep(js,
+    '<th>Entregadas</th><th class="l">Estado</th>',
+    '<th>Entregadas</th><th class="l">En el portal</th><th class="l">Estado</th>')
+js = rep(js,
+    "en curso</span>`:'–'}</td>",
+    "en curso</span>`:'–'}</td><td class=\"l\" data-cp-auto=\"${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}\"></td>")
+js = rep(js,
+    '</div></div><div class="mw-b">${btn}',
+    "</div><div data-cp-auto=\"${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}\" data-cp-mode=\"row\"></div></div><div class=\"mw-b\">${btn}")
+
 if "claude.ai" in js.replace("https://claude.ai/artifact/FCpkgNaYPL2VTtayWHRhnQ", ""):
     left = [m.start() for m in re.finditer("claude.ai", js)]
     raise SystemExit(f"Quedan menciones a claude.ai: {[js[i-60:i+20] for i in left]}")
@@ -95,8 +113,9 @@ module = (
     "// scripts/centro-prospeccion/build_legacy.py a partir del HTML del artifact;\n"
     "// los únicos cambios son: datos por el adaptador del portal (DEPS.claude en\n"
     "// lugar de window.claude), tema solo claro, escuchas globales que se quitan\n"
-    "// al salir, scroll del <main> del portal, archivos por /api/centro/assets y\n"
-    "// textos que mencionaban claude.ai.\n"
+    "// al salir, scroll del <main> del portal, archivos por /api/centro/assets,\n"
+    "// textos que mencionaban claude.ai y marcadores vacíos (data-cp-icp,\n"
+    "// data-cp-auto) que completa portalEnhancer.ts con datos del portal.\n"
     "export function mountCentro(ROOT, DEPS){\n"
     "'use strict';\n"
     "const {Chart,ExcelJS,Papa}=DEPS;\n"

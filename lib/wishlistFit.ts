@@ -5,6 +5,7 @@ import { anthropic, getClientModel } from "./claude";
 import { logAiUsage } from "./aiUsageLogger";
 import type { FilterCatalog } from "./unifiedSearch";
 import type { UnifiedFilterKey, UnifiedFilters } from "./unifiedFilterDefs";
+import { safeFichaContext } from "./centroProspeccion/fichaContext";
 
 // IA de la wishlist del portal:
 //  1. scoreCompanies: % de fit (0–100) + razón de cada empresa contra el ICP
@@ -94,6 +95,9 @@ export async function scoreCompanies(
   if (!pending.length) return out;
 
   const model = await getClientModel(db, opts.clientId);
+  // Ficha del Centro de prospección (exclusiones, zonas, notas del equipo):
+  // contexto extra que no entra al hash del caché
+  const ficha = await safeFichaContext(opts.clientId, "empresas");
   const batches: FitCandidate[][] = [];
   for (let i = 0; i < pending.length; i += SCORE_BATCH) batches.push(pending.slice(i, i + SCORE_BATCH));
 
@@ -114,7 +118,12 @@ export async function scoreCompanies(
             role: "user",
             content: [
               // El ICP se repite en cada lote: se cachea para no pagarlo completo cada vez
-              { type: "text", text: `<icp>\n${opts.icpText}\n</icp>`, cache_control: { type: "ephemeral" } },
+              ...(ficha
+                ? ([
+                    { type: "text", text: `<icp>\n${opts.icpText}\n</icp>` },
+                    { type: "text", text: ficha, cache_control: { type: "ephemeral" } },
+                  ] as Anthropic.TextBlockParam[])
+                : ([{ type: "text", text: `<icp>\n${opts.icpText}\n</icp>`, cache_control: { type: "ephemeral" } }] as Anthropic.TextBlockParam[])),
               { type: "text", text: `<empresas>\n${companiesText}\n</empresas>` },
             ],
           },
