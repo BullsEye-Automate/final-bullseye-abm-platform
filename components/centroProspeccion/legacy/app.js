@@ -5,8 +5,9 @@
 // scripts/centro-prospeccion/build_legacy.py a partir del HTML del artifact;
 // los únicos cambios son: datos por el adaptador del portal (DEPS.claude en
 // lugar de window.claude), tema solo claro, escuchas globales que se quitan
-// al salir, scroll del <main> del portal, archivos por /api/centro/assets y
-// textos que mencionaban claude.ai.
+// al salir, scroll del <main> del portal, archivos por /api/centro/assets,
+// textos que mencionaban claude.ai y marcadores vacíos (data-cp-icp,
+// data-cp-auto) que completa portalEnhancer.ts con datos del portal.
 export function mountCentro(ROOT, DEPS){
 'use strict';
 const {Chart,ExcelJS,Papa}=DEPS;
@@ -471,13 +472,13 @@ VF.plan=function(){
    ${kpi({ic:'clock',c:cnt('sin_gestion')?'r':'',t:'Sin gestión',v:fmt(cnt('sin_gestion')),sub:cerradas?`${pct(cnt('sin_gestion')/cerradas)} de las cerradas · objetivo 2027: 15% o menos`:'Objetivo 2027: 15% o menos'})}
   </div>`;
   if(!rows.length)return h+`<div class="card empty"><h3>No hay asignaciones para esta semana</h3><p>${isAdmin?'Agrega la meta de cada prospectora por cliente, o copia la semana anterior y ajústala.':'Tu líder aún no carga el plan de esta semana.'}</p>${isAdmin?`<div class="actions" style="justify-content:center"><button class="btn" data-act="plan-copy">Copiar semana anterior</button><button class="btn pri" data-act="plan-add">${ic('plus')} Agregar asignación</button></div>`:''}</div>`;
-  h+=`<div class="card"><div class="tw"><table><thead><tr><th class="l">Prospectora</th><th class="l">Cliente</th><th>Meta</th><th>Entregadas</th><th class="l">Estado</th><th class="l">Motivo o nota</th><th></th></tr></thead><tbody>`;
+  h+=`<div class="card"><div class="tw"><table><thead><tr><th class="l">Prospectora</th><th class="l">Cliente</th><th>Meta</th><th>Entregadas</th><th class="l">En el portal</th><th class="l">Estado</th><th class="l">Motivo o nota</th><th></th></tr></thead><tbody>`;
   rows.forEach(r=>{const e=PEST[r.estado]||PEST.planificada;const can=canRow(r);
     let act='';
     if(can&&r.estado==='planificada')act=`<button class="btn sm pri" data-plan-ent="${esc(r.id)}">Registrar entrega</button> <button class="btn sm" data-plan-sg="${esc(r.id)}">Sin gestión</button>`;
     else if(isAdmin)act=`<button class="btn ghost sm" data-plan-reopen="${esc(r.id)}">Reabrir</button>`;
     if(isAdmin&&r.estado==='planificada')act+=` <button class="btn ghost sm danger" data-plan-del="${esc(r.id)}">Quitar</button>`;
-    h+=`<tr><td class="l">${who(r.email)}</td><td class="l">${esc(cname(r.clienteId))}</td><td>${fmt(r.meta)}</td><td>${r.estado==='entregada'?fmt(r.empresas):r.avance?`<span class="muted">${fmt(r.avance)} en curso</span>`:'–'}</td><td class="l"><span class="pill ${e.c}">${e.t}</span></td><td class="l" style="white-space:normal;max-width:280px;color:var(--muted)">${esc(r.motivo?(r.motivo+(r.detalle?': '+r.detalle:'')):(r.nota||''))}</td><td style="white-space:nowrap">${act}</td></tr>`});
+    h+=`<tr><td class="l">${who(r.email)}</td><td class="l">${esc(cname(r.clienteId))}</td><td>${fmt(r.meta)}</td><td>${r.estado==='entregada'?fmt(r.empresas):r.avance?`<span class="muted">${fmt(r.avance)} en curso</span>`:'–'}</td><td class="l" data-cp-auto="${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}"></td><td class="l"><span class="pill ${e.c}">${e.t}</span></td><td class="l" style="white-space:normal;max-width:280px;color:var(--muted)">${esc(r.motivo?(r.motivo+(r.detalle?': '+r.detalle:'')):(r.nota||''))}</td><td style="white-space:nowrap">${act}</td></tr>`});
   return h+'</tbody></table></div></div>';
 };
 function propCard(wk){
@@ -639,7 +640,7 @@ function miSemana(wk){
     else if(r.estado==='sin_gestion'){cls='sg';info=`Sin gestión: ${esc(r.motivo||'')}${r.detalle?' · '+esc(r.detalle):''}`;}
     else{info=av?`Llevas ${fmt(av)} de ${fmt(m)} empresas${r.contactosAvance?` y ${fmt(r.contactosAvance)} contactos`:''}.`:`Aún sin avance registrado.`;
       btn=`<button class="btn pri" data-plan-av="${esc(r.id)}">${ic('plus')} Sumar avance</button><button class="btn" data-plan-ent="${esc(r.id)}">Terminé este cliente</button><button class="btn ghost sm" data-plan-sg="${esc(r.id)}">No pude avanzar</button>`}
-    h+=`<div class="mw-row ${cls}"><div><div class="mw-t">${r.prioridad?`<small>Prioridad ${esc(r.prioridad)}</small>`:''}${esc(cname(r.clienteId))} <span class="muted" style="font-weight:600;font-size:13px">· meta ${fmt(m)}</span></div>${r.estado==='planificada'?`<div class="bar" style="max-width:none;margin-top:8px"><i class="${p>=1?'g':''}" style="width:${Math.round(p*100)}%"></i></div>`:''}<div class="mw-n">${info}${r.nota&&!/^Prioridad \d+\.\s*Cargado/.test(r.nota)?`<br>Nota de tu líder: ${esc(String(r.nota).replace(/^Prioridad \d+\.\s*/,'').replace(/\s*Cargado desde la planilla.*$/,''))}`:''}</div></div><div class="mw-b">${btn}</div></div>`});
+    h+=`<div class="mw-row ${cls}"><div><div class="mw-t">${r.prioridad?`<small>Prioridad ${esc(r.prioridad)}</small>`:''}${esc(cname(r.clienteId))} <span class="muted" style="font-weight:600;font-size:13px">· meta ${fmt(m)}</span></div>${r.estado==='planificada'?`<div class="bar" style="max-width:none;margin-top:8px"><i class="${p>=1?'g':''}" style="width:${Math.round(p*100)}%"></i></div>`:''}<div class="mw-n">${info}${r.nota&&!/^Prioridad \d+\.\s*Cargado/.test(r.nota)?`<br>Nota de tu líder: ${esc(String(r.nota).replace(/^Prioridad \d+\.\s*/,'').replace(/\s*Cargado desde la planilla.*$/,''))}`:''}</div><div data-cp-auto="${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}" data-cp-mode="row"></div></div><div class="mw-b">${btn}</div></div>`});
   return h+`</div></div><h3 style="font-family:var(--head);font-size:15px;margin:4px 0 10px">Todo el equipo</h3>`;
 }
 function modalPlanAv(id){
@@ -880,7 +881,7 @@ function modalCli(id){
   const c=D.clientes.find(x=>x.id===id);if(!c)return;
   const reqs=D.solicitudes.filter(r=>r.clienteId===id).slice(0,6);
   let h=mtop(c.nombre,[c.industria,c.pais].filter(Boolean).map(esc).join(' · ')+(c.actualizado?` · ficha actualizada el ${niceDate(c.actualizado)}`:''))+
-  `<dl class="fld">${[['Perfil de empresa',c.icp],['Industrias',c.industrias],['Zonas',c.zonas],['Cargos objetivo',c.cargos],['Exclusiones',c.exclusiones],['Avances',c.avances],['Próximos pasos',c.proximos]].filter(x=>x[1]).map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')||'<dt>Ficha</dt><dd class="muted">Sin detalle todavía.</dd>'}${c.docUrl&&/^https:\/\//.test(c.docUrl)?`<dt>Resumen completo</dt><dd><a href="${esc(c.docUrl)}" target="_blank" rel="noopener">Abrir en Google Drive</a></dd>`:''}</dl>`;
+  `<dl class="fld">${[['Perfil de empresa',c.icp],['Industrias',c.industrias],['Zonas',c.zonas],['Cargos objetivo',c.cargos],['Exclusiones',c.exclusiones],['Avances',c.avances],['Próximos pasos',c.proximos]].filter(x=>x[1]).map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')||'<dt>Ficha</dt><dd class="muted">Sin detalle todavía.</dd>'}${c.docUrl&&/^https:\/\//.test(c.docUrl)?`<dt>Resumen completo</dt><dd><a href="${esc(c.docUrl)}" target="_blank" rel="noopener">Abrir en Google Drive</a></dd>`:''}</dl><div data-cp-icp="${esc(id)}"></div>`;
   if(c.contexto){const body=String(c.contexto).split('\n').map(l=>{const t=l.trim();return(t.length>=4&&t.length<=80&&/[A-ZÁÉÍÓÚÑ]/.test(t)&&t===t.toUpperCase())?`<span class="ctx-h">${esc(t)}</span>`:esc(l)}).join('\n');
     h+=`<details class="ctx" open><summary>Contexto completo</summary><div class="ctx-body">${body}</div></details>`}
   if(reqs.length)h+=`<div><h3 style="font-size:15px;margin-bottom:8px">Solicitudes recientes</h3><div class="tw"><table><tbody>${reqs.map(r=>{const e=ESTADOS[r.estado]||ESTADOS.pendiente;return `<tr class="click" data-req="${esc(r.id)}"><td class="l">${esc(r.titulo)}</td><td class="l">${esc(pname(keyOf(r)))}</td><td>${niceDate(r.creado)}</td><td class="l"><span class="pill ${e.c}">${e.t}</span></td></tr>`}).join('')}</tbody></table></div></div>`;

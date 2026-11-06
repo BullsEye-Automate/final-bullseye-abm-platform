@@ -7,6 +7,7 @@ import { IconAlertCircle, IconLoader2 } from "@tabler/icons-react";
 import { CENTRO_MARKUP } from "@/components/centroProspeccion/legacy/markup";
 import { createPortalClaude } from "@/components/centroProspeccion/portalClaude";
 import { loadCentroLibs } from "@/components/centroProspeccion/loadLibs";
+import { startPortalEnhancer } from "@/components/centroProspeccion/portalEnhancer";
 
 // Centro de prospección (Prospección → Centro de prospección): el antiguo
 // artifact "Centro de prospección BullsEye" de claude.ai dentro del portal.
@@ -38,7 +39,10 @@ export default function CentroProspeccionPage() {
         const claude = createPortalClaude((e) => {
           if ((e as { code?: string }).code === "unauthenticated") window.location.href = "/login";
         });
-        unmount = appMod.mountCentro(root, { claude, Chart, ExcelJS, Papa });
+        const stopCentro = appMod.mountCentro(root, { claude, Chart, ExcelJS, Papa });
+        // Datos del portal en la ficha (ICP) y en el plan (avance automático)
+        const stopEnhancer = startPortalEnhancer(root);
+        unmount = () => { stopEnhancer(); stopCentro(); };
         setLoading(false);
       } catch (e) {
         if (!cancelled) {
