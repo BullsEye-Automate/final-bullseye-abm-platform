@@ -27,6 +27,8 @@ const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 const n = (x: number | null | undefined) => (x ?? 0).toLocaleString("es-CL");
 const pct = (x: number | null | undefined) => (x == null ? "–" : `${Math.round(x * 100)}%`);
+// La tasa de aprobación del Dashboard ya viene de 0 a 100
+const pct100 = (x: number | null | undefined) => (x == null ? "–" : `${Math.round(x)}%`);
 const fecha = (iso: string) => {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("es-CL", { day: "numeric", month: "short", timeZone: "America/Santiago" });
@@ -92,12 +94,12 @@ export function createPortalSections(week: (wk: string) => Promise<Week | null>)
       ${kpiBox("Contactos por revisar", n(t.porRevisar), "Sugeridos por la IA, esperan a una prospectora", true)}
       ${kpiBox("Búsqueda manual", n(t.busquedaManual), "Empresas con pocos contactos automáticos")}
       ${kpiBox("Contactos aprobados", n(t.contactosAprobados), `${n(t.contactosManuales)} agregados a mano · ${n(t.conTelefono)} con teléfono`)}
-      ${kpiBox("Aprobación del cliente", pct(t.tasaAprobacion), `${n(t.aprobadas)} aprobadas · ${n(t.rechazadas)} rechazadas de las propuestas`)}
+      ${kpiBox("Aprobación del cliente", pct100(t.tasaAprobacion), `${n(t.aprobadas)} aprobadas · ${n(t.rechazadas)} rechazadas de las propuestas`)}
       ${kpiBox("Esperando al cliente", n(t.esperandoCliente), t.esperandoClienteDias != null ? `La más antigua lleva ${n(t.esperandoClienteDias)} días` : "Propuestas sin respuesta")}
     </div>`;
     const table = rows.length
       ? `<div class="tw"><table><thead><tr><th class="l">Cliente</th><th>Por revisar</th><th>Búsqueda manual</th><th>Esperando cliente</th><th>Propuestas</th><th>Aprobación</th><th>Contactos aprobados</th><th>Sin Lemlist</th><th></th></tr></thead><tbody>${rows
-          .map(({ d }) => `<tr><td class="l"><b>${esc(d.cliente)}</b></td><td>${d.porRevisar ? `<b>${n(d.porRevisar)}</b>` : "–"}</td><td>${d.busquedaManual ? `<b>${n(d.busquedaManual)}</b>` : "–"}</td><td>${n(d.esperandoCliente)}</td><td>${n(d.propuestas)}</td><td>${pct(d.tasaAprobacion)}</td><td>${n(d.contactosAprobados)}</td><td>${d.erroresLemlist ? `<span class="pill r">${n(d.erroresLemlist)}</span>` : "–"}</td><td style="white-space:nowrap">${goBtn("Contactos", "/contactos", d.clientId)} ${goBtn("Empresas", "/empresas", d.clientId)}</td></tr>`)
+          .map(({ d }) => `<tr><td class="l"><b>${esc(d.cliente)}</b></td><td>${d.porRevisar ? `<b>${n(d.porRevisar)}</b>` : "–"}</td><td>${d.busquedaManual ? `<b>${n(d.busquedaManual)}</b>` : "–"}</td><td>${n(d.esperandoCliente)}</td><td>${n(d.propuestas)}</td><td>${pct100(d.tasaAprobacion)}</td><td>${n(d.contactosAprobados)}</td><td>${d.erroresLemlist ? `<span class="pill r">${n(d.erroresLemlist)}</span>` : "–"}</td><td style="white-space:nowrap">${goBtn("Contactos", "/contactos", d.clientId)} ${goBtn("Empresas", "/empresas", d.clientId)}</td></tr>`)
           .join("")}</tbody></table></div>`
       : `<p class="muted">${cli ? "Esta ficha no está vinculada a un cliente del portal." : "Aún no hay clientes con prospección en el portal."}</p>`;
     el.innerHTML = card(
@@ -221,7 +223,7 @@ export function createPortalSections(week: (wk: string) => Promise<Week | null>)
     if (!el.isConnected) return;
     const d = s?.porFicha[fid];
     if (!d) { el.innerHTML = ""; return; }
-    el.innerHTML = `<div class="card" style="padding:12px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0"><div style="flex:1;min-width:220px"><b>En el portal: ${n(d.activas)} empresas en prospección</b><div class="muted" style="font-size:12.5px">${n(d.porRevisar)} contactos por revisar · ${n(d.busquedaManual)} en búsqueda manual · ${n(d.esperandoCliente)} propuestas esperando al cliente · aprobación ${pct(d.tasaAprobacion)} (30 días)</div></div>${goBtn("Contactos", "/contactos", d.clientId)} ${goBtn("Empresas", "/empresas", d.clientId, true)}</div>`;
+    el.innerHTML = `<div class="card" style="padding:12px 14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0"><div style="flex:1;min-width:220px"><b>En el portal: ${n(d.activas)} empresas en prospección</b><div class="muted" style="font-size:12.5px">${n(d.porRevisar)} contactos por revisar · ${n(d.busquedaManual)} en búsqueda manual · ${n(d.esperandoCliente)} propuestas esperando al cliente · aprobación ${pct100(d.tasaAprobacion)} (30 días)</div></div>${goBtn("Contactos", "/contactos", d.clientId)} ${goBtn("Empresas", "/empresas", d.clientId, true)}</div>`;
     bindGo(el);
   };
 
