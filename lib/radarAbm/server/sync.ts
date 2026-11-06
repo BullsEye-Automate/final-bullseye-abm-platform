@@ -190,8 +190,8 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   if (!clientMode && !P.contactStatus.property) {
     const n = P.contactStatus.candidates.length;
     throw new Error(n
-      ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${name}${where}. Elígela en Configuración → Cliente → Pulso ABM.`
-      : `No se encontró ninguna propiedad de contacto "Asignación BullsEye por Llamar - …"${where}. Indica su nombre interno en Configuración → Cliente → Pulso ABM.`);
+      ? `No se pudo elegir cuál de las ${n} propiedades "Asignación BullsEye por Llamar - …" es la de ${name}${where}.${sub ? " Elígela en Configuración → Cliente → Pulso ABM → Probar HubSpot del cliente → \"Propiedades de cada cliente de la cuenta\" y guarda." : " Elígela en Configuración → Cliente → Pulso ABM."}`
+      : `No se encontró ninguna propiedad de contacto "Asignación BullsEye por Llamar - …"${where}.${sub ? " Elígela en Configuración → Cliente → Pulso ABM → Probar HubSpot del cliente → \"Propiedades de cada cliente de la cuenta\" y guarda." : " Indica su nombre interno en Configuración → Cliente → Pulso ABM."}`);
   }
   for (const d of detected) if (d.manual && !d.found) warnings.push(`El nombre interno "${d.property}" de "${d.label}" no existe${where}.`);
   // Sin SDR por cliente se usa el propietario del registro: no es un aviso

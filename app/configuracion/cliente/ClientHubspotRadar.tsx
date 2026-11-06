@@ -156,7 +156,9 @@ export default function ClientHubspotRadar({
                               </select>
                             </td>
                             <td className="py-2 text-xs">
-                              {d.found
+                              {(properties[k] ?? "") && properties[k] !== (d.manual ? d.property : "")
+                                ? <span className="text-ink-muted">elegida: <code>{properties[k]}</code> · guarda y vuelve a probar</span>
+                                : d.found
                                 ? <span className="text-success-fg"><code>{d.property}</code> · {d.propLabel}{d.options.length ? ` · ${d.options.length} valores` : ""}</span>
                                 : <span className={d.required ? "text-danger-fg" : "text-ink-subtle"}>{d.manual ? "no existe en este HubSpot" : "no encontrada"}</span>}
                             </td>
