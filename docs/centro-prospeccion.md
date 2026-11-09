@@ -167,3 +167,21 @@ Centro. Sin tocar el código de las pantallas del motor de prospección.
 - **Botones del Centro** (tablero, ficha, cola de «Mi semana», bandeja) cambian
   de pestaña con el cliente elegido (evento `cp:go` que atiende
   `app/centro-prospeccion/page.tsx`); fuera del Centro navegan a la ruta.
+
+
+## Motor automático: inteligencia de la semana (nov-2026)
+
+Fusión del motor de prospección de José Antonio (Empresas → Recomendadas por IA, Contactos IA, señales de llamadas de Allo) con el Centro, siguiendo sus mismos patrones (cron con una invocación por cliente, IA con herramienta forzada y `logAiUsage`, cachés en `allo_response_cache`). Migración: `supabase/20261106_centro_inteligencia_migration.sql`.
+
+| Cuándo | Qué | Dónde |
+|---|---|---|
+| Siempre | Checklist de preparación por cliente (requisitos: Maestra activo, ficha, ICP > 200 caracteres, Pulso sincronizado; opcionales: Pulso ≤ 2 días, key y campaña de Lemlist, números de Allo) | Centro → Clientes · `lib/centroProspeccion/intel/readiness.ts` |
+| Viernes 12:00 / 13:30 Chile | Inteligencia de la semana por cliente listo | `/api/cron/centro-inteligencia` → `run.ts` + `analyze.ts` |
+| Al decidir | Aprobar = se anota en la ficha (campo propuesto, con semana y quién aprobó); si toca el ICP → correo al KAM | `/api/centro/inteligencia/decision` |
+| Domingo 20:00 Chile | Recomendaciones IA de empresas en la cantidad sugerida | `/api/cron/centro-recomendaciones` → `lib/wishlistRecommendations.ts` |
+| L-V 8:30 Chile | Alertas (KAM, prospectoras, líder) y recordatorios a SDR + líder de célula | `/api/cron/centro-alertas` → `automations.ts` |
+| Lunes 8:30 Chile | Plan de la semana (prospectoras + líder) y costo de IA (líder) | mismo cron |
+
+Fuentes de la inteligencia (todas de solo lectura): último Pulso ABM (`numbers.ts`), llamadas y notas de HubSpot de 7 días asociadas a empresas/contactos del cliente (`hubspotFeed.ts`; se cachea el feed del HubSpot de BullsEye 2 días; HubSpot propio del cliente con su token), minutas diio cuyo texto nombra al cliente, `allo_call_signals` de 14 días, rechazos de la wishlist de 30 días, feedback y estado de reuniones de 30 días, ficha vigente e ICP. Se quitan correos y teléfonos antes de enviar a la IA (`scrubPii`).
+
+Pruebas manuales (con `CRON_SECRET`): `?client_id=<uuid>` en cada cron; `centro-alertas?force=1&solo=alertas|lunes|costo`. Desde la ficha, la administración del Centro puede "Volver a generar" (mantiene las decisiones tomadas). Costo estimado: ~US$0,05–0,15 por cliente por semana en la inteligencia más las recomendaciones (ver el correo de costo de los lunes).
