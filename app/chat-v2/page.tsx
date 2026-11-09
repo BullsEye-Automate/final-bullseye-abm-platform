@@ -378,7 +378,7 @@ export default function ChatV2Page() {
   const [segmentId, setSegmentId]       = useState("");
   const [segmentOpen, setSegmentOpen]   = useState(false);
 
-  const [recipientType, setRecipientType] = useState<"prospecto" | "cliente" | null>(null);
+  const [recipientType, setRecipientType] = useState<"prospecto" | null>(null);
 
   const [contactQuery, setContactQuery]         = useState("");
   const [contactResults, setContactResults]     = useState<HSContact[]>([]);
@@ -433,7 +433,7 @@ export default function ChatV2Page() {
   }, []);
 
   useEffect(() => {
-    setRecipientType(null);
+    setRecipientType("prospecto");
     if (!clientId) { setSegments([]); setSegmentId(""); return; }
     fetch(`/api/training/segments?client_id=${clientId}`)
       .then(r => r.json()).then(j => setSegments(j.segments ?? [])).catch(() => {});
@@ -502,27 +502,13 @@ export default function ChatV2Page() {
       }).catch(() => {});
   }, [selectedContact?.id, clientId]);
 
-  function chooseRecipientType(t: "prospecto" | "cliente") {
-    setRecipientType(t);
-    if (t === "cliente") {
-      setEmailType("meeting_brief");
-      clearContact();
-    } else {
-      setEmailType("cold");
-    }
-    setMessages([]);
-  }
-
   function selectContact(c: HSContact) {
     setSelectedContact(c);
     setContactQuery(`${c.firstname} ${c.lastname}`.trim());
     setContactDropOpen(false);
-    // En flujo cliente, el contacto es el PROSPECTO de la reunión, no el destinatario del brief
-    if (recipientType !== "cliente") {
-      setRecipientName(`${c.firstname} ${c.lastname}`.trim());
-      if (c.jobtitle) setTitle(c.jobtitle);
-      if (c.company) setRecipientCompany(c.company);
-    }
+    setRecipientName(`${c.firstname} ${c.lastname}`.trim());
+    if (c.jobtitle) setTitle(c.jobtitle);
+    if (c.company) setRecipientCompany(c.company);
   }
 
   function clearContact() {
@@ -710,57 +696,12 @@ export default function ChatV2Page() {
                 )}
               </div>
 
-              {/* ¿A quién le escribes? */}
-              {clientId && (
-                <div>
-                  <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
-                    ¿A quién le escribes?
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(["prospecto", "cliente"] as const).map(t => (
-                      <button key={t} type="button" onClick={() => chooseRecipientType(t)}
-                        className="py-3 rounded-xl text-sm font-medium transition text-center"
-                        style={{
-                          background: recipientType === t ? "#251762" : "#f4f2fb",
-                          border: `1px solid ${recipientType === t ? "#251762" : "#e2e0f0"}`,
-                          color: recipientType === t ? "#62E0D8" : "#6b66a3",
-                        }}>
-                        {t === "prospecto" ? "Prospecto" : "Cliente BullsEye"}
-                      </button>
-                    ))}
-                  </div>
-                  {recipientType === "cliente" && (
-                    <p className="mt-2 text-[11px]" style={{ color: "#9b97c0" }}>
-                      Genera el briefing interno antes de la reunión con el cliente.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Flujo CLIENTE: destinatario del brief */}
-              {recipientType === "cliente" && (
-                <div>
-                  <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
-                    Para quién es el brief
-                  </label>
-                  <input type="text" value={recipientName} onChange={e => setRecipientName(e.target.value)}
-                    placeholder="Ej: Ingri Hincapié (cliente BullsEye)"
-                    className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
-                    style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
-                </div>
-              )}
-
               {/* Buscar contacto HubSpot */}
-              {recipientType && <div>
+              {clientId && <div>
                 <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
-                  {recipientType === "cliente" ? "Prospecto de la reunión" : "Contacto HubSpot"}{" "}
+                  Contacto HubSpot{" "}
                   <span style={{ fontWeight: 400 }}>(opcional)</span>
                 </label>
-                {recipientType === "cliente" && (
-                  <p className="text-[11px] mb-2" style={{ color: "#b0acd4" }}>
-                    Busca al contacto con quien agendaste la reunión para extraer su información.
-                  </p>
-                )}
                 <div className="relative">
                   <IconSearch size={14} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: "#b0acd4" }} />
                   <input type="text" value={contactQuery}
@@ -838,7 +779,7 @@ export default function ChatV2Page() {
               </div>}
 
               {/* Llamadas Allo */}
-              {recipientType && selectedContact && (
+              {clientId && selectedContact && (
                 <div>
                   <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
                     Llamadas recientes (Allo)
@@ -919,15 +860,7 @@ export default function ChatV2Page() {
               )}
 
               {/* Tipo de mensaje */}
-              {recipientType === "cliente" ? (
-                <div>
-                  <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Tipo de mensaje</label>
-                  <div className="rounded-xl px-4 py-2.5 text-sm font-medium"
-                    style={{ background: "#ede9fb", border: "1px solid #d4d0f0", color: "#251762" }}>
-                    Previa de reunión (briefing interno)
-                  </div>
-                </div>
-              ) : recipientType === "prospecto" && (
+              {clientId && (
                 <div className="relative">
                   <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Tipo de mensaje</label>
                   <button type="button" onClick={() => setTypeOpen(v => !v)}
@@ -954,8 +887,8 @@ export default function ChatV2Page() {
                 </div>
               )}
 
-              {/* Canal (oculto para meeting_brief y para cliente) */}
-              {recipientType === "prospecto" && emailType !== "meeting_brief" && (
+              {/* Canal */}
+              {clientId && emailType !== "meeting_brief" && (
                 <div>
                   <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>Canal</label>
                   <div className="grid grid-cols-3 gap-2">
@@ -970,8 +903,8 @@ export default function ChatV2Page() {
                 </div>
               )}
 
-              {/* Guía de estilo — solo para prospectos */}
-              {recipientType === "prospecto" && segments.length > 0 && (
+              {/* Guía de estilo */}
+              {clientId && segments.length > 0 && (
                 <div className="relative">
                   <label className="block text-[11px] uppercase tracking-widest font-semibold mb-2" style={{ color: "#9b97c0" }}>
                     Guía de estilo <span style={{ fontWeight: 400 }}>(opcional)</span>
@@ -1003,8 +936,8 @@ export default function ChatV2Page() {
                 </div>
               )}
 
-              {/* Nombre, empresa y cargo — solo para prospectos */}
-              {recipientType === "prospecto" && (
+              {/* Nombre, empresa y cargo */}
+              {clientId && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -1120,11 +1053,11 @@ export default function ChatV2Page() {
                 )}
               </div>
 
-              <button type="submit" disabled={!clientId || !recipientType}
+              <button type="submit" disabled={!clientId}
                 className="w-full py-3 rounded-xl text-sm font-semibold transition hover:opacity-90 disabled:opacity-30 flex items-center justify-center gap-2"
                 style={{ background: "#251762", color: "#62E0D8" }}>
                 <IconSparkles size={15} />
-                {messages.length > 0 ? "Regenerar" : recipientType === "cliente" ? "Generar briefing" : "Generar mensaje"}
+                {messages.length > 0 ? "Regenerar" : "Generar mensaje"}
               </button>
             </form>
           </div>
