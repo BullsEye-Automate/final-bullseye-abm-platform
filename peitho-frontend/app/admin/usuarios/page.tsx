@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { fetchMe, fetchUserRoles, fetchClients } from "@/lib/peithoBackend";
 import UserManagement from "@/components/UserManagement";
 import BotCalendarResyncButton from "@/components/BotCalendarResyncButton";
+import RematchMeetingsButton from "@/components/RematchMeetingsButton";
 
 // Admin-only — el backend también lo exige (requireAdmin en /admin/user-roles),
 // esto es solo para no renderizar la página completa si alguien la teclea a mano.
@@ -26,6 +27,8 @@ export default async function AdminUsuariosPage() {
       <UserManagement clients={clients} roles={roles} />
 
       <BotCalendarResyncButton />
+
+      <RematchMeetingsButton />
     </div>
   );
 }

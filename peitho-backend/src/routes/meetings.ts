@@ -610,6 +610,38 @@ meetingsRouter.post('/meetings/:id/resolve-tentative-match', requireAuth, requir
   }
 });
 
+// Re-matching retroactivo en bloque, admin-only (09-11-2026) — pedido
+// explícito del usuario después de agregar el matching por nombre real del
+// contacto (desambiguarPorContacto, metasSheet.ts): ese fix solo se aplica
+// solo a reuniones nuevas, porque resolveMeetingClientAndContact se dispara
+// de forma lazy (recién cuando se carga la lista o el detalle) — sin este
+// botón, el histórico ya quedado como 'tentative'/'none' nunca se reintenta
+// con la lógica nueva salvo que alguien abra cada reunión una por una.
+// Mismos criterios de exclusión que GET /meetings (recurrentes, internas) —
+// no tiene sentido gastar el intento en reuniones que nunca van a ser con un
+// prospecto real.
+meetingsRouter.post('/meetings/rematch-all', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `select id from meetings
+       where coalesce(contacto_match_status, 'none') not in ('auto', 'manual')
+         and recurring_event_id is null
+         and (empresa_contraparte is null or lower(empresa_contraparte) <> $1)
+       order by start_time desc nulls last`,
+      [INTERNAL_DOMAIN]
+    );
+
+    for (const row of rows) {
+      await resolveMeetingClientAndContact(row.id);
+    }
+
+    res.json({ status: 'ok', total: rows.length });
+  } catch (error) {
+    console.error('Error re-matcheando reuniones en bloque', error);
+    res.status(500).json({ error: 'Error re-matcheando reuniones' });
+  }
+});
+
 // Reintento manual admin-only de agendar/crear el bot con join inmediato —
 // pedido explícito del usuario (15-09-2026, reunión de SeguriMaxima/Felipe
 // Salgado): el bot automático agotó su presupuesto de reintentos (ver
