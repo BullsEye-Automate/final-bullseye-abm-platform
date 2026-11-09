@@ -569,10 +569,21 @@ function desambiguarPorEmpresa(candidatos: SheetRow[], empresaContraparte: strin
   return match.length === 1 ? match[0] : null;
 }
 
+// Bug real (09-11-2026, "ucsc.cl"/Universidad Católica de la Santísima
+// Concepción): la sigla real salta las partículas cortas ("de", "la") —
+// "Universidad Catolica DE LA Santisima Concepcion" da "UCSC", no "UCDLSC"
+// como calculaba esta función antes (tomaba la primera letra de TODAS las
+// palabras, partículas incluidas). Lista acotada a las partículas más
+// comunes en nombres de empresas/instituciones en español — el riesgo de
+// excluir una palabra que debería contar es mucho más bajo que el de seguir
+// arrastrando partículas que ninguna sigla real incluye.
+const ACRONYM_STOPWORDS = new Set(['de', 'del', 'la', 'las', 'el', 'los', 'y', 'en', 'a', 'al']);
+
 function acronym(name: string): string {
   return normalizeCompanyName(name)
     .split(/[^a-z0-9]+/)
     .filter(Boolean)
+    .filter((word) => !ACRONYM_STOPWORDS.has(word))
     .map((word) => word[0])
     .join('');
 }
