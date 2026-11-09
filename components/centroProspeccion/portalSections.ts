@@ -51,7 +51,18 @@ const kpiBox = (t: string, v: string, sub = "", hl = false) =>
 const card = (title: string, sub: string, body: string) =>
   `<div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;margin-bottom:10px"><h3 style="font-family:var(--head);font-size:15px">${esc(title)}</h3><span class="muted" style="font-size:12px">${sub}</span></div>${body}</div>`;
 
+import { createIntelSections } from "./intelSections";
+
 export function createPortalSections(week: (wk: string) => Promise<Week | null>) {
+  const intel = createIntelSections();
+  let isAdmin = false;
+  // Contenedor extra junto a un marcador (para no pisar lo que ya se dibuja ahí)
+  const sibling = (el: HTMLElement, key: string) => {
+    const box = document.createElement("div");
+    box.dataset.cpExtra = key;
+    el.after(box);
+    return box;
+  };
   let summary: { at: number; p: Promise<Summary | null> } | null = null;
   const getSummary = (): Promise<Summary | null> => {
     if (summary && Date.now() - summary.at < TTL) return summary.p;
@@ -250,19 +261,22 @@ export function createPortalSections(week: (wk: string) => Promise<Week | null>)
       el.dataset.cpDone = "1";
       const view = el.dataset.cpView ?? "";
       const cli = el.dataset.cli ?? "";
+      isAdmin = el.dataset.admin === "1";
       // Arriba de la vista, para que se vea primero (en el plan queda al final,
       // después de «Mi semana» y la tabla del equipo)
       const host = el.parentElement;
       if (view !== "plan" && host && host.firstChild !== el) host.insertBefore(el, host.firstChild);
-      if (view === "resumen") void renderResumen(el, cli);
+      if (view === "resumen") { void renderResumen(el, cli); void intel.renderResumen(sibling(el, "intel"), cli, isAdmin); }
       else if (view === "solicitudes") void renderSolicitudes(el, cli);
       else if (view === "plan") void renderPlan(el, cli, el.dataset.sem ?? "");
       else if (view === "cuentas") void renderCuentas(el, cli);
-      else if (view === "clientes") { /* la ficha muestra su propio resumen */ }
+      // En la lista de clientes (no dentro de una ficha abierta)
+      else if (view === "clientes" && !host?.querySelector("[data-cp-ficha]")) void intel.renderClientes(el);
     });
     root.querySelectorAll<HTMLElement>("[data-cp-ficha]:not([data-cp-done])").forEach((el) => {
       el.dataset.cpDone = "1";
       void renderFicha(el, el.dataset.cpFicha ?? "");
+      void intel.renderFicha(sibling(el, "intel"), el.dataset.cpFicha ?? "", isAdmin);
     });
     root.querySelectorAll<HTMLElement>("[data-cp-queue]:not([data-cp-done])").forEach((el) => {
       el.dataset.cpDone = "1";
