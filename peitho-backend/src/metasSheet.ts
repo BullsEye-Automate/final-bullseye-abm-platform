@@ -437,6 +437,41 @@ export function matchClientByTitle(
   return allContainedInLongest ? longest.client : null;
 }
 
+// Nombre real del contacto (09-11-2026, pedido explícito del usuario, caso
+// real Ambar Correa/CChC — 2 candidatos el mismo día para el mismo cliente,
+// y el excel tenía literalmente "Ambar Correa" en la columna Contacto para
+// la fila correcta, que Peitho no usaba para nada). Es una señal más
+// específica y confiable que el dominio/empresa del correo (que ya tuvo
+// muchísimos fallbacks reales documentados en desambiguarPorEmpresa de
+// abajo — TLD, fuzzy, sigla) porque compara directamente a la PERSONA, no a
+// la empresa. meeting.contraparte es el displayName real del invitado
+// externo que trae Google Calendar (ver extractContraparte en
+// calendarSync.ts) — disponible para la gran mayoría de las reuniones, no
+// solo cuando el email trae un dominio reconocible. Mismo criterio
+// conservador que desambiguarPorEmpresa: solo acepta si el filtro deja
+// EXACTAMENTE un candidato.
+function desambiguarPorContacto(candidatos: SheetRow[], contraparteNombre: string | null): SheetRow | null {
+  const nombreNorm = normalizeCompanyName(contraparteNombre);
+  if (!nombreNorm) return null;
+
+  let match = candidatos.filter((row) => normalizeCompanyName(row.contacto) === nombreNorm);
+
+  // Fallback: uno de los dos nombres contiene por completo al otro (ej. el
+  // excel tiene "Ambar Correa" y Calendar trae "Ambar Correa Reyes", o al
+  // revés) — solo si el nombre más corto tiene 2+ palabras, para no matchear
+  // por casualidad con un primer nombre repetido entre contactos distintos
+  // de la misma fecha (ej. "Ana" sola no alcanza para desambiguar nada).
+  if (match.length === 0 && nombreNorm.split(' ').length >= 2) {
+    match = candidatos.filter((row) => {
+      const rowNorm = normalizeCompanyName(row.contacto);
+      if (rowNorm.split(' ').length < 2) return false;
+      return rowNorm.includes(nombreNorm) || nombreNorm.includes(rowNorm);
+    });
+  }
+
+  return match.length === 1 ? match[0] : null;
+}
+
 // Filtro por empresa/prospecto dentro de un conjunto ya acotado de filas
 // candidatas (por fecha). Solo devuelve una fila si el filtro deja
 // exactamente una — con más de una no hay forma de saber cuál es sin
@@ -764,7 +799,12 @@ export interface MeetingRowMatch {
 // explícito del usuario ("que me permita aprobar o rechazar el match").
 function matchMeetingRow(
   rows: SheetRow[],
-  meeting: { empresa_contraparte: string | null; start_time: string | null; contraparte_email?: string | null },
+  meeting: {
+    empresa_contraparte: string | null;
+    start_time: string | null;
+    contraparte_email?: string | null;
+    contraparte?: string | null;
+  },
   knownClientName: string | null = null
 ): MeetingRowMatch {
   if (meeting.start_time) {
@@ -794,7 +834,10 @@ function matchMeetingRow(
       const soloCandidato = candidatosPorFecha[0];
       if (meeting.empresa_contraparte) {
         const empresaCoincide = desambiguarPorEmpresa([soloCandidato], meeting.empresa_contraparte);
-        if (!empresaCoincide) {
+        // Antes de rendirse a 'tentative' por un desacuerdo de empresa, el
+        // nombre real del contacto (si matchea exacto contra este único
+        // candidato) es una señal más fuerte — ver desambiguarPorContacto.
+        if (!empresaCoincide && !desambiguarPorContacto([soloCandidato], meeting.contraparte ?? null)) {
           return { status: 'tentative', row: null, candidates: [soloCandidato] };
         }
       }
@@ -818,7 +861,7 @@ function matchMeetingRow(
           const soloPorCliente = narrowed[0];
           if (meeting.empresa_contraparte) {
             const empresaCoincide = desambiguarPorEmpresa([soloPorCliente], meeting.empresa_contraparte);
-            if (!empresaCoincide) {
+            if (!empresaCoincide && !desambiguarPorContacto([soloPorCliente], meeting.contraparte ?? null)) {
               return { status: 'tentative', row: null, candidates: [soloPorCliente] };
             }
           }
@@ -826,6 +869,14 @@ function matchMeetingRow(
         }
         if (narrowed.length > 1) candidatosPorFecha = narrowed;
       }
+
+      // Nombre real del contacto (09-11-2026, pedido explícito del usuario,
+      // caso real Ambar Correa/CChC: 2 candidatos el mismo día para el mismo
+      // cliente, y el excel tenía el nombre exacto del contacto en la fila
+      // correcta) — se prueba primero, antes que empresa/correo, por ser la
+      // señal más específica (ver desambiguarPorContacto).
+      const porContacto = desambiguarPorContacto(candidatosPorFecha, meeting.contraparte ?? null);
+      if (porContacto) return { status: 'matched', row: porContacto, candidates: [] };
 
       const porEmpresa = desambiguarPorEmpresa(candidatosPorFecha, meeting.empresa_contraparte);
       if (porEmpresa) return { status: 'matched', row: porEmpresa, candidates: [] };
@@ -945,7 +996,7 @@ export async function resolveMeetingClientAndContact(meetingId: string): Promise
 
 async function resolveMeetingClientAndContactInner(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select id, empresa_contraparte, contraparte_email, start_time, client_id, meeting_title, contacto_match_status,
+    `select id, empresa_contraparte, contraparte, contraparte_email, start_time, client_id, meeting_title, contacto_match_status,
             organizer_email, organizer_name
      from meetings where id = $1`,
     [meetingId]
@@ -1179,7 +1230,7 @@ export async function resolveTentativeMatch(
 // no pisar la corrección manual del admin.
 export async function refreshMatchedRowFields(meetingId: string): Promise<void> {
   const { rows } = await pool.query(
-    `select m.empresa_contraparte, m.contraparte_email, m.start_time, m.metas_sheet_match_id, m.client_id, c.name as cliente_nombre,
+    `select m.empresa_contraparte, m.contraparte, m.contraparte_email, m.start_time, m.metas_sheet_match_id, m.client_id, c.name as cliente_nombre,
             m.organizer_email, m.organizer_name
      from meetings m
      left join clients c on c.id = m.client_id
