@@ -10,6 +10,7 @@ interface PendienteRow {
   start_time: string | null;
   contacto_match_status: string;
   client_id: string | null;
+  candidatos: number;
 }
 
 function formatDate(value: string | null): string {
@@ -21,10 +22,16 @@ function formatDate(value: string | null): string {
   });
 }
 
-const ESTADO_LABEL: Record<string, string> = {
-  tentative: "Ambiguo — 2+ candidatos",
-  none: "Sin match en el excel",
-};
+// El número real de candidatos (no un "2+" fijo — un 'tentative' puede
+// quedar con 1 solo candidato cuando sí hay alguna relación de texto parcial
+// que lo salva de caer a 'none', ver metasSheet.ts) para no mostrar un
+// conteo que no corresponde al caso real.
+function estadoLabel(m: PendienteRow): string {
+  if (m.contacto_match_status === "tentative") {
+    return `Ambiguo — ${m.candidatos} candidato${m.candidatos === 1 ? "" : "s"}`;
+  }
+  return "Sin match en el excel";
+}
 
 // Pedido explícito del usuario (09-11-2026), después de agregar el matching
 // por nombre real del contacto (ver desambiguarPorContacto en
@@ -107,7 +114,7 @@ export default function RematchMeetingsButton() {
                     <span className="text-gray-400">
                       {" "}
                       · {formatDate(m.start_time)} ·{" "}
-                      {ESTADO_LABEL[m.contacto_match_status] ?? m.contacto_match_status}
+                      {estadoLabel(m)}
                     </span>
                   </li>
                 ))}

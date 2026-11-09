@@ -647,12 +647,14 @@ meetingsRouter.post('/meetings/rematch-all', requireAuth, requireAdmin, async (r
       start_time: string | null;
       contacto_match_status: string;
       client_id: string | null;
+      candidatos: number;
     }> = [];
 
     for (const row of rows) {
       await resolveMeetingClientAndContact(row.id);
       const { rows: after } = await pool.query(
-        `select id, contraparte, empresa_contraparte, start_time, contacto_match_status, client_id
+        `select id, contraparte, empresa_contraparte, start_time, contacto_match_status, client_id,
+                contacto_match_candidates
          from meetings where id = $1`,
         [row.id]
       );
@@ -661,7 +663,20 @@ meetingsRouter.post('/meetings/rematch-all', requireAuth, requireAdmin, async (r
       if (meeting.contacto_match_status === 'auto' || meeting.contacto_match_status === 'manual') {
         resueltas++;
       } else {
-        pendientes.push(meeting);
+        // candidatos: cuántas filas del excel quedaron como posibles — 0
+        // cuando el status es 'none' (nada que elegir), el largo real del
+        // array guardado cuando es 'tentative' (antes el frontend asumía
+        // "2+" siempre, aunque a veces 'tentative' queda con 1 solo
+        // candidato irrelevante — ver fix de arriba).
+        pendientes.push({
+          id: meeting.id,
+          contraparte: meeting.contraparte,
+          empresa_contraparte: meeting.empresa_contraparte,
+          start_time: meeting.start_time,
+          contacto_match_status: meeting.contacto_match_status,
+          client_id: meeting.client_id,
+          candidatos: Array.isArray(meeting.contacto_match_candidates) ? meeting.contacto_match_candidates.length : 0,
+        });
       }
     }
 
