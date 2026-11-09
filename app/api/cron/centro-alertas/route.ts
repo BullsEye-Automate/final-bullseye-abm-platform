@@ -24,7 +24,10 @@ export async function GET(req: NextRequest) {
   const today = chileDate(now);
   const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/Santiago", hour: "numeric", hourCycle: "h23" }).format(now));
   const flag = `centro_alerts_sent:${today}`;
+  // Arranque: el equipo se prepara la primera semana; nada sale antes de esta fecha
+  const start = process.env.CENTRO_ALERTS_START || "2026-11-16";
   if (!force) {
+    if (today < start) return NextResponse.json({ skipped: `los correos parten el ${start}` });
     if (!isBusinessDay(today)) return NextResponse.json({ skipped: "día no hábil" });
     if (hour !== 8 && hour !== 9) return NextResponse.json({ skipped: `hora de Chile ${hour}` });
     if (await getFlag(flag)) return NextResponse.json({ skipped: "ya enviado hoy" });

@@ -184,4 +184,6 @@ Fusión del motor de prospección de José Antonio (Empresas → Recomendadas po
 
 Fuentes de la inteligencia (todas de solo lectura): último Pulso ABM (`numbers.ts`), llamadas y notas de HubSpot de 7 días asociadas a empresas/contactos del cliente (`hubspotFeed.ts`; se cachea el feed del HubSpot de BullsEye 2 días; HubSpot propio del cliente con su token), minutas diio cuyo texto nombra al cliente, `allo_call_signals` de 14 días, rechazos de la wishlist de 30 días, feedback y estado de reuniones de 30 días, ficha vigente e ICP. Se quitan correos y teléfonos antes de enviar a la IA (`scrubPii`).
 
+Arranque: los correos del Centro no salen antes del lunes 16-nov-2026 (`CENTRO_ALERTS_START`, se puede cambiar en Vercel); la primera inteligencia corre el viernes 13.
+
 Pruebas manuales (con `CRON_SECRET`): `?client_id=<uuid>` en cada cron; `centro-alertas?force=1&solo=alertas|lunes|costo`. Desde la ficha, la administración del Centro puede "Volver a generar" (mantiene las decisiones tomadas). Costo estimado: ~US$0,05–0,15 por cliente por semana en la inteligencia más las recomendaciones (ver el correo de costo de los lunes).
