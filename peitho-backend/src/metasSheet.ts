@@ -967,7 +967,24 @@ async function resolveMeetingClientAndContactInner(meetingId: string): Promise<v
   // 'auto' o 'manual' — un admin ya lo resolvió a mano, o ya matcheó
   // limpio) — un status 'tentative' vuelve a intentar el match completo en
   // cada carga del detalle, igual que si client_id nunca se hubiera seteado.
-  if (meeting.client_id && meeting.contacto_match_status !== 'tentative') return;
+  //
+  // Segundo bug real, mismo patrón (09-11-2026, Ximena Molina/Crossville
+  // Fabric Chile): el fix de arriba solo contempló 'tentative' como el
+  // único status que merece reintento — pero el default de la columna es
+  // 'none' (migración 030), no 'tentative'. Si el título del evento ya
+  // resolvía el cliente (ej. "CChC") Y, en ESE primer intento, matchMeetingRow
+  // devolvía 'none' (cero candidatos — típicamente la misma causa que
+  // 'tentative': caché de 5 min desactualizado, o la fila del excel se cargó
+  // un instante después), la fila quedaba exactamente igual de congelada
+  // para siempre: client_id ya no era null, y el status ('none') tampoco era
+  // 'tentative', así que el guard viejo abortaba igual — sin mostrar ningún
+  // aviso de revisión manual (eso solo pasa con 'tentative'), simplemente sin
+  // volver a intentar nunca más aunque la fila correcta sí estuviera en el
+  // excel. Fix: el guard ahora solo aborta si el status es explícitamente
+  // 'auto' o 'manual' (match limpio confirmado, o resuelto a mano) — 'none' y
+  // 'tentative' reintentan siempre, igual que si client_id nunca se hubiera
+  // seteado.
+  if (meeting.client_id && (meeting.contacto_match_status === 'auto' || meeting.contacto_match_status === 'manual')) return;
 
   try {
     let clientId: string | null = null;
