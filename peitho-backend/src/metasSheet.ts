@@ -437,6 +437,29 @@ export function matchClientByTitle(
   return allContainedInLongest ? longest.client : null;
 }
 
+// Bug real (09-11-2026, Denise/Denisse Gallardo — Libesa/CChC - Valle): al
+// acotar los candidatos de un mismo día al cliente ya conocido (ej. "CChC",
+// resuelto por el título del evento), la comparación era de texto EXACTO —
+// "CChC - Valle" (como anota el excel esa variante regional, ver migración
+// 021: comparte external_id con "CChC" pero es una fila de `clients`
+// separada) nunca calzaba con "CChC", así que esa fila quedaba excluida del
+// acotamiento ANTES de llegar a compararla por empresa/contacto. El
+// resultado: el único candidato que sí quedaba (un cliente totalmente
+// distinto, coincidencia de fecha) se mostraba como "pendiente de revisión"
+// mientras la fila correcta ni se consideraba. Mismo criterio de "frase
+// completa contenida" que ya usa matchClientByTitle para esta misma
+// situación (variantes regionales de un cliente real).
+function isSameClientGroup(a: string, b: string): boolean {
+  const normA = normalizeCompanyName(a);
+  const normB = normalizeCompanyName(b);
+  if (!normA || !normB) return false;
+  if (normA === normB) return true;
+
+  const [shorter, longer] = normA.length <= normB.length ? [normA, normB] : [normB, normA];
+  const pattern = new RegExp(`(^|[^a-z0-9])${escapeRegExp(shorter)}([^a-z0-9]|$)`, 'i');
+  return pattern.test(longer);
+}
+
 // Nombre real del contacto (09-11-2026, pedido explícito del usuario, caso
 // real Ambar Correa/CChC — 2 candidatos el mismo día para el mismo cliente,
 // y el excel tenía literalmente "Ambar Correa" en la columna Contacto para
@@ -834,11 +857,22 @@ function matchMeetingRow(
       const soloCandidato = candidatosPorFecha[0];
       if (meeting.empresa_contraparte) {
         const empresaCoincide = desambiguarPorEmpresa([soloCandidato], meeting.empresa_contraparte);
-        // Antes de rendirse a 'tentative' por un desacuerdo de empresa, el
-        // nombre real del contacto (si matchea exacto contra este único
-        // candidato) es una señal más fuerte — ver desambiguarPorContacto.
+        // Antes de rendirse, el nombre real del contacto (si matchea exacto
+        // contra este único candidato) es una señal más fuerte que la
+        // empresa — ver desambiguarPorContacto.
         if (!empresaCoincide && !desambiguarPorContacto([soloCandidato], meeting.contraparte ?? null)) {
-          return { status: 'tentative', row: null, candidates: [soloCandidato] };
+          // Bug real (09-11-2026, Soledad Perez/orion-power.com): si el
+          // único candidato de ese día no tiene NINGUNA relación de texto ni
+          // con la empresa ni con el nombre del contacto, no hay nada
+          // ambiguo que revisar — con alta confianza esta reunión
+          // simplemente no está en el excel todavía. Antes esto igual se
+          // marcaba 'tentative' y mostraba ese candidato irrelevante como
+          // "pendiente de revisión", ensuciando la cola de
+          // revisión/alertas con casos donde no hay nada que decidir.
+          // 'none' sigue reintentando solo en cada carga (ver guard de
+          // resolveMeetingClientAndContactInner) por si la fila aparece
+          // después.
+          return { status: 'none', row: null, candidates: [] };
         }
       }
       return { status: 'matched', row: soloCandidato, candidates: [] };
@@ -846,8 +880,15 @@ function matchMeetingRow(
 
     if (candidatosPorFecha.length > 1) {
       if (knownClientName) {
-        const knownKey = normalizeCompanyName(knownClientName);
-        const narrowed = candidatosPorFecha.filter((row) => normalizeCompanyName(row.cliente) === knownKey);
+        // Bug real (09-11-2026, Denise/Denisse Gallardo — Libesa/CChC -
+        // Valle): acotar por texto EXACTO contra knownClientName excluía
+        // variantes regionales del mismo cliente real (ver
+        // isSameClientGroup) — la fila correcta (anotada bajo "CChC -
+        // Valle") ni siquiera entraba a competir, y la única fila que SÍ
+        // calzaba exacto con "CChC" (un cliente/prospecto totalmente
+        // distinto, coincidencia de fecha) se colaba como si fuera el único
+        // candidato posible.
+        const narrowed = candidatosPorFecha.filter((row) => isSameClientGroup(row.cliente, knownClientName));
         // Segundo lugar real (22-09-2026, mismo bug que el de un solo
         // candidato por fecha): acotar por knownClientName (ej. "CChC")
         // puede dejar 1 solo candidato SIN que eso signifique que es el
@@ -862,7 +903,10 @@ function matchMeetingRow(
           if (meeting.empresa_contraparte) {
             const empresaCoincide = desambiguarPorEmpresa([soloPorCliente], meeting.empresa_contraparte);
             if (!empresaCoincide && !desambiguarPorContacto([soloPorCliente], meeting.contraparte ?? null)) {
-              return { status: 'tentative', row: null, candidates: [soloPorCliente] };
+              // Mismo criterio que el caso de un solo candidato general: sin
+              // ninguna relación de texto ni por empresa ni por contacto, no
+              // hay nada ambiguo que revisar — 'none', no 'tentative'.
+              return { status: 'none', row: null, candidates: [] };
             }
           }
           return { status: 'matched', row: soloPorCliente, candidates: [] };
