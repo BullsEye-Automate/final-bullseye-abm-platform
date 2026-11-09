@@ -631,11 +631,41 @@ meetingsRouter.post('/meetings/rematch-all', requireAuth, requireAdmin, async (r
       [INTERNAL_DOMAIN]
     );
 
+    // Pedido explícito del usuario (09-11-2026, mismo día): "cuántas
+    // funcionaron y cuántas y cuáles quedan pendientes" — antes esto solo
+    // devolvía el total procesado, sin decir qué pasó con cada una. Se
+    // compara el status DESPUÉS de reintentar cada reunión: 'auto'/'manual'
+    // cuenta como resuelta, cualquier otra cosa (sigue 'tentative' —
+    // ambigua, necesita elegir a mano — o 'none' — no hay fila que
+    // corresponda) se junta en `pendientes` con los datos mínimos para
+    // identificarla sin tener que adivinar cuál es.
+    let resueltas = 0;
+    const pendientes: Array<{
+      id: string;
+      contraparte: string | null;
+      empresa_contraparte: string | null;
+      start_time: string | null;
+      contacto_match_status: string;
+      client_id: string | null;
+    }> = [];
+
     for (const row of rows) {
       await resolveMeetingClientAndContact(row.id);
+      const { rows: after } = await pool.query(
+        `select id, contraparte, empresa_contraparte, start_time, contacto_match_status, client_id
+         from meetings where id = $1`,
+        [row.id]
+      );
+      const meeting = after[0];
+      if (!meeting) continue;
+      if (meeting.contacto_match_status === 'auto' || meeting.contacto_match_status === 'manual') {
+        resueltas++;
+      } else {
+        pendientes.push(meeting);
+      }
     }
 
-    res.json({ status: 'ok', total: rows.length });
+    res.json({ status: 'ok', total: rows.length, resueltas, pendientes });
   } catch (error) {
     console.error('Error re-matcheando reuniones en bloque', error);
     res.status(500).json({ error: 'Error re-matcheando reuniones' });
