@@ -307,12 +307,14 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   const coCount = by(C, (c) => c.key);
   const coMax = Math.max(1, ...Object.values(coCount).map((a) => a.length));
-  s["est-emp"] = table([{ h: "Estado", f: (r) => `<span style="display:inline-flex;gap:6px;align-items:center"><span class="dot" style="background:${G[CO_G[r][0]].c}"></span>${esc(r === "CONV" ? `En conversaciones con ${cl.name}` : r)}</span>` },
+  // Tabla de estados plegable (pedido de BullsEye): se abre al hacer clic
+  const coStates = CO_ORDER.filter((r) => coCount[r]);
+  s["est-emp"] = `<details class="ra-how ra-fold"><summary>Ver detalle por estado · ${N(coStates.length)} estados · ${N(C.length)} empresas</summary>` + table([{ h: "Estado", f: (r) => `<span style="display:inline-flex;gap:6px;align-items:center"><span class="dot" style="background:${G[CO_G[r][0]].c}"></span>${esc(r === "CONV" ? `En conversaciones con ${cl.name}` : r)}</span>` },
     { h: "Empresas", n: 1, f: (r) => N((coCount[r] || []).length) }, { h: "%", n: 1, f: (r) => P((coCount[r] || []).length / C.length) },
     { h: "", f: (r) => `<div class="bar" style="grid-template-columns:1fr"><div class="t" style="min-width:90px"><i style="width:${(coCount[r] || []).length / coMax * 100}%;background:${G[CO_G[r][0]].c}"></i></div></div>` },
     { h: "Grupo analítico", s: 1, f: (r) => CO_G[r].map((g) => G[g].l).join(" + ") },
-    { h: "Qué significa", s: 1, f: (r) => esc(defs.companies[r] ?? "") }], CO_ORDER.filter((r) => coCount[r]))
-    + `<div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Destino de las cuentas trabajadas (n=${M.worked.length})</h4>${stack(([
+    { h: "Qué significa", s: 1, f: (r) => esc(defs.companies[r] ?? "") }], coStates)
+    + `</details><div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Destino de las cuentas trabajadas (n=${M.worked.length})</h4>${stack(([
       ["Reunión", (c: any) => c.st === "Reunión Agendada", "var(--g-int)"], ["Seguimiento", (c: any) => c.st === "En seguimiento", "var(--s1)"], ["Conversación existente", (c: any) => c.key === "CONV", "var(--g-rel)"], ["Cliente existente", (c: any) => c.st === "Clientes", "var(--g-rel)"],
       ["Retomar", (c: any) => c.st === "Sin interés ahora - Retomar", "var(--g-fut)"], ["En gestión / LinkedIn", (c: any) => c.st === "En gestión" || c.st === "Gestionada por LinkedIn", "var(--g-act)"], ["No interesados", (c: any) => c.st === "No interesados", "var(--g-rej)"],
       ["Sin comunicación / nutrir", (c: any) => c.st === "Gestionada - sin comunicación" || c.st === "Nutrir", "var(--g-cont)"], ["Sin contactos fit", (c: any) => c.st.includes("sin contactos fit") || c.st.startsWith("Sin contactos"), "var(--g-disp)"], ["No califica", (c: any) => c.st === "No califica", "var(--g-icp)"], ["Empresa ya nutrida", (c: any) => c.st === "Empresa ya nutrida", "var(--g-rec)"],

@@ -175,6 +175,9 @@
 .ra-root tr.ra-goto:hover td { background: var(--accent-soft); }
 .ra-root .ra-how > summary { cursor: pointer; font-size: 13px; font-weight: 500; color: var(--accent); list-style: revert; }
 .ra-root .ra-how[open] > summary { margin-bottom: 10px; }
+.ra-root .ra-fold { margin-top: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; box-shadow: var(--shadow); }
+.ra-root .ra-fold > summary { font-size: 14px; }
+.ra-root .ra-fold .tw { border: 0; box-shadow: none; padding: 0; border-radius: 0; }
 .ra-root .gauge { position: relative; width: 200px; height: 200px; margin: 0 auto; }
 .ra-root .gauge .c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .ra-root .gauge .c b { font-size: 52px; font-weight: 700; line-height: 1; }
