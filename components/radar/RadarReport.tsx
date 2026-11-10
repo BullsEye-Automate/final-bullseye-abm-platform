@@ -61,7 +61,8 @@ export default function RadarReport({
   clientId?: string | null;            // vista interna: cliente para la wishlist, el ICP y el feedback
 }) {
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [sdr, setSdr] = useState("");
+  // Filtro SDR quitado de la barra (pedido de BullsEye); queda vacío
+  const sdr = "";
   const [pais, setPais] = useState("");
   const [ind, setInd] = useState("");
   const [wl, setWl] = useState("");
@@ -76,9 +77,8 @@ export default function RadarReport({
     try { if (localStorage.getItem("radar-theme") === "dark") setTheme("dark"); } catch { /* sin almacenamiento */ }
   }, []);
   // Otro cliente: se limpian los filtros
-  useEffect(() => { setSdr(""); setPais(""); setInd(""); setWl(""); setGran(""); setDateValue(""); }, [dataset]);
+  useEffect(() => { setPais(""); setInd(""); setWl(""); setGran(""); setDateValue(""); }, [dataset]);
 
-  const sdrs = useMemo(() => Array.from(new Set(dataset.client.companies.map((c) => c.sdr))).sort(), [dataset]);
   const countries = useMemo(() => Array.from(new Set(dataset.client.companies.map((c) => c.pais))).sort(), [dataset]);
   const industries = useMemo(() => Array.from(new Set(dataset.client.companies.map((c) => c.ind || NO_IND))).sort((a, b) => (a === NO_IND ? 1 : b === NO_IND ? -1 : a.localeCompare(b, "es"))), [dataset]);
   // Wishlist del cliente ("Wish List - <cliente>"): solo si alguna empresa tiene valor
@@ -130,18 +130,6 @@ export default function RadarReport({
     if (id) document.getElementById(id)?.scrollIntoView();
     else rootRef.current?.scrollIntoView({ block: "start" });
   }, [pi]);
-
-  function jump(value: string) {
-    const [p, id] = value.split("|");
-    const tab = FEEDBACK_TABS.find((t) => t.ids.includes(id));
-    if (tab) setFbTab(tab.key);
-    if (Number(p) !== pi) {
-      pendingJump.current = id;
-      onView(Number(p));
-    } else {
-      document.getElementById(id)?.scrollIntoView();
-    }
-  }
 
   function toggleTheme() {
     const t = theme === "dark" ? "light" : "dark";
@@ -244,23 +232,6 @@ export default function RadarReport({
           </div>
         </div>
         <div className="ra-filters">
-          <label htmlFor="ra-jump">Ir a</label>
-          <select id="ra-jump" className="ra-select" value={`${pi}|${(items[0] ?? allItems[0])[1]}`} onChange={(e) => jump(e.target.value)}>
-            {parts.map((i) => (
-              <optgroup key={i} label={`${PARTS[i][0]} · ${PARTS[i][1]}`}>
-                {PARTS[i][2].map(([no, id, title]) => <option key={id} value={`${i}|${id}`}>§{no} {title}</option>)}
-              </optgroup>
-            ))}
-          </select>
-          {sdrs.length > 1 && (
-            <>
-              <label htmlFor="ra-sdr">SDR</label>
-              <select id="ra-sdr" className={`ra-select${sdr ? " act" : ""}`} value={sdr} onChange={(e) => setSdr(e.target.value)}>
-                <option value="">Todos</option>
-                {sdrs.map((s) => <option key={s}>{s}</option>)}
-              </select>
-            </>
-          )}
           {countries.length > 1 && (
             <>
               <label htmlFor="ra-pais">País</label>
