@@ -1,0 +1,132 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Guía del equipo de prospección</title><style>
+@font-face{font-family:Outfit;src:url(../../../lib/reporteSdr/fonts/outfit-latin-400-normal.woff);font-weight:400}
+@font-face{font-family:Outfit;src:url(../../../lib/reporteSdr/fonts/outfit-latin-700-normal.woff);font-weight:700}
+@font-face{font-family:Outfit;src:url(../../../lib/reporteSdr/fonts/outfit-latin-800-normal.woff);font-weight:800}
+@page{size:A4;margin:16mm 16mm 18mm}
+:root{--ink:#1f1d3a;--muted:#5d5a78;--brand:#251762;--teal:#62E0D8;--tealdk:#1f8f88;--line:#e3e1f0;--soft:#f5f4fb}
+*{box-sizing:border-box}
+body{font-family:Outfit,Arial,sans-serif;color:var(--ink);font-size:10.5pt;line-height:1.45;margin:0}
+.hero{background:var(--brand);color:#fff;border-radius:14px;padding:22px 26px 24px;margin-bottom:18px}
+.hero img{height:26px}
+.hero h1{font-size:23pt;font-weight:800;margin:16px 0 6px;line-height:1.1}
+.hero p{margin:0;color:#d9d6f0;font-size:11pt}
+.hero .tag{display:inline-block;margin-top:14px;background:rgba(98,224,216,.18);color:var(--teal);padding:4px 10px;border-radius:20px;font-size:9pt;font-weight:700}
+h2{font-size:14pt;font-weight:800;color:var(--brand);margin:20px 0 8px;break-after:avoid}
+h2 .n{display:inline-block;width:24px;height:24px;border-radius:50%;background:var(--teal);color:var(--brand);text-align:center;line-height:24px;font-size:11pt;margin-right:8px}
+p{margin:0 0 8px}
+.lead{font-size:11.5pt}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.box{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fff;break-inside:avoid}
+.box h3{margin:0 0 6px;font-size:11pt}
+.box.a h3{color:var(--brand)} .box.b h3{color:var(--tealdk)}
+.box.c{background:var(--soft);border-color:var(--soft)}
+ul{margin:4px 0 0;padding-left:18px} li{margin-bottom:3px}
+.week{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:6px}
+.day{border-radius:12px;padding:12px;background:var(--soft);break-inside:avoid;border-top:4px solid var(--teal)}
+.day .d{font-size:8.5pt;font-weight:700;color:var(--tealdk);text-transform:uppercase;letter-spacing:.06em}
+.day h4{margin:3px 0 6px;font-size:11pt;color:var(--brand)}
+.day p{font-size:9.3pt;color:var(--muted);margin:0}
+table{width:100%;border-collapse:collapse;font-size:9.6pt;margin-top:6px;break-inside:avoid}
+th{background:var(--brand);color:#fff;text-align:left;padding:7px 9px;font-weight:700}
+th:first-child{border-radius:8px 0 0 0} th:last-child{border-radius:0 8px 0 0}
+td{padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:nth-child(even) td{background:#faf9fd}
+.flow{display:flex;align-items:stretch;gap:6px;margin:8px 0 4px;break-inside:avoid}
+.flow .s{flex:1;background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:9pt}
+.flow .s b{display:block;color:var(--brand);font-size:9.8pt;margin-bottom:2px}
+.flow .ar{align-self:center;color:var(--tealdk);font-weight:800}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px}
+.kpi{background:var(--soft);border-radius:12px;padding:12px}
+.kpi .v{font-size:17pt;font-weight:800;color:var(--brand)}
+.kpi .l{font-size:9pt;color:var(--muted)}
+.pb{break-before:page}
+.foot{margin-top:18px;font-size:8.5pt;color:var(--muted);border-top:1px solid var(--line);padding-top:8px}
+.ok{color:var(--tealdk);font-weight:700}.pend{color:#b7791f;font-weight:700}
+</style></head><body>
+<div class="hero">
+  <img src="../../../public/brand/bullseye-logo-white.png" alt="BullsEye">
+  <h1>Guía del equipo de prospección:<br>el Centro con IA</h1>
+  <p>Qué cambia en tu semana, qué hace la IA por ti y qué decides tú.</p>
+  <span class="tag">portal.bullseye-abm.com · parte el viernes 13 de noviembre</span>
+</div>
+
+<h2><span class="n">1</span>Qué cambia</h2>
+<p class="lead">Todo el trabajo de prospección queda en <b>un solo lugar</b>: <b>Prospección → Centro de prospección</b>. Arriba vas a ver las pestañas <b>Centro</b>, <b>Empresas</b>, <b>Contactos</b>, <b>Búsqueda manual</b> y <b>Dashboard</b>.</p>
+<div class="two">
+  <div class="box a"><h3>Lo que hace la IA</h3><ul>
+    <li>Cada viernes revisa cómo va cada cliente: llamadas, notas de los SDR, reuniones y rechazos del cliente.</li>
+    <li>Propone cuántas empresas prospectar y dónde.</li>
+    <li>El domingo deja listas las empresas recomendadas.</li>
+    <li>Busca y puntúa los contactos de cada empresa aprobada.</li></ul></div>
+  <div class="box b"><h3>Lo que decides tú</h3><ul>
+    <li>Qué empresas recomendadas se proponen al cliente.</li>
+    <li>Qué contactos se aprueban.</li>
+    <li>Qué cambios entran a la ficha del cliente.</li>
+    <li>Completar a mano lo que la IA no encuentra.</li></ul></div>
+</div>
+<div class="box c" style="margin-top:10px"><b>Tu rol cambia de buscar a revisar y decidir.</b> La IA hace el primer filtro; tu criterio y lo que sabes de cada cliente es lo que asegura la calidad. Nada llega al cliente sin que tú lo revises.</div>
+
+<h2><span class="n">2</span>Tu semana</h2>
+<div class="week">
+  <div class="day"><div class="d">Lunes 8:30</div><h4>Llega el plan</h4><p>Un correo con la prioridad de cada cliente, cuántas empresas prospectar y en qué foco.</p></div>
+  <div class="day"><div class="d">Lunes y martes</div><h4>Revisar empresas</h4><p>Empresas → Recomendadas por IA. Propón al cliente las que calcen; descarta las que no.</p></div>
+  <div class="day"><div class="d">Toda la semana</div><h4>Contactos y búsqueda manual</h4><p>Aprueba los contactos sugeridos y completa a mano las empresas con pocos contactos.</p></div>
+  <div class="day"><div class="d">Cuando aparezcan</div><h4>Propuestas de la ficha</h4><p>Aprueba o descarta los cambios que propone la IA en la ficha de cada cliente.</p></div>
+</div>
+
+<h2><span class="n">3</span>Paso a paso</h2>
+<table>
+<tr><th style="width:24%">Dónde</th><th>Qué hacer</th><th style="width:30%">Qué pasa después</th></tr>
+<tr><td><b>Centro → Resumen</b></td><td>Mira la tabla "Inteligencia de la semana": prioridad, empresas sugeridas y días de stock que les quedan a los SDR. Parte por los clientes con prioridad alta.</td><td>Te dice dónde poner el esfuerzo de la semana.</td></tr>
+<tr><td><b>Empresas → Recomendadas por IA</b></td><td>Revisa cada empresa: ¿calza con lo que sabes del cliente? ¿No es cliente suyo ni está excluida? Propón las buenas y omite las que no.</td><td>Las propuestas le aparecen al cliente en su portal para aprobar o rechazar. Si las aprueba, se buscan los contactos solos.</td></tr>
+<tr><td><b>Contactos → Contactos IA</b></td><td>Revisa los contactos sugeridos (cargo, empresa, país) y apruébalos o recházalos.</td><td>Al aprobar: se cargan en Lemlist y HubSpot y se piden email y teléfono. Lo que apruebas y rechazas enseña a la IA.</td></tr>
+<tr><td><b>Búsqueda manual</b></td><td>Empresas donde la IA encontró menos de 2 contactos buenos. Usa los enlaces a LinkedIn y Sales Navigator y agrega los contactos a mano.</td><td>Quedan aprobados igual que los automáticos.</td></tr>
+<tr><td><b>Ficha del cliente</b></td><td>Lee la "Inteligencia de la semana" y decide cada propuesta con <b>Aprobar y anotar en la ficha</b> o <b>Descartar</b>.</td><td>Al aprobar se agrega a la ficha sin borrar lo escrito. Si cambia el ICP, se avisa al KAM.</td></tr>
+</table>
+
+<h2><span class="n">4</span>Cómo revisar una propuesta de la IA</h2>
+<div class="two">
+  <div class="box"><h3>Antes de aprobar, mira</h3><ul>
+    <li><b>La evidencia:</b> qué vio la IA (por ejemplo, "5 contactos derivaron al Jefe de Infraestructura").</li>
+    <li><b>Los casos:</b> la IA solo propone con 3 casos o más. Más casos, más confianza.</li>
+    <li><b>Si calza con el cliente:</b> lo que sabes de él manda. Si dudas, consulta con tu líder.</li>
+    <li><b>Si dice "Toca el ICP":</b> al aprobar le llega al KAM para validarlo con el cliente.</li></ul></div>
+  <div class="box"><h3>Tipos de propuesta</h3><ul>
+    <li><b>Sumar o sacar cargos</b> → Cargos objetivo.</li>
+    <li><b>Priorizar o descartar industrias</b> → Industrias objetivo.</li>
+    <li><b>Excluir empresas</b> → Exclusiones.</li>
+    <li><b>Recordatorios</b>: prospectos que pidieron que los llamen en una fecha. Les llegan solos a los SDR; tú no haces nada.</li>
+    <li><b>Calidad de datos</b>: problemas en los contactos entregados (números de central, personas que ya no están). Úsalo para mejorar.</li></ul></div>
+</div>
+
+<h2><span class="n">5</span>Correos que vas a recibir</h2>
+<table>
+<tr><th style="width:30%">Correo</th><th style="width:22%">Cuándo</th><th>Qué hacer</th></tr>
+<tr><td><b>Plan de prospección de la semana</b></td><td>Lunes 8:30</td><td>Leerlo y partir por los clientes de prioridad alta.</td></tr>
+<tr><td><b>Revisión pendiente en Empresas y Contactos</b></td><td>Días hábiles 8:30, solo si se acumula</td><td>Ponerte al día con los contactos por revisar o las empresas recomendadas de hace más de 3 días.</td></tr>
+</table>
+<p style="font-size:9.3pt;color:var(--muted);margin-top:6px">Los correos van a la prospectora que figura en la ficha del cliente. Revisa que tu nombre esté en el campo "Prospectora" de tus clientes.</p>
+
+<h2><span class="n">6</span>Reglas del equipo</h2>
+<div class="two">
+  <div class="box"><h3>Sí</h3><ul>
+    <li>Mantener la ficha al día: lo que aprendes del cliente ayuda a la IA a recomendar mejor.</li>
+    <li>Revisar antes de proponer: la calidad la pones tú.</li>
+    <li>Descartar sin miedo lo que no calza; también le enseña a la IA.</li>
+    <li>Escribir las <b>exclusiones de la ficha</b> como nombres de empresa separados por coma o uno por línea (ej.: Falabella, Ripley, walmart.cl). Así nunca se recomiendan.</li></ul></div>
+  <div class="box"><h3>No</h3><ul>
+    <li>No anotar correos ni teléfonos personales en la ficha.</li>
+    <li>No inventar datos: si no se sabe, se deja en blanco.</li>
+    <li>No cambiar el ICP por tu cuenta: eso lo valida el KAM con el cliente.</li></ul></div>
+</div>
+
+<h2><span class="n">7</span>Preguntas frecuentes</h2>
+<table>
+<tr><td style="width:36%"><b>¿Cómo entro?</b></td><td>En portal.bullseye-abm.com con tu correo y tu clave, luego Prospección → Centro de prospección.</td></tr>
+<tr><td><b>¿Qué pasa si no reviso las recomendadas?</b></td><td>Se quedan pendientes y no llegan al cliente. Si se acumulan, te llega un aviso.</td></tr>
+<tr><td><b>Mi cliente no tiene inteligencia esta semana</b></td><td>Le falta algo para entrar al motor (ficha, ICP o Pulso ABM). Lo ves en Centro → Clientes, en el checklist de preparación. Avísale a tu líder.</td></tr>
+<tr><td><b>¿Me puede recomendar una empresa ya trabajada?</b></td><td>No. Se descartan las que ya están en el portal (propuestas, aprobadas o rechazadas), las que se trabajan en HubSpot para ese cliente, las cuentas del Centro y las de las listas de exclusión.</td></tr>
+<tr><td><b>La IA propuso algo equivocado</b></td><td>Descártalo. Si se repite, coméntalo con tu líder para ajustarlo.</td></tr>
+<tr><td><b>¿A quién le pregunto?</b></td><td>A tu líder de prospección.</td></tr>
+</table>
+</body></html>

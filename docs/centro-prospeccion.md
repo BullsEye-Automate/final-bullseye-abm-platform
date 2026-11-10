@@ -187,3 +187,7 @@ Fuentes de la inteligencia (todas de solo lectura): último Pulso ABM (`numbers.
 Arranque: los correos del Centro no salen antes del lunes 16-nov-2026 (`CENTRO_ALERTS_START`, se puede cambiar en Vercel); la primera inteligencia corre el viernes 13.
 
 Pruebas manuales (con `CRON_SECRET`): `?client_id=<uuid>` en cada cron; `centro-alertas?force=1&solo=alertas|lunes|costo`. Desde la ficha, la administración del Centro puede "Volver a generar" (mantiene las decisiones tomadas). Costo estimado: ~US$0,05–0,15 por cliente por semana en la inteligencia más las recomendaciones (ver el correo de costo de los lunes).
+
+## Guía del equipo (PDF)
+
+Botón "Guía del equipo (PDF)" a la derecha de las pestañas del Centro → `GET /api/centro/guia` (solo equipo con sesión) entrega `content/centro/guia-equipo-prospeccion.pdf`. Para cambiarla: editar `docs/centro-prospeccion/guia/guia.html`, regenerar con `node docs/centro-prospeccion/guia/mk2.js "$PWD/docs/centro-prospeccion/guia"` (Playwright) y copiar el PDF a `content/centro/`.
