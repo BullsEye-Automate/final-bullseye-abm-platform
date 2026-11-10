@@ -13,6 +13,8 @@ const nextConfig = {
       // Academias del Entrenamiento cliente (se leen con fs en lib/academiaSdr/server/source.ts).
       "/api/academia-sdr": ["./content/entrenamiento/**"],
       "/api/academia-sdr/html": ["./content/entrenamiento/**"],
+      // Guía del equipo de prospección (PDF que se abre desde el Centro).
+      "/api/centro/guia": ["./content/centro/**"],
     },
   }
 };

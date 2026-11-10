@@ -61,6 +61,18 @@ export function CentroTabBar({ tab, onChange }: { tab: CentroTab; onChange: (t: 
           </button>
         );
       })}
+      <a
+        href="/api/centro/guia"
+        target="_blank"
+        rel="noopener"
+        title="Cómo trabajar con el Centro y la IA: tu semana, paso a paso y reglas"
+        style={{
+          marginLeft: "auto", alignSelf: "center", borderRadius: 8, padding: "8px 14px", fontSize: 13.5,
+          fontWeight: 600, color: "#1f8f88", textDecoration: "none", background: "rgba(98,224,216,.15)",
+        }}
+      >
+        Guía del equipo (PDF)
+      </a>
     </div>
   );
 }
