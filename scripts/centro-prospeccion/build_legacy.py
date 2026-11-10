@@ -85,9 +85,11 @@ js = rep(js, "Tienes acceso de solo lectura. Para crear solicitudes o registrar 
 #  - data-cp-icp: ICP vigente del portal dentro de la ficha del cliente.
 #  - data-cp-auto: lo hecho en Empresas / Contactos / Búsqueda manual por
 #    cliente, prospectora y semana (tabla del plan y «Mi semana»).
+#  - data-cp-ficha / data-cp-queue: estado del cliente en el portal (ficha) y
+#    cola de trabajo por cliente (contactos por revisar, búsquedas manuales).
 js = rep(js,
     "Abrir en Google Drive</a></dd>`:''}</dl>`;",
-    "Abrir en Google Drive</a></dd>`:''}</dl><div data-cp-icp=\"${esc(id)}\"></div>`;")
+    "Abrir en Google Drive</a></dd>`:''}</dl><div data-cp-ficha=\"${esc(id)}\"></div><div data-cp-icp=\"${esc(id)}\"></div>`;")
 js = rep(js,
     '<th>Entregadas</th><th class="l">Estado</th>',
     '<th>Entregadas</th><th class="l">En el portal</th><th class="l">Estado</th>')
@@ -96,7 +98,13 @@ js = rep(js,
     "en curso</span>`:'–'}</td><td class=\"l\" data-cp-auto=\"${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}\"></td>")
 js = rep(js,
     '</div></div><div class="mw-b">${btn}',
-    "</div><div data-cp-auto=\"${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}\" data-cp-mode=\"row\"></div></div><div class=\"mw-b\">${btn}")
+    "</div><div data-cp-auto=\"${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}\" data-cp-mode=\"row\"></div><div data-cp-queue=\"${esc(r.clienteId)}\"></div></div><div class=\"mw-b\">${btn}")
+# Fases 2-3: un marcador por vista (data-cp-view) que el portal ubica arriba
+# de la vista: tablero del portal (Resumen), pedidos de clientes del portal
+# (Solicitudes), resultados de la semana (Plan) y cruce con la wishlist (Cuentas).
+js = rep(js,
+    "$('#view').innerHTML=(VF[S.view]||VF.resumen)();",
+    "$('#view').innerHTML=(VF[S.view]||VF.resumen)()+`<div data-cp-view=\"${esc(S.view)}\" data-cli=\"${esc(S.cli||'')}\" data-sem=\"${esc(S.sem||'')}\" data-admin=\"${isAdmin?1:0}\"></div>`;")
 
 if "claude.ai" in js.replace("https://claude.ai/artifact/FCpkgNaYPL2VTtayWHRhnQ", ""):
     left = [m.start() for m in re.finditer("claude.ai", js)]

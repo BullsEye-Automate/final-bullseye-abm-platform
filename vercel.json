@@ -55,7 +55,12 @@
     {
       "path": "/api/cron/alerta-feriados",
       "schedule": "30 11,12,13 * * 1-5"
-    }
+    },
+    { "path": "/api/cron/centro-inteligencia", "schedule": "0 15 * * 5" },
+    { "path": "/api/cron/centro-inteligencia", "schedule": "30 16 * * 5" },
+    { "path": "/api/cron/centro-recomendaciones", "schedule": "0 23 * * 0" },
+    { "path": "/api/cron/centro-alertas", "schedule": "30 11 * * 1-5" },
+    { "path": "/api/cron/centro-alertas", "schedule": "30 12 * * 1-5" }
   ],
   "framework": "nextjs",
   "buildCommand": "next build",
@@ -90,6 +95,10 @@
     "app/api/cron/alertas-numeros/route.ts": { "maxDuration": 300 },
     "app/api/analisis/alertas-numeros/route.ts": { "maxDuration": 300 },
     "app/api/cron/alerta-feriados/route.ts": { "maxDuration": 300 },
-    "app/api/alerta-feriados/route.ts": { "maxDuration": 120 }
+    "app/api/alerta-feriados/route.ts": { "maxDuration": 120 },
+    "app/api/cron/centro-inteligencia/route.ts": { "maxDuration": 300 },
+    "app/api/cron/centro-recomendaciones/route.ts": { "maxDuration": 300 },
+    "app/api/cron/centro-alertas/route.ts": { "maxDuration": 300 },
+    "app/api/centro/inteligencia/route.ts": { "maxDuration": 300 }
   }
 }

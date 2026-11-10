@@ -20,6 +20,7 @@ export type ReplyMailData = {
   summary: string;
   replyText: string;
   hubspotUrl: string | null;
+  repliedAt?: string | null;
   sdrName?: string | null;
   reason?: string | null;
 };
@@ -31,6 +32,7 @@ ${row("Cliente", esc(d.clientName))}
 ${row("Contacto", `${esc(d.leadName || d.leadEmail)} · ${esc(d.leadEmail)}`)}
 ${row("Empresa", esc(d.companyName || "—"))}
 ${row("Canal", d.channel === "email" ? "Email" : "LinkedIn")}
+${d.repliedAt ? row("Respondió", esc(new Date(d.repliedAt).toLocaleString("es-CL", { timeZone: "America/Santiago", weekday: "short", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }))) : ""}
 ${row("Campaña", esc(d.campaignName))}
 ${row("Interés", `<b>${esc(CATEGORY_LABEL[d.category])}</b>`)}
 ${row("Resumen", esc(d.summary))}
