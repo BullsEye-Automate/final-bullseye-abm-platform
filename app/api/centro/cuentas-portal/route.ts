@@ -57,7 +57,7 @@ async function load(fichaId: string) {
   // Las que BullsEye ya trabaja con el cliente en HubSpot (universo del último
   // sync de Pulso ABM) o que el cliente excluyó no se pasan: siguen su gestión
   // en HubSpot. Solo pasan las que nadie ha tocado.
-  const ex = await getClientExclusions(supabaseAdmin(), client.id);
+  const ex = await getClientExclusions(supabaseAdmin(), client.id, { cuentas: false });
   const worked = missing.filter((c) => isExcluded(ex, c.empresa, normalizeDomain(c.web)));
   const pending = missing.filter((c) => !isExcluded(ex, c.empresa, normalizeDomain(c.web)));
   return { client, total: docs.length, aprobadas, pending, worked, inWishlist: aprobadas.length - missing.length };

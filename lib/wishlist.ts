@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { listClientIndustries, loadIcpContent } from "./icpStore";
 import { normalizeDomain, pickAllowed, type PoolCompany, type PoolProperty } from "./hubspotPool";
 import type { LemlistCompany } from "./lemlistDatabase";
+import { centroExclusionsFor } from "./centroProspeccion/exclusions";
 
 // Helpers compartidos de la wishlist del portal (búsqueda, IA y alta).
 
@@ -24,8 +25,15 @@ export type ClientExclusions = { domains: string[]; names: string[]; keywords: s
 // Empresas que NO deben volver a aparecerle al cliente: las de su wishlist,
 // las que omitió, las excluidas por BullsEye, las de su lista de exclusión
 // del portal (empresas y palabras clave), las que ya están en su pipeline y
-// las que BullsEye ya trabaja con el cliente en HubSpot (Pulso ABM).
-export async function getClientExclusions(db: SupabaseClient, clientId: string): Promise<ClientExclusions> {
+// las que BullsEye ya trabaja con el cliente en HubSpot (Pulso ABM) y las del
+// Centro de prospección (cuentas de sus fichas y empresas nombradas en las
+// exclusiones de la ficha). `centro` permite apagar una parte: el paso de
+// cuentas aprobadas del Centro a la wishlist no debe excluir sus propias cuentas.
+export async function getClientExclusions(
+  db: SupabaseClient,
+  clientId: string,
+  centro: { cuentas?: boolean; ficha?: boolean } = {}
+): Promise<ClientExclusions> {
   const domains = new Set<string>();
   const names = new Set<string>();
   const keywords = new Set<string>();
@@ -78,6 +86,17 @@ export async function getClientExclusions(db: SupabaseClient, clientId: string):
     for (let i = 0; i < noDomain.length; i += 300) {
       const { data } = await db.from("hubspot_company_pool").select("domain").in("hs_id", noDomain.slice(i, i + 300));
       for (const r of data ?? []) if (r.domain) domains.add(r.domain);
+    }
+  }
+
+  // Centro de prospección (si falla, no bloquea la búsqueda)
+  if (centro.cuentas !== false || centro.ficha !== false) {
+    try {
+      const cx = await centroExclusionsFor(clientId, centro);
+      for (const n of cx.names) add(n, null);
+      for (const d of cx.domains) add(null, d);
+    } catch (e) {
+      console.warn("[wishlist] exclusiones del Centro:", (e as Error).message);
     }
   }
 
