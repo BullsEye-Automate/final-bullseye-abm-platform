@@ -73,7 +73,7 @@ export const LEADS: Record<string, string> = {
   "score-sdr": "Calidad de las conversaciones según el Score de Desempeño SDR que la IA de Allo asigna a las llamadas conectadas.",
   "icp-vigente": "El perfil de empresa y de contacto con el que estamos prospectando.",
   "icp-trabajo": "Cómo se ve, en los hechos, la base que estamos trabajando frente a ese ICP.",
-  seguimientos: "Separa el potencial vivo del trabajo atrasado.",
+  seguimientos: "Empresas y contactos en seguimiento.",
   referrals: "Contactos que nos derivan al decisor: una señal de penetración ABM.",
   objeciones: "Por qué dicen que no, quién lo dice y dónde se concentra.",
   senales: "Qué tipo de interés aparece y qué perfil lo muestra.",
@@ -355,11 +355,11 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     M.held.slice().sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)).slice(0, 25))}${M.held.length > 25 ? `<p class="note">Se muestran las 25 más recientes de ${M.held.length}.</p>` : ""}`;
 
   const fuRow = (x: any) => ({ x, reason: x.sig || x.obj || "" });
-  s.seguimientos = `<div class="grid2"><div class="rcard"><h4>Stock de oportunidad</h4><div class="tiles">${tile("Empresas en seguimiento", N(cnt(C, (c) => c.st === "En seguimiento")))}${tile("Empresas por retomar", N(cnt(C, (c) => c.st === "Sin interés ahora - Retomar")))}${tile("Contactos en seguimiento", N(f.K.length), `${cnt(f.K, (x: any) => x.fu === "interes")} con interés activo`)}${tile("Próximos 14 días", N(f.soon.length))}</div></div>
-  <div class="rcard"><h4>Trabajo pendiente</h4><div class="tiles">${tile("Seguimientos vencidos", N(f.overdue.length), f.K.length ? P(f.overdue.length / f.K.length) + " del total" : "")}${tile("Sin próxima acción", N(f.none.length), "contactos sin fecha")}${tile("Empresas sin fecha", N(f.coNone.length), "en seguimiento o retomar")}${tile("Empresas vencidas", N(f.coOver.length))}</div></div></div>
-  <h4 class="subh">Seguimientos que requieren acción (vencidos y sin fecha)</h4>
-  ${table([{ h: "Contacto", f: (r) => esc(r.x.n) }, { h: "Empresa", f: (r) => esc(r.x.c?.n) }, { h: "Cargo", s: 1, f: (r) => esc(r.x.cargo || "—") }, { h: "Motivo", s: 1, f: (r) => esc(r.reason) }, { h: "SDR", s: 1, f: (r) => esc(r.x.sdr) }, { h: "Último contacto", f: (r) => dmy(r.x.last) }, { h: "Próximo seguimiento", f: (r) => (r.x.next ? `<span style="color:var(--bad-fg)">${dmy(r.x.next)}</span>` : '<span class="flag">sin fecha</span>') }, { h: "Próximo paso", s: 1, f: (r) => esc(r.x.ps) }],
-    f.overdue.concat(f.none).sort((a: any, b: any) => (a.next || "0").localeCompare(b.next || "0")).slice(0, 30).map(fuRow))}`;
+  // Solo seguimientos: sin vencidos, fechas, próximo paso ni SDR (pedido de BullsEye)
+  s.seguimientos = `<div class="tiles">${tile("Empresas en seguimiento", N(cnt(C, (c) => c.st === "En seguimiento")))}${tile("Empresas por retomar", N(cnt(C, (c) => c.st === "Sin interés ahora - Retomar")))}${tile("Contactos en seguimiento", N(f.K.length), `${cnt(f.K, (x: any) => x.fu === "interes")} con interés activo`)}</div>
+  <h4 class="subh">Contactos en seguimiento</h4>
+  ${table([{ h: "Contacto", f: (r) => esc(r.x.n) }, { h: "Empresa", f: (r) => esc(r.x.c?.n) }, { h: "Cargo", s: 1, f: (r) => esc(r.x.cargo || "—") }, { h: "Motivo", s: 1, f: (r) => esc(r.reason) }],
+    f.K.slice().sort((a: any, b: any) => String(a.c?.n ?? "").localeCompare(String(b.c?.n ?? ""))).slice(0, 50).map(fuRow))}${f.K.length > 50 ? `<p class="note">Se muestran 50 de ${N(f.K.length)}.</p>` : ""}`;
 
   const refArea = seg(M, (x) => x.area).filter((a) => a.eff >= 5);
   s.referrals = `<div class="tiles">${tile("Referral rate", P(k.referralRate), "refieren a un decisor / contactos efectivos")}${tile("Referrals", N(rf.refs.length))}${tile("Sin contacto referido creado", N(rf.noChild.length), "potencial sin trabajar")}</div>
