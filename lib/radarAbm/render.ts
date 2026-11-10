@@ -36,7 +36,7 @@ export const PART_SLUGS = [
   "icp-proyecto", "segmentos", "recomendaciones", "inteligencia", "tablas-maestras", "validacion-datos",
 ];
 // Vistas solo para el equipo BullsEye (no se muestran en el portal)
-export const INTERNAL_PARTS = new Set(["inteligencia", "validacion-datos"]);
+export const INTERNAL_PARTS = new Set(["segmentos", "recomendaciones", "inteligencia", "tablas-maestras", "validacion-datos"]);
 // Slugs anteriores (links ya compartidos) → vista actual
 const SLUG_ALIASES: Record<string, string> = {
   "feedback-comercial": "feedback-manual", "evolucion-stock": "recomendaciones", "resumen-feedback": "feedback-manual",
