@@ -27,7 +27,6 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconTarget,
   IconMessageReply,
-  IconDatabaseImport,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -79,7 +78,6 @@ const SECTIONS: Section[] = [
       { href: "/analisis/sdr",        label: "Análisis SDR",        icon: IconChartBar },
       { href: "/analisis/salud-numeros", label: "Salud de números", icon: IconPhone },
       { href: "/analisis/respuestas-lemlist", label: "Respuestas Lemlist", icon: IconMessageReply },
-      { href: "/analisis/calidad-carga", label: "Calidad de carga", icon: IconDatabaseImport },
       { href: "/analisis/celulas-sdr", label: "Células SDR",        icon: IconUsersGroup },
       { href: "/analisis/radar-abm",  label: "Pulso ABM",           icon: IconActivityHeartbeat },
       { href: "/analisis/clientes",   label: "Análisis Clientes",   icon: IconBuilding }

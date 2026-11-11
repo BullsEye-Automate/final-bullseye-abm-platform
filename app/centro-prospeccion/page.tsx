@@ -27,7 +27,7 @@ import { useClient } from "@/lib/clientContext";
 // ya elegido (evento "cp:go").
 
 const PATH_TAB: Record<string, CentroTab> = {
-  "/empresas": "empresas", "/contactos": "contactos", "/busqueda-manual": "busqueda", "/dashboard": "dashboard",
+  "/empresas": "empresas", "/contactos": "contactos", "/busqueda-manual": "busqueda", "/dashboard": "dashboard", "/analisis/calidad-carga": "calidad",
 };
 
 export default function CentroProspeccionPage() {

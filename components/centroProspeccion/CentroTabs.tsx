@@ -9,7 +9,7 @@ import { IconLoader2 } from "@tabler/icons-react";
 // cual (mismas APIs, mismo selector de cliente del menú lateral). Sus rutas
 // propias (/dashboard, /empresas, /contactos, /busqueda-manual) siguen vivas.
 
-export type CentroTab = "centro" | "empresas" | "contactos" | "busqueda" | "dashboard";
+export type CentroTab = "centro" | "empresas" | "contactos" | "busqueda" | "dashboard" | "calidad";
 
 export const CENTRO_TABS: { key: CentroTab; label: string; hint: string }[] = [
   { key: "centro", label: "Centro", hint: "Equipo, clientes, plan semanal y solicitudes" },
@@ -17,6 +17,7 @@ export const CENTRO_TABS: { key: CentroTab; label: string; hint: string }[] = [
   { key: "contactos", label: "Contactos", hint: "Contactos sugeridos por la IA para revisar" },
   { key: "busqueda", label: "Búsqueda manual", hint: "Empresas con pocos contactos automáticos" },
   { key: "dashboard", label: "Dashboard", hint: "Prospección automática por cliente y evolución" },
+  { key: "calidad", label: "Calidad de carga", hint: "Contactos cargados a HubSpot: calce ICP, teléfonos, calidad y probabilidad de agendamiento" },
 ];
 
 export const isCentroTab = (v: string | null): v is CentroTab => !!v && CENTRO_TABS.some((t) => t.key === v);
@@ -31,6 +32,7 @@ const EmpresasPage = dynamic(() => import("@/app/empresas/page"), { ssr: false, 
 const ContactosPage = dynamic(() => import("@/app/contactos/page"), { ssr: false, loading });
 const BusquedaManualPage = dynamic(() => import("@/app/busqueda-manual/page"), { ssr: false, loading });
 const DashboardPage = dynamic(() => import("@/app/dashboard/page"), { ssr: false, loading });
+const CalidadCargaPage = dynamic(() => import("@/app/analisis/calidad-carga/page"), { ssr: false, loading });
 
 export function CentroTabBar({ tab, onChange }: { tab: CentroTab; onChange: (t: CentroTab) => void }) {
   return (
@@ -82,5 +84,6 @@ export function CentroTabPanel({ tab }: { tab: CentroTab }) {
   if (tab === "contactos") return <ContactosPage />;
   if (tab === "busqueda") return <BusquedaManualPage />;
   if (tab === "dashboard") return <DashboardPage />;
+  if (tab === "calidad") return <CalidadCargaPage />;
   return null;
 }

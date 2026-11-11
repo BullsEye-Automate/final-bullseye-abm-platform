@@ -287,7 +287,7 @@ Automatiza las respuestas de los prospectos en Lemlist (email y LinkedIn) de **t
 
 ### Calidad de carga (`/analisis/calidad-carga`, `lib/calidadCarga/report.ts`)
 
-Mide los contactos que prospección **importa** al HubSpot del cliente (insumo de los SDR), pedido de BullsEye nov-2026. Menú Análisis → "Calidad de carga"; API con sesión `GET /api/calidad-carga?client_id=&days=7–90&fresh=1` (resultado cacheado 6 h en `allo_response_cache`, clave `calidad_carga:v1:<cliente>:<días>:<día>`).
+Mide los contactos que prospección **importa** al HubSpot del cliente (insumo de los SDR), pedido de BullsEye nov-2026. Es una pestaña del **Centro de prospección** ("Calidad de carga", `?tab=calidad`, `CentroTabs.tsx`; la ruta `/analisis/calidad-carga` sigue viva pero no está en el menú); API con sesión `GET /api/calidad-carga?client_id=&days=7–90&fresh=1` (resultado cacheado 6 h en `allo_response_cache`, clave `calidad_carga:v1:<cliente>:<días>:<día>`).
 
 - **Qué contactos:** `hs_object_source = IMPORT` creados en el período (los que la importación solo actualizó no cuentan), del cliente: en el HubSpot de BullsEye "Cliente BullsEye" (`cliente_bullseye`) = el cliente (misma regla de opción que Pulso ABM; si no calza, los con "Asignación BullsEye por llamar"); en el HubSpot propio del cliente, todos los importados. Agrupados por día de carga (hora de Chile).
 - **Calce ICP:** el cargo frente al ICP / buyer persona con la misma IA y caché de Contactos IA (`scoreTitlesForClient` en `lib/wishlistContacts.ts`, tabla `persona_title_scores`). Calza ≥ 60, parcial 40–59.
@@ -295,7 +295,7 @@ Mide los contactos que prospección **importa** al HubSpot del cliente (insumo d
 - **Calidad (0–100):** calce ICP 35 (parcial 17), teléfono 30, correo 15, LinkedIn 10, empresa asociada 10.
 - **Probabilidad de agendamiento:** tasa histórica de "Reunión Agendada" (estado "Asignación BullsEye por llamar - <cliente>") de los contactos importados del mismo cliente hace 30–180 días, por segmento calce × teléfono (mínimo 25 casos; si no, por teléfono o la tasa general). Reuniones esperadas = suma de probabilidades; al lado, contactados y reuniones reales a la fecha.
 
- (`/analisis/radar-abm` y portal `/portal/radar`)
+### Pulso ABM — antes "Radar ABM" (`/analisis/radar-abm` y portal `/portal/radar`)
 
 Nombre visible: **Pulso ABM** (se cambió por conflicto de nombre). El código, las URLs (`radar-abm`, `/portal/radar`), `lib/radarAbm/` y las tablas `radar_abm_*` mantienen el nombre interno "radar".
 
