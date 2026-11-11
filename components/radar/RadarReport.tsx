@@ -84,6 +84,8 @@ export default function RadarReport({
   // Wishlist del cliente ("Wish List - <cliente>"): solo si alguna empresa tiene valor
   const wishlists = useMemo(() => {
     const vals = Array.from(new Set(dataset.client.companies.map((c) => c.wl).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "es"));
+    // Universo ya limitado a la wishlist (ej. Nisum, Crossnet): sin filtro
+    if (dataset.client.wishlistOnly) return [];
     return vals.length ? [...vals, NO_WL] : [];
   }, [dataset]);
   // Opciones del selector de fechas dentro del período del informe (más reciente primero)
