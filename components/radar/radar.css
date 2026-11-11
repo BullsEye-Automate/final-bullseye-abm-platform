@@ -177,6 +177,17 @@
 .ra-root .ra-how[open] > summary { margin-bottom: 10px; }
 .ra-root .ra-fold { margin-top: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; box-shadow: var(--shadow); }
 .ra-root .ra-fold > summary { font-size: 14px; }
+/* Listas de empresas: buscador, filtros y orden por columna */
+.ra-root .ra-listbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 10px; }
+.ra-root .ra-listbar .ra-in { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--panel); color: var(--ink); min-width: 0; }
+.ra-root .ra-listbar input.ra-in { flex: 1 1 200px; }
+.ra-root .ra-listcount { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.ra-root .ra-listhint { font-size: 12px; color: var(--muted); margin-left: auto; }
+.ra-root table.ra-sortable th[data-ra-sort] { cursor: pointer; user-select: none; white-space: nowrap; }
+.ra-root table.ra-sortable th[data-ra-sort]:hover { color: var(--accent); }
+.ra-root .ra-sort-ic::after { content: "↕"; margin-left: 4px; opacity: .35; font-size: 11px; }
+.ra-root th[data-dir="asc"] .ra-sort-ic::after { content: "↑"; opacity: 1; color: var(--accent); }
+.ra-root th[data-dir="desc"] .ra-sort-ic::after { content: "↓"; opacity: 1; color: var(--accent); }
 /* Tarjeta plegable: el título es el botón (ej. Cobertura por industria) */
 .ra-root .ra-cfold > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .ra-root .ra-cfold > summary::-webkit-details-marker { display: none; }

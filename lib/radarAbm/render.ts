@@ -102,12 +102,19 @@ type BarItem = { l: string; v: number; c?: string; r?: string | null; tip?: stri
 // Cobertura de una industria a la vez: desplegable + panel por industria
 // (RadarReport alterna los paneles con el atributo data-ra-pick)
 // Lista de empresas que se abre al hacer clic (funnel, descartadas, cobertura)
+// Lista de empresas con buscador, filtros por Status / SDR y orden por columna
 function coListHtml(A: any[]) {
-  return table([
+  const opts = (vals: string[]) => Array.from(new Set(vals.filter(Boolean))).sort((a, b) => a.localeCompare(b, "es")).map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  const lastMt = (c: any) => c.M.reduce((m: string, x: any) => (x.fecha > m ? x.fecha : m), "");
+  const bar = A.length > 5 ? `<div class="ra-listbar"><input type="search" class="ra-in" data-ra-q placeholder="Buscar empresa…" aria-label="Buscar empresa">
+    <select class="ra-in" data-ra-colf="1" aria-label="Filtrar por status"><option value="">Todos los status</option>${opts(A.map((c) => c.st))}</select>
+    <select class="ra-in" data-ra-colf="2" aria-label="Filtrar por SDR"><option value="">Todos los SDR</option>${opts(A.map((c) => c.sdr))}</select>
+    <span class="ra-listcount" data-ra-count></span><span class="ra-listhint">Clic en un encabezado para ordenar</span></div>` : "";
+  return `<div class="ra-sortlist">${bar}` + table([
     { h: "Empresa", f: (c) => esc(c.n) }, { h: "Status", s: 1, f: (c) => esc(c.st) }, { h: "SDR", s: 1, f: (c) => esc(c.sdr) },
     { h: "Contactos efectivos", n: 1, f: (c) => c.effK.length }, { h: "R. agendadas", n: 1, f: (c) => c.M.length }, { h: "R. realizadas", n: 1, f: (c) => c.mheld || 0 },
-    { h: "Última reunión", f: (c) => dmy(c.M.reduce((m: string, x: any) => (x.fecha > m ? x.fecha : m), "") || null) },
-  ], [...A].sort((a, b) => b.M.length - a.M.length || a.n.localeCompare(b.n)).slice(0, 500)) + (A.length > 500 ? `<p class="note">Se muestran 500 de ${N(A.length)}; la lista completa está en Tablas maestras.</p>` : "");
+    { h: "Última reunión", f: (c) => dmy(lastMt(c) || null), v: (c) => lastMt(c) },
+  ], [...A].sort((a, b) => b.M.length - a.M.length || a.n.localeCompare(b.n)).slice(0, 500), { sort: true }) + `</div>` + (A.length > 500 ? `<p class="note">Se muestran 500 de ${N(A.length)}; la lista completa está en Tablas maestras.</p>` : "");
 }
 // Botones "Ver …" + listas ocultas (los alterna RadarReport: data-ra-stage / data-ra-stage-list dentro de la .rcard)
 function companyLists(prefix: string, groups: { l: string; A: any[] }[]) {
@@ -161,9 +168,10 @@ export function tile(k: string, v: string, d?: string, ctx?: string | number, ic
   const cls = ctx === "hl" ? " hl" : ctx ? " ctx" : "";
   return `<div class="tile${cls}"><span class="k">${ico ? `<span class="kic ${sm || ""}">${ic(ico, 15)}</span>` : ""}<span>${k}</span></span><span class="v">${v}</span>${d ? `<span class="d">${d}</span>` : ""}</div>`;
 }
-export type Col = { h: string; f: (r: any) => any; n?: number | boolean; s?: number | boolean };
-export function table(cols: Col[], rows: any[], opt: { dim?: (r: any) => boolean } = {}) {
-  return `<div class="tw"><table><thead><tr>${cols.map((c) => `<th class="${c.n ? "n" : ""}">${c.h}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr class="${opt.dim && opt.dim(r) ? "dim" : ""}">${cols.map((c) => `<td class="${c.n ? "n" : ""}${c.s ? " small" : ""}">${c.f(r)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="flag">Sin registros</td></tr>`}</tbody></table></div>`;
+export type Col = { h: string; f: (r: any) => any; n?: number | boolean; s?: number | boolean; v?: (r: any) => string | number };
+// opt.sort: encabezados clicables para ordenar (los maneja RadarReport; data-v = valor de orden)
+export function table(cols: Col[], rows: any[], opt: { dim?: (r: any) => boolean; sort?: boolean } = {}) {
+  return `<div class="tw"><table${opt.sort ? ' class="ra-sortable"' : ""}><thead><tr>${cols.map((c, i) => `<th class="${c.n ? "n" : ""}"${opt.sort ? ` data-ra-sort="${i}" data-t="${c.n ? "n" : "s"}" title="Ordenar"` : ""}>${c.h}${opt.sort ? '<span class="ra-sort-ic"></span>' : ""}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr class="${opt.dim && opt.dim(r) ? "dim" : ""}">${cols.map((c) => `<td class="${c.n ? "n" : ""}${c.s ? " small" : ""}"${c.v ? ` data-v="${esc(String(c.v(r) ?? ""))}"` : ""}>${c.f(r)}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="${cols.length}" class="flag">Sin registros</td></tr>`}</tbody></table></div>`;
 }
 export const pill = (q: string) => ({ hi: '<span class="pill hi">Alta</span>', md: '<span class="pill md">Media</span>', lo: '<span class="pill lo">Baja</span>', na: '<span class="pill na">Sin info suficiente</span>' } as Record<string, string>)[q] || "";
 export const prioPill = (p: string) => (p === "Alta" ? pill("hi") : p === "Media" ? pill("md") : p === "Baja" ? pill("lo") : '<span class="flag">—</span>');
