@@ -1,6 +1,7 @@
 "use client";
 
 import { resolveDataset } from "@/lib/radarAbm/fetchDataset";
+import { ALL_SUBS, ALL_SUBS_LABEL, mergeDatasets } from "@/lib/radarAbm/mergeSubs";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { IconLoader2, IconActivityHeartbeat } from "@tabler/icons-react";
@@ -43,18 +44,26 @@ export default function PortalRadarPage() {
       .then(async (r) => {
         const j = (await r.json().catch(() => ({}))) as Resp;
         if (!r.ok) return setData({ dataset: null, error: j.error ?? "No se pudo cargar el informe" });
+        // Varios clientes en la cuenta: parte en "Todos los clientes"
+        if ((j.subs?.length ?? 0) > 1) return setData({ ...j, dataset: await loadAll(j.subs!, (j as any).feedback) });
         setData({ ...j, dataset: await resolveDataset(j as any) });
       })
       .catch(() => setData({ dataset: null, error: "No se pudo cargar el informe" }));
   }, []);
 
+  async function loadAll(subs: { name: string; url: string }[], feedback: unknown) {
+    const parts = await Promise.all(subs.map(async (x) => ({ name: x.name, ds: await resolveDataset({ datasetUrl: x.url, feedback: feedback as any }) })));
+    return mergeDatasets(parts.filter((p) => p.ds) as { name: string; ds: RadarDataset }[]);
+  }
+
   async function pickSub(name: string) {
-    const target = data?.subs?.find((x) => x.name === name);
-    if (!target || !data) return;
+    if (!data) return;
+    const target = data.subs?.find((x) => x.name === name);
+    if (!target && name !== ALL_SUBS) return;
     setSub(name);
     setSwitching(true);
     try {
-      setData({ ...data, dataset: await resolveDataset({ datasetUrl: target.url, feedback: (data as any).feedback }) });
+      setData({ ...data, dataset: target ? await resolveDataset({ datasetUrl: target.url, feedback: (data as any).feedback }) : await loadAll(data.subs!, (data as any).feedback) });
     } catch {
       setData({ ...data, dataset: null, error: "No se pudo cargar el informe" });
     } finally {
@@ -100,7 +109,8 @@ export default function PortalRadarPage() {
       onView={(v) => router.push(`${pathname}?vista=${PART_SLUGS[v]}`, { scroll: false })}
       audience="portal"
       actions={(data.subs?.length ?? 0) > 1 ? (
-        <select className="ra-select" aria-label="Cliente" value={sub ?? data.subs![0].name} disabled={switching} onChange={(e) => pickSub(e.target.value)}>
+        <select className="ra-select" aria-label="Cliente" value={sub ?? ALL_SUBS} disabled={switching} onChange={(e) => pickSub(e.target.value)}>
+          <option value={ALL_SUBS}>{ALL_SUBS_LABEL}</option>
           {data.subs!.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
         </select>
       ) : undefined}
