@@ -44,7 +44,7 @@ export default function RadarSettings({ clientId, clientName }: { clientId: stri
   const compactName = clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
   const isBullseye = compactName === "bullseye";
   const isAcid = compactName.startsWith("acidlab");
-  const isNisum = compactName.startsWith("nisum");
+  const isNisum = /^(nisum|crossnet)/.test(compactName); // wishlist automática: Nisum y Crossnet
   const [s, setS] = useState<Settings | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [stats, setStats] = useState<Record<string, number> | null>(null);

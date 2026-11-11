@@ -130,6 +130,7 @@ export type RadarClientData = {
   activities?: RadarActivity[];
   callEvals?: RadarCallEval[];
   meetingsTotal?: boolean;
+  wishlistOnly?: boolean;     // universo = solo empresas de la wishlist (sin filtro Wishlist)
   refCases?: string;         // casos de éxito / clientes de referencia del ICP   // Reuniones = total de la planilla (no se recortan por filtros de empresa)
 };
 

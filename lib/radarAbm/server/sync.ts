@@ -218,11 +218,18 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   }
   const filterGroups = [{ filters }];
 
-  const countryProp = P.companyCountry.property ?? "country";
+  // País: si existe una propiedad de país propia del cliente ("País CrossNet",
+  // "País - <cliente>") manda sobre la general, salvo que se haya fijado una a
+  // mano para este cliente; vacía → la general → country
+  const ownCountry = (settings.properties?.companyCountry ?? "").trim() ? undefined
+    : (catalog.companies ?? []).find((p) => compact(p.label) === "pais" + compact(name) || compact(p.label) === "pais" + compact(client.name));
+  const generalCountry = P.companyCountry.property ?? "country";
+  const countryProp = ownCountry?.name ?? generalCountry;
+  if (ownCountry) warnings.push(`País tomado de "${ownCountry.label}" (si viene vacío, de la propiedad general).`);
   // Industria: "Industria BullsEye" (industria_bullseye) y, si viene vacía, la estándar
   const industryProp = P.companyIndustry?.property ?? null;
   const companyProps = Array.from(new Set([
-    "name", "domain", "industry", "country", "numberofemployees", "hubspot_owner_id", "createdate", statusProp, countryProp,
+    "name", "domain", "industry", "country", "numberofemployees", "hubspot_owner_id", "createdate", statusProp, countryProp, generalCountry,
     ...(industryProp ? [industryProp] : []),
     ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier, P.companySdr, P.companyWishlist].map((p) => p.property).filter(Boolean) as string[],
   ]));
@@ -252,6 +259,7 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   const statusLabel = optionLabeler(P.companyStatus);
   const tierLabel = optionLabeler(P.companyIcpTier);
   const countryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === countryProp) as DetectedProperty | undefined);
+  const generalCountryLabel = optionLabeler((catalog.companies ?? []).find((p) => p.name === generalCountry) as DetectedProperty | undefined);
   const unknownStatuses = new Set<string>();
   // Equivalencias de status (La Biblia + Configuración del Pulso ABM)
   const companyStatusCanon = canonicalizer(CO_ORDER.filter((s) => s !== "CONV"), cfg.companyAliases);
@@ -276,7 +284,7 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
       n: p.name || `Empresa ${r.id}`,
       ...(normalizeDomain(p.domain) ? { dom: normalizeDomain(p.domain)! } : {}),
       ind: (industryProp ? bullseyeIndustryLabel(p[industryProp]) : null) || industryLabel(p.industry),
-      pais: countryLabel(p[countryProp]) || countryLabel(p.country) || "Sin país",
+      pais: countryLabel(p[countryProp]) || generalCountryLabel(p[generalCountry]) || countryLabel(p.country) || "Sin país",
       employees: p.numberofemployees ? Number(p.numberofemployees) : null,
       icp: ["A", "B", "C"].includes(tier) ? tier : "s/i",
       sdr: (P.companySdr.property ? companySdrLabel(p[P.companySdr.property]) : null) ?? ownerName(p.hubspot_owner_id) ?? "Sin SDR",
@@ -478,6 +486,8 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   clientData.activities = act.activities;
   clientData.callEvals = callEvals;
   if (meetingsTotal(settings, client.name)) clientData.meetingsTotal = true;
+  // Universo = solo la wishlist: el informe no muestra el filtro Wishlist
+  if (wlOnly && P.companyWishlist.property) clientData.wishlistOnly = true;
   // Casos de éxito del cliente (ICP → clientes de referencia) para las recomendaciones
   try {
     const refs = Array.from(new Set((await loadClientIcps(clientId)).map((x) => (x.form.mejores_clientes ?? "").trim()).filter(Boolean))).join(" · ");

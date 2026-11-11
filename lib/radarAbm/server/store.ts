@@ -54,7 +54,9 @@ export function meetingsTotal(s: { properties?: Record<string, string> }, client
 export function wishlistOnly(s: { properties?: Record<string, string> }, clientName: string): boolean {
   const m = s.properties?.wishlistOnly;
   if (m === "si" || m === "no") return m === "si";
-  return clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith("nisum");
+  const c = clientName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  // Automático para Nisum y Crossnet (pedido de BullsEye)
+  return /^(nisum|crossnet)/.test(c);
 }
 
 export function universeMode(s: { properties?: Record<string, string> }, clientName: string): "status" | "client" {
