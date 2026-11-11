@@ -139,13 +139,21 @@ function buildSystemPrompt(
     channel?: string; referrerName?: string; meetingDate?: string; meetingCountry?: string;
     contextNotes?: string; segmentStyleGuide?: string;
     contactBlock?: string; alloCallSummary?: string; newsBlock?: string;
+    contextMode?: "all" | "icp_only" | "segment_only";
   }
 ): string {
-  const contextBlock = ctx.aiContext.length
-    ? ctx.aiContext.map((t, i) => `--- Documento ${i + 1} ---\n${t}`).join("\n\n")
-    : "No hay documentos de contexto cargados para este cliente.";
+  const contextMode = recipient.contextMode ?? "all";
 
-  const icpBlock = ctx.icpNotes ? `\n\nPerfil de cliente ideal (ICP):\n${ctx.icpNotes}` : "";
+  const includeIcp     = contextMode !== "segment_only";
+  const includeContext = contextMode !== "icp_only";
+
+  const contextBlock = includeContext
+    ? (ctx.aiContext.length
+        ? ctx.aiContext.map((t, i) => `--- Documento ${i + 1} ---\n${t}`).join("\n\n")
+        : "No hay documentos de contexto cargados para este cliente.")
+    : "";
+
+  const icpBlock = includeIcp && ctx.icpNotes ? `\n\nPerfil de cliente ideal (ICP):\n${ctx.icpNotes}` : "";
 
   const typeLabel   = MSG_TYPE_LABELS[recipient.emailType ?? ""] ?? "";
   const channelInfo = CHANNEL_INSTRUCTIONS[recipient.channel ?? "email"] ?? CHANNEL_INSTRUCTIONS.email;
@@ -189,8 +197,7 @@ ${channelInstruction}Comienza siempre con un saludo apropiado (Hola [Nombre], Bu
 
 ${recipientLines ? `Datos del destinatario:\n${recipientLines}` : ""}${contactSection}${newsSection}${alloBlock}
 
-Contexto sobre ${ctx.clientName}:
-${contextBlock}${icpBlock}${styleBlock}${extraInstruction}
+${contextBlock ? `Contexto sobre ${ctx.clientName}:\n${contextBlock}` : ""}${icpBlock}${styleBlock}${extraInstruction}
 
 Usa TODA la información disponible del contacto y la empresa para hiperpersonalizar el mensaje. Menciona detalles específicos de la industria, tamaño de empresa, cargo o situación del contacto.
 
@@ -220,14 +227,16 @@ export async function POST(req: NextRequest) {
     }
 
     let segmentStyleGuide: string | undefined;
+    let segmentContextMode: "all" | "icp_only" | "segment_only" = "all";
     if (segmentId) {
       const db = supabaseAdmin();
       const { data: seg } = await db
         .from("training_segments")
-        .select("name, message_focus, style_tone, style_rules, style_avoid, style_email_length")
+        .select("name, message_focus, style_tone, style_rules, style_avoid, style_email_length, context_mode")
         .eq("id", segmentId)
         .single();
       if (seg) {
+        segmentContextMode = (seg.context_mode ?? "all") as "all" | "icp_only" | "segment_only";
         segmentStyleGuide = [
           `Segmento: ${seg.name}`,
           seg.message_focus      ? `Enfoque: ${seg.message_focus}`      : "",
@@ -273,6 +282,7 @@ export async function POST(req: NextRequest) {
       referrerName, meetingDate, meetingCountry, contextNotes,
       segmentStyleGuide, contactBlock, alloCallSummary,
       newsBlock: newsBlock ?? undefined,
+      contextMode: segmentContextMode,
     });
 
     const chatMessages: any[] = messages.map((m: { role: string; content: string }, idx: number) => {
