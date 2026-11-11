@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { syncClientRadar } from "@/lib/radarAbm/server/sync";
-import { recordCronStatus } from "@/lib/radarAbm/server/store";
+import { readCronStatus, recordCronStatus } from "@/lib/radarAbm/server/store";
 import { parseSubs } from "@/lib/radarAbm/subAccounts";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 
@@ -17,12 +17,18 @@ export const maxDuration = 300;
 // Cada cliente corre en su propia invocación (?client_id=, con sus 5 min):
 // un cliente grande (ej. Crossnet) no deja sin sincronizar a los demás.
 
-const BUDGET_MS = 270_000;
+const BUDGET_MS = 250_000;
+// Cada cliente se lanza en su propia invocación y NO se espera a que termine
+// (antes se esperaba: un cliente lento o que fallaba ocupaba la corrida entera
+// y, como seguía siendo el más atrasado, volvía a ir primero en la siguiente;
+// los demás nunca llegaban). Se lanza uno cada LAUNCH_GAP_MS para no saturar
+// HubSpot, y los que se intentaron hace menos de RETRY_AFTER_MS van al final.
+const LAUNCH_GAP_MS = 45_000;
+const RETRY_AFTER_MS = 3 * 3600_000;
 // Corre cada hora de 9 a 16 UTC (vercel.json): cada corrida toma solo los
 // clientes que no se sincronizaron en las últimas horas, así todos quedan al
 // día aunque en una sola corrida no alcancen todos. ?all=1 fuerza todos.
 const FRESH_MS = 18 * 3600_000;
-const PARALLEL = 2; // HubSpot comparte el límite de requests entre clientes
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function GET(req: NextRequest) {
@@ -86,29 +92,36 @@ export async function GET(req: NextRequest) {
       if (subs.length) for (const sub of subs) queue.push({ id, sub });
       else queue.push({ id });
     }
-    // Si esta corrida se acaba, las invocaciones ya lanzadas siguen hasta terminar
+    // Los intentados hace poco (ok sin snapshot nuevo, error o "started" que no
+    // terminó) van al final: no bloquean a los que esperan su turno
+    const attempts = await Promise.all(queue.map((q) => readCronStatus(q.id, q.sub).catch(() => null)));
+    const recent = (i: number) => { const a = attempts[i]?.at; return a ? Date.now() - new Date(a).getTime() < RETRY_AFTER_MS : false; };
+    const ordered = queue.map((q, i) => ({ q, late: recent(i) ? 1 : 0, i })).sort((a, b) => a.late - b.late || a.i - b.i).map((x) => x.q);
+
+    // Lanza cada invocación y no espera su resultado: la invocación del cliente
+    // corre con sus propios 5 min y deja su estado (ok / error) en el caché
     const self = new URL(req.nextUrl.pathname, req.nextUrl.origin);
-    let next = 0;
-    await Promise.all(Array.from({ length: Math.min(PARALLEL, queue.length) }, async () => {
-      while (next < queue.length && Date.now() - startedAt < BUDGET_MS) {
-        const { id, sub } = queue[next++];
-        try {
-          const url = new URL(self);
-          url.searchParams.set("client_id", id);
-          if (sub) url.searchParams.set("sub", sub);
-          // "started": si queda así, la invocación no terminó (se pasó de los 5 min)
-          await recordCronStatus(id, sub, { state: "started" });
-          const r = await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store" });
-          const j = await r.json().catch(() => ({}));
-          results.push({ client_id: id, ...(sub ? { sub } : {}), ok: r.ok && !!j.ok, ...(j.error || !r.ok ? { error: j.error ?? `HTTP ${r.status}` } : {}) });
-          // La invocación del cliente no llegó a responder (ej. bloqueo del dominio o 5xx)
-          if (!r.ok && !j.error) await recordCronStatus(id, sub, { state: "error", detail: `La sincronización automática no pudo llamar a la invocación del cliente (HTTP ${r.status}).` });
-        } catch (e) {
-          results.push({ client_id: id, ...(sub ? { sub } : {}), ok: false, error: (e as Error).message });
-        }
+    for (const { id, sub } of ordered) {
+      if (Date.now() - startedAt > BUDGET_MS) break;
+      const url = new URL(self);
+      url.searchParams.set("client_id", id);
+      if (sub) url.searchParams.set("sub", sub);
+      // "started": si queda así, la invocación no terminó (se pasó de los 5 min)
+      await recordCronStatus(id, sub, { state: "started" });
+      try {
+        // Basta con que la invocación arranque: se corta la espera a los 8 s
+        const r = await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store", signal: AbortSignal.timeout(8_000) });
+        const j = await r.json().catch(() => ({}));
+        results.push({ client_id: id, ...(sub ? { sub } : {}), ok: r.ok && !!j.ok, ...(j.error || !r.ok ? { error: j.error ?? `HTTP ${r.status}` } : {}) });
+        if (!r.ok && !j.error) await recordCronStatus(id, sub, { state: "error", detail: `La sincronización automática no pudo llamar a la invocación del cliente (HTTP ${r.status}).` });
+      } catch (e) {
+        // Timeout esperado: la invocación sigue corriendo por su cuenta
+        if ((e as Error).name !== "TimeoutError" && (e as Error).name !== "AbortError") results.push({ client_id: id, ...(sub ? { sub } : {}), ok: false, error: (e as Error).message });
+        else results.push({ client_id: id, ...(sub ? { sub } : {}), ok: true, error: "lanzada" });
       }
-    }));
-    return NextResponse.json({ synced: results.filter((r) => r.ok).length, pending: queue.length - results.length, results, skipped });
+      await new Promise((r) => setTimeout(r, LAUNCH_GAP_MS));
+    }
+    return NextResponse.json({ launched: results.length, pending: ordered.length - results.length, results, skipped });
   } catch (err) {
     console.error("Error en /api/cron/radar-abm-sync:", err);
     return NextResponse.json({ error: (err as Error).message || "Error interno" }, { status: 500 });
