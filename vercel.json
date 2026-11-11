@@ -66,6 +66,7 @@
   "buildCommand": "next build",
   "functions": {
     "app/api/cron/wishlist-contacts/route.ts": { "maxDuration": 300 },
+    "app/api/clients/[id]/peitho/export/route.ts": { "maxDuration": 300 },
     "app/api/cron/respuestas-lemlist/route.ts": { "maxDuration": 300 },
     "app/api/portal-admin/wishlist-contacts/route.ts": { "maxDuration": 60 },
     "app/api/lemlist/csv-generate/route.ts": { "maxDuration": 60 },
