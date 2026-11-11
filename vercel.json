@@ -25,6 +25,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cron/calidad-carga",
+      "schedule": "20 10 * * 1-5"
+    },
+    {
       "path": "/api/cron/radar-abm-sync",
       "schedule": "15 9-16 * * *"
     },
@@ -91,6 +95,7 @@
     "app/api/radar-abm/detect/route.ts": { "maxDuration": 60 },
     "app/api/cron/radar-abm-sync/route.ts": { "maxDuration": 300 },
     "app/api/calidad-carga/route.ts": { "maxDuration": 300 },
+    "app/api/cron/calidad-carga/route.ts": { "maxDuration": 300 },
     "app/api/cron/hubspot-pool/route.ts": { "maxDuration": 300 },
     "app/api/cron/reporte-sdr/route.ts": { "maxDuration": 300 },
     "app/api/reporte-sdr/route.ts": { "maxDuration": 300 },
