@@ -98,3 +98,22 @@ export async function forwardToPeitho(
     return NextResponse.json({ error: "No se pudo conectar con Peitho" }, { status: 502 });
   }
 }
+
+// GET directo al backend de Peitho (sin request del navegador), como el
+// usuario "cliente" de Peitho de ese cliente. Para exportaciones internas.
+export async function peithoGetJson<T>(client: PeithoClientRef, pathWithQuery: string): Promise<T> {
+  if (!peithoConfigured()) throw new Error("La conexión con Peitho no está configurada");
+  const headers: Record<string, string> = {
+    "x-peitho-integration-key": process.env.PEITHO_INTEGRATION_KEY!,
+    "x-bullseye-client-id": client.id,
+    "x-bullseye-client-name": encodeURIComponent(client.name),
+  };
+  if (client.slug) headers["x-bullseye-client-slug"] = encodeURIComponent(client.slug);
+  const res = await fetch(`${process.env.PEITHO_BACKEND_URL!.replace(/\/+$/, "")}${pathWithQuery}`, {
+    headers,
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`Peitho ${pathWithQuery} → ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return (await res.json()) as T;
+}
