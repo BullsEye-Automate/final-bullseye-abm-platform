@@ -636,10 +636,6 @@ export default function ChatV2Page() {
             style={{ background: "rgba(98,224,216,0.15)", color: "#62E0D8" }}>
             Agente V2
           </span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-            style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24" }}>
-            Beta interna
-          </span>
         </div>
         <div className="flex items-center gap-3">
           {gmailChecked && (
