@@ -235,8 +235,6 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     <li>Profundidad: <b>${P(k.multi)}</b> de las empresas con contacto tiene 2 o más interlocutores y ${P(k.deep)} tiene cobertura profunda (3+ contactos o varias áreas).</li>
     ${b.tot ? `<li>${b.main[0] === "rechazo explícito" ? "La principal barrera es el rechazo explícito" : `La principal barrera no es el rechazo sino <b>${b.main[0]}</b>`} (${P(b.main[1] / b.tot)} de las empresas trabajadas sin avance).</li>` : ""}
     <li>Potencial vivo: <b>${N(liveCo.length)} empresas</b> con seguimiento activo, reunión próxima o referral por trabajar; ${N(C.filter((c) => c.st === "Sin interés ahora - Retomar").length)} más pidieron retomar más adelante.</li>
-    <li>${M.pipe ? `Oportunidades: <b>${N(k.opp)} ${k.opp === 1 ? "empresa" : "empresas"}</b> con oportunidad; pipeline abierto ${USD(M.pipe.open)}${M.pipe.won ? ` y ${USD(M.pipe.won)} ganado` : ""}.` : `Oportunidades: ${N(k.opp)} empresas con reunión que terminó en oportunidad. Pipeline: <b>sin información disponible</b> (el cliente no registra negocios en HubSpot).`}</li>
-    ${f.overdue.length + f.none.length ? `<li>Alerta operativa: <b>${N(f.overdue.length)} seguimientos vencidos</b> y ${N(f.none.length)} sin próxima acción.</li>` : ""}
   </ul></div><p class="note">Universo: ${cl.deep ? "cartera acotada de cuentas estratégicas; la lectura se centra en profundidad por cuenta más que en volumen." : "universo amplio; la lectura combina cobertura y profundidad."} SDR: ${esc(cl.sdrs.join(", ") || "—")}.</p>`;
 
   // §2: KPIs principales (el Health Score ya no se muestra aquí)
