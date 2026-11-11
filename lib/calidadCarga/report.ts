@@ -12,7 +12,7 @@
 // Solo lectura en HubSpot. El resultado se cachea 6 h (allo_response_cache).
 import { supabaseAdmin } from "@/lib/supabase";
 import { readMonthCache, writeMonthCache } from "@/lib/celulasSdr/cache";
-import { detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "@/lib/radarAbm/server/hubspot";
+import { batchRead, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "@/lib/radarAbm/server/hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig } from "@/lib/radarAbm/server/store";
 import { normTitle, scoreTitlesForClient } from "@/lib/wishlistContacts";
 
@@ -42,18 +42,21 @@ export type CargaContact = {
   fit: number | null; band: FitBand; role: string | null; reason: string;
   phones: number; phoneSources: string[]; lemlist: boolean; email: boolean; linkedin: boolean; hasCompany: boolean;
   quality: number; prob: number; status: string | null; contacted: boolean; positive: boolean; meeting: boolean;
+  companyId: string | null; companyStatus: string | null; // "Status de la asignación - <cliente>" de la empresa asociada
 };
+export type CompanyStatusCount = { status: string; companies: number };
 export type CargaLoad = {
   day: string; contacts: number;
   calza: number; parcial: number; noCalza: number; sinCargo: number;
   withPhone: number; phonesAvg: number; withLemlist: number; withEmail: number; withLinkedin: number; withCompany: number;
   quality: number; prob: number; expectedMeetings: number;
   contacted: number; positive: number; meetings: number;
+  companies: number; companyStatuses: CompanyStatusCount[]; // empresas distintas de la carga y su status de asignación
 };
 export type CargaReport = {
   client: { id: string; name: string };
   from: string; to: string; generatedAt: string;
-  hasIcp: boolean; statusProp: string | null; phoneProps: string[];
+  hasIcp: boolean; statusProp: string | null; companyStatusProp: string | null; phoneProps: string[];
   totals: CargaLoad;
   loads: CargaLoad[];
   contacts: CargaContact[];
@@ -80,7 +83,7 @@ const SEG_LABEL: Record<string, string> = {
 export async function getCargaReport(clientId: string, days: number, fresh = false): Promise<CargaReport> {
   const to = new Date();
   const from = new Date(to.getTime() - days * 86400_000);
-  const key = `calidad_carga:v1:${clientId}:${days}:${chileDay(to.toISOString())}`;
+  const key = `calidad_carga:v2:${clientId}:${days}:${chileDay(to.toISOString())}`;
   if (!fresh) {
     const hit = await readMonthCache<CargaReport>(key);
     if (hit && Date.now() - new Date(hit.generatedAt).getTime() < CACHE_MS) return hit;
@@ -103,6 +106,8 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
   const P = Object.fromEntries(detected.map((d) => [d.key, d])) as Record<string, DetectedProperty>;
   const statusProp = P.contactStatus?.found ? P.contactStatus.property : null;
   const statusLabel = new Map((P.contactStatus?.options ?? []).map((o) => [o.value, o.label]));
+  const coStatusProp = P.companyStatus?.found ? P.companyStatus.property : null;
+  const coStatusLabel = new Map((P.companyStatus?.options ?? []).map((o) => [o.value, o.label]));
   const contactsCat = catalog.contacts ?? [];
   const has = (n: string) => contactsCat.some((p) => p.name === n);
   const phoneProps = PHONE_PROPS.filter((p) => has(p.name));
@@ -155,7 +160,7 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
   if (!allTitles.length) hasIcp = (await scoreTitlesForClient(db, clientId, [])).hasIcp;
   if (!hasIcp) warnings.push("El cliente no tiene ICP / buyer persona cargado: no se puede medir el calce con el ICP.");
 
-  const toContact = (r: { id: string; properties: Record<string, string | null> }): Omit<CargaContact, "quality" | "prob"> => {
+  const toContact = (r: { id: string; properties: Record<string, string | null> }): Omit<CargaContact, "quality" | "prob" | "companyStatus"> => {
     const p = r.properties;
     const title = (p.jobtitle ?? "").trim();
     const sc = title ? scores.get(normTitle(title)) : undefined;
@@ -176,10 +181,11 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
       phones: nums.size, phoneSources: Array.from(new Set(Array.from(nums.values()).flat())),
       lemlist: !!digits(p.telefono_lemlist), email: !!p.email, linkedin: !!p.hs_linkedin_url, hasCompany: !!p.associatedcompanyid,
       status, contacted: isContacted(status), positive: isPositive(status), meeting: isMeeting(status),
+      companyId: p.associatedcompanyid || null,
     };
   };
   // Puntaje de calidad (0–100): fit 35, teléfono 30, correo 15, LinkedIn 10, empresa 10
-  const qualityOf = (c: Omit<CargaContact, "quality" | "prob">) =>
+  const qualityOf = (c: Omit<CargaContact, "quality" | "prob" | "companyStatus">) =>
     Math.round((c.band === "calza" ? 35 : c.band === "parcial" ? 17 : c.band === "sin_icp" ? 17 : 0) + (c.phones ? 30 : 0) + (c.email ? 15 : 0) + (c.linkedin ? 10 : 0) + (c.hasCompany ? 10 : 0));
 
   // Historia: tasa de reunión por segmento
@@ -195,7 +201,7 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
   }
   const phoneStats = (tel: boolean) => { const a = H.filter((c) => (c.phones > 0) === tel); return a.length >= MIN_SEGMENT ? a.filter((c) => c.meeting).length / a.length : null; };
   const telRate = { true: phoneStats(true), false: phoneStats(false) };
-  const probOf = (c: Omit<CargaContact, "quality" | "prob">) => {
+  const probOf = (c: Omit<CargaContact, "quality" | "prob" | "companyStatus">) => {
     const s = segStats.get(segKey(c.band, c.phones > 0));
     if (s && s.n >= MIN_SEGMENT) return s.m / s.n;
     return telRate[String(c.phones > 0) as "true" | "false"] ?? overall;
@@ -203,7 +209,16 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
   if (!H.length) warnings.push("No hay contactos importados de hace 1 a 6 meses para estimar la probabilidad de agendamiento.");
   else if (!statusProp) warnings.push('No se encontró la propiedad "Asignación BullsEye por llamar": no se puede medir el avance ni la probabilidad.');
 
-  const contacts: CargaContact[] = cur.map(toContact).map((c) => ({ ...c, quality: qualityOf(c), prob: probOf(c) }))
+  // Status de la asignación de las empresas asociadas a los contactos cargados
+  const coStatus = new Map<string, string | null>();
+  if (coStatusProp) {
+    const ids = Array.from(new Set(cur.map((c) => c.properties.associatedcompanyid).filter(Boolean) as string[]));
+    try {
+      const rows = await batchRead("companies", ids, [coStatusProp], token);
+      for (const r of rows) { const v = r.properties[coStatusProp]; coStatus.set(r.id, v ? coStatusLabel.get(v) ?? v : null); }
+    } catch (e) { warnings.push(`No se pudo leer el status de las empresas: ${(e as Error).message}`); }
+  } else warnings.push('No se encontró la propiedad "Status de la asignación" del cliente: no se muestra el status de las empresas.');
+  const contacts: CargaContact[] = cur.map(toContact).map((c) => ({ ...c, quality: qualityOf(c), prob: probOf(c), companyStatus: c.companyId ? coStatus.get(c.companyId) ?? null : null }))
     .sort((a, b) => b.created.localeCompare(a.created));
 
   const agg = (A: CargaContact[], day: string): CargaLoad => {
@@ -216,6 +231,7 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
       withEmail: cnt((c) => c.email), withLinkedin: cnt((c) => c.linkedin), withCompany: cnt((c) => c.hasCompany),
       quality: Math.round(A.reduce((s, c) => s + c.quality, 0) / n), prob: A.length ? expected / A.length : 0, expectedMeetings: expected,
       contacted: cnt((c) => c.contacted), positive: cnt((c) => c.positive), meetings: cnt((c) => c.meeting),
+      ...companyStatusesOf(A),
     };
   };
   const byDay = new Map<string, CargaContact[]>();
@@ -227,7 +243,7 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
   return {
     client: { id: client.id, name: client.name },
     from: from.toISOString(), to: to.toISOString(), generatedAt: new Date().toISOString(),
-    hasIcp, statusProp: statusProp ? P.contactStatus.propLabel ?? statusProp : null, phoneProps: phoneProps.map((p) => p.label),
+    hasIcp, companyStatusProp: coStatusProp ? P.companyStatus.propLabel ?? coStatusProp : null, statusProp: statusProp ? P.contactStatus.propLabel ?? statusProp : null, phoneProps: phoneProps.map((p) => p.label),
     totals: agg(contacts, "total"), loads, contacts,
     history: {
       contacts: H.length, meetings: H.filter((c) => c.meeting).length, rate: overall,
@@ -237,4 +253,21 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
     phoneSources: Array.from(srcCount.entries()).map(([label, n]) => ({ label, contacts: n })).sort((a, b) => b.contacts - a.contacts),
     warnings,
   };
+}
+
+// Empresas distintas de un grupo de contactos y cuántas hay en cada status
+// (sin empresa asociada / sin status van al final)
+function companyStatusesOf(A: CargaContact[]): { companies: number; companyStatuses: CompanyStatusCount[] } {
+  const byCo = new Map<string, string>();
+  let noCompany = 0;
+  for (const c of A) {
+    if (!c.companyId) { noCompany++; continue; }
+    byCo.set(c.companyId, c.companyStatus || "Sin status");
+  }
+  const count = new Map<string, number>();
+  byCo.forEach((st) => count.set(st, (count.get(st) ?? 0) + 1));
+  const list = Array.from(count.entries()).map(([status, companies]) => ({ status, companies }))
+    .sort((a, b) => (a.status === "Sin status" ? 1 : b.status === "Sin status" ? -1 : b.companies - a.companies));
+  if (noCompany) list.push({ status: `Contactos sin empresa asociada (${noCompany})`, companies: 0 });
+  return { companies: byCo.size, companyStatuses: list };
 }

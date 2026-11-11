@@ -6,7 +6,28 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { IconDatabaseImport, IconLoader2, IconAlertCircle, IconRefresh, IconChevronDown, IconChevronUp, IconInfoCircle } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
-import type { CargaContact, CargaLoad, CargaReport } from "@/lib/calidadCarga/report";
+import type { CargaContact, CargaLoad, CargaReport, CompanyStatusCount } from "@/lib/calidadCarga/report";
+
+// Desplegable con el "Status de la asignación" de las empresas de una carga
+function CompanyStatuses({ list, companies, inline }: { list: CompanyStatusCount[]; companies: number; inline?: boolean }) {
+  const max = Math.max(1, ...list.map((x) => x.companies));
+  return (
+    <details className={inline ? "text-xs" : "card p-4"} onClick={(e) => e.stopPropagation()}>
+      <summary className={`cursor-pointer select-none ${inline ? "text-brand whitespace-nowrap" : "text-sm font-medium"}`}>
+        {inline ? `${companies} empresas` : `Status de la asignación de las empresas cargadas · ${companies} empresas`}
+      </summary>
+      <div className={`${inline ? "absolute z-10 mt-1 w-80 card p-3 shadow-lg" : "mt-3"} space-y-1.5`}>
+        {list.length ? list.map((x) => (
+          <div key={x.status} className="grid grid-cols-[minmax(0,1fr)_90px_36px] gap-2 items-center text-xs">
+            <span className="truncate" title={x.status}>{x.status}</span>
+            {x.companies ? <span className="h-2 rounded bg-black/[0.06] overflow-hidden"><span className="block h-full bg-brand" style={{ width: `${(x.companies / max) * 100}%` }} /></span> : <span />}
+            <span className="text-right font-medium">{x.companies || ""}</span>
+          </div>
+        )) : <div className="text-xs text-ink-muted">Sin empresas asociadas.</div>}
+      </div>
+    </details>
+  );
+}
 
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
 const pc1 = (x: number) => `${(x * 100).toFixed(1).replace(".", ",")}%`;
@@ -48,7 +69,7 @@ function ContactsTable({ rows }: { rows: CargaContact[] }) {
       <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
         <table className="w-full text-xs">
           <thead className="text-left text-ink-muted sticky top-0 bg-white">
-            <tr><th className="py-1.5 pr-2">Contacto</th><th className="pr-2">Empresa</th><th className="pr-2">Cargo</th><th className="pr-2">Calce ICP</th><th className="pr-2 text-right">Teléfonos</th><th className="pr-2">Correo / LinkedIn</th><th className="pr-2 text-right">Calidad</th><th className="pr-2 text-right">Prob.</th><th>Estado actual</th></tr>
+            <tr><th className="py-1.5 pr-2">Contacto</th><th className="pr-2">Empresa</th><th className="pr-2">Cargo</th><th className="pr-2">Calce ICP</th><th className="pr-2 text-right">Teléfonos</th><th className="pr-2">Correo / LinkedIn</th><th className="pr-2 text-right">Calidad</th><th className="pr-2 text-right">Prob.</th><th className="pr-2">Estado actual</th><th>Status empresa</th></tr>
           </thead>
           <tbody>
             {shown.slice(0, 400).map((c) => (
@@ -63,7 +84,8 @@ function ContactsTable({ rows }: { rows: CargaContact[] }) {
                 <td className="pr-2">{c.email ? "✓" : "—"} / {c.linkedin ? "✓" : "—"}</td>
                 <td className={`pr-2 text-right font-semibold ${qCls(c.quality)}`}>{c.quality}</td>
                 <td className="pr-2 text-right">{pc1(c.prob)}</td>
-                <td>{c.status || <span className="text-ink-muted">sin estado</span>}</td>
+                <td className="pr-2">{c.status || <span className="text-ink-muted">sin estado</span>}</td>
+                <td>{c.companyStatus || <span className="text-ink-muted">{c.companyId ? "sin status" : "sin empresa"}</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -122,6 +144,7 @@ export default function CalidadCargaPage() {
       <td className="pr-2 text-right">{n1(l.expectedMeetings)}</td>
       <td className="pr-2 text-right">{pct(l.contacted, l.contacts)}</td>
       <td className="pr-2 text-right">{l.meetings}</td>
+      <td className="pr-2 relative"><CompanyStatuses list={l.companyStatuses} companies={l.companies} inline /></td>
     </>
   );
 
@@ -171,6 +194,8 @@ export default function CalidadCargaPage() {
             <Kpi k="Prob. de agendamiento" v={pc1(t.prob)} d={`≈ ${n1(t.expectedMeetings)} reuniones esperadas · ${t.meetings} a la fecha`} />
           </section>
 
+          {data.companyStatusProp && <CompanyStatuses list={t.companyStatuses} companies={t.companies} />}
+
           <section className="card">
             <div className="px-4 pt-4 pb-2 text-sm font-medium">Por carga (día de importación)</div>
             <div className="overflow-x-auto">
@@ -180,7 +205,7 @@ export default function CalidadCargaPage() {
                     <th className="py-2 px-2">Carga</th><th className="pr-2 text-right">Contactos</th><th className="pr-2 text-right">Calzan ICP</th><th className="pr-2 text-right">Parcial</th>
                     <th className="pr-2 text-right">Con teléfono</th><th className="pr-2 text-right">Tel./contacto</th><th className="pr-2 text-right">Tel. Lemlist</th><th className="pr-2 text-right">Correo</th>
                     <th className="pr-2 text-right">Calidad</th><th className="pr-2 text-right">Prob. reunión</th><th className="pr-2 text-right">Reuniones esperadas</th>
-                    <th className="pr-2 text-right">Contactados</th><th className="pr-2 text-right">Reuniones</th><th />
+                    <th className="pr-2 text-right">Contactados</th><th className="pr-2 text-right">Reuniones</th><th className="pr-2">Status empresas</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -190,7 +215,7 @@ export default function CalidadCargaPage() {
                         {row(l)}
                         <td className="pr-2">{open === l.day ? <IconChevronUp size={15} /> : <IconChevronDown size={15} />}</td>
                       </tr>
-                      {open === l.day && <tr><td colSpan={14}><ContactsTable rows={byDay.get(l.day) ?? []} /></td></tr>}
+                      {open === l.day && <tr><td colSpan={15}><ContactsTable rows={byDay.get(l.day) ?? []} /></td></tr>}
                     </Fragment>
                   ))}
                   <tr className="bg-black/[0.03] font-medium [&>td:first-child]:pl-2">{row(t, true)}<td /></tr>
