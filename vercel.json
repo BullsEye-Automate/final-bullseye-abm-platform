@@ -90,6 +90,7 @@
     "app/api/radar-abm/route.ts": { "maxDuration": 300 },
     "app/api/radar-abm/detect/route.ts": { "maxDuration": 60 },
     "app/api/cron/radar-abm-sync/route.ts": { "maxDuration": 300 },
+    "app/api/calidad-carga/route.ts": { "maxDuration": 300 },
     "app/api/cron/hubspot-pool/route.ts": { "maxDuration": 300 },
     "app/api/cron/reporte-sdr/route.ts": { "maxDuration": 300 },
     "app/api/reporte-sdr/route.ts": { "maxDuration": 300 },

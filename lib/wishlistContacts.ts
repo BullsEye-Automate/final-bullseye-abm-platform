@@ -730,3 +730,13 @@ export async function refreshEnrichments(db: SupabaseClient, clientId: string): 
   }
   return { checked: rows.length, done };
 }
+
+// Fit de cargos frente al buyer persona del cliente, con el mismo caché y
+// prompt que Contactos IA (lo usa Calidad de carga, lib/calidadCarga/).
+// Sin ICP cargado devuelve un mapa vacío.
+export async function scoreTitlesForClient(db: SupabaseClient, clientId: string, titles: string[]): Promise<{ scores: Map<string, TitleScore>; hasIcp: boolean }> {
+  const icpText = await getClientIcpText(db, clientId);
+  if (!icpText.trim()) return { scores: new Map(), hasIcp: false };
+  const feedback = await loadFeedback(db, clientId);
+  return { scores: await scoreTitles(db, clientId, icpText, feedback, titles), hasIcp: true };
+}
