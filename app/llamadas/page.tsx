@@ -359,10 +359,14 @@ function CallsTable({
   calls,
   tags,
   onSelectCall,
+  callCounts,
+  onPickNumber,
 }: {
   calls: CallItem[];
   tags: AlloTag[];
   onSelectCall: (id: string) => void;
+  callCounts?: Map<string, number>;   // llamadas al mismo número en el período
+  onPickNumber?: (num: string) => void; // ver todas las llamadas a ese número
 }) {
   const [sortKey, setSortKey] = useState<CallSortKey>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -418,7 +422,19 @@ function CallsTable({
               <td className="px-3 py-2 whitespace-nowrap">{c.user?.name ?? "—"}</td>
               <td className="px-3 py-2">
                 <div className="font-medium">{c.contact_name ?? "Sin identificar"}</div>
-                <div className="text-xs text-ink-subtle font-mono">{c.contact_number}</div>
+                <div className="text-xs text-ink-subtle font-mono flex items-center gap-1.5 flex-wrap">
+                  {c.contact_number}
+                  {onPickNumber && (callCounts?.get(c.contact_number) ?? 0) > 1 && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); onPickNumber(c.contact_number); }}
+                      className="font-sans text-[11px] px-1.5 py-0.5 rounded bg-brand-tint text-brand hover:underline"
+                      title="Ver todas las llamadas a este número"
+                    >
+                      {callCounts!.get(c.contact_number)} llamadas
+                    </button>
+                  )}
+                </div>
               </td>
               <td className="px-3 py-2 text-ink-muted">{c.contact_job_title ?? "—"}</td>
               <td className="px-3 py-2 text-ink-muted">{c.contact_company ?? "—"}</td>
@@ -640,6 +656,8 @@ export default function LlamadasPage() {
   const [tagFilter, setTagFilter] = useState<string>("");
   const [resultFilter, setResultFilter] = useState<string>("");
   const [voicemailFilter, setVoicemailFilter] = useState<"" | "yes" | "no">("");
+  // Buscador del listado: teléfono (dígitos, con o sin código de país), nombre o empresa
+  const [search, setSearch] = useState("");
 
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -720,8 +738,25 @@ export default function LlamadasPage() {
     let filtered = tagFilter ? filteredCalls.filter((c) => c.tags.includes(tagFilter)) : filteredCalls;
     if (resultFilter) filtered = filtered.filter((c) => c.result === resultFilter);
     if (voicemailFilter) filtered = filtered.filter((c) => isVoicemailCall(c) === (voicemailFilter === "yes"));
+    const q = search.trim().toLowerCase();
+    if (q) {
+      const digits = q.replace(/\D/g, "");
+      // Teléfono: basta con los últimos dígitos (sin código de país ni espacios)
+      const tail = digits.length >= 6 ? digits.slice(-8) : "";
+      filtered = filtered.filter((c) =>
+        (tail && c.contact_number.replace(/\D/g, "").includes(tail)) ||
+        (!tail && digits.length >= 3 && c.contact_number.replace(/\D/g, "").includes(digits)) ||
+        [c.contact_name, c.contact_company].some((v) => v && v.toLowerCase().includes(q))
+      );
+    }
     return filtered;
-  }, [filteredCalls, tagFilter, resultFilter, voicemailFilter]);
+  }, [filteredCalls, tagFilter, resultFilter, voicemailFilter, search]);
+  // Cuántas veces se llamó a cada número en el período (sin los filtros del listado)
+  const callCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of filteredCalls) m.set(c.contact_number, (m.get(c.contact_number) ?? 0) + 1);
+    return m;
+  }, [filteredCalls]);
 
   const statModalCalls = useMemo(() => {
     switch (statModal) {
@@ -901,6 +936,13 @@ export default function LlamadasPage() {
                 <span className="text-xs font-normal text-ink-muted">({listCalls.length})</span>
               </h2>
               <div className="flex items-center gap-2 flex-wrap px-2.5 py-1.5 rounded-lg bg-[#F4F2FB]">
+                <input
+                  type="search"
+                  className="input w-56 py-1 px-2 text-xs"
+                  placeholder="Buscar teléfono, contacto o empresa…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
                 <IconFilter size={14} className="text-ink-subtle shrink-0" />
                 <select
                   className="input w-auto min-w-0 py-1 px-2 text-xs"
@@ -933,7 +975,19 @@ export default function LlamadasPage() {
                 </select>
               </div>
             </div>
-            <CallsTable calls={listCalls} tags={tags} onSelectCall={setCallModalId} />
+            {search.trim() && (
+              <div className="flex items-center gap-2 text-xs text-ink-muted">
+                {(() => {
+                  const nums = new Set(listCalls.map((c) => c.contact_number));
+                  const one = nums.size === 1 ? listCalls[0] : null;
+                  return one
+                    ? <span><b className="text-ink">{one.contact_name ?? one.contact_number}</b> · {listCalls.length} {listCalls.length === 1 ? "llamada" : "llamadas"} en el período ({listCalls.filter((c) => c.connected).length} conectadas). Para ver más historia, amplía el rango de fechas.</span>
+                    : <span>{listCalls.length} llamadas encontradas para “{search.trim()}”.</span>;
+                })()}
+                <button type="button" className="underline" onClick={() => setSearch("")}>Limpiar búsqueda</button>
+              </div>
+            )}
+            <CallsTable calls={listCalls} tags={tags} onSelectCall={setCallModalId} callCounts={callCounts} onPickNumber={(n) => { setSearch(n); window.scrollTo({ top: 0 }); }} />
           </section>
         </>
       )}
