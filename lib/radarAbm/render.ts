@@ -257,7 +257,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   s.cobertura = `<div class="grid2"><div class="rcard"><h4>Universo de cuentas</h4>${stack([{ l: "Trabajadas", v: k.worked, c: "var(--accent)" }, { l: "Asignadas sin gestión", v: k.universe - k.worked, c: "var(--g-pend)" }])}
     ${companyLists("cu", [{ l: "Trabajadas", A: C.filter((c) => c.worked) }, { l: "Asignadas sin gestión", A: C.filter((c) => !c.worked) }])}
     <p class="note">Cuenta trabajada = empresa con estado distinto de "Asignada". Empresas asignadas hace más de 30 días sin gestión: <b>${N(cnt(C, (c) => c.st === "Asignada" && c.asg < d30))}</b>.</p></div>
-    <div class="rcard"><h4>Cobertura por industria</h4>${industryPicker(covInd, (key) => C.filter((c) => (c.ind || "Sin industria") === key))}</div></div>`;
+    <div class="rcard"><details class="ra-cfold"><summary><h4>Cobertura por industria</h4><span class="ra-cfold-hint">${N(covInd.length)} industrias · clic para ver</span></summary>${industryPicker(covInd, (key) => C.filter((c) => (c.ind || "Sin industria") === key))}</details></div></div>`;
 
   s.profundidad = `<div class="tiles">${tile("Contact penetration", P(k.penetration), "contactos gestionados / contactos ICP disponibles")}${tile("Contactos por empresa", F1(div(K.length, C.length)), "promedio en base")}${tile("Efectivos por empresa con contacto", F1(div(M.eff.length, M.coEff.length)), "interlocutores reales")}${tile("Reuniones por empresa", F1(k.mPerAcc), "entre empresas con reunión")}${tile("Reuniones por contacto efectivo", F1(k.mPerCt), "")}${tile("Interlocutores distintos", F1(k.interlocutors), "por empresa con reunión")}</div>
   ${channelDepth(M)}`;
