@@ -168,9 +168,54 @@ export default function RadarReport({
       card?.querySelectorAll<HTMLElement>("[data-ra-stage-list]").forEach((p) => { p.hidden = !(open && p.dataset.raStageList === id); if (!p.hidden) shown = p; });
       (shown as HTMLElement | null)?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     };
+    // Listas de empresas: orden por columna (clic en el encabezado) y filtros
+    const onSort = (e: Event) => {
+      const th = (e.target as HTMLElement).closest?.("th[data-ra-sort]") as HTMLElement | null;
+      if (!th) return;
+      const table = th.closest("table");
+      const body = table?.tBodies[0];
+      if (!table || !body) return;
+      const i = Number(th.dataset.raSort), num = th.dataset.t === "n";
+      const dir = th.dataset.dir === "asc" ? "desc" : th.dataset.dir === "desc" ? "asc" : num ? "desc" : "asc";
+      table.querySelectorAll<HTMLElement>("th[data-ra-sort]").forEach((h) => { delete h.dataset.dir; });
+      th.dataset.dir = dir;
+      const val = (tr: HTMLTableRowElement) => { const td = tr.cells[i]; return td?.dataset.v ?? td?.textContent?.trim() ?? ""; };
+      const rows = Array.from(body.rows).filter((r) => r.cells.length > 1);
+      rows.sort((a, b) => {
+        const x = val(a), y = val(b);
+        const r = num ? (Number(x.replace(/\./g, "").replace(",", ".")) || 0) - (Number(y.replace(/\./g, "").replace(",", ".")) || 0)
+          : !x ? 1 : !y ? -1 : x.localeCompare(y, "es");
+        return dir === "asc" ? r : -r;
+      });
+      rows.forEach((r) => body.appendChild(r));
+    };
+    const onFilter = (e: Event) => {
+      const el = e.target as HTMLElement;
+      if (!el.matches?.("[data-ra-q], [data-ra-colf]")) return;
+      const box = el.closest(".ra-sortlist");
+      const body = box?.querySelector("table")?.tBodies[0];
+      if (!box || !body) return;
+      const q = (box.querySelector<HTMLInputElement>("[data-ra-q]")?.value ?? "").trim().toLowerCase();
+      const cols = Array.from(box.querySelectorAll<HTMLSelectElement>("[data-ra-colf]")).filter((s) => s.value);
+      let n = 0;
+      Array.from(body.rows).forEach((tr) => {
+        const ok = (!q || (tr.cells[0]?.textContent ?? "").toLowerCase().includes(q))
+          && cols.every((s) => (tr.cells[Number(s.dataset.raColf)]?.textContent ?? "").trim() === s.value);
+        tr.hidden = !ok;
+        if (ok) n++;
+      });
+      const count = box.querySelector<HTMLElement>("[data-ra-count]");
+      if (count) count.textContent = q || cols.length ? `${n} empresas` : "";
+    };
     root.addEventListener("change", onPick);
     root.addEventListener("click", onStage);
-    return () => { root.removeEventListener("change", onPick); root.removeEventListener("click", onStage); };
+    root.addEventListener("click", onSort);
+    root.addEventListener("input", onFilter);
+    root.addEventListener("change", onFilter);
+    return () => {
+      root.removeEventListener("change", onPick); root.removeEventListener("click", onStage); root.removeEventListener("click", onSort);
+      root.removeEventListener("input", onFilter); root.removeEventListener("change", onFilter);
+    };
   }, []);
 
   // Tooltip de los gráficos (atributo data-tip del HTML generado)
