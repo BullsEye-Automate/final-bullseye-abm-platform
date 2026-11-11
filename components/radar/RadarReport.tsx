@@ -195,17 +195,19 @@ export default function RadarReport({
       const box = el.closest(".ra-sortlist");
       const body = box?.querySelector("table")?.tBodies[0];
       if (!box || !body) return;
-      const q = (box.querySelector<HTMLInputElement>("[data-ra-q]")?.value ?? "").trim().toLowerCase();
+      const qEl = box.querySelector<HTMLInputElement>("[data-ra-q]");
+      const q = (qEl?.value ?? "").trim().toLowerCase();
+      const qCols = (qEl?.dataset.raQ || "0").split(",").map(Number);
       const cols = Array.from(box.querySelectorAll<HTMLSelectElement>("[data-ra-colf]")).filter((s) => s.value);
       let n = 0;
       Array.from(body.rows).forEach((tr) => {
-        const ok = (!q || (tr.cells[0]?.textContent ?? "").toLowerCase().includes(q))
+        const ok = (!q || qCols.some((c) => (tr.cells[c]?.textContent ?? "").toLowerCase().includes(q)))
           && cols.every((s) => (tr.cells[Number(s.dataset.raColf)]?.textContent ?? "").trim() === s.value);
         tr.hidden = !ok;
         if (ok) n++;
       });
       const count = box.querySelector<HTMLElement>("[data-ra-count]");
-      if (count) count.textContent = q || cols.length ? `${n} empresas` : "";
+      if (count) count.textContent = q || cols.length ? `${n} ${count.dataset.raCount || "empresas"}` : "";
     };
     root.addEventListener("change", onPick);
     root.addEventListener("click", onStage);
