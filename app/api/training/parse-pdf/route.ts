@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { logAiUsage } from "@/lib/aiUsageLogger";
-import { getUserIdFromRequest } from "@/lib/supabase";
+import { getUserIdFromRequest, supabaseAdmin } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,24 +10,58 @@ export const maxDuration = 60;
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const BUCKET = "training-files";
+
 export async function POST(req: NextRequest) {
   const userId = getUserIdFromRequest(req);
+  const contentType = req.headers.get("content-type") ?? "";
+
+  let base64 = "";
+  let isPdf = true;
+  let plainText: string | null = null;
+
   try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    if (!file) return NextResponse.json({ error: "No se recibió archivo" }, { status: 400 });
+    if (contentType.includes("application/json")) {
+      // Flujo alternativo: el archivo ya fue subido a Supabase Storage desde el browser
+      const body = await req.json();
+      const { storage_path } = body as { storage_path?: string };
+      if (!storage_path) return NextResponse.json({ error: "storage_path requerido" }, { status: 400 });
 
-    const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+      const db = supabaseAdmin();
+      const { data, error } = await db.storage.from(BUCKET).download(storage_path);
+      if (error || !data) return NextResponse.json({ error: "No se pudo leer el archivo de Storage" }, { status: 500 });
 
-    if (!isPdf) {
-      // Para archivos de texto plano, devolver el contenido directamente
-      const text = await file.text();
-      return NextResponse.json({ text: text.trim(), pages: 1 });
+      const ext = storage_path.split(".").pop()?.toLowerCase();
+      isPdf = ext === "pdf";
+      if (!isPdf) {
+        plainText = await data.text();
+      } else {
+        const ab = await data.arrayBuffer();
+        base64 = Buffer.from(ab).toString("base64");
+      }
+
+      // Limpiar el archivo de Storage después de procesarlo
+      db.storage.from(BUCKET).remove([storage_path]).catch(() => {});
+    } else {
+      // Flujo original: archivo enviado directamente como form-data (archivos < 4.5MB)
+      const formData = await req.formData();
+      const file = formData.get("file") as File | null;
+      if (!file) return NextResponse.json({ error: "No se recibió archivo" }, { status: 400 });
+
+      isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+
+      if (!isPdf) {
+        plainText = await file.text();
+      } else {
+        const arrayBuffer = await file.arrayBuffer();
+        base64 = Buffer.from(arrayBuffer).toString("base64");
+      }
     }
 
-    // Convertir a base64 para enviarlo a Claude
-    const arrayBuffer = await file.arrayBuffer();
-    const base64 = Buffer.from(arrayBuffer).toString("base64");
+    if (!isPdf && plainText !== null) {
+      // Para archivos de texto plano, devolver el contenido directamente
+      return NextResponse.json({ text: plainText.trim(), pages: 1 });
+    }
 
     const response = await anthropic.messages.create({
       model: "claude-haiku-4-5-20251001",
