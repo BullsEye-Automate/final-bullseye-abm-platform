@@ -102,14 +102,18 @@ type BarItem = { l: string; v: number; c?: string; r?: string | null; tip?: stri
 // Cobertura de una industria a la vez: desplegable + panel por industria
 // (RadarReport alterna los paneles con el atributo data-ra-pick)
 // Lista de empresas que se abre al hacer clic (funnel, descartadas, cobertura)
+// Barra de buscador + filtros por columna de una tabla ordenable (dentro de .ra-sortlist;
+// la maneja onFilter en RadarReport). q = columnas donde busca el texto.
+function listBar(ph: string, q: number[], filters: { col: number; all: string; vals: string[] }[], unit = "empresas") {
+  const opts = (vals: string[]) => Array.from(new Set(vals.filter(Boolean))).sort((a, b) => a.localeCompare(b, "es")).map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  return `<div class="ra-listbar"><input type="search" class="ra-in" data-ra-q="${q.join(",")}" placeholder="${esc(ph)}" aria-label="${esc(ph)}">
+    ${filters.map((f) => `<select class="ra-in" data-ra-colf="${f.col}" aria-label="${esc(f.all)}"><option value="">${esc(f.all)}</option>${opts(f.vals)}</select>`).join("")}
+    <span class="ra-listcount" data-ra-count="${unit}"></span><span class="ra-listhint">Clic en un encabezado para ordenar</span></div>`;
+}
 // Lista de empresas con buscador, filtros por Status / SDR y orden por columna
 function coListHtml(A: any[]) {
-  const opts = (vals: string[]) => Array.from(new Set(vals.filter(Boolean))).sort((a, b) => a.localeCompare(b, "es")).map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
   const lastMt = (c: any) => c.M.reduce((m: string, x: any) => (x.fecha > m ? x.fecha : m), "");
-  const bar = A.length > 5 ? `<div class="ra-listbar"><input type="search" class="ra-in" data-ra-q placeholder="Buscar empresa…" aria-label="Buscar empresa">
-    <select class="ra-in" data-ra-colf="1" aria-label="Filtrar por status"><option value="">Todos los status</option>${opts(A.map((c) => c.st))}</select>
-    <select class="ra-in" data-ra-colf="2" aria-label="Filtrar por SDR"><option value="">Todos los SDR</option>${opts(A.map((c) => c.sdr))}</select>
-    <span class="ra-listcount" data-ra-count></span><span class="ra-listhint">Clic en un encabezado para ordenar</span></div>` : "";
+  const bar = A.length > 5 ? listBar("Buscar empresa…", [0], [{ col: 1, all: "Todos los status", vals: A.map((c) => c.st) }, { col: 2, all: "Todos los SDR", vals: A.map((c) => c.sdr) }]) : "";
   return `<div class="ra-sortlist">${bar}` + table([
     { h: "Empresa", f: (c) => esc(c.n) }, { h: "Status", s: 1, f: (c) => esc(c.st) }, { h: "SDR", s: 1, f: (c) => esc(c.sdr) },
     { h: "Contactos efectivos", n: 1, f: (c) => c.effK.length }, { h: "R. agendadas", n: 1, f: (c) => c.M.length }, { h: "R. realizadas", n: 1, f: (c) => c.mheld || 0 },
@@ -375,13 +379,17 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   // §16 Detalle de reuniones (planilla de reuniones, completa)
   const mtRows = [...(M.Mt as any[])].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+  const mtTxt = { emp: (m: any) => m.c?.n ?? m.emp, sdr: (m: any) => m.sdr, org: (m: any) => m.org || "—", opp: (m: any) => m.oppv || m.res || "—" };
   s["reuniones-detalle"] = mtRows.length
-    ? table([
-        { h: "Agendada", f: (m) => dmy(m.agendada) }, { h: "Reunión", f: (m) => dmy(m.fecha) }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) },
+    ? `<div class="ra-sortlist">${mtRows.length > 5 ? listBar("Buscar empresa o contacto…", [2, 3], [
+        { col: 6, all: "Todos los estados", vals: mtRows.map((m: any) => m.st) }, { col: 5, all: "Todos los SDR", vals: mtRows.map(mtTxt.sdr) },
+        { col: 7, all: "Todos los orígenes", vals: mtRows.map(mtTxt.org) }, { col: 8, all: "Propuesta / oportunidad", vals: mtRows.map(mtTxt.opp) },
+      ], "reuniones") : ""}` + table([
+        { h: "Agendada", f: (m) => dmy(m.agendada), v: (m) => m.agendada || "" }, { h: "Reunión", f: (m) => dmy(m.fecha), v: (m) => m.fecha || "" }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) },
         { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") }, { h: "Cargo", s: 1, f: (m) => esc(m.cargo || m.k?.cargo || "—") },
         { h: "SDR", s: 1, f: (m) => esc(m.sdr) }, { h: "Estado", f: (m) => esc(m.st) }, { h: "Origen", s: 1, f: (m) => esc(m.org || "—") },
         { h: "Propuesta / oportunidad", s: 1, f: (m) => esc(m.oppv || m.res || "—") },
-      ], mtRows.slice(0, 400)) + `<p class="note">${mtRows.length > 400 ? `Se muestran las 400 más recientes de ${N(mtRows.length)}. ` : ""}${M.source === "hubspot" ? "Fuente: planilla de reuniones (Excel de metas)." : ""} Una empresa puede tener varias reuniones.</p>`
+      ], mtRows.slice(0, 400), { sort: true }) + `</div><p class="note">${mtRows.length > 400 ? `Se muestran las 400 más recientes de ${N(mtRows.length)}. ` : ""}${M.source === "hubspot" ? "Fuente: planilla de reuniones (Excel de metas)." : ""} Una empresa puede tener varias reuniones.</p>`
     : `<p class="note" style="margin-top:0">Sin reuniones en el período.</p>`;
 
   // §17 Feedback del cliente (encuesta por reunión realizada)
