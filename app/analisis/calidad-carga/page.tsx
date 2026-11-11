@@ -96,8 +96,130 @@ function ContactsTable({ rows }: { rows: CargaContact[] }) {
   );
 }
 
+// ── Vista "Todos los clientes": una fila por cliente activo ─────────────
+type SummaryRow = { id: string; name: string; state: "pending" | "loading" | "ok" | "error"; error?: string; totals?: CargaLoad; loads?: number; hasIcp?: boolean; warnings?: string[] };
+const PARALLEL = 2;
+
+function AllClientsSummary({ days, refreshKey, onPick }: { days: number; refreshKey: number; onPick: (id: string, name: string) => void }) {
+  const [rows, setRows] = useState<SummaryRow[]>([]);
+  const [warn, setWarn] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ k: string; dir: 1 | -1 }>({ k: "contacts", dir: -1 });
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      setRows([]); setWarn(null);
+      const r = await fetch("/api/calidad-carga/clientes", { cache: "no-store" }).then((x) => x.json()).catch(() => ({ clients: [] }));
+      if (!alive) return;
+      setWarn(r.warning ?? null);
+      const list: SummaryRow[] = (r.clients ?? []).map((c: { id: string; name: string }) => ({ ...c, state: "pending" as const }));
+      setRows(list);
+      // De a PARALLEL clientes; cada uno queda guardado 6 h en el servidor
+      let next = 0;
+      const upd = (id: string, patch: Partial<SummaryRow>) => alive && setRows((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+      await Promise.all(Array.from({ length: Math.min(PARALLEL, list.length) }, async () => {
+        while (alive && next < list.length) {
+          const c = list[next++];
+          upd(c.id, { state: "loading" });
+          try {
+            const res = await fetch(`/api/calidad-carga?client_id=${c.id}&days=${days}&summary=1${refreshKey ? "&fresh=1" : ""}`, { cache: "no-store" });
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.error || `Error ${res.status}`);
+            upd(c.id, { state: "ok", totals: d.totals, loads: d.loads, hasIcp: d.hasIcp, warnings: d.warnings });
+          } catch (e) {
+            upd(c.id, { state: "error", error: (e as Error).message });
+          }
+        }
+      }));
+    })();
+    return () => { alive = false; };
+  }, [days, refreshKey]);
+
+  const done = rows.filter((r) => r.state === "ok" || r.state === "error").length;
+  const ok = rows.filter((r) => r.state === "ok" && r.totals) as (SummaryRow & { totals: CargaLoad })[];
+  const sum = (f: (t: CargaLoad) => number) => ok.reduce((s, r) => s + f(r.totals), 0);
+  const tot = { contacts: sum((t) => t.contacts), calza: sum((t) => t.calza), phone: sum((t) => t.withPhone), lemlist: sum((t) => t.withLemlist), expected: sum((t) => t.expectedMeetings), meetings: sum((t) => t.meetings), phones: sum((t) => t.phonesAvg * t.contacts), quality: sum((t) => t.quality * t.contacts) };
+  const val = (r: SummaryRow, k: string): number | string => {
+    const t = r.totals;
+    if (k === "name") return r.name.toLowerCase();
+    if (!t) return -1;
+    const v: Record<string, number> = {
+      contacts: t.contacts, calza: t.contacts ? t.calza / t.contacts : -1, phone: t.contacts ? t.withPhone / t.contacts : -1, phonesAvg: t.phonesAvg,
+      lemlist: t.contacts ? t.withLemlist / t.contacts : -1, quality: t.contacts ? t.quality : -1, prob: t.prob, expected: t.expectedMeetings, meetings: t.meetings,
+    };
+    return v[k] ?? -1;
+  };
+  const sorted = [...rows].sort((a, b) => { const x = val(a, sort.k), y = val(b, sort.k); return (x < y ? -1 : x > y ? 1 : 0) * sort.dir; });
+  const th = (k: string, label: string, right = true) => (
+    <th className={`py-2 pr-2 cursor-pointer select-none hover:text-ink ${right ? "text-right" : ""}`} onClick={() => setSort((p) => ({ k, dir: p.k === k ? (p.dir === 1 ? -1 : 1) : k === "name" ? 1 : -1 }))}>
+      {label}{sort.k === k ? (sort.dir === 1 ? " ↑" : " ↓") : ""}
+    </th>
+  );
+
+  return (
+    <>
+      {warn && <div className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded p-3">{warn}</div>}
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Kpi k="Contactos cargados" v={String(tot.contacts)} d={`${ok.filter((r) => r.totals.contacts).length} clientes con cargas en ${days} días`} />
+        <Kpi k="Calzan con el ICP" v={pct(tot.calza, tot.contacts)} d={`${tot.calza} contactos`} />
+        <Kpi k="Con teléfono" v={pct(tot.phone, tot.contacts)} d={`${tot.contacts ? n1(tot.phones / tot.contacts) : "—"} teléfonos por contacto`} />
+        <Kpi k="Con teléfono Lemlist" v={pct(tot.lemlist, tot.contacts)} d={`${tot.lemlist} contactos`} />
+        <Kpi k="Calidad promedio" v={tot.contacts ? `${Math.round(tot.quality / tot.contacts)}/100` : "—"} d="ponderada por contactos" />
+        <Kpi k="Reuniones esperadas" v={n1(tot.expected)} d={`${tot.meetings} reuniones a la fecha`} />
+      </section>
+      <section className="card">
+        <div className="px-4 pt-4 pb-2 flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-sm font-medium">Por cliente</div>
+          <div className="text-xs text-ink-muted">{done < rows.length ? <span className="inline-flex items-center gap-1.5"><IconLoader2 size={13} className="animate-spin" /> Calculando {done} de {rows.length} clientes… (la primera vez de cada cliente puede tardar 1–2 min)</span> : `${rows.length} clientes activos · clic en un cliente para ver su detalle`}</div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-ink-muted border-b border-[#ECEAF4]">
+              <tr className="[&>th:first-child]:pl-4">
+                {th("name", "Cliente", false)}{th("contacts", "Contactos")}{th("calza", "Calzan ICP")}{th("phone", "Con teléfono")}{th("phonesAvg", "Tel./contacto")}
+                {th("lemlist", "Tel. Lemlist")}{th("quality", "Calidad")}{th("prob", "Prob. reunión")}{th("expected", "Reuniones esperadas")}{th("meetings", "Reuniones")}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((r) => {
+                const t = r.totals;
+                return (
+                  <tr key={r.id} className="border-b border-[#ECEAF4] hover:bg-black/[0.02] cursor-pointer [&>td:first-child]:pl-4" onClick={() => onPick(r.id, r.name)}>
+                    <td className="py-2 pr-2 font-medium">{r.name}</td>
+                    {r.state === "ok" && t ? (
+                      t.contacts ? (
+                        <>
+                          <td className="pr-2 text-right">{t.contacts}</td>
+                          <td className="pr-2 text-right font-semibold">{r.hasIcp ? pct(t.calza, t.contacts) : <span className="text-ink-muted" title="Sin ICP cargado">—</span>}</td>
+                          <td className="pr-2 text-right">{pct(t.withPhone, t.contacts)}</td>
+                          <td className="pr-2 text-right">{n1(t.phonesAvg)}</td>
+                          <td className="pr-2 text-right">{pct(t.withLemlist, t.contacts)}</td>
+                          <td className={`pr-2 text-right font-semibold ${qCls(t.quality)}`}>{t.quality}</td>
+                          <td className="pr-2 text-right">{pc1(t.prob)}</td>
+                          <td className="pr-2 text-right">{n1(t.expectedMeetings)}</td>
+                          <td className="pr-2 text-right">{t.meetings}</td>
+                        </>
+                      ) : <td colSpan={9} className="pr-2 text-xs text-ink-muted">Sin contactos importados en el período</td>
+                    ) : r.state === "error" ? (
+                      <td colSpan={9} className="pr-2 text-xs text-error-fg truncate max-w-0" title={r.error}>{r.error}</td>
+                    ) : (
+                      <td colSpan={9} className="pr-2 text-xs text-ink-muted">{r.state === "loading" ? <span className="inline-flex items-center gap-1.5"><IconLoader2 size={13} className="animate-spin" /> Calculando…</span> : "En espera"}</td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {!rows.length && <div className="p-4 text-sm text-ink-muted flex items-center gap-2"><IconLoader2 size={15} className="animate-spin" /> Cargando clientes…</div>}
+        </div>
+      </section>
+    </>
+  );
+}
+
 export default function CalidadCargaPage() {
-  const { currentClient } = useClient();
+  const { currentClient, clients, setCurrentClient } = useClient();
+  const isAll = currentClient?.id === "__all__";
+  const [refreshKey, setRefreshKey] = useState(0);
   const [days, setDays] = useState(30);
   const [data, setData] = useState<CargaReport | null>(null);
   const [loading, setLoading] = useState(false);
@@ -164,13 +286,19 @@ export default function CalidadCargaPage() {
           <select className="input text-sm w-40" value={days} onChange={(e) => setDays(Number(e.target.value))}>
             {[7, 14, 30, 60, 90].map((d) => <option key={d} value={d}>Últimos {d} días</option>)}
           </select>
-          <button onClick={() => load(true)} disabled={loading || !clientId} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border hover:bg-black/5 transition disabled:opacity-50">
+          <button onClick={() => (isAll ? setRefreshKey((k) => k + 1) : load(true))} disabled={loading || (!clientId && !isAll)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border hover:bg-black/5 transition disabled:opacity-50">
             {loading ? <IconLoader2 size={15} className="animate-spin" /> : <IconRefresh size={15} />} Actualizar
           </button>
         </div>
       </header>
 
-      {!clientId && <div className="card p-4 text-sm text-ink-muted">Elige un cliente en el selector de arriba.</div>}
+      {isAll && (
+        <AllClientsSummary days={days} refreshKey={refreshKey} onPick={(id, name) => {
+          const c = clients.find((x) => x.id === id);
+          setCurrentClient(c ?? { id, name, slug: id, logo_url: null });
+        }} />
+      )}
+      {!clientId && !isAll && <div className="card p-4 text-sm text-ink-muted">Elige un cliente en el selector de arriba (o "Todos los clientes" para el resumen).</div>}
       {error && (
         <div className="flex items-center gap-2 text-error-fg text-sm p-3 rounded bg-error-bg/20 border border-error-bg">
           <IconAlertCircle size={16} className="shrink-0" /> {error}
