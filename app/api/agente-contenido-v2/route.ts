@@ -6,8 +6,42 @@ import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 const HS = "https://api.hubapi.com";
+const PERPLEXITY_API = "https://api.perplexity.ai/chat/completions";
+
+const COLD_TYPES = new Set(["cold", "no_contact"]);
+
+async function searchCompanyNews(companyName: string, country: string | null): Promise<string | null> {
+  const key = process.env.PERPLEXITY_API_KEY;
+  if (!key || !companyName) return null;
+
+  const locationHint = country ? ` en ${country}` : "";
+  const query = `Busca noticias recientes (últimos 6 meses) sobre la empresa "${companyName}"${locationHint}. Incluye: lanzamientos de productos, expansiones, cambios de liderazgo, logros o desafíos relevantes. Sé conciso, máximo 150 palabras. Si no hay noticias relevantes recientes, indícalo brevemente.`;
+
+  try {
+    const r = await fetch(PERPLEXITY_API, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "sonar",
+        messages: [{ role: "user", content: query }],
+        max_tokens: 300,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    const text: string = data?.choices?.[0]?.message?.content ?? "";
+    return text.trim() || null;
+  } catch {
+    return null;
+  }
+}
 function hsHeaders() {
   return {
     Authorization: `Bearer ${process.env.HUBSPOT_ACCESS_TOKEN}`,
@@ -104,7 +138,7 @@ function buildSystemPrompt(
     name?: string; company?: string; title?: string; emailType?: string;
     channel?: string; referrerName?: string; meetingDate?: string; meetingCountry?: string;
     contextNotes?: string; segmentStyleGuide?: string;
-    contactBlock?: string; alloCallSummary?: string;
+    contactBlock?: string; alloCallSummary?: string; newsBlock?: string;
   }
 ): string {
   const contextBlock = ctx.aiContext.length
@@ -132,6 +166,9 @@ function buildSystemPrompt(
     : "";
 
   const contactSection = recipient.contactBlock ? `\n\n${recipient.contactBlock}` : "";
+  const newsSection = recipient.newsBlock
+    ? `\n\n── Noticias recientes de la empresa (web) ──\n${recipient.newsBlock}`
+    : "";
   const styleBlock = recipient.segmentStyleGuide ? `\n\nGuía de estilo (aplica estrictamente):\n${recipient.segmentStyleGuide}` : "";
 
 
@@ -150,7 +187,7 @@ function buildSystemPrompt(
 
 ${channelInstruction}Comienza siempre con un saludo apropiado (Hola [Nombre], Buenos días [Nombre], etc.). No incluyas firma, despedida con nombre ni datos de contacto — el SDR añadirá su propia firma. Nunca uses el carácter — (guión largo).
 
-${recipientLines ? `Datos del destinatario:\n${recipientLines}` : ""}${contactSection}${alloBlock}
+${recipientLines ? `Datos del destinatario:\n${recipientLines}` : ""}${contactSection}${newsSection}${alloBlock}
 
 Contexto sobre ${ctx.clientName}:
 ${contextBlock}${icpBlock}${styleBlock}${extraInstruction}
@@ -203,6 +240,9 @@ export async function POST(req: NextRequest) {
     }
 
     let contactBlock: string | undefined;
+    let contactCountry: string | null = null;
+    let companyName: string | null = recipientCompany ?? null;
+
     if (hubspotContactId) {
       const contactData = await fetchHubSpotContact(hubspotContactId);
       let companyData = null;
@@ -210,14 +250,29 @@ export async function POST(req: NextRequest) {
         ?? contactData?.associations?.companies?.results?.[0]?.id;
       if (companyId) companyData = await fetchHubSpotCompany(companyId);
       contactBlock = buildContactBlock(contactData, companyData) || undefined;
+
+      // País: prioridad al país del contacto, fallback al de la empresa
+      const cp = contactData?.properties ?? {};
+      const ep = companyData?.properties ?? {};
+      contactCountry = cp.country || cp.pais_g || ep.pais_g || ep.country || null;
+      companyName = ep.name || recipientCompany || null;
     }
 
-    const ctx = await getClientContext(clientId);
+    // Búsqueda de noticias solo para tipos de primer contacto (en paralelo con contexto IA)
+    const shouldSearchNews = COLD_TYPES.has(emailType ?? "");
+    const [ctx, newsBlock] = await Promise.all([
+      getClientContext(clientId),
+      shouldSearchNews && companyName
+        ? searchCompanyNews(companyName, contactCountry)
+        : Promise.resolve(null),
+    ]);
+
     const systemPrompt = buildSystemPrompt(ctx, {
       name: recipientName, company: recipientCompany, title: recipientTitle,
       emailType, channel: channel ?? "email",
       referrerName, meetingDate, meetingCountry, contextNotes,
       segmentStyleGuide, contactBlock, alloCallSummary,
+      newsBlock: newsBlock ?? undefined,
     });
 
     const chatMessages: any[] = messages.map((m: { role: string; content: string }, idx: number) => {
