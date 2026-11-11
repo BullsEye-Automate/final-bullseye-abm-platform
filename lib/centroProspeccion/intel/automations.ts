@@ -104,11 +104,11 @@ export async function sendMondayMail(): Promise<{ to: string[]; clientes: number
   const body = rows.length
     ? `<p>Esta es la propuesta para la semana del ${esc(semana)}, armada con el stock de los SDR, sus llamadas y notas, las señales de Allo, los rechazos del cliente y el feedback de reuniones. Las empresas recomendadas ya están en <b>Empresas → Recomendadas por IA</b>: revísalas y propón al cliente las que correspondan.</p>
 <table style="width:100%;border-collapse:collapse;font-size:13px">
-<tr style="background:#f3f2fa"><th align="left" style="padding:6px">Cliente</th><th align="left" style="padding:6px">Prioridad</th><th align="right" style="padding:6px">Sugeridas</th><th align="right" style="padding:6px">Recomendadas listas</th><th align="right" style="padding:6px">Propuestas ficha</th></tr>
+<tr style="background:#f3f2fa"><th align="left" style="padding:6px">Cliente</th><th align="left" style="padding:6px">Prioridad</th><th align="right" style="padding:6px">Meta del mes</th><th align="right" style="padding:6px">Sugeridas</th><th align="right" style="padding:6px">Recomendadas listas</th><th align="right" style="padding:6px">Propuestas ficha</th></tr>
 ${rows.map(({ i, cliente, reco, prospectora }) => {
       const pend = i.result.propuestas.filter((p) => !p.estado || p.estado === "pendiente").length;
       return `<tr style="border-top:1px solid #eee"><td style="padding:6px"><b>${esc(cliente)}</b>${prospectora ? `<br><span style="color:#777">${esc(prospectora)}</span>` : ""}<br><span style="color:#555">${esc(i.result.resumen)}</span>${i.result.donde_prospectar.length ? `<br><span style="color:#555">Foco: ${esc(i.result.donde_prospectar.join("; "))}</span>` : ""}</td>
-<td style="padding:6px;color:${color[i.result.prioridad]}"><b>${i.result.prioridad}</b></td><td align="right" style="padding:6px">${i.result.empresas_sugeridas}</td>
+<td style="padding:6px;color:${color[i.result.prioridad]}"><b>${i.result.prioridad}</b></td><td align="right" style="padding:6px">${(() => { const g = (i.numbers as { meta?: { meta: number; realizadas: number; faltan: number; cumplida: boolean } })?.meta; return g ? `${g.realizadas} / ${g.meta}<br><span style="color:${g.cumplida ? "#2f855a" : "#777"};font-size:11px">${g.cumplida ? "cumplida" : `faltan ${g.faltan}`}</span>` : "–"; })()}</td><td align="right" style="padding:6px">${i.result.empresas_sugeridas}</td>
 <td align="right" style="padding:6px">${reco ? `${reco.pendientes_antes + reco.nuevas}${reco.estado !== "ok" ? `<br><span style="color:#999;font-size:11px">${esc(reco.estado)}</span>` : ""}` : "–"}</td><td align="right" style="padding:6px">${pend}</td></tr>`;
     }).join("")}
 </table>

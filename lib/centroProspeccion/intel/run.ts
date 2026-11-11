@@ -7,6 +7,7 @@ import { writeDoc } from "../store";
 import { computeNumbers, type IntelNumbers } from "./numbers";
 import { readWeekFeed, scrubPii, type FeedItem } from "./hubspotFeed";
 import { analyzeWeek, type IntelResult } from "./analyze";
+import { goalText, loadGoalsByClient, MET_GOAL_CAP, type ClientGoal } from "./goals";
 
 // Inteligencia de la semana de un cliente: junta la evidencia, llama a la IA
 // y guarda el resultado en centro_intel (una fila por cliente y semana).
@@ -108,6 +109,13 @@ export async function runClientIntel(clientId: string, by = "cron"): Promise<Int
     ]);
     const ds = snap?.dataset ?? null;
     const numbers = computeNumbers(ds);
+    // Meta de reuniones del mes (pestaña Asignación + planilla de reuniones)
+    let goal: ClientGoal | null = null;
+    try {
+      goal = (await loadGoalsByClient(chileDate()))[clientId] ?? null;
+    } catch (e) {
+      console.warn("[centro-intel] meta del mes:", (e as Error).message);
+    }
     const fichas = (links.fichasByClient.get(clientId) ?? []).filter((f) => f.data.estado !== "pausado");
 
     // HubSpot: llamadas y notas de los SDR sobre empresas / contactos del cliente
@@ -164,7 +172,13 @@ export async function runClientIntel(clientId: string, by = "cron"): Promise<Int
       ficha: fichaText(fichas), icp,
       senales: scrubPii(senales), hubspot: scrubPii(hubspot), minutas: scrubPii(minutas),
       rechazos: scrubPii(rechazos), feedback: scrubPii(feedback),
+      meta: goalText(goal),
     }, model);
+    // Meta del mes cumplida: se baja el ritmo (tope fijo, aunque la IA proponga más)
+    if (goal?.cumplida && result.empresas_sugeridas > MET_GOAL_CAP) {
+      result.empresas_sugeridas = MET_GOAL_CAP;
+      result.motivo_cantidad = `Meta de ${goal.mes} cumplida (${goal.realizadas} de ${goal.meta} realizadas): se baja el ritmo a ${MET_GOAL_CAP} empresas para no dejar sin cuentas el mes siguiente. ${result.motivo_cantidad}`;
+    }
     // Mantiene las decisiones si se vuelve a generar la misma semana
     const { data: prev } = await db.from("centro_intel").select("result").eq("client_id", clientId).eq("semana", semana).maybeSingle();
     const prevProps = ((prev?.result as IntelResult | undefined)?.propuestas ?? []).filter((p) => p.estado && p.estado !== "pendiente");
@@ -172,7 +186,7 @@ export async function runClientIntel(clientId: string, by = "cron"): Promise<Int
 
     const price = /haiku/i.test(model) ? [1, 5] : /opus/i.test(model) ? [15, 75] : [3, 15];
     const cost = (costIn / 1e6) * price[0] + (costOut / 1e6) * price[1];
-    const row = await save({ status: "ok", numbers: numbers ?? {}, result, error: null, model, cost_usd: Math.round(cost * 10000) / 10000 });
+    const row = await save({ status: "ok", numbers: { ...(numbers ?? {}), ...(goal ? { meta: goal } : {}) } as IntelRow["numbers"], result, error: null, model, cost_usd: Math.round(cost * 10000) / 10000 });
     await writeSummaryDoc(client.name, fichas.map((f) => f.id), row).catch((e) => console.warn("[centro-intel] resumen:", (e as Error).message));
     return row;
   } catch (e) {

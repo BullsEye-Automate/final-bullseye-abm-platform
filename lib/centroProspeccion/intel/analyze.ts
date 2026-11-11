@@ -52,7 +52,10 @@ Reglas obligatorias:
 - Exclusiones: empresas que rechazaron explícitamente, que ya son clientes del cliente o con contratos cerrados largos; nómbralas.
 - Recordatorios: solo cuando el prospecto pidió que lo llamen en un momento concreto (ej. "en diciembre", "después del 15"). Usa la fecha tal como se dijo o el mes (AAAA-MM o AAAA-MM-DD).
 - Calidad de datos: problemas con los contactos entregados por prospección (números de central, números malos, personas que ya no trabajan, cargos equivocados), con conteos.
-- empresas_sugeridas: cuántas empresas nuevas debería prospectar el equipo la próxima semana para este cliente. Si los SDR tienen stock para más de 15 días hábiles, sugiere poco (0–10); si tienen menos de 5 días, sugiere más (30–60). Justifícalo en motivo_cantidad.
+- empresas_sugeridas: cuántas empresas nuevas debería prospectar el equipo la próxima semana para este cliente. Combina dos cosas:
+  1) La meta de reuniones del mes (<meta_reuniones>): si la meta ya está cumplida, baja el ritmo (máximo 10) y prioridad baja. Si faltan reuniones y quedan pocos días hábiles, sube la prioridad. Proyecta cuántas empresas hacen falta con la conversión histórica de la cuenta (reuniones de los últimos 30 días frente a las empresas y contactos trabajados en <numeros>); si no hay conversión medible, dilo y usa el stock. Ten presente que lo que se prospecta hoy suele convertirse en reuniones en 2 a 4 semanas: en la segunda mitad del mes, prospectar alimenta sobre todo el mes siguiente.
+  2) El stock de los SDR: si tienen contactos para más de 15 días hábiles, sugiere poco (0–10) aunque falten reuniones (el problema no es de prospección); si tienen menos de 5 días, sugiere más (30–60).
+  Explica el cálculo en motivo_cantidad con las cifras (meta, realizadas, faltan, días hábiles, stock).
 - No incluyas correos, teléfonos ni datos personales de prospectos. Nombres de empresa sí; de personas solo el cargo.
 - Español de Chile, frases cortas y claras.`;
 
@@ -116,6 +119,7 @@ export type IntelInputs = {
   minutas: string;
   rechazos: string;
   feedback: string;
+  meta: string;
 };
 
 export async function analyzeWeek(inp: IntelInputs, model: string): Promise<{ result: IntelResult; costIn: number; costOut: number }> {
@@ -134,6 +138,10 @@ export async function analyzeWeek(inp: IntelInputs, model: string): Promise<{ re
 <numeros>
 ${numbersText}
 </numeros>
+
+<meta_reuniones>
+${inp.meta || "Sin meta cargada."}
+</meta_reuniones>
 
 <ficha_actual>
 ${inp.ficha || "Sin ficha."}

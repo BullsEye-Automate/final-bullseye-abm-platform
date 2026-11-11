@@ -13,7 +13,8 @@ type Result = {
   recordatorios: { empresa: string; contacto: string; cuando: string; motivo: string; sdr: string }[];
   calidad_datos: string[]; minuta: string;
 };
-type Numbers = { sinGestion?: number; diasStock?: number | null; ritmoDiario?: number; reuniones30d?: number; realizadas30d?: number; empresasSinContacto?: number };
+type Goal = { mes: string; meta: number; realizadas: number; porRealizar: number; faltan: number; cumplida: boolean; diasHabilesRestantes: number };
+type Numbers = { meta?: Goal; sinGestion?: number; diasStock?: number | null; ritmoDiario?: number; reuniones30d?: number; realizadas30d?: number; empresasSinContacto?: number };
 type Row = { client_id: string; cliente: string; semana: string; status: string; error: string | null; result: Result; numbers: Numbers; cost_usd: number | null; fichas: { id: string; nombre: string }[] };
 type Intel = { semana: string | null; filas: Row[]; error?: string };
 type Check = { key: string; label: string; ok: boolean; detail: string; required: boolean };
@@ -30,6 +31,7 @@ const TIPO: Record<string, string> = {
 const CAMPO: Record<string, string> = { cargos: "Cargos objetivo", industrias: "Industrias objetivo", exclusiones: "Exclusiones", zonas: "Zonas", proximos: "Próximos pasos" };
 const card = (title: string, sub: string, body: string) =>
   `<div class="card" style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline;margin-bottom:10px"><h3 style="font-family:var(--head);font-size:15px">${esc(title)}</h3><span class="muted" style="font-size:12px">${sub}</span></div>${body}</div>`;
+const goalCell = (g?: Goal) => !g ? '<span class="muted">sin meta</span>' : `<b>${n(g.realizadas)}</b> / ${n(g.meta)}${g.cumplida ? ' <span class="pill g">cumplida</span>' : `<div class="muted" style="font-size:11.5px">faltan ${n(g.faltan)} · ${n(g.porRealizar)} por realizar</div>`}`;
 const lunes = (iso: string | null) => (iso ? new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-CL", { day: "numeric", month: "long", timeZone: "UTC" }) : "");
 
 export function createIntelSections() {
@@ -64,11 +66,11 @@ export function createIntelSections() {
     el.innerHTML = card(
       `Inteligencia de la semana del ${lunes(it.semana)}`,
       `Stock de los SDR, sus llamadas y notas, señales de Allo, rechazos y feedback${admin ? ` · IA US$${cost.toFixed(2)}` : ""}`,
-      `<div class="tw"><table><thead><tr><th class="l">Cliente</th><th>Prioridad</th><th>Empresas sugeridas</th><th>Stock SDR</th><th>Por decidir</th><th class="l">Qué hacer</th></tr></thead><tbody>${rows.map((r) => {
-        if (r.status !== "ok") return `<tr><td class="l"><b>${esc(r.cliente)}</b></td><td colspan="5" class="l muted">${r.status === "sin_datos" ? "Sin datos suficientes esta semana" : `Error: ${esc(r.error)}`}</td></tr>`;
+      `<div class="tw"><table><thead><tr><th class="l">Cliente</th><th>Prioridad</th><th>Meta del mes</th><th>Empresas sugeridas</th><th>Stock SDR</th><th>Por decidir</th><th class="l">Qué hacer</th></tr></thead><tbody>${rows.map((r) => {
+        if (r.status !== "ok") return `<tr><td class="l"><b>${esc(r.cliente)}</b></td><td colspan="6" class="l muted">${r.status === "sin_datos" ? "Sin datos suficientes esta semana" : `Error: ${esc(r.error)}`}</td></tr>`;
         const p = pending(r).length;
         const d = r.numbers?.diasStock;
-        return `<tr><td class="l"><b>${esc(r.cliente)}</b></td><td><span class="pill ${PRIO[r.result.prioridad]}">${esc(r.result.prioridad)}</span></td><td><b>${n(r.result.empresas_sugeridas)}</b></td><td>${d == null ? "–" : `${n(d)} días`}<div class="muted" style="font-size:11.5px">${n(r.numbers?.sinGestion)} contactos</div></td><td>${p ? `<b>${n(p)}</b>` : "–"}</td><td class="l" style="white-space:normal;max-width:420px;font-size:12.5px">${esc(r.result.resumen)}</td></tr>`;
+        return `<tr><td class="l"><b>${esc(r.cliente)}</b></td><td><span class="pill ${PRIO[r.result.prioridad]}">${esc(r.result.prioridad)}</span></td><td>${goalCell(r.numbers?.meta)}</td><td><b>${n(r.result.empresas_sugeridas)}</b></td><td>${d == null ? "–" : `${n(d)} días`}<div class="muted" style="font-size:11.5px">${n(r.numbers?.sinGestion)} contactos</div></td><td>${p ? `<b>${n(p)}</b>` : "–"}</td><td class="l" style="white-space:normal;max-width:420px;font-size:12.5px">${esc(r.result.resumen)}</td></tr>`;
       }).join("")}</tbody></table></div><p class="muted" style="font-size:12px;margin-top:8px">Las propuestas de cargos, industrias y exclusiones se aprueban o descartan en la ficha de cada cliente. Las empresas sugeridas se generan solas el domingo en Empresas → Recomendadas por IA.</p>`
     );
     rerender.push(() => { if (el.isConnected) void renderResumen(el, fichaFilter, admin); });
@@ -131,6 +133,7 @@ export function createIntelSections() {
       `<p style="font-size:13.5px">${esc(res.resumen)}</p>
       <div class="kgrid" style="margin:10px 0">
         <div class="kpi hl"><div class="kpi-h">Empresas sugeridas</div><div class="kv">${n(res.empresas_sugeridas)}</div><div class="ksub">${esc(res.motivo_cantidad)}</div></div>
+        <div class="kpi"><div class="kpi-h">Meta de reuniones del mes</div><div class="kv">${nb.meta ? `${n(nb.meta.realizadas)} / ${n(nb.meta.meta)}` : "–"}</div><div class="ksub">${nb.meta ? (nb.meta.cumplida ? "Cumplida: se baja el ritmo" : `Faltan ${n(nb.meta.faltan)} · ${n(nb.meta.porRealizar)} por realizar · ${n(nb.meta.diasHabilesRestantes)} días hábiles`) : "Sin meta cargada en Asignación"}</div></div>
         <div class="kpi"><div class="kpi-h">Stock de los SDR</div><div class="kv">${nb.diasStock == null ? "–" : `${n(nb.diasStock)} días`}</div><div class="ksub">${n(nb.sinGestion)} contactos sin gestionar · ${n(nb.ritmoDiario)} por día</div></div>
         <div class="kpi"><div class="kpi-h">Reuniones 30 días</div><div class="kv">${n(nb.reuniones30d)}</div><div class="ksub">${n(nb.realizadas30d)} realizadas</div></div>
       </div>
