@@ -1,6 +1,7 @@
 "use client";
 
 import { resolveDataset } from "@/lib/radarAbm/fetchDataset";
+import { ALL_SUBS, ALL_SUBS_LABEL, mergeDatasets } from "@/lib/radarAbm/mergeSubs";
 import { runRadarSync } from "@/lib/radarAbm/clientSync";
 import "@/components/radar/radar.css";
 import Link from "next/link";
@@ -67,9 +68,19 @@ export default function RadarAbmPage() {
       const j = (await r.json()) as ApiResponse;
       if (!r.ok || j.error) throw new Error(j.error || `Error ${r.status}`);
       if (j.subs?.length && !demo) {
-        const pick = j.subs.find((x) => x.name === sub) ?? j.subs[0];
-        const dataset = await resolveDataset({ datasetUrl: pick.url, datasetExtra: { warnings: pick.warnings, mapping: pick.mapping }, feedback: (j as any).feedback });
-        setData({ ...j, dataset, warnings: pick.warnings, syncedAt: pick.syncedAt });
+        const fb = (j as any).feedback;
+        const load1 = (x: NonNullable<ApiResponse["subs"]>[number]) =>
+          resolveDataset({ datasetUrl: x.url, datasetExtra: { warnings: x.warnings, mapping: x.mapping }, feedback: fb }).then((ds) => ({ name: x.name, ds: ds ? { ...ds, syncedAt: x.syncedAt } : null }));
+        if (j.subs.length > 1 && (sub ?? ALL_SUBS) === ALL_SUBS) {
+          // Todos los clientes de la cuenta en un solo informe (el País y el selector filtran)
+          const parts = await Promise.all(j.subs.map(load1));
+          const dataset = mergeDatasets(parts.filter((p) => p.ds) as { name: string; ds: RadarDataset }[]);
+          setData({ ...j, dataset, warnings: dataset?.warnings ?? [], syncedAt: dataset?.syncedAt ?? null });
+        } else {
+          const pick = j.subs.find((x) => x.name === sub) ?? j.subs[0];
+          const dataset = await resolveDataset({ datasetUrl: pick.url, datasetExtra: { warnings: pick.warnings, mapping: pick.mapping }, feedback: fb });
+          setData({ ...j, dataset, warnings: pick.warnings, syncedAt: pick.syncedAt });
+        }
       } else setData({ ...j, dataset: await resolveDataset(j as any) });
     } catch (e) {
       setError((e as Error).message);
@@ -115,7 +126,8 @@ export default function RadarAbmPage() {
   const actions = (
     <>
       {subs.length > 1 && (
-        <select className="ra-select" aria-label="Cliente de la cuenta" value={sub ?? subs[0].name} onChange={(e) => setSub(e.target.value)} title="Esta cuenta de HubSpot tiene varios clientes">
+        <select className="ra-select" aria-label="Cliente de la cuenta" value={sub ?? ALL_SUBS} onChange={(e) => setSub(e.target.value)} title="Esta cuenta de HubSpot tiene varios clientes">
+          <option value={ALL_SUBS}>{ALL_SUBS_LABEL}</option>
           {subs.map((x) => <option key={x.name} value={x.name}>{x.name}</option>)}
         </select>
       )}
