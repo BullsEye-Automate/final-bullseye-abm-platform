@@ -177,6 +177,15 @@
 .ra-root .ra-how[open] > summary { margin-bottom: 10px; }
 .ra-root .ra-fold { margin-top: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 18px; box-shadow: var(--shadow); }
 .ra-root .ra-fold > summary { font-size: 14px; }
+/* Tarjeta plegable: el título es el botón (ej. Cobertura por industria) */
+.ra-root .ra-cfold > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ra-root .ra-cfold > summary::-webkit-details-marker { display: none; }
+.ra-root .ra-cfold > summary h4 { margin: 0; }
+.ra-root .ra-cfold > summary h4::before { content: "▸"; display: inline-block; margin-right: 8px; color: var(--accent); transition: transform .15s; }
+.ra-root .ra-cfold[open] > summary h4::before { transform: rotate(90deg); }
+.ra-root .ra-cfold[open] > summary { margin-bottom: 12px; }
+.ra-root .ra-cfold-hint { font-size: 12px; color: var(--muted); }
+.ra-root .ra-cfold[open] .ra-cfold-hint { display: none; }
 .ra-root .ra-fold .tw { border: 0; box-shadow: none; padding: 0; border-radius: 0; }
 .ra-root .gauge { position: relative; width: 200px; height: 200px; margin: 0 auto; }
 .ra-root .gauge .c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
