@@ -112,6 +112,14 @@ function WorkspaceTabs() {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [wishlist, setWishlist] = useState<WishlistItem[]>([]);
+  const [proxy, setProxy] = useState(false);
+  useEffect(() => {
+    if (!ws.operator) return;
+    fetch(ws.url("/api/portal/wishlist/on-behalf"), { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => setProxy(!!j?.allowed))
+      .catch(() => setProxy(false));
+  }, [ws.operator, ws.url]);
 
   const loadWishlist = useCallback(async () => {
     const r = await fetch(ws.url("/api/portal/wishlist"), { cache: "no-store" });
@@ -135,6 +143,7 @@ function WorkspaceTabs() {
         { key: "ai", label: "Recomendadas por IA", icon: <IconSparkles size={16} /> },
         { key: "search", label: "Buscar empresas", icon: <IconSearch size={16} /> },
         { key: "proposals", label: `Pendientes de aprobación${count(proposed.length)}`, icon: <IconClock size={16} /> },
+        ...(proxy ? [{ key: "upload" as Tab, label: "Cargar listado del cliente", icon: <IconUpload size={16} /> }] : []),
         { key: "worked", label: "Aprobadas para prospectar", icon: <IconBriefcase size={16} /> },
         { key: "rejected", label: `Rechazadas por el cliente${count(rejected.length)}`, icon: <IconThumbDown size={16} /> },
         { key: "omitted", label: "Descartadas", icon: <IconEyeOff size={16} /> },
@@ -182,8 +191,8 @@ function WorkspaceTabs() {
 
       {tab === "ai" && catalog && <AiTab catalog={catalog} onAdded={loadWishlist} />}
       {tab === "search" && catalog && <SearchTab catalog={catalog} onAdded={loadWishlist} />}
-      {tab === "upload" && <UploadTab onAdded={loadWishlist} onDone={() => setTab("wishlist")} />}
-      {tab === "proposals" && <ProposalsTab items={proposed} onChange={loadWishlist} />}
+      {tab === "upload" && <UploadTab onAdded={loadWishlist} onDone={() => setTab(ws.operator ? "worked" : "wishlist")} />}
+      {tab === "proposals" && <ProposalsTab items={proposed} onChange={loadWishlist} proxy={proxy} />}
       {tab === "rejected" && <RejectedTab items={rejected} />}
       {tab === "wishlist" && <WishlistTab items={own} onChange={loadWishlist} />}
       {tab === "worked" && <WorkedTab />}
@@ -1026,9 +1035,32 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
 
 // ── Propuestas de BullsEye ───────────────────────────────────────────────
 
-function ProposalsTab({ items, onChange }: { items: WishlistItem[]; onChange: () => void }) {
+function ProposalsTab({ items, onChange, proxy = false }: { items: WishlistItem[]; onChange: () => void; proxy?: boolean }) {
   const ws = useWorkspace();
   const [busy, setBusy] = useState<string | null>(null);
+  const [medio, setMedio] = useState<string>("correo");
+  const [nota, setNota] = useState("");
+
+  // Respuesta del cliente registrada por el equipo (contingencia)
+  async function decideFor(ids: string[], action: "approve" | "reject") {
+    if (!ids.length) return;
+    const what = ids.length === 1 ? (items.find((x) => x.id === ids[0])?.company_name ?? "la empresa") : `${ids.length} empresas`;
+    const ok = window.confirm(action === "approve"
+      ? `¿Registrar que el cliente aprobó ${what} (por ${medio})? Se cargan en su Lemlist y la IA busca sus contactos.`
+      : `¿Registrar que el cliente rechazó ${what} (por ${medio})?`);
+    if (!ok) return;
+    setBusy(ids.length === 1 ? ids[0] : "__all");
+    const r = await fetch(ws.url("/api/portal/wishlist/on-behalf"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, action, medio, nota }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setBusy(null);
+    if (!r.ok) alert(j.error ?? "No se pudo guardar");
+    else if (j.skipped) alert(`${j.updated} registradas. ${j.skipped} ya tenían respuesta.`);
+    onChange();
+  }
 
   async function decide(i: WishlistItem, action: "approve" | "reject") {
     let reason: string | null = null;
@@ -1060,6 +1092,18 @@ function ProposalsTab({ items, onChange }: { items: WishlistItem[]; onChange: ()
 
   return (
     <div>
+      {ws.operator && proxy && (
+        <>
+          <ProxyFields medio={medio} setMedio={setMedio} nota={nota} setNota={setNota}
+            text="Si el cliente ya respondió por fuera del portal, registra su respuesta aquí: queda anotado quién la registró y por qué medio." />
+          <div className="flex justify-end mb-3">
+            <button onClick={() => decideFor(items.map((x) => x.id), "approve")} disabled={!!busy}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-60" style={{ background: "#251762" }}>
+              {busy === "__all" ? <IconLoader2 size={15} className="animate-spin" /> : <IconCheck size={15} />} El cliente aprobó todas ({items.length})
+            </button>
+          </div>
+        </>
+      )}
       <p className="text-sm text-gray-500 mb-4">
         {ws.operator
           ? "Empresas que propusiste y que el cliente todavía no aprueba en su portal. Al aprobarlas se crean en su Lemlist y la IA busca sus contactos."
@@ -1097,8 +1141,22 @@ function ProposalsTab({ items, onChange }: { items: WishlistItem[]; onChange: ()
               </dl>
               <div className="mt-auto">
                 {ws.operator ? (
-                  <div className="text-xs text-gray-500">
-                    Propuesta el {new Date(i.created_at).toLocaleDateString("es-CL")}{i.requested_by_email ? ` por ${i.requested_by_email}` : ""}
+                  <div>
+                    <div className="text-xs text-gray-500">
+                      Propuesta el {new Date(i.created_at).toLocaleDateString("es-CL")}{i.requested_by_email ? ` por ${i.requested_by_email}` : ""}
+                    </div>
+                    {proxy && (
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => decideFor([i.id], "approve")} disabled={!!busy}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-medium text-white disabled:opacity-60" style={{ background: "#251762" }}>
+                          {busy === i.id ? <IconLoader2 size={14} className="animate-spin" /> : <><IconCheck size={14} /> El cliente aprobó</>}
+                        </button>
+                        <button onClick={() => decideFor([i.id], "reject")} disabled={!!busy}
+                          className="flex items-center justify-center gap-1 px-3 py-1.5 rounded-xl text-xs border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-60">
+                          <IconX size={14} /> Rechazó
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex gap-2">
@@ -1123,6 +1181,25 @@ function ProposalsTab({ items, onChange }: { items: WishlistItem[]; onChange: ()
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// Contingencia: la líder y las prospectoras registran lo que el cliente
+// respondió fuera del portal (correo, reunión, WhatsApp…)
+const PROXY_CHANNELS = ["correo", "reunión", "WhatsApp", "llamada", "otro"] as const;
+
+function ProxyFields({ medio, setMedio, nota, setNota, text }: { medio: string; setMedio: (v: string) => void; nota: string; setNota: (v: string) => void; text: string }) {
+  return (
+    <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mb-4 text-sm">
+      <div className="text-amber-800 mb-2">{text}</div>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-xs text-gray-600">El cliente respondió por</label>
+        <select value={medio} onChange={(e) => setMedio(e.target.value)} className="border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white">
+          {PROXY_CHANNELS.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Nota (opcional): quién aprobó, fecha…" className="flex-1 min-w-[200px] border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white" />
       </div>
     </div>
   );
@@ -1366,6 +1443,8 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [results, setResults] = useState<UploadResult[] | null>(null);
+  const [medio, setMedio] = useState<string>("correo");
+  const [nota, setNota] = useState("");
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -1394,7 +1473,7 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
       const r = await fetch(ws.url("/api/portal/wishlist/upload"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: batch }),
+        body: JSON.stringify(ws.operator ? { rows: batch, medio, nota } : { rows: batch }),
       });
       const j = await r.json().catch(() => null);
       if (!r.ok || !j) {
@@ -1423,10 +1502,15 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
 
   return (
     <div className="space-y-5 max-w-4xl">
-      <p className="text-sm text-gray-500">
-        ¿Ya tienes empresas elegidas? Súbelas aquí en vez de mandarlas por correo. Quedan <b>aprobadas para prospectar</b> de inmediato
-        y el equipo de BullsEye empieza a buscar sus contactos.
-      </p>
+      {ws.operator ? (
+        <ProxyFields medio={medio} setMedio={setMedio} nota={nota} setNota={setNota}
+          text="Carga aquí el listado de empresas que mandó el cliente (Excel o CSV). Quedan aprobadas para prospectar como si las hubiera subido él, con la traza de quién las cargó." />
+      ) : (
+        <p className="text-sm text-gray-500">
+          ¿Ya tienes empresas elegidas? Súbelas aquí en vez de mandarlas por correo. Quedan <b>aprobadas para prospectar</b> de inmediato
+          y el equipo de BullsEye empieza a buscar sus contactos.
+        </p>
+      )}
 
       <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-4">
         <div className="flex flex-wrap items-center gap-3">
