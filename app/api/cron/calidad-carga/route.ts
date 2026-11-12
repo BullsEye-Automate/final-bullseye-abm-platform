@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getCargaReport } from "@/lib/calidadCarga/report";
+import { runInBackground } from "@/lib/backgroundTask";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 
 export const runtime = "nodejs";
@@ -24,12 +25,14 @@ export async function GET(req: NextRequest) {
   const one = req.nextUrl.searchParams.get("client_id");
   if (one) {
     if (!UUID_RE.test(one)) return NextResponse.json({ error: "client_id inválido" }, { status: 400 });
-    try {
-      const r = await getCargaReport(one, 30, true);
-      return NextResponse.json({ client_id: one, ok: true, contacts: r.totals.contacts });
-    } catch (e) {
-      return NextResponse.json({ client_id: one, ok: false, error: (e as Error).message });
-    }
+    const task = getCargaReport(one, 30, true).then(
+      (r) => ({ ok: true, contacts: r.totals.contacts }),
+      (e) => ({ ok: false, error: (e as Error).message }),
+    );
+    // Responde al instante y calcula en segundo plano (la corrida principal
+    // no espera; cortar la conexión ya no termina el cálculo)
+    if (runInBackground(task)) return NextResponse.json({ client_id: one, ok: true, accepted: true }, { status: 202 });
+    return NextResponse.json({ client_id: one, ...(await task) });
   }
   const startedAt = Date.now();
   const { data: clients } = await supabaseAdmin().from("clients").select("id, name, slug").eq("is_active", true);
@@ -42,7 +45,7 @@ export async function GET(req: NextRequest) {
     const url = new URL(self);
     url.searchParams.set("client_id", c.id);
     // Basta con que arranque: la invocación sigue por su cuenta
-    await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store", signal: AbortSignal.timeout(8_000) }).catch(() => {});
+    await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store", signal: AbortSignal.timeout(20_000) }).catch(() => {});
     launched.push(c.name);
     await new Promise((r) => setTimeout(r, LAUNCH_GAP_MS));
   }
