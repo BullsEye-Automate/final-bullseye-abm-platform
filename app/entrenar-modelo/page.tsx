@@ -421,6 +421,33 @@ function SegmentsTab({ clientId }: { clientId: string }) {
   async function readFileContent(file: File): Promise<string> {
     const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
     if (isPdf) {
+      const VERCEL_BODY_LIMIT = 4 * 1024 * 1024; // 4 MB
+
+      if (file.size > VERCEL_BODY_LIMIT) {
+        // Archivo grande: subir directo a Supabase Storage desde el browser,
+        // luego pedir al servidor que lo procese desde Storage (evita el límite de Vercel)
+        const urlRes = await fetch(`/api/training/upload-url?filename=${encodeURIComponent(file.name)}`);
+        if (!urlRes.ok) throw new Error("No se pudo obtener URL de subida");
+        const { signedUrl, path } = await urlRes.json() as { signedUrl: string; path: string };
+
+        const uploadRes = await fetch(signedUrl, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type || "application/pdf" },
+        });
+        if (!uploadRes.ok) throw new Error("Error al subir el archivo");
+
+        const parseRes = await fetch("/api/training/parse-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ storage_path: path }),
+        });
+        const d = await parseRes.json();
+        if (!parseRes.ok) throw new Error(d.error ?? "Error al procesar el PDF");
+        return d.text as string;
+      }
+
+      // Archivo pequeño: flujo directo
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/training/parse-pdf", { method: "POST", body: fd });
