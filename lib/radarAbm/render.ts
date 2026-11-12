@@ -365,10 +365,11 @@ export function render(M: Model, mapping?: { label: string; property: string | n
     M.held.slice().sort((a: any, b: any) => b.fecha.localeCompare(a.fecha)).slice(0, 25))}${M.held.length > 25 ? `<p class="note">Se muestran las 25 más recientes de ${M.held.length}.</p>` : ""}`;
 
   const fuRow = (x: any) => ({ x, reason: x.sig || x.obj || "" });
-  // Solo seguimientos: sin vencidos, fechas, próximo paso ni SDR (pedido de BullsEye)
+  // Solo seguimientos: sin vencidos, fechas, próximo paso, SDR ni motivo (pedido de BullsEye).
+  // País = el de la empresa (en Crossnet sale de "País CrossNet", ver sync)
   s.seguimientos = `<div class="tiles">${tile("Empresas en seguimiento", N(cnt(C, (c) => c.st === "En seguimiento")))}${tile("Empresas por retomar", N(cnt(C, (c) => c.st === "Sin interés ahora - Retomar")))}${tile("Contactos en seguimiento", N(f.K.length), `${cnt(f.K, (x: any) => x.fu === "interes")} con interés activo`)}</div>
   <h4 class="subh">Contactos en seguimiento</h4>
-  ${table([{ h: "Contacto", f: (r) => esc(r.x.n) }, { h: "Empresa", f: (r) => esc(r.x.c?.n) }, { h: "Cargo", s: 1, f: (r) => esc(r.x.cargo || "—") }, { h: "Motivo", s: 1, f: (r) => esc(r.reason) }],
+  ${table([{ h: "Contacto", f: (r) => esc(r.x.n) }, { h: "Empresa", f: (r) => esc(r.x.c?.n) }, { h: "Cargo", s: 1, f: (r) => esc(r.x.cargo || "—") }, { h: "País", f: (r) => esc(r.x.c?.pais || "Sin país") }],
     f.K.slice().sort((a: any, b: any) => String(a.c?.n ?? "").localeCompare(String(b.c?.n ?? ""))).slice(0, 50).map(fuRow))}${f.K.length > 50 ? `<p class="note">Se muestran 50 de ${N(f.K.length)}.</p>` : ""}`;
 
   const refArea = seg(M, (x) => x.area).filter((a) => a.eff >= 5);
