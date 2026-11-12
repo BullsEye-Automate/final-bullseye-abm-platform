@@ -43,6 +43,8 @@ export type CargaContact = {
   phones: number; phoneSources: string[]; lemlist: boolean; email: boolean; linkedin: boolean; hasCompany: boolean;
   quality: number; prob: number; status: string | null; contacted: boolean; positive: boolean; meeting: boolean;
   companyId: string | null; companyStatus: string | null; // "Status de la asignación - <cliente>" de la empresa asociada
+  returned: string | null;   // devuelto por el SDR: "Sin información de contacto" / "No fit" (La Biblia)
+  noAttempt: boolean;        // devuelto sin ninguna actividad de venta registrada (llamada, correo…)
 };
 export type CompanyStatusCount = { status: string; companies: number };
 export type CargaLoad = {
@@ -51,6 +53,7 @@ export type CargaLoad = {
   withPhone: number; phonesAvg: number; withLemlist: number; withEmail: number; withLinkedin: number; withCompany: number;
   quality: number; prob: number; expectedMeetings: number;
   contacted: number; positive: number; meetings: number;
+  returned: number; returnedNoAttempt: number; // devueltos por el SDR y, de ellos, sin ningún intento
   companies: number; companyStatuses: CompanyStatusCount[]; // empresas distintas de la carga y su status de asignación
 };
 export type CargaReport = {
@@ -73,6 +76,9 @@ const bandOf = (fit: number | null, title: string, hasIcp: boolean): FitBand =>
 const isMeeting = (s: string | null) => !!s && /reuni/i.test(s);
 const isPositive = (s: string | null) => !!s && /reuni|seguimiento|refiere/i.test(s);
 const isContacted = (s: string | null) => !!s && !/por gestionar|^buscar|sin informaci/i.test(s);
+// Devuelto por el SDR (mismas definiciones que Células SDR → Devoluciones)
+const returnedOf = (s: string | null): string | null =>
+  !s ? null : /sin informaci/i.test(s) ? "Sin información de contacto" : /no fit/i.test(s) ? "No fit" : null;
 const segKey = (band: FitBand, phone: boolean) => `${band === "calza" ? "calza" : band === "parcial" ? "parcial" : "otro"}|${phone ? "tel" : "sintel"}`;
 const SEG_LABEL: Record<string, string> = {
   "calza|tel": "Calza con el ICP · con teléfono", "calza|sintel": "Calza con el ICP · sin teléfono",
@@ -83,7 +89,7 @@ const SEG_LABEL: Record<string, string> = {
 export async function getCargaReport(clientId: string, days: number, fresh = false): Promise<CargaReport> {
   const to = new Date();
   const from = new Date(to.getTime() - days * 86400_000);
-  const key = `calidad_carga:v2:${clientId}:${days}:${chileDay(to.toISOString())}`;
+  const key = `calidad_carga:v3:${clientId}:${days}:${chileDay(to.toISOString())}`;
   if (!fresh) {
     const hit = await readMonthCache<CargaReport>(key);
     if (hit && Date.now() - new Date(hit.generatedAt).getTime() < CACHE_MS) return hit;
@@ -131,7 +137,7 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
   }
   const props = Array.from(new Set([
     "firstname", "lastname", "jobtitle", "company", "email", "hs_linkedin_url", "associatedcompanyid", "createdate",
-    ...phoneProps.map((p) => p.name), ...(statusProp ? [statusProp] : []),
+    ...phoneProps.map((p) => p.name), ...(statusProp ? [statusProp] : []), ...(has("num_contacted_notes") ? ["num_contacted_notes"] : []),
   ]));
   const range = (a: Date, b: Date) => [{ filters: [...base, { propertyName: "createdate", operator: "BETWEEN", value: String(a.getTime()), highValue: String(b.getTime()) }] }];
   const histTo = new Date(to.getTime() - HISTORY_TO_DAYS * 86400_000);
@@ -182,6 +188,9 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
       lemlist: !!digits(p.telefono_lemlist), email: !!p.email, linkedin: !!p.hs_linkedin_url, hasCompany: !!p.associatedcompanyid,
       status, contacted: isContacted(status), positive: isPositive(status), meeting: isMeeting(status),
       companyId: p.associatedcompanyid || null,
+      returned: returnedOf(status),
+      // "Número de actividades de venta" de HubSpot (llamadas, correos…) en 0
+      noAttempt: !!returnedOf(status) && !(Number(p.num_contacted_notes) > 0),
     };
   };
   // Puntaje de calidad (0–100): fit 35, teléfono 30, correo 15, LinkedIn 10, empresa 10
@@ -231,6 +240,7 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
       withEmail: cnt((c) => c.email), withLinkedin: cnt((c) => c.linkedin), withCompany: cnt((c) => c.hasCompany),
       quality: Math.round(A.reduce((s, c) => s + c.quality, 0) / n), prob: A.length ? expected / A.length : 0, expectedMeetings: expected,
       contacted: cnt((c) => c.contacted), positive: cnt((c) => c.positive), meetings: cnt((c) => c.meeting),
+      returned: cnt((c) => !!c.returned), returnedNoAttempt: cnt((c) => c.noAttempt),
       ...companyStatusesOf(A),
     };
   };

@@ -16,6 +16,7 @@ import { ViewAct, ViewAvg, ViewClients, ViewConn, ViewMtg, ViewQual } from "./vi
 import { ViewCal, ViewEff, ViewFicha, ViewTrend } from "./views/Analisis";
 import { ViewEvo } from "./views/Evolutivo";
 import { ViewRegistro } from "./views/Registro";
+import { ViewDevoluciones } from "./views/Devoluciones";
 import { ViewFeriados } from "./views/Feriados";
 import ConfigModal from "./ConfigModal";
 
@@ -41,6 +42,7 @@ const VIEWS: Record<string, { t: string; s: string; ic: string; g?: string; np?:
   cal: { t: "Calendario de desempeño", s: "Desempeño de cada SDR por día", ic: "grid", g: "Análisis", C: ViewCal },
   trend: { t: "Tendencia semanal", s: "Ritmo de desempeño semana a semana", ic: "trend", C: ViewTrend },
   evo: { t: "Evolutivo mensual", s: "Reuniones agendadas por SDR mes a mes, de enero a la fecha", ic: "trend", C: ViewEvo },
+  devol: { t: "Devoluciones", s: "Empresas y contactos que los SDR devuelven a prospección, y por qué", ic: "repeat", C: ViewDevoluciones },
   eff: { t: "Indicadores de eficiencia", s: "Cantidad vs calidad de la actividad", ic: "zap", C: ViewEff },
   ficha: { t: "Ficha individual", s: "Productividad detallada por SDR", ic: "user", C: ViewFicha },
 };
