@@ -590,7 +590,7 @@ export default function ChatV2Page() {
       const r = await fetch("/api/auth/gmail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, body }),
+        body: JSON.stringify({ to, subject, body, clientId }),
       });
       const j = await r.json();
       setSendResult({ idx: msgIdx, ok: r.ok, msg: r.ok ? "Enviado" : (j.error ?? "Error al enviar") });
