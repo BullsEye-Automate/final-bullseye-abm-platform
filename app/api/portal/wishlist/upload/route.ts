@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { requireWishlistActor } from "@/lib/portalAuth";
 import { normalizeDomain } from "@/lib/hubspotPool";
 import { pushWishlistItemToLemlist } from "@/lib/wishlistLemlist";
+import { canActForClient, proxyLabel } from "@/lib/clientProxy";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,7 +14,9 @@ export const maxDuration = 60;
 // envían a su Lemlist; el cron de contactos las toma desde ahí. El navegador
 // manda el archivo en tandas de hasta MAX_ROWS filas.
 // Si la empresa era una propuesta de BullsEye pendiente (o rechazada), subirla
-// cuenta como aprobación. Solo para el cliente: el equipo propone desde Empresas.
+// cuenta como aprobación. Lo usa el cliente y, como contingencia, la líder de
+// prospección y las prospectoras (lib/clientProxy.ts) para cargar el listado
+// que el cliente mandó por fuera del portal (queda trazado quién lo cargó).
 
 const MAX_ROWS = 25;
 const CONCURRENCY = 4;
@@ -32,9 +35,13 @@ const normLinkedin = (v: string | null) => {
 export async function POST(req: NextRequest) {
   const { user, response } = await requireWishlistActor(req);
   if (!user) return response;
-  if (user.isOperator) return NextResponse.json({ error: "El equipo propone empresas desde Empresas" }, { status: 403 });
+  if (user.isOperator && !canActForClient(user.email)) {
+    return NextResponse.json({ error: "Solo la líder de prospección y las prospectoras pueden cargar el listado del cliente" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => null);
+  // Carga del equipo en nombre del cliente: medio y nota quedan en la traza
+  const actorLabel = user.isOperator ? proxyLabel(user.email, typeof body?.medio === "string" ? body.medio : "correo", typeof body?.nota === "string" ? body.nota.trim().slice(0, 200) : null) : user.email;
   const raw: unknown[] = Array.isArray(body?.rows) ? body.rows.slice(0, MAX_ROWS) : [];
   if (!raw.length) return NextResponse.json({ error: "No hay empresas en el listado" }, { status: 400 });
 
@@ -81,7 +88,7 @@ export async function POST(req: NextRequest) {
       if (prev.status === "proposed" || prev.status === "rejected_by_client") {
         const { error } = await db
           .from("client_wishlist")
-          .update({ status: "new", lemlist_status: "pendiente", client_decision_at: now, client_decision_by_email: user.email, client_reject_reason: null, updated_at: now })
+          .update({ status: "new", lemlist_status: "pendiente", client_decision_at: now, client_decision_by_email: actorLabel, client_reject_reason: null, updated_at: now })
           .eq("id", prev.id);
         if (error) results.push({ name: r.name, result: "error", error: error.message });
         else {
@@ -103,12 +110,12 @@ export async function POST(req: NextRequest) {
         source: "manual",
         source_ref: null,
         mode: "manual",
-        snapshot: { facts: [{ label: "Origen", value: "Listado subido por el cliente" }], uploaded: true },
+        snapshot: { facts: [{ label: "Origen", value: user.isOperator ? "Listado del cliente cargado por BullsEye" : "Listado subido por el cliente" }], uploaded: true, ...(user.isOperator ? { loadedBy: actorLabel } : {}) },
         status: "new",
         origin: "client",
         lemlist_status: "pendiente",
         requested_by: user.portalUserId,
-        requested_by_email: user.email,
+        requested_by_email: actorLabel,
       })
       .select("id")
       .single();

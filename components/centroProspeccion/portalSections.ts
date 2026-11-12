@@ -97,32 +97,26 @@ export function createPortalSections(week: (wk: string) => Promise<Week | null>)
     `<button class="btn sm ${pri ? "pri" : ""}" data-cp-go="${esc(path)}" data-cp-client="${esc(clientId)}">${esc(label)}</button>`;
 
   // ── Resumen: un solo tablero ───────────────────────────────────────────
+  // El tablero del portal vive en la pestaña Dashboard (no se duplica aquí,
+  // nov-2026): el Resumen solo muestra la cola que pide acción hoy y un acceso.
   const renderResumen = async (el: HTMLElement, cli: string) => {
-    el.innerHTML = card("Prospección en el portal", "Cargando…", "");
     const s = await getSummary();
     if (!el.isConnected) return;
-    if (!s) { el.innerHTML = card("Prospección en el portal", "", `<p class="muted">No se pudo leer el portal.</p>`); return; }
-    const rows = byClient(s, cli).sort((a, b) =>
-      b.d.porRevisar + b.d.busquedaManual + b.d.esperandoCliente - (a.d.porRevisar + a.d.busquedaManual + a.d.esperandoCliente));
-    const t = cli && rows[0] ? { ...rows[0].d } : { ...s.totales, porRevisar: s.porRevisarTotal };
-    const kpis = `<div class="kgrid" style="margin-bottom:14px">
-      ${kpiBox("Contactos por revisar", n(t.porRevisar), "Sugeridos por la IA, esperan a una prospectora", true)}
-      ${kpiBox("Búsqueda manual", n(t.busquedaManual), "Empresas con pocos contactos automáticos")}
-      ${kpiBox("Contactos aprobados", n(t.contactosAprobados), `${n(t.contactosManuales)} agregados a mano · ${n(t.conTelefono)} con teléfono`)}
-      ${kpiBox("Aprobación del cliente", pct100(t.tasaAprobacion), `${n(t.aprobadas)} aprobadas · ${n(t.rechazadas)} rechazadas de las propuestas`)}
-      ${kpiBox("Esperando al cliente", n(t.esperandoCliente), t.esperandoClienteDias != null ? `La más antigua lleva ${n(t.esperandoClienteDias)} días` : "Propuestas sin respuesta")}
-    </div>`;
-    const table = rows.length
-      ? `<div class="tw"><table><thead><tr><th class="l">Cliente</th><th>Por revisar</th><th>Búsqueda manual</th><th>Esperando cliente</th><th>Propuestas</th><th>Aprobación</th><th>Contactos aprobados</th><th>Sin Lemlist</th><th></th></tr></thead><tbody>${rows
-          .map(({ d }) => `<tr><td class="l"><b>${esc(d.cliente)}</b></td><td>${d.porRevisar ? `<b>${n(d.porRevisar)}</b>` : "–"}</td><td>${d.busquedaManual ? `<b>${n(d.busquedaManual)}</b>` : "–"}</td><td>${n(d.esperandoCliente)}</td><td>${n(d.propuestas)}</td><td>${pct100(d.tasaAprobacion)}</td><td>${n(d.contactosAprobados)}</td><td>${d.erroresLemlist ? `<span class="pill r">${n(d.erroresLemlist)}</span>` : "–"}</td><td style="white-space:nowrap">${goBtn("Contactos", "/contactos", d.clientId)} ${goBtn("Empresas", "/empresas", d.clientId)}</td></tr>`)
-          .join("")}</tbody></table></div>`
-      : `<p class="muted">${cli ? "Esta ficha no está vinculada a un cliente del portal." : "Aún no hay clientes con prospección en el portal."}</p>`;
-    el.innerHTML = card(
-      cli && rows[0] ? `Prospección en el portal · ${rows[0].d.cliente}` : "Prospección en el portal",
-      `Últimos ${n(s.dias)} días · cola actual · mismo cálculo del Dashboard`,
-      kpis + table + (s.migration_missing ? `<p class="muted" style="margin-top:8px">Falta una migración de prospección en el portal: algunas cifras pueden venir en cero.</p>` : "")
-    );
-    bindGo(el);
+    const rows = s ? byClient(s, cli) : [];
+    const t = s ? (cli && rows[0] ? { ...rows[0].d } : { ...s.totales, porRevisar: s.porRevisarTotal }) : null;
+    const pend = t ? `${n(t.porRevisar)} contactos por revisar · ${n(t.busquedaManual)} empresas en búsqueda manual · ${n(t.esperandoCliente)} esperando al cliente` : "No se pudo leer el portal.";
+    el.innerHTML = `<div class="card" style="margin-bottom:16px;display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
+      <div><b style="font-family:var(--head)">Prospección en el portal${cli && rows[0] ? ` · ${esc(rows[0].d.cliente)}` : ""}</b><div class="muted" style="font-size:12.5px;margin-top:3px">${pend}</div></div>
+      <button class="btn sm" data-cp-tab="dashboard">Ver el Dashboard</button></div>`;
+    el.querySelector<HTMLButtonElement>("[data-cp-tab]")?.addEventListener("click", () => {
+      const cid = cli && rows[0] ? rows[0].d.clientId : "";
+      if (cid) goPortal("/dashboard", cid);
+      else {
+        const detail: { path: string; clientId: string; handled?: boolean } = { path: "/dashboard", clientId: "" };
+        window.dispatchEvent(new CustomEvent("cp:go", { detail }));
+        if (!detail.handled) window.location.href = "/dashboard";
+      }
+    });
   };
 
   // ── Solicitudes: una sola bandeja ───────────────────────────────────────

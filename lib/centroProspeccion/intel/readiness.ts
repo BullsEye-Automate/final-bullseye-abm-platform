@@ -42,16 +42,18 @@ export async function computeReadiness(): Promise<ClientReadiness[]> {
   const wishCount = new Map<string, number>();
   for (const w of wish.data ?? []) if (!["rejected_by_client", "discarded", "removed"].includes(w.status)) wishCount.set(w.client_id, (wishCount.get(w.client_id) ?? 0) + 1);
 
-  // Clientes activos en la Maestra + los que tienen ficha en el Centro
+  const activeFichas = (id: string) => (links.fichasByClient.get(id) ?? []).filter((f) => f.data.estado !== "pausado");
+  // Clientes activos en la Maestra + los que tienen ficha activa en el Centro
   const candidates = links.clients.filter((c) => {
     const row = findMasterRow(master, c);
-    return row?.active || links.fichasByClient.has(c.id);
+    // Fichas pausadas (ej. Umine) no cuentan: el cliente queda fuera si tampoco está activo
+    return row?.active || activeFichas(c.id).length > 0;
   });
 
   const out: ClientReadiness[] = [];
   for (const c of candidates) {
     const row = findMasterRow(master, c);
-    const fichas = (links.fichasByClient.get(c.id) ?? []).map((f) => String(f.data.nombre || f.id));
+    const fichas = activeFichas(c.id).map((f) => String(f.data.nombre || f.id));
     const [icp, key] = await Promise.all([
       getClientIcpText(db, c.id).catch(() => ""),
       getClientOwnLemlistKey(db, c.id).catch(() => null),
