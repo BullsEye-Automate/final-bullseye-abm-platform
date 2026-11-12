@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { fetchClients, fetchClientDocuments, fetchClientExecutives, fetchMe } from "@/lib/peithoBackend";
 import KnowledgeBaseView from "@/components/KnowledgeBaseView";
 import ClientExecutivesManager from "@/components/ClientExecutivesManager";
+import CaptureModeForm from "@/components/CaptureModeForm";
 
 // Un usuario "client" puede VER (no subir/borrar) la base de conocimiento de
 // su propio cliente — aclaración explícita del usuario en la Fase E. El
@@ -35,7 +36,9 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
   const [client, documents, executives] = await Promise.all([
     isAdmin
       ? fetchClients(true).then((clients) => clients.find((c) => c.id === params.id) ?? null)
-      : Promise.resolve(me?.clientName ? { name: me.clientName, website_url: null } : null),
+      : Promise.resolve(
+          me?.clientName ? { name: me.clientName, website_url: null, capture_mode: "bot" as const } : null
+        ),
     fetchClientDocuments(params.id),
     fetchClientExecutives(params.id),
   ]);
@@ -65,6 +68,12 @@ export default async function ClientKnowledgeBasePage({ params }: { params: { id
       </div>
 
       <ClientExecutivesManager clientId={params.id} executives={executives} canManage={canManageExecutives} />
+
+      {isAdmin && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <CaptureModeForm clientId={params.id} initialMode={client.capture_mode} />
+        </div>
+      )}
 
       <KnowledgeBaseView
         clientId={params.id}

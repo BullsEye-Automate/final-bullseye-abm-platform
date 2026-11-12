@@ -13,6 +13,7 @@ import {
 import { requireAuth, requireAdmin, requireFullClientAccess } from '../authMiddleware';
 import { syncClientesDesdeMaestra } from '../clientesMaestra';
 import { rematchClientExecutivesForClient } from '../metasSheet';
+import { cancelRecallBot } from '../recall';
 
 export const clientsRouter = Router();
 
@@ -75,16 +76,17 @@ clientsRouter.get('/clients', requireAdmin, async (req, res) => {
         ? `select (array_agg(c.id order by c.name asc))[1] as id,
                   string_agg(distinct c.name, ' + ' order by c.name) as name,
                   (array_agg(c.website_url) filter (where c.website_url is not null))[1] as website_url,
+                  coalesce((array_agg(c.capture_mode) filter (where c.capture_mode = 'extension'))[1], 'bot') as capture_mode,
                   count(distinct k.id)::int as documentos
            from clients c
            left join knowledge_base_documents k on k.client_id = c.id
            group by coalesce(c.external_id, c.id::text)
            order by name asc`
-        : `select c.id, c.name, c.website_url,
+        : `select c.id, c.name, c.website_url, c.capture_mode,
                   count(k.id)::int as documentos
            from clients c
            left join knowledge_base_documents k on k.client_id = c.id
-           group by c.id, c.name, c.website_url
+           group by c.id, c.name, c.website_url, c.capture_mode
            order by c.name asc`
     );
     res.json(rows);
@@ -180,6 +182,62 @@ clientsRouter.put('/clients/:id/website', requireAdmin, async (req, res) => {
   } catch (error) {
     console.error('Error en PUT /clients/:id/website', error);
     res.status(500).json({ error: 'Error guardando la URL del sitio' });
+  }
+});
+
+// Modo de captura por cliente (12-11-2026, pedido explícito del usuario):
+// algunos clientes no quieren que un bot visible se una a la videollamada —
+// para esos, Peitho graba con la extensión de Chrome (chrome.tabCapture
+// desde el navegador del ejecutivo, nadie nuevo se une a la llamada) en vez
+// de agendar el bot de Recall. Decisión explícita del usuario: ambos
+// mecanismos NUNCA conviven para el mismo cliente — al pasar a "extension",
+// se cancelan (best-effort, mismo criterio que DELETE /meetings/:id) los
+// bots ya agendados para reuniones futuras de este cliente, para que no
+// quede un bot programado igual pese al cambio. scheduleRecallBotForMeeting
+// (recall.ts) es quien impide que se agenden bots NUEVOS mientras el cliente
+// siga en "extension". Se aplica a TODO el grupo de external_id (mismo
+// criterio que la base de conocimiento/roster de ejecutivos) — "CChC" y
+// "CChC - Valle" son el mismo cliente real, no debería quedar uno en modo
+// bot y el otro en extensión.
+clientsRouter.put('/clients/:id/capture-mode', requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { capture_mode: captureMode } = req.body ?? {};
+
+  if (captureMode !== 'bot' && captureMode !== 'extension') {
+    res.status(400).json({ error: 'capture_mode debe ser "bot" o "extension"' });
+    return;
+  }
+
+  try {
+    const groupIds = await resolveClientGroupIds(id);
+    if (groupIds.length === 0) {
+      res.status(404).json({ error: 'Cliente no encontrado' });
+      return;
+    }
+    await pool.query(`update clients set capture_mode = $1 where id = any($2)`, [captureMode, groupIds]);
+
+    let botsCancelados = 0;
+    if (captureMode === 'extension') {
+      const { rows: pendientes } = await pool.query(
+        `select id, recall_bot_id from meetings
+         where client_id = any($1) and recall_bot_id is not null and start_time > now()`,
+        [groupIds]
+      );
+      for (const meeting of pendientes) {
+        try {
+          await cancelRecallBot(meeting.recall_bot_id);
+        } catch (error) {
+          console.error(`[capture-mode] no se pudo cancelar el bot ${meeting.recall_bot_id} de la reunión ${meeting.id} (se ignora)`, error);
+        }
+        await pool.query(`update meetings set recall_bot_id = null, recall_bot_retries = 0 where id = $1`, [meeting.id]);
+        botsCancelados++;
+      }
+    }
+
+    res.json({ status: 'ok', bots_cancelados: botsCancelados });
+  } catch (error) {
+    console.error('Error en PUT /clients/:id/capture-mode', error);
+    res.status(500).json({ error: 'Error guardando el modo de captura' });
   }
 });
 

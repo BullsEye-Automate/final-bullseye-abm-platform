@@ -170,6 +170,34 @@ export async function cancelRecallBot(botId: string): Promise<void> {
   }
 }
 
+// Modo de captura por cliente (12-11-2026, pedido explícito del usuario):
+// cubre el caso en que el cliente de una reunión recién se resuelve DESPUÉS
+// de que ya se le había agendado un bot (ej. invitación manual al bot,
+// requireClientMatch:false — el bot se crea antes de saber a qué cliente
+// pertenece). scheduleRecallBotForMeetingInner por sí solo no alcanza para
+// esto: su primer chequeo descarta cualquier reunión que YA tenga
+// recall_bot_id, sin llegar a mirar el capture_mode del cliente. Se llama
+// desde routes/meetings.ts (no desde acá mismo) para no crear un import
+// circular con metasSheet.ts, que este módulo ya importa.
+export async function cancelBotIfClientUsesExtension(meetingId: string): Promise<void> {
+  const { rows } = await pool.query(`select client_id, recall_bot_id from meetings where id = $1`, [meetingId]);
+  const meeting = rows[0];
+  if (!meeting?.client_id || !meeting.recall_bot_id) return;
+
+  const { rows: clientRows } = await pool.query(`select capture_mode from clients where id = $1`, [meeting.client_id]);
+  if (clientRows[0]?.capture_mode !== 'extension') return;
+
+  console.log(
+    `[recall] reunión ${meetingId}: cliente pasó a modo "extension" — cancelando el bot ${meeting.recall_bot_id} ya agendado`
+  );
+  try {
+    await cancelRecallBot(meeting.recall_bot_id);
+  } catch (error) {
+    console.error(`[recall] no se pudo cancelar el bot ${meeting.recall_bot_id} de la reunión ${meetingId} (se ignora)`, error);
+  }
+  await pool.query(`update meetings set recall_bot_id = null, recall_bot_retries = 0 where id = $1`, [meetingId]);
+}
+
 // Se llama cuando el webhook de Recall avisa que la grabación ya está lista.
 // Devuelve la URL para descargar el audio/video de la reunión.
 export async function getRecallRecordingUrl(botId: string): Promise<string> {
@@ -533,12 +561,31 @@ async function scheduleRecallBotForMeetingInner(
       await resolveMeetingClientAndContact(meetingId);
     }
 
-    if (requireClientMatch) {
-      const { rows: refreshed } = await pool.query(`select client_id from meetings where id = $1`, [meetingId]);
-      if (!refreshed[0]?.client_id) {
-        // Sin match en el excel de metas todavía — no se agenda (requisito
-        // explícito: el bot NO entra a cualquier reunión, solo a las que
-        // matchean o a las que se invita a mano).
+    // Siempre se refresca (antes solo cuando requireClientMatch), porque
+    // también hace falta para el chequeo de capture_mode de abajo.
+    const { rows: refreshed } = await pool.query(`select client_id from meetings where id = $1`, [meetingId]);
+    const clientId: string | null = refreshed[0]?.client_id ?? null;
+
+    if (requireClientMatch && !clientId) {
+      // Sin match en el excel de metas todavía — no se agenda (requisito
+      // explícito: el bot NO entra a cualquier reunión, solo a las que
+      // matchean o a las que se invita a mano).
+      return;
+    }
+
+    // Modo de captura por cliente (12-11-2026, pedido explícito del
+    // usuario): algunos clientes no quieren un bot visible en la
+    // videollamada — graban con la extensión de Chrome en su lugar (ver
+    // peitho-chrome-extension/). Si el cliente ya resuelto está en modo
+    // "extension", el bot NUNCA se agenda para sus reuniones — ambos
+    // mecanismos no conviven (ver PUT /clients/:id/capture-mode, que además
+    // cancela cualquier bot ya agendado al activar este modo).
+    if (clientId) {
+      const { rows: clientRows } = await pool.query(`select capture_mode from clients where id = $1`, [clientId]);
+      if (clientRows[0]?.capture_mode === 'extension') {
+        console.log(
+          `[recall] reunión ${meetingId}: cliente en modo "extension" (captura por extensión de Chrome) — no se agenda bot de Recall`
+        );
         return;
       }
     }

@@ -1,5 +1,6 @@
-// Cambiar esto cuando el backend deje de correr en localhost (ej. al desplegar a Railway/Render).
-const BACKEND_URL = 'http://localhost:3001';
+// Backend de producción (Railway) — cambiar a http://localhost:3001 solo si
+// estás probando contra tu backend local (npm run dev).
+const BACKEND_URL = 'https://final-bullseye-abm-platform-production.up.railway.app';
 
 let mediaRecorder = null;
 let audioContext = null;

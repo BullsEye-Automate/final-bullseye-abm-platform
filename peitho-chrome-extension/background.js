@@ -1,5 +1,6 @@
-// Cambiar esto cuando el backend deje de correr en localhost (ej. al desplegar a Railway/Render).
-const BACKEND_URL = 'http://localhost:3001';
+// Backend de producción (Railway) — cambiar a http://localhost:3001 solo si
+// estás probando contra tu backend local (npm run dev).
+const BACKEND_URL = 'https://final-bullseye-abm-platform-production.up.railway.app';
 
 // tabId -> meetingId — reuniones de Peitho detectadas, esperando el clic del ejecutivo
 // para arrancar (Chrome exige un gesto del usuario para autorizar tabCapture).
@@ -7,21 +8,43 @@ const readyTabs = new Map();
 // tabId -> { meetingId } — reuniones que ya se están grabando de verdad
 const capturingTabs = new Map();
 
-function extractMeetCode(url) {
+// Detecta si una URL de pestaña es una videollamada real reconocible —
+// Google Meet (con su código de 3 grupos) o Microsoft Teams (link de
+// meetup-join/meet). Pedido explícito del usuario (12-11-2026): el diseño
+// original (Tarea 4) solo reconocía Meet agendado en el calendario propio
+// del ejecutivo de BullsEye (meet_code) — pero la mayoría de las reuniones
+// reales con clientes son invitaciones al bot en el calendario DEL CLIENTE
+// (meeting_url en el backend, no meet_code), y varios clientes usan Teams,
+// no Meet. Devuelve el parámetro exacto que espera GET /meetings/lookup
+// para cada caso: meet_code para Meet (compatibilidad con el diseño
+// original), url (la pestaña completa) para Teams — ahí no hay un "código"
+// corto que extraer, el backend matchea contra meeting_url normalizado.
+function extractMeetingLookupParams(url) {
+  let parsed;
   try {
-    const parsed = new URL(url);
-    if (parsed.hostname !== 'meet.google.com') return null;
-    const code = parsed.pathname.replace(/^\//, '');
-    // Descarta páginas que no son un código de reunión real (home, /new, /_meet/..., etc.)
-    if (!/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(code)) return null;
-    return code;
+    parsed = new URL(url);
   } catch {
     return null;
   }
+
+  if (parsed.hostname === 'meet.google.com') {
+    const code = parsed.pathname.replace(/^\//, '');
+    // Descarta páginas que no son un código de reunión real (home, /new, /_meet/..., etc.)
+    if (!/^[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(code)) return null;
+    return { meet_code: code };
+  }
+
+  if (parsed.hostname === 'teams.microsoft.com' || parsed.hostname === 'teams.live.com') {
+    if (!/^\/(l\/meetup-join|meet)\//i.test(parsed.pathname)) return null;
+    return { url: parsed.href };
+  }
+
+  return null;
 }
 
-async function lookupMeeting(meetCode) {
-  const res = await fetch(`${BACKEND_URL}/meetings/lookup?meet_code=${encodeURIComponent(meetCode)}`);
+async function lookupMeeting(params) {
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`${BACKEND_URL}/meetings/lookup?${qs}`);
   if (!res.ok) throw new Error(`lookup falló con status ${res.status}`);
   return res.json();
 }
@@ -76,11 +99,11 @@ async function startCapture(tabId, meetingId) {
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (!changeInfo.url) return;
 
-  const meetCode = extractMeetCode(changeInfo.url);
-  if (!meetCode) return;
+  const lookupParams = extractMeetingLookupParams(changeInfo.url);
+  if (!lookupParams) return;
 
   try {
-    const result = await lookupMeeting(meetCode);
+    const result = await lookupMeeting(lookupParams);
     if (result.registered && result.auto_capture) {
       readyTabs.set(tabId, result.meeting_id);
       setBadge(tabId, '●', '#62E0D8'); // celeste = detectada, esperando el clic

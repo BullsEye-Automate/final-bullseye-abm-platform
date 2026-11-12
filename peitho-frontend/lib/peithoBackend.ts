@@ -256,6 +256,11 @@ export interface ClientListItem {
   // trae su contenido y lo suma a la base de conocimiento como un documento
   // más (ver fetchAndStoreWebsiteContent en knowledgeBase.ts).
   website_url: string | null;
+  // Modo de captura (12-11-2026) — 'bot' (default) agenda el bot de Recall
+  // que se une a la videollamada; 'extension' graba con la extensión de
+  // Chrome del ejecutivo, sin que nadie nuevo se una a la llamada. Nunca
+  // conviven los dos para un mismo cliente (ver PUT /clients/:id/capture-mode).
+  capture_mode: 'bot' | 'extension';
 }
 
 export interface KnowledgeBaseDocument {

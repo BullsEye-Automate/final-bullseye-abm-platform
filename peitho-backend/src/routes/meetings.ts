@@ -8,7 +8,7 @@ import { analyzeMeetingAudio } from '../postMeetingAnalysis';
 import { generatePreMeetingBrief } from '../preMeetingBrief';
 import { resolveMeetingClientAndContact, refreshMatchedRowFields, resolveTentativeMatch } from '../metasSheet';
 import { resyncBotInviteMeeting } from '../calendarSync';
-import { scheduleRecallBotForMeeting, cancelRecallBot, createRecallBot } from '../recall';
+import { scheduleRecallBotForMeeting, cancelRecallBot, createRecallBot, cancelBotIfClientUsesExtension } from '../recall';
 import { runAudioJob } from '../audioJobLimiter';
 import { processRecallDone } from './webhooks';
 import { requireAuth, requireAdmin } from '../authMiddleware';
@@ -155,6 +155,11 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
           // acá es una reunión externa real: no debe depender de que
           // además haya matcheado el excel de metas (ver el mismo fix en
           // GET /meetings/:id, bug real 08-09-2026).
+          // cancelBotIfClientUsesExtension primero: cubre el caso de un bot
+          // ya agendado ANTES de saber que el cliente está en modo
+          // "extension" (ver recall.ts) — scheduleRecallBotForMeeting por sí
+          // solo no lo cancelaría (ya tiene recall_bot_id).
+          await cancelBotIfClientUsesExtension(row.id);
           await scheduleRecallBotForMeeting(row.id, { requireClientMatch: false });
         }
       })
@@ -194,26 +199,72 @@ meetingsRouter.get('/meetings', requireAuth, async (req, res) => {
   }
 });
 
-// La extensión de Chrome llama esto cada vez que navega a meet.google.com/{codigo}
-// para saber si debe arrancar chrome.tabCapture.
+// Reduce una URL de videollamada a host+path en minúsculas, sin query ni
+// hash — para que "https://teams.microsoft.com/l/meetup-join/19%3a...&context=..."
+// (lo que trae la pestaña real al unirse) matchee contra el mismo link
+// guardado en meeting_url (extraído del texto crudo de la invitación en
+// calendarSync.ts), aunque Teams le agregue u ordene distinto los parámetros
+// de query. Mismo criterio conservador de siempre: si la URL no parsea, no
+// matchea nada (no se adivina).
+function normalizeMeetingUrl(raw: string): string | null {
+  try {
+    const u = new URL(raw);
+    return `${u.hostname.toLowerCase()}${u.pathname.toLowerCase()}`;
+  } catch {
+    return null;
+  }
+}
+
+// La extensión de Chrome llama esto al detectar una pestaña de videollamada,
+// para saber si debe ofrecer arrancar chrome.tabCapture.
+//
+// Pedido explícito del usuario (12-11-2026, extensión como alternativa al
+// bot visible): el diseño original de este endpoint (Tarea 4) solo
+// reconocía meet_code — reuniones de Google Meet agendadas en el calendario
+// PROPIO del ejecutivo de BullsEye. Pero el flujo real con la mayoría de los
+// clientes hoy es la invitación al bot (el SDR agenda en el calendario DEL
+// CLIENTE, meeting_url en vez de meet_code — ver calendarSync.ts), y no
+// todos esos clientes usan Google Meet (varios usan Teams). Ahora también
+// acepta `url` (la URL completa de la pestaña, Meet o Teams) y matchea por
+// meeting_url normalizado — así la extensión sirve para el caso real de uso
+// (reuniones con clientes), no solo para el calendario interno de BullsEye.
 meetingsRouter.get('/meetings/lookup', async (req, res) => {
   const meetCode = req.query.meet_code;
-  if (typeof meetCode !== 'string' || meetCode.trim() === '') {
-    res.status(400).json({ error: 'Falta el parámetro meet_code' });
-    return;
-  }
+  const url = req.query.url;
 
   try {
-    const { rows } = await pool.query(
-      `select id, auto_capture
-       from meetings
-       where meet_code = $1
-       order by abs(extract(epoch from (start_time - now())))
-       limit 1`,
-      [meetCode]
-    );
+    let meeting: { id: string; auto_capture: boolean } | undefined;
 
-    const meeting = rows[0];
+    if (typeof meetCode === 'string' && meetCode.trim() !== '') {
+      const { rows } = await pool.query(
+        `select id, auto_capture
+         from meetings
+         where meet_code = $1
+         order by abs(extract(epoch from (start_time - now())))
+         limit 1`,
+        [meetCode]
+      );
+      meeting = rows[0];
+    } else if (typeof url === 'string' && url.trim() !== '') {
+      const normalizedTarget = normalizeMeetingUrl(url);
+      if (normalizedTarget) {
+        // Ventana acotada (no todo el histórico) — una reunión real se
+        // detecta cerca de su propio horario, nunca días de diferencia.
+        const { rows } = await pool.query(
+          `select id, auto_capture, meeting_url, start_time
+           from meetings
+           where meeting_url is not null
+             and start_time between now() - interval '3 hours' and now() + interval '1 day'
+           order by abs(extract(epoch from (start_time - now())))`
+        );
+        const match = rows.find((row: any) => normalizeMeetingUrl(row.meeting_url) === normalizedTarget);
+        meeting = match;
+      }
+    } else {
+      res.status(400).json({ error: 'Falta el parámetro meet_code o url' });
+      return;
+    }
+
     if (!meeting) {
       res.json({ registered: false });
       return;
@@ -288,6 +339,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
     // de recargar la página para ver el resultado).
     const isInternalMeeting = meeting.empresa_contraparte?.toLowerCase() === INTERNAL_DOMAIN;
     resolveMeetingClientAndContact(id)
+      .then(() => cancelBotIfClientUsesExtension(id))
       .then(() => scheduleRecallBotForMeeting(id, { requireClientMatch: isInternalMeeting }))
       .catch((error) => {
         console.error(`Error resolviendo cliente/bot en segundo plano para reunión ${id}`, error);
@@ -603,6 +655,10 @@ meetingsRouter.post('/meetings/:id/resolve-tentative-match', requireAuth, requir
       res.status(400).json({ error: result.error });
       return;
     }
+    // El cliente recién se confirma acá — si ya tenía un bot agendado (de
+    // cuando todavía estaba "tentative") y el cliente elegido usa la
+    // extensión en vez del bot, hay que cancelarlo ahora.
+    await cancelBotIfClientUsesExtension(id);
     res.json({ status: 'ok' });
   } catch (error) {
     console.error('Error resolviendo el match tentativo de la reunión', error);
@@ -652,6 +708,10 @@ meetingsRouter.post('/meetings/rematch-all', requireAuth, requireAdmin, async (r
 
     for (const row of rows) {
       await resolveMeetingClientAndContact(row.id);
+      // Mismo motivo que en resolve-tentative-match: el cliente recién se
+      // confirma acá, y puede resultar ser uno que graba con la extensión
+      // en vez del bot.
+      await cancelBotIfClientUsesExtension(row.id);
       const { rows: after } = await pool.query(
         `select id, contraparte, empresa_contraparte, start_time, contacto_match_status, client_id,
                 contacto_match_candidates
