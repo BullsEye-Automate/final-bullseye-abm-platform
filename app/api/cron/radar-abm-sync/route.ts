@@ -19,9 +19,8 @@ export const maxDuration = 300;
 // un cliente grande (ej. Crossnet) no deja sin sincronizar a los demás.
 
 const BUDGET_MS = 240_000;
-// Cada cliente corre en su propia invocación (?client_id=). La invocación
-// responde al instante y sigue sincronizando en segundo plano (waitUntil,
-// lib/backgroundTask.ts). Antes la corrida principal cortaba la espera a los
+// Cada cliente corre en su propia invocación (?client_id=) y la corrida
+// principal la espera sin cortar la conexión. Antes cortaba la espera a los
 // 8 s y Vercel terminaba la invocación del cliente: todos quedaban "started"
 // sin sincronizar (nov-2026: Grupo Tress, BullsEye, Apply, Acid Labs, Simplex
 // atrasados de 3 a 14 días).
@@ -34,6 +33,9 @@ const RUNNING_MS = 6 * 60_000;
 const POLL_MS = 20_000;
 // La invocación del cliente deja "error" antes de que Vercel la corte (300 s)
 const CHILD_LIMIT_MS = 285_000;
+// La corrida principal espera a sus invocaciones hasta este punto (su propio
+// límite también es 300 s)
+const PARENT_LIMIT_MS = 296_000;
 const RETRY_AFTER_MS = 3 * 3600_000;
 // Corre cada 10 min de 9 a 16 UTC (vercel.json): cada corrida toma solo los
 // clientes que no se sincronizaron en las últimas horas y los lanza a medida
@@ -115,34 +117,50 @@ export async function GET(req: NextRequest) {
       .map((x) => x.q);
 
     const self = new URL(req.nextUrl.pathname, req.nextUrl.origin);
-    const launch = async ({ id, sub }: { id: string; sub?: string }) => {
+    // Lanza la invocación de un cliente y ESPERA su respuesta sin cortarla:
+    // cortar la conexión termina la invocación en Vercel (nov-2026). Si la
+    // invocación logra quedar en segundo plano (waitUntil) responde 202 al
+    // instante; si no, responde al terminar (≤ CHILD_LIMIT_MS).
+    type Outcome = "accepted" | "done";
+    const launch = async ({ id, sub }: { id: string; sub?: string }): Promise<Outcome> => {
       const url = new URL(self);
       url.searchParams.set("client_id", id);
       if (sub) url.searchParams.set("sub", sub);
       await recordCronStatus(id, sub, { state: "started" });
+      const base = { client_id: id, ...(sub ? { sub } : {}) };
       try {
-        // La invocación responde 202 al aceptar y sigue sola
-        const r = await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store", signal: AbortSignal.timeout(20_000) });
+        const wait = Math.max(5_000, PARENT_LIMIT_MS - (Date.now() - startedAt));
+        const r = await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store", signal: AbortSignal.timeout(wait) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) {
           await recordCronStatus(id, sub, { state: "error", detail: `La sincronización automática no pudo llamar a la invocación del cliente (HTTP ${r.status}).` });
-          results.push({ client_id: id, ...(sub ? { sub } : {}), ok: false, error: j.error ?? `HTTP ${r.status}` });
-          return false;
+          results.push({ ...base, ok: false, error: j.error ?? `HTTP ${r.status}` });
+          return "done";
         }
-        results.push({ client_id: id, ...(sub ? { sub } : {}), ok: true, ...(j.accepted ? { error: "lanzada" } : {}) });
-        return true;
+        if (j.accepted) { results.push({ ...base, ok: true, error: "en segundo plano" }); return "accepted"; }
+        results.push({ ...base, ok: !!j.ok, ...(j.error ? { error: j.error } : {}) });
+        return "done";
       } catch (e) {
-        // Sin respuesta en 20 s: se cuenta como en curso y su estado lo dirá
-        results.push({ client_id: id, ...(sub ? { sub } : {}), ok: true, error: `sin respuesta al lanzar (${(e as Error).name})` });
-        return true;
+        results.push({ ...base, ok: false, error: `sin respuesta (${(e as Error).name})` });
+        return "done";
       }
     };
-    // Lanza a medida que se liberan cupos (máx. MAX_RUNNING a la vez)
+    // Máx. MAX_RUNNING a la vez. Con respuesta al terminar, una corrida solo
+    // alcanza para una tanda (se lanza al inicio y se espera); la siguiente
+    // corrida (cada 10 min) sigue con la fila. Si las invocaciones quedan en
+    // segundo plano (202), se siguen lanzando a medida que se liberan cupos.
     const pendingQ = [...ordered];
+    let background = false;
     while (pendingQ.length && Date.now() - startedAt < BUDGET_MS) {
-      while (pendingQ.length && running.size < MAX_RUNNING) {
-        const q = pendingQ.shift()!;
-        if (await launch(q)) running.add(keyOf(q));
+      const batch: { id: string; sub?: string }[] = [];
+      if (background || Date.now() - startedAt < 30_000) {
+        while (pendingQ.length && running.size + batch.length < MAX_RUNNING) batch.push(pendingQ.shift()!);
+      }
+      if (batch.length) {
+        batch.forEach((q) => running.add(keyOf(q)));
+        const outs = await Promise.all(batch.map(launch));
+        outs.forEach((o, i) => { if (o === "done") running.delete(keyOf(batch[i])); else background = true; });
+        if (!background) break;
       }
       if (!pendingQ.length) break;
       await new Promise((r) => setTimeout(r, POLL_MS));
