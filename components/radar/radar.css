@@ -231,3 +231,31 @@
 .ra-root .ra-plain { color: #1A1733; font-family: inherit; }
 .ra-root .ra-plain-card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
 .ra-root[data-theme=dark] .ra-plain-card { background: #fff; }
+
+/* Inteligencia (KAM): insights de feedback + Peitho y conversaciones con el cliente (KamInsights.tsx) */
+.ra-root .ra-kam { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); color: var(--ink); }
+.ra-root .ra-kam-head { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.ra-root .ra-kam-meta { font-size: 12.5px; color: var(--muted); margin: 0; }
+.ra-root .ra-kam-err { font-size: 13px; color: var(--bad-fg); margin: 10px 0 0; }
+.ra-root .ra-kam-sum { margin: 14px 0 4px; font-size: 14px; line-height: 1.55; padding: 12px 14px; border-radius: 10px; background: var(--accent-soft); }
+.ra-root .ra-kam-h { margin: 18px 0 10px; font-size: 14px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.ra-root .ra-kam-n { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--warn-soft); color: var(--warn-fg); }
+.ra-root .ra-kam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.ra-root .ra-kam-ins { border: 1px solid var(--line); border-left: 3px solid var(--c); border-radius: 10px; padding: 12px 14px; background: var(--panel-2); font-size: 13px; line-height: 1.5; }
+.ra-root .ra-kam-ins p { margin: 6px 0 0; }
+.ra-root .ra-kam-ins .ev { color: var(--muted); font-size: 12px; }
+.ra-root .ra-kam-tags { display: inline-flex; gap: 6px; margin-bottom: 6px; font-size: 11px; font-weight: 600; }
+.ra-root .ra-kam-tags span { padding: 1px 7px; border-radius: 99px; background: var(--panel-3); }
+.ra-root .ra-kam-tags .src { color: var(--teal-fg); }
+.ra-root .ra-kam-conv { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; font-size: 13px; line-height: 1.5; }
+.ra-root .ra-kam-conv.done { opacity: .75; }
+.ra-root .ra-kam-conv p { margin: 6px 0 0; }
+.ra-root .ra-kam-conv-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ra-root .ra-kam-conv-top .ra-kam-tags { margin: 0; }
+.ra-root .ra-kam-prio { font-size: 11.5px; font-weight: 600; }
+.ra-root .ra-kam-why { color: var(--muted); }
+.ra-root .ra-kam-msg { margin-top: 8px; padding: 10px 12px; border-radius: 8px; background: var(--panel-2); border: 1px dashed var(--line-2); display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.ra-root .ra-kam-msg p { margin: 0; flex: 1 1 260px; white-space: pre-wrap; }
+.ra-root .ra-kam-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+.ra-root .ra-kam-actions .ra-input { flex: 1 1 220px; min-width: 0; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 11px; font-size: 13px; color: var(--ink); }
+.ra-root .ra-kam .ra-fold { margin-top: 12px; box-shadow: none; }

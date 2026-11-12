@@ -25,7 +25,7 @@ export const PARTS: Part[] = [
   ["VIII", "ICP del proyecto", [[23, "icp-vigente", "ICP y buyer persona vigentes"], [24, "icp-trabajo", "Lo que estamos trabajando"]]],
   ["IX", "Segmentos", [[25, "rol", "Análisis por rol"], [26, "industria", "Análisis por industria"], [27, "pais", "Análisis por país"], [28, "sdr", "Análisis por SDR"]]],
   ["X", "Recomendaciones", [[29, "rec-be", "Recomendaciones BullsEye"], [30, "rec-cli", "Recomendaciones para el cliente"]]],
-  ["XI", "Inteligencia (KAM)", [[31, "inteligencia", "Inteligencia comercial"], [32, "aprendizajes", "Lo que aprendimos del mercado"], [33, "oportunidades", "Oportunidades detectadas"]]],
+  ["XI", "Inteligencia (KAM)", [["K", "kam-insights", "Insights de feedback y Peitho · conversaciones con el cliente"], [31, "inteligencia", "Inteligencia comercial"], [32, "aprendizajes", "Lo que aprendimos del mercado"], [33, "oportunidades", "Oportunidades detectadas"]]],
   ["XII", "Tablas maestras", [[34, "tm-emp", "Tabla maestra de empresas"], [35, "tm-ct", "Tabla maestra de contactos"]]],
   ["A", "Anexo · Validación de datos", [["A1", "datos-prop", "Propiedades y mapeo HubSpot"], ["A2", "datos-metr", "Qué se puede calcular"], ["A3", "datos-inc", "Inconsistencias detectadas"], ["A4", "datos-nuevas", "Propiedades a registrar"]]],
 ];
@@ -49,7 +49,7 @@ export const FEEDBACK_TABS: { key: "form" | "resumen"; label: string; ids: strin
   { key: "resumen", label: "Resumen del feedback", ids: ["feedback", "calidad"] },
 ];
 // Secciones que arma React (no salen del HTML generado)
-export const REACT_SECTIONS = new Set(["wishlist", "feedback-form", "peitho", "icp-vigente", "tm-emp", "tm-ct"]);
+export const REACT_SECTIONS = new Set(["kam-insights", "wishlist", "feedback-form", "peitho", "icp-vigente", "tm-emp", "tm-ct"]);
 
 export const LEADS: Record<string, string> = {
   resumen: "Qué pasó con las cuentas, hasta dónde llegamos dentro de ellas y qué potencial queda abierto.",
@@ -87,6 +87,7 @@ export const LEADS: Record<string, string> = {
   "stock-op": "¿Cuánto trabajo pendiente existe?",
   "stock-opp": "¿Cuánto potencial comercial está vivo?",
   recuperables: "Cuentas que no deben considerarse perdidas.",
+  "kam-insights": "La IA lee el feedback que el cliente dejó de cada reunión y el análisis de Peitho, detecta patrones y propone conversaciones para tener con el cliente. Marca cada una cuando la converses y anota lo que respondió.",
   inteligencia: "Patrones detectados en los datos. Cada uno indica el dato que lo sustenta y la interpretación por separado.",
   aprendizajes: "Lo que el mercado nos está diciendo, más allá de los KPIs.",
   oportunidades: "Cuentas priorizadas por fit, interés, profundidad y avance.",
