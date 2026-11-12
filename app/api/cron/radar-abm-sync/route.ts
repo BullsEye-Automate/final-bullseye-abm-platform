@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { syncClientRadar } from "@/lib/radarAbm/server/sync";
 import { readCronStatus, recordCronStatus, type CronStatus } from "@/lib/radarAbm/server/store";
-import { runInBackground } from "@/lib/backgroundTask";
 import { parseSubs } from "@/lib/radarAbm/subAccounts";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 
@@ -18,28 +17,21 @@ export const maxDuration = 300;
 // Cada cliente corre en su propia invocación (?client_id=, con sus 5 min):
 // un cliente grande (ej. Crossnet) no deja sin sincronizar a los demás.
 
-const BUDGET_MS = 240_000;
-// Cada cliente corre en su propia invocación (?client_id=) y la corrida
-// principal la espera sin cortar la conexión. Antes cortaba la espera a los
-// 8 s y Vercel terminaba la invocación del cliente: todos quedaban "started"
-// sin sincronizar (nov-2026: Grupo Tress, BullsEye, Apply, Acid Labs, Simplex
-// atrasados de 3 a 14 días).
-// Como máximo MAX_RUNNING sincronizaciones a la vez: todas comparten el límite
-// de búsquedas de HubSpot (~3 req/s) y en paralelo se pasaban de los 5 min.
+// Cada corrida (cada 10 min de 9 a 16 UTC, vercel.json) sincroniza una tanda
+// de MAX_RUNNING clientes en su propia ejecución, en paralelo (comparten el
+// límite de búsquedas de HubSpot). Antes se lanzaba una invocación por
+// cliente con fetch: quedaban "started" sin terminar (nov-2026: Grupo Tress,
+// BullsEye, Acid Labs, Simplex atrasados de 3 a 14 días; a mano el mismo
+// sync de Grupo Tress termina en 182 s). ?client_id= sincroniza uno a mano.
 // Un "started" de hace menos de RUNNING_MS cuenta como en curso; más antiguo,
 // como intento que no terminó (va al final de la fila por RETRY_AFTER_MS).
 const MAX_RUNNING = 2;
 const RUNNING_MS = 6 * 60_000;
-const POLL_MS = 20_000;
-// La invocación del cliente deja "error" antes de que Vercel la corte (300 s)
-const CHILD_LIMIT_MS = 285_000;
-// La corrida principal espera a sus invocaciones hasta este punto (su propio
-// límite también es 300 s)
-const PARENT_LIMIT_MS = 296_000;
+// syncOne deja "error" si no terminó, antes del límite de 300 s de Vercel
+const CHILD_LIMIT_MS = 280_000;
 const RETRY_AFTER_MS = 3 * 3600_000;
-// Corre cada 10 min de 9 a 16 UTC (vercel.json): cada corrida toma solo los
-// clientes que no se sincronizaron en las últimas horas y los lanza a medida
-// que se liberan cupos. ?all=1 fuerza todos.
+// Cada corrida toma solo los clientes que no se sincronizaron en las últimas
+// horas. ?all=1 fuerza todos.
 const FRESH_MS = 18 * 3600_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -57,11 +49,7 @@ export async function GET(req: NextRequest) {
   if (one) {
     if (!UUID_RE.test(one)) return NextResponse.json({ error: "client_id inválido" }, { status: 400 });
     const sub = req.nextUrl.searchParams.get("sub") || undefined;
-    const task = syncOne(one, sub);
-    // En Vercel responde de inmediato y sigue en segundo plano; fuera de
-    // Vercel (local) espera el resultado
-    if (runInBackground(task)) return NextResponse.json({ client_id: one, ok: true, accepted: true }, { status: 202 });
-    const r = await task;
+    const r = await syncOne(one, sub);
     return NextResponse.json({ client_id: one, ...r });
   }
   const all = req.nextUrl.searchParams.get("all") === "1";
@@ -116,59 +104,13 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => a.late - b.late || a.i - b.i)
       .map((x) => x.q);
 
-    const self = new URL(req.nextUrl.pathname, req.nextUrl.origin);
-    // Lanza la invocación de un cliente y ESPERA su respuesta sin cortarla:
-    // cortar la conexión termina la invocación en Vercel (nov-2026). Si la
-    // invocación logra quedar en segundo plano (waitUntil) responde 202 al
-    // instante; si no, responde al terminar (≤ CHILD_LIMIT_MS).
-    type Outcome = "accepted" | "done";
-    const launch = async ({ id, sub }: { id: string; sub?: string }): Promise<Outcome> => {
-      const url = new URL(self);
-      url.searchParams.set("client_id", id);
-      if (sub) url.searchParams.set("sub", sub);
+    // Una tanda aquí mismo, sin llamarse a sí misma por HTTP
+    const batch = ordered.slice(0, Math.max(0, MAX_RUNNING - running.size));
+    await Promise.all(batch.map(async ({ id, sub }) => {
       await recordCronStatus(id, sub, { state: "started" });
-      const base = { client_id: id, ...(sub ? { sub } : {}) };
-      try {
-        const wait = Math.max(5_000, PARENT_LIMIT_MS - (Date.now() - startedAt));
-        const r = await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store", signal: AbortSignal.timeout(wait) });
-        const j = await r.json().catch(() => ({}));
-        if (!r.ok) {
-          await recordCronStatus(id, sub, { state: "error", detail: `La sincronización automática no pudo llamar a la invocación del cliente (HTTP ${r.status}).` });
-          results.push({ ...base, ok: false, error: j.error ?? `HTTP ${r.status}` });
-          return "done";
-        }
-        if (j.accepted) { results.push({ ...base, ok: true, error: "en segundo plano" }); return "accepted"; }
-        results.push({ ...base, ok: !!j.ok, ...(j.error ? { error: j.error } : {}) });
-        return "done";
-      } catch (e) {
-        results.push({ ...base, ok: false, error: `sin respuesta (${(e as Error).name})` });
-        return "done";
-      }
-    };
-    // Máx. MAX_RUNNING a la vez. Con respuesta al terminar, una corrida solo
-    // alcanza para una tanda (se lanza al inicio y se espera); la siguiente
-    // corrida (cada 10 min) sigue con la fila. Si las invocaciones quedan en
-    // segundo plano (202), se siguen lanzando a medida que se liberan cupos.
-    const pendingQ = [...ordered];
-    let background = false;
-    while (pendingQ.length && Date.now() - startedAt < BUDGET_MS) {
-      const batch: { id: string; sub?: string }[] = [];
-      if (background || Date.now() - startedAt < 30_000) {
-        while (pendingQ.length && running.size + batch.length < MAX_RUNNING) batch.push(pendingQ.shift()!);
-      }
-      if (batch.length) {
-        batch.forEach((q) => running.add(keyOf(q)));
-        const outs = await Promise.all(batch.map(launch));
-        outs.forEach((o, i) => { if (o === "done") running.delete(keyOf(batch[i])); else background = true; });
-        if (!background) break;
-      }
-      if (!pendingQ.length) break;
-      await new Promise((r) => setTimeout(r, POLL_MS));
-      // Libera los cupos de los que ya terminaron (ok / error) o se pasaron
-      const keys = Array.from(running);
-      const now = await Promise.all(keys.map((k) => { const [id, sub] = k.split("|"); return readCronStatus(id, sub || undefined).catch(() => null); }));
-      keys.forEach((k, i) => { if (!isRunning(now[i])) running.delete(k); });
-    }
+      const r = await syncOne(id, sub);
+      results.push({ client_id: id, ...(sub ? { sub } : {}), ...r });
+    }));
     return NextResponse.json({ launched: results.length, running: Array.from(running), pending: ordered.length - results.length, results, skipped });
   } catch (err) {
     console.error("Error en /api/cron/radar-abm-sync:", err);
