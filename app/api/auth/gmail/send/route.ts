@@ -54,12 +54,18 @@ function buildHtmlBody(body: string, senderName: string, clientName: string): st
 </body></html>`;
 }
 
-function buildRawEmail(from: string, to: string, subject: string, htmlBody: string): string {
-  const encodedSubject = /[^\x00-\x7F]/.test(subject)
-    ? `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`
-    : subject;
+function encodeRfc2047(text: string): string {
+  return /[^\x00-\x7F]/.test(text)
+    ? `=?UTF-8?B?${Buffer.from(text).toString("base64")}?=`
+    : text;
+}
+
+function buildRawEmail(from: string, senderName: string, to: string, subject: string, htmlBody: string): string {
+  const encodedSubject = encodeRfc2047(subject);
+  const encodedName = encodeRfc2047(senderName);
+  const fromHeader = senderName ? `${encodedName} <${from}>` : from;
   const lines = [
-    `From: ${from}`,
+    `From: ${fromHeader}`,
     `To: ${to}`,
     `Subject: ${encodedSubject}`,
     `MIME-Version: 1.0`,
@@ -130,7 +136,7 @@ export async function POST(req: NextRequest) {
     clientRow?.name ?? "",
   );
 
-  const raw = buildRawEmail(tokenRow.email, to, subject, htmlBody);
+  const raw = buildRawEmail(tokenRow.email, senderName, to, subject, htmlBody);
 
   const gmailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
