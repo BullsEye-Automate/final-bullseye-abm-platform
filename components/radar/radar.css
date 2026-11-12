@@ -188,6 +188,10 @@
 .ra-root .ra-sort-ic::after { content: "↕"; margin-left: 4px; opacity: .35; font-size: 11px; }
 .ra-root th[data-dir="asc"] .ra-sort-ic::after { content: "↑"; opacity: 1; color: var(--accent); }
 .ra-root th[data-dir="desc"] .ra-sort-ic::after { content: "↓"; opacity: 1; color: var(--accent); }
+/* Mapa día × hora de las reuniones */
+.ra-root table.ra-heat { width: 100%; border-collapse: separate; border-spacing: 2px; font-size: 11px; }
+.ra-root table.ra-heat th { font-weight: 500; color: var(--muted); padding: 2px 4px; text-align: center; }
+.ra-root table.ra-heat td { border-radius: 4px; padding: 6px 0; text-align: center; min-width: 20px; border: 1px solid var(--line); }
 /* Tarjeta plegable: el título es el botón (ej. Cobertura por industria) */
 .ra-root .ra-cfold > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .ra-root .ra-cfold > summary::-webkit-details-marker { display: none; }

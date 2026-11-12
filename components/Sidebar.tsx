@@ -19,7 +19,6 @@ import {
   IconChartBar,
   IconFileText,
   IconLogout,
-  IconCalendarEvent,
   IconUsersGroup,
   IconSchool,
   IconActivityHeartbeat,
@@ -68,7 +67,6 @@ const SECTIONS: Section[] = [
       { href: "/oportunidades/feedback",               label: "Feedback manual",   icon: IconMessageStar },
       { href: "/oportunidades/resumen-feedback",       label: "Resumen Feedback",  icon: IconChartBar },
       { href: "/oportunidades/peitho",                 label: "Peitho",            icon: IconSparkles },
-      { href: "/oportunidades/reuniones",              label: "Reuniones",         icon: IconCalendarEvent },
       { href: "/oportunidades/configuracion-feedback", label: "Config. feedback",  icon: IconSettings },
     ]
   },
