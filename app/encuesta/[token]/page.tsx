@@ -12,6 +12,7 @@ type MeetingData = {
   contacto_cargo: string | null;
   fecha_reunion: string | null;
   feedback_status: "pendiente" | "con_feedback";
+  peitho?: boolean;           // feedback automático de Peitho: no se pide
 };
 
 type FormState = {
@@ -216,6 +217,26 @@ export default function EncuestaPage() {
           <div className="text-4xl mb-4">🔍</div>
           <h1 className="text-xl font-semibold text-gray-800">Encuesta no encontrada</h1>
           <p className="text-gray-500 text-sm mt-2">El link puede estar desactualizado o ser incorrecto.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Cliente con Peitho o reunión ya analizada en Peitho: no se pide feedback
+  if (meeting?.peitho && !submitted) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+        <div className="text-center max-w-sm">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5"
+            style={{ background: "rgba(98,224,216,0.15)" }}>
+            <IconCheck size={32} style={{ color: "#62E0D8" }} />
+          </div>
+          <h1 className="text-xl font-semibold text-gray-800">No necesitas completar esta encuesta</h1>
+          <p className="text-gray-500 text-sm mt-2">El feedback de esta reunión llega automáticamente desde Peitho.</p>
+          <p className="text-xs text-gray-400 mt-4">
+            Reunión con {meeting.empresa}
+            {meeting.contacto_nombre && ` · ${meeting.contacto_nombre}`}
+          </p>
         </div>
       </div>
     );

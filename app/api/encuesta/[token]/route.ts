@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { peithoFeedbackCoverage } from "@/lib/peithoFeedback";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,14 @@ export async function GET(
     .single();
 
   if (error || !data) return NextResponse.json({ error: "Reunión no encontrada" }, { status: 404 });
-  return NextResponse.json(data);
+  // Cliente con Peitho o reunión ya analizada en Peitho: no se pide feedback
+  // manual (la página muestra el aviso en vez del formulario)
+  let peitho = false;
+  if (data.feedback_status !== "con_feedback" && data.client_id) {
+    const { enabled, covered } = await peithoFeedbackCoverage(supabase, data.client_id, [data]);
+    peitho = enabled || covered.has(data.id);
+  }
+  return NextResponse.json({ ...data, peitho });
 }
 
 export async function POST(
@@ -25,11 +33,17 @@ export async function POST(
   const supabase = supabaseAdmin();
   const { data: meeting, error: meetingError } = await supabase
     .from("meetings")
-    .select("id, feedback_status")
+    .select("id, client_id, empresa, contacto_nombre, fecha_reunion, feedback_status")
     .eq("feedback_token", params.token)
     .single();
 
   if (meetingError || !meeting) return NextResponse.json({ error: "Token inválido" }, { status: 404 });
+  if (meeting.feedback_status !== "con_feedback" && meeting.client_id) {
+    const { enabled, covered } = await peithoFeedbackCoverage(supabase, meeting.client_id, [meeting]);
+    if (enabled || covered.has(meeting.id)) {
+      return NextResponse.json({ error: "El feedback de esta reunión llega automáticamente desde Peitho" }, { status: 409 });
+    }
+  }
   if (meeting.feedback_status === "con_feedback") {
     return NextResponse.json({ error: "Esta encuesta ya fue completada" }, { status: 409 });
   }
