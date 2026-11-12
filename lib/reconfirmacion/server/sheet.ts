@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { getSheetRows } from "@/lib/googleSheets";
 import { buildMatchKey, parseDate } from "@/lib/syncMeetings";
-import { cleanReconfDate, isPilotClient, isYes, pilotClients } from "../rules";
+import { cleanReconfDate, isPilotClient, isReconfValid, isYes, pilotClients } from "../rules";
 
 // Reconfirmación — lectura en vivo de "API Reuniones - IA" para los clientes
 // del piloto. La usan el cron de alertas (necesita el estado al minuto, no el
@@ -61,24 +61,29 @@ export async function readPilotMeetings(sinceDay: string): Promise<{ meetings: P
   return { meetings, hasColumns };
 }
 
-// Copia la reconfirmación a `meetings` (solo las filas que cambiaron). Sin la
-// migración 20261112 no hace nada.
+// Copia la reconfirmación a `meetings` (solo las filas que cambiaron) y marca
+// como no reconfirmadas las que se marcaron en el portal para otra fecha u
+// hora (la reunión se movió). Sin la migración 20261112 no hace nada.
 export async function syncPilotReconfirmations(meetings: PilotMeeting[]): Promise<{ updated: number; skipped?: string }> {
   const db = supabaseAdmin();
-  const { error: colErr } = await db.from("meetings").select("reconfirmada").limit(1);
+  const { error: colErr } = await db.from("meetings").select("reconfirmada, reconfirmada_para").limit(1);
   if (colErr) return { updated: 0, skipped: "Falta la migración 20261112_meetings_reconfirmacion.sql" };
   const byKey = new Map(meetings.map((m) => [m.key, m]));
   const keys = [...byKey.keys()];
   let updated = 0;
   for (let i = 0; i < keys.length; i += 200) {
-    const { data, error } = await db.from("meetings").select("id, sheet_row_key, reconfirmada, reconfirmada_en").in("sheet_row_key", keys.slice(i, i + 200));
+    const { data, error } = await db.from("meetings").select("id, sheet_row_key, reconfirmada, reconfirmada_en, reconfirmada_para").in("sheet_row_key", keys.slice(i, i + 200));
     if (error) throw new Error(error.message);
     for (const row of data ?? []) {
       const m = byKey.get(row.sheet_row_key);
       if (!m) continue;
-      const at = m.reconfirmed ? m.reconfirmedAt : null;
-      if (!!row.reconfirmada === m.reconfirmed && (row.reconfirmada_en ?? null) === at) continue;
-      const { error: upErr } = await db.from("meetings").update({ reconfirmada: m.reconfirmed, reconfirmada_en: at }).eq("id", row.id);
+      const yes = m.reconfirmed; // lo que dice la planilla
+      const at = yes ? m.reconfirmedAt : null;
+      const para = yes ? row.reconfirmada_para ?? null : null;
+      // Marcada en el portal para otra fecha u hora: no vale para la reunión actual
+      if (yes && !isReconfValid(para, m.md, m.hour)) m.reconfirmed = false;
+      if (!!row.reconfirmada === yes && (row.reconfirmada_en ?? null) === at && (row.reconfirmada_para ?? null) === para) continue;
+      const { error: upErr } = await db.from("meetings").update({ reconfirmada: yes, reconfirmada_en: at, reconfirmada_para: para }).eq("id", row.id);
       if (upErr) throw new Error(upErr.message);
       updated++;
     }

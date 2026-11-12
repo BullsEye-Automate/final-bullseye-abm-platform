@@ -5,7 +5,8 @@ import { buildClientDirectory } from "./clientAccounts";
 import { canonicalCountry } from "@/lib/celulasSdr/country";
 import { chileToday, monthEnd, monthStart } from "@/lib/celulasSdr/calendar";
 import { canEditMeetings } from "@/lib/celulasSdr/editors";
-import { isPilotClient, pilotClients } from "@/lib/reconfirmacion/rules";
+import { isPilotClient, isReconfValid, pilotClients } from "@/lib/reconfirmacion/rules";
+import { normName, readMasterPeople, resolveSdr } from "@/lib/respuestasLemlist/directory";
 import type { DataWarning, MeetingRecord, MeetingRecordsResponse, MeetingStatus } from "@/lib/celulasSdr/types";
 
 // Módulo Células SDR — Registro de reuniones: las filas de la pestaña API
@@ -54,7 +55,7 @@ export async function loadMeetingRecords(params: URLSearchParams, userEmail: str
   let truncated = false;
   let cliCol = " cliente_nombre,";
   // Reconfirmación (migración 20261112_meetings_reconfirmacion.sql): opcional
-  let recCol = " reconfirmada, reconfirmada_en,";
+  let recCol = " reconfirmada, reconfirmada_en, reconfirmada_para,";
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await db
       .from("meetings")
@@ -73,6 +74,19 @@ export async function loadMeetingRecords(params: URLSearchParams, userEmail: str
   }
 
   const pilots = pilotClients();
+  // Reconfirmación: quién mira puede marcar las suyas (por su correo en la Maestra)
+  const isEditor = canEditMeetings(userEmail);
+  const people = recCol && !isEditor && userEmail ? await readMasterPeople().catch(() => []) : [];
+  const ownCache = new Map<string, boolean>();
+  const isOwn = (who: string) => {
+    if (isEditor) return true;
+    if (!userEmail || !who) return false;
+    if (!ownCache.has(who)) {
+      const r = resolveSdr(people, who);
+      ownCache.set(who, !!r.person?.email && normName(r.person.email) === normName(userEmail));
+    }
+    return ownCache.get(who)!;
+  };
   const appClientName = new Map((clientRows ?? []).map((c: any) => [c.id as string, c.name as string]));
   const sdrNames: Record<string, string> = {};
   const rows: MeetingRecord[] = raw.slice(0, MAX_ROWS).map((m) => {
@@ -97,7 +111,11 @@ export async function loadMeetingRecords(params: URLSearchParams, userEmail: str
       comment: (m.notas ?? "").trim(),
       editable: !!m.sheet_row_key && !String(m.sheet_row_key).includes("|"),
       ...(recCol && (isPilotClient(m.cliente_nombre, pilots) || isPilotClient(appClientName.get(m.client_id), pilots))
-        ? { rc: { ok: !!m.reconfirmada, at: m.reconfirmada ? (m.reconfirmada_en ?? null) : null } }
+        ? (() => {
+            const ok = !!m.reconfirmada && isReconfValid(m.reconfirmada_para, m.fecha_reunion, m.hora);
+            const editable = !!m.sheet_row_key && !String(m.sheet_row_key).includes("|");
+            return { rc: { ok, at: ok ? (m.reconfirmada_en ?? null) : null, edit: editable && isOwn((m.responsable || m.sdr_nombre || "").trim()) } };
+          })()
         : {}),
     };
   });

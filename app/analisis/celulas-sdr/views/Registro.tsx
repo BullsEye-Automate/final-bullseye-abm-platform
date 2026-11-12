@@ -98,6 +98,29 @@ export function ViewRegistro() {
     }
   };
 
+  // Reconfirmación (piloto): el SDR responsable, las líderes o Ingri la marcan
+  // aquí; se escribe en la planilla (/api/celulas-sdr/records/reconfirm)
+  const [rcSaving, setRcSaving] = useState<string | null>(null);
+  const toggleReconf = async (r: MeetingRecord, value: boolean) => {
+    setRcSaving(r.id);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/celulas-sdr/records/reconfirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: r.id, value }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || `Error ${res.status}`);
+      setData((x) => (x ? { ...x, rows: x.rows.map((y) => (y.id === r.id && y.rc ? { ...y, rc: { ...y.rc, ok: j.rc.ok, at: j.rc.at } } : y)) } : x));
+      setMsg({ t: `${r.company || "Reunión"}: ${value ? "marcada como reconfirmada con el prospecto" : "reconfirmación quitada"}. El cliente lo ve en Pulso ABM.`, err: false });
+    } catch (e) {
+      setMsg({ t: (e as Error).message, err: true });
+    } finally {
+      setRcSaving(null);
+    }
+  };
+
   const pickPreset = (p: Preset) => {
     setPreset(p);
     if (p !== "rango") setRange(presetRange(p, today));
@@ -212,7 +235,7 @@ export function ViewRegistro() {
             </label>
           ) : null}
         </div>
-        <p className="cs-note">Espejo de la pestaña API Reuniones (se sincroniza cada hora en horario laboral; la reconfirmación del piloto, cada 15 min). {data?.canEdit ? "Puedes cambiar el estado de cada reunión: se guarda directo en la planilla." : "Solo lectura."} Los filtros de célula, SDR, cliente y país de arriba también aplican.</p>
+        <p className="cs-note">Espejo de la pestaña API Reuniones (se sincroniza cada hora en horario laboral; la reconfirmación del piloto, cada 15 min). {data?.canEdit ? "Puedes cambiar el estado de cada reunión: se guarda directo en la planilla." : "Solo lectura."}{d?.hasRc ? " Reconfirmación (piloto): el SDR de la reunión, las líderes e Ingri marcan el check cuando reconfirman con el prospecto." : ""} Los filtros de célula, SDR, cliente y país de arriba también aplican.</p>
       </div>
 
       {err ? <div className="cs-banner err">{err}</div> : null}
@@ -227,7 +250,7 @@ export function ViewRegistro() {
           ) : null}
           {d.rcOpen > 0 && !rcTodo ? (
             <div className="cs-banner warn" style={{ cursor: "pointer" }} onClick={() => setRcTodo(true)}>
-              <span>📞 {d.rcOpen} {d.rcOpen === 1 ? "reunión hay que reconfirmarla" : "reuniones hay que reconfirmarlas"} ahora o ya venció su plazo. El SDR la marca en el formulario de registro de reuniones. Clic para verlas.</span>
+              <span>📞 {d.rcOpen} {d.rcOpen === 1 ? "reunión hay que reconfirmarla" : "reuniones hay que reconfirmarlas"} ahora o ya venció su plazo. Márcalas en la columna Reconfirmación apenas las reconfirmes. Clic para verlas.</span>
             </div>
           ) : null}
           {msg ? <div className={`cs-banner ${msg.err ? "err" : "info"}`}>{msg.t}</div> : null}
@@ -270,7 +293,18 @@ export function ViewRegistro() {
                           </td>
                           {d.hasRc ? (() => {
                             const rc = rcInfo(r, now);
-                            return <td className="l">{rc ? <span className={`cs-tag ${RC_CLS[rc.st]}`} title={rc.title}>{rc.label}</span> : <span className="cs-muted">—</span>}</td>;
+                            const canMark = !!r.rc?.edit && (r.rc.ok || r.st === "pending");
+                            return (
+                              <td className="l" onClick={(e) => canMark && e.stopPropagation()} style={{ whiteSpace: "nowrap" }}>
+                                {canMark ? (
+                                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center", cursor: "pointer", marginRight: 6 }} title="Reunión reconfirmada con el prospecto">
+                                    <input type="checkbox" checked={!!r.rc?.ok} disabled={rcSaving === r.id} onChange={(e) => toggleReconf(r, e.target.checked)} />
+                                  </label>
+                                ) : null}
+                                {rc ? <span className={`cs-tag ${RC_CLS[rc.st]}`} title={rc.title}>{rc.label}</span> : <span className="cs-muted">—</span>}
+                                {rcSaving === r.id ? <span className="cs-muted" style={{ marginLeft: 6 }}>Guardando…</span> : null}
+                              </td>
+                            );
                           })() : null}
                           <td className="l">{r.opp || "—"}</td>
                           <td className="l">{r.origin || "—"}</td>

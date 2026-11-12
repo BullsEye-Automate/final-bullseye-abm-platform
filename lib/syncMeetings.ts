@@ -130,12 +130,15 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
   const cliName = (row: Record<string, string>) => (withClienteNombre ? { cliente_nombre: row["Cliente"]?.trim() || null } : {});
   // Reconfirmación (migración 20261112_meetings_reconfirmacion.sql): solo si
   // la columna existe en la base Y en la planilla (si no, no se toca)
-  const { error: recColErr } = await supabase.from("meetings").select("reconfirmada").limit(1);
+  const { error: recColErr } = await supabase.from("meetings").select("reconfirmada, reconfirmada_para").limit(1);
   const withReconf = !recColErr && rows.some((r) => "Reconfirmada" in r);
   const reconf = (row: Record<string, string>) => {
     if (!withReconf) return {};
     const yes = isYes(row["Reconfirmada"]);
-    return { reconfirmada: yes, reconfirmada_en: yes ? cleanReconfDate(row["Fecha reconfirmación"]) : null };
+    // reconfirmada_para solo lo escribe el portal; si la planilla dice No, se limpia
+    return yes
+      ? { reconfirmada: true, reconfirmada_en: cleanReconfDate(row["Fecha reconfirmación"]) }
+      : { reconfirmada: false, reconfirmada_en: null, reconfirmada_para: null };
   };
   const clientByName = new Map<string, string>();
   const clientNameById = new Map<string, string>();

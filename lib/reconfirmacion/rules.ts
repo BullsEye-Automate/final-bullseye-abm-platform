@@ -2,10 +2,10 @@
 // dependencias de Node: se usan en el servidor (alertas, sync, Pulso ABM) y en
 // el navegador (Registro de reuniones de Células SDR).
 //
-// El SDR marca "Reunión reconfirmada con el prospecto" en el formulario de
-// registro de reuniones (repo Hubspot-y-SDR-Dashboard); el Apps Script lo
-// guarda en "API Reuniones - IA" (columnas Reconfirmada / Fecha reconfirmación)
-// y el portal lo lee desde ahí.
+// El SDR (o su líder, o Ingri) marca "Reconfirmada con el prospecto" en el
+// Registro de reuniones de Células SDR; el portal lo escribe en "API Reuniones
+// - IA" (columnas Reconfirmada / Fecha reconfirmación) y en `meetings`
+// (/api/celulas-sdr/records/reconfirm).
 //
 // Plazos (confirmados en la propuesta "Reconfirmación de reuniones — idea para
 // células SDR"):
@@ -116,6 +116,19 @@ export function isYes(v: string | null | undefined): boolean {
 export function cleanReconfDate(v: string | null | undefined): string | null {
   const s = String(v ?? "").trim();
   return s ? s.slice(0, 40) : null;
+}
+
+// Fecha y hora de la reunión a la que corresponde una reconfirmación
+export function reconfKey(md: string | null | undefined, hour: string | null | undefined): string {
+  const min = parseHour(hour);
+  return `${md ?? ""} ${min == null ? "" : hm(min)}`.trim();
+}
+
+// Una reconfirmación hecha desde el portal guarda para qué fecha y hora era;
+// si la reunión se movió, ya no vale (hay que volver a reconfirmar). Sin ese
+// dato (marcada directo en la planilla) se da por válida.
+export function isReconfValid(para: string | null | undefined, md: string | null | undefined, hour: string | null | undefined): boolean {
+  return !para || para === reconfKey(md, hour);
 }
 
 export const STATE_LABEL: Record<ReconfState, string> = {

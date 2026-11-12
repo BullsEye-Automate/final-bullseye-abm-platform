@@ -8,4 +8,7 @@
 alter table meetings
   add column if not exists reconfirmada    boolean not null default false,
   -- "dd/MM/yyyy HH:mm" (hora de Chile) tal como lo escribe el Apps Script
-  add column if not exists reconfirmada_en text;
+  add column if not exists reconfirmada_en text,
+  -- fecha y hora de la reunión cuando se marcó desde el portal ("YYYY-MM-DD HH:MM"):
+  -- si la reunión cambia de fecha u hora, la reconfirmación deja de valer
+  add column if not exists reconfirmada_para text;

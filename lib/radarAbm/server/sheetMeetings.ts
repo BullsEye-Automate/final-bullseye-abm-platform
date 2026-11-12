@@ -1,15 +1,16 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import type { RadarMeeting } from "../types";
 import { pickSub } from "../subAccounts";
-import { isPilotClient, pilotClients } from "@/lib/reconfirmacion/rules";
+import { isPilotClient, isReconfValid, pilotClients } from "@/lib/reconfirmacion/rules";
 
 // Reconfirmación (piloto): campos de la reunión para Pulso ABM. Solo reuniones
 // de clientes del piloto (por la columna Cliente de la planilla o el nombre
 // del cliente en la app).
-function reconfPatch(r: { reconfirmada?: boolean | null; reconfirmada_en?: string | null; cliente_nombre?: string | null }, clientName: string | null | undefined, pilots: string[]): Partial<RadarMeeting> {
+function reconfPatch(r: { reconfirmada?: boolean | null; reconfirmada_en?: string | null; reconfirmada_para?: string | null; cliente_nombre?: string | null; fecha_reunion?: string | null; hora?: string | null }, clientName: string | null | undefined, pilots: string[]): Partial<RadarMeeting> {
   if (r.reconfirmada === undefined) return {};
   if (!isPilotClient(r.cliente_nombre, pilots) && !isPilotClient(clientName, pilots)) return {};
-  return r.reconfirmada ? { rcp: 1, rc: 1, rca: r.reconfirmada_en ? String(r.reconfirmada_en) : "" } : { rcp: 1, rc: 0, rca: "" };
+  // Si la reunión cambió de fecha u hora después de reconfirmarla, ya no vale
+  return r.reconfirmada && isReconfValid(r.reconfirmada_para, r.fecha_reunion, r.hora) ? { rcp: 1, rc: 1, rca: r.reconfirmada_en ? String(r.reconfirmada_en) : "" } : { rcp: 1, rc: 0, rca: "" };
 }
 
 // Pulso ABM — reuniones desde la planilla de reuniones (tabla meetings, la
@@ -85,9 +86,9 @@ export async function loadFeedbackOverlay(clientId: string, subs: string[] = [])
     if (subs.length && pickSub(subs, c.name, null)) ids.add(c.id);
   }
   const since = new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 10);
-  const meetings: { id: string; client_id: string; propuesta_oportunidad: string | null; realizado: string | null; reconfirmada?: boolean; reconfirmada_en?: string | null; cliente_nombre?: string | null }[] = [];
+  const meetings: { id: string; client_id: string; propuesta_oportunidad: string | null; realizado: string | null; reconfirmada?: boolean; reconfirmada_en?: string | null; reconfirmada_para?: string | null; cliente_nombre?: string | null; fecha_reunion?: string | null; hora?: string | null }[] = [];
   // Con la migración de reconfirmación se lee también su estado (en vivo para el cliente)
-  let cols = "id, client_id, propuesta_oportunidad, realizado, reconfirmada, reconfirmada_en, cliente_nombre";
+  let cols = "id, client_id, propuesta_oportunidad, realizado, fecha_reunion, hora, reconfirmada, reconfirmada_en, reconfirmada_para, cliente_nombre";
   for (let offset = 0; offset < 20000; offset += 1000) {
     let { data, error } = await supabase.from("meetings").select(cols)
       .in("client_id", [...ids]).gte("fecha_reunion", since).order("id", { ascending: true }).range(offset, offset + 999);
@@ -158,7 +159,7 @@ export async function loadSheetMeetings(input: {
     const COLS = "id, client_id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais, hora, industria";
     // cliente_nombre (columna Cliente de la planilla) y la reconfirmación
     // (migración 20261112) son opcionales: sin las columnas se lee lo demás
-    let { data, error } = await query(`${COLS}, cliente_nombre, reconfirmada, reconfirmada_en`);
+    let { data, error } = await query(`${COLS}, cliente_nombre, reconfirmada, reconfirmada_en, reconfirmada_para`);
     if (error && /cliente_nombre|reconfirmada/.test(error.message)) ({ data, error } = input.sub ? await query(`${COLS}, cliente_nombre`) : await query(COLS));
     if (error && input.sub && /cliente_nombre/.test(error.message)) ({ data, error } = await query(COLS));
     if (error) throw new Error(`No se pudieron leer las reuniones de la planilla: ${error.message}`);

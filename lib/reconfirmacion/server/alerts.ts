@@ -24,7 +24,7 @@ export type SlotId = "0830" | "1000" | "1200" | "1600" | "1800";
 type Slot = { id: SlotId; time: string; leader: boolean; pick: (w: ReconfWindow) => boolean; title: string; intro: string };
 
 export const SLOTS: Slot[] = [
-  { id: "0830", time: "08:30", leader: true, pick: () => true, title: "Reuniones a reconfirmar hoy", intro: "Estas reuniones se reconfirman hoy con el prospecto. Márcalas en el formulario de registro apenas las reconfirmes." },
+  { id: "0830", time: "08:30", leader: true, pick: () => true, title: "Reuniones a reconfirmar hoy", intro: "Estas reuniones se reconfirman hoy con el prospecto. Márcalas en el Registro de reuniones del portal apenas las reconfirmes." },
   { id: "1000", time: "10:00", leader: false, pick: (w) => w.pm, title: "Recordatorio: reconfirma las reuniones de esta tarde", intro: "Se abrió la ventana para reconfirmar las reuniones PM de hoy. Plazo: 12:00." },
   { id: "1200", time: "12:00", leader: true, pick: (w) => w.pm, title: "Reuniones de esta tarde sin reconfirmar", intro: "Venció el plazo (12:00) y estas reuniones de hoy en la tarde siguen sin reconfirmar." },
   { id: "1600", time: "16:00", leader: false, pick: (w) => !w.pm, title: "Recordatorio: reconfirma las reuniones de mañana en la mañana", intro: "Se abrió la ventana para reconfirmar las reuniones AM del próximo día hábil. Plazo: 18:00." },
@@ -69,7 +69,7 @@ export function itemsForSlot(meetings: PilotMeeting[], day: string, slot: Slot):
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 const dmy = (d: string | null) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "—");
-const FORM_URL = "https://bullseye-automate.github.io/Hubspot-y-SDR-Dashboard/";
+const REGISTRO_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://portal.bullseye-abm.com"}/analisis/celulas-sdr?vista=registro`;
 
 function mailHtml(slot: Slot, items: Item[], greeting: string, showSdr: boolean, testNote: string): string {
   const th = 'style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd;font-size:12px;color:#555"';
@@ -79,7 +79,7 @@ function mailHtml(slot: Slot, items: Item[], greeting: string, showSdr: boolean,
 ${testNote}<h2 style="color:#251762;font-size:18px;margin:0 0 8px">${esc(slot.title)}</h2>
 <p style="font-size:14px">${esc(greeting)}: ${esc(slot.intro)}</p>
 <table style="border-collapse:collapse;width:100%"><thead><tr><th ${th}>Reconfirmar antes de</th><th ${th}>Reunión</th><th ${th}>Empresa</th><th ${th}>Contacto</th><th ${th}>Cliente</th>${showSdr ? `<th ${th}>SDR</th>` : ""}</tr></thead><tbody>${rows}</tbody></table>
-<p style="font-size:13px;margin-top:14px">Marca cada reunión como reconfirmada en el <a href="${FORM_URL}">formulario de registro de reuniones</a> (modo Actualizar). El cliente ve el estado en su portal (Pulso ABM).</p>
+<p style="font-size:13px;margin-top:14px">Marca cada reunión como reconfirmada en el <a href="${REGISTRO_URL}">Registro de reuniones de Células SDR</a> (columna Reconfirmación, filtro "Solo por reconfirmar"). El cliente ve el estado en su portal (Pulso ABM).</p>
 <p style="font-size:11px;color:#888">Piloto de reconfirmación de reuniones · BullsEye</p></div>`;
 }
 
@@ -101,7 +101,7 @@ export async function runReconfirmation(opts: { slotId?: SlotId; force?: boolean
   const mode: "test" | "activo" = process.env.RECONF_ALERTS_MODE === "activo" ? "activo" : "test";
   const result: SlotResult = { slot: slot.id, day, mode, meetings: 0, mails: [], synced: sync.updated };
   if (!hasColumns) {
-    result.note = "La planilla aún no tiene la columna Reconfirmada (falta publicar el Apps Script del formulario): no se envía nada.";
+    result.note = "La planilla no tiene la columna Reconfirmada: no se envía nada.";
     return result;
   }
   const items = itemsForSlot(meetings, day, slot);
