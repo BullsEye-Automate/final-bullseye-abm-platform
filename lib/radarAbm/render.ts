@@ -151,6 +151,23 @@ export function bars(items: BarItem[], opt: { max?: number; pct?: boolean | numb
     <div class="t"><i style="width:${(i.v / max * 100).toFixed(2)}%;background:${i.c || "var(--s1)"}"></i></div>
     <div class="r">${opt.pct ? P(i.v, 0) : N(i.v)}${i.r != null ? ` <em>${i.r}</em>` : ""}</div></div>`).join("")}</div>`;
 }
+// Evolución mes a mes (pedido de BullsEye nov-2026): agendadas por fecha de
+// agendamiento y realizadas por fecha de la reunión, siempre por mes
+const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+function meetingMonthly(A: any[]) {
+  const ag = new Map<string, number>(), he = new Map<string, number>();
+  for (const m of A) {
+    if (m.agendada) ag.set(m.agendada.slice(0, 7), (ag.get(m.agendada.slice(0, 7)) ?? 0) + 1);
+    if (m.st === "Realizada" && m.fecha) he.set(m.fecha.slice(0, 7), (he.get(m.fecha.slice(0, 7)) ?? 0) + 1);
+  }
+  const keys = [...ag.keys(), ...he.keys()].sort();
+  if (!keys.length) return "";
+  const months: string[] = [];
+  for (let [y, mo] = keys[0].split("-").map(Number); `${y}-${String(mo).padStart(2, "0")}` <= keys[keys.length - 1]; mo === 12 ? (y++, mo = 1) : mo++) months.push(`${y}-${String(mo).padStart(2, "0")}`);
+  if (months.length < 2) return "";
+  const labels = months.map((k) => `${MES[Number(k.slice(5)) - 1]} ${k.slice(2, 4)}`);
+  return `<div class="rcard" style="margin-top:14px"><h4>Evolución mes a mes</h4>${lineChart([{ n: "Agendadas", c: "var(--s1)", v: months.map((k) => ag.get(k) ?? 0) }, { n: "Realizadas", c: "var(--s2)", v: months.map((k) => he.get(k) ?? 0) }], labels)}<p class="note">Agendadas por fecha de agendamiento; realizadas por fecha de la reunión.</p></div>`;
+}
 // Reuniones por país / industria / origen (barras con realizadas) y mapa día × hora
 function meetingDistribution(A: any[]) {
   if (!A.length) return "";
@@ -388,7 +405,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   // La evolución de reuniones (agendadas vs realizadas) se quitó a pedido de BullsEye
   // Distribución (antes en Oportunidades → Reuniones, unificada aquí): por país,
   // industria, origen y día/hora de la reunión, sobre las reuniones del período
-  s.reuniones += meetingDistribution(M.agM as any[]);
+  s.reuniones += meetingMonthly(M.agM as any[]) + meetingDistribution(M.agM as any[]);
 
   const qd = by(M.held as any[], (m) => m.q), yn = (v: any) => (v === true ? "Sí" : v === false ? "No" : '<span class="flag">s/i</span>');
   s.calidad = `<div class="tiles">${["hi", "md", "lo", "na"].map((q) => tile(pill(q), N((qd[q] || []).length), P(div((qd[q] || []).length, M.held.length)))).join("")}</div>
