@@ -380,15 +380,17 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   // §16 Detalle de reuniones (planilla de reuniones, completa)
   const mtRows = [...(M.Mt as any[])].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
-  const mtTxt = { emp: (m: any) => m.c?.n ?? m.emp, sdr: (m: any) => m.sdr, org: (m: any) => m.org || "—", opp: (m: any) => m.oppv || m.res || "—" };
+  // País = el de la empresa (en Crossnet "País CrossNet", ver sync); si la reunión no calza con una empresa, el de la planilla
+  const mtTxt = { emp: (m: any) => m.c?.n ?? m.emp, sdr: (m: any) => m.sdr, org: (m: any) => m.org || "—", opp: (m: any) => m.oppv || m.res || "—", pais: (m: any) => m.c?.pais || m.pais || "Sin país" };
   s["reuniones-detalle"] = mtRows.length
     ? `<div class="ra-sortlist">${mtRows.length > 5 ? listBar("Buscar empresa o contacto…", [2, 3], [
-        { col: 6, all: "Todos los estados", vals: mtRows.map((m: any) => m.st) }, { col: 5, all: "Todos los SDR", vals: mtRows.map(mtTxt.sdr) },
-        { col: 7, all: "Todos los orígenes", vals: mtRows.map(mtTxt.org) }, { col: 8, all: "Propuesta / oportunidad", vals: mtRows.map(mtTxt.opp) },
+        { col: 7, all: "Todos los estados", vals: mtRows.map((m: any) => m.st) },
+        { col: 5, all: "Todos los países", vals: mtRows.map(mtTxt.pais) },
+        { col: 8, all: "Todos los orígenes", vals: mtRows.map(mtTxt.org) }, { col: 9, all: "Propuesta / oportunidad", vals: mtRows.map(mtTxt.opp) },
       ], "reuniones") : ""}` + table([
         { h: "Agendada", f: (m) => dmy(m.agendada), v: (m) => m.agendada || "" }, { h: "Reunión", f: (m) => dmy(m.fecha), v: (m) => m.fecha || "" }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) },
         { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") }, { h: "Cargo", s: 1, f: (m) => esc(m.cargo || m.k?.cargo || "—") },
-        { h: "SDR", s: 1, f: (m) => esc(m.sdr) }, { h: "Estado", f: (m) => esc(m.st) }, { h: "Origen", s: 1, f: (m) => esc(m.org || "—") },
+        { h: "País", s: 1, f: (m) => esc(mtTxt.pais(m)) }, { h: "SDR", s: 1, f: (m) => esc(m.sdr) }, { h: "Estado", f: (m) => esc(m.st) }, { h: "Origen", s: 1, f: (m) => esc(m.org || "—") },
         { h: "Propuesta / oportunidad", s: 1, f: (m) => esc(m.oppv || m.res || "—") },
       ], mtRows.slice(0, 400), { sort: true }) + `</div><p class="note">${mtRows.length > 400 ? `Se muestran las 400 más recientes de ${N(mtRows.length)}. ` : ""}${M.source === "hubspot" ? "Fuente: planilla de reuniones (Excel de metas)." : ""} Una empresa puede tener varias reuniones.</p>`
     : `<p class="note" style="margin-top:0">Sin reuniones en el período.</p>`;
