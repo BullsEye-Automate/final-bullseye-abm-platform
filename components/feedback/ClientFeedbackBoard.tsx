@@ -19,7 +19,9 @@ type Meeting = {
   contacto_cargo: string | null;
   fecha_reunion: string | null;
   realizado: string;
-  feedback_status: "pendiente" | "con_feedback";
+  // "peitho" = el cliente tiene Peitho o la reunión ya tiene análisis en
+  // Peitho: no se pide feedback manual (lib/peithoFeedback.ts)
+  feedback_status: "pendiente" | "con_feedback" | "peitho";
   feedback_token: string;
   sdr_nombre: string | null;
 };
@@ -333,6 +335,7 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
   const [search, setSearch] = useState("");
   const [sdrFilter, setSdrFilter] = useState("Todos");
   const [activeMeeting, setActiveMeeting] = useState<Meeting | null>(null);
+  const [peithoEnabled, setPeithoEnabled] = useState(false);
 
   useEffect(() => {
     fetch(`/api/feedback-cliente/${token}`)
@@ -341,6 +344,7 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
         if (!data) { setNotFound(true); setLoading(false); return; }
         setClient(data.client);
         setMeetings(data.meetings ?? []);
+        setPeithoEnabled(!!data.peitho_enabled);
         setLoading(false);
         if (data.client?.id) {
           fetch(`/api/feedback-config?client_id=${data.client.id}`)
@@ -383,6 +387,7 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
 
   const pendientes  = filtered.filter(m => m.feedback_status === "pendiente");
   const conFeedback = filtered.filter(m => m.feedback_status === "con_feedback");
+  const porPeitho   = filtered.filter(m => m.feedback_status === "peitho");
 
   const fmtFecha = (f: string | null) =>
     f ? new Date(f + "T12:00:00").toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" }) : null;
@@ -402,6 +407,12 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
             Aquí puedes completar el feedback de cada reunión realizada. Haz clic en "Dejar feedback" para comenzar.
           </p>
         </div>}
+
+        {peithoEnabled && (
+          <div className="mb-6 rounded-2xl border border-teal-100 bg-teal-50 p-4 text-sm text-teal-800">
+            <b>No necesitas completar feedback.</b> Tus reuniones se analizan automáticamente con Peitho y el feedback llega desde ahí.
+          </div>
+        )}
 
         {/* Stats (sobre el total) */}
         <div className="grid grid-cols-2 gap-3 mb-6">
@@ -499,6 +510,36 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
                   </div>
                   <span className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-teal-50 text-teal-700 border border-teal-100">
                     <IconCheck size={12} /> Completado
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Feedback automático de Peitho */}
+        {porPeitho.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+              <IconMessageCheck size={15} className="text-teal-500" />
+              Feedback automático de Peitho ({porPeitho.length})
+            </h2>
+            <div className="space-y-2">
+              {porPeitho.map(m => (
+                <div key={m.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between gap-4 opacity-70">
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-700 truncate">{m.empresa}</p>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">
+                      {[m.contacto_nombre, m.contacto_cargo].filter(Boolean).join(" · ")}
+                    </p>
+                    {m.fecha_reunion && (
+                      <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
+                        <IconCalendar size={11} /> {fmtFecha(m.fecha_reunion)}
+                      </p>
+                    )}
+                  </div>
+                  <span className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium bg-teal-50 text-teal-700 border border-teal-100">
+                    Peitho
                   </span>
                 </div>
               ))}

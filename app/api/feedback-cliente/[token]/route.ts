@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { peithoFeedbackCoverage } from "@/lib/peithoFeedback";
 
 export const dynamic = "force-dynamic";
 
@@ -32,5 +33,13 @@ export async function GET(
     return NextResponse.json({ error: meetingsError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ client, meetings: meetings ?? [] });
+  // Con Peitho activado, o si la reunión ya tiene análisis en Peitho, no se
+  // pide feedback manual: queda como "peitho" (lib/peithoFeedback.ts)
+  const list = meetings ?? [];
+  const pending = list.filter((m) => m.feedback_status !== "con_feedback");
+  const { enabled, covered } = await peithoFeedbackCoverage(db, client.id, pending);
+  const out = list.map((m) =>
+    m.feedback_status !== "con_feedback" && (enabled || covered.has(m.id)) ? { ...m, feedback_status: "peitho" } : m
+  );
+  return NextResponse.json({ client, meetings: out, peitho_enabled: enabled });
 }
