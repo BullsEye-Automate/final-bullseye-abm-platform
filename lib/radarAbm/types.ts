@@ -85,6 +85,13 @@ export type RadarMeeting = {
   next?: boolean;
   reprog?: boolean;
   deal?: boolean;
+  // Reconfirmación con el prospecto (piloto, lib/reconfirmacion): rcp = la
+  // reunión es de un cliente del piloto; rc = reconfirmada (0 explícito para
+  // que el estado en vivo pise un 1 del informe guardado); rca = cuándo
+  // ("dd/MM/yyyy HH:mm", hora de Chile)
+  rcp?: 1;
+  rc?: 0 | 1;
+  rca?: string;
 };
 
 export type RadarDeal = {

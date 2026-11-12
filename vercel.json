@@ -64,7 +64,8 @@
     { "path": "/api/cron/centro-inteligencia", "schedule": "30 16 * * 5" },
     { "path": "/api/cron/centro-recomendaciones", "schedule": "0 23 * * 0" },
     { "path": "/api/cron/centro-alertas", "schedule": "30 11 * * 1-5" },
-    { "path": "/api/cron/centro-alertas", "schedule": "30 12 * * 1-5" }
+    { "path": "/api/cron/centro-alertas", "schedule": "30 12 * * 1-5" },
+    { "path": "/api/cron/reconfirmaciones", "schedule": "*/15 11-23 * * 1-5" }
   ],
   "framework": "nextjs",
   "buildCommand": "next build",
