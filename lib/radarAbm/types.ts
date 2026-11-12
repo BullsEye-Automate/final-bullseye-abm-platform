@@ -64,6 +64,8 @@ export type RadarMeeting = {
   cargo?: string;            // cargo del contacto (planilla)
   org?: string;              // origen de la reunión (planilla)
   pais?: string;             // país (planilla)
+  hora?: string;             // hora de la reunión HH:MM (planilla)
+  indp?: string;             // industria (planilla), si la reunión no calza con una empresa
   oppv?: string;             // Propuesta/Oportunidad tal cual en la planilla
   fbk?: 1;                   // el cliente respondió la encuesta de feedback
   cal?: number;              // calificación del cliente (1–10)

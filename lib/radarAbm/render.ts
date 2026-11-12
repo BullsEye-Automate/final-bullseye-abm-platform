@@ -151,6 +151,35 @@ export function bars(items: BarItem[], opt: { max?: number; pct?: boolean | numb
     <div class="t"><i style="width:${(i.v / max * 100).toFixed(2)}%;background:${i.c || "var(--s1)"}"></i></div>
     <div class="r">${opt.pct ? P(i.v, 0) : N(i.v)}${i.r != null ? ` <em>${i.r}</em>` : ""}</div></div>`).join("")}</div>`;
 }
+// Reuniones por país / industria / origen (barras con realizadas) y mapa día × hora
+function meetingDistribution(A: any[]) {
+  if (!A.length) return "";
+  const group = (key: (m: any) => string, top = 10) => {
+    const g = new Map<string, { n: number; held: number }>();
+    for (const m of A) { const k = key(m) || "Sin información"; const x = g.get(k) ?? { n: 0, held: 0 }; x.n++; if (m.st === "Realizada") x.held++; g.set(k, x); }
+    const rows = Array.from(g.entries()).sort((a, b) => b[1].n - a[1].n);
+    const shown = rows.slice(0, top), rest = rows.slice(top);
+    if (rest.length) shown.push([`Otros (${rest.length})`, rest.reduce((t, [, x]) => ({ n: t.n + x.n, held: t.held + x.held }), { n: 0, held: 0 })]);
+    return bars(shown.map(([l, x]) => ({ l, v: x.n, r: `${N(x.held)} ${x.held === 1 ? "realizada" : "realizadas"}`, tip: `${l}: ${N(x.n)} reuniones, ${N(x.held)} realizadas (${P(div(x.held, x.n))})` })));
+  };
+  const card = (t: string, body: string) => `<div class="rcard"><h4>${t}</h4>${body}</div>`;
+  // Día × hora (lunes a sábado, 7 a 20 h)
+  const DAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+  const grid = DAYS.map(() => new Array(14).fill(0));
+  let withHour = 0;
+  for (const m of A) {
+    if (!m.fecha || !m.hora) continue;
+    const d = new Date(m.fecha + "T12:00:00").getDay(), h = parseInt(String(m.hora).split(":")[0], 10);
+    if (d < 1 || d > 6 || !(h >= 7 && h <= 20)) continue;
+    grid[d - 1][h - 7]++; withHour++;
+  }
+  const max = Math.max(1, ...grid.flat());
+  const heat = withHour ? `<div class="tw" style="border:0;box-shadow:none;padding:0"><table class="ra-heat"><thead><tr><th></th>${Array.from({ length: 14 }, (_, i) => `<th class="n">${i + 7}</th>`).join("")}</tr></thead><tbody>${DAYS.map((d, i) => `<tr><th>${d}</th>${grid[i].map((v, j) => `<td class="n" style="background:${v ? `color-mix(in srgb, var(--accent) ${Math.round(15 + 85 * v / max)}%, transparent)` : "transparent"};${v / max > 0.55 ? "color:#fff;" : ""}" data-tip="${d} ${j + 7}:00 · ${N(v)} reuniones">${v || ""}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    <p class="note">${N(withHour)} de ${N(A.length)} reuniones con hora en la planilla.</p>` : `<p class="note">La planilla no trae la hora de estas reuniones (se verá tras la próxima sincronización).</p>`;
+  return `<h4 class="subh" style="margin-top:18px">Distribución de las reuniones</h4>
+  <div class="grid2">${card("Reuniones por país", group((m) => m.c?.pais || m.pais))}${card("Reuniones por industria", group((m) => m.c?.ind || m.indp))}</div>
+  <div class="grid2" style="margin-top:14px">${card("Reuniones por origen", group((m) => m.org))}${card("Día y hora de las reuniones", heat)}</div>`;
+}
 export function stack(items: { l: string; v: number; c: string }[]) {
   const tot = sum(items, (i) => i.v) || 1;
   return `<div class="stack">${items.filter((i) => i.v).map((i) => `<i style="width:${i.v / tot * 100}%;background:${i.c}" data-tip="${esc(i.l)}: ${N(i.v)} (${P(i.v / tot)})"></i>`).join("")}</div>
@@ -357,6 +386,9 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   <div class="rcard"><h4>Qué pasó después de las ${M.held.length} realizadas</h4>${bars(res.map(([l, c]) => ({ l: l || "Sin información de resultado", v: cnt(M.held, (m: any) => (m.res || null) === l), c })))}<p class="note">Agendada ≠ realizada, y reunión ≠ oportunidad: solo se cuenta oportunidad cuando hay resultado registrado o un negocio asociado.</p></div></div>
   ${M.pipe ? `<div class="rcard" style="margin-top:14px"><h4>Pipeline asociado (${M.pipe.n} negocios)</h4>${bars(["Calificación", "Propuesta enviada", "Negociación", "Ganado", "Perdido"].map((st) => ({ l: st, v: sum(M.pipe.byStage[st] || [], (d: any) => d.amount), c: st === "Perdido" ? "var(--g-rej)" : st === "Ganado" ? "var(--g-rel)" : "var(--s1)", r: `(${(M.pipe.byStage[st] || []).length})`, tip: `${st}: ${USD(sum(M.pipe.byStage[st] || [], (d: any) => d.amount))}` })))}<p class="note">Montos en dólares; barras en miles.</p></div>` : `<p class="note">Pipeline: sin información disponible para este cliente.</p>`}`;
   // La evolución de reuniones (agendadas vs realizadas) se quitó a pedido de BullsEye
+  // Distribución (antes en Oportunidades → Reuniones, unificada aquí): por país,
+  // industria, origen y día/hora de la reunión, sobre las reuniones del período
+  s.reuniones += meetingDistribution(M.agM as any[]);
 
   const qd = by(M.held as any[], (m) => m.q), yn = (v: any) => (v === true ? "Sí" : v === false ? "No" : '<span class="flag">s/i</span>');
   s.calidad = `<div class="tiles">${["hi", "md", "lo", "na"].map((q) => tile(pill(q), N((qd[q] || []).length), P(div((qd[q] || []).length, M.held.length)))).join("")}</div>

@@ -136,7 +136,7 @@ export async function loadSheetMeetings(input: {
       .or(`fecha_reunion.gte.${input.start},fecha_agendamiento.gte.${input.start}`)
       .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
-    const COLS = "id, client_id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais";
+    const COLS = "id, client_id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais, hora, industria";
     // cliente_nombre (columna Cliente de la planilla) solo hace falta con varios clientes en la cuenta
     let { data, error } = input.sub ? await query(`${COLS}, cliente_nombre`) : await query(COLS);
     if (error && input.sub && /cliente_nombre/.test(error.message)) ({ data, error } = await query(COLS));
@@ -216,6 +216,9 @@ export async function loadSheetMeetings(input: {
       ...(r.contacto_cargo ? { cargo: String(r.contacto_cargo).trim() } : {}),
       ...(r.origen ? { org: String(r.origen).trim() } : {}),
       ...(r.pais ? { pais: String(r.pais).trim() } : {}),
+      // Hora e industria de la planilla (distribución por día/hora e industria en Reuniones)
+      ...(r.hora ? { hora: String(r.hora).slice(0, 5) } : {}),
+      ...(r.industria ? { indp: String(r.industria).trim() } : {}),
       ...(r.propuesta_oportunidad ? { oppv: String(r.propuesta_oportunidad).trim() } : {}),
       co,
       sdr: (r.responsable || r.sdr_nombre || "").trim() || input.sdrOf(co),
