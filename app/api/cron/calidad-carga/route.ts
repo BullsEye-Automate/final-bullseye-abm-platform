@@ -11,9 +11,7 @@ export const maxDuration = 300;
 // Vercel Cron (L-V temprano, ver vercel.json): deja calculada la Calidad de
 // carga (últimos 30 días) de cada cliente activo en la Maestra, para que la
 // vista "Todos los clientes" abra al instante (caché de 6 h por cliente).
-// Cada cliente corre en su propia invocación (?client_id=), lanzada sin
-// esperar a que termine (mismo patrón que radar-abm-sync).
-const LAUNCH_GAP_MS = 20_000;
+// Cada cliente corre en su propia invocación (?client_id=), de a 2.
 const BUDGET_MS = 250_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -40,14 +38,18 @@ export async function GET(req: NextRequest) {
   const list = (clients ?? []).filter((c: { id: string; name: string; slug: string | null }) => !rows || findMasterRow(rows, c)?.active);
   const self = new URL(req.nextUrl.pathname, req.nextUrl.origin);
   const launched: string[] = [];
-  for (const c of list) {
-    if (Date.now() - startedAt > BUDGET_MS) break;
-    const url = new URL(self);
-    url.searchParams.set("client_id", c.id);
-    // Basta con que arranque: la invocación sigue por su cuenta
-    await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store", signal: AbortSignal.timeout(20_000) }).catch(() => {});
-    launched.push(c.name);
-    await new Promise((r) => setTimeout(r, LAUNCH_GAP_MS));
-  }
+  // De a 2 y esperando la respuesta sin cortar la conexión: cortarla termina
+  // la invocación del cliente en Vercel (nov-2026, mismo caso que Pulso ABM)
+  let next = 0;
+  await Promise.all([0, 1].map(async () => {
+    while (next < list.length && Date.now() - startedAt < BUDGET_MS) {
+      const c = list[next++];
+      const url = new URL(self);
+      url.searchParams.set("client_id", c.id);
+      const wait = Math.max(5_000, 295_000 - (Date.now() - startedAt));
+      await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store", signal: AbortSignal.timeout(wait) }).catch(() => {});
+      launched.push(c.name);
+    }
+  }));
   return NextResponse.json({ launched, pending: list.length - launched.length });
 }
