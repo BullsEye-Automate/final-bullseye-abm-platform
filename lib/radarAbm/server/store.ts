@@ -192,6 +192,23 @@ export async function loadSnapshot(clientId: string, mode: "full" | "url" | "met
   return { ...snap, dataset: { ...ds, warnings: (first ? first.warnings : snap.warnings) ?? [], ...(mapping ? { mapping } : {}) } };
 }
 
+// Todos los informes guardados del cliente (uno por cuenta si el HubSpot
+// tiene varios clientes), completos. Lo usan los cálculos de servidor que
+// recorren todas las cuentas (ej. Devoluciones en Células SDR).
+export async function loadAllDatasets(clientId: string): Promise<{ sub?: string; dataset: RadarDataset; syncedAt: string | null }[]> {
+  const { data, error } = await supabaseAdmin().from("radar_abm_snapshots").select("dataset, synced_at").eq("client_id", clientId).maybeSingle();
+  if (error && !missingTable(error.message)) throw new Error(error.message);
+  if (!data) return [];
+  const ref = data.dataset as unknown;
+  if (!isRef(ref)) return ref ? [{ dataset: ref as RadarDataset, syncedAt: (data.synced_at as string) ?? null }] : [];
+  if (ref.subs?.length) {
+    const out: { sub?: string; dataset: RadarDataset; syncedAt: string | null }[] = [];
+    for (const x of ref.subs) out.push({ sub: x.name, dataset: await downloadDataset(x.$storage), syncedAt: x.syncedAt });
+    return out;
+  }
+  return [{ dataset: await downloadDataset(ref.$storage), syncedAt: (data.synced_at as string) ?? null }];
+}
+
 // sub: cliente de la cuenta (subAccounts); order: orden configurado de las cuentas
 export async function saveSnapshot(clientId: string, ds: RadarDataset, stats: Record<string, number>, by: string, sub?: string, order: string[] = []): Promise<void> {
   const { warnings, mapping, ...file } = ds;

@@ -266,6 +266,7 @@ export default function CalidadCargaPage() {
       <td className="pr-2 text-right">{n1(l.expectedMeetings)}</td>
       <td className="pr-2 text-right">{pct(l.contacted, l.contacts)}</td>
       <td className="pr-2 text-right">{l.meetings}</td>
+      <td className="pr-2 text-right" title="Contactos que el SDR devolvió (Sin información de contacto / No fit) y, entre paréntesis, cuántos sin ningún intento">{l.returned ?? 0}{l.returnedNoAttempt ? <span className="text-red-600"> ({l.returnedNoAttempt})</span> : null}</td>
       <td className="pr-2 relative"><CompanyStatuses list={l.companyStatuses} companies={l.companies} inline /></td>
     </>
   );
@@ -333,7 +334,7 @@ export default function CalidadCargaPage() {
                     <th className="py-2 px-2">Carga</th><th className="pr-2 text-right">Contactos</th><th className="pr-2 text-right">Calzan ICP</th><th className="pr-2 text-right">Parcial</th>
                     <th className="pr-2 text-right">Con teléfono</th><th className="pr-2 text-right">Tel./contacto</th><th className="pr-2 text-right">Tel. Lemlist</th><th className="pr-2 text-right">Correo</th>
                     <th className="pr-2 text-right">Calidad</th><th className="pr-2 text-right">Prob. reunión</th><th className="pr-2 text-right">Reuniones esperadas</th>
-                    <th className="pr-2 text-right">Contactados</th><th className="pr-2 text-right">Reuniones</th><th className="pr-2">Status empresas</th><th />
+                    <th className="pr-2 text-right">Contactados</th><th className="pr-2 text-right">Reuniones</th><th className="pr-2 text-right">Devueltos (sin intentos)</th><th className="pr-2">Status empresas</th><th />
                   </tr>
                 </thead>
                 <tbody>
@@ -343,7 +344,7 @@ export default function CalidadCargaPage() {
                         {row(l)}
                         <td className="pr-2">{open === l.day ? <IconChevronUp size={15} /> : <IconChevronDown size={15} />}</td>
                       </tr>
-                      {open === l.day && <tr><td colSpan={15}><ContactsTable rows={byDay.get(l.day) ?? []} /></td></tr>}
+                      {open === l.day && <tr><td colSpan={16}><ContactsTable rows={byDay.get(l.day) ?? []} /></td></tr>}
                     </Fragment>
                   ))}
                   <tr className="bg-black/[0.03] font-medium [&>td:first-child]:pl-2">{row(t, true)}<td /></tr>
@@ -390,6 +391,7 @@ export default function CalidadCargaPage() {
               <li><b>Calidad (0–100):</b> calce ICP 35 (parcial 17), teléfono 30, correo 15, LinkedIn 10, empresa asociada 10.</li>
               <li><b>Probabilidad de agendamiento:</b> tasa histórica de "Reunión Agendada" en {data.statusProp ?? "el estado del contacto"} de cargas anteriores del cliente, por segmento. Reuniones esperadas = suma de las probabilidades.</li>
               <li><b>Contactados / Reuniones:</b> avance real a la fecha según el estado del contacto en HubSpot.</li>
+              <li><b>Devueltos (sin intentos):</b> contactos que el SDR dejó en "Sin información de contacto" o "Contacto No Fit para gestión" (definiciones de La Biblia); entre paréntesis, los que no tienen ninguna actividad de venta registrada en HubSpot. Las líderes SDR ven las mismas devoluciones por SDR en Células SDR → Devoluciones.</li>
             </ul>
             <div className="mt-2">Calculado {new Date(data.generatedAt).toLocaleString("es-CL")} · se guarda 6 h ("Actualizar" recalcula).</div>
           </details>
