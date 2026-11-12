@@ -8,6 +8,7 @@ import { FEEDBACK_TABS, INTERNAL_PARTS, LEADS, PARTS, PART_SLUGS, REACT_SECTIONS
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import MasterTables from "./MasterTables";
 import WishlistWorkspace from "@/components/wishlist/WishlistWorkspace";
+import KamInsights from "./KamInsights";
 import IcpPanel from "./IcpPanel";
 import FeedbackPanel from "./FeedbackPanel";
 import PeithoPanel from "@/components/peitho/PeithoPanel";
@@ -252,6 +253,7 @@ export default function RadarReport({
     }
     if (id === "icp-vigente") return <IcpPanel audience={audience} clientId={clientId} />;
     if (id === "feedback-form") return <FeedbackPanel audience={audience} clientId={clientId} />;
+    if (id === "kam-insights") return <KamInsights clientId={clientId} />;
     if (id === "peitho") return <PeithoPanel audience={audience} clientId={clientId} clientName={dataset.client.name} />;
     return null;
   };
