@@ -30,7 +30,7 @@
     },
     {
       "path": "/api/cron/radar-abm-sync",
-      "schedule": "15 9-16 * * *"
+      "schedule": "*/10 9-16 * * *"
     },
     {
       "path": "/api/cron/hubspot-pool",
