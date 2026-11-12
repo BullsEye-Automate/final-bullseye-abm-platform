@@ -30,18 +30,48 @@ async function refreshAccessToken(userId: string, refreshToken: string): Promise
   return data.access_token;
 }
 
-function buildRawEmail(from: string, to: string, subject: string, body: string): string {
-  const encodedSubject = /[^\x00-\x7F]/.test(subject)
-    ? `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`
-    : subject;
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildHtmlBody(body: string, senderName: string, clientName: string): string {
+  const bodyHtml = escapeHtml(body).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>");
+  const partnerLine = clientName
+    ? `Marketing Partner - ${escapeHtml(clientName)}`
+    : "Marketing Partner";
+  return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;font-size:14px;color:#222;margin:0;padding:0;">
+<div>
+  <p style="margin:0 0 1em 0;">${bodyHtml}</p>
+  <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e0e0e0;color:#555;font-size:13px;line-height:1.5;">
+    <strong>${escapeHtml(senderName)}</strong><br>
+    ${partnerLine}
+  </div>
+</div>
+</body></html>`;
+}
+
+function encodeRfc2047(text: string): string {
+  return /[^\x00-\x7F]/.test(text)
+    ? `=?UTF-8?B?${Buffer.from(text).toString("base64")}?=`
+    : text;
+}
+
+function buildRawEmail(from: string, senderName: string, to: string, subject: string, htmlBody: string): string {
+  const encodedSubject = encodeRfc2047(subject);
+  const encodedName = encodeRfc2047(senderName);
+  const fromHeader = senderName ? `${encodedName} <${from}>` : from;
   const lines = [
-    `From: ${from}`,
+    `From: ${fromHeader}`,
     `To: ${to}`,
     `Subject: ${encodedSubject}`,
     `MIME-Version: 1.0`,
-    `Content-Type: text/plain; charset=UTF-8`,
+    `Content-Type: text/html; charset=UTF-8`,
     ``,
-    body,
+    htmlBody,
   ];
   return Buffer.from(lines.join("\r\n")).toString("base64url");
 }
@@ -59,17 +89,21 @@ export async function POST(req: NextRequest) {
   } catch {}
   if (!userId) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  const { to, subject, body } = await req.json();
+  const { to, subject, body, clientId } = await req.json();
   if (!to || !subject || !body) {
     return NextResponse.json({ error: "to, subject y body son requeridos" }, { status: 400 });
   }
 
   const db = supabaseAdmin();
-  const { data: tokenRow } = await db
-    .from("user_gmail_tokens")
-    .select("email, access_token, refresh_token, token_expiry")
-    .eq("user_id", userId)
-    .single();
+  const [{ data: tokenRow }, { data: clientRow }] = await Promise.all([
+    db.from("user_gmail_tokens")
+      .select("email, access_token, refresh_token, token_expiry")
+      .eq("user_id", userId)
+      .single(),
+    clientId
+      ? db.from("clients").select("name, logo_url").eq("id", clientId).single()
+      : Promise.resolve({ data: null }),
+  ]);
 
   if (!tokenRow) {
     return NextResponse.json({ error: "Gmail no conectado" }, { status: 403 });
@@ -84,7 +118,25 @@ export async function POST(req: NextRequest) {
     accessToken = refreshed;
   }
 
-  const raw = buildRawEmail(tokenRow.email, to, subject, body);
+  // Obtener nombre del remitente desde Google
+  let senderName = tokenRow.email.split("@")[0];
+  try {
+    const profileRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (profileRes.ok) {
+      const profile = await profileRes.json();
+      if (profile.name) senderName = profile.name;
+    }
+  } catch {}
+
+  const htmlBody = buildHtmlBody(
+    body,
+    senderName,
+    clientRow?.name ?? "",
+  );
+
+  const raw = buildRawEmail(tokenRow.email, senderName, to, subject, htmlBody);
 
   const gmailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",

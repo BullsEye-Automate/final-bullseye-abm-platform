@@ -4,6 +4,7 @@ import { leaderEmail } from "@/lib/celulasSdr/server/alertsMail";
 import { kamFor, readMasterPeople, resolveSdr } from "@/lib/respuestasLemlist/directory";
 import { RecoInputError, runRecommendationRound } from "@/lib/wishlistRecommendations";
 import { loadClientLinks } from "../portalLink";
+import { readDocs } from "../store";
 import type { IntelResult } from "./analyze";
 import type { IntelNumbers } from "./numbers";
 import { chileDate, planningMonday } from "./run";
@@ -78,25 +79,38 @@ export async function runClientRecommendations(clientId: string): Promise<RecoRu
 }
 
 // ---------- prospectora de cada ficha ----------
-const PROSPECTORA_BY_NAME: [RegExp, string][] = [
-  [/\bgia|condori/i, "gcondori@bullseye-abm.com"],
-  [/\bjavi|nazar/i, "jnazar@bullseye-abm.com"],
-  [/\bnasly|moreno/i, "nmoreno@bullseye-abm.com"],
-];
-function prospectoraEmails(value: unknown): string[] {
-  const v = String(value ?? "");
-  const hits = PROSPECTORA_BY_NAME.filter(([re]) => re.test(v)).map(([, e]) => e);
-  return hits.length ? hits : PROSPECTORAS;
+// La ficha no guarda la prospectora: sale del plan semanal del Centro (colección
+// "plan", un documento por prospectora × ficha × semana, con su correo). Se usa
+// la semana más reciente de cada ficha; sin plan, el aviso va solo a la líder.
+const PROSPECTORA_NAME: Record<string, string> = {
+  "gcondori@bullseye-abm.com": "Gia",
+  "jnazar@bullseye-abm.com": "Javi",
+  "nmoreno@bullseye-abm.com": "Nasly",
+};
+export async function loadPlanProspectoras(): Promise<Map<string, string[]>> {
+  const latest = new Map<string, { semana: string; emails: Set<string> }>();
+  for (const d of await readDocs(["plan"])) {
+    const ficha = String(d.data?.clienteId ?? "");
+    const email = String(d.data?.email ?? "").trim().toLowerCase();
+    const semana = String(d.data?.semana ?? "");
+    if (!ficha || !email.includes("@") || !PROSPECTORAS.includes(email)) continue;
+    const cur = latest.get(ficha);
+    if (!cur || semana > cur.semana) latest.set(ficha, { semana, emails: new Set([email]) });
+    else if (semana === cur.semana) cur.emails.add(email);
+  }
+  return new Map(Array.from(latest).map(([k, v]) => [k, Array.from(v.emails)]));
 }
+const prospectorasDe = (plan: Map<string, string[]>, fichaIds: string[]) =>
+  Array.from(new Set(fichaIds.flatMap((id) => plan.get(id) ?? [])));
 
 // ---------- lunes: plan de la semana ----------
 export async function sendMondayMail(): Promise<{ to: string[]; clientes: number }> {
-  const [intel, links] = await Promise.all([latestIntel(), loadClientLinks()]);
+  const [intel, links, plan] = await Promise.all([latestIntel(), loadClientLinks(), loadPlanProspectoras()]);
   const name = new Map(links.clients.map((c) => [c.id, c.name]));
   const semana = planningMonday();
   const rows = await Promise.all(intel.filter((i) => i.status === "ok").map(async (i) => ({
     i, cliente: name.get(i.client_id) ?? "", reco: await getFlag<RecoRun>(`centro_reco:${semana}:${i.client_id}`),
-    prospectora: (links.fichasByClient.get(i.client_id) ?? []).map((f) => String(f.data.prospectora ?? "")).filter(Boolean).join(", "),
+    prospectora: prospectorasDe(plan, (links.fichasByClient.get(i.client_id) ?? []).map((f) => f.id)).map((e) => PROSPECTORA_NAME[e] ?? e).join(", "),
   })));
   const rank = { alta: 0, media: 1, baja: 2 } as const;
   rows.sort((a, b) => rank[a.i.result.prioridad] - rank[b.i.result.prioridad] || a.cliente.localeCompare(b.cliente));
@@ -172,7 +186,7 @@ ${table("Por cliente", clCur, clPrev, (k) => (k === "—" ? "Sin cliente" : name
 // ---------- lunes a viernes: alertas ----------
 export async function sendDailyAlerts(today = chileDate()): Promise<Record<string, unknown>> {
   const db = supabaseAdmin();
-  const [links, intel] = await Promise.all([loadClientLinks(), latestIntel()]);
+  const [links, intel, plan] = await Promise.all([loadClientLinks(), latestIntel(), loadPlanProspectoras()]);
   const name = new Map(links.clients.map((c) => [c.id, c.name]));
   const cname = (id: string) => name.get(id) ?? id;
   const sent: Record<string, unknown> = {};
@@ -204,7 +218,8 @@ export async function sendDailyAlerts(today = chileDate()): Promise<Record<strin
     const s = sugCount.get(id) ?? 0, rc = recoCount.get(id) ?? 0;
     if (s < 30 && rc < 30) continue;
     const fichas = links.fichasByClient.get(id) ?? [];
-    for (const e of prospectoraEmails(fichas.map((f) => f.data.prospectora).join(" "))) {
+    const asignadas = prospectorasDe(plan, fichas.map((f) => f.id));
+    for (const e of asignadas.length ? asignadas : [CENTRO_LEADER]) {
       const l = byProsp.get(e) ?? [];
       l.push(`<li><b>${esc(cname(id))}</b>: ${s >= 30 ? `${s} contactos IA por revisar` : ""}${s >= 30 && rc >= 30 ? " · " : ""}${rc >= 30 ? `${rc} empresas recomendadas sin revisar hace 3+ días` : ""}</li>`);
       byProsp.set(e, l);

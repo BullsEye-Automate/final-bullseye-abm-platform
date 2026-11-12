@@ -233,3 +233,30 @@ export type MeetingRecordsResponse = {
   truncated: boolean;
   canEdit: boolean;         // el usuario puede cambiar estados (lib/celulasSdr/editors.ts)
 };
+
+// Devoluciones (vista "Devoluciones"): empresas y contactos que los SDR
+// devuelven a prospección, desde los informes de Pulso ABM. Una fila por
+// mes de última actividad × SDR × cuenta × país, solo conteos.
+export type ReturnRow = {
+  m: string;                    // mes de la última actividad de la empresa (YYYY-MM)
+  s: string;                    // SDR (clave del módulo)
+  c: string | null;             // cuenta (cliente)
+  k: string | null;             // país
+  w: number;                    // empresas trabajadas (con actividad)
+  r: number;                    // empresas devueltas
+  rn: number;                   // empresas devueltas sin ningún llamado
+  rr: Record<string, number>;   // empresas devueltas por motivo
+  ct: number;                   // contactos de empresas trabajadas
+  cr: number;                   // contactos devueltos
+  crn: number;                  // contactos devueltos sin ningún intento
+  cs: Record<string, number>;   // contactos devueltos por motivo
+};
+export type ReturnsResponse = {
+  generated: string;
+  today: string;
+  rows: ReturnRow[];
+  sdrNames: Record<string, string>;
+  clientNames: Record<string, string>;
+  sources: { client: string; syncedAt: string | null }[];
+  missing: string[];            // clientes activos sin informe de Pulso ABM
+};

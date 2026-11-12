@@ -10,9 +10,7 @@ export const maxDuration = 300;
 // Vercel Cron (L-V temprano, ver vercel.json): deja calculada la Calidad de
 // carga (últimos 30 días) de cada cliente activo en la Maestra, para que la
 // vista "Todos los clientes" abra al instante (caché de 6 h por cliente).
-// Cada cliente corre en su propia invocación (?client_id=), lanzada sin
-// esperar a que termine (mismo patrón que radar-abm-sync).
-const LAUNCH_GAP_MS = 20_000;
+// Calcula de a 2 clientes en la misma ejecución; ?client_id= uno solo a mano.
 const BUDGET_MS = 250_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -35,16 +33,17 @@ export async function GET(req: NextRequest) {
   const { data: clients } = await supabaseAdmin().from("clients").select("id, name, slug").eq("is_active", true);
   const rows = await readMasterClients().catch(() => null);
   const list = (clients ?? []).filter((c: { id: string; name: string; slug: string | null }) => !rows || findMasterRow(rows, c)?.active);
-  const self = new URL(req.nextUrl.pathname, req.nextUrl.origin);
   const launched: string[] = [];
-  for (const c of list) {
-    if (Date.now() - startedAt > BUDGET_MS) break;
-    const url = new URL(self);
-    url.searchParams.set("client_id", c.id);
-    // Basta con que arranque: la invocación sigue por su cuenta
-    await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store", signal: AbortSignal.timeout(8_000) }).catch(() => {});
-    launched.push(c.name);
-    await new Promise((r) => setTimeout(r, LAUNCH_GAP_MS));
-  }
+  // De a 2 en esta misma ejecución (nov-2026: las invocaciones lanzadas por
+  // fetch no terminaban, mismo caso que Pulso ABM). Lo que no alcance queda
+  // sin caché y se calcula al abrirlo.
+  let next = 0;
+  await Promise.all([0, 1].map(async () => {
+    while (next < list.length && Date.now() - startedAt < BUDGET_MS) {
+      const c = list[next++];
+      await getCargaReport(c.id, 30, true).catch(() => null);
+      launched.push(c.name);
+    }
+  }));
   return NextResponse.json({ launched, pending: list.length - launched.length });
 }
