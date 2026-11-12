@@ -22,7 +22,7 @@ function alertRecipients(): string[] {
   const raw = process.env.PEITHO_DAILY_ALERTS_EMAILS;
   const list = raw
     ? raw.split(',').map((email) => email.trim()).filter(Boolean)
-    : ['ihincapie@bullseye-abm.com', 'amadriz@bullseye-abm.com', 'jkarmy@bullseye-abm.com'];
+    : ['ihincapie@bullseye-abm.com', 'amadriz@bullseye-abm.com', 'jkarmy@bullseye-abm.com', 'rarredondo@bullseye-abm.com'];
   return list;
 }
 
