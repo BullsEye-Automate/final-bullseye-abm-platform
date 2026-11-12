@@ -5,6 +5,7 @@ import { fmt, isExcludedSdr, makeFilter, pct } from "@/lib/celulasSdr/engine";
 import { addDays, dayShort, monthEnd, monthStart, shiftMonth, weekStart } from "@/lib/celulasSdr/calendar";
 import type { MeetingRecord, MeetingRecordsResponse, MeetingStatus } from "@/lib/celulasSdr/types";
 import { CardH, KGrid, Pending, Seg, useCells, type KCard } from "../components/ui";
+import { chileNow, reconfState, reconfWindow, STATE_LABEL, type ReconfState } from "@/lib/reconfirmacion/rules";
 
 // ─── Registro de reuniones ──────────────────────────────────────────────────
 // Espejo de la pestaña API Reuniones, con filtros. Las líderes de célula e
@@ -20,6 +21,19 @@ type SortK = "md" | "sd" | "sdr" | "client" | "company" | "st";
 const ST_LABEL: Record<MeetingStatus, string> = { held: "Realizada", pending: "Pendiente", resch: "Reagendar", noshow: "No-show" };
 const ST_CLS: Record<MeetingStatus, string> = { held: "g", pending: "", resch: "y", noshow: "r" };
 const PAGE = 100;
+
+// Reconfirmación (piloto Simplex): estado según la hora actual de Chile
+const RC_CLS: Record<ReconfState, string> = { ok: "g", upcoming: "", due: "y", late: "r", past: "", na: "" };
+function rcInfo(r: MeetingRecord, now: { day: string; time: string }): { st: ReconfState; label: string; title: string } | null {
+  if (!r.rc) return null;
+  const st = reconfState({ md: r.md, hour: r.hour, reconfirmed: r.rc.ok, pending: r.st === "pending" }, now);
+  if (st === "ok") return { st, label: r.rc.at ? `Reconfirmada · ${r.rc.at}` : "Reconfirmada", title: "Reconfirmada con el prospecto" };
+  const w = reconfWindow(r.md, r.hour);
+  const when = w ? `${w.day === now.day ? "hoy" : dayShort(w.day)} ${w.remind}–${w.deadline}` : "";
+  if (st === "upcoming" || st === "due") return { st, label: `${STATE_LABEL[st]} · ${when}`, title: "Ventana para reconfirmar con el prospecto" };
+  if (st === "late") return { st, label: `${STATE_LABEL[st]} (${w?.deadline})`, title: "Venció el plazo sin reconfirmar" };
+  return { st, label: STATE_LABEL[st], title: "" };
+}
 
 const norm = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLowerCase();
 const isOpp = (v: string) => ["si", "yes"].includes(norm(v));
@@ -51,6 +65,8 @@ export function ViewRegistro() {
   const [opp, setOpp] = useState<"" | "si" | "no">("");
   const [q, setQ] = useState("");
   const [todo, setTodo] = useState(false);
+  const [rcTodo, setRcTodo] = useState(false);
+  const now = useMemo(() => chileNow(), [data]);
   const [sort, setSort] = useState<{ k: SortK; d: 1 | -1 }>({ k: "md", d: -1 });
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
@@ -104,7 +120,7 @@ export function ViewRegistro() {
     return () => { cancel = true; };
   }, [range, field]);
 
-  useEffect(() => setPage(0), [range, field, sts, origin, opp, q, todo, f, sort]);
+  useEffect(() => setPage(0), [range, field, sts, origin, opp, q, todo, rcTodo, f, sort]);
 
   const sdrName = (k: string) => M.SD[k]?.name ?? data?.sdrNames[k] ?? k;
   const clientName = (c: string | null) => (c ? M.CL[c]?.name ?? data?.clientNames[c] ?? "—" : "—");
@@ -120,6 +136,7 @@ export function ViewRegistro() {
       (!origin || r.origin === origin) &&
       (!opp || (opp === "si" ? isOpp(r.opp) : !isOpp(r.opp))) &&
       (!todo || (r.st === "pending" && !!r.md && r.md < today)) &&
+      (!rcTodo || ["upcoming", "due", "late"].includes(rcInfo(r, now)?.st ?? "")) &&
       (!qq || norm(`${r.company} ${r.contact} ${r.title} ${r.comment}`).includes(qq)));
     const val = (r: MeetingRecord): string => {
       switch (sort.k) {
@@ -135,9 +152,11 @@ export function ViewRegistro() {
     const n = (st: MeetingStatus) => rows.filter((r) => r.st === st).length;
     const held = n("held"), noshow = n("noshow");
     const late = base.filter((r) => r.st === "pending" && !!r.md && r.md < today).length;
-    return { rows, origins, held, noshow, pending: n("pending"), resch: n("resch"), opps: rows.filter((r) => r.st === "held" && isOpp(r.opp)).length, late };
+    const hasRc = base.some((r) => !!r.rc);
+    const rcOpen = base.filter((r) => ["due", "late"].includes(rcInfo(r, now)?.st ?? "")).length;
+    return { rows, origins, hasRc, rcOpen, held, noshow, pending: n("pending"), resch: n("resch"), opps: rows.filter((r) => r.st === "held" && isOpp(r.opp)).length, late };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, M, f, sts, origin, opp, q, todo, sort, today]);
+  }, [data, M, f, sts, origin, opp, q, todo, rcTodo, sort, today, now]);
 
   const toggleSt = (s: MeetingStatus) => setSts((x) => (x.includes(s) ? x.filter((y) => y !== s) : [...x, s]));
   const th = (k: SortK, l: string, cls = "l") => (
@@ -187,8 +206,13 @@ export function ViewRegistro() {
           <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13, cursor: "pointer" }}>
             <input type="checkbox" checked={todo} onChange={(e) => setTodo(e.target.checked)} /> Solo por actualizar
           </label>
+          {d?.hasRc ? (
+            <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13, cursor: "pointer" }} title="Reuniones del piloto de reconfirmación que aún no se reconfirman con el prospecto">
+              <input type="checkbox" checked={rcTodo} onChange={(e) => setRcTodo(e.target.checked)} /> Solo por reconfirmar
+            </label>
+          ) : null}
         </div>
-        <p className="cs-note">Espejo de la pestaña API Reuniones (se sincroniza cada hora en horario laboral). {data?.canEdit ? "Puedes cambiar el estado de cada reunión: se guarda directo en la planilla." : "Solo lectura."} Los filtros de célula, SDR, cliente y país de arriba también aplican.</p>
+        <p className="cs-note">Espejo de la pestaña API Reuniones (se sincroniza cada hora en horario laboral; la reconfirmación del piloto, cada 15 min). {data?.canEdit ? "Puedes cambiar el estado de cada reunión: se guarda directo en la planilla." : "Solo lectura."} Los filtros de célula, SDR, cliente y país de arriba también aplican.</p>
       </div>
 
       {err ? <div className="cs-banner err">{err}</div> : null}
@@ -201,6 +225,11 @@ export function ViewRegistro() {
               <span>⚠️ {d.late} {d.late === 1 ? "reunión ya pasó y sigue" : "reuniones ya pasaron y siguen"} en "Pendiente" en este rango: hay que actualizar su estado en la planilla. Clic para verlas.</span>
             </div>
           ) : null}
+          {d.rcOpen > 0 && !rcTodo ? (
+            <div className="cs-banner warn" style={{ cursor: "pointer" }} onClick={() => setRcTodo(true)}>
+              <span>📞 {d.rcOpen} {d.rcOpen === 1 ? "reunión hay que reconfirmarla" : "reuniones hay que reconfirmarlas"} ahora o ya venció su plazo. El SDR la marca en el formulario de registro de reuniones. Clic para verlas.</span>
+            </div>
+          ) : null}
           {msg ? <div className={`cs-banner ${msg.err ? "err" : "info"}`}>{msg.t}</div> : null}
           {data.truncated ? <div className="cs-banner warn">El rango tiene demasiadas reuniones: se muestran las primeras 5.000. Acota las fechas.</div> : null}
           <KGrid cards={cards} />
@@ -211,7 +240,7 @@ export function ViewRegistro() {
                 <thead>
                   <tr>
                     {th("md", "Fecha reunión")}<th className="l">Hora</th>{th("sd", "Agendada el")}{th("sdr", "SDR")}{th("client", "Cliente")}{th("company", "Empresa")}
-                    <th className="l">Contacto</th><th className="l">Cargo</th><th className="l">País</th>{th("st", "Estado")}<th className="l">Oportunidad</th><th className="l">Origen</th><th className="l">Comentario</th>
+                    <th className="l">Contacto</th><th className="l">Cargo</th><th className="l">País</th>{th("st", "Estado")}{d.hasRc ? <th className="l">Reconfirmación</th> : null}<th className="l">Oportunidad</th><th className="l">Origen</th><th className="l">Comentario</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -239,12 +268,16 @@ export function ViewRegistro() {
                             )}
                             {savingId === r.id ? <span className="cs-muted" style={{ marginLeft: 6 }}>Guardando…</span> : null}
                           </td>
+                          {d.hasRc ? (() => {
+                            const rc = rcInfo(r, now);
+                            return <td className="l">{rc ? <span className={`cs-tag ${RC_CLS[rc.st]}`} title={rc.title}>{rc.label}</span> : <span className="cs-muted">—</span>}</td>;
+                          })() : null}
                           <td className="l">{r.opp || "—"}</td>
                           <td className="l">{r.origin || "—"}</td>
                           <td className="l" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{r.comment || <span className="cs-muted">—</span>}</td>
                         </tr>
                         {open === r.id ? (
-                          <tr><td className="l fb" colSpan={13} style={{ maxWidth: "none", background: "var(--surface-3)" }}>
+                          <tr><td className="l fb" colSpan={d.hasRc ? 14 : 13} style={{ maxWidth: "none", background: "var(--surface-3)" }}>
                             <b>{r.company}</b>{r.contact ? ` · ${r.contact}` : ""}{r.title ? ` (${r.title})` : ""}<br />
                             {r.comment ? r.comment : <span className="cs-muted">Sin comentario en la planilla.</span>}
                           </td></tr>
@@ -252,7 +285,7 @@ export function ViewRegistro() {
                       </Fragment>
                     );
                   })}
-                  {!shown.length ? <tr><td className="l cs-muted" colSpan={13}>No hay reuniones con estos filtros.</td></tr> : null}
+                  {!shown.length ? <tr><td className="l cs-muted" colSpan={d.hasRc ? 14 : 13}>No hay reuniones con estos filtros.</td></tr> : null}
                 </tbody>
               </table>
             </div>

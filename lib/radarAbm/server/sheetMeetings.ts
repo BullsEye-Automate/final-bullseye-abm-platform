@@ -1,6 +1,16 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import type { RadarMeeting } from "../types";
 import { pickSub } from "../subAccounts";
+import { isPilotClient, pilotClients } from "@/lib/reconfirmacion/rules";
+
+// Reconfirmación (piloto): campos de la reunión para Pulso ABM. Solo reuniones
+// de clientes del piloto (por la columna Cliente de la planilla o el nombre
+// del cliente en la app).
+function reconfPatch(r: { reconfirmada?: boolean | null; reconfirmada_en?: string | null; cliente_nombre?: string | null }, clientName: string | null | undefined, pilots: string[]): Partial<RadarMeeting> {
+  if (r.reconfirmada === undefined) return {};
+  if (!isPilotClient(r.cliente_nombre, pilots) && !isPilotClient(clientName, pilots)) return {};
+  return r.reconfirmada ? { rcp: 1, rc: 1, rca: r.reconfirmada_en ? String(r.reconfirmada_en) : "" } : { rcp: 1, rc: 0, rca: "" };
+}
 
 // Pulso ABM — reuniones desde la planilla de reuniones (tabla meetings, la
 // misma de Células SDR y del Excel de metas), no desde HubSpot: hay clientes
@@ -75,20 +85,29 @@ export async function loadFeedbackOverlay(clientId: string, subs: string[] = [])
     if (subs.length && pickSub(subs, c.name, null)) ids.add(c.id);
   }
   const since = new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 10);
-  const meetings: { id: string; propuesta_oportunidad: string | null; realizado: string | null }[] = [];
+  const meetings: { id: string; client_id: string; propuesta_oportunidad: string | null; realizado: string | null; reconfirmada?: boolean; reconfirmada_en?: string | null; cliente_nombre?: string | null }[] = [];
+  // Con la migración de reconfirmación se lee también su estado (en vivo para el cliente)
+  let cols = "id, client_id, propuesta_oportunidad, realizado, reconfirmada, reconfirmada_en, cliente_nombre";
   for (let offset = 0; offset < 20000; offset += 1000) {
-    const { data } = await supabase.from("meetings").select("id, propuesta_oportunidad, realizado")
+    let { data, error } = await supabase.from("meetings").select(cols)
       .in("client_id", [...ids]).gte("fecha_reunion", since).order("id", { ascending: true }).range(offset, offset + 999);
+    if (error && /reconfirmada|cliente_nombre/.test(error.message) && cols.includes("reconfirmada")) {
+      cols = "id, client_id, propuesta_oportunidad, realizado";
+      offset -= 1000;
+      continue;
+    }
     meetings.push(...((data ?? []) as any[]));
     if (!data || data.length < 1000) break;
   }
+  const pilots = pilotClients();
+  const nameById = new Map((allClients ?? []).map((c: any) => [c.id as string, c.name as string]));
   const opp = new Map(meetings.map((m) => [m.id, m.propuesta_oportunidad]));
   const out: Record<string, Partial<RadarMeeting>> = {};
   // Estado actual de la planilla (si cambió después del último sync) y resultado
   for (const m of meetings) {
     const st = meetingState(m.realizado);
     const res = meetingResult(m.propuesta_oportunidad, null);
-    out[m.id] = { st, ...(st === "Reprogramada" ? { reprog: true } : {}), ...(res ? { res } : {}) };
+    out[m.id] = { st, ...(st === "Reprogramada" ? { reprog: true } : {}), ...(res ? { res } : {}), ...reconfPatch(m, nameById.get(m.client_id), pilots) };
   }
   const mids = meetings.map((m) => m.id);
   for (let i = 0; i < mids.length; i += 300) {
@@ -137,8 +156,10 @@ export async function loadSheetMeetings(input: {
       .order("id", { ascending: true })
       .range(offset, offset + PAGE - 1);
     const COLS = "id, client_id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais, hora, industria";
-    // cliente_nombre (columna Cliente de la planilla) solo hace falta con varios clientes en la cuenta
-    let { data, error } = input.sub ? await query(`${COLS}, cliente_nombre`) : await query(COLS);
+    // cliente_nombre (columna Cliente de la planilla) y la reconfirmación
+    // (migración 20261112) son opcionales: sin las columnas se lee lo demás
+    let { data, error } = await query(`${COLS}, cliente_nombre, reconfirmada, reconfirmada_en`);
+    if (error && /cliente_nombre|reconfirmada/.test(error.message)) ({ data, error } = input.sub ? await query(`${COLS}, cliente_nombre`) : await query(COLS));
     if (error && input.sub && /cliente_nombre/.test(error.message)) ({ data, error } = await query(COLS));
     if (error) throw new Error(`No se pudieron leer las reuniones de la planilla: ${error.message}`);
     const page = (data ?? []) as any[];
@@ -192,6 +213,7 @@ export async function loadSheetMeetings(input: {
 
   const meetings: RadarMeeting[] = [];
   const unmatched = new Map<string, number>();
+  const pilots = pilotClients();
   for (const r of rows) {
     const empresa = (r.empresa ?? "").trim();
     const matched = matchCompany(empresa, r.correo);
@@ -224,6 +246,8 @@ export async function loadSheetMeetings(input: {
       sdr: (r.responsable || r.sdr_nombre || "").trim() || input.sdrOf(co),
       agendada, fecha, st,
       ...(st === "Reprogramada" ? { reprog: true } : {}),
+      // Reconfirmación con el prospecto (piloto)
+      ...reconfPatch(r, nameOf.get(r.client_id), pilots),
       // Encuesta del cliente (vista Resumen feedback) y resultado
       ...feedbackPatch(f, r.propuesta_oportunidad),
     });

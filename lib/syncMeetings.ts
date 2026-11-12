@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase";
 import { getSheetRows } from "./googleSheets";
+import { cleanReconfDate, isYes } from "./reconfirmacion/rules";
 
 export function normalizeName(s: string): string {
   return s.toLowerCase().trim()
@@ -127,6 +128,15 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
   const { error: cliColErr } = await supabase.from("meetings").select("cliente_nombre").limit(1);
   const withClienteNombre = !cliColErr;
   const cliName = (row: Record<string, string>) => (withClienteNombre ? { cliente_nombre: row["Cliente"]?.trim() || null } : {});
+  // Reconfirmación (migración 20261112_meetings_reconfirmacion.sql): solo si
+  // la columna existe en la base Y en la planilla (si no, no se toca)
+  const { error: recColErr } = await supabase.from("meetings").select("reconfirmada").limit(1);
+  const withReconf = !recColErr && rows.some((r) => "Reconfirmada" in r);
+  const reconf = (row: Record<string, string>) => {
+    if (!withReconf) return {};
+    const yes = isYes(row["Reconfirmada"]);
+    return { reconfirmada: yes, reconfirmada_en: yes ? cleanReconfDate(row["Fecha reconfirmación"]) : null };
+  };
   const clientByName = new Map<string, string>();
   const clientNameById = new Map<string, string>();
   (clients ?? []).forEach((c) => {
@@ -226,6 +236,7 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
           sheet_row_key:         sheetRowKey,
           realizado:             normalizeRealizado(row["Realizado"] ?? ""),
           ...cliName(row),
+          ...reconf(row),
           // responsable y origen también siguen a la planilla: si se
           // corrige el SDR de una reunión que ya tiene feedback, antes
           // quedaba atribuida al SDR anterior en la reportería
@@ -253,6 +264,7 @@ export async function runMeetingsSync(preview = false, sinceDays?: number): Prom
       sheet_row_key:         sheetRowKey,
       client_id:             clientId,
       ...cliName(row),
+      ...reconf(row),
       empresa,
       contacto_nombre:       row["Contacto"]                 || null,
       contacto_cargo:        row["Cargo"]                    || null,
