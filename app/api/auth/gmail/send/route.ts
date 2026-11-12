@@ -44,8 +44,8 @@ function buildHtmlBody(body: string, senderName: string, clientName: string): st
     ? `Marketing Partner - ${escapeHtml(clientName)}`
     : "Marketing Partner";
   return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;font-size:14px;color:#222;margin:0;padding:0;">
-<div style="max-width:600px;padding:16px;">
-  <div><p style="margin:0 0 1em 0;">${bodyHtml}</p></div>
+<div>
+  <p style="margin:0 0 1em 0;">${bodyHtml}</p>
   <div style="margin-top:24px;padding-top:16px;border-top:1px solid #e0e0e0;color:#555;font-size:13px;line-height:1.5;">
     <strong>${escapeHtml(senderName)}</strong><br>
     ${partnerLine}
