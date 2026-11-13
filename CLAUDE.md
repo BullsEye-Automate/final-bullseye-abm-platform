@@ -213,6 +213,15 @@ Centro de mando del equipo SDR (14 vistas: Dirección / Operación / Análisis),
 
 ---
 
+### Dashboard SDR (`/sdr/dashboard`, `lib/dashboardSdr/`)
+
+Primer ítem del menú SDR (nov-2026). Cada SDR ve sus **empresas y contactos asignados por cliente** y la actividad registrada en ellos; abre en el SDR de la sesión (correo → Maestra, `identifySdr`) y un selector permite ver a cualquier otro (todos ven toda la información, como en Células SDR). Reemplaza al prototipo HTML `dashboard_sdr_base.html` que leía HubSpot por el conector de claude.ai.
+
+- **Datos:** los informes ya sincronizados de **Pulso ABM** de cada cliente activo en la Maestra (`loadAllDatasets`, misma fuente que Devoluciones; no consulta HubSpot en vivo). Empresa del SDR = "SDR - <cliente>"; contacto del SDR = "SDR Asignado - <cliente>" o, vacío, el SDR de su empresa. Nombre de HubSpot ("Nico", "Vanesa"…) → Maestra con `makePersonResolver` + `resolveSdrKey`; excluidos los de `isExcludedSdr`. Empresas sin SDR quedan en "Sin SDR asignado".
+- **Actividades:** llamadas (y conectadas), correos, WhatsApp y LinkedIn de Pulso en esas empresas/contactos, últimos 92 días; el período (Este mes / 7 / 30 / 90 días) y el filtro de cliente se aplican en el navegador. Pulso no guarda quién hizo cada actividad: son las registradas en la cartera del SDR.
+- **Vista:** tarjetas de cartera y actividades, tabla por cliente (asignadas, con actividad, por gestionar / en gestión / reunión / descartadas según el status de la asignación, contactos) y detalle de empresas y de contactos con filtro de status, búsqueda, "Solo sin actividad en el período" y orden por columna (máx. 500 filas).
+- **Caché:** se calcula una vez para todos los SDR y se guarda por SDR en `allo_response_cache` (`dashboard_sdr:v1:<día>:index` y `…:sdr:<clave>`, 3 h); "Actualizar" = `?fresh=1`. API con sesión `GET /api/sdr/dashboard?sdr=<clave>`.
+
 ### Entrenamiento cliente (`/sdr/entrenamiento`, antes "Academia SDR")
 
 Capacitación de cada cliente para los SDR, en el menú SDR debajo de Teléfonos y Llamadas (`/sdr/academia` redirige). **Es la misma academia HTML que se arma con el skill "academia-sdr-bullseye" en el proyecto de Claude del cliente**, mostrada tal cual (sus colores, estructura y diseño); la app no la genera ni pide Contexto IA. Solo la ve el equipo BullsEye (no está en `/portal`). El código y las tablas conservan el nombre interno `academiaSdr` / `academia-sdr` / `sdr_academ*`.
