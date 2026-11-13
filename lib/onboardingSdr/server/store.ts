@@ -6,6 +6,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadCoverage } from "@/lib/academiaSdr/server/source";
 import { identifySdr } from "@/lib/academiaSdr/server/progress";
+import { readMaster } from "@/lib/celulasSdr/sheets";
 import {
   STAGES,
   canConfirm,
@@ -60,7 +61,7 @@ export async function getById(db: SupabaseClient, id: string): Promise<Onboardin
 
 export async function createOnboarding(
   db: SupabaseClient,
-  opts: { email: string; name?: string | null; ingreso?: string | null; clientes?: string[]; by: string }
+  opts: { email: string; name?: string | null; leader?: string | null; ingreso?: string | null; clientes?: string[]; by: string }
 ): Promise<OnboardingRow> {
   const email = opts.email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Correo inválido");
@@ -77,7 +78,7 @@ export async function createOnboarding(
     .insert({
       sdr_email: email,
       sdr_name: who.sdrName ?? (opts.name?.trim() || null),
-      leader_name: who.leaderName,
+      leader_name: opts.leader?.trim() || who.leaderName,
       ingreso,
       clientes: (opts.clientes ?? []).slice(0, 2),
       created_by: opts.by,
@@ -86,6 +87,44 @@ export async function createOnboarding(
     .single();
   if (error) throw new Error(error.message);
   return data as OnboardingRow;
+}
+
+// Datos del SDR que corrige la líder / RRHH / administradora desde la tabla
+// del Equipo: nombre, líder directo y fecha de ingreso.
+export async function updateMeta(
+  db: SupabaseClient,
+  id: string,
+  meta: { name?: string | null; leader?: string | null; ingreso?: string | null },
+  actor: string,
+  role: string
+): Promise<void> {
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (meta.name !== undefined) patch.sdr_name = String(meta.name ?? "").trim() || null;
+  if (meta.leader !== undefined) patch.leader_name = String(meta.leader ?? "").trim() || null;
+  if (meta.ingreso !== undefined) {
+    if (meta.ingreso && !DATE_RE.test(meta.ingreso)) throw new OpError("Fecha inválida");
+    patch.ingreso = meta.ingreso || null;
+  }
+  const { error } = await db.from("sdr_onboardings").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
+  await db.from("sdr_onboarding_log").insert({ onboarding_id: id, actor_email: actor, actor_role: role, op: { kind: "meta", ...meta } });
+}
+
+// Líderes de célula de la Maestra IA (para elegir el líder directo).
+let leadersCache: { at: number; list: string[] } | null = null;
+export async function listLeaders(): Promise<string[]> {
+  if (leadersCache && Date.now() - leadersCache.at < 10 * 60_000) return leadersCache.list;
+  const id = process.env.GOOGLE_SHEETS_MEETINGS_ID;
+  if (!id) return [];
+  try {
+    const m = await readMaster(id, []);
+    const list = Array.from(new Set(m.cells.map((c) => c.leader).filter(Boolean))).sort();
+    leadersCache = { at: Date.now(), list };
+    return list;
+  } catch (e) {
+    console.warn("[onboarding-sdr] No se pudieron leer las líderes de la Maestra:", e);
+    return [];
+  }
 }
 
 export async function setActive(db: SupabaseClient, id: string, active: boolean): Promise<void> {

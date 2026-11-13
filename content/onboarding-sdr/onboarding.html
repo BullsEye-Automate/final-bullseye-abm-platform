@@ -3,17 +3,19 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap">
 <style>
-/* Layout: pit-wall de F1. Cabecera fija con semáforo de 10 luces, pestañas por vuelta, una vuelta por pantalla. Identidad BullsEye, un solo tema oscuro. */
+/* PLATAFORMA: mismos colores y tipografía que el portal (tailwind.config:
+   canvas, brand, ink, success/warning/danger; fuente Outfit). Tema claro. */
 :root{
-  --bg:#2A156A; --s1:#341F7A; --s2:#40298C; --line:#5640A6;
-  --fg:#F6F4FF; --mute:#CCC3F0;
-  --cyan:#1CDAD0; --purple:#B79CF5; --magenta:#F0638F;
-  --ok:#1CDAD0; --warn:#F2C14E; --bad:#F0638F;
-  --display:"Sora",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --body:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
-  color-scheme:dark;
+  --bg:#F4F2FB; --s1:#FFFFFF; --s2:#EEEDFE; --line:#E5E2F0;
+  --fg:#1A1733; --mute:#6B6884;
+  --cyan:#3D2878; --purple:#7F77DD; --magenta:#B4235A;
+  --ok:#0F6E56; --warn:#B7791F; --bad:#993C1D;
+  --accent:#62E0D8;
+  --display:"Outfit",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --body:"Outfit",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
 }
 *{box-sizing:border-box}
 html,body{background:var(--bg);color:var(--fg)}
@@ -183,7 +185,7 @@ textarea{min-height:220px;resize:vertical;line-height:1.5}
 @media (max-width:760px){.rhead{grid-template-columns:1fr}}
 .rin{display:grid;gap:10px}
 .rin label{font-family:var(--display);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
-.rin input[type=date]{background:var(--s1);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;font-size:15px;color-scheme:dark;max-width:220px}
+.rin input[type=date]{background:var(--s1);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;font-size:15px;color-scheme:light;max-width:220px}
 .rsum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .rsum .stat .v{font-size:26px}
 .track{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;position:relative}
@@ -285,6 +287,21 @@ mark{background:color-mix(in srgb,var(--cyan) 35%,transparent);color:inherit;bor
 .roles{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute)}
 .roles .seg button{padding:5px 10px;font-size:13px}
 .stagehead{display:grid;gap:6px}
+/* PLATAFORMA: tarjetas blancas con la sombra suave del portal; el estado
+   "hoy" y lo completado con el acento turquesa de la marca. */
+.panel,.stg,.cat,.cli,.hito{box-shadow:0 1px 2px rgba(26,23,51,.04),0 1px 3px rgba(26,23,51,.06)}
+.cat .hito{background:var(--bg);box-shadow:none}
+.stg.now{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.stg[aria-pressed="true"]{border-color:var(--cyan)}
+.stg .sbar i,.cat .cbar i{background:var(--accent)}
+.stg.ok,.cat.full,.cli.done{border-color:var(--ok)}
+.stg .okt,.cat.full .cc,.trace{color:var(--ok)}
+.btn.primary,.seg button[aria-pressed="true"]{color:#fff}
+.recBtn:hover,.recBtn[aria-expanded="true"]{color:#fff}
+header.top{background:var(--s1)}
+h1,h2,h3{font-weight:600;letter-spacing:-.01em}
+.cli .score{font-size:14px;font-family:var(--body);font-weight:400}
+.cli .score b{display:inline;font-size:15px;font-weight:600}
 .calln .late{color:var(--magenta);font-weight:600}
 </style>
 <header class="top"><div class="wrap"><div class="brandrow"><div class="brand"><span class="tag">BullsEye · Onboarding SDR</span><h1 id="ttl">Tu ruta de 90 días</h1></div><div class="headR"><button type="button" class="recBtn" id="recOpen" aria-expanded="false" aria-controls="recWrap">Recursos</button><div class="roles" id="rolesBox">Ver como<div class="seg" id="roles"></div></div></div></div></div></header>

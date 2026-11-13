@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { appUrl, currentViewer, isEditor, rolesOn } from "@/lib/onboardingSdr/server/access";
-import { OpError, applyOp, getById, loadAcademies, loadCatalog, setActive, stateOf, type Op } from "@/lib/onboardingSdr/server/store";
+import { OpError, applyOp, getById, loadAcademies, loadCatalog, setActive, stateOf, updateMeta, type Op } from "@/lib/onboardingSdr/server/store";
 import { loadOnboardingCalendar } from "@/lib/onboardingSdr/server/calendar";
 import { HAB_NAME, HITOS, STAGES, type Role } from "@/lib/onboardingSdr/plan";
 
@@ -57,6 +57,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 // PATCH { role, op } → aplica un cambio y devuelve el estado oficial.
 // PATCH { active: boolean } → archivar / reactivar (solo editoras).
+// PATCH { meta: { name?, leader?, ingreso? } } → corregir datos del SDR (solo editoras).
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const r = await load(params.id);
@@ -66,6 +67,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     if (typeof body?.active === "boolean") {
       if (!isEditor(viewer)) return NextResponse.json({ error: "Sin permiso" }, { status: 403 });
       await setActive(db, row.id, body.active);
+      return NextResponse.json({ ok: true });
+    }
+    if (body?.meta && typeof body.meta === "object") {
+      if (!isEditor(viewer)) return NextResponse.json({ error: "Solo la líder, RRHH o una administradora corrigen estos datos" }, { status: 403 });
+      const { name, leader, ingreso } = body.meta as { name?: string; leader?: string; ingreso?: string };
+      await updateMeta(db, row.id, { name, leader, ingreso }, viewer.email, viewer.admin ? "admin" : viewer.editorRoles[0] ?? "editor");
       return NextResponse.json({ ok: true });
     }
     const role = body?.role as Role;

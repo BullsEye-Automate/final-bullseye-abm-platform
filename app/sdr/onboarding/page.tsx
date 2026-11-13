@@ -7,6 +7,7 @@ import {
   IconArrowLeft,
   IconCalendar,
   IconLoader2,
+  IconPencil,
   IconPlus,
   IconRefresh,
   IconRoad,
@@ -39,7 +40,7 @@ type TeamRow = {
   day: number | null;
   current: number;
 };
-type Home = { viewer: Viewer; mine: { id: string; active: boolean } | null; suggestedIngreso: string | null; team?: TeamRow[]; catalog: { id: string; n: string }[] };
+type Home = { viewer: Viewer; mine: { id: string; active: boolean } | null; suggestedIngreso: string | null; team?: TeamRow[]; leaders?: string[]; catalog: { id: string; n: string }[] };
 type Detail = { onb: any; meta: { id: string; email: string; name: string | null; leader: string | null; active: boolean } };
 type Roles = { lider: string[]; rrhh: string[]; hab: string[]; admin: string[] };
 
@@ -218,6 +219,7 @@ export default function OnboardingSdrPage() {
       {view === "equipo" && v.editor && (
         <TeamView
           team={home.team ?? []}
+          leaders={home.leaders ?? []}
           catalog={home.catalog}
           showArchived={showArchived}
           onToggleArchived={(on) => {
@@ -348,6 +350,7 @@ function StartCard({ suggested, onStart }: { suggested: string | null; onStart: 
 
 function TeamView({
   team,
+  leaders,
   catalog,
   showArchived,
   onToggleArchived,
@@ -355,6 +358,7 @@ function TeamView({
   onChanged,
 }: {
   team: TeamRow[];
+  leaders: string[];
   catalog: { id: string; n: string }[];
   showArchived: boolean;
   onToggleArchived: (on: boolean) => void;
@@ -362,9 +366,39 @@ function TeamView({
   onChanged: () => void;
 }) {
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ email: "", name: "", ingreso: nextMonday(), c1: "", c2: "" });
+  const [form, setForm] = useState({ email: "", name: "", leader: "", ingreso: nextMonday(), c1: "", c2: "" });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Edición en la tabla: nombre, líder directo y fecha de ingreso.
+  const [editId, setEditId] = useState<string | null>(null);
+  const [edit, setEdit] = useState({ name: "", leader: "", ingreso: "" });
+  const [saving, setSaving] = useState(false);
+
+  function startEdit(r: TeamRow) {
+    setEditId(r.id);
+    setEdit({ name: r.name ?? "", leader: r.leader ?? "", ingreso: r.ingreso ?? "" });
+  }
+
+  async function saveEdit() {
+    if (!editId) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      const r = await fetch(`/api/onboarding-sdr/${editId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ meta: edit }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "No se pudo guardar");
+      setEditId(null);
+      onChanged();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function create() {
     setBusy(true);
@@ -373,12 +407,12 @@ function TeamView({
       const r = await fetch("/api/onboarding-sdr", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: form.email, name: form.name, ingreso: form.ingreso, clientes: [form.c1, form.c2].filter(Boolean) }),
+        body: JSON.stringify({ email: form.email, name: form.name, leader: form.leader, ingreso: form.ingreso, clientes: [form.c1, form.c2].filter(Boolean) }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "No se pudo crear");
       setAdding(false);
-      setForm({ email: "", name: "", ingreso: nextMonday(), c1: "", c2: "" });
+      setForm({ email: "", name: "", leader: "", ingreso: nextMonday(), c1: "", c2: "" });
       onChanged();
       onOpen(d.id);
     } catch (e) {
@@ -421,6 +455,10 @@ function TeamView({
               <input className="input mt-1 w-full" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </label>
             <label>
+              Líder directo (si no, se toma de la Maestra)
+              <input className="input mt-1 w-full" list="onb-leaders" placeholder="Elige o escribe" value={form.leader} onChange={(e) => setForm({ ...form, leader: e.target.value })} />
+            </label>
+            <label>
               Fecha de ingreso (día 1)
               <input type="date" className="input mt-1 w-full" value={form.ingreso} onChange={(e) => setForm({ ...form, ingreso: e.target.value })} />
             </label>
@@ -447,12 +485,18 @@ function TeamView({
         </div>
       )}
 
+      <datalist id="onb-leaders">
+        {leaders.map((l) => (
+          <option key={l} value={l} />
+        ))}
+      </datalist>
+      {err && !adding && <p className="text-sm text-danger-fg">{err}</p>}
       <div className="card p-0 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-ink-muted border-b border-[#EEEAF6]">
               <th className="px-4 py-2 font-medium">SDR</th>
-              <th className="px-4 py-2 font-medium">Líder</th>
+              <th className="px-4 py-2 font-medium">Líder directo</th>
               <th className="px-4 py-2 font-medium">Ingreso</th>
               <th className="px-4 py-2 font-medium">Etapa actual</th>
               <th className="px-4 py-2 font-medium">Hitos</th>
@@ -470,7 +514,29 @@ function TeamView({
                 </td>
               </tr>
             )}
-            {team.map((r) => (
+            {team.map((r) =>
+              editId === r.id ? (
+                <tr key={r.id} className="border-b border-[#EEEAF6] bg-brand-tint/40">
+                  <td className="px-4 py-2">
+                    <input className="input w-full text-sm" placeholder="Nombre" value={edit.name} onChange={(e) => setEdit({ ...edit, name: e.target.value })} />
+                    <div className="text-xs text-ink-subtle mt-1">{r.email}</div>
+                  </td>
+                  <td className="px-4 py-2">
+                    <input className="input w-full text-sm" list="onb-leaders" placeholder="Elige o escribe" value={edit.leader} onChange={(e) => setEdit({ ...edit, leader: e.target.value })} />
+                  </td>
+                  <td className="px-4 py-2">
+                    <input type="date" className="input text-sm" value={edit.ingreso} onChange={(e) => setEdit({ ...edit, ingreso: e.target.value })} />
+                  </td>
+                  <td colSpan={6} className="px-4 py-2 text-right whitespace-nowrap">
+                    <button className="btn-primary text-sm inline-flex items-center gap-1.5 mr-2" disabled={saving} onClick={() => void saveEdit()}>
+                      {saving && <IconLoader2 size={14} className="animate-spin" />} Guardar
+                    </button>
+                    <button className="btn-secondary text-sm" onClick={() => setEditId(null)}>
+                      Cancelar
+                    </button>
+                  </td>
+                </tr>
+              ) : (
               <tr key={r.id} className={`border-b border-[#EEEAF6] last:border-0 hover:bg-brand-tint/40 cursor-pointer ${r.active ? "" : "opacity-60"}`} onClick={() => onOpen(r.id)}>
                 <td className="px-4 py-2">
                   <div className="font-medium">{r.name || r.email}</div>
@@ -495,7 +561,17 @@ function TeamView({
                 <td className="px-4 py-2 text-right tabular-nums">{r.espera || "—"}</td>
                 <td className={`px-4 py-2 text-right tabular-nums ${r.late ? "text-danger-fg font-medium" : ""}`}>{r.late || "—"}</td>
                 <td className="px-4 py-2 text-xs">{r.clientes.join(", ") || "—"}</td>
-                <td className="px-4 py-2 text-right">
+                <td className="px-4 py-2 text-right whitespace-nowrap">
+                  <button
+                    className="text-ink-muted hover:text-brand mr-3"
+                    title="Editar nombre, líder directo y fecha de ingreso"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      startEdit(r);
+                    }}
+                  >
+                    <IconPencil size={16} />
+                  </button>
                   <button
                     className="text-ink-muted hover:text-brand"
                     title={r.active ? "Archivar" : "Reactivar"}
@@ -508,7 +584,8 @@ function TeamView({
                   </button>
                 </td>
               </tr>
-            ))}
+              )
+            )}
           </tbody>
         </table>
       </div>
