@@ -1628,15 +1628,41 @@ async function parseExclusionFile(file: File): Promise<{ name: string | null; do
   // Si hay varias columnas del mismo tipo, manda la primera
   let nameCol = kinds.indexOf("name");
   let domainCol = kinds.indexOf("domain");
-  const linkedinCol = kinds.indexOf("linkedin");
+  let linkedinCol = kinds.indexOf("linkedin");
   const hasHeader = nameCol >= 0 || domainCol >= 0 || linkedinCol >= 0;
+  // Si un encabezado no se reconoce, se mira el contenido: la columna donde la
+  // mayoría de las celdas son links de LinkedIn es el LinkedIn; la de sitios
+  // web, el sitio. Así sirve aunque las columnas se llamen de cualquier forma.
+  const sample = rows.slice(hasHeader ? 1 : 0, 51);
+  const share = (col: number, re: RegExp) => {
+    const vals = sample.map((r) => String(r[col] ?? "").trim()).filter(Boolean);
+    return vals.length ? vals.filter((v) => re.test(v)).length / vals.length : 0;
+  };
+  const width = Math.max(...rows.slice(0, 51).map((r) => r.length));
+  const pick = (re: RegExp, skip: number[]) => {
+    let best = -1, bestShare = 0.6;
+    for (let c = 0; c < width; c++) {
+      if (skip.includes(c)) continue;
+      const sh = share(c, re);
+      if (sh > bestShare) { best = c; bestShare = sh; }
+    }
+    return best;
+  };
+  if (linkedinCol < 0) linkedinCol = pick(/linkedin\.com\//i, [nameCol, domainCol]);
+  if (domainCol < 0) domainCol = pick(/^(https?:\/\/)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i, [nameCol, linkedinCol]);
+  // Encabezado con nombres desconocidos: la primera fila no tiene un link
+  // donde el resto de la columna sí lo tiene
+  const row0 = rows[0] ?? [];
+  const skipFirst = hasHeader
+    || (linkedinCol >= 0 && !/linkedin\.com\//i.test(String(row0[linkedinCol] ?? "")))
+    || (domainCol >= 0 && !/\.[a-z]{2,}/i.test(String(row0[domainCol] ?? "")));
   if (!hasHeader) {
-    // Sin encabezados: la primera columna es el nombre; si parece dominio, va como dominio
-    nameCol = 0;
-    domainCol = -1;
+    // Sin encabezados reconocidos: la primera columna que no es sitio ni
+    // LinkedIn es el nombre
+    nameCol = [...Array(width).keys()].find((c) => c !== domainCol && c !== linkedinCol) ?? 0;
   }
   const looksLikeDomain = (v: string) => /^[a-z0-9.-]+\.[a-z]{2,}(\/.*)?$/i.test(v.replace(/^https?:\/\//, "").replace(/^www\./, ""));
-  return rows.slice(hasHeader ? 1 : 0).map((r) => {
+  return rows.slice(skipFirst ? 1 : 0).map((r) => {
     const name = nameCol >= 0 ? String(r[nameCol] ?? "").trim() : "";
     const domain = domainCol >= 0 ? String(r[domainCol] ?? "").trim() : "";
     const linkedin = linkedinCol >= 0 ? String(r[linkedinCol] ?? "").trim() : "";
