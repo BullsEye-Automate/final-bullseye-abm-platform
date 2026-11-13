@@ -88,15 +88,15 @@ export async function loadFeedbackOverlay(clientId: string, subs: string[] = [])
   const since = new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 10);
   const meetings: { id: string; client_id: string; propuesta_oportunidad: string | null; realizado: string | null; reconfirmada?: boolean; reconfirmada_en?: string | null; reconfirmada_para?: string | null; cliente_nombre?: string | null; fecha_reunion?: string | null; hora?: string | null }[] = [];
   // Con la migración de reconfirmación se lee también su estado (en vivo para el cliente)
-  let cols = "id, client_id, propuesta_oportunidad, realizado, fecha_reunion, hora, reconfirmada, reconfirmada_en, reconfirmada_para, cliente_nombre";
+  // cliente_nombre y la reconfirmación son columnas opcionales e independientes:
+  // si falta una se deja de pedir solo esa (antes, sin cliente_nombre se perdía
+  // también la reconfirmación)
+  let cliCol = ", cliente_nombre", recCols = ", fecha_reunion, hora, reconfirmada, reconfirmada_en, reconfirmada_para";
   for (let offset = 0; offset < 20000; offset += 1000) {
-    let { data, error } = await supabase.from("meetings").select(cols)
+    const { data, error } = await supabase.from("meetings").select(`id, client_id, propuesta_oportunidad, realizado${recCols}${cliCol}`)
       .in("client_id", [...ids]).gte("fecha_reunion", since).order("id", { ascending: true }).range(offset, offset + 999);
-    if (error && /reconfirmada|cliente_nombre/.test(error.message) && cols.includes("reconfirmada")) {
-      cols = "id, client_id, propuesta_oportunidad, realizado";
-      offset -= 1000;
-      continue;
-    }
+    if (error && cliCol && /cliente_nombre/.test(error.message)) { cliCol = ""; offset -= 1000; continue; }
+    if (error && recCols && /reconfirmada/.test(error.message)) { recCols = ""; offset -= 1000; continue; }
     meetings.push(...((data ?? []) as any[]));
     if (!data || data.length < 1000) break;
   }
@@ -148,6 +148,7 @@ export async function loadSheetMeetings(input: {
   const nameOf = new Map((allClients ?? []).map((c: any) => [c.id, c.name as string]));
   const rows: any[] = [];
   const PAGE = 1000;
+  let cliCol = ", cliente_nombre", recCols = ", reconfirmada, reconfirmada_en, reconfirmada_para";
   for (let offset = 0; offset < 100000; offset += PAGE) {
     const query = (cols: string) => supabase
       .from("meetings")
@@ -159,9 +160,14 @@ export async function loadSheetMeetings(input: {
     const COLS = "id, client_id, empresa, contacto_nombre, contacto_cargo, correo, fecha_agendamiento, fecha_reunion, realizado, propuesta_oportunidad, responsable, sdr_nombre, origen, pais, hora, industria";
     // cliente_nombre (columna Cliente de la planilla) y la reconfirmación
     // (migración 20261112) son opcionales: sin las columnas se lee lo demás
-    let { data, error } = await query(`${COLS}, cliente_nombre, reconfirmada, reconfirmada_en, reconfirmada_para`);
-    if (error && /cliente_nombre|reconfirmada/.test(error.message)) ({ data, error } = input.sub ? await query(`${COLS}, cliente_nombre`) : await query(COLS));
-    if (error && input.sub && /cliente_nombre/.test(error.message)) ({ data, error } = await query(COLS));
+    // Si falta una, se deja de pedir solo esa
+    let { data, error } = await query(`${COLS}${cliCol}${recCols}`);
+    for (let i = 0; i < 2 && error; i++) {
+      if (cliCol && /cliente_nombre/.test(error.message)) cliCol = "";
+      else if (recCols && /reconfirmada/.test(error.message)) recCols = "";
+      else break;
+      ({ data, error } = await query(`${COLS}${cliCol}${recCols}`));
+    }
     if (error) throw new Error(`No se pudieron leer las reuniones de la planilla: ${error.message}`);
     const page = (data ?? []) as any[];
     // Varios clientes en la cuenta: del registro principal, solo las que la
