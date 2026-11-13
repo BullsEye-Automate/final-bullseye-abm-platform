@@ -60,8 +60,7 @@
       "path": "/api/cron/alerta-feriados",
       "schedule": "30 11,12,13 * * 1-5"
     },
-    { "path": "/api/cron/centro-inteligencia", "schedule": "0 15 * * 5" },
-    { "path": "/api/cron/centro-inteligencia", "schedule": "30 16 * * 5" },
+    { "path": "/api/cron/centro-inteligencia", "schedule": "0,20,40 15-17 * * 5" },
     { "path": "/api/cron/centro-recomendaciones", "schedule": "0 23 * * 0" },
     { "path": "/api/cron/centro-alertas", "schedule": "30 11 * * 1-5" },
     { "path": "/api/cron/centro-alertas", "schedule": "30 12 * * 1-5" },
