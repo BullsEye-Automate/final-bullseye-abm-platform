@@ -201,6 +201,18 @@ Usa la herramienta proponer_inteligencia_semanal.`;
       const t = v.trim();
       if (!t) return [];
       try { const j = JSON.parse(t); if (Array.isArray(j)) return j as T[]; } catch { /* no es JSON */ }
+      // A veces llega como pseudo-XML "<item>…</item>" (CCHC, 13-nov-2026):
+      // cada item es un texto o, si trae sub-etiquetas, un objeto campo → valor.
+      const items = [...t.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => m[1].trim());
+      if (items.length) {
+        return items.map((it) => {
+          const fields = [...it.matchAll(/<([a-z_]+)>([\s\S]*?)<\/\1>/gi)];
+          if (!fields.length) return it;
+          const o: Record<string, string> = {};
+          for (const f of fields) o[f[1]] = f[2].trim();
+          return o;
+        }) as unknown as T[];
+      }
       return t.split(/\n+|;\s+/).map((x) => x.replace(/^[-•*\d.)\s]+/, "").trim()).filter(Boolean) as unknown as T[];
     }
     return [];
