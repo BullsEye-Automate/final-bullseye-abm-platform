@@ -58,9 +58,19 @@ export function lemlistFilterLabel(def: { filterId: string; description: string 
 
 type Result<T> = { ok: true; data: T } | { ok: false; status: number; error: string };
 
+// Lemlist responde 429 ("Too Many Requests") si llegan muchas llamadas
+// seguidas (ej. al subir un listado: crear empresa + lista + agregar por cada
+// una). Se reintenta hasta 4 veces esperando lo que pida Retry-After o 1, 2,
+// 4 y 8 s (nov-2026: 16 de 24 empresas de Crossnet quedaban con error).
+const RETRY_429 = 4;
 async function call<T>(apiKey: string, path: string, init?: RequestInit): Promise<Result<T>> {
   try {
-    const res = await fetch(`${LEMLIST_API}${path}`, { ...init, headers: headers(apiKey), cache: "no-store" });
+    let res = await fetch(`${LEMLIST_API}${path}`, { ...init, headers: headers(apiKey), cache: "no-store" });
+    for (let i = 0; res.status === 429 && i < RETRY_429; i++) {
+      const after = Number(res.headers.get("retry-after"));
+      await new Promise((r) => setTimeout(r, Math.min(10_000, after > 0 ? after * 1000 : 1000 * 2 ** i)));
+      res = await fetch(`${LEMLIST_API}${path}`, { ...init, headers: headers(apiKey), cache: "no-store" });
+    }
     const text = await res.text();
     if (!res.ok) return { ok: false, status: res.status, error: text.slice(0, 300) || `HTTP ${res.status}` };
     return { ok: true, data: (text ? JSON.parse(text) : null) as T };
