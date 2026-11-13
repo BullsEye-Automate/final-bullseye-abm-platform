@@ -1588,21 +1588,47 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
 
 type ExclusionItem = { id: string; kind: "company" | "keyword"; company_name: string | null; domain: string | null; keyword: string | null; reason: string | null; created_by_email: string | null; created_at: string };
 
-const NAME_HEADERS = /^(empresa|empresas|nombre|razon social|razón social|company|company name|cliente|cuenta|account)$/i;
-const DOMAIN_HEADERS = /^(dominio|domain|web|website|sitio|sitio web|url|pagina web|página web)$/i;
-const LINKEDIN_HEADERS = /^(linkedin|linked in|linkedin url|url linkedin|linkedin empresa|perfil linkedin)$/i;
+// Encabezados: se comparan sin tildes ni mayúsculas y por palabras clave, así
+// también se reconocen los de un export de HubSpot ("Nombre de la Empresa",
+// "Nombre de dominio de la empresa", "URL LinkedIn Empresa"…)
+const normHeader = (h: string) => h.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+function headerKind(h: string): "name" | "domain" | "linkedin" | null {
+  const n = normHeader(h);
+  if (!n) return null;
+  if (/linked ?in/.test(n)) return "linkedin";
+  if (/\b(dominio|domain|website|web|sitio|url|pagina)\b/.test(n)) return "domain";
+  if (/\bid\b|registro|record/.test(n)) return null;
+  if (/\b(empresa|empresas|nombre|razon social|company|cliente|cuenta|account)\b/.test(n)) return "name";
+  return null;
+}
+
+// CSV: se lee como texto UTF-8 (si no lo es, Windows-1252) para que no se
+// rompan las tildes ("ChangoMâs" quedaba "ChangoMÃ¢s")
+async function readSheetRows(file: File): Promise<unknown[][]> {
+  const XLSX = await import("xlsx");
+  const buf = await file.arrayBuffer();
+  let wb;
+  if (/\.(csv|txt|tsv)$/i.test(file.name)) {
+    let text = new TextDecoder("utf-8").decode(buf);
+    if (text.includes("\uFFFD")) text = new TextDecoder("windows-1252").decode(buf);
+    wb = XLSX.read(text.replace(/^\uFEFF/, ""), { type: "string" });
+  } else {
+    wb = XLSX.read(buf, { type: "array" });
+  }
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, blankrows: false }) as unknown[][];
+}
 
 // Lee un Excel/CSV y devuelve [{ name, domain, linkedin_url }] detectando las columnas
 async function parseExclusionFile(file: File): Promise<{ name: string | null; domain: string | null; linkedin_url?: string | null }[]> {
-  const XLSX = await import("xlsx");
-  const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, blankrows: false }) as unknown[][];
+  const rows = await readSheetRows(file);
   if (!rows.length) return [];
   const header = rows[0].map((h) => String(h ?? "").trim());
-  let nameCol = header.findIndex((h) => NAME_HEADERS.test(h));
-  let domainCol = header.findIndex((h) => DOMAIN_HEADERS.test(h));
-  const linkedinCol = header.findIndex((h) => LINKEDIN_HEADERS.test(h));
+  const kinds = header.map(headerKind);
+  // Si hay varias columnas del mismo tipo, manda la primera
+  let nameCol = kinds.indexOf("name");
+  let domainCol = kinds.indexOf("domain");
+  const linkedinCol = kinds.indexOf("linkedin");
   const hasHeader = nameCol >= 0 || domainCol >= 0 || linkedinCol >= 0;
   if (!hasHeader) {
     // Sin encabezados: la primera columna es el nombre; si parece dominio, va como dominio
