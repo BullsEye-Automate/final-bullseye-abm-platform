@@ -207,6 +207,16 @@ export default function EntrenamientoClientePage() {
     if (c) setCurrentClient(c);
   }
 
+  // ?client_id= (link desde el Onboarding SDR): abre ese cliente.
+  const urlClientDone = useRef(false);
+  useEffect(() => {
+    if (urlClientDone.current || !clients.length) return;
+    urlClientDone.current = true;
+    const id = new URLSearchParams(window.location.search).get("client_id");
+    if (id) selectClient(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients]);
+
   const missingAlert = missing.length > 0 && (
     <div className="card border border-warning-bg bg-warning-bg/40 text-sm space-y-2">
       <div className="flex items-center justify-between gap-3 flex-wrap">
