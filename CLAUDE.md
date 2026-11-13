@@ -228,6 +228,19 @@ Capacitación de cada cliente para los SDR, en el menú SDR debajo de Teléfonos
 
 ---
 
+### Onboarding SDR (`/sdr/onboarding`, nov-2026)
+
+Ruta de 90 días de cada SDR nuevo, en el menú SDR debajo de Entrenamiento cliente. Es el prototipo "Onboarding SDR por semanas" (etapas Antes de entrar → Semana 1 Inducción / Capacitación → Semana 2 → Mes 1–3, hitos simples, de doble verificación, compuertas y Pit Stops) con su diseño tal cual, en un iframe aislado (`content/onboarding-sdr/onboarding.html`, sin `allow-same-origin`). Migración `supabase/20261113_sdr_onboarding_migration.sql` (sin ella la página da error).
+
+- **Plan = `lib/onboardingSdr/plan.ts`** (única fuente: etapas, hitos, quién marca `canMark` y quién confirma `canConfirm`). La página lo recibe inyectado (`window.__ONB`, `lib/onboardingSdr/bridge.ts`) y el servidor valida cada cambio con las mismas reglas. Para cambiar un hito se edita ese archivo, no el HTML.
+- **Avance por SDR** (tabla `sdr_onboardings`, una fila por correo; historial en `sdr_onboarding_log`): marcas, confirmaciones y etapas con `{ at, by: rol, email }`, fecha de ingreso y clientes 1 y 2. El iframe manda cada cambio por `postMessage` (`hecho` / `valida` / `etapa` / `clientes` / `ingreso`), `PATCH /api/onboarding-sdr/[id]` lo valida (`applyOp` en `server/store.ts`, escritura condicionada a `updated_at` para no pisar a otra persona) y devuelve el estado oficial. Se ve igual desde cualquier computador.
+- **Quién ve qué** (`server/roles.ts`, `server/access.ts`): quien entra con su correo es SDR y solo ve **su** onboarding (lo crea con "Comenzar mi onboarding"; la fecha se sugiere desde el evento "Bienvenida" de su calendario). Líderes de célula, RRHH y habilitadora comercial ven la pestaña **Equipo** (todos los SDR: etapa actual, hitos, por confirmar, atrasados, clientes; crear uno antes del ingreso, archivar) y abren la ruta de cualquiera con su rol ("Ver como" muestra solo los roles que tiene). Listas en la pestaña **Configurar** (fila `id = 'onboarding_roles'` de `sdr_cells_config`, sin migración; por defecto líderes nnazar@ y vabarzua@, administradora ihincapie@ = los tres roles). **Pendiente: cargar los correos de JP (RRHH) y Tatiana Zavala (habilitadora).**
+- **Google Calendar** (`server/calendar.ts`): con el correo del SDR, la cuenta de servicio (`GOOGLE_SERVICE_ACCOUNT_JSON`, delegación de dominio, igual que `lib/gmail.ts`) lee su calendario principal (solo lectura) entre 10 días antes del ingreso y el día 95. Cada hito con palabras `k` se asocia al evento más cercano a su fecha esperada (≤ 21 días) y muestra fecha, hora y si aceptó la invitación; bloque "Tu agenda de onboarding" con los próximos eventos e invitaciones aceptadas. Caché de 5 min ("Actualizar" = `?fresh=1`). **Requiere** habilitar Google Calendar API en el proyecto de la cuenta de servicio y agregar el alcance `https://www.googleapis.com/auth/calendar.readonly` a su delegación en admin.google.com; sin eso la ruta funciona y la página muestra el aviso.
+- **Entrenamiento cliente conectado:** los clientes asignables son los activos con Entrenamiento cliente; el botón lleva a `/sdr/entrenamiento?client_id=` (esa página ahora acepta el parámetro) y el hito "Entrenamiento de cliente" se cumple solo con quiz ≥ 8 de 10 en `sdr_academy_progress` (vueltas y puntaje a la vista).
+- API con sesión: `GET/POST /api/onboarding-sdr`, `GET/PATCH /api/onboarding-sdr/[id]`, `GET /api/onboarding-sdr/html`, `GET/PUT /api/onboarding-sdr/roles`. Sin correos automáticos por ahora.
+
+---
+
 ### Reporte SDR diario por correo (`lib/reporteSdr/`)
 
 Correo automático con un **PNG vertical** (1080 px, para reenviar por WhatsApp) de las llamadas del día por SDR + reuniones agendadas hoy. **Lunes a viernes hábiles a las 13:00 y 18:30 de Chile.**
