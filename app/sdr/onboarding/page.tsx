@@ -525,13 +525,19 @@ const ROLE_INFO: { key: keyof Roles; label: string; help: string }[] = [
 
 function RolesView({ admin }: { admin: boolean }) {
   const [roles, setRoles] = useState<Record<string, string> | null>(null);
+  const [cal, setCal] = useState<{ clientId: string | null; email: string | null; scope: string } | null>(null);
+  const [test, setTest] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [testing, setTesting] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     fetch("/api/onboarding-sdr/roles")
       .then((r) => r.json())
-      .then((d) => d.roles && setRoles(Object.fromEntries(Object.entries(d.roles as Roles).map(([k, v]) => [k, v.join("\n")]))));
+      .then((d) => {
+        if (d.roles) setRoles(Object.fromEntries(Object.entries(d.roles as Roles).map(([k, v]) => [k, v.join("\n")])));
+        setCal(d.calendar ?? null);
+      });
   }, []);
 
   async function save() {
@@ -547,9 +553,37 @@ function RolesView({ admin }: { admin: boolean }) {
     setMsg("Guardado");
   }
 
+  async function runTest() {
+    setTesting(true);
+    setTest(null);
+    const d = await fetch("/api/onboarding-sdr/roles?test=1").then((r) => r.json()).catch(() => null);
+    setTest(d?.test ?? { ok: false, msg: "No se pudo probar" });
+    setTesting(false);
+  }
+
   if (!roles) return <Loading />;
   return (
-    <div className="card space-y-4 max-w-3xl">
+    <div className="space-y-4 max-w-3xl">
+    {admin && cal && (
+      <div className="card space-y-3">
+        <div>
+          <h2 className="font-semibold flex items-center gap-2"><IconCalendar size={18} /> Conectar Google Calendar</h2>
+          <p className="text-sm text-ink-muted">
+            En admin.google.com → Seguridad → Controles de API → Delegación de todo el dominio → <b>Agregar nuevo</b>, pega estos dos datos y pulsa Autorizar. Además, en Google Cloud (proyecto de la cuenta de servicio) habilita la <b>Google Calendar API</b>.
+          </p>
+        </div>
+        <CopyField label="ID de cliente" value={cal.clientId ?? "No se encontró: falta GOOGLE_SERVICE_ACCOUNT_JSON en Vercel"} />
+        <CopyField label="Alcances de OAuth" value={cal.scope} />
+        {cal.email && <p className="text-xs text-ink-subtle">Cuenta de servicio: {cal.email}</p>}
+        <div className="flex items-center gap-3">
+          <button className="btn-secondary flex items-center gap-2 text-sm" disabled={testing} onClick={() => void runTest()}>
+            {testing && <IconLoader2 size={15} className="animate-spin" />} Probar con mi calendario
+          </button>
+          {test && <span className={`text-sm ${test.ok ? "text-success-fg" : "text-danger-fg"}`}>{test.msg}</span>}
+        </div>
+      </div>
+    )}
+    <div className="card space-y-4">
       <div>
         <h2 className="font-semibold">Quién confirma en el onboarding</h2>
         <p className="text-sm text-ink-muted">Un correo por línea. Cualquier otra persona que entre con su correo es SDR y solo ve su propio onboarding.</p>
@@ -579,6 +613,30 @@ function RolesView({ admin }: { admin: boolean }) {
       ) : (
         <p className="text-xs text-ink-subtle">Solo una administradora puede cambiar esta lista.</p>
       )}
+    </div>
+    </div>
+  );
+}
+
+function CopyField({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="text-sm">
+      <div className="font-medium mb-1">{label}</div>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 px-3 py-2 rounded-lg bg-brand-tint text-xs break-all">{value}</code>
+        <button
+          className="btn-secondary text-xs"
+          onClick={() => {
+            void navigator.clipboard.writeText(value).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            });
+          }}
+        >
+          {copied ? "Copiado" : "Copiar"}
+        </button>
+      </div>
     </div>
   );
 }

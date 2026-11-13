@@ -166,6 +166,23 @@ function matchHitos(events: CalEvent[], ingreso: string | null): Record<string, 
   return out;
 }
 
+// Datos públicos de la cuenta de servicio para configurar la delegación en
+// admin.google.com (el client_id no es secreto; la clave privada nunca sale).
+export function serviceAccountInfo(): { clientId: string | null; email: string | null; scope: string } {
+  try {
+    const c = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || "{}");
+    return { clientId: c.client_id ? String(c.client_id) : null, email: c.client_email ? String(c.client_email) : null, scope: SCOPE };
+  } catch {
+    return { clientId: null, email: null, scope: SCOPE };
+  }
+}
+
+// Prueba el calendario de un correo sin caché (para el botón "Probar").
+export async function testCalendar(email: string) {
+  const r = await loadOnboardingCalendar(email, null, true);
+  return r.status === "ok" ? { ok: true, msg: `Calendario conectado: ${r.events.length} eventos del onboarding encontrados.` } : { ok: false, msg: r.msg };
+}
+
 // Sugerencia de fecha de ingreso: el día del evento "Bienvenida".
 export function suggestIngreso(cal: CalendarResult): string | null {
   const ev = cal.byHito["d1"] ?? cal.events.find((x) => norm(x.title).includes("bienvenida"));
