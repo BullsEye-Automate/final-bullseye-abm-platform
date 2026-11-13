@@ -7,7 +7,7 @@ import { isExcludedSdr } from "@/lib/celulasSdr/engine";
 import { loadAllDatasets } from "@/lib/radarAbm/server/store";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 import { identifySdr } from "@/lib/academiaSdr/server/progress";
-import type { SdrActivity, SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrSlice } from "./types";
+import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrSlice } from "./types";
 
 // Dashboard SDR: empresas y contactos asignados a cada SDR por cliente, con
 // sus actividades. Lee los informes ya sincronizados de Pulso ABM de cada
@@ -15,16 +15,14 @@ import type { SdrActivity, SdrCompany, SdrContact, SdrDashboardResponse, SdrInde
 // HubSpot en vivo):
 //  - empresa del SDR = "SDR - <cliente>" de la empresa,
 //  - contacto del SDR = "SDR Asignado - <cliente>" del contacto o, si está
-//    vacío, el SDR de su empresa,
-//  - actividades = llamadas, correos, WhatsApp y LinkedIn registrados en
-//    esas empresas / contactos (Pulso no guarda quién hizo cada actividad).
+//    vacío, el SDR de su empresa.
+// Por ahora no suma actividades (decisión de BullsEye, nov-2026).
 // El nombre de HubSpot ("Nico", "Vanesa"…) se resuelve contra la Maestra.
 // Se calcula una vez para todos los SDR y se guarda por SDR en
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo.
 
-const VERSION = "v1";
+const VERSION = "v2";
 const TTL_MS = 3 * 3600_000;
-const ACTIVITY_DAYS = 92;   // cubre "Últimos 90 días" y "Este mes"
 export const NO_SDR_KEY = "sin-sdr";
 
 type IndexCache = Omit<SdrDashboardResponse, "me" | "sdr">;
@@ -33,13 +31,7 @@ const keySdr = (day: string, sdr: string) => `dashboard_sdr:${VERSION}:${day}:sd
 
 let running: Promise<{ idx: IndexCache; slices: Map<string, SdrSlice> }> | null = null;
 
-function daysBefore(day: string, n: number): string {
-  const d = new Date(`${day}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - n);
-  return d.toISOString().slice(0, 10);
-}
-
-async function buildAll(today: string) {
+export async function buildAll(today: string) {
   const spreadsheetId = process.env.GOOGLE_SHEETS_MEETINGS_ID;
   if (!spreadsheetId) throw new Error("GOOGLE_SHEETS_MEETINGS_ID no configurado");
   const master = await readMaster(spreadsheetId, []);
@@ -52,7 +44,6 @@ async function buildAll(today: string) {
   const { data: snaps } = await db.from("radar_abm_snapshots").select("client_id");
   const withSnap = new Set((snaps ?? []).map((x: { client_id: string }) => x.client_id));
 
-  const since = daysBefore(today, ACTIVITY_DAYS);
   const slices = new Map<string, SdrSlice>();
   const clientsOf = new Map<string, Set<string>>();
   const sources: IndexCache["sources"] = [];
@@ -67,7 +58,7 @@ async function buildAll(today: string) {
   };
   const slice = (s: { key: string; name: string }, client: string): SdrSlice => {
     let x = slices.get(s.key);
-    if (!x) { x = { key: s.key, name: s.name, companies: [], contacts: [], activities: [] }; slices.set(s.key, x); }
+    if (!x) { x = { key: s.key, name: s.name, companies: [], contacts: [] }; slices.set(s.key, x); }
     const cs = clientsOf.get(s.key) ?? new Set<string>();
     cs.add(client);
     clientsOf.set(s.key, cs);
@@ -87,15 +78,6 @@ async function buildAll(today: string) {
       const d = dataset.client;
       const gid = (id: string | number) => `${pre}:${id}`;
 
-      const lastAct = new Map<string, string>();
-      for (const a of d.activities ?? []) {
-        const co = String(a.co);
-        if (a.d && (lastAct.get(co) ?? "") < a.d) lastAct.set(co, a.d);
-      }
-      for (const ct of d.contacts) {
-        const co = String(ct.co);
-        if (ct.last && (lastAct.get(co) ?? "") < ct.last) lastAct.set(co, ct.last);
-      }
 
       // Empresas por su SDR
       const coName = new Map<string, string>();
@@ -108,41 +90,28 @@ async function buildAll(today: string) {
         if (!s) continue;
         const row: SdrCompany = {
           id: gid(id), c: client, n: co.n || "(sin nombre)", st: co.st || "Sin status", pais: co.pais || "", ind: co.ind ?? null,
-          nct: co.nct ?? 0, nmg: co.nmg ?? 0, msch: co.msch ?? 0, mheld: co.mheld ?? 0, last: lastAct.get(id) ?? null,
+          nct: co.nct ?? 0, nmg: co.nmg ?? 0, msch: co.msch ?? 0, mheld: co.mheld ?? 0, asg: co.asg || "",
         };
         slice(s, client).companies.push(row);
       }
 
       // Contactos por su SDR (si no tiene, el de su empresa)
-      const ctSdr = new Map<string, string>();
       for (const ct of d.contacts) {
         const co = String(ct.co);
         const s = ct.sdr?.trim() ? sdrOf(ct.sdr) : coSdr.get(co) ?? sdrOf("");
         if (!s) continue;
-        ctSdr.set(String(ct.id), s.key);
         slice(s, client).contacts.push({
-          id: gid(ct.id), co: gid(co), con: coName.get(co) ?? "", c: client, n: ct.n || "(sin nombre)", cargo: ct.cargo ?? "", st: ct.st || "Sin status", last: ct.last ?? null,
+          id: gid(ct.id), co: gid(co), con: coName.get(co) ?? "", c: client, n: ct.n || "(sin nombre)", cargo: ct.cargo ?? "", st: ct.st || "Sin status",
         });
       }
 
-      // Actividades recientes: al SDR del contacto o, sin contacto, al de la empresa
-      for (const a of d.activities ?? []) {
-        if (!a.d || a.d < since) continue;
-        const ctKey = a.ct != null ? ctSdr.get(String(a.ct)) : undefined;
-        const key = ctKey ?? coSdr.get(String(a.co))?.key;
-        if (!key) continue;
-        const x = slices.get(key);
-        if (!x) continue;
-        const act: SdrActivity = [a.d, a.k, gid(a.co), a.ct != null && ctKey ? gid(a.ct) : "", a.conn ? 1 : 0];
-        x.activities.push(act);
-      }
     }
   }
 
   const index: SdrIndexRow[] = [...slices.values()]
     .map((s) => ({ key: s.key, name: s.name, companies: s.companies.length, contacts: s.contacts.length, clients: [...(clientsOf.get(s.key) ?? [])].sort() }))
     .sort((a, b) => (a.key === NO_SDR_KEY ? 1 : b.key === NO_SDR_KEY ? -1 : a.name.localeCompare(b.name)));
-  const idx: IndexCache = { generated: new Date().toISOString(), today, activitySince: since, index, sources, missing };
+  const idx: IndexCache = { generated: new Date().toISOString(), today, index, sources, missing };
 
   await Promise.all([
     writeMonthCache(keyIndex(today), idx, TTL_MS),

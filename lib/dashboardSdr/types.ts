@@ -13,7 +13,7 @@ export type SdrCompany = {
   nmg: number;         // contactos gestionados
   msch: number;        // reuniones agendadas
   mheld: number;       // reuniones realizadas
-  last: string | null; // última actividad (YYYY-MM-DD)
+  asg: string;         // fecha de asignación (YYYY-MM-DD; sin propiedad en HubSpot, la de creación)
 };
 
 export type SdrContact = {
@@ -24,11 +24,7 @@ export type SdrContact = {
   n: string;
   cargo: string;
   st: string;          // Asignación BullsEye por llamar - <cliente>
-  last: string | null;
 };
-
-// Actividad: [fecha, canal, empresa, contacto | "", conectada (1/0)]
-export type SdrActivity = [string, "call" | "em" | "wa" | "li", string, string, 0 | 1];
 
 export type SdrIndexRow = { key: string; name: string; companies: number; contacts: number; clients: string[] };
 
@@ -37,13 +33,11 @@ export type SdrSlice = {
   name: string;
   companies: SdrCompany[];
   contacts: SdrContact[];
-  activities: SdrActivity[];
 };
 
 export type SdrDashboardResponse = {
   generated: string;
   today: string;
-  activitySince: string;                                   // primera fecha con actividades incluidas
   me: { key: string | null; name: string | null };         // SDR de la sesión (por correo)
   index: SdrIndexRow[];
   sources: { client: string; syncedAt: string | null }[];  // informes de Pulso ABM leídos

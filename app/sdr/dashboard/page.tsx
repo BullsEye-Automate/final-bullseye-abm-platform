@@ -1,19 +1,15 @@
 "use client";
 
-// Dashboard SDR: empresas y contactos asignados a cada SDR por cliente, con su
-// actividad del período. Datos de los informes de Pulso ABM ya sincronizados
-// (lib/dashboardSdr/server.ts). Por defecto muestra al SDR de la sesión.
+// Dashboard SDR: empresas y contactos asignados a cada SDR por cliente y sus
+// cuentas estancadas (15+ días hábiles en "Asignada"). Datos de los informes
+// de Pulso ABM ya sincronizados (lib/dashboardSdr/server.ts). Por ahora no
+// suma actividades (decisión de BullsEye). Abre en el SDR de la sesión;
+// ?sdr=<clave>&estancadas=1 abre un SDR con el filtro de estancadas (links
+// del correo semanal).
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { IconAlertCircle, IconLoader2, IconRefresh, IconSearch, IconUserCircle } from "@tabler/icons-react";
-import type { SdrActivity, SdrCompany, SdrContact, SdrDashboardResponse } from "@/lib/dashboardSdr/types";
-
-type Period = "mes" | "7" | "30" | "90";
-const PERIODS: { v: Period; l: string }[] = [
-  { v: "mes", l: "Este mes" },
-  { v: "7", l: "Últimos 7 días" },
-  { v: "30", l: "Últimos 30 días" },
-  { v: "90", l: "Últimos 90 días" },
-];
+import { IconAlertCircle, IconAlertTriangle, IconLoader2, IconRefresh, IconSearch, IconUserCircle } from "@tabler/icons-react";
+import type { SdrCompany, SdrContact, SdrDashboardResponse } from "@/lib/dashboardSdr/types";
+import { STALE_BUSINESS_DAYS, staleDays } from "@/lib/dashboardSdr/stale";
 
 const nf = new Intl.NumberFormat("es-CL");
 const fmt = (n: number) => nf.format(n);
@@ -26,13 +22,7 @@ const fmtDay = (d: string | null) => {
 const timeCL = (iso: string) =>
   new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-
-function periodFrom(p: Period, today: string): string {
-  if (p === "mes") return `${today.slice(0, 7)}-01`;
-  const d = new Date(`${today}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - Number(p) + 1);
-  return d.toISOString().slice(0, 10);
-}
+const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)}%` : "0%");
 
 // Grupos de status de empresa (La Biblia)
 type CoGroup = "por_gestionar" | "en_gestion" | "reunion" | "cerradas";
@@ -50,15 +40,6 @@ function pillClass(st: string): string {
   if (t.includes("no fit") || t.includes("no califica") || t.includes("sin informaci") || t.includes("descart")) return "bg-danger-bg text-danger-fg";
   if (t === "asignada" || t.includes("por gestionar") || t.includes("por llamar")) return "bg-info-bg text-info-fg";
   return "bg-black/5 text-ink";
-}
-
-type Counts = { call: number; conn: number; em: number; wa: number; li: number; total: number; last: string | null };
-const emptyCounts = (): Counts => ({ call: 0, conn: 0, em: 0, wa: 0, li: 0, total: 0, last: null });
-function add(c: Counts, a: SdrActivity) {
-  c[a[1]]++;
-  if (a[1] === "call" && a[4]) c.conn++;
-  c.total++;
-  if (!c.last || a[0] > c.last) c.last = a[0];
 }
 
 type SortState = { k: string; dir: 1 | -1 };
@@ -82,9 +63,9 @@ export default function DashboardSdrPage() {
   const [sdr, setSdr] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [period, setPeriod] = useState<Period>("mes");
   const [client, setClient] = useState("");
   const [tab, setTab] = useState<"empresas" | "contactos">("empresas");
+  const [onlyStale, setOnlyStale] = useState(false);
 
   const load = useCallback(async (key: string, fresh = false) => {
     setLoading(true);
@@ -105,58 +86,45 @@ export default function DashboardSdrPage() {
     }
   }, []);
 
-  useEffect(() => { load(""); }, [load]);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("estancadas") === "1") { setOnlyStale(true); setTab("empresas"); }
+    load(q.get("sdr") ?? "");
+  }, [load]);
 
   const slice = data?.sdr ?? null;
   const today = data?.today ?? new Date().toISOString().slice(0, 10);
-  const from = periodFrom(period, today);
   const clients = useMemo(() => [...new Set((slice?.companies ?? []).map((c) => c.c).concat((slice?.contacts ?? []).map((c) => c.c)))].sort(), [slice]);
 
-  // Actividad del período por empresa y por contacto
   const calc = useMemo(() => {
-    const byCo = new Map<string, Counts>();
-    const byCt = new Map<string, Counts>();
-    const total = emptyCounts();
-    const coClient = new Map((slice?.companies ?? []).map((c) => [c.id, c.c]));
-    const ctClient = new Map((slice?.contacts ?? []).map((c) => [c.id, c.c]));
-    for (const a of slice?.activities ?? []) {
-      if (a[0] < from) continue;
-      const cl = (a[3] && ctClient.get(a[3])) || coClient.get(a[2]);
-      if (client && cl !== client) continue;
-      add(total, a);
-      const co = byCo.get(a[2]) ?? emptyCounts(); add(co, a); byCo.set(a[2], co);
-      if (a[3]) { const ct = byCt.get(a[3]) ?? emptyCounts(); add(ct, a); byCt.set(a[3], ct); }
-    }
     const companies = (slice?.companies ?? []).filter((c) => !client || c.c === client);
     const contacts = (slice?.contacts ?? []).filter((c) => !client || c.c === client);
-    const byClient = new Map<string, { cliente: string; asignadas: number; activas: number; por_gestionar: number; en_gestion: number; reunion: number; cerradas: number; contactos: number; contactosActivos: number; acts: number }>();
+    const days = new Map<string, number | null>(companies.map((c) => [c.id, staleDays(c, today)]));
+    const isStale = (c: SdrCompany) => (days.get(c.id) ?? -1) >= STALE_BUSINESS_DAYS;
+    const byClient = new Map<string, { cliente: string; asignadas: number; por_gestionar: number; estancadas: number; en_gestion: number; reunion: number; cerradas: number; contactos: number }>();
     const row = (c: string) => {
       let r = byClient.get(c);
-      if (!r) { r = { cliente: c, asignadas: 0, activas: 0, por_gestionar: 0, en_gestion: 0, reunion: 0, cerradas: 0, contactos: 0, contactosActivos: 0, acts: 0 }; byClient.set(c, r); }
+      if (!r) { r = { cliente: c, asignadas: 0, por_gestionar: 0, estancadas: 0, en_gestion: 0, reunion: 0, cerradas: 0, contactos: 0 }; byClient.set(c, r); }
       return r;
     };
     for (const co of companies) {
       const r = row(co.c);
       r.asignadas++;
       r[companyGroup(co.st)]++;
-      const a = byCo.get(co.id);
-      if (a) { r.activas++; }
+      if (isStale(co)) r.estancadas++;
     }
-    for (const ct of contacts) {
-      const r = row(ct.c);
-      r.contactos++;
-      if (byCt.has(ct.id)) r.contactosActivos++;
-    }
-    for (const [coId, a] of byCo) { const cl = coClient.get(coId); if (cl && byClient.has(cl)) byClient.get(cl)!.acts += a.total; }
+    for (const ct of contacts) row(ct.c).contactos++;
+    const stale = companies.filter(isStale);
     return {
-      byCo, byCt, total, companies, contacts,
+      companies, contacts, days, stale,
       perClient: [...byClient.values()].sort((a, b) => b.asignadas - a.asignadas),
-      activeCompanies: companies.filter((c) => byCo.has(c.id)).length,
-      activeContacts: contacts.filter((c) => byCt.has(c.id)).length,
-      meetings: companies.reduce((s, c) => s + c.msch, 0),
+      unworked: companies.filter((c) => companyGroup(c.st) === "por_gestionar").length,
       withMeeting: companies.filter((c) => companyGroup(c.st) === "reunion" || c.msch > 0).length,
+      meetings: companies.reduce((s, c) => s + c.msch, 0),
+      noContacts: companies.filter((c) => c.nct === 0).length,
+      oldest: stale.reduce((m, c) => Math.max(m, days.get(c.id) ?? 0), 0),
     };
-  }, [slice, from, client]);
+  }, [slice, client, today]);
 
   const myself = data?.me.key && data.me.key === slice?.key;
 
@@ -170,7 +138,7 @@ export default function DashboardSdrPage() {
             {slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
           </h1>
           <p className="text-sm text-ink-muted mt-1">
-            Empresas y contactos asignados por cliente, con la actividad registrada en ellos.
+            Empresas y contactos asignados por cliente.
             {data && <> Calculado {timeCL(data.generated)}.</>}
           </p>
         </div>
@@ -189,12 +157,6 @@ export default function DashboardSdrPage() {
             <select className="input min-w-[160px]" value={client} onChange={(e) => setClient(e.target.value)}>
               <option value="">Todos</option>
               {clients.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-ink-muted">
-            Período
-            <select className="input" value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
-              {PERIODS.map((p) => <option key={p.v} value={p.v}>{p.l}</option>)}
             </select>
           </label>
           <button
@@ -230,31 +192,29 @@ export default function DashboardSdrPage() {
 
       {data && slice && (
         <div className={loading ? "opacity-50 pointer-events-none space-y-6" : "space-y-6"}>
-          {/* Cartera */}
           <section className="space-y-2">
             <h2 className="text-base font-semibold">Cartera asignada{client ? ` · ${client}` : ""}</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               <Tile label="Empresas asignadas" value={calc.companies.length} sub={`En ${client ? 1 : clients.length} cliente${!client && clients.length !== 1 ? "s" : ""}`} />
-              <Tile label="Empresas con actividad" value={calc.activeCompanies} sub={pct(calc.activeCompanies, calc.companies.length) + " en el período"} />
-              <Tile label="Contactos asignados" value={calc.contacts.length} sub="De sus empresas y propios" />
-              <Tile label="Contactos con actividad" value={calc.activeContacts} sub={pct(calc.activeContacts, calc.contacts.length) + " en el período"} />
+              <Tile label="Sin gestionar" value={calc.unworked} sub={`${pct(calc.unworked, calc.companies.length)} en Asignada`} />
+              <Tile label="Contactos asignados" value={calc.contacts.length} sub={`${calc.noContacts ? `${fmt(calc.noContacts)} empresas sin contactos` : "Todas las empresas con contactos"}`} />
               <Tile label="Empresas con reunión" value={calc.withMeeting} sub={`${fmt(calc.meetings)} reuniones agendadas (histórico)`} />
+              <Tile label="Cuentas estancadas" value={calc.stale.length} sub={`${STALE_BUSINESS_DAYS}+ días hábiles en Asignada`} alert={calc.stale.length > 0} />
             </div>
           </section>
 
-          {/* Actividades */}
-          <section className="space-y-2">
-            <h2 className="text-base font-semibold">Actividades del período</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-              <Tile label="Llamadas" value={calc.total.call} sub={`${fmt(calc.total.conn)} conectadas (${pct(calc.total.conn, calc.total.call)})`} />
-              <Tile label="Correos" value={calc.total.em} />
-              <Tile label="WhatsApp" value={calc.total.wa} />
-              <Tile label="LinkedIn" value={calc.total.li} />
-              <Tile label="Total" value={calc.total.total} sub={`Desde el ${fmtDay(from)}`} />
+          {calc.stale.length > 0 && (
+            <div className="flex items-start gap-2 text-sm p-3 rounded-lg bg-warning-bg text-warning-fg">
+              <IconAlertTriangle size={18} className="shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <b>{fmt(calc.stale.length)} cuenta{calc.stale.length === 1 ? "" : "s"} estancada{calc.stale.length === 1 ? "" : "s"}</b>: siguen en Asignada hace {STALE_BUSINESS_DAYS} días hábiles o más (la más antigua, {fmt(calc.oldest)}). Gestiónalas o actualiza su status en HubSpot.
+              </div>
+              {!onlyStale && (
+                <button onClick={() => { setOnlyStale(true); setTab("empresas"); }} className="shrink-0 px-2.5 py-1 rounded-md border border-current text-xs hover:bg-black/5">Ver cuáles</button>
+              )}
             </div>
-          </section>
+          )}
 
-          {/* Por cliente */}
           <section className="card p-0 overflow-hidden">
             <div className="px-4 pt-4 pb-2">
               <h2 className="text-base font-semibold">Empresas asignadas por cliente</h2>
@@ -264,27 +224,27 @@ export default function DashboardSdrPage() {
               <table className="w-full text-sm">
                 <thead className="text-xs text-ink-muted bg-black/[0.02]">
                   <tr>
-                    <Th>Cliente</Th><Th n>Asignadas</Th><Th n>Con actividad</Th><Th n>Por gestionar</Th><Th n>En gestión / seguimiento</Th>
-                    <Th n>Reunión / oportunidad</Th><Th n>Descartadas / nutrir</Th><Th n>Contactos</Th><Th n>Contactos con actividad</Th><Th n>Actividades</Th>
+                    <Th>Cliente</Th><Th n>Asignadas</Th><Th n>Por gestionar</Th><Th n>Estancadas</Th><Th n>En gestión / seguimiento</Th>
+                    <Th n>Reunión / oportunidad</Th><Th n>Descartadas / nutrir</Th><Th n>Contactos</Th>
                   </tr>
                 </thead>
                 <tbody>
                   {calc.perClient.map((r) => (
                     <tr key={r.cliente} className="border-t hover:bg-black/[0.02] cursor-pointer" onClick={() => setClient(client === r.cliente ? "" : r.cliente)}>
                       <td className="px-3 py-2 font-medium">{r.cliente}</td>
-                      <Td n>{r.asignadas}</Td><Td n>{r.activas}</Td><Td n>{r.por_gestionar}</Td><Td n>{r.en_gestion}</Td>
-                      <Td n>{r.reunion}</Td><Td n>{r.cerradas}</Td><Td n>{r.contactos}</Td><Td n>{r.contactosActivos}</Td><Td n>{r.acts}</Td>
+                      <Td n>{r.asignadas}</Td><Td n>{r.por_gestionar}</Td>
+                      <td className={`px-3 py-2 text-right tabular-nums ${r.estancadas ? "text-warning-fg font-semibold" : ""}`}>{fmt(r.estancadas)}</td>
+                      <Td n>{r.en_gestion}</Td><Td n>{r.reunion}</Td><Td n>{r.cerradas}</Td><Td n>{r.contactos}</Td>
                     </tr>
                   ))}
                   {!calc.perClient.length && (
-                    <tr><td colSpan={10} className="px-3 py-4 text-ink-muted">Sin empresas asignadas{client ? " en este cliente" : ""}.</td></tr>
+                    <tr><td colSpan={8} className="px-3 py-4 text-ink-muted">Sin empresas asignadas{client ? " en este cliente" : ""}.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           </section>
 
-          {/* Detalle */}
           <section className="card space-y-3">
             <div className="flex gap-1 border-b">
               {(["empresas", "contactos"] as const).map((t) => (
@@ -298,15 +258,15 @@ export default function DashboardSdrPage() {
               ))}
             </div>
             {tab === "empresas"
-              ? <CompaniesTable rows={calc.companies} acts={calc.byCo} showClient={!client} />
-              : <ContactsTable rows={calc.contacts} acts={calc.byCt} showClient={!client} />}
+              ? <CompaniesTable rows={calc.companies} days={calc.days} showClient={!client} onlyStale={onlyStale} setOnlyStale={setOnlyStale} />
+              : <ContactsTable rows={calc.contacts} showClient={!client} />}
           </section>
 
           <details className="text-xs text-ink-muted">
             <summary className="cursor-pointer">Cómo se calcula y de dónde salen los datos</summary>
             <div className="mt-2 space-y-1.5 leading-relaxed">
               <p>Se leen los informes de <b>Pulso ABM</b> de los clientes activos en la Maestra (se sincronizan con HubSpot cada día). Empresa asignada = su propiedad «SDR - &lt;cliente&gt;» es este SDR; contacto asignado = su «SDR Asignado - &lt;cliente&gt;» o, si está vacío, el SDR de su empresa.</p>
-              <p>Las actividades son las llamadas, correos, WhatsApp y LinkedIn registrados en HubSpot en esas empresas y contactos dentro del período (HubSpot no distingue aquí quién hizo cada una). Llamada conectada = «Resultado de la llamada» Conectada. Se incluyen los últimos {ACTIVITY_LABEL} días.</p>
+              <p><b>Cuenta estancada</b> = empresa en «Asignada» {STALE_BUSINESS_DAYS} días hábiles o más (lunes a viernes sin feriados de Chile) desde su fecha de asignación en HubSpot; si el HubSpot del cliente no tiene la propiedad «Fecha de asignación», se usa la fecha de creación de la empresa. Cada semana llega un correo al SDR con su lista y a su líder con el resumen de la célula.</p>
               <p>Los status son los actuales de HubSpot. «Reunión / oportunidad» agrupa los status con reunión, oportunidad o cliente; «Descartadas / nutrir» los que salieron de gestión (No califica, Nutrir, sin contactos fit…).</p>
               {data.sources.length > 0 && (
                 <p>Informes leídos: {data.sources.map((s) => `${s.client}${s.syncedAt ? ` (${timeCL(s.syncedAt)})` : ""}`).join(" · ")}.</p>
@@ -320,14 +280,11 @@ export default function DashboardSdrPage() {
   );
 }
 
-const ACTIVITY_LABEL = 92;
-const pct = (a: number, b: number) => (b ? `${Math.round((100 * a) / b)}%` : "0%");
-
-function Tile({ label, value, sub }: { label: string; value: number; sub?: string }) {
+function Tile({ label, value, sub, alert }: { label: string; value: number; sub?: string; alert?: boolean }) {
   return (
-    <div className="card py-3">
+    <div className={`card py-3 ${alert ? "border-warning-fg/40 bg-warning-bg/40" : ""}`}>
       <div className="text-xs text-ink-muted">{label}</div>
-      <div className="text-2xl font-semibold tabular-nums">{fmt(value)}</div>
+      <div className={`text-2xl font-semibold tabular-nums ${alert ? "text-warning-fg" : ""}`}>{fmt(value)}</div>
       {sub && <div className="text-xs text-ink-muted">{sub}</div>}
     </div>
   );
@@ -346,86 +303,87 @@ function Pill({ st }: { st: string }) {
   return <span className={`inline-block px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${pillClass(st)}`}>{st}</span>;
 }
 
-function Filters({ statuses, status, setStatus, q, setQ, onlyIdle, setOnlyIdle, placeholder, count }: {
-  statuses: [string, number][]; status: string; setStatus: (v: string) => void; q: string; setQ: (v: string) => void;
-  onlyIdle: boolean; setOnlyIdle: (v: boolean) => void; placeholder: string; count: string;
-}) {
+function SearchBox({ q, setQ, placeholder }: { q: string; setQ: (v: string) => void; placeholder: string }) {
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
-        <option value="">Todos los status</option>
-        {statuses.map(([s, n]) => <option key={s} value={s}>{s} ({fmt(n)})</option>)}
-      </select>
-      <div className="relative">
-        <IconSearch size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-subtle" />
-        <input className="input pl-8 min-w-[240px]" type="search" placeholder={placeholder} value={q} onChange={(e) => setQ(e.target.value)} />
-      </div>
-      <label className="flex items-center gap-1.5 text-sm text-ink-muted">
-        <input type="checkbox" checked={onlyIdle} onChange={(e) => setOnlyIdle(e.target.checked)} /> Solo sin actividad en el período
-      </label>
-      <span className="text-xs text-ink-muted ml-auto">{count}</span>
+    <div className="relative">
+      <IconSearch size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-subtle" />
+      <input className="input pl-8 min-w-[240px]" type="search" placeholder={placeholder} value={q} onChange={(e) => setQ(e.target.value)} />
     </div>
   );
 }
-
-function statusCounts(rows: { st: string }[]): [string, number][] {
-  const m = new Map<string, number>();
-  for (const r of rows) m.set(r.st, (m.get(r.st) ?? 0) + 1);
-  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+function StatusSelect({ rows, status, setStatus }: { rows: { st: string }[]; status: string; setStatus: (v: string) => void }) {
+  const counts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.st, (m.get(r.st) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [rows]);
+  return (
+    <select className="input" value={status} onChange={(e) => setStatus(e.target.value)}>
+      <option value="">Todos los status</option>
+      {counts.map(([s, n]) => <option key={s} value={s}>{s} ({fmt(n)})</option>)}
+    </select>
+  );
 }
 
-function CompaniesTable({ rows, acts, showClient }: { rows: SdrCompany[]; acts: Map<string, Counts>; showClient: boolean }) {
+function CompaniesTable({ rows, days, showClient, onlyStale, setOnlyStale }: {
+  rows: SdrCompany[]; days: Map<string, number | null>; showClient: boolean; onlyStale: boolean; setOnlyStale: (v: boolean) => void;
+}) {
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
-  const [onlyIdle, setOnlyIdle] = useState(false);
-  const [sort, toggle] = useSort({ k: "acts", dir: -1 });
-  const statuses = useMemo(() => statusCounts(rows), [rows]);
+  const [sort, toggle] = useSort({ k: "days", dir: -1 });
   const list = useMemo(() => {
     const nq = norm(q.trim());
-    const f = rows.filter((r) => (!status || r.st === status) && (!nq || norm(`${r.n} ${r.pais} ${r.ind ?? ""}`).includes(nq)) && (!onlyIdle || !acts.has(r.id)));
+    const f = rows.filter((r) =>
+      (!status || r.st === status) &&
+      (!nq || norm(`${r.n} ${r.pais} ${r.ind ?? ""}`).includes(nq)) &&
+      (!onlyStale || (days.get(r.id) ?? -1) >= STALE_BUSINESS_DAYS)
+    );
     return sortRows(f, sort, (r, k) => {
-      const a = acts.get(r.id);
       switch (k) {
-        case "acts": return a?.total ?? 0;
-        case "calls": return a?.call ?? 0;
-        case "last": return r.last ?? "";
+        case "days": return days.get(r.id) ?? -1;
         case "nct": return r.nct;
         case "nmg": return r.nmg;
         case "msch": return r.msch;
         default: return (r as unknown as Record<string, string>)[k] ?? "";
       }
     });
-  }, [rows, status, q, onlyIdle, sort, acts]);
+  }, [rows, status, q, onlyStale, sort, days]);
   const th = (k: string, l: string, n?: boolean) => <Th n={n} onClick={() => toggle(k)} active={sort.k === k} dir={sort.dir}>{l}</Th>;
   return (
     <>
-      <Filters statuses={statuses} status={status} setStatus={setStatus} q={q} setQ={setQ} onlyIdle={onlyIdle} setOnlyIdle={setOnlyIdle}
-        placeholder="Empresa, país o industria" count={`${fmt(list.length)} empresas${list.length > MAX_ROWS ? ` (se muestran ${MAX_ROWS})` : ""}`} />
+      <div className="flex items-center gap-2 flex-wrap">
+        <StatusSelect rows={rows} status={status} setStatus={setStatus} />
+        <SearchBox q={q} setQ={setQ} placeholder="Empresa, país o industria" />
+        <label className="flex items-center gap-1.5 text-sm text-ink-muted">
+          <input type="checkbox" checked={onlyStale} onChange={(e) => setOnlyStale(e.target.checked)} /> Solo estancadas ({STALE_BUSINESS_DAYS}+ días hábiles en Asignada)
+        </label>
+        <span className="text-xs text-ink-muted ml-auto">{fmt(list.length)} empresas{list.length > MAX_ROWS ? ` (se muestran ${MAX_ROWS})` : ""}</span>
+      </div>
       <div className="overflow-auto max-h-[560px] border rounded-lg">
         <table className="w-full text-sm">
           <thead className="text-xs text-ink-muted bg-white sticky top-0 shadow-[0_1px_0_rgba(0,0,0,0.06)]">
             <tr>
               {th("n", "Empresa")}{showClient && th("c", "Cliente")}{th("pais", "País")}{th("st", "Status de la asignación")}
-              {th("nct", "Contactos", true)}{th("nmg", "Gestionados", true)}{th("calls", "Llamadas", true)}{th("acts", "Actividades", true)}{th("msch", "Reuniones", true)}{th("last", "Última actividad")}
+              {th("asg", "Asignada el")}{th("days", "Días hábiles en Asignada", true)}{th("nct", "Contactos", true)}{th("nmg", "Gestionados", true)}{th("msch", "Reuniones", true)}
             </tr>
           </thead>
           <tbody>
             {list.slice(0, MAX_ROWS).map((r) => {
-              const a = acts.get(r.id);
+              const d = days.get(r.id);
+              const stale = (d ?? -1) >= STALE_BUSINESS_DAYS;
               return (
-                <tr key={r.id} className="border-t">
+                <tr key={r.id} className={`border-t ${stale ? "bg-warning-bg/30" : ""}`}>
                   <td className="px-3 py-2 font-medium">{r.n}{r.ind && <div className="text-xs font-normal text-ink-muted">{r.ind}</div>}</td>
                   {showClient && <td className="px-3 py-2">{r.c}</td>}
                   <td className="px-3 py-2">{r.pais || "—"}</td>
                   <td className="px-3 py-2"><Pill st={r.st} /></td>
-                  <Td n>{r.nct}</Td><Td n>{r.nmg}</Td>
-                  <Td n>{a ? `${fmt(a.call)}${a.conn ? ` (${fmt(a.conn)} con.)` : ""}` : 0}</Td>
-                  <Td n>{a?.total ?? 0}</Td><Td n>{r.msch}</Td>
-                  <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.last)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.asg || null)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${stale ? "text-warning-fg font-semibold" : ""}`}>{d == null ? "—" : fmt(d)}</td>
+                  <Td n>{r.nct}</Td><Td n>{r.nmg}</Td><Td n>{r.msch}</Td>
                 </tr>
               );
             })}
-            {!list.length && <tr><td colSpan={10} className="px-3 py-4 text-ink-muted">Sin empresas con estos filtros.</td></tr>}
+            {!list.length && <tr><td colSpan={9} className="px-3 py-4 text-ink-muted">Sin empresas con estos filtros.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -433,51 +391,39 @@ function CompaniesTable({ rows, acts, showClient }: { rows: SdrCompany[]; acts: 
   );
 }
 
-function ContactsTable({ rows, acts, showClient }: { rows: SdrContact[]; acts: Map<string, Counts>; showClient: boolean }) {
+function ContactsTable({ rows, showClient }: { rows: SdrContact[]; showClient: boolean }) {
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
-  const [onlyIdle, setOnlyIdle] = useState(false);
-  const [sort, toggle] = useSort({ k: "total", dir: -1 });
-  const statuses = useMemo(() => statusCounts(rows), [rows]);
+  const [sort, toggle] = useSort({ k: "con", dir: 1 });
   const list = useMemo(() => {
     const nq = norm(q.trim());
-    const f = rows.filter((r) => (!status || r.st === status) && (!nq || norm(`${r.n} ${r.cargo} ${r.con}`).includes(nq)) && (!onlyIdle || !acts.has(r.id)));
-    return sortRows(f, sort, (r, k) => {
-      const a = acts.get(r.id);
-      if (k === "call" || k === "em" || k === "wa" || k === "li" || k === "total") return a?.[k] ?? 0;
-      if (k === "last") return r.last ?? "";
-      return (r as unknown as Record<string, string>)[k] ?? "";
-    });
-  }, [rows, status, q, onlyIdle, sort, acts]);
-  const th = (k: string, l: string, n?: boolean) => <Th n={n} onClick={() => toggle(k)} active={sort.k === k} dir={sort.dir}>{l}</Th>;
+    const f = rows.filter((r) => (!status || r.st === status) && (!nq || norm(`${r.n} ${r.cargo} ${r.con}`).includes(nq)));
+    return sortRows(f, sort, (r, k) => (r as unknown as Record<string, string>)[k] ?? "");
+  }, [rows, status, q, sort]);
+  const th = (k: string, l: string) => <Th onClick={() => toggle(k)} active={sort.k === k} dir={sort.dir}>{l}</Th>;
   return (
     <>
-      <Filters statuses={statuses} status={status} setStatus={setStatus} q={q} setQ={setQ} onlyIdle={onlyIdle} setOnlyIdle={setOnlyIdle}
-        placeholder="Nombre, cargo o empresa" count={`${fmt(list.length)} contactos${list.length > MAX_ROWS ? ` (se muestran ${MAX_ROWS})` : ""}`} />
+      <div className="flex items-center gap-2 flex-wrap">
+        <StatusSelect rows={rows} status={status} setStatus={setStatus} />
+        <SearchBox q={q} setQ={setQ} placeholder="Nombre, cargo o empresa" />
+        <span className="text-xs text-ink-muted ml-auto">{fmt(list.length)} contactos{list.length > MAX_ROWS ? ` (se muestran ${MAX_ROWS})` : ""}</span>
+      </div>
       <div className="overflow-auto max-h-[560px] border rounded-lg">
         <table className="w-full text-sm">
           <thead className="text-xs text-ink-muted bg-white sticky top-0 shadow-[0_1px_0_rgba(0,0,0,0.06)]">
-            <tr>
-              {th("n", "Contacto")}{th("con", "Empresa")}{showClient && th("c", "Cliente")}{th("st", "Status")}
-              {th("call", "Llamadas", true)}{th("em", "Correos", true)}{th("wa", "WhatsApp", true)}{th("li", "LinkedIn", true)}{th("total", "Total", true)}{th("last", "Última actividad")}
-            </tr>
+            <tr>{th("n", "Contacto")}{th("cargo", "Cargo")}{th("con", "Empresa")}{showClient && th("c", "Cliente")}{th("st", "Status")}</tr>
           </thead>
           <tbody>
-            {list.slice(0, MAX_ROWS).map((r) => {
-              const a = acts.get(r.id);
-              return (
-                <tr key={r.id} className="border-t">
-                  <td className="px-3 py-2"><div className="font-medium">{r.n}</div>{r.cargo && <div className="text-xs text-ink-muted">{r.cargo}</div>}</td>
-                  <td className="px-3 py-2">{r.con || "—"}</td>
-                  {showClient && <td className="px-3 py-2">{r.c}</td>}
-                  <td className="px-3 py-2"><Pill st={r.st} /></td>
-                  <Td n>{a ? `${fmt(a.call)}${a.conn ? ` (${fmt(a.conn)} con.)` : ""}` : 0}</Td>
-                  <Td n>{a?.em ?? 0}</Td><Td n>{a?.wa ?? 0}</Td><Td n>{a?.li ?? 0}</Td><Td n>{a?.total ?? 0}</Td>
-                  <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.last)}</td>
-                </tr>
-              );
-            })}
-            {!list.length && <tr><td colSpan={10} className="px-3 py-4 text-ink-muted">Sin contactos con estos filtros.</td></tr>}
+            {list.slice(0, MAX_ROWS).map((r) => (
+              <tr key={r.id} className="border-t">
+                <td className="px-3 py-2 font-medium">{r.n}</td>
+                <td className="px-3 py-2">{r.cargo || "—"}</td>
+                <td className="px-3 py-2">{r.con || "—"}</td>
+                {showClient && <td className="px-3 py-2">{r.c}</td>}
+                <td className="px-3 py-2"><Pill st={r.st} /></td>
+              </tr>
+            ))}
+            {!list.length && <tr><td colSpan={5} className="px-3 py-4 text-ink-muted">Sin contactos con estos filtros.</td></tr>}
           </tbody>
         </table>
       </div>
