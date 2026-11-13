@@ -16,8 +16,9 @@ import { readPilotMeetings, syncPilotReconfirmations, type PilotMeeting } from "
 //   16:00  SDR: recordatorio de las AM del próximo día hábil
 //   18:00  SDR + líder: AM del próximo día hábil que vencieron sin reconfirmar
 //
-// Modo (RECONF_ALERTS_MODE): por defecto "test" = todo a RECONF_ALERTS_TEST_TO
-// (amadriz@) con los destinatarios reales en el cuerpo; "activo" = envío real.
+// Modo (RECONF_ALERTS_MODE): por defecto "activo" = envío real (desde el
+// 13-nov-2026, pedido de BullsEye); "test" = todo a RECONF_ALERTS_TEST_TO
+// (amadriz@) con los destinatarios reales en el cuerpo.
 // Remitente: RECONF_ALERTS_FROM → CELULAS_ALERTS_FROM.
 
 export type SlotId = "0830" | "1000" | "1200" | "1600" | "1800";
@@ -98,7 +99,7 @@ export async function runReconfirmation(opts: { slotId?: SlotId; force?: boolean
     if (!isBusinessDay(day)) return { day, time, synced: sync.updated, note: "No es día hábil en Chile" };
     if (await wasSent(day, slot.id)) return { day, time, synced: sync.updated, note: `El envío de las ${slot.time} ya se hizo` };
   }
-  const mode: "test" | "activo" = process.env.RECONF_ALERTS_MODE === "activo" ? "activo" : "test";
+  const mode: "test" | "activo" = process.env.RECONF_ALERTS_MODE === "test" ? "test" : "activo";
   const result: SlotResult = { slot: slot.id, day, mode, meetings: 0, mails: [], synced: sync.updated };
   if (!hasColumns) {
     result.note = "La planilla no tiene la columna Reconfirmada: no se envía nada.";
@@ -147,7 +148,9 @@ export async function runReconfirmation(opts: { slotId?: SlotId; force?: boolean
   // Un correo por SDR (en los envíos con plazo vencido, con copia a su líder)
   for (const g of Array.from(bySdr.values())) {
     const to = g.email ? [g.email] : (g.leader ? [g.leader] : allLeaders);
-    const cc = slot.leader && g.email && g.leader && g.leader !== g.email ? [g.leader] : [];
+    // Copia a la líder solo cuando vence un plazo (12:00 y 18:00); a las 08:30
+    // la líder ya recibe el resumen de su célula (pedido de BullsEye, 13-nov-2026)
+    const cc = slot.leader && slot.id !== "0830" && g.email && g.leader && g.leader !== g.email ? [g.leader] : [];
     const greeting = g.email ? `Hola ${g.name.split(" ")[0]}` : `Hola: no se encontró el correo de ${g.name} en la Maestra`;
     await send(to, cc, `${slot.title} (${g.items.length})`, mailHtml(slot, g.items, greeting, false, "__TEST__"), g.items.length);
   }
