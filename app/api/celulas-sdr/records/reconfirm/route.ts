@@ -37,11 +37,10 @@ export async function POST(request: NextRequest) {
     if (!spreadsheetId) return NextResponse.json({ error: "GOOGLE_SHEETS_MEETINGS_ID no configurado" }, { status: 500 });
 
     const db = supabaseAdmin();
-    const { data: m, error } = await db
-      .from("meetings")
-      .select("id, sheet_row_key, client_id, cliente_nombre, responsable, sdr_nombre, fecha_reunion, hora, realizado")
-      .eq("id", id)
-      .maybeSingle();
+    // cliente_nombre es opcional (migración 20261030): sin la columna se lee lo demás
+    const BASE = "id, sheet_row_key, client_id, responsable, sdr_nombre, fecha_reunion, hora, realizado";
+    let { data: m, error } = await db.from("meetings").select(`${BASE}, cliente_nombre`).eq("id", id).maybeSingle<any>();
+    if (error && /cliente_nombre/.test(error.message)) ({ data: m, error } = await db.from("meetings").select(BASE).eq("id", id).maybeSingle<any>());
     if (error) throw new Error(error.message);
     if (!m) return NextResponse.json({ error: "Reunión no encontrada" }, { status: 404 });
 
