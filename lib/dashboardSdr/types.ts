@@ -62,6 +62,7 @@ export type SdrSlice = {
 export type SdrSummary = {
   cos: number; unw: number; est: number; seg: number; sta: number; reu: number; hs: number;
   ag: number; re: number; ns: number; pe: number; withMtg: number;
+  goal: number; goalDone: number;   // meta del mes (suma de sus clientes) y realizadas de esos clientes
   oldest: { n: string; c: string; d: number }[];
   perClient: { c: string; cos: number; none: number; stock: number; telN: number; telD: number }[];
 };

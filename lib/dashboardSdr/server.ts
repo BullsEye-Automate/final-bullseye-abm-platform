@@ -27,7 +27,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v3";
+const VERSION = "v4";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";

@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconAlertCircle, IconAlertTriangle, IconLoader2, IconRefresh, IconSearch, IconUserCircle, IconUsersGroup } from "@tabler/icons-react";
 import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow } from "@/lib/dashboardSdr/types";
-import { analyze, CO_GROUP_LABEL, FIX_KINDS, type CoGroup, type FixKind } from "@/lib/dashboardSdr/compute";
+import { analyze, CO_GROUP_LABEL, FIX_KINDS, goalStatus, monthProgress, type CoGroup, type FixKind, type Pace } from "@/lib/dashboardSdr/compute";
 import { STALE_BUSINESS_DAYS } from "@/lib/dashboardSdr/stale";
 
 const nf = new Intl.NumberFormat("es-CL");
@@ -219,8 +219,8 @@ export default function DashboardSdrPage() {
                       <Line l="Contactos disponibles (por gestionar)" v={`${fmt(p.stock)} de ${fmt(p.cts)}`} />
                       <Line l="Con teléfono" v={p.tel === null ? "Sin dato aún" : `${p.tel}%`} />
                       <Line l="Empresas sin contactos" v={fmt(p.none)} bad={p.none > 0} />
-                      <Line l={`Reuniones realizadas en ${monthName}`} v={p.goal ? `${fmt(p.re)} de ${fmt(p.goal)} (meta)` : `${fmt(p.re)} (sin meta cargada)`} />
                     </div>
+                    <GoalBox goal={p.goal} done={p.re} pct={p.pct} expected={p.expected} pace={p.pace} monthName={monthName} pending={p.pe} />
                     <div className={`rounded-lg px-2.5 py-2 text-sm ${p.fixN ? "bg-warning-bg text-warning-fg" : "bg-success-bg text-success-fg"}`}>
                       {p.fixN ? `Por corregir: ${fmt(p.fixN)} (${fmt(p.fixEst)} estancadas, ${fmt(p.fixSeg)} seguimientos vencidos)` : "Sin pendientes por corregir"}
                     </div>
@@ -372,27 +372,44 @@ function MeetingsSection({ A, client, monthName }: { A: NonNullable<ReturnType<t
         <Tile label="Realizadas" value={m.re} sub="Por fecha de reunión" tone="ok" />
         <Tile label="No-show" value={m.ns} sub={`${pct(m.ns, occurred)} de las ocurridas`} tone={m.ns ? "bad" : undefined} />
         <Tile label="Pendientes" value={m.pe} sub={m.pePast ? `${fmt(m.pePast)} con fecha pasada` : "Por realizarse"} tone={m.pePast ? "warn" : undefined} />
-        <Tile label="Empresas con reunión" value={A.totals.withMtg} sub={`${pct(A.totals.withMtg, A.totals.cos)} de ${fmt(A.totals.cos)} asignadas`} />
+        <div className={`card py-3 ${PACE[A.goal.pace].tile}`}>
+          <div className="text-xs text-ink-muted">Cumplimiento de la meta</div>
+          <div className={`text-2xl font-semibold tabular-nums ${PACE[A.goal.pace].fg}`}>{A.goal.pct === null ? "—" : `${A.goal.pct}%`}</div>
+          <div className="text-xs text-ink-muted">{A.goal.total ? `${fmt(A.goal.done)} de ${fmt(A.goal.total)} · esperado a la fecha ${fmtDec(A.goal.expected)}` : "Sin meta cargada este mes"}</div>
+        </div>
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))" }}>
-        <div className="card p-0 overflow-hidden">
-          <h3 className="text-sm font-semibold px-4 pt-3.5 pb-2">Por cliente</h3>
+        <div className="card p-0 overflow-hidden" style={{ gridColumn: "1 / -1" }}>
+          <h3 className="text-sm font-semibold px-4 pt-3.5 pb-2">Meta y reuniones por cliente</h3>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-ink-muted bg-[#FAF9FD]">
-                <tr><Th>Cliente</Th><Th n>Agendadas</Th><Th n>Realizadas</Th><Th n>Meta</Th><Th n>No-show</Th><Th n>Pendientes</Th><Th n>% empresas con reunión</Th></tr>
+                <tr><Th>Cliente</Th><Th n>Meta</Th><Th n>Realizadas</Th><Th n>Cumplimiento</Th><Th n>Esperado a la fecha</Th><Th>Ritmo</Th><Th n>Agendadas</Th><Th n>No-show</Th><Th n>Pendientes</Th></tr>
               </thead>
               <tbody>
                 {A.perClient.map((p) => (
                   <tr key={p.client} className="border-t">
                     <td className="px-3 py-2 font-medium">{p.client}</td>
-                    <Td n>{p.ag}</Td><Td n>{p.re}</Td><td className="px-3 py-2 text-right tabular-nums">{p.goal ?? "—"}</td><Td n>{p.ns}</Td><Td n>{p.pe}</Td>
-                    <td className="px-3 py-2 text-right tabular-nums">{pct(p.withMtg, p.cos)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{p.goal ?? "—"}</td><Td n>{p.re}</Td>
+                    <td className={`px-3 py-2 text-right tabular-nums font-semibold ${PACE[p.pace].fg}`}>{p.pct === null ? "—" : `${p.pct}%`}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{p.expected === null ? "—" : fmtDec(p.expected)}</td>
+                    <td className="px-3 py-2"><PaceBadge pace={p.pace} /></td>
+                    <Td n>{p.ag}</Td><Td n>{p.ns}</Td><Td n>{p.pe}</Td>
                   </tr>
                 ))}
+                {A.goal.total && A.perClient.length > 1 && (
+                  <tr className="border-t bg-[#FAF9FD] font-semibold">
+                    <td className="px-3 py-2">Total</td><Td n>{A.goal.total}</Td><Td n>{A.goal.done}</Td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${PACE[A.goal.pace].fg}`}>{A.goal.pct}%</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmtDec(A.goal.expected)}</td>
+                    <td className="px-3 py-2"><PaceBadge pace={A.goal.pace} /></td>
+                    <Td n>{A.mtg.ag}</Td><Td n>{A.mtg.ns}</Td><Td n>{A.mtg.pe}</Td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
+          <p className="px-4 py-2 text-xs text-ink-muted">Meta del SDR en cada cliente (pestaña «Asignación»). Cumplimiento = realizadas ÷ meta. Esperado a la fecha = meta × días hábiles transcurridos ÷ días hábiles del mes (hoy: {A.goal.elapsed} de {A.goal.days}). Ritmo: al día si las realizadas alcanzan lo esperado, en riesgo desde el 70%, atrasado bajo eso.</p>
         </div>
         <div className="card space-y-2">
           <div className="flex justify-between items-center gap-2 flex-wrap">
@@ -412,21 +429,25 @@ function MeetingsSection({ A, client, monthName }: { A: NonNullable<ReturnType<t
 // ── Vista de la líder ─────────────────────────────────────────────────────
 function CellView({ data, onOpen }: { data: SdrDashboardResponse; onOpen: (key: string) => void }) {
   const meCell = data.index.find((r) => r.key === data.me.key)?.cell ?? null;
+  const prog = monthProgress(data.today);
   const [cell, setCell] = useState<string>(meCell && data.cells.includes(meCell) ? meCell : "");
   const [sort, toggle] = useSort({ k: "est", dir: -1 });
   const rows = data.index.filter((r) => r.key !== "sin-sdr" && (!cell || r.cell === cell));
   const S = (k: keyof SdrIndexRow["summary"]) => rows.reduce((s, r) => s + (r.summary[k] as number), 0);
   const cols: { k: string; l: string; get: (r: SdrIndexRow) => number | string; hot?: boolean }[] = [
     { k: "name", l: "SDR", get: (r) => r.name },
+    { k: "goal", l: "Meta del mes", get: (r) => r.summary.goal ?? 0 },
+    { k: "re", l: "Realizadas", get: (r) => r.summary.re },
+    { k: "gpct", l: "Cumplimiento", get: (r) => (r.summary.goal ? Math.round((100 * (r.summary.goalDone ?? 0)) / r.summary.goal) : -1) },
     { k: "cos", l: "Asignadas", get: (r) => r.summary.cos },
     { k: "unw", l: "Sin gestionar", get: (r) => r.summary.unw },
     { k: "est", l: "Estancadas", get: (r) => r.summary.est, hot: true },
     { k: "seg", l: "Seguim. vencidos", get: (r) => r.summary.seg, hot: true },
     { k: "sta", l: "Status desactualizado", get: (r) => r.summary.sta, hot: true },
-    { k: "reu", l: "Reuniones por actualizar", get: (r) => r.summary.reu + r.summary.hs, hot: true },
-    { k: "ag", l: "Agendadas del mes", get: (r) => r.summary.ag },
-    { k: "re", l: "Realizadas del mes", get: (r) => r.summary.re },
-    { k: "pctm", l: "% empresas con reunión", get: (r) => (r.summary.cos ? Math.round((100 * r.summary.withMtg) / r.summary.cos) : 0) },
+    { k: "reu", l: "Reun. por actualizar", get: (r) => r.summary.reu + r.summary.hs, hot: true },
+    { k: "ag", l: "Agendadas", get: (r) => r.summary.ag },
+
+    { k: "pctm", l: "% emp. con reunión", get: (r) => (r.summary.cos ? Math.round((100 * r.summary.withMtg) / r.summary.cos) : 0) },
   ];
   const avg = (c: (typeof cols)[number]) => rows.length ? rows.reduce((s, r) => s + Number(c.get(r)), 0) / rows.length : 0;
   const sorted = sortRows(rows, sort, (r, k) => cols.find((c) => c.k === k)!.get(r));
@@ -455,8 +476,17 @@ function CellView({ data, onOpen }: { data: SdrDashboardResponse; onOpen: (key: 
         <Tile label="Empresas asignadas" value={S("cos")} sub={`${fmt(rows.length)} SDR`} />
         <Tile label="Cuentas estancadas" value={S("est")} sub={`${STALE_BUSINESS_DAYS}+ días hábiles en Asignada`} alert={S("est") > 0} />
         <Tile label="Seguimientos vencidos" value={S("seg")} sub="Empresas y contactos" />
-        <Tile label="Reuniones del mes" value={S("ag")} sub={`${fmt(S("re"))} realizadas · ${fmt(S("ns"))} no-show`} />
-        <Tile label="Empresas con reunión" value={S("withMtg")} sub={`${pct(S("withMtg"), S("cos"))} de ${fmt(S("cos"))}`} />
+        <Tile label="Reuniones del mes" value={S("ag")} sub={`${fmt(S("re"))} realizadas · ${fmt(S("ns"))} no-show · ${pct(S("withMtg"), S("cos"))} de las empresas con reunión`} />
+        {(() => {
+          const g = goalStatus(S("goal") || null, S("goalDone"), prog.share);
+          return (
+            <div className="card py-3">
+              <div className="text-xs text-ink-muted">Cumplimiento de la meta</div>
+              <div className={`text-2xl font-semibold tabular-nums ${PACE[g.pace].fg}`}>{g.pct === null ? "—" : `${g.pct}%`}</div>
+              <div className="text-xs text-ink-muted">{S("goal") ? `${fmt(S("goalDone"))} de ${fmt(S("goal"))} · esperado a la fecha ${fmtDec(g.expected)}` : "Sin metas cargadas"}</div>
+            </div>
+          );
+        })()}
       </div>
       <section className="card p-0 overflow-hidden">
         <div className="px-4 pt-4 pb-3">
@@ -475,6 +505,10 @@ function CellView({ data, onOpen }: { data: SdrDashboardResponse; onOpen: (key: 
                     const v = c.get(r);
                     if (c.k === "name") return <td key={c.k} className="px-3 py-2"><button onClick={() => onOpen(r.key)} className="font-medium text-brand hover:underline text-left whitespace-nowrap">{r.name}</button></td>;
                     const hot = c.hot && Number(v) > avg(c);
+                    if (c.k === "gpct") {
+                      const g = goalStatus(r.summary.goal || null, r.summary.goalDone ?? 0, prog.share);
+                      return <td key={c.k} className={`px-3 py-2 text-right tabular-nums font-semibold ${PACE[g.pace].fg}`}>{g.pct === null ? "—" : `${g.pct}%`}</td>;
+                    }
                     return <td key={c.k} className={`px-3 py-2 text-right tabular-nums ${hot ? "text-danger-fg font-semibold" : ""}`}>{c.k === "pctm" ? `${v}%` : fmt(Number(v))}</td>;
                   })}
                 </tr>
@@ -508,6 +542,50 @@ function CellView({ data, onOpen }: { data: SdrDashboardResponse; onOpen: (key: 
             </tbody>
           </table>
         </section>
+      </div>
+    </div>
+  );
+}
+
+// ── Meta del mes ──────────────────────────────────────────────────────────
+const fmtDec = (n: number | null) => (n === null ? "—" : n.toLocaleString("es-CL", { maximumFractionDigits: 1 }));
+const PACE: Record<Pace, { label: string; fg: string; badge: string; bar: string; tile: string }> = {
+  ok: { label: "Al día", fg: "text-success-fg", badge: "bg-success-bg text-success-fg", bar: "#0F6E56", tile: "" },
+  risk: { label: "En riesgo", fg: "text-warning-fg", badge: "bg-warning-bg text-warning-fg", bar: "#D39B1F", tile: "" },
+  late: { label: "Atrasado", fg: "text-danger-fg", badge: "bg-danger-bg text-danger-fg", bar: "#C2562E", tile: "" },
+  none: { label: "Sin meta", fg: "", badge: "bg-black/5 text-ink-muted", bar: "#B9B4CC", tile: "" },
+};
+function PaceBadge({ pace }: { pace: Pace }) {
+  return <span className={`inline-block px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${PACE[pace].badge}`}>{PACE[pace].label}</span>;
+}
+// Meta del SDR en un cliente: barra de realizadas vs meta con la marca de lo esperado a la fecha
+function GoalBox({ goal, done, pct: p, expected, pace, monthName, pending }: { goal: number | null; done: number; pct: number | null; expected: number | null; pace: Pace; monthName: string; pending: number }) {
+  if (!goal) {
+    return (
+      <div className="rounded-lg border border-dashed px-2.5 py-2 text-sm text-ink-muted">
+        Sin meta cargada para {monthName} · {fmt(done)} realizada{done === 1 ? "" : "s"}
+      </div>
+    );
+  }
+  const w = Math.min(100, (100 * done) / goal);
+  const mark = expected === null ? 0 : Math.min(100, (100 * expected) / goal);
+  return (
+    <div className="rounded-lg bg-[#FAF9FD] border px-2.5 py-2 flex flex-col gap-1.5 text-sm">
+      <div className="flex justify-between items-center gap-2">
+        <span className="font-medium">Meta de {monthName}</span>
+        <PaceBadge pace={pace} />
+      </div>
+      <div className="flex items-baseline gap-2">
+        <span className={`text-2xl font-semibold tabular-nums ${PACE[pace].fg}`}>{p}%</span>
+        <span className="text-ink-muted">{fmt(done)} de {fmt(goal)} realizadas</span>
+      </div>
+      <div className="relative h-2.5 rounded bg-black/10" aria-hidden>
+        <div className="h-full rounded" style={{ width: `${w}%`, background: PACE[pace].bar }} />
+        <div className="absolute -top-1 h-[18px] w-0.5 bg-ink" style={{ left: `calc(${mark}% - 1px)` }} title="Esperado a la fecha" />
+      </div>
+      <div className="flex justify-between text-xs text-ink-muted">
+        <span>Esperado a la fecha: <b className="text-ink">{fmtDec(expected)}</b></span>
+        <span>{pending ? `${fmt(pending)} por realizar` : `Faltan ${fmt(Math.max(0, goal - done))}`}</span>
       </div>
     </div>
   );

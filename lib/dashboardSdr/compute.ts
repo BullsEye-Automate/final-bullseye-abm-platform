@@ -3,6 +3,7 @@
 // (resumen por SDR para la vista de la líder) y el correo semanal, así los
 // tres muestran las mismas cifras.
 import { CT_G } from "@/lib/radarAbm/dictionaries";
+import { businessDaysBetween, businessDaysInMonth } from "@/lib/celulasSdr/calendar";
 import { businessDaysSince, STALE_BUSINESS_DAYS, staleDays } from "./stale";
 import type { SdrCompany, SdrContact, SdrMeeting, SdrSlice, SdrSummary } from "./types";
 
@@ -39,6 +40,25 @@ const RETURN_LABEL: Record<string, string> = {
   "nutrir": "Nutrir",
   "sin contactos - (ya nutrida)": "Sin contactos (ya nutrida)",
 };
+
+// ── Meta del mes ────────────────────────────────────────────────────────
+// Cumplimiento = realizadas ÷ meta (Asignación, SDR × cliente × mes).
+// Esperado a la fecha = meta × días hábiles transcurridos ÷ días hábiles del
+// mes (lun–vie sin feriados de Chile). Ritmo: al día (≥ 100% de lo esperado),
+// en riesgo (70–99%) o atrasado (< 70%).
+export type Pace = "ok" | "risk" | "late" | "none";
+export function monthProgress(today: string) {
+  const month = today.slice(0, 7);
+  const total = businessDaysInMonth(month);
+  const elapsed = businessDaysBetween(`${month}-01`, today).length;
+  return { elapsed, total, share: total ? elapsed / total : 0 };
+}
+export function goalStatus(goal: number | null, done: number, share: number) {
+  if (!goal) return { pct: null as number | null, expected: null as number | null, pace: "none" as Pace };
+  const expected = Math.round(goal * share * 10) / 10;
+  const ratio = expected > 0 ? done / expected : done > 0 ? 1 : 1;
+  return { pct: Math.round((100 * done) / goal), expected, pace: (ratio >= 1 ? "ok" : ratio >= 0.7 ? "risk" : "late") as Pace };
+}
 
 // ── Por corregir ────────────────────────────────────────────────────────
 export type FixKind = "est" | "seg" | "sta" | "reu" | "hs";
@@ -110,6 +130,7 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
   const withMtg = (cs: SdrCompany[]) => cs.filter((c) => group.get(c.id) === "reunion" || c.msch > 0).length;
 
   // Por cliente
+  const prog = monthProgress(today);
   const clients = [...new Set([...companies.map((c) => c.c), ...contacts.map((k) => k.c)])].sort();
   const perClient = clients.map((cl) => {
     const cs = companies.filter((c) => c.c === cl);
@@ -126,7 +147,7 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
       none: cs.filter((c) => c.nct === 0).length, one: cs.filter((c) => c.nct === 1).length,
       tel: pct((k) => k.ph === 1), mail: pct((k) => k.ml === 1), li: pct((k) => k.lk === 1),
       telN: hasData ? ks.filter((k) => k.ph === 1).length : 0, telD: hasData ? ks.length : 0,
-      goal: slice.goals[cl] ?? null, ...ms, withMtg: withMtg(cs),
+      goal: slice.goals[cl] ?? null, ...ms, ...goalStatus(slice.goals[cl] ?? null, ms.re, prog.share), withMtg: withMtg(cs),
       fixN: fx.length, fixEst: fx.filter((f) => f.kind === "est").length, fixSeg: fx.filter((f) => f.kind === "seg").length,
     };
   });
@@ -164,6 +185,10 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
   };
 
   const unw = companies.filter((c) => group.get(c.id) === "por_gestionar").length;
+  // Meta total = suma de las metas de los clientes visibles; realizadas solo de esos clientes
+  const goalClients = perClient.filter((p) => p.goal);
+  const goalTotal = goalClients.reduce((s, p) => s + (p.goal ?? 0), 0);
+  const goalDone = goalClients.reduce((s, p) => s + p.re, 0);
   return {
     companies, contacts, meetings, group, fixes, fixBy, flagOf, perClient, clients,
     totals: {
@@ -171,6 +196,7 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
       withMtg: withMtg(companies), fix: fixes.length,
     },
     mtg: mtgStats(meetings),
+    goal: { total: goalTotal || null, done: goalDone, ...goalStatus(goalTotal || null, goalDone, prog.share), elapsed: prog.elapsed, days: prog.total },
     quality: { depth, returns, ctStatus, worked: worked.length },
     profile: { sen: profile("sen"), area: profile("area"), n: recent.length },
   };
@@ -183,6 +209,7 @@ export function summarize(slice: SdrSlice, today: string): SdrSummary {
     cos: a.totals.cos, unw: a.totals.unw,
     est: a.fixBy.est.length, seg: a.fixBy.seg.length, sta: a.fixBy.sta.length, reu: a.fixBy.reu.length, hs: a.fixBy.hs.length,
     ag: a.mtg.ag, re: a.mtg.re, ns: a.mtg.ns, pe: a.mtg.pe, withMtg: a.totals.withMtg,
+    goal: a.goal.total ?? 0, goalDone: a.goal.done,
     oldest: a.fixBy.est.slice(0, 8).map((f) => ({ n: f.who, c: f.client, d: Number(f.since.split(" ")[0]) })),
     perClient: a.perClient.map((p) => ({ c: p.client, cos: p.cos, none: p.none, stock: p.stock, telN: p.telN, telD: p.telD })),
   };
