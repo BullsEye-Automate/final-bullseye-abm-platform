@@ -120,16 +120,16 @@ export default function DashboardSdrPage() {
           <div className="label">SDR</div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {view === "sdr" ? <IconUserCircle size={24} className="text-brand" /> : <IconUsersGroup size={24} className="text-brand" />}
-            {view === "celula" ? "Dashboard SDR · células" : view === "facturacion" ? "Dashboard SDR · facturación" : slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
+            {view === "celula" ? "Dashboard SDR · células" : view === "facturacion" ? "Dashboard SDR · comisionables" : slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
           </h1>
           <p className="text-sm text-ink-muted mt-1">
-            {view === "sdr" ? "Empresas y contactos asignados por cliente." : view === "celula" ? "Cartera, pendientes y reuniones de cada SDR de la célula." : "Reuniones marcadas «Para facturar» por cliente, con quién las marcó y cuándo."}
+            {view === "sdr" ? "Empresas y contactos asignados por cliente." : view === "celula" ? "Cartera, pendientes y reuniones de cada SDR de la célula." : "Reuniones marcadas «Reunión comisionable» por cliente, con quién las marcó y cuándo."}
             {data && <> Datos de Pulso ABM, calculados {timeCL(data.generated)}.</>}
           </p>
         </div>
         <div className="flex items-end gap-2 flex-wrap">
           <div role="tablist" aria-label="Vista" className="flex rounded-lg border bg-white p-0.5">
-            {([["sdr", "Mi cartera"], ["celula", "Célula"], ...(data?.me.canBill ? [["facturacion", "Facturación"]] : [])] as [string, string][]).map(([v, l]) => (
+            {([["sdr", "Mi cartera"], ["celula", "Célula"], ...(data?.me.canBill ? [["facturacion", "Comisionables"]] : [])] as [string, string][]).map(([v, l]) => (
               <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v as typeof view)}
                 className={`px-3 py-1.5 rounded-md text-sm ${view === v ? "bg-brand text-white" : "text-ink-muted hover:text-ink"}`}>{l}</button>
             ))}
@@ -412,7 +412,7 @@ function MeetingsSection({ A, client, monthName, ed, today }: { A: NonNullable<R
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-ink-muted bg-[#FAF9FD]">
-                <tr><Th>Cliente</Th><Th n>Meta</Th><Th n>Realizadas</Th><Th n>Cumplimiento</Th><Th n>Esperado a la fecha</Th><Th>Ritmo</Th><Th n>Agendadas</Th><Th n>No-show</Th><Th n>Pendientes</Th>{ed.canBill && <Th n>Para facturar</Th>}</tr>
+                <tr><Th>Cliente</Th><Th n>Meta</Th><Th n>Realizadas</Th><Th n>Cumplimiento</Th><Th n>Esperado a la fecha</Th><Th>Ritmo</Th><Th n>Agendadas</Th><Th n>No-show</Th><Th n>Pendientes</Th>{ed.canBill && <Th n>Comisionables</Th>}</tr>
               </thead>
               <tbody>
                 {A.perClient.map((p) => (
@@ -743,13 +743,13 @@ function loadOpts(id: string, sub: string | null): Promise<StatusOpts> {
   }
   return optsCache.get(k)!;
 }
-// Reuniones (planilla) con su comentario y la marca "Para facturar"
+// Reuniones (planilla) con su comentario y la marca «Reunión comisionable»
 function MeetingsTable({ ms, ed, showCompany }: { ms: SdrMeeting[]; ed: Editing; showCompany?: boolean }) {
   if (!ms.length) return <p className="text-sm text-ink-muted">Sin reuniones.</p>;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm bg-white border rounded-lg">
-        <thead className="text-xs text-ink-muted"><tr><Th>Fecha</Th><Th>Agendada el</Th>{showCompany && <Th>Empresa</Th>}<Th>Contacto</Th><Th>Estado</Th><Th>Origen</Th><Th>Oportunidad</Th><Th>Comentario</Th>{ed.canBill && <Th>Para facturar</Th>}</tr></thead>
+        <thead className="text-xs text-ink-muted"><tr><Th>Fecha</Th><Th>Agendada el</Th>{showCompany && <Th>Empresa</Th>}<Th>Contacto</Th><Th>Estado</Th><Th>Origen</Th><Th>Oportunidad</Th><Th>Comentario</Th>{ed.canBill && <Th>Comisionable</Th>}</tr></thead>
         <tbody>
           {ms.map((m, i) => (
             <tr key={m.id ?? i} className="border-t align-top">
@@ -794,7 +794,7 @@ function FacturarBox({ m, ed }: { m: SdrMeeting; ed: Editing }) {
   );
 }
 
-// ── Vista Facturación: reuniones del mes marcadas «Para facturar», por cliente ──
+// ── Vista Comisionables: reuniones del mes marcadas «Reunión comisionable», por cliente ──
 type BillRow = { id: string; cliente: string; fecha: string; hora: string; empresa: string; contacto: string; cargo: string; sdr: string; realizado: string; oportunidad: string; origen: string; facturar: boolean; by: string | null; at: string | null };
 function BillingView({ today }: { today: string }) {
   const months = useMemo(() => {
@@ -837,7 +837,7 @@ function BillingView({ today }: { today: string }) {
         <label className="flex flex-col gap-1 text-xs text-ink-muted">Cliente
           <select className="input min-w-[180px]" value={cl} onChange={(e) => setCl(e.target.value)}><option value="">Todos</option>{clients.map(([c]) => <option key={c} value={c}>{c}</option>)}</select>
         </label>
-        <label className="flex items-center gap-1.5 text-sm text-ink-muted pb-2"><input type="checkbox" checked={onlyMarked} onChange={(e) => setOnlyMarked(e.target.checked)} /> Solo las marcadas «Para facturar»</label>
+        <label className="flex items-center gap-1.5 text-sm text-ink-muted pb-2"><input type="checkbox" checked={onlyMarked} onChange={(e) => setOnlyMarked(e.target.checked)} /> Solo las marcadas comisionables</label>
       </div>
       {err && <div className="text-sm p-3 rounded-lg bg-danger-bg text-danger-fg">{err}</div>}
       {!rows && !err && <div className="flex items-center gap-2 text-ink-muted text-sm py-8 justify-center"><IconLoader2 size={16} className="animate-spin" /> Cargando reuniones…</div>}
@@ -847,7 +847,7 @@ function BillingView({ today }: { today: string }) {
             <h2 className="text-base font-semibold px-4 pt-4 pb-2">Por cliente · {label(month)}</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-xs text-ink-muted bg-[#FAF9FD]"><tr><Th>Cliente</Th><Th n>Reuniones del mes</Th><Th n>Realizadas</Th><Th n>Para facturar</Th></tr></thead>
+                <thead className="text-xs text-ink-muted bg-[#FAF9FD]"><tr><Th>Cliente</Th><Th n>Reuniones del mes</Th><Th n>Realizadas</Th><Th n>Comisionables</Th></tr></thead>
                 <tbody>
                   {clients.map(([c, x]) => (
                     <tr key={c} className="border-t hover:bg-black/[0.02] cursor-pointer" onClick={() => setCl(cl === c ? "" : c)}>
@@ -867,7 +867,7 @@ function BillingView({ today }: { today: string }) {
             <h2 className="text-base font-semibold px-4 pt-4 pb-2">Trazabilidad{cl ? ` · ${cl}` : ""} ({fmt(list.length)})</h2>
             <div className="overflow-auto max-h-[600px]">
               <table className="w-full text-sm">
-                <thead className="text-xs text-ink-muted bg-[#FAF9FD] sticky top-0"><tr><Th>Fecha</Th><Th>Cliente</Th><Th>Empresa</Th><Th>Contacto</Th><Th>SDR</Th><Th>Realizado</Th><Th>Oportunidad</Th><Th>Para facturar</Th><Th>Marcada por</Th><Th>El</Th></tr></thead>
+                <thead className="text-xs text-ink-muted bg-[#FAF9FD] sticky top-0"><tr><Th>Fecha</Th><Th>Cliente</Th><Th>Empresa</Th><Th>Contacto</Th><Th>SDR</Th><Th>Realizado</Th><Th>Oportunidad</Th><Th>Comisionable</Th><Th>Marcada por</Th><Th>El</Th></tr></thead>
                 <tbody>
                   {list.map((r) => (
                     <tr key={r.id} className="border-t align-top">
@@ -883,12 +883,12 @@ function BillingView({ today }: { today: string }) {
                       <td className="px-3 py-2 whitespace-nowrap">{r.facturar || r.by ? atCL(r.at) : "—"}</td>
                     </tr>
                   ))}
-                  {!list.length && <tr><td colSpan={10} className="px-3 py-4 text-ink-muted">{onlyMarked ? "Ninguna reunión marcada «Para facturar» con estos filtros." : "Sin reuniones con estos filtros."}</td></tr>}
+                  {!list.length && <tr><td colSpan={10} className="px-3 py-4 text-ink-muted">{onlyMarked ? "Ninguna reunión marcada comisionable con estos filtros." : "Sin reuniones con estos filtros."}</td></tr>}
                 </tbody>
               </table>
             </div>
           </section>
-          <p className="text-xs text-ink-muted">«Para facturar» es una marca tuya para contar reuniones: no cambia nada en la facturación ni en la planilla, y solo la ves tú. Se marca en los desplegables de reuniones del Dashboard SDR. «Marcada por» y «El» = quién cambió la marca por última vez y cuándo. Reuniones de la planilla por fecha de la reunión.</p>
+          <p className="text-xs text-ink-muted">«Reunión comisionable» es una marca tuya para contar las reuniones que comisionan los SDR: no cambia nada en la planilla, y solo la ves tú. La marca «Por facturar» al cliente está en Pulso ABM → Detalle de reuniones. Se marca en los desplegables de reuniones del Dashboard SDR. «Marcada por» y «El» = quién cambió la marca por última vez y cuándo. Reuniones de la planilla por fecha de la reunión.</p>
         </>
       )}
     </div>

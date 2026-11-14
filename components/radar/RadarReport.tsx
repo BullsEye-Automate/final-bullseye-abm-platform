@@ -4,7 +4,7 @@ import "./radar.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { IconAlertTriangle, IconArrowLeft, IconArrowRight, IconMoon, IconSun } from "@tabler/icons-react";
 import { addDays, compute, dmy, filterDataset, mondayOf, N, NO_IND, NO_WL, periodMonths } from "@/lib/radarAbm/engine";
-import { FEEDBACK_TABS, INTERNAL_PARTS, LEADS, PARTS, PART_SLUGS, REACT_SECTIONS, render, sec } from "@/lib/radarAbm/render";
+import { billingCell, FEEDBACK_TABS, INTERNAL_PARTS, LEADS, PARTS, PART_SLUGS, REACT_SECTIONS, render, sec, type BillingMarks } from "@/lib/radarAbm/render";
 import type { RadarConfig, RadarDataset } from "@/lib/radarAbm/types";
 import MasterTables from "./MasterTables";
 import WishlistWorkspace from "@/components/wishlist/WishlistWorkspace";
@@ -72,6 +72,19 @@ export default function RadarReport({
   const rootRef = useRef<HTMLDivElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   const pendingJump = useRef<string | null>(null);
+  // «Por facturar» (Detalle de reuniones): solo vista interna y personas de
+  // facturación (/api/radar-abm/facturar responde canBill). Los cambios se
+  // aplican en el DOM y en billingRef, sin volver a armar el HTML (no se
+  // pierden los filtros de la tabla).
+  const [billing, setBilling] = useState<BillingMarks | null>(null);
+  const billingRef = useRef<BillingMarks>({});
+  useEffect(() => {
+    if (audience !== "internal" || dataset.source === "demo") return;
+    fetch("/api/radar-abm/facturar", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (j?.canBill) { billingRef.current = j.marks ?? {}; setBilling({ ...billingRef.current }); } })
+      .catch(() => {});
+  }, [audience, dataset.source]);
   const shownView = useRef<number | null>(null);
 
   useEffect(() => {
@@ -107,7 +120,8 @@ export default function RadarReport({
     setDateValue(g === "month" ? monthOpts[0] : g === "week" ? weekOpts[0] : g === "day" ? dataset.generated : "");
   }
   const M = useMemo(() => compute(filtered, config), [filtered, config]);
-  const secs = useMemo(() => render(M, dataset.mapping), [M, dataset.mapping]);
+  // billingRef: al cambiar filtros se rearma con las marcas al día
+  const secs = useMemo(() => render(M, dataset.mapping, { billing: billing ? billingRef.current : null }), [M, dataset.mapping, billing]);
 
   const parts = visibleParts(audience);
   const pi = parts.includes(view) ? view : parts[0];
@@ -210,12 +224,37 @@ export default function RadarReport({
       const count = box.querySelector<HTMLElement>("[data-ra-count]");
       if (count) count.textContent = q || cols.length ? `${n} ${count.dataset.raCount || "empresas"}` : "";
     };
+    // Marca «Por facturar»: guarda y actualiza la celda y el contador
+    const onBill = async (e: Event) => {
+      const el = e.target as HTMLInputElement;
+      if (!el.matches?.("input[data-ra-bill]")) return;
+      const id = el.dataset.raBill!, value = el.checked;
+      const cell = el.closest("td");
+      el.disabled = true;
+      try {
+        const r = await fetch("/api/radar-abm/facturar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, value }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error ?? "No se pudo guardar");
+        billingRef.current[id] = j.mark;
+        if (cell) { cell.innerHTML = billingCell(id, j.mark); cell.dataset.v = value ? "1" : "0"; }
+        const box = cell?.closest(".ra-sortlist");
+        const count = box?.querySelector<HTMLElement>("[data-ra-billcount]");
+        if (count && box) count.textContent = String(box.querySelectorAll("input[data-ra-bill]:checked").length);
+      } catch (err) {
+        el.checked = !value;
+        alert((err as Error).message);
+      } finally {
+        el.disabled = false;
+      }
+    };
+    root.addEventListener("change", onBill);
     root.addEventListener("change", onPick);
     root.addEventListener("click", onStage);
     root.addEventListener("click", onSort);
     root.addEventListener("input", onFilter);
     root.addEventListener("change", onFilter);
     return () => {
+      root.removeEventListener("change", onBill);
       root.removeEventListener("change", onPick); root.removeEventListener("click", onStage); root.removeEventListener("click", onSort);
       root.removeEventListener("input", onFilter); root.removeEventListener("change", onFilter);
     };

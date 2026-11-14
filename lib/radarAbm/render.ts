@@ -280,7 +280,13 @@ function channelDepth(M: Model): string {
 }
 
 /* ---------- render de secciones ---------- */
-export function render(M: Model, mapping?: { label: string; property: string | null }[] | null): Record<string, string> {
+// billing = marcas «Por facturar» (solo vista interna, personas de facturación): id de reunión → marca
+export type BillingMarks = Record<string, { value: boolean; by: string; at: string }>;
+export const billingId = (id: unknown) => String(id ?? "").replace(/@\d+$/, "");
+export const billingCell = (id: unknown, mk?: { value: boolean; by: string; at: string }) =>
+  `<label class="ra-bill" title="${mk ? esc(`${mk.value ? "Marcada" : "Desmarcada"} por ${mk.by} el ${new Date(mk.at).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}`) : "Marcar por facturar"}"><input type="checkbox" data-ra-bill="${esc(billingId(id))}"${mk?.value ? " checked" : ""}><span>${mk?.value ? "Sí" : "No"}</span></label>`;
+
+export function render(M: Model, mapping?: { label: string; property: string | null }[] | null, opts: { billing?: BillingMarks | null } = {}): Record<string, string> {
   const k = M.kpi, h = M.health, cl = M.cl, C: any[] = M.C, K: any[] = M.K, f = M.fu, rf = M.ref, TODAY: string = M.TODAY;
   const s: Record<string, string> = {};
   const b = barrier(M);
@@ -439,18 +445,25 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   const mtRows = [...(M.Mt as any[])].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
   // País = el de la empresa (en Crossnet "País CrossNet", ver sync); si la reunión no calza con una empresa, el de la planilla
   const mtTxt = { emp: (m: any) => m.c?.n ?? m.emp, sdr: (m: any) => m.sdr, org: (m: any) => m.org || "—", opp: (m: any) => m.oppv || m.res || "—", pais: (m: any) => m.c?.pais || m.pais || "Sin país" };
+  // «Por facturar» (solo personas de facturación, vista interna): columna con check y filtro
+  const bill = opts.billing && M.source !== "demo" ? opts.billing : null;
+  const hasReconf = mtRows.some((m: any) => m.rcp);
+  const billCol = 10 + (hasReconf ? 1 : 0);
+  const billed = bill ? mtRows.filter((m: any) => bill[billingId(m.id)]?.value).length : 0;
   s["reuniones-detalle"] = mtRows.length
-    ? `<div class="ra-sortlist">${mtRows.length > 5 ? listBar("Buscar empresa o contacto…", [2, 3], [
+    ? `<div class="ra-sortlist">${bill ? `<p class="note" style="margin-top:0"><b>Por facturar:</b> <span data-ra-billcount>${billed}</span> de ${N(mtRows.length)} reuniones del período. Marca solo interna (no cambia la planilla); el detalle de quién y cuándo al pasar el mouse.</p>` : ""}${mtRows.length > 5 ? listBar("Buscar empresa o contacto…", [2, 3], [
         { col: 7, all: "Todos los estados", vals: mtRows.map((m: any) => m.st) },
         { col: 5, all: "Todos los países", vals: mtRows.map(mtTxt.pais) },
         { col: 8, all: "Todos los orígenes", vals: mtRows.map(mtTxt.org) }, { col: 9, all: "Propuesta / oportunidad", vals: mtRows.map(mtTxt.opp) },
+        ...(bill ? [{ col: billCol, all: "Por facturar: todas", vals: ["Sí", "No"] }] : []),
       ], "reuniones") : ""}` + table([
         { h: "Agendada", f: (m) => dmy(m.agendada), v: (m) => m.agendada || "" }, { h: "Reunión", f: (m) => dmy(m.fecha), v: (m) => m.fecha || "" }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) },
         { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") }, { h: "Cargo", s: 1, f: (m) => esc(m.cargo || m.k?.cargo || "—") },
         { h: "País", s: 1, f: (m) => esc(mtTxt.pais(m)) }, { h: "SDR", s: 1, f: (m) => esc(m.sdr) }, { h: "Estado", f: (m) => esc(m.st) }, { h: "Origen", s: 1, f: (m) => esc(m.org || "—") },
         { h: "Propuesta / oportunidad", s: 1, f: (m) => esc(m.oppv || m.res || "—") },
         // Reconfirmación con el prospecto (solo clientes del piloto, ver lib/reconfirmacion)
-        ...(mtRows.some((m: any) => m.rcp) ? [{ h: "Reconfirmación", s: 1, f: (m: any) => reconfCell(m), v: (m: any) => (m.rc === 1 ? `1 ${m.rca || ""}` : m.rcp && m.st === "Pendiente" ? "0" : "") }] : []),
+        ...(hasReconf ? [{ h: "Reconfirmación", s: 1, f: (m: any) => reconfCell(m), v: (m: any) => (m.rc === 1 ? `1 ${m.rca || ""}` : m.rcp && m.st === "Pendiente" ? "0" : "") }] : []),
+        ...(bill ? [{ h: "Por facturar", f: (m: any) => billingCell(m.id, bill[billingId(m.id)]), v: (m: any) => (bill[billingId(m.id)]?.value ? "1" : "0") }] : []),
       ], mtRows.slice(0, 400), { sort: true }) + `</div><p class="note">${mtRows.length > 400 ? `Se muestran las 400 más recientes de ${N(mtRows.length)}. ` : ""}${M.source === "hubspot" ? "Fuente: planilla de reuniones (Excel de metas)." : ""} Una empresa puede tener varias reuniones.</p>`
     : `<p class="note" style="margin-top:0">Sin reuniones en el período.</p>`;
 

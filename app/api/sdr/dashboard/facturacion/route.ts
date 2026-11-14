@@ -6,7 +6,7 @@ import { canMarkBilling, loadBillingMarks } from "@/lib/dashboardSdr/billing";
 export const dynamic = "force-dynamic";
 
 // Dashboard SDR → vista Facturación: reuniones del mes (por fecha de la
-// reunión) de todos los clientes, con la marca "Para facturar" y su
+// reunión) de todos los clientes, con la marca «Reunión comisionable» (antes "Para facturar") y su
 // trazabilidad (quién la marcó y cuándo). Lee la tabla meetings en vivo.
 // Nunca teléfono ni correo del prospecto. GET ?month=YYYY-MM
 export async function GET(req: NextRequest) {

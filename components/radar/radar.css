@@ -263,3 +263,5 @@
 .ra-root .ra-kam-log summary, .ra-root .ra-kam-ver summary { cursor: pointer; }
 .ra-root .ra-kam-log ul, .ra-root .ra-kam-ver ul { margin: 6px 0 0; padding-left: 18px; }
 .ra-root .ra-kam-ver { padding: 8px 0; border-top: 1px solid var(--line); color: var(--ink); font-size: 13px; }
+.ra-root .ra-bill { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.ra-root .ra-bill input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
