@@ -773,7 +773,7 @@ function FacturarBox({ m, ed }: { m: SdrMeeting; ed: Editing }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   if (!m.id) return <span className="text-ink-subtle">—</span>;
-  if (!ed.fcReady) return <span className="text-xs text-ink-subtle" title="Falta ejecutar la migración supabase/20261114_meetings_facturar.sql">No disponible</span>;
+  if (!ed.fcReady) return <span className="text-xs text-ink-subtle" title="No se pudieron leer las marcas">No disponible</span>;
   const toggle = async (value: boolean) => {
     setBusy(true); setErr(null);
     try {
@@ -839,7 +839,6 @@ function BillingView({ today }: { today: string }) {
         </label>
         <label className="flex items-center gap-1.5 text-sm text-ink-muted pb-2"><input type="checkbox" checked={onlyMarked} onChange={(e) => setOnlyMarked(e.target.checked)} /> Solo las marcadas «Para facturar»</label>
       </div>
-      {!ready && <div className="text-sm p-3 rounded-lg bg-warning-bg text-warning-fg">Falta ejecutar la migración <code>supabase/20261114_meetings_facturar.sql</code> en Supabase: hasta entonces no se pueden marcar reuniones.</div>}
       {err && <div className="text-sm p-3 rounded-lg bg-danger-bg text-danger-fg">{err}</div>}
       {!rows && !err && <div className="flex items-center gap-2 text-ink-muted text-sm py-8 justify-center"><IconLoader2 size={16} className="animate-spin" /> Cargando reuniones…</div>}
       {rows && (

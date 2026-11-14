@@ -7,7 +7,7 @@ import { readMonthCache, writeMonthCache } from "@/lib/celulasSdr/cache";
 import { isExcludedSdr } from "@/lib/celulasSdr/engine";
 import { loadAllDatasets, loadClientSettings, universeMode } from "@/lib/radarAbm/server/store";
 import { canEditMeetings } from "@/lib/celulasSdr/editors";
-import { canMarkBilling } from "./billing";
+import { canMarkBilling, loadBillingMarks } from "./billing";
 import { loadStatusOverrides, overrideId, type StatusOverride } from "./statusEdit";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 import { identifySdr } from "@/lib/academiaSdr/server/progress";
@@ -325,39 +325,33 @@ export async function loadSdrDashboard(opts: { sdr?: string | null; email?: stri
   // Cambios de status hechos desde el dashboard después de armar la caché
   if (sdr) sdr = applyOverrides(sdr, await loadStatusOverrides(), idx.sources);
   let fcReady = false;
-  if (sdr) ({ slice: sdr, fcReady } = await withMeetingNotes(sdr));
+  if (sdr) ({ slice: sdr, fcReady } = await withMeetingNotes(sdr, canMarkBilling(opts.email)));
   return { ...idx, me: { key: meKey, name: me.sdrName ?? null, canEditAll: canEditMeetings(opts.email), canBill: canMarkBilling(opts.email) }, sdr, fcReady };
 }
 
-// Comentario de cada reunión (columna "notas" de la planilla) y la marca
-// "Para facturar", leídos en vivo de la tabla meetings. Sin la migración
-// supabase/20261114_meetings_facturar.sql se leen solo los comentarios.
-async function withMeetingNotes(s: SdrSlice): Promise<{ slice: SdrSlice; fcReady: boolean }> {
+// Comentario de cada reunión (columna "notas" de la planilla, tabla meetings)
+// y la marca «Para facturar» (allo_response_cache, lib/dashboardSdr/billing.ts),
+// leídos en vivo. La marca solo se carga para quien puede verla.
+async function withMeetingNotes(s: SdrSlice, withBilling: boolean): Promise<{ slice: SdrSlice; fcReady: boolean }> {
   const ids = [...new Set(s.meetings.map((m) => m.id).filter(Boolean) as string[])];
   const notes = new Map<string, string>();
-  const fc = new Set<string>();
-  let fcReady = true;
+  let marks = new Map<string, { value: boolean }>();
   try {
     const db = supabaseAdmin();
-    const probe = await db.from("meetings").select("facturar").limit(1);
-    if (probe.error) fcReady = false;
-    const cols = fcReady ? "id, notas, facturar" : "id, notas";
     for (let i = 0; i < ids.length; i += 200) {
-      const { data } = await db.from("meetings").select(cols).in("id", ids.slice(i, i + 200));
-      for (const r of (data ?? []) as unknown as { id: string; notas: string | null; facturar?: boolean }[]) {
-        if (r.notas?.trim()) notes.set(String(r.id), r.notas.trim().slice(0, 800));
-        if (r.facturar) fc.add(String(r.id));
-      }
+      const { data } = await db.from("meetings").select("id, notas").in("id", ids.slice(i, i + 200));
+      for (const r of (data ?? []) as { id: string; notas: string | null }[]) if (r.notas?.trim()) notes.set(String(r.id), r.notas.trim().slice(0, 800));
     }
+    if (withBilling) marks = await loadBillingMarks();
   } catch (e) {
-    console.error("Dashboard SDR: no se pudieron leer los comentarios de las reuniones:", e);
+    console.error("Dashboard SDR: no se pudieron leer los comentarios / marcas de las reuniones:", e);
   }
   const meetings = s.meetings.map((m) => {
     if (!m.id) return m;
     const { fc: _old, ...rest } = m;
-    return { ...rest, ...(notes.has(m.id) ? { nt: notes.get(m.id) } : {}), ...(fc.has(m.id) ? { fc: 1 as const } : {}) };
+    return { ...rest, ...(notes.has(m.id) ? { nt: notes.get(m.id) } : {}), ...(marks.get(m.id)?.value ? { fc: 1 as const } : {}) };
   });
-  return { slice: { ...s, meetings }, fcReady };
+  return { slice: { ...s, meetings }, fcReady: true };
 }
 
 function applyOverrides(s: SdrSlice, overrides: Map<string, StatusOverride>, sources: IndexCache["sources"]): SdrSlice {
