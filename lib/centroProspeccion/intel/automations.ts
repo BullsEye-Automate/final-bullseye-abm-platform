@@ -46,7 +46,19 @@ async function latestIntel(): Promise<IntelLite[]> {
 }
 
 // ---------- domingo: recomendaciones IA ----------
-export type RecoRun = { client_id: string; objetivo: number; pendientes_antes: number; nuevas: number; tandas: number; estado: string };
+export type RecoRun = { client_id: string; objetivo: number; pendientes_antes: number; nuevas: number; tandas: number; estado: string; corridas?: number };
+const MAX_RECO_RUNS = 3;
+const recoKey = (semana: string, clientId: string) => `centro_reco:${semana}:${clientId}`;
+
+// El domingo el cron pasa varias veces: un cliente queda listo cuando juntó la
+// cantidad sugerida, terminó por otro motivo (sin ICP, se agotaron, error) o ya
+// tuvo MAX_RECO_RUNS corridas de ~4 min (las que quedan cortas siguen después).
+export async function recoDone(clientId: string): Promise<boolean> {
+  const f = await getFlag<RecoRun>(recoKey(planningMonday(), clientId));
+  if (!f) return false;
+  if (f.estado.startsWith("error")) return (f.corridas ?? 1) >= MAX_RECO_RUNS;
+  return f.estado !== "ok" || f.pendientes_antes + f.nuevas >= f.objetivo || (f.corridas ?? 1) >= MAX_RECO_RUNS;
+}
 
 export async function runClientRecommendations(clientId: string): Promise<RecoRun> {
   const db = supabaseAdmin();
@@ -58,23 +70,32 @@ export async function runClientRecommendations(clientId: string): Promise<RecoRu
   const { count } = await db.from("client_recommendations").select("id", { count: "exact", head: true }).eq("client_id", clientId).eq("status", "pending");
   const pendientes = count ?? 0;
   const need = Math.max(0, objetivo - pendientes);
-  const out: RecoRun = { client_id: clientId, objetivo, pendientes_antes: pendientes, nuevas: 0, tandas: 0, estado: "ok" };
+  // Corrida anterior de la misma semana: se acumula (el correo del lunes muestra el total)
+  const prev = await getFlag<RecoRun>(recoKey(semana, clientId));
+  const out: RecoRun = prev
+    ? { ...prev, objetivo, estado: "ok", corridas: (prev.corridas ?? 1) + 1 }
+    : { client_id: clientId, objetivo, pendientes_antes: pendientes, nuevas: 0, tandas: 0, estado: "ok", corridas: 1 };
   if (!need) out.estado = objetivo ? "ya hay suficientes pendientes" : "la inteligencia sugiere no prospectar esta semana";
   // Mismos topes que la pantalla: ~cantidad/5 + 2 tandas, corta tras 4 tandas seguidas sin empresas buenas
   const maxRounds = Math.ceil(need / 5) + 2;
   let empty = 0;
+  let added = 0;
+  let rounds = 0;
   try {
-    while (need && out.nuevas < need && out.tandas < maxRounds && empty < 4 && Date.now() - started < CLIENT_BUDGET_MS) {
+    while (need && added < need && rounds < maxRounds && empty < 4 && Date.now() - started < CLIENT_BUDGET_MS) {
       const r = await runRecommendationRound(db, clientId);
+      rounds++;
       out.tandas++;
+      added += r.cards.length;
       out.nuevas += r.cards.length;
       empty = r.cards.length ? 0 : empty + 1;
       if (r.exhausted) { out.estado = "se agotaron las empresas con los filtros del ICP"; break; }
     }
+    if (need && added < need && out.estado === "ok" && (empty >= 4 || rounds >= maxRounds)) out.estado = "no hubo más empresas con fit suficiente";
   } catch (e) {
     out.estado = e instanceof RecoInputError ? "sin ICP cargado" : `error: ${(e as Error).message.slice(0, 200)}`;
   }
-  await setFlag(`centro_reco:${semana}:${clientId}`, out, 14);
+  await setFlag(recoKey(semana, clientId), out, 14);
   return out;
 }
 
@@ -109,7 +130,7 @@ export async function sendMondayMail(): Promise<{ to: string[]; clientes: number
   const name = new Map(links.clients.map((c) => [c.id, c.name]));
   const semana = planningMonday();
   const rows = await Promise.all(intel.filter((i) => i.status === "ok").map(async (i) => ({
-    i, cliente: name.get(i.client_id) ?? "", reco: await getFlag<RecoRun>(`centro_reco:${semana}:${i.client_id}`),
+    i, cliente: name.get(i.client_id) ?? "", reco: await getFlag<RecoRun>(recoKey(semana, i.client_id)),
     prospectora: prospectorasDe(plan, (links.fichasByClient.get(i.client_id) ?? []).map((f) => f.id)).map((e) => PROSPECTORA_NAME[e] ?? e).join(", "),
   })));
   const rank = { alta: 0, media: 1, baja: 2 } as const;
