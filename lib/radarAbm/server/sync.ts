@@ -81,9 +81,13 @@ function periodStart(today: string, months: number): string {
 const ACTIVITIES_BUDGET_MS = 200_000;
 const DEALS_BUDGET_MS = 235_000;
 
+// Campos de teléfono del contacto (los mismos de Calidad de carga)
+const CONTACT_PHONE_PROPS = ["phone", "mobilephone", "telefono_lemlist", "bullseye_telefono_clay", "bullseye_telefono_lusha", "phone_4", "hs_whatsapp_phone_number"];
+
 // sub: uno de los clientes de la cuenta (subAccounts, ej. "Nisum Colombia"):
 // sus propiedades se detectan por su nombre y sus reuniones y llamadas se
 // separan por la columna Cliente de la planilla y el país.
+
 export async function syncClientRadar(clientId: string, by: string, sub?: string) {
   const startedAt = Date.now();
   const db = supabaseAdmin();
@@ -303,9 +307,15 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   const contactCompany = new Map<string, string>();
   for (const [co, cts] of coContacts) for (const ct of cts) if (!contactCompany.has(ct)) contactCompany.set(ct, co);
   const contactStatusProp = clientMode ? uniCt!.name : P.contactStatus.property!;
+  // Disponibilidad de datos (Dashboard SDR): teléfono, correo y LinkedIn del
+  // contacto. Solo las propiedades que existen en este HubSpot.
+  const ctPropNames = new Set((catalog.contacts ?? []).map((x) => x.name));
+  const phoneProps = CONTACT_PHONE_PROPS.filter((x) => ctPropNames.has(x));
+  const contactDataProps = [...phoneProps, ...(ctPropNames.has("hs_linkedin_url") ? ["hs_linkedin_url"] : [])];
   const contactProps = Array.from(new Set([
     "firstname", "lastname", "email", "jobtitle", "hubspot_owner_id", "notes_last_contacted", "notes_next_activity_date", contactStatusProp,
     ...(uniCt ? [uniCt.name] : []),
+    ...contactDataProps,
     ...[P.contactObjection, P.contactSignal, P.contactSdr].map((p) => p.property).filter(Boolean) as string[],
   ]));
   const rawContacts = await batchRead("contacts", Array.from(contactCompany.keys()), contactProps, token);
@@ -386,6 +396,9 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
       ...(toDay(p.notes_last_contacted) || lastAct ? { last: toDay(p.notes_last_contacted) ?? lastAct } : {}),
       ...(toDay(p.notes_next_activity_date) ? { next: toDay(p.notes_next_activity_date) } : {}),
       ...(obj ? { obj } : {}), ...(sig ? { sig } : {}),
+      ...(phoneProps.some((x) => (p[x] ?? "").replace(/\D/g, "").length >= 7) ? { ph: 1 as const } : {}),
+      ...(/@/.test(p.email ?? "") ? { ml: 1 as const } : {}),
+      ...((p.hs_linkedin_url ?? "").trim() ? { lk: 1 as const } : {}),
     };
   });
 
@@ -484,6 +497,7 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
     companies, contacts, meetings, deals, cfg, today,
   });
   clientData.activities = act.activities;
+  clientData.ctData = 1; // los contactos traen ph / ml / lk
   clientData.callEvals = callEvals;
   if (meetingsTotal(settings, client.name)) clientData.meetingsTotal = true;
   // Universo = solo la wishlist: el informe no muestra el filtro Wishlist

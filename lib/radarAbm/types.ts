@@ -53,6 +53,9 @@ export type RadarContact = {
   note?: string;
   refBy?: number | string;   // contacto que lo refirió
   nuevo?: boolean;           // contacto nuevo en empresa ya nutrida
+  ph?: 1;                    // tiene teléfono (Dashboard SDR, disponibilidad)
+  ml?: 1;                    // tiene correo
+  lk?: 1;                    // tiene LinkedIn
   ps: string;                // próximo paso (texto automático)
 };
 
@@ -137,6 +140,7 @@ export type RadarClientData = {
   meetings: RadarMeeting[];
   deals: RadarDeal[];
   activities?: RadarActivity[];
+  ctData?: 1;                // el sync guardó ph / ml / lk en los contactos
   callEvals?: RadarCallEval[];
   meetingsTotal?: boolean;
   wishlistOnly?: boolean;     // universo = solo empresas de la wishlist (sin filtro Wishlist)

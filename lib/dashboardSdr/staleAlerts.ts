@@ -1,21 +1,23 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { sendMail } from "@/lib/mailer";
-import { normalizeSdrName, resolveSdrKey } from "@/lib/sdrAnalytics";
-import { readMaster } from "@/lib/celulasSdr/sheets";
+import { normalizeSdrName } from "@/lib/sdrAnalytics";
 import { addDays, chileToday, dow, isBusinessDay } from "@/lib/celulasSdr/calendar";
 import { CC_ALWAYS, TEST_RECIPIENT, leaderEmail } from "@/lib/celulasSdr/server/alertsMail";
 import { readMasterPeople, resolveSdr } from "@/lib/respuestasLemlist/directory";
 import { buildAll, NO_SDR_KEY } from "./server";
-import { STALE_BUSINESS_DAYS, staleDays } from "./stale";
-import type { SdrCompany, SdrSlice } from "./types";
+import { STALE_BUSINESS_DAYS } from "./stale";
+import { analyze, FIX_KINDS, type Analysis, type FixItem } from "./compute";
 
-// Alerta de cuentas estancadas (nov-2026, pedido de BullsEye): empresas que
-// siguen en "Asignada" 15 días hábiles o más (regla en ./stale.ts). Dos
-// correos, una vez por semana (primer día hábil, ~9:00 de Chile):
-//  - a cada SDR: su lista de cuentas estancadas por cliente,
-//  - a cada líder de célula: resumen por SDR de su célula + las más antiguas,
-//    con copia a CC_ALWAYS. Los SDR sin célula identificada van a CC_ALWAYS.
-// Datos: los mismos del Dashboard SDR (informes de Pulso ABM).
+// Correo semanal "Por corregir" del Dashboard SDR (nov-2026, pedido de
+// BullsEye; partió como alerta de cuentas estancadas y se unificó con el resto
+// de "Por corregir"). Mismo cálculo del dashboard (./compute.ts): cuentas
+// estancadas (15+ días hábiles en Asignada), seguimientos vencidos, status
+// desactualizados y reuniones por actualizar. Una vez por semana (primer día
+// hábil, ~9:00 de Chile):
+//  - a cada SDR: su lista,
+//  - a cada líder de célula: resumen por SDR de su célula + las cuentas
+//    estancadas más antiguas, con copia a CC_ALWAYS. Los SDR sin célula
+//    identificada van a CC_ALWAYS.
 // Modo STALE_ALERTS_MODE: "test" por defecto (todo a TEST_RECIPIENT con los
 // destinatarios reales en el cuerpo); "activo" = envío real.
 // Remitente: STALE_ALERTS_FROM → CELULAS_ALERTS_FROM.
@@ -24,7 +26,6 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://portal.bullseye-abm.
 const MAX_ROWS_SDR = 150;
 const MAX_ROWS_LEADER = 40;
 
-type StaleRow = SdrCompany & { days: number; sdr: string };
 type Planned = { kind: "sdr" | "lider" | "sin_celula"; name: string; to: string[]; cc: string[]; subject: string; html: string; count: number };
 export type StaleRunResult = {
   mode: "test" | "activo";
@@ -36,33 +37,9 @@ export type StaleRunResult = {
 };
 
 const esc = (s: string) => (s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
-const dmy = (d: string) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "—");
 const TH = 'style="text-align:left;padding:6px 8px;border-bottom:1px solid #ddd;font-size:12px;color:#555"';
 const TD = 'style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px"';
 const TDN = 'style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px;text-align:right"';
-
-function staleOf(s: SdrSlice, today: string): StaleRow[] {
-  const out: StaleRow[] = [];
-  for (const c of s.companies) {
-    const days = staleDays(c, today);
-    if (days !== null && days >= STALE_BUSINESS_DAYS) out.push({ ...c, days, sdr: s.name });
-  }
-  return out.sort((a, b) => b.days - a.days || a.c.localeCompare(b.c) || a.n.localeCompare(b.n));
-}
-
-function byClient(rows: StaleRow[]): [string, number][] {
-  const m = new Map<string, number>();
-  for (const r of rows) m.set(r.c, (m.get(r.c) ?? 0) + 1);
-  return [...m.entries()].sort((a, b) => b[1] - a[1]);
-}
-
-function rowsTable(rows: StaleRow[], showSdr: boolean, max: number): string {
-  const body = rows.slice(0, max).map((r) =>
-    `<tr><td ${TD}><b>${esc(r.n)}</b>${r.pais ? `<br><span style="color:#777">${esc(r.pais)}</span>` : ""}</td><td ${TD}>${esc(r.c)}</td>${showSdr ? `<td ${TD}>${esc(r.sdr)}</td>` : ""}<td ${TD}>${dmy(r.asg)}</td><td ${TDN}><b>${r.days}</b></td><td ${TDN}>${r.nct}</td></tr>`
-  ).join("");
-  const more = rows.length > max ? `<p style="font-size:12px;color:#777">… y ${rows.length - max} más (ver el dashboard).</p>` : "";
-  return `<table style="border-collapse:collapse;width:100%"><tr><th ${TH}>Empresa</th><th ${TH}>Cliente</th>${showSdr ? `<th ${TH}>SDR</th>` : ""}<th ${TH}>Asignada el</th><th ${TH}>Días hábiles</th><th ${TH}>Contactos</th></tr>${body}</table>${more}`;
-}
 
 function wrap(title: string, intro: string, inner: string, link: string, testNote: string): string {
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#222;max-width:760px">
@@ -102,95 +79,102 @@ function chileHour(): number {
 }
 
 async function planMails(today: string, live: boolean, notes: string[]): Promise<Planned[]> {
-  const { slices } = await buildAll(today);
-  const spreadsheetId = process.env.GOOGLE_SHEETS_MEETINGS_ID;
-  if (!spreadsheetId) throw new Error("GOOGLE_SHEETS_MEETINGS_ID no configurado");
-  const [master, people] = await Promise.all([readMaster(spreadsheetId, []), readMasterPeople()]);
-  const cellOf = new Map<string, string>(); // clave SDR → líder
-  for (const c of master.cells) {
-    for (const n of [c.leader, ...c.members]) cellOf.set(resolveSdrKey(n), c.leader);
-  }
-
+  const { idx, slices } = await buildAll(today);
+  const people = await readMasterPeople();
   const testNote = (to: string[], cc: string[]) =>
     live ? "" : `<div style="background:#FAEEDA;border:1px solid #E8C98F;padding:8px 10px;border-radius:6px;font-size:12px;margin-bottom:12px">Modo prueba: en envío real este correo iría a <b>${esc(to.join(", ") || "—")}</b>${cc.length ? ` con copia a ${esc(cc.join(", "))}` : ""}.</div>`;
+  const plural = (n: number, s: string, p = s + "s") => `${n} ${n === 1 ? s : p}`;
 
-  const staleBySdr = new Map<string, StaleRow[]>();
+  // Análisis de cada SDR (el mismo cálculo del dashboard)
+  const byKey = new Map<string, { name: string; a: Analysis }>();
   for (const s of slices.values()) {
     if (s.key === NO_SDR_KEY) continue;
-    const rows = staleOf(s, today);
-    if (rows.length) staleBySdr.set(s.key, rows);
+    const a = analyze(s, today);
+    if (a.fixes.length) byKey.set(s.key, { name: s.name, a });
   }
-  const unassigned = slices.get(NO_SDR_KEY);
-  const unassignedStale = unassigned ? staleOf(unassigned, today) : [];
-  if (unassignedStale.length) notes.push(`${unassignedStale.length} cuentas estancadas sin SDR asignado en HubSpot (van en el correo de copia).`);
+
+  const section = (title: string, items: FixItem[], max: number, cols: [string, (f: FixItem) => string][]) => {
+    if (!items.length) return "";
+    const head = cols.map(([h]) => `<th ${TH}>${esc(h)}</th>`).join("");
+    const body = items.slice(0, max).map((f) => `<tr>${cols.map(([, get], i) => `<td ${TD}>${i === 0 ? `<b>${esc(get(f))}</b>` : esc(get(f))}</td>`).join("")}</tr>`).join("");
+    const more = items.length > max ? `<tr><td ${TD} colspan="${cols.length}" style="color:#777">… y ${items.length - max} más en el dashboard</td></tr>` : "";
+    return `<h3 style="margin:18px 0 6px;font-size:15px;color:#251762">${esc(title)} (${items.length})</h3><table style="border-collapse:collapse;width:100%"><tr>${head}</tr>${body}${more}</table>`;
+  };
+  const who = (f: FixItem) => (f.sub ? `${f.who} · ${f.sub}` : f.who);
+  const countsTable = (a: Analysis) => `<table style="border-collapse:collapse;width:100%">${FIX_KINDS.map((k) => {
+    const n = a.fixBy[k.id].length;
+    return n ? `<tr><td style="width:44px;padding:6px 8px;border-bottom:1px solid #eee;font-size:20px;font-weight:700;color:#854F0B;text-align:right">${n}</td><td ${TD}><b>${esc(k.label)}</b><br><span style="color:#777">${esc(k.help)}</span></td></tr>` : "";
+  }).join("")}</table>`;
 
   const mails: Planned[] = [];
-  // 1) Cada SDR
-  for (const [key, rows] of staleBySdr) {
-    const name = rows[0].sdr;
+  // 1) Cada SDR: su lista
+  for (const [key, { name, a }] of byKey) {
     const r = resolveSdr(people, name);
     if (!r.ok) { notes.push(`${name}: sin correo de SDR (${r.reason}). Va solo en el resumen de su líder.`); continue; }
     const to = [r.person.email!];
-    const clients = byClient(rows).map(([c, n]) => `${esc(c)} (${n})`).join(", ");
-    const inner = rowsTable(rows, false, MAX_ROWS_SDR);
+    const inner = countsTable(a)
+      + section("Cuentas estancadas", a.fixBy.est, MAX_ROWS_SDR, [["Empresa", (f) => f.who], ["Cliente", (f) => f.client], ["En Asignada", (f) => f.since], ["Qué hacer", (f) => f.todo]])
+      + section("Seguimientos vencidos", a.fixBy.seg, 40, [["Empresa / contacto", who], ["Cliente", (f) => f.client], ["Vencido", (f) => f.since.replace("Vencido el ", "")]])
+      + section("Status desactualizados", a.fixBy.sta, 40, [["Empresa", who], ["Cliente", (f) => f.client], ["Qué hacer", (f) => f.todo]])
+      + section("Reuniones por actualizar", [...a.fixBy.reu, ...a.fixBy.hs], 40, [["Empresa", who], ["Cliente", (f) => f.client], ["Qué falta", (f) => f.what]]);
     mails.push({
-      kind: "sdr", name, to, cc: [], count: rows.length,
-      subject: `Tienes ${rows.length} cuenta${rows.length === 1 ? "" : "s"} sin gestionar hace ${STALE_BUSINESS_DAYS}+ días hábiles`,
-      html: wrap(
-        `Hola ${name.split(" ")[0]}: cuentas estancadas`,
-        `Estas empresas siguen en <b>Asignada</b> hace ${STALE_BUSINESS_DAYS} días hábiles o más: ${clients}. Gestiónalas o actualiza su status en HubSpot (si no califican, márcalas como corresponde según La Biblia).`,
-        inner, `${APP_URL}/sdr/dashboard?sdr=${encodeURIComponent(key)}&estancadas=1`, testNote(to, [])
-      ),
+      kind: "sdr", name, to, cc: [], count: a.fixes.length,
+      subject: `Tienes ${plural(a.fixes.length, "cosa por corregir", "cosas por corregir")} esta semana`,
+      html: wrap(`Hola ${name.split(" ")[0]}: esto quedó pendiente en tu cartera`,
+        "Gestiónalo o actualiza el status en HubSpot (o la reunión en la planilla). El dashboard se actualiza con la sincronización diaria de Pulso ABM.",
+        inner, `${APP_URL}/sdr/dashboard?sdr=${encodeURIComponent(key)}`, testNote(to, [])),
     });
   }
 
-  // 2) Cada líder: su célula
-  const byLeader = new Map<string, string[]>(); // líder → claves SDR
-  const noCell: string[] = [];
-  for (const key of staleBySdr.keys()) {
-    const leader = cellOf.get(key);
-    const email = leader ? leaderEmail(leader) : null;
-    if (!leader || !email) { noCell.push(key); continue; }
-    byLeader.set(leader, [...(byLeader.get(leader) ?? []), key]);
+  // 2) Cada líder: su célula (todos sus SDR, con o sin pendientes)
+  const leaders = new Map<string, typeof idx.index>();
+  const noCell: typeof idx.index = [];
+  for (const row of idx.index) {
+    if (row.key === NO_SDR_KEY) continue;
+    const s = row.summary;
+    const has = s.est + s.seg + s.sta + s.reu + s.hs > 0;
+    const email = row.cell ? leaderEmail(row.cell) : null;
+    if (!row.cell || !email) { if (has) noCell.push(row); continue; }
+    leaders.set(row.cell, [...(leaders.get(row.cell) ?? []), row]);
   }
-  const summary = (keys: string[]) => {
-    const rows = keys.flatMap((k) => staleBySdr.get(k)!).sort((a, b) => b.days - a.days);
-    const perSdr = keys
-      .map((k) => { const r = staleBySdr.get(k)!; return { name: r[0].sdr, n: r.length, max: r[0].days, clients: byClient(r) }; })
-      .sort((a, b) => b.n - a.n);
-    const table = `<table style="border-collapse:collapse;width:100%;margin-bottom:14px"><tr><th ${TH}>SDR</th><th ${TH}>Estancadas</th><th ${TH}>Más antigua (días hábiles)</th><th ${TH}>Por cliente</th></tr>${perSdr
-      .map((p) => `<tr><td ${TD}><b>${esc(p.name)}</b></td><td ${TDN}><b>${p.n}</b></td><td ${TDN}>${p.max}</td><td ${TD}>${p.clients.map(([c, n]) => `${esc(c)} ${n}`).join(" · ")}</td></tr>`)
-      .join("")}</table>`;
-    return { rows, table };
+  const cellTable = (rows: typeof idx.index) => {
+    const sorted = [...rows].sort((a, b) => (b.summary.est + b.summary.seg) - (a.summary.est + a.summary.seg));
+    const avg = (f: (r: (typeof rows)[number]) => number) => rows.reduce((s, r) => s + f(r), 0) / Math.max(1, rows.length);
+    const cell = (v: number, av: number) => (v > av ? `<td style="padding:6px 8px;border-bottom:1px solid #eee;font-size:13px;text-align:right;color:#993C1D;font-weight:700">${v}</td>` : `<td ${TDN}>${v}</td>`);
+    const fs = [(r: (typeof rows)[number]) => r.summary.est, (r: (typeof rows)[number]) => r.summary.seg, (r: (typeof rows)[number]) => r.summary.sta, (r: (typeof rows)[number]) => r.summary.reu + r.summary.hs];
+    const avgs = fs.map(avg);
+    return `<table style="border-collapse:collapse;width:100%"><tr><th ${TH}>SDR</th><th ${TH}>Estancadas</th><th ${TH}>Seguim. vencidos</th><th ${TH}>Status desact.</th><th ${TH}>Reuniones por actualizar</th><th ${TH}>Más antigua</th></tr>${sorted
+      .map((r) => `<tr><td ${TD}><b>${esc(r.name)}</b></td>${fs.map((f, i) => cell(f(r), avgs[i])).join("")}<td ${TDN}>${r.summary.oldest[0] ? `${r.summary.oldest[0].d} días` : "—"}</td></tr>`).join("")}</table>`;
   };
-  for (const [leader, keys] of byLeader) {
-    const { rows, table } = summary(keys);
+  const oldestTable = (rows: typeof idx.index) => {
+    const list = rows.flatMap((r) => r.summary.oldest.map((o) => ({ ...o, sdr: r.name }))).sort((a, b) => b.d - a.d).slice(0, MAX_ROWS_LEADER);
+    if (!list.length) return "";
+    return `<h3 style="margin:18px 0 6px;font-size:15px;color:#251762">Cuentas estancadas más antiguas</h3><table style="border-collapse:collapse;width:100%"><tr><th ${TH}>Empresa</th><th ${TH}>SDR</th><th ${TH}>Cliente</th><th ${TH}>Días hábiles</th></tr>${list
+      .map((o) => `<tr><td ${TD}><b>${esc(o.n)}</b></td><td ${TD}>${esc(o.sdr)}</td><td ${TD}>${esc(o.c)}</td><td ${TDN}><b>${o.d}</b></td></tr>`).join("")}</table>`;
+  };
+  const sum = (rows: typeof idx.index, f: (s: (typeof rows)[number]["summary"]) => number) => rows.reduce((s, r) => s + f(r.summary), 0);
+  for (const [leader, rows] of leaders) {
+    const est = sum(rows, (s) => s.est), seg = sum(rows, (s) => s.seg);
+    if (!est && !seg && !sum(rows, (s) => s.sta + s.reu + s.hs)) continue;
     const to = [leaderEmail(leader)!];
     const cc = CC_ALWAYS.filter((x) => !to.includes(x));
+    const mtg = `<p style="font-size:14px;line-height:1.5;margin:16px 0 0"><b>Reuniones de la célula este mes:</b> ${sum(rows, (s) => s.ag)} agendadas · ${sum(rows, (s) => s.re)} realizadas · ${sum(rows, (s) => s.ns)} no-show · ${sum(rows, (s) => s.pe)} pendientes.</p>`;
     mails.push({
-      kind: "lider", name: leader, to, cc, count: rows.length,
-      subject: `Tu célula tiene ${rows.length} cuenta${rows.length === 1 ? "" : "s"} estancada${rows.length === 1 ? "" : "s"} en Asignada`,
-      html: wrap(
-        `Cuentas estancadas de tu célula`,
-        `Empresas en <b>Asignada</b> hace ${STALE_BUSINESS_DAYS} días hábiles o más, por SDR. Abajo, las ${Math.min(rows.length, MAX_ROWS_LEADER)} más antiguas.`,
-        table + rowsTable(rows, true, MAX_ROWS_LEADER), `${APP_URL}/sdr/dashboard?estancadas=1`, testNote(to, cc)
-      ),
+      kind: "lider", name: leader, to, cc, count: est + seg,
+      subject: `Tu célula tiene ${plural(est, "cuenta estancada", "cuentas estancadas")} y ${plural(seg, "seguimiento vencido", "seguimientos vencidos")}`,
+      html: wrap("Pendientes de tu célula", "Por SDR, lo que quedó por corregir. Cada SDR recibió hoy su propia lista. En rojo, lo que está sobre el promedio de la célula.",
+        cellTable(rows) + oldestTable(rows) + mtg, `${APP_URL}/sdr/dashboard?vista=celula`, testNote(to, cc)),
     });
   }
 
-  // 3) SDR sin célula identificada + cuentas sin SDR → CC_ALWAYS
-  if (noCell.length || unassignedStale.length) {
-    const { rows, table } = summary(noCell);
-    const all = [...rows, ...unassignedStale.map((r) => ({ ...r, sdr: "Sin SDR asignado" }))].sort((a, b) => b.days - a.days);
+  // 3) SDR sin célula identificada → CC_ALWAYS
+  if (noCell.length) {
     const to = [...CC_ALWAYS];
     mails.push({
-      kind: "sin_celula", name: "Sin célula / sin SDR", to, cc: [], count: all.length,
-      subject: `${all.length} cuentas estancadas de SDR sin célula o sin SDR asignado`,
-      html: wrap(
-        `Cuentas estancadas sin líder que las reciba`,
-        `Estas cuentas llevan ${STALE_BUSINESS_DAYS}+ días hábiles en <b>Asignada</b> y su SDR no tiene célula (o líder con correo) en la Maestra, o la empresa no tiene SDR en HubSpot.`,
-        (noCell.length ? table : "") + rowsTable(all, true, MAX_ROWS_LEADER), `${APP_URL}/sdr/dashboard?estancadas=1`, testNote(to, [])
-      ),
+      kind: "sin_celula", name: "Sin célula", to, cc: [], count: sum(noCell, (s) => s.est + s.seg),
+      subject: `Pendientes de ${plural(noCell.length, "SDR")} sin célula en la Maestra`,
+      html: wrap("Pendientes sin líder que los reciba", "Estos SDR no tienen célula (o líder con correo) en la Maestra.",
+        cellTable(noCell) + oldestTable(noCell), `${APP_URL}/sdr/dashboard?vista=celula`, testNote(to, [])),
     });
   }
   return mails;
@@ -220,7 +204,7 @@ export async function runStaleAlerts(opts: { force?: boolean; preview?: boolean;
     const to = live ? m.to : [TEST_RECIPIENT];
     const cc = live ? m.cc : [];
     try {
-      await sendMail({ from, fromName: "BullsEye · Cuentas estancadas", to, cc, subject: live ? m.subject : `[Prueba] ${m.subject}`, html: m.html });
+      await sendMail({ from, fromName: "BullsEye · Por corregir", to, cc, subject: live ? m.subject : `[Prueba] ${m.subject}`, html: m.html });
       out.push({ kind: m.kind, name: m.name, to, cc, subject: m.subject, count: m.count, status: "sent" });
     } catch (e) {
       out.push({ kind: m.kind, name: m.name, to, cc, subject: m.subject, count: m.count, status: "error", error: (e as Error).message });
