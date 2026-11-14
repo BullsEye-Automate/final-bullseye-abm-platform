@@ -13,6 +13,8 @@ const TIPO: Record<string, string> = { oportunidad: "Oportunidad", riesgo: "Ries
 const TIPO_C: Record<string, string> = { oportunidad: "var(--good)", riesgo: "var(--bad)", icp: "var(--teal)", mensaje: "var(--magenta)", proceso: "var(--accent)" };
 const PRIO_C: Record<string, string> = { alta: "var(--bad-fg)", media: "var(--warn-fg)", baja: "var(--muted, #888)" };
 const ESTADOS: KamConversation["estado"][] = ["pendiente", "conversado", "descartado"];
+const fmt = (d: string) => new Date(d).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" });
+const who = (by: string) => (by === "automático" ? "automático" : by);
 
 export default function KamInsights({ clientId }: { clientId?: string | null }) {
   const [doc, setDoc] = useState<KamInsightsDoc | null | undefined>(undefined);
@@ -51,16 +53,17 @@ export default function KamInsights({ clientId }: { clientId?: string | null }) 
         <div>
           {doc ? (
             <p className="ra-kam-meta">
-              Generado el {new Date(doc.generated_at).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })} · {doc.sources.feedback} respuestas de feedback · {doc.sources.peitho} reuniones de Peitho
+              Última versión: {fmt(doc.generated_at)} ({doc.generated_by === "automático" ? "automática" : `por ${doc.generated_by}`}) · {doc.sources.feedback} respuestas de feedback · {doc.sources.peitho} reuniones de Peitho
               {doc.sources.peitho_status !== "ok" && <> (Peitho: {doc.sources.peitho_status})</>}
+              <br />Se actualiza solo cada día hábil cuando llega feedback nuevo o una reunión nueva de Peitho.
             </p>
           ) : (
-            <p className="ra-kam-meta">Lee el feedback que dejó el cliente de cada reunión y el análisis de Peitho de los últimos 6 meses, y propone qué conversar con el cliente.</p>
+            <p className="ra-kam-meta">Lee el feedback que dejó el cliente de cada reunión y el análisis de Peitho de los últimos 6 meses, y propone qué conversar con el cliente. Se genera solo cada día hábil cuando hay datos nuevos; también puedes generarlo ahora.</p>
           )}
         </div>
         <button className="ra-btn pri" onClick={generate} disabled={busy}>
           {busy ? <IconLoader2 size={15} className="animate-spin" /> : doc ? <IconRefresh size={15} /> : <IconSparkles size={15} />}
-          {busy ? " Analizando (≈1 min)…" : doc ? " Actualizar insights" : " Generar insights"}
+          {busy ? " Analizando (≈1 min)…" : doc ? " Actualizar ahora" : " Generar ahora"}
         </button>
       </div>
       {error && <p className="ra-kam-err">{error}</p>}
@@ -86,13 +89,26 @@ export default function KamInsights({ clientId }: { clientId?: string | null }) 
           )}
 
           <h4 className="ra-kam-h">Conversaciones con el cliente {open.length > 0 && <span className="ra-kam-n">{open.length} pendientes</span>}</h4>
-          {open.length === 0 && <p className="ra-kam-meta">No hay conversaciones pendientes. Actualiza los insights cuando haya feedback o reuniones nuevas.</p>}
+          {open.length === 0 && <p className="ra-kam-meta">No hay conversaciones pendientes. Aparecerán nuevas cuando llegue feedback o reuniones de Peitho.</p>}
           {open.map((c) => <Conversation key={c.id} c={c} onSave={(p) => call("PATCH", { id: c.id, ...p })} />)}
 
           {done.length > 0 && (
             <details className="ra-fold" open={showDone} onToggle={(e) => setShowDone((e.target as HTMLDetailsElement).open)}>
               <summary>Historial · {done.length} conversadas o descartadas</summary>
               {done.map((c) => <Conversation key={c.id} c={c} onSave={(p) => call("PATCH", { id: c.id, ...p })} />)}
+            </details>
+          )}
+
+          {(doc.history?.length ?? 0) > 0 && (
+            <details className="ra-fold">
+              <summary>Versiones anteriores de los insights · {doc.history!.length}</summary>
+              {doc.history!.map((v, i) => (
+                <details key={i} className="ra-kam-ver">
+                  <summary>{fmt(v.at)} · {v.by === "automático" ? "automática" : `por ${v.by}`} · {v.feedback} feedback · {v.peitho} Peitho</summary>
+                  {v.resumen && <p className="ra-kam-why">{v.resumen}</p>}
+                  <ul>{v.insights.map((x) => <li key={x.id}><b>{x.titulo}:</b> {x.hallazgo}</li>)}</ul>
+                </details>
+              ))}
             </details>
           )}
         </>
@@ -136,7 +152,14 @@ function Conversation({ c, onSave }: { c: KamConversation; onSave: (p: { estado?
         <input className="ra-input" placeholder="Qué respondió el cliente / acuerdos" value={nota} onChange={(e) => setNota(e.target.value)} />
         <button className="ra-btn" disabled={saving || nota === (c.nota ?? "")} onClick={() => save({ nota })}>{saving ? "Guardando…" : "Guardar nota"}</button>
       </div>
-      {c.updated_by && <p className="ra-kam-meta">Actualizado por {c.updated_by} · {new Date(c.updated_at!).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}</p>}
+      {(c.log?.length ?? 0) > 0 ? (
+        <details className="ra-kam-log">
+          <summary>Trazabilidad · {c.log!.length} {c.log!.length === 1 ? "registro" : "registros"}{c.updated_at ? ` · último ${fmt(c.updated_at)}` : ""}</summary>
+          <ul>{[...c.log!].reverse().map((l, i) => <li key={i}>{fmt(l.at)} · {who(l.by)} · {l.accion}</li>)}</ul>
+        </details>
+      ) : c.updated_by ? (
+        <p className="ra-kam-meta">Actualizado por {c.updated_by} · {fmt(c.updated_at!)}</p>
+      ) : null}
       {err && <p className="ra-kam-err">{err}</p>}
     </div>
   );

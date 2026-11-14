@@ -39,17 +39,27 @@ export type KamConversation = {
   fuente: KamSource;
   estado: "pendiente" | "conversado" | "descartado";
   nota?: string;
+  created_at?: string;
   updated_by?: string;
   updated_at?: string;
+  // Trazabilidad: cada cambio de estado o nota, con quién y cuándo
+  log?: { at: string; by: string; accion: string }[];
 };
+// Versión anterior de los insights (historial, últimas HISTORY_MAX)
+export type KamVersion = { at: string; by: string; resumen: string; insights: KamInsight[]; feedback: number; peitho: number };
 export type KamInsightsDoc = {
   generated_at: string;
   generated_by: string;
   resumen: string;
   insights: KamInsight[];
   conversaciones: KamConversation[];
-  sources: { feedback: number; peitho: number; peitho_status: string };
+  // fp = huella de los datos con que se generó (cantidad de feedback y de
+  // reuniones de Peitho + la más reciente): si cambia, el cron regenera
+  sources: { feedback: number; peitho: number; peitho_status: string; fp?: string };
+  history?: KamVersion[];
 };
+const HISTORY_MAX = 12;
+export const AUTO_BY = "automático";
 
 export async function loadKamInsights(clientId: string): Promise<KamInsightsDoc | null> {
   const { data } = await supabaseAdmin().from("allo_response_cache").select("response").eq("cache_key", cacheKey(clientId)).maybeSingle();
@@ -107,18 +117,30 @@ async function feedbackLines(clientId: string): Promise<string[]> {
   return out.sort().reverse();
 }
 
-async function peithoLines(clientId: string): Promise<{ lines: string[]; status: string }> {
+type PeithoRef = NonNullable<Awaited<ReturnType<typeof loadPeithoClient>>>;
+// Reuniones analizadas de Peitho del período (más recientes primero), sin el detalle
+async function peithoList(clientId: string): Promise<{ client?: PeithoRef; list: MeetingListItem[]; status: string }> {
   const db = supabaseAdmin();
-  if (!(await isPeithoEnabled(db, clientId))) return { lines: [], status: "no activado" };
-  if (!peithoConfigured()) return { lines: [], status: "conexión no configurada" };
+  if (!(await isPeithoEnabled(db, clientId))) return { list: [], status: "no activado" };
+  if (!peithoConfigured()) return { list: [], status: "conexión no configurada" };
   const client = await loadPeithoClient(db, clientId);
-  if (!client) return { lines: [], status: "cliente no encontrado" };
+  if (!client) return { list: [], status: "cliente no encontrado" };
   try {
     const since = new Date(Date.now() - DAYS * 86_400_000).toISOString();
     const list = (await peithoGetJson<MeetingListItem[]>(client, "/meetings?scope=past"))
       .filter((m) => m.status === "analyzed" && (!m.start_time || m.start_time >= since))
-      .sort((a, b) => String(b.start_time ?? "").localeCompare(String(a.start_time ?? "")))
-      .slice(0, PEITHO_MAX);
+      .sort((a, b) => String(b.start_time ?? "").localeCompare(String(a.start_time ?? "")));
+    return { client, list, status: list.length ? "ok" : "sin reuniones analizadas" };
+  } catch (err) {
+    return { list: [], status: `error: ${clip((err as Error).message, 120)}` };
+  }
+}
+
+async function peithoLines(pl: { client?: PeithoRef; list: MeetingListItem[]; status: string }): Promise<{ lines: string[]; status: string }> {
+  const client = pl.client;
+  if (!client || !pl.list.length) return { lines: [], status: pl.status };
+  try {
+    const list = pl.list.slice(0, PEITHO_MAX);
     const lines: string[] = [];
     for (let i = 0; i < list.length; i += 5) {
       await Promise.all(list.slice(i, i + 5).map(async (m) => {
@@ -141,7 +163,7 @@ async function peithoLines(clientId: string): Promise<{ lines: string[]; status:
         } catch { /* una reunión que falla no corta el resto */ }
       }));
     }
-    return { lines: lines.sort().reverse(), status: list.length ? "ok" : "sin reuniones analizadas" };
+    return { lines: lines.sort().reverse(), status: pl.status };
   } catch (err) {
     return { lines: [], status: `error: ${clip((err as Error).message, 120)}` };
   }
@@ -194,14 +216,27 @@ const SYSTEM = `Eres el analista de cuentas (KAM) de BullsEye, agencia de prospe
 Con el feedback que el cliente dejó de cada reunión y el análisis automático de Peitho (grabación de las reuniones), detecta patrones útiles para la relación con el cliente y propón conversaciones para tener con él: validar el ICP, entender por qué una reunión no avanzó, alinear el mensaje, pedir información, celebrar avances o ajustar el foco.
 Reglas: usa solo lo que está en los datos; cita la evidencia (número de reuniones, empresas, frases cortas); un patrón necesita al menos 2 casos, si no, dilo como señal aislada; no inventes cifras; no incluyas correos ni teléfonos; escribe en español de Chile, claro y breve.`;
 
-export async function generateKamInsights(clientId: string, by: string): Promise<KamInsightsDoc> {
+const fingerprint = (fb: string[], pl: { list: MeetingListItem[] }) =>
+  `fb:${fb.length}|${fb[0]?.slice(0, 40) ?? ""}|pe:${pl.list.length}|${pl.list[0]?.id ?? ""}`;
+
+export class NoKamData extends Error {}
+
+export async function generateKamInsights(clientId: string, by: string, pre?: { fb: string[]; pl: Awaited<ReturnType<typeof peithoList>> }): Promise<KamInsightsDoc> {
   const db = supabaseAdmin();
   const { data: client } = await db.from("clients").select("name").eq("id", clientId).maybeSingle();
-  const [fb, pe] = await Promise.all([feedbackLines(clientId), peithoLines(clientId)]);
+  const [fb, pl] = pre ? [pre.fb, pre.pl] : await Promise.all([feedbackLines(clientId), peithoList(clientId)]);
+  const pe = await peithoLines(pl);
   if (!fb.length && !pe.lines.length) {
-    throw new Error(`No hay feedback del cliente ni reuniones analizadas en Peitho en los últimos ${DAYS} días (Peitho: ${pe.status}).`);
+    throw new NoKamData(`No hay feedback del cliente ni reuniones analizadas en Peitho en los últimos ${DAYS} días (Peitho: ${pe.status}).`);
   }
+  const prev = await loadKamInsights(clientId);
+  const known = (prev?.conversaciones ?? []).map((c) => `- ${c.tema} (${c.estado}${c.nota ? `: ${clip(c.nota, 160)}` : ""})`);
   const user = `Cliente: ${client?.name ?? clientId}
+
+<conversaciones_ya_propuestas>
+${known.join("\n") || "Ninguna."}
+</conversaciones_ya_propuestas>
+No vuelvas a proponer esos temas (ni con otras palabras), salvo que haya un dato nuevo que cambie la conversación; usa lo que respondió el cliente.
 
 <feedback_cliente total="${fb.length}">
 ${fb.slice(0, 120).join("\n") || "Sin feedback."}
@@ -227,12 +262,16 @@ Usa la herramienta insights_kam.`;
   const r = block.input as { resumen?: string; insights?: any[]; conversaciones?: any[] };
   const src = (s: unknown): KamSource => (s === "feedback" || s === "peitho" ? s : "ambos");
 
-  // Las conversaciones ya marcadas (mismo tema) conservan su estado y nota
-  const prev = await loadKamInsights(clientId);
-  const prevByTema = new Map((prev?.conversaciones ?? []).filter((c) => c.estado !== "pendiente").map((c) => [c.tema.trim().toLowerCase(), c]));
+  // Las conversaciones anteriores (pendientes incluidas) se conservan con su
+  // estado, nota y bitácora; las nuevas se suman si su tema no estaba
+  const prevTemas = new Set((prev?.conversaciones ?? []).map((c) => c.tema.trim().toLowerCase()));
   const stamp = Date.now().toString(36);
+  const now = new Date().toISOString();
+  const history: KamVersion[] = prev
+    ? [{ at: prev.generated_at, by: prev.generated_by, resumen: prev.resumen, insights: prev.insights, feedback: prev.sources.feedback, peitho: prev.sources.peitho }, ...(prev.history ?? [])].slice(0, HISTORY_MAX)
+    : [];
   const doc: KamInsightsDoc = {
-    generated_at: new Date().toISOString(),
+    generated_at: now,
     generated_by: by,
     resumen: String(r.resumen ?? ""),
     insights: (r.insights ?? []).slice(0, 8).map((x, i) => ({
@@ -240,17 +279,18 @@ Usa la herramienta insights_kam.`;
       fuente: src(x.fuente), tipo: (["oportunidad", "riesgo", "icp", "mensaje", "proceso"].includes(x.tipo) ? x.tipo : "proceso") as KamInsight["tipo"],
     })),
     conversaciones: [
-      // Las ya conversadas o descartadas quedan como historial
-      ...(prev?.conversaciones ?? []).filter((c) => c.estado !== "pendiente"),
+      ...(prev?.conversaciones ?? []),
       ...(r.conversaciones ?? []).slice(0, 6)
-        .filter((x) => !prevByTema.has(String(x.tema ?? "").trim().toLowerCase()))
+        .filter((x) => !prevTemas.has(String(x.tema ?? "").trim().toLowerCase()))
         .map((x, i) => ({
           id: `c${stamp}${i}`, tema: String(x.tema ?? ""), por_que: String(x.por_que ?? ""), pregunta: String(x.pregunta ?? ""), mensaje: String(x.mensaje ?? ""),
           prioridad: (["alta", "media", "baja"].includes(x.prioridad) ? x.prioridad : "media") as KamConversation["prioridad"],
           fuente: src(x.fuente), estado: "pendiente" as const,
+          created_at: now, log: [{ at: now, by, accion: "Propuesta por la IA" }],
         })),
     ],
-    sources: { feedback: fb.length, peitho: pe.lines.length, peitho_status: pe.status },
+    sources: { feedback: fb.length, peitho: pe.lines.length, peitho_status: pe.status, fp: fingerprint(fb, pl) },
+    history,
   };
   await saveKamInsights(clientId, doc);
   return doc;
@@ -263,10 +303,38 @@ export async function updateKamConversation(
   if (!doc) throw new Error("Todavía no hay insights para este cliente");
   const c = doc.conversaciones.find((x) => x.id === id);
   if (!c) throw new Error("Conversación no encontrada");
-  if (patch.estado && ["pendiente", "conversado", "descartado"].includes(patch.estado)) c.estado = patch.estado;
-  if (patch.nota !== undefined) c.nota = String(patch.nota).trim().slice(0, 1000);
+  const now = new Date().toISOString();
+  const LABEL = { pendiente: "Pendiente", conversado: "Conversado con el cliente", descartado: "Descartado" } as const;
+  const acciones: string[] = [];
+  if (patch.estado && patch.estado !== c.estado && ["pendiente", "conversado", "descartado"].includes(patch.estado)) {
+    acciones.push(`Estado: ${LABEL[patch.estado]}`);
+    c.estado = patch.estado;
+  }
+  if (patch.nota !== undefined) {
+    const nota = String(patch.nota).trim().slice(0, 1000);
+    if (nota !== (c.nota ?? "")) acciones.push(nota ? `Nota: ${nota}` : "Nota borrada");
+    c.nota = nota;
+  }
+  if (!acciones.length) return doc;
+  c.log = [...(c.log ?? []), ...acciones.map((accion) => ({ at: now, by, accion }))].slice(-50);
   c.updated_by = by;
-  c.updated_at = new Date().toISOString();
+  c.updated_at = now;
   await saveKamInsights(clientId, doc);
   return doc;
+}
+
+// Actualización automática (cron diario): regenera solo si cambiaron los datos
+// (feedback nuevo o reuniones nuevas de Peitho) desde la última versión.
+export async function refreshKamInsightsIfChanged(clientId: string): Promise<"actualizado" | "sin cambios" | "sin datos"> {
+  const [fb, pl] = await Promise.all([feedbackLines(clientId), peithoList(clientId)]);
+  if (!fb.length && !pl.list.length) return "sin datos";
+  const prev = await loadKamInsights(clientId);
+  if (prev?.sources.fp === fingerprint(fb, pl)) return "sin cambios";
+  try {
+    await generateKamInsights(clientId, AUTO_BY, { fb, pl });
+    return "actualizado";
+  } catch (err) {
+    if (err instanceof NoKamData) return "sin datos";
+    throw err;
+  }
 }

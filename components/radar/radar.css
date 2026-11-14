@@ -259,3 +259,7 @@
 .ra-root .ra-kam-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
 .ra-root .ra-kam-actions .ra-input { flex: 1 1 220px; min-width: 0; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; padding: 7px 11px; font-size: 13px; color: var(--ink); }
 .ra-root .ra-kam .ra-fold { margin-top: 12px; box-shadow: none; }
+.ra-root .ra-kam-log, .ra-root .ra-kam-ver { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.ra-root .ra-kam-log summary, .ra-root .ra-kam-ver summary { cursor: pointer; }
+.ra-root .ra-kam-log ul, .ra-root .ra-kam-ver ul { margin: 6px 0 0; padding-left: 18px; }
+.ra-root .ra-kam-ver { padding: 8px 0; border-top: 1px solid var(--line); color: var(--ink); font-size: 13px; }
