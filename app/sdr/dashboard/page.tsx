@@ -103,6 +103,7 @@ export default function DashboardSdrPage() {
     can: !!slice && (myself || !!data?.me.canEditAll),
     accts: slice?.accts ?? {},
     fcReady: !!data?.fcReady,
+    canBill: !!data?.me.canBill,
     onFc: (id, v) => setData((d) => (d && d.sdr ? { ...d, sdr: { ...d.sdr, meetings: d.sdr.meetings.map((m) => (m.id === id ? { ...m, fc: v ? 1 : undefined } : m)) } } : d)),
     onSaved: (type, c, hs, st) => setData((d) => (d && d.sdr ? { ...d, sdr: {
       ...d.sdr,
@@ -128,8 +129,8 @@ export default function DashboardSdrPage() {
         </div>
         <div className="flex items-end gap-2 flex-wrap">
           <div role="tablist" aria-label="Vista" className="flex rounded-lg border bg-white p-0.5">
-            {([["sdr", "Mi cartera"], ["celula", "Célula"], ["facturacion", "Facturación"]] as const).map(([v, l]) => (
-              <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
+            {([["sdr", "Mi cartera"], ["celula", "Célula"], ...(data?.me.canBill ? [["facturacion", "Facturación"]] : [])] as [string, string][]).map(([v, l]) => (
+              <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v as typeof view)}
                 className={`px-3 py-1.5 rounded-md text-sm ${view === v ? "bg-brand text-white" : "text-ink-muted hover:text-ink"}`}>{l}</button>
             ))}
           </div>
@@ -177,7 +178,7 @@ export default function DashboardSdrPage() {
       )}
 
       {data && view === "celula" && <CellView data={data} onOpen={openSdr} />}
-      {data && view === "facturacion" && <BillingView today={today} />}
+      {data && view === "facturacion" && data.me.canBill && <BillingView today={today} />}
 
       {data && <DataCheck data={data} />}
 
@@ -411,7 +412,7 @@ function MeetingsSection({ A, client, monthName, ed, today }: { A: NonNullable<R
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-ink-muted bg-[#FAF9FD]">
-                <tr><Th>Cliente</Th><Th n>Meta</Th><Th n>Realizadas</Th><Th n>Cumplimiento</Th><Th n>Esperado a la fecha</Th><Th>Ritmo</Th><Th n>Agendadas</Th><Th n>No-show</Th><Th n>Pendientes</Th><Th n>Para facturar</Th></tr>
+                <tr><Th>Cliente</Th><Th n>Meta</Th><Th n>Realizadas</Th><Th n>Cumplimiento</Th><Th n>Esperado a la fecha</Th><Th>Ritmo</Th><Th n>Agendadas</Th><Th n>No-show</Th><Th n>Pendientes</Th>{ed.canBill && <Th n>Para facturar</Th>}</tr>
               </thead>
               <tbody>
                 {A.perClient.map((p) => (
@@ -426,7 +427,7 @@ function MeetingsSection({ A, client, monthName, ed, today }: { A: NonNullable<R
                     <td className={`px-3 py-2 text-right tabular-nums font-semibold ${PACE[p.pace].fg}`}>{p.pct === null ? "—" : `${p.pct}%`}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{p.expected === null ? "—" : fmtDec(p.expected)}</td>
                     <td className="px-3 py-2"><PaceBadge pace={p.pace} /></td>
-                    <Td n>{p.ag}</Td><Td n>{p.ns}</Td><Td n>{p.pe}</Td><Td n>{p.fc}</Td>
+                    <Td n>{p.ag}</Td><Td n>{p.ns}</Td><Td n>{p.pe}</Td>{ed.canBill && <Td n>{p.fc}</Td>}
                   </tr>
                   {openCl === p.client && (
                     <tr className="bg-[#FAF9FD]">
@@ -444,7 +445,7 @@ function MeetingsSection({ A, client, monthName, ed, today }: { A: NonNullable<R
                     <td className={`px-3 py-2 text-right tabular-nums ${PACE[A.goal.pace].fg}`}>{A.goal.pct}%</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtDec(A.goal.expected)}</td>
                     <td className="px-3 py-2"><PaceBadge pace={A.goal.pace} /></td>
-                    <Td n>{A.mtg.ag}</Td><Td n>{A.mtg.ns}</Td><Td n>{A.mtg.pe}</Td><Td n>{A.mtg.fc}</Td>
+                    <Td n>{A.mtg.ag}</Td><Td n>{A.mtg.ns}</Td><Td n>{A.mtg.pe}</Td>{ed.canBill && <Td n>{A.mtg.fc}</Td>}
                   </tr>
                 )}
               </tbody>
@@ -722,6 +723,7 @@ function Td({ children, n }: { children: React.ReactNode; n?: boolean }) {
 // ── Cambiar status en HubSpot ─────────────────────────────────────────────
 type Editing = {
   can: boolean;
+  canBill: boolean;
   fcReady: boolean;
   onFc: (id: string, value: boolean) => void;
   accts: Record<string, { id: string; sub: string | null; edit: boolean }>;
@@ -747,7 +749,7 @@ function MeetingsTable({ ms, ed, showCompany }: { ms: SdrMeeting[]; ed: Editing;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm bg-white border rounded-lg">
-        <thead className="text-xs text-ink-muted"><tr><Th>Fecha</Th><Th>Agendada el</Th>{showCompany && <Th>Empresa</Th>}<Th>Contacto</Th><Th>Estado</Th><Th>Origen</Th><Th>Oportunidad</Th><Th>Comentario</Th><Th>Para facturar</Th></tr></thead>
+        <thead className="text-xs text-ink-muted"><tr><Th>Fecha</Th><Th>Agendada el</Th>{showCompany && <Th>Empresa</Th>}<Th>Contacto</Th><Th>Estado</Th><Th>Origen</Th><Th>Oportunidad</Th><Th>Comentario</Th>{ed.canBill && <Th>Para facturar</Th>}</tr></thead>
         <tbody>
           {ms.map((m, i) => (
             <tr key={m.id ?? i} className="border-t align-top">
@@ -759,7 +761,7 @@ function MeetingsTable({ ms, ed, showCompany }: { ms: SdrMeeting[]; ed: Editing;
               <td className="px-3 py-2">{m.org || "—"}</td>
               <td className="px-3 py-2">{m.opp || "—"}</td>
               <td className="px-3 py-2 max-w-[340px] whitespace-pre-line">{m.nt || <span className="text-ink-subtle">Sin comentario</span>}</td>
-              <td className="px-3 py-2"><FacturarBox m={m} ed={ed} /></td>
+              {ed.canBill && <td className="px-3 py-2"><FacturarBox m={m} ed={ed} /></td>}
             </tr>
           ))}
         </tbody>
@@ -784,7 +786,7 @@ function FacturarBox({ m, ed }: { m: SdrMeeting; ed: Editing }) {
   return (
     <span className="inline-flex flex-col gap-0.5">
       <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
-        <input type="checkbox" checked={!!m.fc} disabled={!ed.can || busy} onChange={(e) => toggle(e.target.checked)} />
+        <input type="checkbox" checked={!!m.fc} disabled={busy} onChange={(e) => toggle(e.target.checked)} />
         {busy ? <IconLoader2 size={12} className="animate-spin" /> : m.fc ? "Sí" : "No"}
       </label>
       {err && <span className="text-xs text-danger-fg max-w-[200px]">{err}</span>}
@@ -887,7 +889,7 @@ function BillingView({ today }: { today: string }) {
               </table>
             </div>
           </section>
-          <p className="text-xs text-ink-muted">La marca «Para facturar» la ponen el SDR de la reunión o las líderes desde el Dashboard SDR (desplegable de reuniones). «Marcada por» y «El» = la última persona que cambió la marca y cuándo. Reuniones de la planilla por fecha de la reunión.</p>
+          <p className="text-xs text-ink-muted">«Para facturar» es una marca tuya para contar reuniones: no cambia nada en la facturación ni en la planilla, y solo la ves tú. Se marca en los desplegables de reuniones del Dashboard SDR. «Marcada por» y «El» = quién cambió la marca por última vez y cuándo. Reuniones de la planilla por fecha de la reunión.</p>
         </>
       )}
     </div>
