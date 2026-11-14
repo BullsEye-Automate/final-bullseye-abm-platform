@@ -192,17 +192,42 @@ Usa la herramienta proponer_inteligencia_semanal.`;
   const block = msg.content.find((b) => b.type === "tool_use") as Anthropic.ToolUseBlock | undefined;
   if (!block) throw new Error("La IA no devolvió la propuesta");
   const r = block.input as IntelResult;
-  const props = (Array.isArray(r.propuestas) ? r.propuestas : []).map((p, i) => ({ ...p, id: `p${i + 1}`, estado: "pendiente" as const }));
+  // La IA a veces devuelve una lista como texto (JSON o líneas sueltas) en vez
+  // de arreglo: se normaliza para no caerse (nov-2026, CCHC: "slice(...).map
+  // is not a function")
+  const arr = <T,>(v: unknown): T[] => {
+    if (Array.isArray(v)) return v as T[];
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (!t) return [];
+      try { const j = JSON.parse(t); if (Array.isArray(j)) return j as T[]; } catch { /* no es JSON */ }
+      // A veces llega como pseudo-XML "<item>…</item>" (CCHC, 13-nov-2026):
+      // cada item es un texto o, si trae sub-etiquetas, un objeto campo → valor.
+      const items = [...t.matchAll(/<item>([\s\S]*?)<\/item>/g)].map((m) => m[1].trim());
+      if (items.length) {
+        return items.map((it) => {
+          const fields = [...it.matchAll(/<([a-z_]+)>([\s\S]*?)<\/\1>/gi)];
+          if (!fields.length) return it;
+          const o: Record<string, string> = {};
+          for (const f of fields) o[f[1]] = f[2].trim();
+          return o;
+        }) as unknown as T[];
+      }
+      return t.split(/\n+|;\s+/).map((x) => x.replace(/^[-•*\d.)\s]+/, "").trim()).filter(Boolean) as unknown as T[];
+    }
+    return [];
+  };
+  const props = arr<IntelProposal>(r.propuestas).filter((p) => p && typeof p === "object").map((p, i) => ({ ...p, id: `p${i + 1}`, estado: "pendiente" as const }));
   return {
     result: {
       resumen: String(r.resumen ?? ""),
       prioridad: (["alta", "media", "baja"].includes(r.prioridad) ? r.prioridad : "media") as IntelResult["prioridad"],
       empresas_sugeridas: Math.max(0, Math.min(80, Math.round(Number(r.empresas_sugeridas) || 0))),
       motivo_cantidad: String(r.motivo_cantidad ?? ""),
-      donde_prospectar: (r.donde_prospectar ?? []).slice(0, 5).map(String),
+      donde_prospectar: arr<unknown>(r.donde_prospectar).slice(0, 5).map(String),
       propuestas: props,
-      recordatorios: Array.isArray(r.recordatorios) ? r.recordatorios.slice(0, 30) : [],
-      calidad_datos: (r.calidad_datos ?? []).slice(0, 10).map(String),
+      recordatorios: arr<IntelReminder>(r.recordatorios).filter((x) => x && typeof x === "object").slice(0, 30),
+      calidad_datos: arr<unknown>(r.calidad_datos).slice(0, 10).map(String),
       minuta: String(r.minuta ?? ""),
     },
     costIn: msg.usage.input_tokens,

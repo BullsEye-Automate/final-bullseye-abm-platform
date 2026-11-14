@@ -25,6 +25,11 @@ const PERSON_NICKNAMES: Record<string, string> = {
   [normalizeSdrName("Lore")]: "Lorena Rosales",
   [normalizeSdrName("Cote")]: "María José",
   [normalizeSdrName("Consu")]: "Consuelo Contador",
+  // En el HubSpot de la CChC la SDR figura como "Jacque" (nov-2026)
+  [normalizeSdrName("Jacque")]: "Jacqueline Fuentes",
+  [normalizeSdrName("Jaque")]: "Jacqueline Fuentes",
+  [normalizeSdrName("Jacqueline")]: "Jacqueline Fuentes",
+  [normalizeSdrName("Jaqueline")]: "Jacqueline Fuentes",
 };
 
 // Columnas de la matriz de Asignación que no son SDR.

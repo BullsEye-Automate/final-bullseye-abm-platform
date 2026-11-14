@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readyClientIds } from "@/lib/centroProspeccion/intel/readiness";
-import { runClientRecommendations } from "@/lib/centroProspeccion/intel/automations";
+import { recoDone, runClientRecommendations } from "@/lib/centroProspeccion/intel/automations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Vercel Cron (domingo, ver vercel.json): recomendaciones IA de empresas de
-// cada cliente listo, en la cantidad que sugiere la Inteligencia de la semana
-// (tope 60; sin inteligencia, 20). Quedan en Empresas → Recomendadas por IA
-// para que prospección las revise antes de proponerlas al cliente.
-// Mismo patrón de /api/cron/radar-abm-sync: una invocación por cliente.
+// Vercel Cron (domingo en la noche de Chile, ver vercel.json): recomendaciones
+// IA de empresas de cada cliente listo, en la cantidad que sugiere la
+// Inteligencia de la semana (tope 60; sin inteligencia, 20). Quedan en
+// Empresas → Recomendadas por IA para que prospección las revise antes de
+// proponerlas al cliente.
+// Cada corrida trabaja de a 2 clientes en la misma ejecución (sin llamarse por
+// HTTP: en Vercel esas invocaciones hijas no terminaban, ver radar-abm-sync) y
+// salta los que ya quedaron listos (recoDone); las corridas siguientes, cada
+// 20 min, siguen con el resto o completan a los que quedaron cortos.
 
-const BUDGET_MS = 270_000;
+const START_BUDGET_MS = 40_000; // no empezar un cliente nuevo pasado este tiempo (cada uno usa hasta ~4 min)
 const PARALLEL = 2;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -29,24 +33,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: !r.estado.startsWith("error"), ...r });
   }
   try {
-    const queue = await readyClientIds();
-    const self = new URL(req.nextUrl.pathname, req.nextUrl.origin);
+    const ready = await readyClientIds();
+    const done = await Promise.all(ready.map((id) => recoDone(id)));
+    const queue = ready.filter((_, i) => !done[i]);
     const results: unknown[] = [];
     let next = 0;
     await Promise.all(Array.from({ length: Math.min(PARALLEL, queue.length) }, async () => {
-      while (next < queue.length && Date.now() - startedAt < BUDGET_MS) {
+      while (next < queue.length && Date.now() - startedAt < START_BUDGET_MS) {
         const id = queue[next++];
         try {
-          const url = new URL(self);
-          url.searchParams.set("client_id", id);
-          const r = await fetch(url, { headers: cronSecret ? { authorization: `Bearer ${cronSecret}` } : {}, cache: "no-store" });
-          results.push(await r.json().catch(() => ({ client_id: id, ok: false, error: `HTTP ${r.status}` })));
+          results.push(await runClientRecommendations(id));
         } catch (e) {
-          results.push({ client_id: id, ok: false, error: (e as Error).message });
+          results.push({ client_id: id, estado: `error: ${(e as Error).message}` });
         }
       }
     }));
-    return NextResponse.json({ clientes: queue.length, pending: queue.length - results.length, results });
+    return NextResponse.json({ clientes: ready.length, listos: ready.length - queue.length, procesados: results.length, pendientes: queue.length - results.length, results });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }

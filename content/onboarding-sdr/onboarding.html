@@ -1,0 +1,514 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Onboarding SDR por semanas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: pit-wall de F1. Cabecera fija con semáforo de 10 luces, pestañas por vuelta, una vuelta por pantalla. Identidad BullsEye, un solo tema oscuro. */
+:root{
+  --bg:#2A156A; --s1:#341F7A; --s2:#40298C; --line:#5640A6;
+  --fg:#F6F4FF; --mute:#CCC3F0;
+  --cyan:#1CDAD0; --purple:#B79CF5; --magenta:#F0638F;
+  --ok:#1CDAD0; --warn:#F2C14E; --bad:#F0638F;
+  --display:"Sora",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --body:"Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--body);font-size:16px;line-height:1.55;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+p{margin:0}
+a{color:var(--cyan)}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+/* Header */
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+header.top .wrap{padding-block:14px 10px;display:grid;gap:10px}
+.brandrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 16px}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.brand h1{font-size:clamp(20px,3.2vw,26px);font-weight:800;letter-spacing:-.01em}
+.brand .tag{font-family:var(--display);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+.lights{display:flex;align-items:center;gap:6px}
+.light{width:14px;height:14px;border-radius:50%;background:var(--s2);border:1px solid var(--line);transition:background .3s,box-shadow .3s}
+.light.on{background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+.light.on.last{background:var(--magenta);box-shadow:0 0 10px var(--magenta)}
+.lap-count{font-family:var(--display);font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums;margin-left:6px;white-space:nowrap}
+.tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:thin;padding-bottom:4px}
+.tab{flex:0 0 auto;border:1px solid var(--line);background:var(--s1);color:var(--mute);border-radius:999px;padding:6px 12px;font-family:var(--display);font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.tab .n{font-variant-numeric:tabular-nums;color:var(--fg)}
+.tab.done .n{color:var(--cyan)}
+.tab[aria-selected="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.tab[aria-selected="true"] .n{color:var(--bg)}
+
+main .wrap{padding-block:28px 64px}
+.lap-head{display:grid;gap:8px;margin-bottom:22px}
+.eyebrow{font-family:var(--display);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--purple);font-weight:700}
+.lap-head h2{font-size:clamp(26px,4.4vw,40px);font-weight:800;letter-spacing:-.02em}
+.lead{color:var(--mute);font-size:18px;max-width:65ch}
+section.lap{display:grid;gap:22px}
+.block{display:grid;gap:12px;min-width:0}
+.block h3{font-size:19px;font-weight:700}
+.block p,.block li{max-width:68ch}
+.block ul,.block ol{margin:0;padding-left:20px;display:grid;gap:6px}
+.panel{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:18px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font-family:var(--display);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute);background:var(--s1);font-weight:600}
+tr:last-child td{border-bottom:0}
+.remember{border:1px solid var(--cyan);background:color-mix(in srgb,var(--cyan) 10%,var(--bg));border-radius:12px;padding:14px 16px;display:grid;gap:4px}
+.remember b{font-family:var(--display);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--cyan)}
+.chip{display:inline-block;border:1px solid var(--line);background:var(--s2);border-radius:999px;padding:2px 10px;font-size:13px;color:var(--fg)}
+.stat{display:grid;gap:2px}
+.stat .v{font-family:var(--display);font-size:30px;font-weight:800;color:var(--cyan);font-variant-numeric:tabular-nums}
+.stat .k{color:var(--mute);font-size:14px}
+.btn{border:1px solid var(--line);background:var(--s2);border-radius:10px;padding:9px 14px;font-weight:500}
+.btn:hover{border-color:var(--cyan)}
+.btn.primary{background:var(--cyan);color:var(--bg);border-color:var(--cyan);font-family:var(--display);font-weight:700}
+.btn.primary:hover{filter:brightness(1.08)}
+.finish{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:20px;margin-top:6px}
+.finish .msg{color:var(--mute);font-size:14px}
+.warnbox{border-left:3px solid var(--magenta);padding:4px 0 4px 12px;color:var(--fg)}
+
+/* Selector de servicios */
+.seg{display:flex;flex-wrap:wrap;gap:8px}
+.seg button{border:1px solid var(--line);background:var(--s1);border-radius:10px;padding:8px 12px;font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--cyan);border-color:var(--cyan);color:var(--bg)}
+.svc{display:grid;gap:10px}
+.svc dl{display:grid;grid-template-columns:140px 1fr;gap:8px 14px;margin:0}
+.svc dt{font-family:var(--display);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);padding-top:3px}
+.svc dd{margin:0;min-width:0}
+@media (max-width:560px){.svc dl{grid-template-columns:1fr}.svc dt{padding-top:6px}}
+
+/* Flip cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.flip{perspective:900px;border:0;background:none;padding:0;text-align:left;min-height:170px}
+.flip .in{position:relative;width:100%;height:100%;min-height:170px;transition:transform .5s;transform-style:preserve-3d}
+.flip.open .in{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;border-radius:12px;border:1px solid var(--line);padding:14px;display:grid;align-content:space-between;gap:8px;overflow:auto}
+.front{background:var(--s1)}
+.front .w{font-family:var(--display);font-size:18px;font-weight:700}
+.front .hint{font-size:12px;color:var(--mute)}
+.back{background:var(--s2);transform:rotateY(180deg);font-size:14px}
+.back .why{color:var(--cyan);font-size:13px}
+.filter{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Builder */
+.builder{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.builder{grid-template-columns:1fr}}
+.piece{display:grid;gap:6px}
+.piece label{font-family:var(--display);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.piece label span{color:var(--cyan)}
+select,textarea{width:100%;background:var(--s1);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;font-size:15px}
+textarea{min-height:220px;resize:vertical;line-height:1.5}
+.meter{display:flex;align-items:center;gap:10px;font-variant-numeric:tabular-nums}
+.bar{flex:1;height:8px;border-radius:4px;background:var(--s2);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--cyan);width:0;transition:width .2s,background .2s}
+.bar.over i{background:var(--magenta)}
+
+/* Objeciones */
+.obj-list{display:flex;flex-wrap:wrap;gap:8px}
+.obj-list button{border:1px solid var(--line);background:var(--s1);border-radius:999px;padding:7px 12px;font-size:14px}
+.obj-list button[aria-pressed="true"]{border-color:var(--magenta);background:color-mix(in srgb,var(--magenta) 22%,var(--s1))}
+.sim{display:grid;gap:12px}
+.bubble{background:var(--s2);border-radius:14px 14px 14px 4px;padding:12px 14px;max-width:560px;font-size:17px}
+.reveal{display:grid;gap:10px}
+.reveal .lbl{font-family:var(--display);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.answer{border-left:3px solid var(--cyan);padding-left:12px}
+
+/* Checklist */
+.check{display:grid;gap:10px}
+.check label{display:flex;gap:12px;align-items:flex-start;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+.check input{width:20px;height:20px;accent-color:var(--cyan);margin-top:2px;flex:0 0 auto}
+.verdict{border-radius:12px;padding:14px 16px;font-weight:500;border:1px solid var(--line)}
+.verdict.go{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,var(--bg))}
+.verdict.mid{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 14%,var(--bg))}
+.verdict.no{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 14%,var(--bg))}
+
+/* Quiz */
+.q{display:grid;gap:10px}
+.q .qn{font-family:var(--display);font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums}
+.q h3{font-size:20px}
+.opts{display:grid;gap:8px}
+.opt{text-align:left;border:1px solid var(--line);background:var(--s1);border-radius:10px;padding:10px 14px}
+.opt:hover:not([disabled]){border-color:var(--cyan)}
+.opt.right{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 16%,var(--s1))}
+.opt.wrong{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 16%,var(--s1))}
+.opt[disabled]{cursor:default}
+.qprog{display:flex;gap:4px}
+.qprog i{flex:1;height:6px;border-radius:3px;background:var(--s2)}
+.qprog i.r{background:var(--ok)}.qprog i.w{background:var(--bad)}
+.score{font-family:var(--display);font-size:44px;font-weight:800;font-variant-numeric:tabular-nums}
+
+.case-out{display:grid;gap:8px}
+.case-out .name{font-family:var(--display);font-size:22px;font-weight:700}
+.quote{font-size:17px;border-left:3px solid var(--purple);padding-left:12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:999px;font-weight:500;font-size:14px;z-index:20}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* ---- Ruta 90 días + kit (simulación) ---- */
+.note{border:1px solid var(--warn);border-radius:10px;padding:8px 12px;font-size:14px;color:var(--fg);background:color-mix(in srgb,var(--warn) 10%,var(--bg))}
+.viewing{border-left:3px solid var(--cyan);padding:6px 12px;background:var(--s1);border-radius:0 10px 10px 0}
+.trace{font-size:12.5px;color:var(--cyan);margin-top:6px}
+.teamt td.num,.teamt th{white-space:nowrap}
+.teamt td.num{font-variant-numeric:tabular-nums;font-family:var(--display)}
+.teamt tr.sel td{background:var(--s2)}
+.teamt .btn{padding:5px 10px;font-size:13px}
+.agenda{display:grid;gap:10px}
+.ses{display:grid;grid-template-columns:120px minmax(0,1fr) auto;gap:14px;align-items:start;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+@media (max-width:640px){.ses{grid-template-columns:1fr}}
+.ses .when b{font-family:var(--display);display:block;font-size:15px}
+.ses .when span{font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums}
+.ses .act{display:grid;gap:8px;justify-items:start}
+.ses .act .btn{font-size:13px;padding:6px 10px;text-decoration:none;color:var(--fg)}
+.ses.done{opacity:.65}
+.mini{display:flex;gap:6px;align-items:center;font-size:14px;cursor:pointer}
+.mini input{width:18px;height:18px;accent-color:var(--cyan)}
+.hito.acc .kind{color:var(--cyan)}.hito.cap .kind{color:var(--purple)}
+
+.headR{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.rutaBtn{border:1px solid var(--magenta);background:color-mix(in srgb,var(--magenta) 18%,var(--bg));color:var(--fg);border-radius:999px;padding:6px 14px;font-family:var(--display);font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+.rutaBtn[aria-current="page"]{background:var(--magenta);color:#fff}
+.rutaBtn .flag{width:14px;height:10px;background:repeating-conic-gradient(var(--fg) 0 25%,transparent 0 50%) 0 0/5px 5px;border:1px solid var(--fg);border-radius:1px}
+.simbar{background:color-mix(in srgb,var(--warn) 16%,var(--bg));border-bottom:1px solid var(--warn);font-size:13px;color:var(--fg)}
+.simbar .wrap{padding-block:6px}
+.rhead{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:18px;align-items:end}
+@media (max-width:760px){.rhead{grid-template-columns:1fr}}
+.rin{display:grid;gap:10px}
+.rin label{font-family:var(--display);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.rin input[type=date]{background:var(--s1);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;font-size:15px;color-scheme:dark;max-width:220px}
+.rsum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.rsum .stat .v{font-size:26px}
+.track{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;position:relative}
+@media (max-width:760px){.track{grid-template-columns:repeat(7,minmax(92px,1fr));overflow-x:auto;padding-bottom:6px}}
+.stg{border:1px solid var(--line);background:var(--s1);border-radius:12px;padding:10px;text-align:left;display:grid;gap:6px;min-width:0}
+.stg .sn{font-family:var(--display);font-size:13px;font-weight:700}
+.stg .sd{font-size:12px;color:var(--mute);font-variant-numeric:tabular-nums}
+.stg .sbar{height:5px;border-radius:3px;background:var(--s2);overflow:hidden}
+.stg .sbar i{display:block;height:100%;background:var(--cyan)}
+.stg.now{border-color:var(--magenta)}
+.stg.now .sn::after{content:" · hoy";color:var(--magenta);font-weight:600}
+.stg[aria-pressed="true"]{background:var(--s2);border-color:var(--fg)}
+.hitos{display:grid;gap:8px}
+.hito{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:start;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.hito input{width:20px;height:20px;accent-color:var(--cyan);margin-top:2px}
+.hito .hn{font-weight:500}
+.hito .hm{font-size:13px;color:var(--mute);margin-top:2px}
+.hito .hd{font-family:var(--display);font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+.hito .hd.late{color:var(--magenta)}
+.hito.done{opacity:.6}
+.hito.done .hn{text-decoration:line-through;text-decoration-color:var(--mute)}
+.hito.gate{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 9%,var(--s1))}
+.hito.pit{border-color:var(--magenta);background:color-mix(in srgb,var(--magenta) 10%,var(--s1))}
+.hito .crit{margin:8px 0 0;padding-left:18px;font-size:14px;display:grid;gap:4px}
+.kind{display:inline-block;font-family:var(--display);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;margin-right:6px}
+.gate .kind{color:var(--warn)}.pit .kind{color:var(--magenta)}.acad .kind{color:var(--cyan)}
+.acadbar{display:flex;align-items:center;gap:10px;margin-top:8px;font-size:13px;color:var(--mute)}
+.acadbar .bar{max-width:180px}
+.linkbtn{background:none;border:0;padding:0;color:var(--cyan);text-decoration:underline;font-size:13px}
+.metas .n{font-family:var(--display);font-variant-numeric:tabular-nums;font-weight:700}
+.sema{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:560px){.sema{grid-template-columns:1fr}.rsum{grid-template-columns:1fr 1fr}}
+.sema div{border-radius:12px;padding:12px;border:1px solid var(--line);font-size:14px}
+.sema b{font-family:var(--display);display:block;margin-bottom:2px}
+.sema .g{border-color:var(--ok)}.sema .y{border-color:var(--warn)}.sema .r{border-color:var(--bad)}
+.who{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.who .panel{padding:12px 14px}
+.who .panel b{font-family:var(--display);display:block}
+.who .panel span{font-size:13px;color:var(--mute)}
+
+.clis{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.cli{display:grid;gap:12px;align-content:start;background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:16px}
+.cli b{font-family:var(--display);font-size:22px;display:block;margin-top:2px}
+.cli .btn.primary{text-decoration:none;justify-self:start}
+.cli.done{border-color:var(--cyan)}
+.lockd{font-family:var(--display);font-size:13px;color:var(--mute);border:1px dashed var(--line);border-radius:10px;padding:8px 12px;justify-self:start}
+.score{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin-top:10px;font-size:14px;font-variant-numeric:tabular-nums}
+.score b{font-family:var(--display);color:var(--cyan)}
+.score.off{color:var(--mute);font-size:13px}
+.live{font-family:var(--display);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--bg);background:var(--cyan);border-radius:999px;padding:2px 8px}
+.assign{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:14px}
+.hero{display:grid;gap:6px;margin-bottom:6px}
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;max-width:560px}
+</style>
+<style>
+.recBtn{border:1px solid var(--cyan);background:transparent;color:var(--cyan);border-radius:999px;padding:6px 14px;font-family:var(--display);font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+.recBtn:hover,.recBtn[aria-expanded="true"]{background:var(--cyan);color:var(--bg)}
+.headR{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.recWrap{position:fixed;inset:0;z-index:30;background:color-mix(in srgb,#000 55%,transparent);display:flex;justify-content:flex-end}
+.recWrap[hidden]{display:none!important}
+.recPanel{background:var(--bg);border-left:1px solid var(--line);width:min(520px,100%);height:100%;overflow-y:auto;padding:max(20px,env(safe-area-inset-top,0px)) 20px 32px;display:grid;gap:16px;align-content:start}
+.recTop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.recTop h2{font-size:24px;font-weight:800}
+.recClose{border:1px solid var(--line);background:var(--s1);border-radius:10px;width:36px;height:36px;font-size:18px;line-height:1}
+.recSearch{width:100%;background:var(--s1);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit;font-size:15px}
+.recSearch::placeholder{color:var(--mute)}
+.recCat .files{display:grid;gap:8px;padding:0 12px 12px}
+.recFile{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;text-decoration:none;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.recFile:hover{border-color:var(--cyan)}
+.recFile .ft{font-family:var(--display);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--cyan)}
+.recFile .go{color:var(--cyan);font-size:13px;white-space:nowrap}
+.recEmpty{display:grid;gap:12px;justify-items:start}
+mark{background:color-mix(in srgb,var(--cyan) 35%,transparent);color:inherit;border-radius:3px}
+</style>
+<style>
+.cat{background:var(--s1);border:1px solid var(--line);border-radius:14px}
+.cat.full{border-color:var(--cyan)}
+.cat summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;align-items:center;padding:14px 16px}
+.cat summary::-webkit-details-marker{display:none}
+.cn{font-family:var(--display);font-weight:700;font-size:16px}
+.cc{font-family:var(--display);font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cc .arr{display:inline-block;margin-left:8px;transition:transform .2s}
+.cat[open] .cc .arr{transform:rotate(180deg)}
+.cat.full .cc{color:var(--cyan)}
+.cbar{grid-column:1/-1;height:5px;border-radius:3px;background:var(--s2);overflow:hidden}
+.cbar i{display:block;height:100%;background:var(--cyan)}
+.cat .hitos{padding:0 12px 12px}
+.cat .hito{background:var(--bg)}
+.hito.wait{border-color:var(--purple)}
+.vtag{display:inline-block;font-family:var(--display);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--purple);margin-right:6px}
+.vline{font-size:13px;color:var(--mute);margin-top:6px}
+.vline.wait{color:var(--fg)}
+.btn.sm{padding:5px 10px;font-size:13px;margin-top:8px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:var(--mute)}
+.legend b{font-family:var(--display);color:var(--fg);font-weight:600}
+.stg.ok{border-color:var(--cyan)}
+.stg .okt{color:var(--cyan)}
+.verdict{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.roles{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mute)}
+.roles .seg button{padding:5px 10px;font-size:13px}
+.stagehead{display:grid;gap:6px}
+.calln .late{color:var(--magenta);font-weight:600}
+</style>
+<header class="top"><div class="wrap"><div class="brandrow"><div class="brand"><span class="tag">BullsEye · Onboarding SDR</span><h1 id="ttl">Tu ruta de 90 días</h1></div><div class="headR"><button type="button" class="recBtn" id="recOpen" aria-expanded="false" aria-controls="recWrap">Recursos</button><div class="roles" id="rolesBox">Ver como<div class="seg" id="roles"></div></div></div></div></div></header>
+<div class="recWrap" id="recWrap" hidden><div class="recPanel" role="dialog" aria-modal="true" aria-labelledby="recTitle"><div class="recTop"><div><span class="eyebrow">Carpeta de Drive</span><h2 id="recTitle">Recursos</h2></div><button type="button" class="recClose" id="recClose" aria-label="Cerrar">×</button></div><input type="search" class="recSearch" id="recQ" placeholder="Buscar un archivo o una categoría" aria-label="Buscar recursos"><div id="recList" style="display:grid;gap:10px"></div></div></div>
+<main><div class="wrap"><section class="lap"><div id="ruta90" style="display:grid;gap:22px"></div></section></div></main>
+<div class="toast" id="toast" hidden></div>
+<script>
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(m){const t=$("#toast");t.textContent=m;t.hidden=false;clearTimeout(toast.h);toast.h=setTimeout(()=>t.hidden=true,1800)}
+const remember=t=>`<div class="remember"><b>Lo que debes recordar</b><p>${t}</p></div>`;
+const tbl=(head,rows)=>`<div class="tbl"><table><thead><tr>${head.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+
+/* PLATAFORMA: el plan, el avance, el rol y el calendario los entrega la
+   plataforma (window.__ONB, lib/onboardingSdr/). El plan se edita en
+   lib/onboardingSdr/plan.ts, no aquí. */
+const ONB=window.__ONB||{};
+const STAGES=ONB.stages||[];
+const HITOS=ONB.hitos||[];
+const T=ONB.hab||"Tatiana Zavala",TL="tu líder de célula";
+const CATALOG=ONB.catalog||[];
+const CAL=ONB.cal||{status:"off",events:[],byHito:{}};
+const cliOf=r=>(r.clientes||[]).map(id=>CATALOG.find(c=>c.id===id)).filter(Boolean);
+const acadH=(c,i)=>i?{id:"acad-"+c.id,e:3,c:"Segundo cliente",d:8,g:"acad",t:"Entrenamiento de cliente · "+c.n,w:"Tú, con apoyo del KAM",vb:TL,x:"Propuesta de valor, ICP, objeciones y quiz (8 de 10).",v:"doble"}:{id:"acad-"+c.id,e:2,c:"Tus clientes",d:4,g:"acad",t:"Entrenamiento de cliente · "+c.n,w:"Tú, con apoyo del KAM",vb:TL,x:"Propuesta de valor, ICP, objeciones y quiz (8 de 10).",v:"doble"};
+function H(r){const cl=cliOf(r),out=[];HITOS.forEach(h=>{out.push(h);if(h.id==="kam"&&cl[0])out.push(acadH(cl[0],0));if(h.id==="kam2")cl.slice(1).forEach(c=>out.push(acadH(c,1)))});return out}
+const cbOf=h=>h.cb||(h.w===T?["hab"]:["lider"]);const canConfirm=h=>cbOf(h).includes(ROLE);
+const canMark=h=>h.rh?ROLE==="rrhh":(h.g==="gate"||h.lo)?ROLE==="lider":h.g==="pit"?ROLE!=="sdr":true;
+const KIND={gate:"Compuerta",pit:"Pit Stop",acad:"Entrenamiento",acc:"Acceso",agenda:"Inducción",cap:"Capacitación"};
+
+/* ---------- fechas (solo para ubicar la semana) ---------- */
+const D0=s=>{const [y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d)};
+const addD=(dt,n)=>{const x=new Date(dt);x.setDate(x.getDate()+n);return x};
+const iso=dt=>`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;
+const MES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"],DIA=["dom","lun","mar","mié","jue","vie","sáb"];
+const fmt=dt=>`${DIA[dt.getDay()]} ${dt.getDate()} ${MES[dt.getMonth()]}`;
+const fmtC=dt=>`${dt.getDate()} ${MES[dt.getMonth()]}`;
+const hoy=()=>{const t=new Date();return new Date(t.getFullYear(),t.getMonth(),t.getDate())};
+function nextMonday(){let x=hoy();do{x=addD(x,1)}while(x.getDay()!==1);return iso(x)}
+const wkOf=h=>h.d<1?0:Math.floor((h.d-1)/7)+1;
+const wkEnd=(ing,wk)=>wk<1?addD(D0(ing),-1):addD(D0(ing),wk*7-1);
+const dayNow=ing=>Math.round((hoy()-D0(ing))/864e5)+1;
+
+/* ---------- datos locales (vista previa) ---------- */
+const ROLES=(ONB.roles&&ONB.roles.length?ONB.roles:["sdr"]);
+let ROLE=ROLES[0];const EDIT=()=>ROLE==="lider";const EDITOR=()=>ROLE!=="sdr";
+const fresh=st=>Object.assign({ingreso:nextMonday(),hechos:{},valida:{},etapas:{},clientes:[]},st||{},{ingreso:(st&&st.ingreso)||nextMonday()});
+let local=fresh(ONB.state);local.academias=ONB.academias||{};
+/* Cada cambio se manda a la plataforma, que lo valida, lo guarda y devuelve el estado oficial. */
+let pendingOp=null;
+const lsave=()=>{if(pendingOp){try{parent.postMessage({source:"onboarding-sdr",type:"op",role:ROLE,op:pendingOp},"*")}catch(e){}pendingOp=null}};
+const send=op=>{pendingOp=op};
+window.addEventListener("message",e=>{const m=e.data;if(!m||m.source!=="onboarding-host")return;
+ if(m.type==="state"){const ac=local.academias;local=fresh(m.state);local.academias=m.academias||ac;redraw()}
+ if(m.type==="error"){toast(m.msg||"No se pudo guardar")}});
+let stageSel=null;const OPEN={};
+const acadData=(r,cid)=>(r.academias&&r.academias[cid])||null;
+const marked=(r,h)=>!!((r.hechos||{})[h.id]);
+function st(r,h){
+ if(h.alias&&(r.hechos||{})[h.alias])return "ok";
+ if(h.g==="acad"){const a=acadData(r,h.id.slice(5));return (marked(r,h)||(a&&a.quiz>=8))?"ok":"pend"}
+ if(!marked(r,h))return "pend";
+ if(h.v==="doble"&&!(r.valida||{})[h.id])return "espera";
+ return "ok";
+}
+const isDone=(r,h)=>st(r,h)==="ok";
+const stageList=(r,i)=>H(r).filter(h=>h.e===i);
+const stageAll=(r,i)=>stageList(r,i).every(h=>isDone(r,h));
+const stageOk=(r,i)=>STAGES[i].conf?!!(r.etapas||{})[i]:stageAll(r,i);
+const stamp=()=>({at:new Date().toISOString(),by:ROLE,email:ONB.viewer||""});
+const who=by=>by==="lider"?"tu líder de célula":by==="rrhh"?"JP (RRHH)":by==="hab"?"Tatiana Zavala":"el SDR";
+function redo(i){local.etapas=Object.assign({},local.etapas,{[i]:null})}
+function toggle(h,on){
+ if(!canMark(h)){toast(h.rh?"Este hito lo confirma JP (RRHH).":h.g==="pit"?"Este hito lo marca un editor.":"Este hito lo marca tu líder de célula.");redraw();return}
+ local.hechos=Object.assign({},local.hechos,{[h.id]:on?stamp():null});send({kind:"hecho",id:h.id,on});
+ if(!on){local.valida=Object.assign({},local.valida,{[h.id]:null});redo(h.e)}
+ lsave();redraw();
+}
+function validate(id,on){
+ const h=H(local).find(x=>x.id===id);if(!h||!canConfirm(h))return;
+ local.valida=Object.assign({},local.valida,{[id]:on?stamp():null});if(!on)redo(h.e);send({kind:"valida",id,on});
+ lsave();redraw();toast(on?"Confirmado":"Confirmación quitada");
+}
+function confirmStage(i,on){if(!EDIT())return;local.etapas=Object.assign({},local.etapas,{[i]:on?stamp():null});send({kind:"etapa",i,on});lsave();redraw();toast(on?"Etapa superada":"Confirmación quitada")}
+
+/* ---------- vistas ---------- */
+function stats(r){const HS=H(r),ing=r.ingreso||nextMonday(),t=hoy();
+ const ok=HS.filter(h=>isDone(r,h)).length,esp=HS.filter(h=>st(r,h)==="espera").length;
+ const late=HS.filter(h=>!isDone(r,h)&&t>wkEnd(ing,wkOf(h))).length;
+ const dn=dayNow(ing);let now=dn<1?0:dn<=7?(stageOk(r,1)?2:1):dn<=14?3:dn<=30?4:dn<=60?5:6;
+ const sup=STAGES.filter((_,i)=>stageOk(r,i)).length;
+ return {ok,esp,late,now,ing,sup,tot:HS.length}}
+function stageDate(S,ing){return S.w?`Semana ${S.w} · desde ${fmtC(addD(D0(ing),(S.w-1)*7))}`:S.wk}
+function hitoRow(h,r,ing){
+ const s=st(r,h),wk=wkOf(h),late=s!=="ok"&&hoy()>wkEnd(ing,wk),kind=KIND[h.g]||"",canTick=canMark(h);
+ const vb=h.vb||h.w;
+ let meta=h.crit?`<p class="hm">Decide: ${esc(h.w)}. Para aprobar:</p><ul class="crit">${h.crit.map(c=>`<li>${esc(c)}</li>`).join("")}</ul>`:`<p class="hm">Con: ${esc(h.w)}${h.x?" · "+esc(h.x):""}</p>`;
+ if(h.g==="acad"){const c=CATALOG.find(c=>"acad-"+c.id===h.id);if(c&&c.u)meta+=`<p class="hm"><a href="${esc(c.u)}" target="_blank" rel="noopener">Abrir el Entrenamiento de ${esc(c.n)}</a></p>`}
+ const ev=(CAL.byHito||{})[h.id];if(ev)meta+=`<p class="hm calln">📅 En tu calendario: <b>${esc(calWhen(ev))}</b> · ${ev.link?`<a href="${esc(ev.link)}" target="_blank" rel="noopener">${esc(ev.title)}</a>`:esc(ev.title)}${ev.rs==="needsAction"?" · <span class=\"late\">invitación sin responder</span>":ev.rs==="declined"?" · <span class=\"late\">rechazada</span>":""}</p>`;
+ let ver="";const m=(r.hechos||{})[h.id];
+ if(h.v==="doble"){
+  if(s==="pend")ver=`<p class="vline"><span class="vtag">Doble verificación</span>Lo marcas tú y lo confirma ${esc(vb)}.</p>`;
+  else if(s==="espera")ver=`<p class="vline wait"><span class="vtag">Por confirmar</span>Marcado por ${who(m.by)} · falta que lo confirme ${esc(vb)}.</p>${canConfirm(h)?`<button type="button" class="btn sm" data-val="${h.id}">Confirmar</button>`:""}`;
+  else{const v=(r.valida||{})[h.id];ver=`<p class="trace">${v?`Confirmado por ${esc(vb)} · ${fmt(new Date(v.at))}`:"Confirmado"}</p>${canConfirm(h)&&v?`<button type="button" class="linkbtn" data-unval="${h.id}">Quitar confirmación</button>`:""}`}
+ }else if(!canMark(h)&&s!=="ok")ver=`<p class="trace">${h.rh?"Lo confirma JP (RRHH).":h.g==="pit"?"Lo marca un editor (líder, Operaciones o RRHH).":"Lo marca tu líder de célula."}</p>`;
+ if(s==="ok"&&m&&m.by&&h.v!=="doble")ver=`<p class="trace">Marcado por ${who(m.by)} · ${fmt(new Date(m.at))}</p>`;
+ return `<div class="hito ${h.g||""} ${s==="ok"?"done":""} ${s==="espera"?"wait":""}"><input type="checkbox" id="h-${h.id}" data-id="${h.id}" ${s!=="pend"?"checked":""} ${canTick?"":"disabled"}><div><label for="h-${h.id}"><span class="hn">${kind?`<span class="kind">${kind}</span>`:""}${esc(h.t)}</span>${meta}</label>${ver}</div><span class="hd ${late?"late":""}">${wk?"Semana "+wk:"Previa"}${late?"<br>atrasado":""}</span></div>`;
+}
+function catsHtml(i,r,ing){
+ const all=stageList(r,i),cats=[...new Set(all.map(h=>h.c))];
+ const first=cats.find(c=>!all.filter(h=>h.c===c).every(h=>isDone(r,h)));
+ return `<div style="display:grid;gap:10px">${cats.map(c=>{const l=all.filter(h=>h.c===c),d=l.filter(h=>isDone(r,h)).length,w=l.filter(h=>st(r,h)==="espera").length,full=d===l.length,key=i+"|"+c,open=key in OPEN?OPEN[key]:c===first;
+  return `<details class="cat ${full?"full":""}" data-key="${esc(key)}" ${open?"open":""}><summary><span class="cn">${esc(c)}</span><span class="cc">${full?"Superada":`${d}/${l.length}`}${w?` · ${w} por confirmar`:""}<span class="arr" aria-hidden="true">▾</span></span><span class="cbar"><i style="width:${d/l.length*100}%"></i></span></summary><div class="hitos">${l.map(h=>hitoRow(h,r,ing)).join("")}</div></details>`}).join("")}</div>`;
+}
+function closeHtml(i,r){
+ const S=STAGES[i],all=stageAll(r,i),c=(r.etapas||{})[i];
+ if(S.conf){
+  if(c)return `<div class="verdict go"><span><b>Etapa superada.</b> La confirmó tu líder de célula el ${fmt(new Date(c.at))}.</span>${EDIT()?`<button type="button" class="linkbtn" data-unstage="${i}">Deshacer</button>`:""}</div>`;
+  if(all)return EDIT()?`<div class="verdict mid"><span>El SDR completó todas las categorías de esta etapa.</span><button type="button" class="btn primary" data-stage="${i}">Confirmar etapa superada</button></div>`:`<div class="verdict mid">Completaste todas las categorías. Falta que tu líder de célula confirme que superaste la etapa.</div>`;
+  return `<div class="verdict">Para superar esta etapa completa todas sus categorías. Después tu líder de célula la confirma.</div>`;
+ }
+ if(i===0)return all?`<div class="verdict go"><b>Todo listo para tu primer día.</b></div>`:`<div class="verdict">Completa tu ingreso y tus accesos antes de tu primer día.</div>`;
+ return all?`<div class="verdict go"><b>Mes cerrado.</b></div>`:`<div class="verdict">Este mes se cierra con su Pit Stop.</div>`;
+}
+function clientesHtml(r,ing){
+ const cl=cliOf(r),abierto=EDITOR()||hoy()>=addD(D0(ing),2);
+ const assign=EDITOR()?`<div class="assign"><span class="eyebrow">Asignar clientes</span><div class="slots">${[0,1].map(i=>{const cur=(r.clientes||[])[i]||"";return `<div class="piece"><label for="cli-${i}">Cliente ${i+1}</label><select id="cli-${i}" data-slot="${i}"><option value="">Sin asignar</option>${CATALOG.filter(c=>!c.off||c.id===cur).map(c=>`<option value="${c.id}" ${c.id===cur?"selected":""}>${esc(c.n)}</option>`).join("")}</select></div>`}).join("")}</div><p class="hm">El cliente 1 lo define la líder antes del ingreso. El cliente 2 se suma en la semana 2. La lista muestra los clientes activos que ya tienen Entrenamiento cliente.</p></div>`:"";
+ return `<div class="block"><span class="eyebrow">Tu cartera inicial</span><h3 style="font-size:24px">Estos son los clientes que trabajarás</h3>
+ ${cl.length?`<div class="clis">${cl.map((c,ci)=>{const h=acadH(c,ci),done=isDone(r,h);return `<div class="cli ${done?"done":""}"><div><span class="eyebrow">Cliente ${ci+1}</span><b>${esc(c.n)}</b><p class="hm">${done?"Entrenamiento completado":"Entrenamiento por completar"} · meta: quiz 8 de 10 ${ci?"durante tu semana 2":"antes de la salida a pista"}.</p>${(()=>{const a=acadData(r,c.id);return a&&(a.laps||a.score!=null)?`<div class="score"><span>Vueltas: <b>${a.laps}/10</b>${a.score!=null?` · Quiz: <b>${a.score}/${a.total}</b>${a.quiz>=8?" (aprobado)":" (aún no aprueba)"}`:" · Quiz sin rendir"}</span></div>`:`<div class="score off"><span>Todavía no hay avance registrado en el entrenamiento de este cliente.</span></div>`})()}</div>${abierto&&c.u?`<a class="btn primary" href="${esc(c.u)}" target="_blank" rel="noopener">Estudiar su propuesta de valor</a>`:`<span class="lockd">Se abre en tu semana ${ci?2:1}</span>`}<label class="mini"><input type="checkbox" data-id="${h.id}" ${done?"checked":""} ${canMark(h)?"":"disabled"}> Completé el entrenamiento y aprobé el quiz (lo confirma tu líder)</label></div>`}).join("")}</div>
+ <p class="hm">El entrenamiento de tu primer cliente se abre en tu semana 1, y el del segundo en la semana 2. Con 8 o más en el quiz el hito se marca solo; si no, lo marcas tú y lo confirma tu líder de célula.</p>`:`<p class="panel" style="color:var(--mute)">Tu líder te asignará tus clientes antes de tu ingreso.</p>`}
+ ${assign}</div>`;
+}
+const RS={accepted:"Aceptada",tentative:"Tal vez",declined:"Rechazada",needsAction:"Sin responder"};
+function calWhen(ev){const d=new Date(ev.start);return ev.allDay?fmt(D0(ev.start.slice(0,10))):`${fmt(d)} · ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`}
+function calHtml(){
+ if(CAL.status==="off")return "";
+ if(CAL.status==="error")return `<div class="block"><span class="eyebrow">Google Calendar</span><h3>Tu agenda de onboarding</h3><p class="panel" style="color:var(--mute)">${esc(CAL.msg||"No se pudo leer el calendario.")}</p></div>`;
+ const evs=CAL.events||[],now=Date.now(),up=evs.filter(e=>new Date(e.end||e.start).getTime()>=now),past=evs.length-up.length;
+ const inv=evs.filter(e=>e.rs&&e.rs!=="organizer"),acc=inv.filter(e=>e.rs==="accepted").length;
+ return `<div class="block"><span class="eyebrow">Google Calendar · ${esc(CAL.email||"")}</span><h3>Tu agenda de onboarding</h3>
+ <p class="hm">${evs.length?`${evs.length} eventos del onboarding en tu calendario${inv.length?` · ${acc} de ${inv.length} invitaciones aceptadas`:""}${past?` · ${past} ya pasaron`:""}.`:"Todavía no hay eventos del onboarding en tu calendario. Aparecen aquí apenas te lleguen las invitaciones."}</p>
+ ${up.length?`<div class="tbl"><table><thead><tr><th>Cuándo</th><th>Evento</th><th>Hito</th><th>Tu respuesta</th></tr></thead><tbody>${up.slice(0,12).map(e=>{const h=HITOS.find(x=>x.id===e.hito);return `<tr><td>${esc(calWhen(e))}</td><td>${e.link?`<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.title)}</a>`:esc(e.title)}</td><td>${h?esc(h.t):"—"}</td><td>${esc(RS[e.rs]||(e.rs==="organizer"?"Organizas tú":"—"))}</td></tr>`}).join("")}</tbody></table></div>`:""}</div>`;
+}
+function rutaHtml(){
+ const r=local,s=stats(r);if(stageSel===null)stageSel=s.now;
+ const S=STAGES[stageSel],sl=stageList(r,stageSel),sd=sl.filter(h=>isDone(r,h)).length,cats=[...new Set(sl.map(h=>h.c))],cd=cats.filter(c=>sl.filter(h=>h.c===c).every(h=>isDone(r,h))).length;
+ return `${ROLE==="lider"?`<p class="viewing">Estás viendo la ruta como <b>líder de célula</b>: confirmas tus hitos de doble verificación y las capacitaciones de clientes que dicta el KAM, marcas las compuertas y confirmas cada etapa superada.</p>`:ROLE==="rrhh"?`<p class="viewing">Estás viendo la ruta como <b>RRHH</b>: confirmas los hitos de antes de entrar y los Pit Stops.</p>`:ROLE==="hab"?`<p class="viewing">Estás viendo la ruta como <b>habilitadora comercial</b>: confirmas las capacitaciones y reforzamientos de herramientas que dictas, la auditoría de call-scoring y las clínicas.</p>`:""}
+<div class="rhead panel">
+ <div class="rin"><label for="ingreso">Fecha de ingreso (día 1)</label><input type="date" id="ingreso" value="${esc(s.ing)}"><p style="font-size:13px;color:var(--mute)">Tu ruta se ordena por semanas desde esta fecha.</p></div>
+ <div class="rsum">
+  <div class="stat"><span class="v">${s.ok}/${s.tot}</span><span class="k">hitos cumplidos</span></div>
+  <div class="stat"><span class="v" style="color:var(--purple)">${s.esp}</span><span class="k">por confirmar</span></div>
+  <div class="stat"><span class="v">${s.sup}/${STAGES.length}</span><span class="k">etapas superadas</span></div>
+ </div>
+</div>
+${calHtml()}
+<div class="block"><h3>Tu ruta por etapas</h3><div class="track" role="group" aria-label="Etapas">${STAGES.map((st_,i)=>{const hs=stageList(r,i),d=hs.filter(h=>isDone(r,h)).length,ok=stageOk(r,i);return `<button type="button" class="stg ${i===s.now?"now":""} ${ok?"ok":""}" data-i="${i}" aria-pressed="${i===stageSel}"><span class="sn">${st_.n}</span><span class="sd">${st_.w?"Semana "+st_.w:st_.wk}</span><span class="sbar"><i style="width:${d/hs.length*100}%"></i></span><span class="sd ${ok?"okt":""}">${ok?"Superada":`${d}/${hs.length} hitos`}</span></button>`}).join("")}</div></div>
+<div class="block"><div class="stagehead"><span class="eyebrow">${esc(stageDate(S,s.ing))}</span><h3 style="font-size:24px">${esc(S.n)}</h3><p class="hm">${sd}/${sl.length} hitos · ${cd}/${cats.length} categorías superadas</p></div>
+<div class="legend"><span><b>Simple:</b> lo marcas tú.</span><span><b>Doble verificación:</b> lo marcas tú y lo confirma la persona indicada.</span><span><b>Antes de entrar:</b> lo confirma JP (RRHH).</span><span><b>Compuertas:</b> las marca tu líder.</span></div>
+${catsHtml(stageSel,r,s.ing)}
+${closeHtml(stageSel,r)}</div>
+${clientesHtml(r,s.ing)}
+<div class="block"><span class="eyebrow">Tus primeros 90 días en BullsEye</span><h3 style="font-size:24px">Qué esperar de tu onboarding</h3>
+<p>Tu onboarding avanza por etapas. Las primeras son semanales y cada una se supera cuando completas todas sus categorías y tu líder de célula lo confirma. Desde el mes 1 operas con tu cartera y cada mes se cierra con un Pit Stop. Tu líder, Operaciones y RRHH ven el mismo avance que tú.</p>
+<div class="grid3">
+<div class="panel"><span class="eyebrow">Semana 1 · aprendes</span><p style="margin-top:6px">Primero la inducción: bienvenida, áreas de BullsEye y accesos. Luego la capacitación: herramientas, método de venta y tus clientes. Terminas con la salida a pista.</p></div>
+<div class="panel"><span class="eyebrow">Semana 2 · practicas</span><p style="margin-top:6px">Haces tu primera llamada en vivo acompañado, con feedback completo, y sumas tu segundo cliente.</p></div>
+<div class="panel"><span class="eyebrow">Meses 1 a 3 · operas</span><p style="margin-top:6px">Trabajas tus dos clientes con 1:1 semanal en el mes 1 y cada dos semanas desde el mes 2. Pit Stops en los días 30, 60 y 90.</p></div>
+</div></div>
+<div class="block"><h3>Curva de metas</h3>
+${tbl(["Mes","Reuniones realizadas","Cumplimiento mínimo","Asistencia exigida"],[["Mes 1 (días 1–30)","<span class='n'>10</span>","70%","Se observa"],["Mes 2 (días 31–60)","<span class='n'>15</span>","70%","85% o más"],["Mes 3 (días 61–90) en adelante","<span class='n'>20</span> · meta de un SDR consolidado","70%","85% o más"],["<b>Total 90 días</b>","<span class='n'>45</span>","70%",""]]).replace('<table>','<table class="metas">')}
+<div class="sema"><div class="g"><b>Verde</b>100% o más de la meta del mes: avanzas y puedes sumar clientes.</div><div class="y"><b>Amarillo</b>70% a 99%: avanzas con compromisos concretos.</div><div class="r"><b>Rojo</b>Menos de 70%: plan de mejora de 2 semanas.</div></div></div>
+${remember("Avanzas por criterios, no por calendario. Si un hito se atrasa, avísale a tu líder esa misma semana.")}`;
+}
+/* ---------- montaje ---------- */
+const root=document.getElementById("ruta90");
+root.addEventListener("change",e=>{
+ const c=e.target.closest("input[data-id]");if(c){const h=H(local).find(x=>x.id===c.dataset.id);if(h)toggle(h,c.checked);return}
+ const sl=e.target.closest("select[data-slot]");if(sl){const arr=[(local.clientes||[])[0]||"",(local.clientes||[])[1]||""];arr[+sl.dataset.slot]=sl.value;local.clientes=[...new Set(arr.filter(Boolean))];send({kind:"clientes",ids:local.clientes});lsave();redraw();return}
+ if(e.target.id==="ingreso"&&e.target.value){local.ingreso=e.target.value;stageSel=null;send({kind:"ingreso",date:e.target.value});lsave();redraw()}
+});
+root.addEventListener("click",e=>{
+ const sm=e.target.closest("summary");if(sm){const d=sm.parentElement;OPEN[d.dataset.key]=!d.open;return}
+ const v=e.target.closest("[data-val]");if(v){validate(v.dataset.val,true);return}
+ const u=e.target.closest("[data-unval]");if(u){validate(u.dataset.unval,false);return}
+ const g=e.target.closest("[data-stage]");if(g){confirmStage(+g.dataset.stage,true);return}
+ const ug=e.target.closest("[data-unstage]");if(ug){confirmStage(+ug.dataset.unstage,false);return}
+ const b=e.target.closest(".stg");if(b){stageSel=+b.dataset.i;redraw()}
+});
+(function(){const box=document.getElementById("roles"),LBL={sdr:"SDR",lider:"Líder de célula",rrhh:"RRHH",hab:"Habilitadora comercial"};
+ box.innerHTML=ROLES.map(r=>`<button type="button" data-role="${r}" aria-pressed="${r===ROLE}">${LBL[r]}</button>`).join("");
+ if(ROLES.length<2)document.getElementById("rolesBox").hidden=true;
+ if(ONB.sdrName&&!ONB.own)document.getElementById("ttl").textContent="Ruta de 90 días de "+ONB.sdrName;})();
+document.getElementById("roles").addEventListener("click",e=>{const b=e.target.closest("[data-role]");if(!b)return;ROLE=b.dataset.role;document.querySelectorAll("#roles button").forEach(x=>x.setAttribute("aria-pressed",x===b));redraw()});
+
+/* ---------- Recursos (carpeta de Drive) ---------- */
+const DRIVE_URL="https://drive.google.com/drive/folders/1ndlBrK3ZU4uO6uNi7_PU4ZgjtbJwjwvM";
+/* Cada carpeta de Drive es una categoría, en el mismo orden que en Drive. Cada archivo: {n: nombre, t: tipo, u: link}. */
+const RECURSOS=[
+ {cat:"Allo",items:[
+  {n:"Allo · Onboarding",t:"Video",u:"https://drive.google.com/file/d/1Tt8uBw45G_6jIGXZLj15qG4qBgGyGm7J/view"}]},
+ {cat:"HubSpot",items:[
+  {n:"Crear contacto",t:"Video",u:"https://drive.google.com/file/d/1nCvxCwF7p07sX6nwx3UfXFeDL8yb07os/view"},
+  {n:"Registrar actividad de LinkedIn",t:"Video",u:"https://drive.google.com/file/d/1YxsS9AMV9zRucb54f_IpIwqeWQrOs_IF/view"},
+  {n:"Registrar reunión",t:"Video",u:"https://drive.google.com/file/d/1IWkRuC3CqO0RSRXVX2MO2uN3V4XgJcPi/view"},
+  {n:"Registrar tarea",t:"Video",u:"https://drive.google.com/file/d/1Ir5q3rFCbvg3PZjTB_-F3OfbJuGFvaH8/view"},
+  {n:"Registrar WhatsApp",t:"Video",u:"https://drive.google.com/file/d/1UYeV7aK-2qHFa5mMU076ht0CsbHl3wsy/view"}]}
+];
+const norm=s=>String(s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+const hl=(s,q)=>{if(!q)return esc(s);const i=norm(s).indexOf(q);return i<0?esc(s):esc(s.slice(0,i))+"<mark>"+esc(s.slice(i,i+q.length))+"</mark>"+esc(s.slice(i+q.length))};
+const RECOPEN={};
+function recDraw(){
+ const q=norm($("#recQ").value.trim()),box=$("#recList");
+ if(!RECURSOS.length){box.innerHTML=`<div class="panel recEmpty"><p>La lista de recursos se carga desde la carpeta de Drive del onboarding. Mientras tanto, puedes abrir la carpeta completa.</p><a class="btn primary" href="${DRIVE_URL}" target="_blank" rel="noopener" style="text-decoration:none">Abrir carpeta en Drive</a></div>`;return}
+ const cats=RECURSOS.map(c=>{const cm=q&&norm(c.cat).includes(q);const fs=q&&!cm?c.items.filter(f=>norm(f.n).includes(q)):c.items;return {c,fs,show:!q||cm||fs.length}}).filter(x=>x.show);
+ box.innerHTML=cats.length?cats.map(({c,fs})=>{const open=q?true:!!RECOPEN[c.cat];return `<details class="cat recCat" data-rc="${esc(c.cat)}" ${open?"open":""}><summary><span class="cn">${hl(c.cat,q)}</span><span class="cc">${fs.length} ${fs.length===1?"archivo":"archivos"}<span class="arr" aria-hidden="true">▾</span></span></summary><div class="files">${fs.map(f=>`<a class="recFile" href="${esc(f.u)}" target="_blank" rel="noopener"><span><span class="ft">${esc(f.t||"Archivo")}</span><br>${hl(f.n,q)}</span><span class="go">Abrir ↗</span></a>`).join("")}</div></details>`}).join("")+`<a class="linkbtn" href="${DRIVE_URL}" target="_blank" rel="noopener">Ver la carpeta completa en Drive</a>`:`<p class="panel" style="color:var(--mute)">No hay archivos ni categorías con «${esc($("#recQ").value)}».</p>`;
+}
+function recShow(on){$("#recWrap").hidden=!on;$("#recOpen").setAttribute("aria-expanded",on);document.body.style.overflow=on?"hidden":"";if(on){recDraw();setTimeout(()=>$("#recQ").focus(),30)}else $("#recOpen").focus()}
+$("#recOpen").addEventListener("click",()=>recShow(true));
+$("#recClose").addEventListener("click",()=>recShow(false));
+$("#recWrap").addEventListener("click",e=>{if(e.target.id==="recWrap")recShow(false)});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("#recWrap").hidden)recShow(false)});
+$("#recQ").addEventListener("input",recDraw);
+$("#recList").addEventListener("toggle",e=>{const d=e.target.closest("[data-rc]");if(d&&!$("#recQ").value.trim())RECOPEN[d.dataset.rc]=d.open},true);
+function redraw(){root.innerHTML=rutaHtml()}
+redraw();
+</script>
+</body></html>

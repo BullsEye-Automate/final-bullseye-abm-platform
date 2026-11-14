@@ -13,6 +13,8 @@ const CHILE_HOLIDAYS = new Set<string>([
   // 2026
   "2026-01-01", "2026-04-03", "2026-05-01", "2026-05-21", "2026-06-29",
   "2026-07-16", "2026-09-18", "2026-10-12", "2026-12-08", "2026-12-25",
+  // 2027 (pendiente completar con el calendario oficial)
+  "2027-01-01",
 ]);
 
 export const MN = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];

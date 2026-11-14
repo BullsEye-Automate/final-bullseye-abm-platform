@@ -428,6 +428,13 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   <p class="note">Un referral es avance dentro de la cuenta, no un contacto perdido.${rf.refs.length && !rf.refd.length ? " Sin el vínculo \"Referido por\" no se puede trazar qué generó cada referral (Anexo A4)." : ""}</p></div>
   <div class="rcard"><h4>Referral rate por área (áreas con 5+ contactos efectivos)</h4>${bars(refArea.map((a) => ({ l: `${a.key} (n=${a.eff})`, v: div(a.ref, a.eff) || 0, c: "var(--g-act)" })), { pct: 1 })}</div></div>`;
 
+  // Reconfirmación (piloto): "Reconfirmada" con fecha y hora o, si la reunión
+  // sigue pendiente, "En proceso de reconfirmación"
+  const reconfCell = (m: any) => {
+    if (!m.rcp) return "—";
+    if (m.rc === 1) return `<span style="color:var(--good-fg);font-weight:600">✓ Reconfirmada</span>${m.rca ? `<br><span class="note" style="margin:0">${esc(m.rca)}</span>` : ""}`;
+    return m.st === "Pendiente" ? `<span style="color:var(--warn-fg);font-weight:600">En proceso de reconfirmación</span>` : "—";
+  };
   // §16 Detalle de reuniones (planilla de reuniones, completa)
   const mtRows = [...(M.Mt as any[])].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
   // País = el de la empresa (en Crossnet "País CrossNet", ver sync); si la reunión no calza con una empresa, el de la planilla
@@ -442,6 +449,8 @@ export function render(M: Model, mapping?: { label: string; property: string | n
         { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") }, { h: "Cargo", s: 1, f: (m) => esc(m.cargo || m.k?.cargo || "—") },
         { h: "País", s: 1, f: (m) => esc(mtTxt.pais(m)) }, { h: "SDR", s: 1, f: (m) => esc(m.sdr) }, { h: "Estado", f: (m) => esc(m.st) }, { h: "Origen", s: 1, f: (m) => esc(m.org || "—") },
         { h: "Propuesta / oportunidad", s: 1, f: (m) => esc(m.oppv || m.res || "—") },
+        // Reconfirmación con el prospecto (solo clientes del piloto, ver lib/reconfirmacion)
+        ...(mtRows.some((m: any) => m.rcp) ? [{ h: "Reconfirmación", s: 1, f: (m: any) => reconfCell(m), v: (m: any) => (m.rc === 1 ? `1 ${m.rca || ""}` : m.rcp && m.st === "Pendiente" ? "0" : "") }] : []),
       ], mtRows.slice(0, 400), { sort: true }) + `</div><p class="note">${mtRows.length > 400 ? `Se muestran las 400 más recientes de ${N(mtRows.length)}. ` : ""}${M.source === "hubspot" ? "Fuente: planilla de reuniones (Excel de metas)." : ""} Una empresa puede tener varias reuniones.</p>`
     : `<p class="note" style="margin-top:0">Sin reuniones en el período.</p>`;
 

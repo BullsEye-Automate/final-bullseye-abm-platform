@@ -19,7 +19,8 @@ export const maxDuration = 60;
 // que el cliente mandó por fuera del portal (queda trazado quién lo cargó).
 
 const MAX_ROWS = 25;
-const CONCURRENCY = 4;
+// De a 2: Lemlist limita las llamadas seguidas (429)
+const CONCURRENCY = 2;
 
 type Row = { name: string; domain: string | null; linkedin: string | null };
 type Result = { name: string; result: "added" | "approved" | "duplicate" | "invalid" | "error"; error?: string };

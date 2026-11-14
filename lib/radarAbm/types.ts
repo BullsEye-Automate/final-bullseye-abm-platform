@@ -53,6 +53,10 @@ export type RadarContact = {
   note?: string;
   refBy?: number | string;   // contacto que lo refirió
   nuevo?: boolean;           // contacto nuevo en empresa ya nutrida
+  ph?: 1;                    // tiene teléfono (Dashboard SDR, disponibilidad)
+  ml?: 1;                    // tiene correo
+  lk?: 1;                    // tiene LinkedIn
+  own?: 1;                   // "Cliente BullsEye" del contacto = este cliente (Dashboard SDR)
   ps: string;                // próximo paso (texto automático)
 };
 
@@ -85,6 +89,13 @@ export type RadarMeeting = {
   next?: boolean;
   reprog?: boolean;
   deal?: boolean;
+  // Reconfirmación con el prospecto (piloto, lib/reconfirmacion): rcp = la
+  // reunión es de un cliente del piloto; rc = reconfirmada (0 explícito para
+  // que el estado en vivo pise un 1 del informe guardado); rca = cuándo
+  // ("dd/MM/yyyy HH:mm", hora de Chile)
+  rcp?: 1;
+  rc?: 0 | 1;
+  rca?: string;
 };
 
 export type RadarDeal = {
@@ -130,6 +141,8 @@ export type RadarClientData = {
   meetings: RadarMeeting[];
   deals: RadarDeal[];
   activities?: RadarActivity[];
+  ctData?: 1;                // el sync guardó ph / ml / lk en los contactos
+  ownData?: 1;               // el sync guardó own (hay "Cliente BullsEye" para filtrar)
   callEvals?: RadarCallEval[];
   meetingsTotal?: boolean;
   wishlistOnly?: boolean;     // universo = solo empresas de la wishlist (sin filtro Wishlist)

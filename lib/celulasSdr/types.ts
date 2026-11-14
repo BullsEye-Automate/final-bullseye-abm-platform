@@ -220,6 +220,9 @@ export type MeetingRecord = {
   title: string;            // cargo
   comment: string;          // Comentario de la reunión
   editable: boolean;        // tiene "ID Reunión" en la planilla (se puede cambiar el estado desde la app)
+  // Reconfirmación con el prospecto (solo clientes del piloto, lib/reconfirmacion)
+  // edit = quien mira puede marcarla (SDR responsable, líderes, Ingri)
+  rc?: { ok: boolean; at: string | null; edit?: boolean };
 };
 
 export type MeetingRecordsResponse = {
