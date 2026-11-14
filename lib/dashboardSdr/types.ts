@@ -81,5 +81,8 @@ export type SdrDashboardResponse = {
   cells: string[];                                         // líderes de célula
   sources: { client: string; syncedAt: string | null }[];  // informes de Pulso ABM leídos
   missing: string[];                                       // clientes activos sin informe de Pulso
+  notActive?: string[];                                    // clientes con informe de Pulso pero no activos en la Maestra
+  // Valores de SDR en HubSpot que no quedan en una SDR activa (diagnóstico)
+  unmatched?: { client: string; raw: string; name: string; why: string; companies: number; contacts: number }[];
   sdr: SdrSlice | null;
 };

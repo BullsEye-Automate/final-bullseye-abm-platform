@@ -165,6 +165,8 @@ export default function DashboardSdrPage() {
 
       {data && view === "celula" && <CellView data={data} onOpen={openSdr} />}
 
+      {data && <DataCheck data={data} />}
+
       {data && view === "sdr" && !slice && !loading && (
         <div className="card text-sm text-ink-muted">
           {data.me.name
@@ -544,6 +546,46 @@ function CellView({ data, onOpen }: { data: SdrDashboardResponse; onOpen: (key: 
         </section>
       </div>
     </div>
+  );
+}
+
+// ── Diagnóstico: por qué falta una SDR o un cliente ─────────────────────
+function DataCheck({ data }: { data: SdrDashboardResponse }) {
+  const un = data.unmatched ?? [];
+  const n = un.length + data.missing.length + (data.notActive?.length ?? 0);
+  if (!n) return null;
+  return (
+    <details className="card text-sm">
+      <summary className="cursor-pointer font-medium">¿Falta una SDR o un cliente? Revisa los datos que no calzan ({fmt(n)})</summary>
+      <div className="mt-3 space-y-4">
+        {data.missing.length > 0 && (
+          <p><b>Clientes activos sin informe de Pulso ABM</b> (hay que sincronizarlos en Pulso): {data.missing.join(", ")}.</p>
+        )}
+        {(data.notActive?.length ?? 0) > 0 && (
+          <p><b>Clientes con informe de Pulso pero sin Status Cliente = Activo en la Maestra</b> (no entran al dashboard): {data.notActive!.join(", ")}.</p>
+        )}
+        {un.length > 0 && (
+          <div>
+            <p className="mb-2"><b>SDR de HubSpot que no quedan en una SDR activa.</b> Sus empresas y contactos no aparecen en el dashboard de nadie. Se corrige poniendo en HubSpot el nombre de la SDR como está en la Maestra, o avisando para agregar el apodo.</p>
+            <div className="overflow-auto max-h-[420px] border rounded-lg">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-ink-muted bg-[#FAF9FD] sticky top-0">
+                  <tr><Th>Cliente</Th><Th>Valor en HubSpot</Th><Th>Se interpreta como</Th><Th>Motivo</Th><Th n>Empresas</Th><Th n>Contactos</Th></tr>
+                </thead>
+                <tbody>
+                  {un.map((u, i) => (
+                    <tr key={i} className="border-t">
+                      <td className="px-3 py-2">{u.client}</td><td className="px-3 py-2 font-medium">{u.raw}</td><td className="px-3 py-2">{u.name}</td>
+                      <td className="px-3 py-2 text-warning-fg">{u.why}</td><Td n>{u.companies}</Td><Td n>{u.contacts}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    </details>
   );
 }
 

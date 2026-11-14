@@ -27,7 +27,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v4";
+const VERSION = "v6";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -56,6 +56,8 @@ export async function buildAll(today: string) {
   const active = clients.filter((c) => findMasterRow(masterRows, c)?.active).sort((a, b) => a.name.localeCompare(b.name));
   const { data: snaps } = await db.from("radar_abm_snapshots").select("client_id");
   const withSnap = new Set((snaps ?? []).map((x: { client_id: string }) => x.client_id));
+  // Con informe de Pulso pero no activos en la Maestra (no entran al dashboard)
+  const notActive = clients.filter((c) => withSnap.has(c.id) && !findMasterRow(masterRows, c)?.active).map((c) => c.name).sort();
 
   // Metas del mes: SDR × cuenta (las cuentas que comparten ID Cliente van por separado)
   const month = today.slice(0, 7);
@@ -71,11 +73,30 @@ export async function buildAll(today: string) {
   // Célula de cada persona (líder incluida)
   const cellOf = new Map<string, string>();
   for (const c of master.cells) for (const n of [c.leader, ...c.members]) cellOf.set(resolveSdrKey(n), c.leader);
+  // Solo SDR activos en la Maestra (pedido de BullsEye): "Status Responsable"
+  // = Activo; sin status, solo si está en una célula. Los inactivos, los que
+  // no figuran en la Maestra y "Sin SDR asignado" no aparecen en el selector,
+  // la vista de la célula ni el correo.
+  const activeKeys = new Set<string>();
+  for (const p of master.people) {
+    const k = resolveSdrKey(p.name);
+    if (p.active === true || (p.active === null && cellOf.has(k))) activeKeys.add(k);
+  }
+  for (const p of master.people) if (p.active === false) activeKeys.delete(resolveSdrKey(p.name));
 
   const slices = new Map<string, SdrSlice>();
   const clientsOf = new Map<string, Set<string>>();
   const sources: IndexCache["sources"] = [];
   const missing: string[] = [];
+  // Diagnóstico: valores de SDR de HubSpot que no quedan en una SDR activa
+  const unmatched = new Map<string, { client: string; raw: string; name: string; why: string; companies: number; contacts: number }>();
+  let curClient = "";
+  const note = (raw: string, name: string, why: string, kind: "companies" | "contacts") => {
+    const k = `${curClient}|${raw}`;
+    const u = unmatched.get(k) ?? { client: curClient, raw, name, why, companies: 0, contacts: 0 };
+    u[kind]++;
+    unmatched.set(k, u);
+  };
   const sdrOf = (raw: string | null | undefined): { key: string; name: string } | null => {
     const v = (raw ?? "").trim();
     if (!v || v === "Sin SDR") return { key: NO_SDR_KEY, name: "Sin SDR asignado" };
@@ -93,6 +114,15 @@ export async function buildAll(today: string) {
     return x;
   };
   const meetingSince = daysBefore(today, MEETING_DAYS);
+  // (activeKeys se arma arriba con la Maestra)
+  const trackRaw = (raw: string | null | undefined, s: { key: string; name: string }, kind: "companies" | "contacts") => {
+    const v = (raw ?? "").trim();
+    if (s.key === NO_SDR_KEY) { note(v || "(vacío)", "Sin SDR asignado", "La empresa no tiene SDR en HubSpot", kind); return; }
+    if (activeKeys.has(s.key)) return;
+    const known = resolvePerson(v).known;
+    const p = master.people.find((x) => resolveSdrKey(x.name) === s.key);
+    note(v, s.name, !known ? "No calza con nadie de la Maestra" : p?.active === false ? "Inactiva en la Maestra" : "Sin status Activo en la Maestra", kind);
+  };
   const accountOf = new Map<string, string>(); // nombre de la cuenta → id en Asignación
 
   let acct = 0;
@@ -103,6 +133,7 @@ export async function buildAll(today: string) {
     try { sets = await loadAllDatasets(cl.id); } catch { missing.push(cl.name); continue; }
     for (const { sub, dataset, syncedAt } of sets) {
       const client = sub || cl.name;
+      curClient = client;
       accountOf.set(client, dir.toAccount(cl.id, sub ?? null, null) ?? cl.id);
       const pre = `a${acct++}`;
       sources.push({ client, syncedAt });
@@ -123,9 +154,11 @@ export async function buildAll(today: string) {
       // Empresas por su SDR
       const coName = new Map<string, string>();
       const coSdr = new Map<string, { key: string; name: string } | null>();
+      const coSdrRaw = new Map<string, string>();
       for (const co of d.companies) {
         const id = String(co.id);
         coName.set(id, co.n);
+        coSdrRaw.set(id, co.sdr ?? "");
         const s = sdrOf(co.sdr);
         coSdr.set(id, s);
         if (!s) continue;
@@ -136,6 +169,7 @@ export async function buildAll(today: string) {
         };
         const x = slice(s, client);
         x.companies.push(row);
+        trackRaw(co.sdr, s, "companies");
         x.ctData[client] = ctData;
       }
 
@@ -153,6 +187,7 @@ export async function buildAll(today: string) {
         };
         const x = slice(s, client);
         x.contacts.push(row);
+        trackRaw(ct.sdr?.trim() && ct.sdr !== "Sin SDR" ? ct.sdr : coSdrRaw.get(co) ?? "", s, "contacts");
         x.ctData[client] = ctData;
       }
 
@@ -183,13 +218,15 @@ export async function buildAll(today: string) {
   }
 
   const index: SdrIndexRow[] = [...slices.values()]
+    .filter((s) => activeKeys.has(s.key))
     .map((s) => ({
       key: s.key, name: s.name, companies: s.companies.length, contacts: s.contacts.length,
       clients: [...(clientsOf.get(s.key) ?? [])].sort(), cell: cellOf.get(s.key) ?? null, summary: summarize(s, today),
     }))
     .sort((a, b) => (a.key === NO_SDR_KEY ? 1 : b.key === NO_SDR_KEY ? -1 : a.name.localeCompare(b.name)));
   const cells = [...new Set(master.cells.map((c) => c.leader))].sort();
-  const idx: IndexCache = { generated: new Date().toISOString(), today, index, cells, sources, missing };
+  const unmatchedList = [...unmatched.values()].sort((a, b) => a.client.localeCompare(b.client) || b.companies - a.companies);
+  const idx: IndexCache = { generated: new Date().toISOString(), today, index, cells, sources, missing, notActive, unmatched: unmatchedList };
 
   await Promise.all([
     writeMonthCache(keyIndex(today), idx, TTL_MS),
