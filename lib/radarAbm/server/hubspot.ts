@@ -135,7 +135,11 @@ export function detectProperties(configured: Record<string, string>, catalog: Pr
       }
     } else if (!prop && !manual) {
       const target = normLabel(def.label);
-      prop = props.find((p) => normLabel(p.label) === target) ?? props.find((p) => normLabel(p.label).startsWith(target));
+      prop = props.find((p) => normLabel(p.label) === target) ?? props.find((p) => normLabel(p.label).startsWith(target))
+        // Tramo SII: cualquier etiqueta con "tramo" (primero las que dicen "SII")
+        ?? (def.key === "companyTramo"
+          ? props.find((p) => normLabel(p.label).includes("tramo") && normLabel(p.label).includes("sii")) ?? props.find((p) => normLabel(p.label).includes("tramo"))
+          : undefined);
     }
     return {
       key: def.key,
