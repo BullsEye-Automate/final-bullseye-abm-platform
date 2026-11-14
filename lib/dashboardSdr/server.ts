@@ -11,6 +11,7 @@ import { loadStatusOverrides, overrideId, type StatusOverride } from "./statusEd
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 import { identifySdr } from "@/lib/academiaSdr/server/progress";
 import { summarize } from "./compute";
+import { CT_G, PAUSA } from "@/lib/radarAbm/dictionaries";
 import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeeting, SdrSlice } from "./types";
 
 // Dashboard SDR: cartera de cada SDR por cliente (empresas, contactos,
@@ -29,7 +30,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v9";
+const VERSION = "v10";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -173,6 +174,15 @@ export async function buildAll(today: string) {
       }
       for (const k of d.contacts) if ((k.att ?? k.calls ?? 0) > 0) { triedCt.add(String(k.id)); triedCo.add(String(k.co)); }
 
+      // Contactos disponibles para esta cuenta: en el HubSpot de BullsEye una
+      // empresa puede tener cientos de contactos de otros clientes; solo
+      // cuentan los con "Cliente BullsEye" = este cliente (pedido de BullsEye).
+      // Requiere un informe de Pulso sincronizado con la marca own.
+      const contacts = d.ownData ? d.contacts.filter((k) => k.own) : d.contacts;
+      const ctByCo = new Map<string, typeof contacts>();
+      for (const k of contacts) ctByCo.set(String(k.co), [...(ctByCo.get(String(k.co)) ?? []), k]);
+      const pendSt = (st: string) => CT_G[st] === "pend" || st === PAUSA;
+
       // Empresas por su SDR
       const coName = new Map<string, string>();
       const coSdr = new Map<string, { key: string; name: string } | null>();
@@ -186,7 +196,9 @@ export async function buildAll(today: string) {
         if (!s) continue;
         const row: SdrCompany = {
           id: gid(id), hs: id, c: client, n: co.n || "(sin nombre)", st: ov("company", id, co.st || "Sin status"), pais: co.pais || "", ind: co.ind ?? null,
-          nct: co.nct ?? 0, nmg: co.nmg ?? 0, msch: co.msch ?? 0, mheld: co.mheld ?? 0, asg: co.asg || "",
+          nct: d.ownData ? (ctByCo.get(id)?.length ?? 0) : co.nct ?? 0,
+          nmg: d.ownData ? (ctByCo.get(id) ?? []).filter((k) => !pendSt(k.st)).length : co.nmg ?? 0,
+          msch: co.msch ?? 0, mheld: co.mheld ?? 0, asg: co.asg || "",
           ...(co.next ? { next: co.next } : {}), ...(triedCo.has(id) ? { tr: 1 as const } : {}),
         };
         const x = slice(s, client);
@@ -197,7 +209,7 @@ export async function buildAll(today: string) {
 
       // Contactos por su SDR (si no tiene, el de su empresa)
       const ctById = new Map(d.contacts.map((k) => [String(k.id), k]));
-      for (const ct of d.contacts) {
+      for (const ct of contacts) {
         const co = String(ct.co);
         const s = ct.sdr?.trim() && ct.sdr !== "Sin SDR" ? sdrOf(ct.sdr) : coSdr.get(co) ?? sdrOf("");
         if (!s) continue;
