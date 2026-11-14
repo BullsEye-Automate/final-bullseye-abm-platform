@@ -27,6 +27,7 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconTarget,
   IconMessageReply,
+  IconRoad,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -61,6 +62,7 @@ const SECTIONS: Section[] = [
       { href: "/telefonos",     label: "Teléfonos",           icon: IconPhone },
       { href: "/llamadas",      label: "Llamadas",            icon: IconHeadset },
       { href: "/sdr/entrenamiento", label: "Entrenamiento cliente", icon: IconSchool },
+      { href: "/sdr/onboarding", label: "Onboarding SDR", icon: IconRoad },
     ]
   },
   {
