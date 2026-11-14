@@ -9,9 +9,9 @@
 // Datos de Pulso ABM (lib/dashboardSdr/server.ts); cálculo en
 // lib/dashboardSdr/compute.ts (el mismo del correo semanal). Por ahora no
 // suma actividades. ?sdr=<clave>&estancadas=1 / ?vista=celula (links del correo).
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { IconAlertCircle, IconAlertTriangle, IconLoader2, IconRefresh, IconSearch, IconUserCircle, IconUsersGroup } from "@tabler/icons-react";
-import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow } from "@/lib/dashboardSdr/types";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { IconAlertCircle, IconAlertTriangle, IconChevronDown, IconChevronRight, IconLoader2, IconRefresh, IconSearch, IconUserCircle, IconUsersGroup } from "@tabler/icons-react";
+import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeeting } from "@/lib/dashboardSdr/types";
 import { analyze, CO_GROUP_LABEL, FIX_KINDS, goalStatus, monthProgress, type CoGroup, type FixKind, type Pace } from "@/lib/dashboardSdr/compute";
 import { STALE_BUSINESS_DAYS } from "@/lib/dashboardSdr/stale";
 
@@ -58,7 +58,7 @@ export default function DashboardSdrPage() {
   const [sdr, setSdr] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<"sdr" | "celula">("sdr");
+  const [view, setView] = useState<"sdr" | "celula" | "facturacion">("sdr");
   const [client, setClient] = useState("");
   const [fixTab, setFixTab] = useState<FixKind>("est");
   const [detTab, setDetTab] = useState<"empresas" | "contactos">("empresas");
@@ -87,6 +87,7 @@ export default function DashboardSdrPage() {
     const q = new URLSearchParams(window.location.search);
     if (q.get("estancadas") === "1") { setFixTab("est"); }
     if (q.get("vista") === "celula") setView("celula");
+    if (q.get("vista") === "facturacion") setView("facturacion");
     load(q.get("sdr") ?? "");
   }, [load]);
 
@@ -97,6 +98,18 @@ export default function DashboardSdrPage() {
   const A = useMemo(() => (slice ? analyze(slice, today, client) : null), [slice, today, client]);
   const allClients = useMemo(() => (slice ? analyze(slice, today).clients : []), [slice, today]);
   const myself = !!data?.me.key && data.me.key === slice?.key;
+  // Cambiar status: el SDR en su propia cartera, o líder / Ingri en cualquiera
+  const ed: Editing = {
+    can: !!slice && (myself || !!data?.me.canEditAll),
+    accts: slice?.accts ?? {},
+    fcReady: !!data?.fcReady,
+    onFc: (id, v) => setData((d) => (d && d.sdr ? { ...d, sdr: { ...d.sdr, meetings: d.sdr.meetings.map((m) => (m.id === id ? { ...m, fc: v ? 1 : undefined } : m)) } } : d)),
+    onSaved: (type, c, hs, st) => setData((d) => (d && d.sdr ? { ...d, sdr: {
+      ...d.sdr,
+      companies: type === "company" ? d.sdr.companies.map((x) => (x.c === c && x.hs === hs ? { ...x, st } : x)) : d.sdr.companies,
+      contacts: type === "contact" ? d.sdr.contacts.map((x) => (x.c === c && x.hs === hs ? { ...x, st } : x)) : d.sdr.contacts,
+    } } : d)),
+  };
   const monthName = MONTHS_L[Number(today.slice(5, 7)) - 1];
 
   return (
@@ -106,16 +119,16 @@ export default function DashboardSdrPage() {
           <div className="label">SDR</div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {view === "sdr" ? <IconUserCircle size={24} className="text-brand" /> : <IconUsersGroup size={24} className="text-brand" />}
-            {view === "celula" ? "Dashboard SDR · células" : slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
+            {view === "celula" ? "Dashboard SDR · células" : view === "facturacion" ? "Dashboard SDR · facturación" : slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
           </h1>
           <p className="text-sm text-ink-muted mt-1">
-            {view === "sdr" ? "Empresas y contactos asignados por cliente." : "Cartera, pendientes y reuniones de cada SDR de la célula."}
+            {view === "sdr" ? "Empresas y contactos asignados por cliente." : view === "celula" ? "Cartera, pendientes y reuniones de cada SDR de la célula." : "Reuniones marcadas «Para facturar» por cliente, con quién las marcó y cuándo."}
             {data && <> Datos de Pulso ABM, calculados {timeCL(data.generated)}.</>}
           </p>
         </div>
         <div className="flex items-end gap-2 flex-wrap">
           <div role="tablist" aria-label="Vista" className="flex rounded-lg border bg-white p-0.5">
-            {([["sdr", "Mi cartera"], ["celula", "Célula"]] as const).map(([v, l]) => (
+            {([["sdr", "Mi cartera"], ["celula", "Célula"], ["facturacion", "Facturación"]] as const).map(([v, l]) => (
               <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
                 className={`px-3 py-1.5 rounded-md text-sm ${view === v ? "bg-brand text-white" : "text-ink-muted hover:text-ink"}`}>{l}</button>
             ))}
@@ -164,6 +177,7 @@ export default function DashboardSdrPage() {
       )}
 
       {data && view === "celula" && <CellView data={data} onOpen={openSdr} />}
+      {data && view === "facturacion" && <BillingView today={today} />}
 
       {data && <DataCheck data={data} />}
 
@@ -262,7 +276,7 @@ export default function DashboardSdrPage() {
             <div className="overflow-auto max-h-[460px]">
               <table className="w-full text-sm">
                 <thead className="text-xs text-ink-muted bg-[#FAF9FD] sticky top-0">
-                  <tr><Th>Empresa / contacto</Th>{!client && <Th>Cliente</Th>}<Th>Qué pasa</Th><Th>Desde</Th><Th>Qué hacer</Th></tr>
+                  <tr><Th>Empresa / contacto</Th>{!client && <Th>Cliente</Th>}<Th>Qué pasa</Th><Th>Desde</Th><Th>Qué hacer</Th>{fixTab !== "seg" && fixTab !== "reu" && <Th>Status de la empresa</Th>}</tr>
                 </thead>
                 <tbody>
                   {A.fixBy[fixTab].slice(0, MAX_ROWS).map((f, i) => (
@@ -272,6 +286,10 @@ export default function DashboardSdrPage() {
                       <td className="px-3 py-2">{f.what}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-warning-fg font-medium">{f.since}</td>
                       <td className="px-3 py-2">{f.todo}</td>
+                      {fixTab !== "seg" && fixTab !== "reu" && (() => {
+                        const co = A.companies.find((x) => x.id === f.coId);
+                        return <td className="px-3 py-2">{co ? <StatusCell type="company" rec={co} ed={ed} /> : "—"}</td>;
+                      })()}
                     </tr>
                   ))}
                   {!A.fixBy[fixTab].length && <tr><td colSpan={5} className="px-3 py-4 text-ink-muted">Nada por corregir aquí.</td></tr>}
@@ -333,7 +351,7 @@ export default function DashboardSdrPage() {
           </section>
 
           {/* 5. Reuniones */}
-          <MeetingsSection A={A} client={client} monthName={monthName} />
+          <MeetingsSection A={A} client={client} monthName={monthName} ed={ed} today={today} />
 
           {/* 6. Detalle */}
           <section className="card space-y-3">
@@ -347,8 +365,8 @@ export default function DashboardSdrPage() {
               ))}
             </div>
             {detTab === "empresas"
-              ? <CompaniesTable rows={A.companies} flagOf={A.flagOf} showClient={!client} onlyFix={onlyFix} setOnlyFix={setOnlyFix} />
-              : <ContactsTable rows={A.contacts} showClient={!client} />}
+              ? <CompaniesTable rows={A.companies} flagOf={A.flagOf} showClient={!client} onlyFix={onlyFix} setOnlyFix={setOnlyFix} ed={ed} meetings={A.meetings} />
+              : <ContactsTable rows={A.contacts} showClient={!client} ed={ed} />}
           </section>
 
           <details className="text-xs text-ink-muted">
@@ -367,8 +385,10 @@ export default function DashboardSdrPage() {
 }
 
 // ── Reuniones ─────────────────────────────────────────────────────────────
-function MeetingsSection({ A, client, monthName }: { A: NonNullable<ReturnType<typeof analyze>>; client: string; monthName: string }) {
+function MeetingsSection({ A, client, monthName, ed, today }: { A: NonNullable<ReturnType<typeof analyze>>; client: string; monthName: string; ed: Editing; today: string }) {
   const [dim, setDim] = useState<"sen" | "area">("sen");
+  const [openCl, setOpenCl] = useState<string | null>(null);
+  const month = today.slice(0, 7);
   const m = A.mtg;
   const occurred = m.re + m.ns;
   return (
@@ -391,18 +411,32 @@ function MeetingsSection({ A, client, monthName }: { A: NonNullable<ReturnType<t
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-ink-muted bg-[#FAF9FD]">
-                <tr><Th>Cliente</Th><Th n>Meta</Th><Th n>Realizadas</Th><Th n>Cumplimiento</Th><Th n>Esperado a la fecha</Th><Th>Ritmo</Th><Th n>Agendadas</Th><Th n>No-show</Th><Th n>Pendientes</Th></tr>
+                <tr><Th>Cliente</Th><Th n>Meta</Th><Th n>Realizadas</Th><Th n>Cumplimiento</Th><Th n>Esperado a la fecha</Th><Th>Ritmo</Th><Th n>Agendadas</Th><Th n>No-show</Th><Th n>Pendientes</Th><Th n>Para facturar</Th></tr>
               </thead>
               <tbody>
                 {A.perClient.map((p) => (
-                  <tr key={p.client} className="border-t">
-                    <td className="px-3 py-2 font-medium">{p.client}</td>
+                  <Fragment key={p.client}>
+                  <tr className="border-t">
+                    <td className="px-3 py-2 font-medium">
+                      <button type="button" onClick={() => setOpenCl(openCl === p.client ? null : p.client)} aria-expanded={openCl === p.client} className="inline-flex items-center gap-1 hover:text-brand text-left">
+                        {openCl === p.client ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}{p.client}
+                      </button>
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums">{p.goal ?? "—"}</td><Td n>{p.re}</Td>
                     <td className={`px-3 py-2 text-right tabular-nums font-semibold ${PACE[p.pace].fg}`}>{p.pct === null ? "—" : `${p.pct}%`}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{p.expected === null ? "—" : fmtDec(p.expected)}</td>
                     <td className="px-3 py-2"><PaceBadge pace={p.pace} /></td>
-                    <Td n>{p.ag}</Td><Td n>{p.ns}</Td><Td n>{p.pe}</Td>
+                    <Td n>{p.ag}</Td><Td n>{p.ns}</Td><Td n>{p.pe}</Td><Td n>{p.fc}</Td>
                   </tr>
+                  {openCl === p.client && (
+                    <tr className="bg-[#FAF9FD]">
+                      <td colSpan={10} className="px-4 py-3">
+                        <div className="text-xs font-medium text-ink-muted mb-2">Reuniones de {p.client} con fecha en {monthName} (planilla de reuniones)</div>
+                        <MeetingsTable ms={A.meetings.filter((m) => m.c === p.client && m.f.startsWith(month)).sort((x, y) => x.f.localeCompare(y.f))} ed={ed} showCompany />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
                 {A.goal.total && A.perClient.length > 1 && (
                   <tr className="border-t bg-[#FAF9FD] font-semibold">
@@ -410,7 +444,7 @@ function MeetingsSection({ A, client, monthName }: { A: NonNullable<ReturnType<t
                     <td className={`px-3 py-2 text-right tabular-nums ${PACE[A.goal.pace].fg}`}>{A.goal.pct}%</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtDec(A.goal.expected)}</td>
                     <td className="px-3 py-2"><PaceBadge pace={A.goal.pace} /></td>
-                    <Td n>{A.mtg.ag}</Td><Td n>{A.mtg.ns}</Td><Td n>{A.mtg.pe}</Td>
+                    <Td n>{A.mtg.ag}</Td><Td n>{A.mtg.ns}</Td><Td n>{A.mtg.pe}</Td><Td n>{A.mtg.fc}</Td>
                   </tr>
                 )}
               </tbody>
@@ -685,6 +719,239 @@ function Th({ children, n, onClick, active, dir }: { children: React.ReactNode; 
 function Td({ children, n }: { children: React.ReactNode; n?: boolean }) {
   return <td className={`px-3 py-2 ${n ? "text-right tabular-nums" : ""}`}>{typeof children === "number" ? fmt(children) : children}</td>;
 }
+// ── Cambiar status en HubSpot ─────────────────────────────────────────────
+type Editing = {
+  can: boolean;
+  fcReady: boolean;
+  onFc: (id: string, value: boolean) => void;
+  accts: Record<string, { id: string; sub: string | null; edit: boolean }>;
+  onSaved: (type: "company" | "contact", client: string, hs: string, st: string) => void;
+};
+type StatusOpts = { writable: boolean; reason: string | null; company: { label: string; options: { value: string; label: string }[] } | null; contact: { label: string; options: { value: string; label: string }[] } | null };
+const optsCache = new Map<string, Promise<StatusOpts>>();
+function loadOpts(id: string, sub: string | null): Promise<StatusOpts> {
+  const k = `${id}|${sub ?? ""}`;
+  if (!optsCache.has(k)) {
+    const qs = new URLSearchParams({ client_id: id, ...(sub ? { sub } : {}) });
+    optsCache.set(k, fetch(`/api/sdr/dashboard/status?${qs}`).then(async (r) => {
+      const j = await r.json();
+      if (!r.ok) { optsCache.delete(k); throw new Error(j.error || `Error ${r.status}`); }
+      return j as StatusOpts;
+    }));
+  }
+  return optsCache.get(k)!;
+}
+// Reuniones (planilla) con su comentario y la marca "Para facturar"
+function MeetingsTable({ ms, ed, showCompany }: { ms: SdrMeeting[]; ed: Editing; showCompany?: boolean }) {
+  if (!ms.length) return <p className="text-sm text-ink-muted">Sin reuniones.</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm bg-white border rounded-lg">
+        <thead className="text-xs text-ink-muted"><tr><Th>Fecha</Th><Th>Agendada el</Th>{showCompany && <Th>Empresa</Th>}<Th>Contacto</Th><Th>Estado</Th><Th>Origen</Th><Th>Oportunidad</Th><Th>Comentario</Th><Th>Para facturar</Th></tr></thead>
+        <tbody>
+          {ms.map((m, i) => (
+            <tr key={m.id ?? i} className="border-t align-top">
+              <td className="px-3 py-2 whitespace-nowrap">{fmtDay(m.f)}{m.hora ? ` · ${m.hora}` : ""}</td>
+              <td className="px-3 py-2 whitespace-nowrap">{fmtDay(m.ag)}</td>
+              {showCompany && <td className="px-3 py-2">{m.con || "—"}</td>}
+              <td className="px-3 py-2">{m.ctn || "—"}{m.cargo && <div className="text-xs text-ink-muted">{m.cargo}</div>}</td>
+              <td className="px-3 py-2"><Pill st={m.st === "Realizada" ? "Reunión realizada" : m.st} /></td>
+              <td className="px-3 py-2">{m.org || "—"}</td>
+              <td className="px-3 py-2">{m.opp || "—"}</td>
+              <td className="px-3 py-2 max-w-[340px] whitespace-pre-line">{m.nt || <span className="text-ink-subtle">Sin comentario</span>}</td>
+              <td className="px-3 py-2"><FacturarBox m={m} ed={ed} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function FacturarBox({ m, ed }: { m: SdrMeeting; ed: Editing }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!m.id) return <span className="text-ink-subtle">—</span>;
+  if (!ed.fcReady) return <span className="text-xs text-ink-subtle" title="Falta ejecutar la migración supabase/20261114_meetings_facturar.sql">No disponible</span>;
+  const toggle = async (value: boolean) => {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch("/api/sdr/dashboard/facturar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: m.id, value }) });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `Error ${res.status}`);
+      ed.onFc(m.id!, value);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <span className="inline-flex flex-col gap-0.5">
+      <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <input type="checkbox" checked={!!m.fc} disabled={!ed.can || busy} onChange={(e) => toggle(e.target.checked)} />
+        {busy ? <IconLoader2 size={12} className="animate-spin" /> : m.fc ? "Sí" : "No"}
+      </label>
+      {err && <span className="text-xs text-danger-fg max-w-[200px]">{err}</span>}
+    </span>
+  );
+}
+
+// ── Vista Facturación: reuniones del mes marcadas «Para facturar», por cliente ──
+type BillRow = { id: string; cliente: string; fecha: string; hora: string; empresa: string; contacto: string; cargo: string; sdr: string; realizado: string; oportunidad: string; origen: string; facturar: boolean; by: string | null; at: string | null };
+function BillingView({ today }: { today: string }) {
+  const months = useMemo(() => {
+    const out: string[] = [];
+    const d = new Date(`${today.slice(0, 7)}-01T12:00:00Z`);
+    for (let i = 0; i < 6; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1); }
+    return out;
+  }, [today]);
+  const [month, setMonth] = useState(months[0]);
+  const [rows, setRows] = useState<BillRow[] | null>(null);
+  const [ready, setReady] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [cl, setCl] = useState("");
+  const [onlyMarked, setOnlyMarked] = useState(true);
+  useEffect(() => {
+    setRows(null); setErr(null);
+    fetch(`/api/sdr/dashboard/facturacion?month=${month}`).then(async (r) => {
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+      setRows(j.rows); setReady(j.ready);
+    }).catch((e) => setErr((e as Error).message));
+  }, [month]);
+  const label = (m: string) => `${MONTHS_L[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
+  const all = rows ?? [];
+  const byClient = new Map<string, { total: number; realizadas: number; marcadas: number }>();
+  for (const r of all) {
+    const x = byClient.get(r.cliente) ?? { total: 0, realizadas: 0, marcadas: 0 };
+    x.total++; if (norm(r.realizado) === "si") x.realizadas++; if (r.facturar) x.marcadas++;
+    byClient.set(r.cliente, x);
+  }
+  const clients = [...byClient.entries()].sort((a, b) => b[1].marcadas - a[1].marcadas || a[0].localeCompare(b[0]));
+  const list = all.filter((r) => (!cl || r.cliente === cl) && (!onlyMarked || r.facturar));
+  const atCL = (iso: string | null) => (iso ? new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : "—");
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-2 flex-wrap">
+        <label className="flex flex-col gap-1 text-xs text-ink-muted">Mes (fecha de la reunión)
+          <select className="input" value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((m) => <option key={m} value={m}>{label(m)}</option>)}</select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-muted">Cliente
+          <select className="input min-w-[180px]" value={cl} onChange={(e) => setCl(e.target.value)}><option value="">Todos</option>{clients.map(([c]) => <option key={c} value={c}>{c}</option>)}</select>
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-ink-muted pb-2"><input type="checkbox" checked={onlyMarked} onChange={(e) => setOnlyMarked(e.target.checked)} /> Solo las marcadas «Para facturar»</label>
+      </div>
+      {!ready && <div className="text-sm p-3 rounded-lg bg-warning-bg text-warning-fg">Falta ejecutar la migración <code>supabase/20261114_meetings_facturar.sql</code> en Supabase: hasta entonces no se pueden marcar reuniones.</div>}
+      {err && <div className="text-sm p-3 rounded-lg bg-danger-bg text-danger-fg">{err}</div>}
+      {!rows && !err && <div className="flex items-center gap-2 text-ink-muted text-sm py-8 justify-center"><IconLoader2 size={16} className="animate-spin" /> Cargando reuniones…</div>}
+      {rows && (
+        <>
+          <section className="card p-0 overflow-hidden">
+            <h2 className="text-base font-semibold px-4 pt-4 pb-2">Por cliente · {label(month)}</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-ink-muted bg-[#FAF9FD]"><tr><Th>Cliente</Th><Th n>Reuniones del mes</Th><Th n>Realizadas</Th><Th n>Para facturar</Th></tr></thead>
+                <tbody>
+                  {clients.map(([c, x]) => (
+                    <tr key={c} className="border-t hover:bg-black/[0.02] cursor-pointer" onClick={() => setCl(cl === c ? "" : c)}>
+                      <td className="px-3 py-2 font-medium">{c}</td><Td n>{x.total}</Td><Td n>{x.realizadas}</Td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-brand">{fmt(x.marcadas)}</td>
+                    </tr>
+                  ))}
+                  {!clients.length && <tr><td colSpan={4} className="px-3 py-4 text-ink-muted">Sin reuniones en el mes.</td></tr>}
+                  {clients.length > 1 && (
+                    <tr className="border-t bg-[#FAF9FD] font-semibold"><td className="px-3 py-2">Total</td><Td n>{all.length}</Td><Td n>{all.filter((r) => norm(r.realizado) === "si").length}</Td><Td n>{all.filter((r) => r.facturar).length}</Td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section className="card p-0 overflow-hidden">
+            <h2 className="text-base font-semibold px-4 pt-4 pb-2">Trazabilidad{cl ? ` · ${cl}` : ""} ({fmt(list.length)})</h2>
+            <div className="overflow-auto max-h-[600px]">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-ink-muted bg-[#FAF9FD] sticky top-0"><tr><Th>Fecha</Th><Th>Cliente</Th><Th>Empresa</Th><Th>Contacto</Th><Th>SDR</Th><Th>Realizado</Th><Th>Oportunidad</Th><Th>Para facturar</Th><Th>Marcada por</Th><Th>El</Th></tr></thead>
+                <tbody>
+                  {list.map((r) => (
+                    <tr key={r.id} className="border-t align-top">
+                      <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.fecha)}{r.hora ? ` · ${r.hora}` : ""}</td>
+                      <td className="px-3 py-2">{r.cliente}</td>
+                      <td className="px-3 py-2 font-medium">{r.empresa || "—"}</td>
+                      <td className="px-3 py-2">{r.contacto || "—"}{r.cargo && <div className="text-xs text-ink-muted">{r.cargo}</div>}</td>
+                      <td className="px-3 py-2">{r.sdr || "—"}</td>
+                      <td className="px-3 py-2">{r.realizado || "—"}</td>
+                      <td className="px-3 py-2">{r.oportunidad || "—"}</td>
+                      <td className="px-3 py-2">{r.facturar ? <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-success-bg text-success-fg">Sí</span> : "No"}</td>
+                      <td className="px-3 py-2">{r.by || "—"}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{r.facturar || r.by ? atCL(r.at) : "—"}</td>
+                    </tr>
+                  ))}
+                  {!list.length && <tr><td colSpan={10} className="px-3 py-4 text-ink-muted">{onlyMarked ? "Ninguna reunión marcada «Para facturar» con estos filtros." : "Sin reuniones con estos filtros."}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <p className="text-xs text-ink-muted">La marca «Para facturar» la ponen el SDR de la reunión o las líderes desde el Dashboard SDR (desplegable de reuniones). «Marcada por» y «El» = la última persona que cambió la marca y cuándo. Reuniones de la planilla por fecha de la reunión.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusCell({ type, rec, ed }: { type: "company" | "contact"; rec: { c: string; hs: string; st: string }; ed: Editing }) {
+  const acct = ed.accts[rec.c];
+  const [open, setOpen] = useState(false);
+  const [opts, setOpts] = useState<{ value: string; label: string }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  if (!ed.can || !acct || !rec.hs) return <Pill st={rec.st} />;
+  if (!acct.edit) return <span title="Este cliente trabaja en su propio HubSpot (solo lectura): el status se cambia allá."><Pill st={rec.st} /></span>;
+  const start = async () => {
+    setOpen(true); setMsg(null);
+    try {
+      const o = await loadOpts(acct.id, acct.sub);
+      const p = type === "company" ? o.company : o.contact;
+      if (!o.writable || !p) { setMsg(o.reason || "No se encontró la propiedad de status en HubSpot."); setOpts([]); return; }
+      setOpts(p.options);
+    } catch (e) { setMsg((e as Error).message); setOpts([]); }
+  };
+  const save = async (value: string) => {
+    if (!value) return;
+    setBusy(true); setMsg(null);
+    try {
+      const res = await fetch("/api/sdr/dashboard/status", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: acct.id, sub: acct.sub, type, hs: rec.hs, value, prev: rec.st }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `Error ${res.status}`);
+      ed.onSaved(type, rec.c, rec.hs, j.st);
+      setOpen(false);
+    } catch (e) { setMsg((e as Error).message); } finally { setBusy(false); }
+  };
+  if (!open) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <Pill st={rec.st} />
+        <button type="button" onClick={start} className="text-xs text-brand hover:underline whitespace-nowrap" title="Cambiar el status en HubSpot">Cambiar</button>
+      </span>
+    );
+  }
+  const curNorm = norm(rec.st);
+  const current = opts?.find((o) => norm(o.label) === curNorm)?.value ?? "";
+  return (
+    <span className="inline-flex flex-col gap-1 min-w-[190px]">
+      {opts === null ? <span className="text-xs text-ink-muted inline-flex items-center gap-1"><IconLoader2 size={12} className="animate-spin" /> Cargando opciones…</span>
+        : opts.length > 0 && (
+          <span className="inline-flex items-center gap-1">
+            <select className="input py-1 text-xs" aria-label="Nuevo status" defaultValue={current} disabled={busy} onChange={(e) => save(e.target.value)}>
+              {!current && <option value="">Elige el nuevo status…</option>}
+              {opts.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            {busy ? <IconLoader2 size={14} className="animate-spin text-ink-muted" /> : <button type="button" onClick={() => setOpen(false)} className="text-xs text-ink-muted hover:underline">Cancelar</button>}
+          </span>
+        )}
+      {msg && <span className="text-xs text-danger-fg max-w-[260px]">{msg}{opts && !opts.length && <> · <button type="button" className="underline" onClick={() => setOpen(false)}>Cerrar</button></>}</span>}
+    </span>
+  );
+}
+
 function Pill({ st }: { st: string }) {
   return <span className={`inline-block px-2 py-0.5 rounded-full text-xs whitespace-nowrap ${pillClass(st)}`}>{st}</span>;
 }
@@ -710,12 +977,21 @@ function StatusSelect({ rows, status, setStatus }: { rows: { st: string }[]; sta
   );
 }
 
-function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix }: {
+function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, meetings }: {
+  ed: Editing;
+  meetings: SdrMeeting[];
   rows: SdrCompany[]; flagOf: Map<string, string>; showClient: boolean; onlyFix: boolean; setOnlyFix: (v: boolean) => void;
 }) {
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
   const [sort, toggle] = useSort({ k: "flag", dir: -1 });
+  const [openCo, setOpenCo] = useState<string | null>(null);
+  const mtgOf = useMemo(() => {
+    const m = new Map<string, SdrMeeting[]>();
+    for (const x of meetings) if (x.co) m.set(x.co, [...(m.get(x.co) ?? []), x]);
+    for (const l of m.values()) l.sort((a, b) => b.f.localeCompare(a.f));
+    return m;
+  }, [meetings]);
   const list = useMemo(() => {
     const nq = norm(q.trim());
     const f = rows.filter((r) => (!status || r.st === status) && (!nq || norm(`${r.n} ${r.pais} ${r.ind ?? ""}`).includes(nq)) && (!onlyFix || flagOf.has(r.id)));
@@ -751,17 +1027,35 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix }: {
           <tbody>
             {list.slice(0, MAX_ROWS).map((r) => {
               const flag = flagOf.get(r.id);
+              const ms = mtgOf.get(r.id) ?? [];
+              const isOpen = openCo === r.id;
               return (
-                <tr key={r.id} className={`border-t ${flag ? "bg-warning-bg/30" : ""}`}>
+                <Fragment key={r.id}>
+                <tr className={`border-t ${flag ? "bg-warning-bg/30" : ""}`}>
                   <td className="px-3 py-2 font-medium">{r.n}<div className="text-xs font-normal text-ink-muted">{[r.pais, r.ind].filter(Boolean).join(" · ")}</div></td>
                   {showClient && <td className="px-3 py-2">{r.c}</td>}
-                  <td className="px-3 py-2"><Pill st={r.st} /></td>
+                  <td className="px-3 py-2"><StatusCell type="company" rec={r} ed={ed} /></td>
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.asg)}</td>
                   <Td n>{r.nct}</Td><Td n>{r.nmg}</Td>
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.next)}</td>
-                  <Td n>{r.msch}</Td>
+                  <td className="px-3 py-2 text-right">
+                    {ms.length
+                      ? <button type="button" onClick={() => setOpenCo(isOpen ? null : r.id)} aria-expanded={isOpen} className="inline-flex items-center gap-1 text-brand hover:underline tabular-nums whitespace-nowrap">
+                          {isOpen ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}{fmt(ms.length)} {ms.length === 1 ? "reunión" : "reuniones"}
+                        </button>
+                      : <span className="tabular-nums">{fmt(r.msch)}</span>}
+                  </td>
                   <td className="px-3 py-2 text-warning-fg font-medium">{flag && <span className="inline-flex items-center gap-1"><IconAlertTriangle size={14} />{flag}</span>}</td>
                 </tr>
+                {isOpen && (
+                  <tr className="bg-[#FAF9FD]">
+                    <td colSpan={showClient ? 9 : 8} className="px-4 py-3">
+                      <div className="text-xs font-medium text-ink-muted mb-2">Reuniones de {r.n} (planilla de reuniones, últimos 5 meses)</div>
+                      <MeetingsTable ms={ms} ed={ed} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {!list.length && <tr><td colSpan={9} className="px-3 py-4 text-ink-muted">Sin empresas con estos filtros.</td></tr>}
@@ -772,7 +1066,7 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix }: {
   );
 }
 
-function ContactsTable({ rows, showClient }: { rows: SdrContact[]; showClient: boolean }) {
+function ContactsTable({ rows, showClient, ed }: { rows: SdrContact[]; showClient: boolean; ed: Editing }) {
   const [status, setStatus] = useState("");
   const [q, setQ] = useState("");
   const [sort, toggle] = useSort({ k: "con", dir: 1 });
@@ -802,7 +1096,7 @@ function ContactsTable({ rows, showClient }: { rows: SdrContact[]; showClient: b
                 <td className="px-3 py-2">{r.cargo || "—"}</td>
                 <td className="px-3 py-2">{r.con || "—"}</td>
                 {showClient && <td className="px-3 py-2">{r.c}</td>}
-                <td className="px-3 py-2"><Pill st={r.st} /></td>
+                <td className="px-3 py-2"><StatusCell type="contact" rec={r} ed={ed} /></td>
                 <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.next)}</td>
                 <td className="px-3 py-2">{yn(r.ph)}</td><td className="px-3 py-2">{yn(r.ml)}</td><td className="px-3 py-2">{yn(r.lk)}</td>
               </tr>

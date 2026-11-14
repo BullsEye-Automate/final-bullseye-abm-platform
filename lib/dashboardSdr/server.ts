@@ -5,7 +5,9 @@ import { buildClientDirectory } from "@/lib/celulasSdr/server/clientAccounts";
 import { chileToday } from "@/lib/celulasSdr/calendar";
 import { readMonthCache, writeMonthCache } from "@/lib/celulasSdr/cache";
 import { isExcludedSdr } from "@/lib/celulasSdr/engine";
-import { loadAllDatasets } from "@/lib/radarAbm/server/store";
+import { loadAllDatasets, loadClientSettings, universeMode } from "@/lib/radarAbm/server/store";
+import { canEditMeetings } from "@/lib/celulasSdr/editors";
+import { loadStatusOverrides, overrideId, type StatusOverride } from "./statusEdit";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 import { identifySdr } from "@/lib/academiaSdr/server/progress";
 import { summarize } from "./compute";
@@ -27,7 +29,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v7";
+const VERSION = "v9";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -117,7 +119,7 @@ export async function buildAll(today: string) {
   };
   const slice = (s: { key: string; name: string }, client: string): SdrSlice => {
     let x = slices.get(s.key);
-    if (!x) { x = { key: s.key, name: s.name, companies: [], contacts: [], meetings: [], goals: {}, ctData: {} }; slices.set(s.key, x); }
+    if (!x) { x = { key: s.key, name: s.name, companies: [], contacts: [], meetings: [], goals: {}, ctData: {}, accts: {} }; slices.set(s.key, x); }
     const cs = clientsOf.get(s.key) ?? new Set<string>();
     cs.add(client);
     clientsOf.set(s.key, cs);
@@ -135,12 +137,16 @@ export async function buildAll(today: string) {
   };
   const accountOf = new Map<string, string>(); // nombre de la cuenta → id en Asignación
 
+  const overrides = await loadStatusOverrides();
+  const accts: SdrSlice["accts"] = {};
   let acct = 0;
   // De a uno: los informes grandes (Crossnet) pesan decenas de MB
   for (const cl of active) {
     if (!withSnap.has(cl.id)) { missing.push(cl.name); continue; }
     let sets: Awaited<ReturnType<typeof loadAllDatasets>>;
     try { sets = await loadAllDatasets(cl.id); } catch { missing.push(cl.name); continue; }
+    const settings = await loadClientSettings(cl.id).catch(() => null);
+    const editable = !!settings && settings.hubspot_source !== "client" && universeMode(settings, cl.name) !== "client";
     for (const { sub, dataset, syncedAt } of sets) {
       const client = sub || cl.name;
       curClient = client;
@@ -148,6 +154,12 @@ export async function buildAll(today: string) {
       const pre = `a${acct++}`;
       sources.push({ client, syncedAt });
       const d = dataset.client;
+      accts[client] = { id: cl.id, sub: sub ?? null, edit: editable };
+      // Cambios de status hechos desde el dashboard después de la última sincronización
+      const ov = (type: "company" | "contact", hsId: string | number, st: string) => {
+        const o = overrides.get(overrideId(cl.id, sub ?? null, type, String(hsId)));
+        return o && (!syncedAt || o.at > syncedAt) ? o.st : st;
+      };
       const gid = (id: string | number) => `${pre}:${id}`;
       const ctData = !!d.ctData;
 
@@ -173,7 +185,7 @@ export async function buildAll(today: string) {
         coSdr.set(id, s);
         if (!s) continue;
         const row: SdrCompany = {
-          id: gid(id), c: client, n: co.n || "(sin nombre)", st: co.st || "Sin status", pais: co.pais || "", ind: co.ind ?? null,
+          id: gid(id), hs: id, c: client, n: co.n || "(sin nombre)", st: ov("company", id, co.st || "Sin status"), pais: co.pais || "", ind: co.ind ?? null,
           nct: co.nct ?? 0, nmg: co.nmg ?? 0, msch: co.msch ?? 0, mheld: co.mheld ?? 0, asg: co.asg || "",
           ...(co.next ? { next: co.next } : {}), ...(triedCo.has(id) ? { tr: 1 as const } : {}),
         };
@@ -190,7 +202,7 @@ export async function buildAll(today: string) {
         const s = ct.sdr?.trim() && ct.sdr !== "Sin SDR" ? sdrOf(ct.sdr) : coSdr.get(co) ?? sdrOf("");
         if (!s) continue;
         const row: SdrContact = {
-          id: gid(ct.id), co: gid(co), con: coName.get(co) ?? "", c: client, n: ct.n || "(sin nombre)", cargo: ct.cargo ?? "", st: ct.st || "Sin status",
+          id: gid(ct.id), hs: String(ct.id), co: gid(co), con: coName.get(co) ?? "", c: client, n: ct.n || "(sin nombre)", cargo: ct.cargo ?? "", st: ov("contact", ct.id, ct.st || "Sin status"),
           ...(ct.sen ? { sen: ct.sen } : {}), ...(ct.area ? { area: ct.area } : {}), ...(ct.next ? { next: ct.next } : {}),
           ...(triedCt.has(String(ct.id)) ? { tr: 1 as const } : {}),
           ...(ctData ? { ph: ct.ph ? 1 as const : 0 as const, ml: ct.ml ? 1 as const : 0 as const, lk: ct.lk ? 1 as const : 0 as const } : {}),
@@ -213,11 +225,31 @@ export async function buildAll(today: string) {
           c: client, co: matched ? gid(coId) : "", con: (matched ? coName.get(coId) : m.emp) || m.emp || "",
           ctn: k?.n || m.ctn || "", ...(k?.sen ? { sen: k.sen } : {}), ...(k?.area ? { area: k.area } : {}),
           ag: m.agendada || "", f: m.fecha || "", st: m.st || "",
+          id: String(m.id), ...(m.hora ? { hora: m.hora } : {}), ...(m.cargo ? { cargo: m.cargo } : {}),
+          ...(m.org ? { org: m.org } : {}), ...(m.oppv ? { opp: m.oppv } : {}),
         };
         slice(s, client).meetings.push(row);
       }
     }
   }
+
+  // Solo los clientes que el SDR trabaja = los con meta este mes en
+  // Asignación (pedido de BullsEye: si HubSpot lo tiene como SDR en un cliente
+  // sin meta, ese cliente no aparece en su dashboard). Sin metas en el mes no
+  // se filtra. Se compara por cuenta (accountOf), no por nombre.
+  for (const [key, gp] of goalPeople) {
+    const sl = slices.get(key);
+    if (!sl) continue;
+    const ok = (c: string) => gp.accounts.has(accountOf.get(c) ?? "");
+    sl.companies = sl.companies.filter((x) => ok(x.c));
+    sl.contacts = sl.contacts.filter((x) => ok(x.c));
+    sl.meetings = sl.meetings.filter((x) => ok(x.c));
+    const cs = clientsOf.get(key);
+    if (cs) for (const c of [...cs]) if (!ok(c)) cs.delete(c);
+  }
+
+  // Registro y cuenta de cada cliente de la cartera (para cambiar el status)
+  for (const sl of slices.values()) for (const c of clientsOf.get(sl.key) ?? []) if (accts[c]) sl.accts[c] = accts[c];
 
   // Metas del mes: cada cliente con meta del SDR tiene su tarjeta, aunque en
   // Pulso no le calce ninguna empresa (nombre del cliente = el de su informe
@@ -277,5 +309,57 @@ export async function loadSdrDashboard(opts: { sdr?: string | null; email?: stri
       sdr = r.slices.get(wanted) ?? null;
     }
   }
-  return { ...idx, me: { key: meKey, name: me.sdrName ?? null }, sdr };
+  // Cambios de status hechos desde el dashboard después de armar la caché
+  if (sdr) sdr = applyOverrides(sdr, await loadStatusOverrides(), idx.sources);
+  let fcReady = false;
+  if (sdr) ({ slice: sdr, fcReady } = await withMeetingNotes(sdr));
+  return { ...idx, me: { key: meKey, name: me.sdrName ?? null, canEditAll: canEditMeetings(opts.email) }, sdr, fcReady };
+}
+
+// Comentario de cada reunión (columna "notas" de la planilla) y la marca
+// "Para facturar", leídos en vivo de la tabla meetings. Sin la migración
+// supabase/20261114_meetings_facturar.sql se leen solo los comentarios.
+async function withMeetingNotes(s: SdrSlice): Promise<{ slice: SdrSlice; fcReady: boolean }> {
+  const ids = [...new Set(s.meetings.map((m) => m.id).filter(Boolean) as string[])];
+  const notes = new Map<string, string>();
+  const fc = new Set<string>();
+  let fcReady = true;
+  try {
+    const db = supabaseAdmin();
+    const probe = await db.from("meetings").select("facturar").limit(1);
+    if (probe.error) fcReady = false;
+    const cols = fcReady ? "id, notas, facturar" : "id, notas";
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await db.from("meetings").select(cols).in("id", ids.slice(i, i + 200));
+      for (const r of (data ?? []) as unknown as { id: string; notas: string | null; facturar?: boolean }[]) {
+        if (r.notas?.trim()) notes.set(String(r.id), r.notas.trim().slice(0, 800));
+        if (r.facturar) fc.add(String(r.id));
+      }
+    }
+  } catch (e) {
+    console.error("Dashboard SDR: no se pudieron leer los comentarios de las reuniones:", e);
+  }
+  const meetings = s.meetings.map((m) => {
+    if (!m.id) return m;
+    const { fc: _old, ...rest } = m;
+    return { ...rest, ...(notes.has(m.id) ? { nt: notes.get(m.id) } : {}), ...(fc.has(m.id) ? { fc: 1 as const } : {}) };
+  });
+  return { slice: { ...s, meetings }, fcReady };
+}
+
+function applyOverrides(s: SdrSlice, overrides: Map<string, StatusOverride>, sources: IndexCache["sources"]): SdrSlice {
+  if (!overrides.size) return s;
+  const synced = new Map(sources.map((x) => [x.client, x.syncedAt]));
+  const pick = (c: string, type: "company" | "contact", hs: string, st: string) => {
+    const a = s.accts?.[c];
+    if (!a || !hs) return st;
+    const o = overrides.get(overrideId(a.id, a.sub, type, hs));
+    const at = synced.get(c);
+    return o && (!at || o.at > at) ? o.st : st;
+  };
+  return {
+    ...s,
+    companies: s.companies.map((c) => ({ ...c, st: pick(c.c, "company", c.hs, c.st) })),
+    contacts: s.contacts.map((k) => ({ ...k, st: pick(k.c, "contact", k.hs, k.st) })),
+  };
 }

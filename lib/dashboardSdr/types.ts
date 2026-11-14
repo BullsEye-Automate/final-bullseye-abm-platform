@@ -4,6 +4,7 @@
 
 export type SdrCompany = {
   id: string;          // único en todo el dashboard: "<cuenta>:<id HubSpot>"
+  hs: string;          // id de HubSpot (para cambiar el status)
   c: string;           // cliente (cuenta de Pulso ABM)
   n: string;           // nombre de la empresa
   st: string;          // Status de la asignación - <cliente>
@@ -20,6 +21,7 @@ export type SdrCompany = {
 
 export type SdrContact = {
   id: string;          // "<cuenta>:<id HubSpot>"
+  hs: string;          // id de HubSpot
   co: string;          // id de la empresa (mismo formato que SdrCompany.id)
   con: string;         // nombre de la empresa
   c: string;           // cliente
@@ -37,6 +39,7 @@ export type SdrContact = {
 
 // Reunión de la planilla (API Reuniones) cuyo responsable es el SDR
 export type SdrMeeting = {
+  id?: string;         // id de la reunión (tabla meetings)
   c: string;           // cliente
   co: string;          // id de la empresa ("" si no calza con una empresa del universo)
   con: string;         // empresa
@@ -46,6 +49,12 @@ export type SdrMeeting = {
   ag: string;          // fecha de agendamiento (YYYY-MM-DD)
   f: string;           // fecha de la reunión
   st: string;          // Realizada / Pendiente / Reprogramada / No-show
+  hora?: string;       // HH:MM
+  cargo?: string;      // cargo del contacto (planilla)
+  org?: string;        // origen
+  opp?: string;        // Propuesta / Oportunidad
+  nt?: string;         // comentario de la planilla (columna notas; se lee en vivo al abrir)
+  fc?: 1;              // marcada "Para facturar" (meetings.facturar; se lee en vivo)
 };
 
 export type SdrSlice = {
@@ -56,6 +65,8 @@ export type SdrSlice = {
   meetings: SdrMeeting[];
   goals: Record<string, number>;   // meta de reuniones del mes por cliente (Asignación)
   ctData: Record<string, boolean>; // cliente → el informe trae teléfono / correo / LinkedIn
+  // cliente → registro en la app y cuenta dentro del HubSpot (para escribir el status); edit = se puede escribir
+  accts: Record<string, { id: string; sub: string | null; edit: boolean }>;
 };
 
 // Resumen por SDR para la vista de la líder (se calcula en el servidor)
@@ -76,7 +87,7 @@ export type SdrIndexRow = {
 export type SdrDashboardResponse = {
   generated: string;
   today: string;
-  me: { key: string | null; name: string | null };         // SDR de la sesión (por correo)
+  me: { key: string | null; name: string | null; canEditAll?: boolean }; // SDR de la sesión (por correo); canEditAll = líder / Ingri
   index: SdrIndexRow[];
   cells: string[];                                         // líderes de célula
   sources: { client: string; syncedAt: string | null }[];  // informes de Pulso ABM leídos
@@ -85,4 +96,5 @@ export type SdrDashboardResponse = {
   // Valores de SDR en HubSpot que no quedan en una SDR activa (diagnóstico)
   unmatched?: { client: string; raw: string; name: string; why: string; companies: number; contacts: number }[];
   sdr: SdrSlice | null;
+  fcReady?: boolean;   // existe la columna meetings.facturar (migración ejecutada)
 };
