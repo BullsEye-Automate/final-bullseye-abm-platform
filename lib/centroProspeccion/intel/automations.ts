@@ -24,6 +24,9 @@ const DAY = 86_400_000;
 const CLIENT_BUDGET_MS = 240_000;
 const RECO_CAP = 60;
 const RECO_DEFAULT = 20;
+// Mínimo por cliente aunque la inteligencia sugiera menos (pedido de BullsEye, 13-nov-2026:
+// normalmente se piden al menos 20 empresas, también a los clientes con stock de sobra)
+const RECO_MIN = 20;
 
 // ---------- marcas en allo_response_cache ----------
 async function getFlag<T = unknown>(key: string): Promise<T | null> {
@@ -66,7 +69,7 @@ export async function runClientRecommendations(clientId: string): Promise<RecoRu
   const semana = planningMonday();
   const { data: intel } = await db.from("centro_intel").select("result, status").eq("client_id", clientId).eq("semana", semana).maybeSingle();
   const sugeridas = intel?.status === "ok" ? Number((intel.result as IntelResult).empresas_sugeridas) : NaN;
-  const objetivo = Math.min(RECO_CAP, Number.isFinite(sugeridas) ? sugeridas : RECO_DEFAULT);
+  const objetivo = Math.min(RECO_CAP, Math.max(RECO_MIN, Number.isFinite(sugeridas) ? sugeridas : RECO_DEFAULT));
   const { count } = await db.from("client_recommendations").select("id", { count: "exact", head: true }).eq("client_id", clientId).eq("status", "pending");
   const pendientes = count ?? 0;
   const need = Math.max(0, objetivo - pendientes);
@@ -75,7 +78,7 @@ export async function runClientRecommendations(clientId: string): Promise<RecoRu
   const out: RecoRun = prev
     ? { ...prev, objetivo, estado: "ok", corridas: (prev.corridas ?? 1) + 1 }
     : { client_id: clientId, objetivo, pendientes_antes: pendientes, nuevas: 0, tandas: 0, estado: "ok", corridas: 1 };
-  if (!need) out.estado = objetivo ? "ya hay suficientes pendientes" : "la inteligencia sugiere no prospectar esta semana";
+  if (!need) out.estado = "ya hay suficientes pendientes";
   // Mismos topes que la pantalla: ~cantidad/5 + 2 tandas, corta tras 4 tandas seguidas sin empresas buenas
   const maxRounds = Math.ceil(need / 5) + 2;
   let empty = 0;
