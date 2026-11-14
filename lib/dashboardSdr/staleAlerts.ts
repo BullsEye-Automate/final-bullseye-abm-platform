@@ -87,8 +87,9 @@ async function planMails(today: string, live: boolean, notes: string[]): Promise
 
   // Análisis de cada SDR (el mismo cálculo del dashboard)
   const byKey = new Map<string, { name: string; a: Analysis }>();
+  const activeKeys = new Set(idx.index.map((r) => r.key)); // solo SDR activos en la Maestra
   for (const s of slices.values()) {
-    if (s.key === NO_SDR_KEY) continue;
+    if (s.key === NO_SDR_KEY || !activeKeys.has(s.key)) continue;
     const a = analyze(s, today);
     if (a.fixes.length) byKey.set(s.key, { name: s.name, a });
   }

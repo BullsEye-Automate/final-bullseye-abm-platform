@@ -27,7 +27,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v4";
+const VERSION = "v5";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -71,6 +71,16 @@ export async function buildAll(today: string) {
   // Célula de cada persona (líder incluida)
   const cellOf = new Map<string, string>();
   for (const c of master.cells) for (const n of [c.leader, ...c.members]) cellOf.set(resolveSdrKey(n), c.leader);
+  // Solo SDR activos en la Maestra (pedido de BullsEye): "Status Responsable"
+  // = Activo; sin status, solo si está en una célula. Los inactivos, los que
+  // no figuran en la Maestra y "Sin SDR asignado" no aparecen en el selector,
+  // la vista de la célula ni el correo.
+  const activeKeys = new Set<string>();
+  for (const p of master.people) {
+    const k = resolveSdrKey(p.name);
+    if (p.active === true || (p.active === null && cellOf.has(k))) activeKeys.add(k);
+  }
+  for (const p of master.people) if (p.active === false) activeKeys.delete(resolveSdrKey(p.name));
 
   const slices = new Map<string, SdrSlice>();
   const clientsOf = new Map<string, Set<string>>();
@@ -183,6 +193,7 @@ export async function buildAll(today: string) {
   }
 
   const index: SdrIndexRow[] = [...slices.values()]
+    .filter((s) => activeKeys.has(s.key))
     .map((s) => ({
       key: s.key, name: s.name, companies: s.companies.length, contacts: s.contacts.length,
       clients: [...(clientsOf.get(s.key) ?? [])].sort(), cell: cellOf.get(s.key) ?? null, summary: summarize(s, today),
