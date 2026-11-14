@@ -29,7 +29,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v8";
+const VERSION = "v9";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -233,6 +233,21 @@ export async function buildAll(today: string) {
     }
   }
 
+  // Solo los clientes que el SDR trabaja = los con meta este mes en
+  // Asignación (pedido de BullsEye: si HubSpot lo tiene como SDR en un cliente
+  // sin meta, ese cliente no aparece en su dashboard). Sin metas en el mes no
+  // se filtra. Se compara por cuenta (accountOf), no por nombre.
+  for (const [key, gp] of goalPeople) {
+    const sl = slices.get(key);
+    if (!sl) continue;
+    const ok = (c: string) => gp.accounts.has(accountOf.get(c) ?? "");
+    sl.companies = sl.companies.filter((x) => ok(x.c));
+    sl.contacts = sl.contacts.filter((x) => ok(x.c));
+    sl.meetings = sl.meetings.filter((x) => ok(x.c));
+    const cs = clientsOf.get(key);
+    if (cs) for (const c of [...cs]) if (!ok(c)) cs.delete(c);
+  }
+
   // Registro y cuenta de cada cliente de la cartera (para cambiar el status)
   for (const sl of slices.values()) for (const c of clientsOf.get(sl.key) ?? []) if (accts[c]) sl.accts[c] = accts[c];
 
@@ -296,26 +311,40 @@ export async function loadSdrDashboard(opts: { sdr?: string | null; email?: stri
   }
   // Cambios de status hechos desde el dashboard después de armar la caché
   if (sdr) sdr = applyOverrides(sdr, await loadStatusOverrides(), idx.sources);
-  if (sdr) sdr = await withMeetingNotes(sdr);
-  return { ...idx, me: { key: meKey, name: me.sdrName ?? null, canEditAll: canEditMeetings(opts.email) }, sdr };
+  let fcReady = false;
+  if (sdr) ({ slice: sdr, fcReady } = await withMeetingNotes(sdr));
+  return { ...idx, me: { key: meKey, name: me.sdrName ?? null, canEditAll: canEditMeetings(opts.email) }, sdr, fcReady };
 }
 
-// Comentario de cada reunión (columna "notas" de la planilla, tabla meetings),
-// leído en vivo para el desplegable de reuniones por empresa
-async function withMeetingNotes(s: SdrSlice): Promise<SdrSlice> {
+// Comentario de cada reunión (columna "notas" de la planilla) y la marca
+// "Para facturar", leídos en vivo de la tabla meetings. Sin la migración
+// supabase/20261114_meetings_facturar.sql se leen solo los comentarios.
+async function withMeetingNotes(s: SdrSlice): Promise<{ slice: SdrSlice; fcReady: boolean }> {
   const ids = [...new Set(s.meetings.map((m) => m.id).filter(Boolean) as string[])];
-  if (!ids.length) return s;
   const notes = new Map<string, string>();
+  const fc = new Set<string>();
+  let fcReady = true;
   try {
     const db = supabaseAdmin();
+    const probe = await db.from("meetings").select("facturar").limit(1);
+    if (probe.error) fcReady = false;
+    const cols = fcReady ? "id, notas, facturar" : "id, notas";
     for (let i = 0; i < ids.length; i += 200) {
-      const { data } = await db.from("meetings").select("id, notas").in("id", ids.slice(i, i + 200));
-      for (const r of (data ?? []) as { id: string; notas: string | null }[]) if (r.notas?.trim()) notes.set(String(r.id), r.notas.trim().slice(0, 800));
+      const { data } = await db.from("meetings").select(cols).in("id", ids.slice(i, i + 200));
+      for (const r of (data ?? []) as unknown as { id: string; notas: string | null; facturar?: boolean }[]) {
+        if (r.notas?.trim()) notes.set(String(r.id), r.notas.trim().slice(0, 800));
+        if (r.facturar) fc.add(String(r.id));
+      }
     }
   } catch (e) {
     console.error("Dashboard SDR: no se pudieron leer los comentarios de las reuniones:", e);
   }
-  return { ...s, meetings: s.meetings.map((m) => (m.id && notes.has(m.id) ? { ...m, nt: notes.get(m.id) } : m)) };
+  const meetings = s.meetings.map((m) => {
+    if (!m.id) return m;
+    const { fc: _old, ...rest } = m;
+    return { ...rest, ...(notes.has(m.id) ? { nt: notes.get(m.id) } : {}), ...(fc.has(m.id) ? { fc: 1 as const } : {}) };
+  });
+  return { slice: { ...s, meetings }, fcReady };
 }
 
 function applyOverrides(s: SdrSlice, overrides: Map<string, StatusOverride>, sources: IndexCache["sources"]): SdrSlice {

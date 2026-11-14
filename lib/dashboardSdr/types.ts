@@ -54,6 +54,7 @@ export type SdrMeeting = {
   org?: string;        // origen
   opp?: string;        // Propuesta / Oportunidad
   nt?: string;         // comentario de la planilla (columna notas; se lee en vivo al abrir)
+  fc?: 1;              // marcada "Para facturar" (meetings.facturar; se lee en vivo)
 };
 
 export type SdrSlice = {
@@ -95,4 +96,5 @@ export type SdrDashboardResponse = {
   // Valores de SDR en HubSpot que no quedan en una SDR activa (diagnóstico)
   unmatched?: { client: string; raw: string; name: string; why: string; companies: number; contacts: number }[];
   sdr: SdrSlice | null;
+  fcReady?: boolean;   // existe la columna meetings.facturar (migración ejecutada)
 };

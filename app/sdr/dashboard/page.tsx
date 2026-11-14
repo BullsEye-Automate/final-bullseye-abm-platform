@@ -58,7 +58,7 @@ export default function DashboardSdrPage() {
   const [sdr, setSdr] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<"sdr" | "celula">("sdr");
+  const [view, setView] = useState<"sdr" | "celula" | "facturacion">("sdr");
   const [client, setClient] = useState("");
   const [fixTab, setFixTab] = useState<FixKind>("est");
   const [detTab, setDetTab] = useState<"empresas" | "contactos">("empresas");
@@ -87,6 +87,7 @@ export default function DashboardSdrPage() {
     const q = new URLSearchParams(window.location.search);
     if (q.get("estancadas") === "1") { setFixTab("est"); }
     if (q.get("vista") === "celula") setView("celula");
+    if (q.get("vista") === "facturacion") setView("facturacion");
     load(q.get("sdr") ?? "");
   }, [load]);
 
@@ -101,6 +102,8 @@ export default function DashboardSdrPage() {
   const ed: Editing = {
     can: !!slice && (myself || !!data?.me.canEditAll),
     accts: slice?.accts ?? {},
+    fcReady: !!data?.fcReady,
+    onFc: (id, v) => setData((d) => (d && d.sdr ? { ...d, sdr: { ...d.sdr, meetings: d.sdr.meetings.map((m) => (m.id === id ? { ...m, fc: v ? 1 : undefined } : m)) } } : d)),
     onSaved: (type, c, hs, st) => setData((d) => (d && d.sdr ? { ...d, sdr: {
       ...d.sdr,
       companies: type === "company" ? d.sdr.companies.map((x) => (x.c === c && x.hs === hs ? { ...x, st } : x)) : d.sdr.companies,
@@ -116,16 +119,16 @@ export default function DashboardSdrPage() {
           <div className="label">SDR</div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
             {view === "sdr" ? <IconUserCircle size={24} className="text-brand" /> : <IconUsersGroup size={24} className="text-brand" />}
-            {view === "celula" ? "Dashboard SDR · células" : slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
+            {view === "celula" ? "Dashboard SDR · células" : view === "facturacion" ? "Dashboard SDR · facturación" : slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
           </h1>
           <p className="text-sm text-ink-muted mt-1">
-            {view === "sdr" ? "Empresas y contactos asignados por cliente." : "Cartera, pendientes y reuniones de cada SDR de la célula."}
+            {view === "sdr" ? "Empresas y contactos asignados por cliente." : view === "celula" ? "Cartera, pendientes y reuniones de cada SDR de la célula." : "Reuniones marcadas «Para facturar» por cliente, con quién las marcó y cuándo."}
             {data && <> Datos de Pulso ABM, calculados {timeCL(data.generated)}.</>}
           </p>
         </div>
         <div className="flex items-end gap-2 flex-wrap">
           <div role="tablist" aria-label="Vista" className="flex rounded-lg border bg-white p-0.5">
-            {([["sdr", "Mi cartera"], ["celula", "Célula"]] as const).map(([v, l]) => (
+            {([["sdr", "Mi cartera"], ["celula", "Célula"], ["facturacion", "Facturación"]] as const).map(([v, l]) => (
               <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
                 className={`px-3 py-1.5 rounded-md text-sm ${view === v ? "bg-brand text-white" : "text-ink-muted hover:text-ink"}`}>{l}</button>
             ))}
@@ -174,6 +177,7 @@ export default function DashboardSdrPage() {
       )}
 
       {data && view === "celula" && <CellView data={data} onOpen={openSdr} />}
+      {data && view === "facturacion" && <BillingView today={today} />}
 
       {data && <DataCheck data={data} />}
 
@@ -347,7 +351,7 @@ export default function DashboardSdrPage() {
           </section>
 
           {/* 5. Reuniones */}
-          <MeetingsSection A={A} client={client} monthName={monthName} />
+          <MeetingsSection A={A} client={client} monthName={monthName} ed={ed} today={today} />
 
           {/* 6. Detalle */}
           <section className="card space-y-3">
@@ -381,8 +385,10 @@ export default function DashboardSdrPage() {
 }
 
 // ── Reuniones ─────────────────────────────────────────────────────────────
-function MeetingsSection({ A, client, monthName }: { A: NonNullable<ReturnType<typeof analyze>>; client: string; monthName: string }) {
+function MeetingsSection({ A, client, monthName, ed, today }: { A: NonNullable<ReturnType<typeof analyze>>; client: string; monthName: string; ed: Editing; today: string }) {
   const [dim, setDim] = useState<"sen" | "area">("sen");
+  const [openCl, setOpenCl] = useState<string | null>(null);
+  const month = today.slice(0, 7);
   const m = A.mtg;
   const occurred = m.re + m.ns;
   return (
@@ -405,18 +411,32 @@ function MeetingsSection({ A, client, monthName }: { A: NonNullable<ReturnType<t
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-xs text-ink-muted bg-[#FAF9FD]">
-                <tr><Th>Cliente</Th><Th n>Meta</Th><Th n>Realizadas</Th><Th n>Cumplimiento</Th><Th n>Esperado a la fecha</Th><Th>Ritmo</Th><Th n>Agendadas</Th><Th n>No-show</Th><Th n>Pendientes</Th></tr>
+                <tr><Th>Cliente</Th><Th n>Meta</Th><Th n>Realizadas</Th><Th n>Cumplimiento</Th><Th n>Esperado a la fecha</Th><Th>Ritmo</Th><Th n>Agendadas</Th><Th n>No-show</Th><Th n>Pendientes</Th><Th n>Para facturar</Th></tr>
               </thead>
               <tbody>
                 {A.perClient.map((p) => (
-                  <tr key={p.client} className="border-t">
-                    <td className="px-3 py-2 font-medium">{p.client}</td>
+                  <Fragment key={p.client}>
+                  <tr className="border-t">
+                    <td className="px-3 py-2 font-medium">
+                      <button type="button" onClick={() => setOpenCl(openCl === p.client ? null : p.client)} aria-expanded={openCl === p.client} className="inline-flex items-center gap-1 hover:text-brand text-left">
+                        {openCl === p.client ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}{p.client}
+                      </button>
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums">{p.goal ?? "—"}</td><Td n>{p.re}</Td>
                     <td className={`px-3 py-2 text-right tabular-nums font-semibold ${PACE[p.pace].fg}`}>{p.pct === null ? "—" : `${p.pct}%`}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{p.expected === null ? "—" : fmtDec(p.expected)}</td>
                     <td className="px-3 py-2"><PaceBadge pace={p.pace} /></td>
-                    <Td n>{p.ag}</Td><Td n>{p.ns}</Td><Td n>{p.pe}</Td>
+                    <Td n>{p.ag}</Td><Td n>{p.ns}</Td><Td n>{p.pe}</Td><Td n>{p.fc}</Td>
                   </tr>
+                  {openCl === p.client && (
+                    <tr className="bg-[#FAF9FD]">
+                      <td colSpan={10} className="px-4 py-3">
+                        <div className="text-xs font-medium text-ink-muted mb-2">Reuniones de {p.client} con fecha en {monthName} (planilla de reuniones)</div>
+                        <MeetingsTable ms={A.meetings.filter((m) => m.c === p.client && m.f.startsWith(month)).sort((x, y) => x.f.localeCompare(y.f))} ed={ed} showCompany />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
                 {A.goal.total && A.perClient.length > 1 && (
                   <tr className="border-t bg-[#FAF9FD] font-semibold">
@@ -424,7 +444,7 @@ function MeetingsSection({ A, client, monthName }: { A: NonNullable<ReturnType<t
                     <td className={`px-3 py-2 text-right tabular-nums ${PACE[A.goal.pace].fg}`}>{A.goal.pct}%</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtDec(A.goal.expected)}</td>
                     <td className="px-3 py-2"><PaceBadge pace={A.goal.pace} /></td>
-                    <Td n>{A.mtg.ag}</Td><Td n>{A.mtg.ns}</Td><Td n>{A.mtg.pe}</Td>
+                    <Td n>{A.mtg.ag}</Td><Td n>{A.mtg.ns}</Td><Td n>{A.mtg.pe}</Td><Td n>{A.mtg.fc}</Td>
                   </tr>
                 )}
               </tbody>
@@ -702,6 +722,8 @@ function Td({ children, n }: { children: React.ReactNode; n?: boolean }) {
 // ── Cambiar status en HubSpot ─────────────────────────────────────────────
 type Editing = {
   can: boolean;
+  fcReady: boolean;
+  onFc: (id: string, value: boolean) => void;
   accts: Record<string, { id: string; sub: string | null; edit: boolean }>;
   onSaved: (type: "company" | "contact", client: string, hs: string, st: string) => void;
 };
@@ -719,6 +741,159 @@ function loadOpts(id: string, sub: string | null): Promise<StatusOpts> {
   }
   return optsCache.get(k)!;
 }
+// Reuniones (planilla) con su comentario y la marca "Para facturar"
+function MeetingsTable({ ms, ed, showCompany }: { ms: SdrMeeting[]; ed: Editing; showCompany?: boolean }) {
+  if (!ms.length) return <p className="text-sm text-ink-muted">Sin reuniones.</p>;
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm bg-white border rounded-lg">
+        <thead className="text-xs text-ink-muted"><tr><Th>Fecha</Th><Th>Agendada el</Th>{showCompany && <Th>Empresa</Th>}<Th>Contacto</Th><Th>Estado</Th><Th>Origen</Th><Th>Oportunidad</Th><Th>Comentario</Th><Th>Para facturar</Th></tr></thead>
+        <tbody>
+          {ms.map((m, i) => (
+            <tr key={m.id ?? i} className="border-t align-top">
+              <td className="px-3 py-2 whitespace-nowrap">{fmtDay(m.f)}{m.hora ? ` · ${m.hora}` : ""}</td>
+              <td className="px-3 py-2 whitespace-nowrap">{fmtDay(m.ag)}</td>
+              {showCompany && <td className="px-3 py-2">{m.con || "—"}</td>}
+              <td className="px-3 py-2">{m.ctn || "—"}{m.cargo && <div className="text-xs text-ink-muted">{m.cargo}</div>}</td>
+              <td className="px-3 py-2"><Pill st={m.st === "Realizada" ? "Reunión realizada" : m.st} /></td>
+              <td className="px-3 py-2">{m.org || "—"}</td>
+              <td className="px-3 py-2">{m.opp || "—"}</td>
+              <td className="px-3 py-2 max-w-[340px] whitespace-pre-line">{m.nt || <span className="text-ink-subtle">Sin comentario</span>}</td>
+              <td className="px-3 py-2"><FacturarBox m={m} ed={ed} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function FacturarBox({ m, ed }: { m: SdrMeeting; ed: Editing }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!m.id) return <span className="text-ink-subtle">—</span>;
+  if (!ed.fcReady) return <span className="text-xs text-ink-subtle" title="Falta ejecutar la migración supabase/20261114_meetings_facturar.sql">No disponible</span>;
+  const toggle = async (value: boolean) => {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch("/api/sdr/dashboard/facturar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: m.id, value }) });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `Error ${res.status}`);
+      ed.onFc(m.id!, value);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  return (
+    <span className="inline-flex flex-col gap-0.5">
+      <label className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        <input type="checkbox" checked={!!m.fc} disabled={!ed.can || busy} onChange={(e) => toggle(e.target.checked)} />
+        {busy ? <IconLoader2 size={12} className="animate-spin" /> : m.fc ? "Sí" : "No"}
+      </label>
+      {err && <span className="text-xs text-danger-fg max-w-[200px]">{err}</span>}
+    </span>
+  );
+}
+
+// ── Vista Facturación: reuniones del mes marcadas «Para facturar», por cliente ──
+type BillRow = { id: string; cliente: string; fecha: string; hora: string; empresa: string; contacto: string; cargo: string; sdr: string; realizado: string; oportunidad: string; origen: string; facturar: boolean; by: string | null; at: string | null };
+function BillingView({ today }: { today: string }) {
+  const months = useMemo(() => {
+    const out: string[] = [];
+    const d = new Date(`${today.slice(0, 7)}-01T12:00:00Z`);
+    for (let i = 0; i < 6; i++) { out.push(d.toISOString().slice(0, 7)); d.setUTCMonth(d.getUTCMonth() - 1); }
+    return out;
+  }, [today]);
+  const [month, setMonth] = useState(months[0]);
+  const [rows, setRows] = useState<BillRow[] | null>(null);
+  const [ready, setReady] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [cl, setCl] = useState("");
+  const [onlyMarked, setOnlyMarked] = useState(true);
+  useEffect(() => {
+    setRows(null); setErr(null);
+    fetch(`/api/sdr/dashboard/facturacion?month=${month}`).then(async (r) => {
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+      setRows(j.rows); setReady(j.ready);
+    }).catch((e) => setErr((e as Error).message));
+  }, [month]);
+  const label = (m: string) => `${MONTHS_L[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
+  const all = rows ?? [];
+  const byClient = new Map<string, { total: number; realizadas: number; marcadas: number }>();
+  for (const r of all) {
+    const x = byClient.get(r.cliente) ?? { total: 0, realizadas: 0, marcadas: 0 };
+    x.total++; if (norm(r.realizado) === "si") x.realizadas++; if (r.facturar) x.marcadas++;
+    byClient.set(r.cliente, x);
+  }
+  const clients = [...byClient.entries()].sort((a, b) => b[1].marcadas - a[1].marcadas || a[0].localeCompare(b[0]));
+  const list = all.filter((r) => (!cl || r.cliente === cl) && (!onlyMarked || r.facturar));
+  const atCL = (iso: string | null) => (iso ? new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : "—");
+  return (
+    <div className="space-y-4">
+      <div className="flex items-end gap-2 flex-wrap">
+        <label className="flex flex-col gap-1 text-xs text-ink-muted">Mes (fecha de la reunión)
+          <select className="input" value={month} onChange={(e) => setMonth(e.target.value)}>{months.map((m) => <option key={m} value={m}>{label(m)}</option>)}</select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-muted">Cliente
+          <select className="input min-w-[180px]" value={cl} onChange={(e) => setCl(e.target.value)}><option value="">Todos</option>{clients.map(([c]) => <option key={c} value={c}>{c}</option>)}</select>
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-ink-muted pb-2"><input type="checkbox" checked={onlyMarked} onChange={(e) => setOnlyMarked(e.target.checked)} /> Solo las marcadas «Para facturar»</label>
+      </div>
+      {!ready && <div className="text-sm p-3 rounded-lg bg-warning-bg text-warning-fg">Falta ejecutar la migración <code>supabase/20261114_meetings_facturar.sql</code> en Supabase: hasta entonces no se pueden marcar reuniones.</div>}
+      {err && <div className="text-sm p-3 rounded-lg bg-danger-bg text-danger-fg">{err}</div>}
+      {!rows && !err && <div className="flex items-center gap-2 text-ink-muted text-sm py-8 justify-center"><IconLoader2 size={16} className="animate-spin" /> Cargando reuniones…</div>}
+      {rows && (
+        <>
+          <section className="card p-0 overflow-hidden">
+            <h2 className="text-base font-semibold px-4 pt-4 pb-2">Por cliente · {label(month)}</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-ink-muted bg-[#FAF9FD]"><tr><Th>Cliente</Th><Th n>Reuniones del mes</Th><Th n>Realizadas</Th><Th n>Para facturar</Th></tr></thead>
+                <tbody>
+                  {clients.map(([c, x]) => (
+                    <tr key={c} className="border-t hover:bg-black/[0.02] cursor-pointer" onClick={() => setCl(cl === c ? "" : c)}>
+                      <td className="px-3 py-2 font-medium">{c}</td><Td n>{x.total}</Td><Td n>{x.realizadas}</Td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-brand">{fmt(x.marcadas)}</td>
+                    </tr>
+                  ))}
+                  {!clients.length && <tr><td colSpan={4} className="px-3 py-4 text-ink-muted">Sin reuniones en el mes.</td></tr>}
+                  {clients.length > 1 && (
+                    <tr className="border-t bg-[#FAF9FD] font-semibold"><td className="px-3 py-2">Total</td><Td n>{all.length}</Td><Td n>{all.filter((r) => norm(r.realizado) === "si").length}</Td><Td n>{all.filter((r) => r.facturar).length}</Td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <section className="card p-0 overflow-hidden">
+            <h2 className="text-base font-semibold px-4 pt-4 pb-2">Trazabilidad{cl ? ` · ${cl}` : ""} ({fmt(list.length)})</h2>
+            <div className="overflow-auto max-h-[600px]">
+              <table className="w-full text-sm">
+                <thead className="text-xs text-ink-muted bg-[#FAF9FD] sticky top-0"><tr><Th>Fecha</Th><Th>Cliente</Th><Th>Empresa</Th><Th>Contacto</Th><Th>SDR</Th><Th>Realizado</Th><Th>Oportunidad</Th><Th>Para facturar</Th><Th>Marcada por</Th><Th>El</Th></tr></thead>
+                <tbody>
+                  {list.map((r) => (
+                    <tr key={r.id} className="border-t align-top">
+                      <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.fecha)}{r.hora ? ` · ${r.hora}` : ""}</td>
+                      <td className="px-3 py-2">{r.cliente}</td>
+                      <td className="px-3 py-2 font-medium">{r.empresa || "—"}</td>
+                      <td className="px-3 py-2">{r.contacto || "—"}{r.cargo && <div className="text-xs text-ink-muted">{r.cargo}</div>}</td>
+                      <td className="px-3 py-2">{r.sdr || "—"}</td>
+                      <td className="px-3 py-2">{r.realizado || "—"}</td>
+                      <td className="px-3 py-2">{r.oportunidad || "—"}</td>
+                      <td className="px-3 py-2">{r.facturar ? <span className="inline-block px-2 py-0.5 rounded-full text-xs bg-success-bg text-success-fg">Sí</span> : "No"}</td>
+                      <td className="px-3 py-2">{r.by || "—"}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{r.facturar || r.by ? atCL(r.at) : "—"}</td>
+                    </tr>
+                  ))}
+                  {!list.length && <tr><td colSpan={10} className="px-3 py-4 text-ink-muted">{onlyMarked ? "Ninguna reunión marcada «Para facturar» con estos filtros." : "Sin reuniones con estos filtros."}</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <p className="text-xs text-ink-muted">La marca «Para facturar» la ponen el SDR de la reunión o las líderes desde el Dashboard SDR (desplegable de reuniones). «Marcada por» y «El» = la última persona que cambió la marca y cuándo. Reuniones de la planilla por fecha de la reunión.</p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function StatusCell({ type, rec, ed }: { type: "company" | "contact"; rec: { c: string; hs: string; st: string }; ed: Editing }) {
   const acct = ed.accts[rec.c];
   const [open, setOpen] = useState(false);
@@ -876,24 +1051,7 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
                   <tr className="bg-[#FAF9FD]">
                     <td colSpan={showClient ? 9 : 8} className="px-4 py-3">
                       <div className="text-xs font-medium text-ink-muted mb-2">Reuniones de {r.n} (planilla de reuniones, últimos 5 meses)</div>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm bg-white border rounded-lg">
-                          <thead className="text-xs text-ink-muted"><tr><Th>Fecha</Th><Th>Agendada el</Th><Th>Contacto</Th><Th>Estado</Th><Th>Origen</Th><Th>Oportunidad</Th><Th>Comentario</Th></tr></thead>
-                          <tbody>
-                            {ms.map((m, i) => (
-                              <tr key={m.id ?? i} className="border-t align-top">
-                                <td className="px-3 py-2 whitespace-nowrap">{fmtDay(m.f)}{m.hora ? ` · ${m.hora}` : ""}</td>
-                                <td className="px-3 py-2 whitespace-nowrap">{fmtDay(m.ag)}</td>
-                                <td className="px-3 py-2">{m.ctn || "—"}{m.cargo && <div className="text-xs text-ink-muted">{m.cargo}</div>}</td>
-                                <td className="px-3 py-2"><Pill st={m.st === "Realizada" ? "Reunión realizada" : m.st} /></td>
-                                <td className="px-3 py-2">{m.org || "—"}</td>
-                                <td className="px-3 py-2">{m.opp || "—"}</td>
-                                <td className="px-3 py-2 max-w-[340px] whitespace-pre-line">{m.nt || <span className="text-ink-subtle">Sin comentario</span>}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <MeetingsTable ms={ms} ed={ed} />
                     </td>
                   </tr>
                 )}

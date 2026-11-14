@@ -126,6 +126,7 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
     ns: ms.filter((m) => m.f.startsWith(month) && m.st === "No-show").length,
     pe: ms.filter((m) => m.f.startsWith(month) && m.st === "Pendiente").length,
     pePast: ms.filter((m) => m.f.startsWith(month) && m.st === "Pendiente" && m.f < today).length,
+    fc: ms.filter((m) => m.f.startsWith(month) && m.fc).length, // "Para facturar" (por fecha de reunión)
   });
   const withMtg = (cs: SdrCompany[]) => cs.filter((c) => group.get(c.id) === "reunion" || c.msch > 0).length;
 
