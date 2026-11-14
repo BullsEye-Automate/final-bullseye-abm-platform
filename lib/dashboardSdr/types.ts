@@ -54,7 +54,7 @@ export type SdrMeeting = {
   org?: string;        // origen
   opp?: string;        // Propuesta / Oportunidad
   nt?: string;         // comentario de la planilla (columna notas; se lee en vivo al abrir)
-  fc?: 1;              // marcada «Para facturar» (allo_response_cache; solo para quien puede verla)
+  fc?: 1;              // marcada «Reunión comisionable» (allo_response_cache; solo para quien puede verla)
 };
 
 export type SdrSlice = {
@@ -87,7 +87,7 @@ export type SdrIndexRow = {
 export type SdrDashboardResponse = {
   generated: string;
   today: string;
-  me: { key: string | null; name: string | null; canEditAll?: boolean; canBill?: boolean }; // canBill = ve y marca «Para facturar» // SDR de la sesión (por correo); canEditAll = líder / Ingri
+  me: { key: string | null; name: string | null; canEditAll?: boolean; canBill?: boolean }; // canBill = ve y marca «Reunión comisionable» // SDR de la sesión (por correo); canEditAll = líder / Ingri
   index: SdrIndexRow[];
   cells: string[];                                         // líderes de célula
   sources: { client: string; syncedAt: string | null }[];  // informes de Pulso ABM leídos
@@ -96,5 +96,5 @@ export type SdrDashboardResponse = {
   // Valores de SDR en HubSpot que no quedan en una SDR activa (diagnóstico)
   unmatched?: { client: string; raw: string; name: string; why: string; companies: number; contacts: number }[];
   sdr: SdrSlice | null;
-  fcReady?: boolean;   // la marca «Para facturar» está disponible
+  fcReady?: boolean;   // la marca «Reunión comisionable» está disponible
 };

@@ -5,7 +5,7 @@ import { canMarkBilling, setBillingMark } from "@/lib/dashboardSdr/billing";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Dashboard SDR — marca "Para facturar" de una reunión, con trazabilidad
+// Dashboard SDR — marca «Reunión comisionable» (antes "Para facturar") de una reunión, con trazabilidad
 // (quién y cuándo). POST { id: <meetings.id>, value: boolean }.
 // Es una marca personal de Ingri para contar reuniones (lib/dashboardSdr/billing.ts):
 // no cambia nada en la facturación ni en la planilla.

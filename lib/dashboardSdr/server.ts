@@ -330,7 +330,7 @@ export async function loadSdrDashboard(opts: { sdr?: string | null; email?: stri
 }
 
 // Comentario de cada reunión (columna "notas" de la planilla, tabla meetings)
-// y la marca «Para facturar» (allo_response_cache, lib/dashboardSdr/billing.ts),
+// y la marca «Reunión comisionable» (allo_response_cache, lib/dashboardSdr/billing.ts),
 // leídos en vivo. La marca solo se carga para quien puede verla.
 async function withMeetingNotes(s: SdrSlice, withBilling: boolean): Promise<{ slice: SdrSlice; fcReady: boolean }> {
   const ids = [...new Set(s.meetings.map((m) => m.id).filter(Boolean) as string[])];
