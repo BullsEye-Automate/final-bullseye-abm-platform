@@ -235,7 +235,7 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   const companyProps = Array.from(new Set([
     "name", "domain", "industry", "country", "numberofemployees", "hubspot_owner_id", "createdate", statusProp, countryProp, generalCountry,
     ...(industryProp ? [industryProp] : []),
-    ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier, P.companySdr, P.companyWishlist].map((p) => p.property).filter(Boolean) as string[],
+    ...[P.companyAssignedAt, P.companyNextFollowUp, P.companyIcpTier, P.companySdr, P.companyWishlist, P.companyTramo].map((p) => p?.property).filter(Boolean) as string[],
   ]));
   const rawCompanies = await searchAll("companies", filterGroups, companyProps, token);
 
@@ -251,6 +251,8 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   const companySdrLabel = optionLabeler(P.companySdr);
   const contactSdrLabel = optionLabeler(P.contactSdr);
   const wishlistLabel = optionLabeler(P.companyWishlist);
+  const tramoProp = P.companyTramo?.found ? P.companyTramo.property : null;
+  const tramoLabel = optionLabeler(P.companyTramo);
   // Universo = solo empresas de la wishlist con valor "Sí" (ej. Nisum, una
   // wishlist por mercado: "Wish List - Nisum Chile"…)
   const wlOnly = wishlistOnly(settings, client.name);
@@ -295,6 +297,7 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
       asg: toDay(P.companyAssignedAt.property ? p[P.companyAssignedAt.property] : null) ?? toDay(p.createdate) ?? "",
       st,
       ...(P.companyWishlist.property && wishlistLabel(p[P.companyWishlist.property]) ? { wl: wishlistLabel(p[P.companyWishlist.property])! } : {}),
+      ...(tramoProp && tramoLabel(p[tramoProp]) ? { tramo: String(tramoLabel(p[tramoProp])).trim() } : {}),
       ...(P.companyNextFollowUp.property && toDay(p[P.companyNextFollowUp.property]) ? { next: toDay(p[P.companyNextFollowUp.property]) } : {}),
     });
   }

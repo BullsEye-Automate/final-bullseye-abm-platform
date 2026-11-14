@@ -16,6 +16,7 @@ export type RadarCompany = {
   asg: string;               // fecha de asignación (YYYY-MM-DD)
   st: string;                // Status de la asignación - SDR
   wl?: string;               // valor de "Wish List - <cliente>" (sin él: fuera de la wishlist)
+  tramo?: string;            // Tramo SII de la empresa (si el HubSpot lo tiene, ej. Simplex)
   next?: string;             // próximo seguimiento
   nct: number;               // contactos
   nmg: number;               // contactos gestionados
