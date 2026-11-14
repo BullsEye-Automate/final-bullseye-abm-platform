@@ -209,6 +209,11 @@ export default function DashboardSdrPage() {
                       <h3 className="text-base font-semibold">{p.client}</h3>
                       <span className="text-xs text-ink-muted">{fmt(p.cos)} empresas</span>
                     </div>
+                    {p.cos === 0 && (
+                      <div className="rounded-lg bg-warning-bg text-warning-fg px-2.5 py-2 text-sm">
+                        Tiene meta en este cliente, pero en Pulso ABM no tiene empresas asignadas a su nombre. Revisa el panel «¿Falta una SDR o un cliente?» al final de la página: puede que en HubSpot figure con otro nombre.
+                      </div>
+                    )}
                     <div aria-hidden className="flex h-3 rounded-md overflow-hidden bg-black/5">
                       {GROUPS.map((g) => <div key={g} style={{ width: `${p.cos ? (100 * p.groups[g]) / p.cos : 0}%`, background: GROUP_COLOR[g] }} />)}
                     </div>

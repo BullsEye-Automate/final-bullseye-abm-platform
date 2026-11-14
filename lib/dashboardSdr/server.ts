@@ -27,7 +27,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v6";
+const VERSION = "v7";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -64,25 +64,35 @@ export async function buildAll(today: string) {
   const rawGoals = await readAssignment(spreadsheetId, resolvePerson, [], Number(today.slice(0, 4))).catch(() => []);
   const dir = buildClientDirectory(clients, rawGoals);
   const goalBy = new Map<string, number>(); // "<sdr>|<cuenta>" → meta
+  const goalPeople = new Map<string, { name: string; accounts: Map<string, string> }>(); // SDR → cuenta → nombre en Asignación
   for (const g of rawGoals) {
-    if (g.month !== month) continue;
-    const k = `${resolveSdrKey(g.person)}|${dir.goalClientId(g.client)}`;
+    if (g.month !== month || !(g.goal > 0)) continue;
+    const key = resolveSdrKey(g.person);
+    if (isExcludedSdr(key)) continue;
+    const acc = dir.goalClientId(g.client);
+    const k = `${key}|${acc}`;
     goalBy.set(k, (goalBy.get(k) ?? 0) + g.goal);
+    const gp = goalPeople.get(key) ?? { name: g.person, accounts: new Map<string, string>() };
+    if (!gp.accounts.has(acc)) gp.accounts.set(acc, dir.clients.get(acc)?.name ?? g.client.trim());
+    goalPeople.set(key, gp);
   }
 
   // Célula de cada persona (líder incluida)
   const cellOf = new Map<string, string>();
   for (const c of master.cells) for (const n of [c.leader, ...c.members]) cellOf.set(resolveSdrKey(n), c.leader);
-  // Solo SDR activos en la Maestra (pedido de BullsEye): "Status Responsable"
-  // = Activo; sin status, solo si está en una célula. Los inactivos, los que
-  // no figuran en la Maestra y "Sin SDR asignado" no aparecen en el selector,
-  // la vista de la célula ni el correo.
-  const activeKeys = new Set<string>();
-  for (const p of master.people) {
-    const k = resolveSdrKey(p.name);
-    if (p.active === true || (p.active === null && cellOf.has(k))) activeKeys.add(k);
+  // SDR que se muestran (pedido de BullsEye): los que tienen meta este mes en
+  // la pestaña "Asignación" (manda la planilla de metas). Si el mes aún no
+  // tiene metas cargadas, los activos en la Maestra ("Status Responsable" =
+  // Activo; sin status, solo si está en una célula). Los demás y "Sin SDR
+  // asignado" no aparecen en el selector, la vista de la célula ni el correo.
+  const activeKeys = new Set<string>(goalPeople.keys());
+  if (!activeKeys.size) {
+    for (const p of master.people) {
+      const k = resolveSdrKey(p.name);
+      if (p.active === true || (p.active === null && cellOf.has(k))) activeKeys.add(k);
+    }
+    for (const p of master.people) if (p.active === false) activeKeys.delete(resolveSdrKey(p.name));
   }
-  for (const p of master.people) if (p.active === false) activeKeys.delete(resolveSdrKey(p.name));
 
   const slices = new Map<string, SdrSlice>();
   const clientsOf = new Map<string, Set<string>>();
@@ -209,11 +219,17 @@ export async function buildAll(today: string) {
     }
   }
 
-  // Metas del mes en cada cartera
-  for (const s of slices.values()) {
-    for (const client of clientsOf.get(s.key) ?? []) {
-      const g = goalBy.get(`${s.key}|${accountOf.get(client)}`);
-      if (g) s.goals[client] = g;
+  // Metas del mes: cada cliente con meta del SDR tiene su tarjeta, aunque en
+  // Pulso no le calce ninguna empresa (nombre del cliente = el de su informe
+  // de Pulso; si no tiene informe, el de la app / Asignación)
+  const nameOfAccount = new Map<string, string>();
+  for (const [client, acc] of accountOf) if (!nameOfAccount.has(acc)) nameOfAccount.set(acc, client);
+  for (const [key, gp] of goalPeople) {
+    const existing = slices.get(key);
+    for (const [acc, accName] of gp.accounts) {
+      const client = nameOfAccount.get(acc) ?? accName;
+      const x = slice(existing ? { key, name: existing.name } : { key, name: gp.name }, client);
+      x.goals[client] = goalBy.get(`${key}|${acc}`) ?? 0;
     }
   }
 

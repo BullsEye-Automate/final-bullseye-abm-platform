@@ -131,7 +131,9 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
 
   // Por cliente
   const prog = monthProgress(today);
-  const clients = [...new Set([...companies.map((c) => c.c), ...contacts.map((k) => k.c)])].sort();
+  // Clientes del SDR: con empresas, contactos o reuniones en Pulso, o con meta en Asignación
+  const clients = [...new Set([...companies.map((c) => c.c), ...contacts.map((k) => k.c), ...meetings.map((m) => m.c),
+    ...Object.keys(slice.goals).filter((c) => !client || c === client)])].sort();
   const perClient = clients.map((cl) => {
     const cs = companies.filter((c) => c.c === cl);
     const ks = contacts.filter((k) => k.c === cl);
