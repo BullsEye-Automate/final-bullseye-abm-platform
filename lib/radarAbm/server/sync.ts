@@ -399,6 +399,8 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
       ...(phoneProps.some((x) => (p[x] ?? "").replace(/\D/g, "").length >= 7) ? { ph: 1 as const } : {}),
       ...(/@/.test(p.email ?? "") ? { ml: 1 as const } : {}),
       ...((p.hs_linkedin_url ?? "").trim() ? { lk: 1 as const } : {}),
+      // "Cliente BullsEye" del contacto = este cliente (Dashboard SDR: contactos disponibles para la cuenta)
+      ...(filterByClient && isClientContact(p[uniCt!.name]) ? { own: 1 as const } : {}),
     };
   });
 
@@ -498,6 +500,7 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   });
   clientData.activities = act.activities;
   clientData.ctData = 1; // los contactos traen ph / ml / lk
+  if (filterByClient) clientData.ownData = 1; // los contactos traen own (titular = este cliente)
   clientData.callEvals = callEvals;
   if (meetingsTotal(settings, client.name)) clientData.meetingsTotal = true;
   // Universo = solo la wishlist: el informe no muestra el filtro Wishlist

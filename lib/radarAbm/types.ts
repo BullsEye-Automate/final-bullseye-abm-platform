@@ -56,6 +56,7 @@ export type RadarContact = {
   ph?: 1;                    // tiene teléfono (Dashboard SDR, disponibilidad)
   ml?: 1;                    // tiene correo
   lk?: 1;                    // tiene LinkedIn
+  own?: 1;                   // "Cliente BullsEye" del contacto = este cliente (Dashboard SDR)
   ps: string;                // próximo paso (texto automático)
 };
 
@@ -141,6 +142,7 @@ export type RadarClientData = {
   deals: RadarDeal[];
   activities?: RadarActivity[];
   ctData?: 1;                // el sync guardó ph / ml / lk en los contactos
+  ownData?: 1;               // el sync guardó own (hay "Cliente BullsEye" para filtrar)
   callEvals?: RadarCallEval[];
   meetingsTotal?: boolean;
   wishlistOnly?: boolean;     // universo = solo empresas de la wishlist (sin filtro Wishlist)
