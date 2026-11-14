@@ -61,7 +61,8 @@
       "schedule": "30 11,12,13 * * 1-5"
     },
     { "path": "/api/cron/centro-inteligencia", "schedule": "0,20,40 15-17 * * 5" },
-    { "path": "/api/cron/centro-recomendaciones", "schedule": "0 23 * * 0" },
+    { "path": "/api/cron/centro-recomendaciones", "schedule": "0,20,40 23 * * 0" },
+    { "path": "/api/cron/centro-recomendaciones?tramo=utc-lunes", "schedule": "0,20,40 0-2 * * 1" },
     { "path": "/api/cron/centro-alertas", "schedule": "30 11 * * 1-5" },
     { "path": "/api/cron/centro-alertas", "schedule": "30 12 * * 1-5" },
     { "path": "/api/cron/reconfirmaciones", "schedule": "*/15 11-23 * * 1-5" }
