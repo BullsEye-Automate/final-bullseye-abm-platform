@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { currentUserEmail } from "@/lib/academiaSdr/server/client";
+import { canMarkBilling } from "@/lib/dashboardSdr/billing";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +11,7 @@ export const dynamic = "force-dynamic";
 // Nunca teléfono ni correo del prospecto. GET ?month=YYYY-MM
 export async function GET(req: NextRequest) {
   try {
+    if (!canMarkBilling(await currentUserEmail())) return NextResponse.json({ error: "Vista solo para facturación interna." }, { status: 403 });
     const month = req.nextUrl.searchParams.get("month") ?? "";
     if (!/^\d{4}-\d{2}$/.test(month)) return NextResponse.json({ error: "month inválido (YYYY-MM)" }, { status: 400 });
     const [y, m] = month.split("-").map(Number);

@@ -87,7 +87,7 @@ export type SdrIndexRow = {
 export type SdrDashboardResponse = {
   generated: string;
   today: string;
-  me: { key: string | null; name: string | null; canEditAll?: boolean }; // SDR de la sesión (por correo); canEditAll = líder / Ingri
+  me: { key: string | null; name: string | null; canEditAll?: boolean; canBill?: boolean }; // canBill = ve y marca «Para facturar» // SDR de la sesión (por correo); canEditAll = líder / Ingri
   index: SdrIndexRow[];
   cells: string[];                                         // líderes de célula
   sources: { client: string; syncedAt: string | null }[];  // informes de Pulso ABM leídos

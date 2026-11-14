@@ -7,6 +7,7 @@ import { readMonthCache, writeMonthCache } from "@/lib/celulasSdr/cache";
 import { isExcludedSdr } from "@/lib/celulasSdr/engine";
 import { loadAllDatasets, loadClientSettings, universeMode } from "@/lib/radarAbm/server/store";
 import { canEditMeetings } from "@/lib/celulasSdr/editors";
+import { canMarkBilling } from "./billing";
 import { loadStatusOverrides, overrideId, type StatusOverride } from "./statusEdit";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 import { identifySdr } from "@/lib/academiaSdr/server/progress";
@@ -325,7 +326,7 @@ export async function loadSdrDashboard(opts: { sdr?: string | null; email?: stri
   if (sdr) sdr = applyOverrides(sdr, await loadStatusOverrides(), idx.sources);
   let fcReady = false;
   if (sdr) ({ slice: sdr, fcReady } = await withMeetingNotes(sdr));
-  return { ...idx, me: { key: meKey, name: me.sdrName ?? null, canEditAll: canEditMeetings(opts.email) }, sdr, fcReady };
+  return { ...idx, me: { key: meKey, name: me.sdrName ?? null, canEditAll: canEditMeetings(opts.email), canBill: canMarkBilling(opts.email) }, sdr, fcReady };
 }
 
 // Comentario de cada reunión (columna "notas" de la planilla) y la marca
