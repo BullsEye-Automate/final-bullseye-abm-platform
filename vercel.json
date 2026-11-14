@@ -65,7 +65,8 @@
     { "path": "/api/cron/centro-recomendaciones?tramo=utc-lunes", "schedule": "0,20,40 0-2 * * 1" },
     { "path": "/api/cron/centro-alertas", "schedule": "30 11 * * 1-5" },
     { "path": "/api/cron/centro-alertas", "schedule": "30 12 * * 1-5" },
-    { "path": "/api/cron/reconfirmaciones", "schedule": "*/15 11-23 * * 1-5" }
+    { "path": "/api/cron/reconfirmaciones", "schedule": "*/15 11-23 * * 1-5" },
+    { "path": "/api/cron/cuentas-estancadas", "schedule": "0 12,13 * * 1,2" }
   ],
   "framework": "nextjs",
   "buildCommand": "next build",
@@ -92,6 +93,7 @@
     "app/api/celulas-sdr/devoluciones/route.ts": { "maxDuration": 300 },
     "app/api/celulas-sdr/hubspot/route.ts": { "maxDuration": 300 },
     "app/api/cron/celulas-sdr-alerts/route.ts": { "maxDuration": 300 },
+    "app/api/cron/cuentas-estancadas/route.ts": { "maxDuration": 300 },
     "app/api/celulas-sdr/alerts-preview/route.ts": { "maxDuration": 300 },
     "app/api/radar-abm/route.ts": { "maxDuration": 300 },
     "app/api/radar-abm/detect/route.ts": { "maxDuration": 60 },

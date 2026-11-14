@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useRef, useState, useEffect } from "react";
 import {
   IconMail,
+  IconLayoutDashboard,
   IconPhone,
   IconHeadset,
   IconBrain,
@@ -57,6 +58,7 @@ const SECTIONS: Section[] = [
   {
     label: "SDR",
     items: [
+      { href: "/sdr/dashboard", label: "Dashboard SDR",       icon: IconLayoutDashboard },
       { href: "/telefonos",     label: "Teléfonos",           icon: IconPhone },
       { href: "/llamadas",      label: "Llamadas",            icon: IconHeadset },
       { href: "/sdr/entrenamiento", label: "Entrenamiento cliente", icon: IconSchool },
