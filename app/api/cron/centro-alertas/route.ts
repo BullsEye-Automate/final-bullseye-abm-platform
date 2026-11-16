@@ -3,6 +3,7 @@ import { isBusinessDay } from "@/lib/celulasSdr/calendar";
 import { getFlag, loadWeekPlan, planPendingKey, sendDailyAlerts, sendIcpDigest, sendMondayMail, sendWeeklyCostReport, setFlag } from "@/lib/centroProspeccion/intel/automations";
 import { PROSPECTORAS } from "@/lib/centroProspeccion/intel/mail";
 import { loadProspectoraCalendar } from "@/lib/centroProspeccion/intel/prospectoraDays";
+import { syncFichasFromIcp } from "@/lib/centroProspeccion/icpSync";
 import { chileDate, planningMonday } from "@/lib/centroProspeccion/intel/run";
 
 export const runtime = "nodejs";
@@ -70,6 +71,8 @@ export async function GET(req: NextRequest) {
     });
   }
   if (!solo || solo === "icp") await step("icp", () => sendIcpDigest());
+  // Fichas alineadas con el ICP de Pulso ABM (solo las que cambiaron)
+  if (!solo || solo === "icp_sync") await step("icp_sync", async () => (await syncFichasFromIcp()).filter((r) => r.estado === "alineada"));
   if ((isMonday && !solo) || solo === "costo") await step("costo", () => sendWeeklyCostReport());
   if (!solo) await setFlag(flag, out, 3);
   return NextResponse.json(out);
