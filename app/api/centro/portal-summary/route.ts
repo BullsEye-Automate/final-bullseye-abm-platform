@@ -3,6 +3,10 @@ import { requireCentroUser } from "@/lib/centroProspeccion/access";
 import { loadClientLinks } from "@/lib/centroProspeccion/portalLink";
 import { computeAllClientsDashboard, type ProspectingKpis } from "@/lib/prospectingDashboard";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getFlag } from "@/lib/centroProspeccion/intel/automations";
+
+// Rechazos que alguien del equipo ya marcó como revisados (bandeja de Solicitudes)
+const PEDIDOS_VISTOS_KEY = "centro_pedidos_vistos";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -24,6 +28,8 @@ type Pedido = {
   estado: string;
   fecha: string;
   motivo: string | null;
+  /** Qué falta hacer (null = nada: ya se trabajó). */
+  accion: string | null;
 };
 
 const pick = (k: ProspectingKpis) => ({
@@ -55,15 +61,16 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
 
   try {
-    const [links, dash, suggested, pedidosRes] = await Promise.all([
+    const [links, dash, suggested, pedidosRes, vistos] = await Promise.all([
       loadClientLinks(),
       computeAllClientsDashboard(db, start, end),
       db.from("wishlist_contacts").select("client_id").eq("status", "suggested").limit(20000),
       db.from("client_wishlist")
-        .select("id, client_id, company_name, status, origin, created_at, client_decision_at, client_reject_reason, clients(name)")
+        .select("id, client_id, company_name, status, origin, created_at, client_decision_at, client_reject_reason, contacts_status, manual_status, lemlist_status, clients(name)")
         .or(`and(origin.eq.client,created_at.gte.${start.toISOString()}),and(status.eq.rejected_by_client,client_decision_at.gte.${start.toISOString()})`)
         .order("created_at", { ascending: false })
         .limit(400),
+      getFlag<string[]>(PEDIDOS_VISTOS_KEY).then((v) => new Set(v ?? [])),
     ]);
 
     const toReview = new Map<string, number>();
@@ -95,6 +102,22 @@ export async function GET(req: NextRequest) {
       const rel = w.clients as unknown as { name?: string } | { name?: string }[] | null;
       const name = (Array.isArray(rel) ? rel[0]?.name : rel?.name) ?? "";
       const tipo: Pedido["tipo"] = w.status === "rejected_by_client" ? "rechazada" : "pedida";
+      // Pendiente de acción (pedido de BullsEye 16-nov-2026: la bandeja mostraba
+      // también lo ya trabajado y parecía algo por hacer)
+      const cs = String(w.contacts_status ?? "pending");
+      const ms = String(w.manual_status ?? "");
+      const accion =
+        tipo === "rechazada"
+          ? (vistos.has(w.id) ? null : "Revisar el motivo del rechazo")
+          : w.lemlist_status === "error"
+            ? "Error al enviarla a Lemlist (reintentar en el Dashboard)"
+            : cs === "error"
+              ? "Falló la búsqueda de contactos (reintentar en Contactos IA)"
+            : cs === "pending" || cs === "searching"
+              ? "Esperando la búsqueda automática de contactos"
+              : cs === "few_contacts" && ms !== "done" && ms !== "no_contacts"
+                ? "Pocos contactos: falta la búsqueda manual"
+                : null;
       return {
         id: w.id,
         clienteId: fichaOf(w.client_id),
@@ -104,6 +127,7 @@ export async function GET(req: NextRequest) {
         estado: w.status,
         fecha: (tipo === "rechazada" ? w.client_decision_at : w.created_at) ?? w.created_at,
         motivo: w.client_reject_reason ?? null,
+        accion,
       };
     });
 

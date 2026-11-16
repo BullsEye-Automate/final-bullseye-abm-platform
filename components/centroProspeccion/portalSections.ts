@@ -19,7 +19,7 @@ type Kpis = {
   porProspectar: number; erroresLemlist: number; busquedaManual: number; activas: number;
 };
 type FichaSummary = Kpis & { clientId: string; cliente: string; porRevisar: number };
-type Pedido = { id: string; clienteId: string | null; cliente: string; empresa: string; tipo: "pedida" | "rechazada"; fecha: string; motivo: string | null };
+type Pedido = { id: string; clienteId: string | null; cliente: string; empresa: string; tipo: "pedida" | "rechazada"; fecha: string; motivo: string | null; accion?: string | null };
 type Summary = { dias: number; porFicha: Record<string, FichaSummary>; totales: Kpis; porRevisarTotal: number; pedidos: Pedido[]; migration_missing: boolean };
 
 const TTL = 60_000;
@@ -120,25 +120,45 @@ export function createPortalSections(week: (wk: string) => Promise<Week | null>)
   };
 
   // ── Solicitudes: una sola bandeja ───────────────────────────────────────
+  // Solo lo que pide acción (pedido de BullsEye 16-nov-2026), plegado: empresas
+  // pedidas por el cliente que aún no tienen contactos buscados / búsqueda manual
+  // o con error de Lemlist, y rechazos sin revisar (botón «Revisado»).
   const renderSolicitudes = async (el: HTMLElement, cli: string) => {
     const s = await getSummary();
     if (!el.isConnected || !s) { el.innerHTML = ""; return; }
-    const list = s.pedidos.filter((p) => !cli || p.clienteId === cli);
-    if (!list.length) { el.innerHTML = ""; return; }
-    const shown = list.slice(0, 40);
+    const all = s.pedidos.filter((p) => !cli || p.clienteId === cli);
+    const list = all.filter((p) => p.accion);
+    if (!all.length) { el.innerHTML = ""; return; }
+    const shown = list.slice(0, 60);
     const clientIdOf = (p: Pedido) => (p.clienteId && s.porFicha[p.clienteId]?.clientId) || "";
-    el.innerHTML = card(
-      "Pedidos de clientes desde el portal",
-      `${n(list.length)} en los últimos ${n(s.dias)} días`,
-      `<div class="tw"><table><thead><tr><th class="l">Fecha</th><th class="l">Cliente</th><th class="l">Empresa</th><th class="l">Qué pasó</th><th></th></tr></thead><tbody>${shown
-        .map((p) => `<tr><td class="l">${fecha(p.fecha)}</td><td class="l">${esc(p.cliente)}</td><td class="l">${esc(p.empresa)}</td><td class="l" style="white-space:normal;max-width:340px">${
-          p.tipo === "rechazada"
-            ? `<span class="pill r">Rechazó la propuesta</span>${p.motivo ? ` <span class="muted">${esc(p.motivo)}</span>` : ""}`
-            : `<span class="pill g">La pidió el cliente</span> <span class="muted">aprobada para prospectar</span>`
-        }</td><td>${clientIdOf(p) ? goBtn("Ver en Empresas", "/empresas", clientIdOf(p)) : ""}</td></tr>`)
-        .join("")}</tbody></table></div>${list.length > shown.length ? `<p class="muted" style="margin-top:8px">Y ${n(list.length - shown.length)} más en Empresas.</p>` : ""}`
-    );
+    const body = list.length
+      ? `<div class="tw"><table><thead><tr><th class="l">Fecha</th><th class="l">Cliente</th><th class="l">Empresa</th><th class="l">Qué pasó</th><th class="l">Qué falta</th><th></th></tr></thead><tbody>${shown
+          .map((p) => `<tr><td class="l">${fecha(p.fecha)}</td><td class="l">${esc(p.cliente)}</td><td class="l">${esc(p.empresa)}</td><td class="l" style="white-space:normal;max-width:280px">${
+            p.tipo === "rechazada"
+              ? `<span class="pill r">Rechazó la propuesta</span>${p.motivo ? ` <span class="muted">${esc(p.motivo)}</span>` : ""}`
+              : `<span class="pill g">La pidió el cliente</span>`
+          }</td><td class="l" style="white-space:normal;max-width:260px">${esc(p.accion)}</td><td style="white-space:nowrap">${clientIdOf(p) ? goBtn("Ver en Empresas", "/empresas", clientIdOf(p)) : ""}${p.tipo === "rechazada" ? ` <button class="btn ghost sm" data-cp-visto="${esc(p.id)}">Revisado</button>` : ""}</td></tr>`)
+          .join("")}</tbody></table></div>${list.length > shown.length ? `<p class="muted" style="margin-top:8px">Y ${n(list.length - shown.length)} más en Empresas.</p>` : ""}`
+      : `<p class="muted" style="margin:6px 0 0">Nada pendiente: todo lo que pidieron los clientes ya se trabajó.</p>`;
+    el.innerHTML = `<details class="card" style="margin-bottom:16px"><summary style="cursor:pointer;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;list-style:none">
+      <b style="font-family:var(--head)">Pedidos de clientes desde el portal ${list.length ? `<span class="pill o">${n(list.length)} por atender</span>` : `<span class="pill g">al día</span>`}</b>
+      <span class="muted" style="font-size:12.5px">${n(all.length)} en los últimos ${n(s.dias)} días · clic para ${list.length ? "ver" : "abrir"}</span></summary><div style="margin-top:12px">${body}</div></details>`;
     bindGo(el);
+    el.querySelectorAll<HTMLButtonElement>("[data-cp-visto]").forEach((b) =>
+      b.addEventListener("click", async (ev) => {
+        ev.preventDefault();
+        b.disabled = true;
+        const r = await fetch("/api/centro/pedidos/visto", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: b.dataset.cpVisto }) }).catch(() => null);
+        if (r?.ok) {
+          const p = s.pedidos.find((x) => x.id === b.dataset.cpVisto);
+          if (p) p.accion = null;
+          const open = (el.querySelector("details") as HTMLDetailsElement | null)?.open;
+          await renderSolicitudes(el, cli);
+          const d = el.querySelector("details") as HTMLDetailsElement | null;
+          if (d && open) d.open = true;
+        } else b.disabled = false;
+      })
+    );
   };
 
   // ── Plan semanal: metas por resultado ──────────────────────────────────
