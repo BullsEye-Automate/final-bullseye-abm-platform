@@ -5,6 +5,7 @@ import { kamFor, readMasterPeople, resolveSdr } from "@/lib/respuestasLemlist/di
 import { RecoInputError, runRecommendationRound } from "@/lib/wishlistRecommendations";
 import { loadClientLinks } from "../portalLink";
 import { readDocs } from "../store";
+import { holidaysOn, type CountryCode } from "@/lib/feriados/calendar";
 import type { IntelResult } from "./analyze";
 import type { IntelNumbers } from "./numbers";
 import { chileDate, planningMonday } from "./run";
@@ -128,7 +129,27 @@ const prospectorasDe = (plan: Map<string, string[]>, fichaIds: string[]) =>
   Array.from(new Set(fichaIds.flatMap((id) => plan.get(id) ?? [])));
 
 // ---------- lunes: plan de la semana ----------
-export async function sendMondayMail(): Promise<{ to: string[]; clientes: number }> {
+// País de cada prospectora: el lunes que es feriado en su país no recibe el plan
+// ese día; le llega el siguiente día hábil suyo (16-nov-2026: Nasly, feriado en
+// Colombia). CENTRO_PROSPECTORA_PAISES = "correo:CO,correo:PE" lo reemplaza.
+const PROSPECTORA_COUNTRY: Record<string, CountryCode> = (() => {
+  const env = process.env.CENTRO_PROSPECTORA_PAISES;
+  if (env) {
+    const m: Record<string, CountryCode> = {};
+    for (const part of env.split(",")) {
+      const [e, c] = part.split(":").map((x) => x.trim());
+      if (e && c) m[e.toLowerCase()] = c.toUpperCase() as CountryCode;
+    }
+    return m;
+  }
+  return { "nmoreno@bullseye-abm.com": "CO" };
+})();
+export function isHolidayFor(email: string, day: string): boolean {
+  const c = PROSPECTORA_COUNTRY[email.toLowerCase()] ?? "CL";
+  return holidaysOn(day, c).some((h) => h.kind === "national");
+}
+
+export async function sendMondayMail(opts: { to?: string[]; cc?: string[]; late?: boolean } = {}): Promise<{ to: string[]; clientes: number }> {
   const [intel, links, plan] = await Promise.all([latestIntel(), loadClientLinks(), loadPlanProspectoras()]);
   const name = new Map(links.clients.map((c) => [c.id, c.name]));
   const semana = planningMonday();
@@ -152,7 +173,7 @@ ${rows.map(({ i, cliente, reco, prospectora }) => {
 </table>
 <p style="color:#666">"Propuestas ficha" = cambios de cargos, industrias o exclusiones que propone la IA con evidencia; se aprueban o descartan en la ficha del cliente en el Centro.</p>`
     : "<p>Esta semana no se generó la inteligencia de ningún cliente (revisa el checklist de preparación en el Centro).</p>";
-  const r = await sendCentroMail({ to: PROSPECTORAS, cc: [CENTRO_LEADER], subject: `Plan de prospección · semana del ${semana}`, html: wrapMail(`Plan de prospección · semana del ${semana}`, body, { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }) });
+  const r = await sendCentroMail({ to: opts.to ?? PROSPECTORAS, cc: opts.cc ?? [CENTRO_LEADER], subject: `Plan de prospección · semana del ${semana}${opts.late ? " (ayer fue feriado en tu país)" : ""}`, html: wrapMail(`Plan de prospección · semana del ${semana}`, body, { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }) });
   return { to: r.to, clientes: rows.length };
 }
 
@@ -250,6 +271,7 @@ export async function sendDailyAlerts(today = chileDate()): Promise<Record<strin
     }
   }
   for (const [e, l] of Array.from(byProsp)) {
+    if (isHolidayFor(e, today)) { sent[`prosp:${e}`] = "feriado en su país"; continue; }
     sent[`prosp:${e}`] = await sendCentroMail({ to: [e], subject: "Revisión pendiente en Empresas y Contactos", html: wrapMail("Revisión acumulada", `<p>Se está acumulando trabajo por revisar:</p><ul>${l.join("")}</ul>`, { href: `${APP_URL}/centro-prospeccion?tab=contactos`, label: "Revisar" }) }).catch((err) => ({ error: (err as Error).message }));
   }
 
@@ -328,5 +350,45 @@ async function sendReminders(intel: IntelLite[], cname: (id: string) => string, 
   }
   return { enviados };
 }
+
+// ---------- cambios de ICP aprobados en la ficha → KAM, un solo correo al día ----------
+// Antes cada aprobación mandaba un correo al KAM en el momento (13-nov-2026: muchas
+// aprobaciones de noche = muchos correos a Ingri a esa hora). Ahora se acumulan y
+// salen juntos en el correo de las 8:30 del día hábil siguiente.
+export type IcpPending = { client_id: string; cliente: string; campo: string; texto: string; evidencia: string; casos: number; by: string; at: string };
+const ICP_QUEUE = "centro_icp_validar:cola";
+export async function queueIcpValidation(item: IcpPending) {
+  for (let i = 0; i < 3; i++) {
+    const { data } = await supabaseAdmin().from("allo_response_cache").select("response, expires_at").eq("cache_key", ICP_QUEUE).maybeSingle();
+    const list = ((data?.response as IcpPending[] | undefined) ?? []);
+    list.push(item);
+    await setFlag(ICP_QUEUE, list, 60);
+    // Relee: si otra aprobación escribió al mismo tiempo, vuelve a intentar
+    const back = await getFlag<IcpPending[]>(ICP_QUEUE);
+    if (back?.some((x) => x.at === item.at && x.texto === item.texto)) return;
+  }
+}
+const CAMPO_LABEL: Record<string, string> = { cargos: "Cargos objetivo", industrias: "Industrias objetivo", exclusiones: "Exclusiones", zonas: "Zonas", proximos: "Próximos pasos" };
+export async function sendIcpDigest(): Promise<Record<string, unknown>> {
+  const list = (await getFlag<IcpPending[]>(ICP_QUEUE)) ?? [];
+  if (!list.length) return { pendientes: 0 };
+  const byKam = new Map<string, IcpPending[]>();
+  for (const it of list) {
+    const k = kamFor(it.cliente);
+    byKam.set(k, [...(byKam.get(k) ?? []), it]);
+  }
+  const out: Record<string, unknown> = {};
+  for (const [kam, items] of Array.from(byKam)) {
+    const byClient = new Map<string, IcpPending[]>();
+    for (const it of items) byClient.set(it.cliente, [...(byClient.get(it.cliente) ?? []), it]);
+    const body = `<p>Prospección aprobó en la ficha cambios que tocan el ICP acordado con el cliente. Por favor valídalos con cada cliente y, si corresponde, actualiza el ICP en Sistema → ICP.</p>${Array.from(byClient).map(([c, xs]) => `<h3 style="font-size:15px;margin:16px 0 6px">${esc(c)}</h3><ul>${xs.map((x) => `<li><b>${esc(CAMPO_LABEL[x.campo] ?? x.campo)}:</b> ${esc(x.texto)}<br><span style="color:#666">Evidencia (${x.casos} casos): ${esc(x.evidencia)}</span></li>`).join("")}</ul>`).join("")}`;
+    out[kam] = await sendCentroMail({ to: [kam], cc: [CENTRO_LEADER], subject: `Cambios de ICP para validar (${items.length})`, html: wrapMail("Cambios de ICP para validar", body, { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }) }).then(() => items.length).catch((e) => ({ error: (e as Error).message }));
+  }
+  if (!Object.values(out).some((v) => typeof v === "object")) await setFlag(ICP_QUEUE, [], 1);
+  return out;
+}
+
+// ---------- plan del lunes pendiente para quien tuvo feriado ----------
+export const planPendingKey = (semana: string, email: string) => `centro_plan_pendiente:${semana}:${email.toLowerCase()}`;
 
 export { getFlag, setFlag };
