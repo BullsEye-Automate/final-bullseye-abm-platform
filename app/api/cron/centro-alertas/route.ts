@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isBusinessDay } from "@/lib/celulasSdr/calendar";
-import { getFlag, isHolidayFor, planPendingKey, sendDailyAlerts, sendIcpDigest, sendMondayMail, sendWeeklyCostReport, setFlag } from "@/lib/centroProspeccion/intel/automations";
+import { getFlag, loadWeekPlan, planPendingKey, sendDailyAlerts, sendIcpDigest, sendMondayMail, sendWeeklyCostReport, setFlag } from "@/lib/centroProspeccion/intel/automations";
 import { PROSPECTORAS } from "@/lib/centroProspeccion/intel/mail";
+import { loadProspectoraCalendar } from "@/lib/centroProspeccion/intel/prospectoraDays";
 import { chileDate, planningMonday } from "@/lib/centroProspeccion/intel/run";
 
 export const runtime = "nodejs";
@@ -41,20 +42,29 @@ export async function GET(req: NextRequest) {
     try { out[k] = await fn(); } catch (e) { out[k] = { error: (e as Error).message }; }
   };
   if (!solo || solo === "alertas") await step("alertas", () => sendDailyAlerts(today));
+  const cal = await loadProspectoraCalendar();
   if ((isMonday && !solo) || solo === "lunes") {
-    // Quien tiene feriado en su país no lo recibe hoy: queda pendiente para su próximo día hábil
+    // Quien no trabaja hoy (feriado de su país o ausencia, según config/feriados
+    // del Centro) no lo recibe: queda pendiente para su próximo día hábil
     const semana = planningMonday(now);
-    const away = PROSPECTORAS.filter((e) => isHolidayFor(e, today));
+    const away = PROSPECTORAS.filter((e) => cal.offReason(e, today));
     const here = PROSPECTORAS.filter((e) => !away.includes(e));
-    for (const e of away) await setFlag(planPendingKey(semana, e), { desde: today }, 6);
-    if (here.length) await step("lunes", async () => ({ ...(await sendMondayMail({ to: here })), feriado: away }));
+    for (const e of away) await setFlag(planPendingKey(semana, e), { desde: today, motivo: cal.offReason(e, today) }, 6);
+    await step("lunes", async () => {
+      const r = await sendMondayMail({ to: here });
+      // Plan aún sin aprobar: se les envía el primer día hábil en que esté aprobado
+      if (!r.planAprobado) for (const e of here) await setFlag(planPendingKey(semana, e), { desde: today, motivo: "plan sin aprobar" }, 6);
+      return { ...r, noTrabajan: away };
+    });
   } else if (!solo) {
-    // Otro día de la semana: el plan del lunes a quien tuvo feriado
+    // Otro día de la semana: el plan a quien no lo recibió (feriado / ausencia o
+    // porque el lunes el plan aún no estaba aprobado)
     const semana = planningMonday(new Date(now.getTime() - 6 * 86_400_000));
+    const week = await loadWeekPlan(semana);
     const late: string[] = [];
-    for (const e of PROSPECTORAS) if (!isHolidayFor(e, today) && (await getFlag(planPendingKey(semana, e)))) late.push(e);
-    if (late.length) await step("lunes_atrasado", async () => {
-      const r = await sendMondayMail({ to: late, cc: [], late: true });
+    for (const e of PROSPECTORAS) if (!cal.offReason(e, today) && (await getFlag(planPendingKey(semana, e)))) late.push(e);
+    if (late.length && week.approved) await step("lunes_atrasado", async () => {
+      const r = await sendMondayMail({ to: late, late: true, leader: false });
       for (const e of late) await setFlag(planPendingKey(semana, e), null, 0);
       return r;
     });
