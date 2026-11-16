@@ -798,8 +798,9 @@ VF.plan=function(){
     let act='';
     if(can&&r.estado==='planificada')act=`<button class="btn sm pri" data-plan-ent="${esc(r.id)}">Registrar entrega</button> <button class="btn sm" data-plan-sg="${esc(r.id)}">Sin gestión</button>`;
     else if(isAdmin)act=`<button class="btn ghost sm" data-plan-reopen="${esc(r.id)}">Reabrir</button>`;
+    if(isAdmin)act+=` <button class="btn ghost sm" data-plan-edit="${esc(r.id)}">Editar</button>`;
     if(isAdmin&&r.estado==='planificada')act+=` <button class="btn ghost sm danger" data-plan-del="${esc(r.id)}">Quitar</button>`;
-    const pr=+r.prioridad||0;const prCell=isAdmin?`<input data-pp="prioridad" data-id="${esc(r.id)}" type="number" min="1" step="1" value="${pr||''}" style="width:56px" aria-label="Prioridad" title="1 = la más importante">`:(pr?`<span class="pill ${pr===1?'g':'n'}">${pr}</span>`:'<span class="muted">–</span>');
+    const pr=+r.prioridad||0;const prCell=pr?`<span class="pill ${pr===1?'g':'n'}">${pr}</span>`:'<span class="muted">–</span>';
     h+=`<tr><td class="l">${who(r.email)}</td><td>${prCell}</td><td class="l">${esc(cname(r.clienteId))}</td><td>${fmt(r.meta)}</td><td>${r.estado==='entregada'?fmt(r.empresas):r.avance?`<span class="muted">${fmt(r.avance)} en curso</span>`:'–'}</td><td class="l"><span class="pill ${e.c}">${e.t}</span></td><td class="l" style="white-space:normal;max-width:280px;color:var(--muted)">${esc(r.motivo?(r.motivo+(r.detalle?': '+r.detalle:'')):(r.nota||''))}</td><td style="white-space:nowrap">${act}</td></tr>`});
   return h+'</tbody></table></div></div>';
 };
@@ -924,6 +925,19 @@ function modalPlanAdd(){
   $('#fPa').addEventListener('submit',async e=>{e.preventDefault();const em=$('#pa-p').value,c=$('#pa-c').value;
     if(D.plan.some(r=>r.semana===S.sem&&r.email===em&&r.clienteId===c)){toast('Esa prospectora ya tiene este cliente asignado esta semana.',true);return}
     const ok=await write(()=>db.collection('plan').add({semana:S.sem,email:em,clienteId:c,meta:Math.max(0,+$('#pa-m').value||0),nota:$('#pa-n').value.trim(),estado:'planificada',creado:new Date().toISOString(),actualizado:new Date().toISOString()}),'Asignación agregada');if(ok)closeModal()});
+}
+function modalPlanEdit(id){
+  const r=D.plan.find(x=>x.id===id);if(!r)return;const tm=team();
+  openModal(mtop('Editar asignación',`Semana del ${niceDate(r.semana)} · ${esc(cname(r.clienteId))}`)+
+  `<form class="form" id="fPx"><label>Prospectora<select id="px-p" required>${tm.map(em=>`<option value="${esc(em)}" ${em===r.email?'selected':''}>${esc(pname(em))}</option>`).join('')}</select></label>
+   <label>Cliente<select id="px-c" required>${vigentes().map(c=>`<option value="${esc(c.id)}" ${c.id===r.clienteId?'selected':''}>${esc(c.nombre)}</option>`).join('')}${vigentes().some(c=>c.id===r.clienteId)?'':`<option value="${esc(r.clienteId)}" selected>${esc(cname(r.clienteId))}</option>`}</select></label>
+   <label>Meta de empresas<input id="px-m" type="number" min="0" step="1" value="${esc(+r.meta||0)}" required></label>
+   <label>Prioridad <span class="hint">1 = la más importante</span><input id="px-r" type="number" min="1" step="1" value="${esc(+r.prioridad||'')}"></label>
+   <label class="full">Nota <span class="hint">La ve la prospectora</span><textarea id="px-n" maxlength="300">${esc(r.nota||'')}</textarea></label>
+   <div class="mact full"><button type="button" class="btn ghost" data-act="close">Cancelar</button><button class="btn pri">Guardar cambios</button></div></form>`);
+  $('#fPx').addEventListener('submit',async e=>{e.preventDefault();const em=$('#px-p').value,c=$('#px-c').value;
+    if((em!==r.email||c!==r.clienteId)&&D.plan.some(x=>x.id!==r.id&&x.semana===r.semana&&x.email===em&&x.clienteId===c)){toast('Esa prospectora ya tiene este cliente asignado esta semana.',true);return}
+    const ok=await write(()=>db.doc('plan/'+r.id).update({email:em,clienteId:c,meta:Math.max(0,Math.round(+$('#px-m').value||0)),prioridad:Math.max(0,Math.round(+$('#px-r').value||0)),nota:$('#px-n').value.trim(),actualizado:new Date().toISOString()}),'Asignación actualizada');if(ok)closeModal()});
 }
 async function planCopy(){
   const prev=addDays(S.sem,-7);const src=D.plan.filter(r=>r.semana===prev);
@@ -1317,7 +1331,7 @@ function modalEditMant(){
 
 /* ---------- eventos delegados ---------- */
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-kf],[data-kl],[data-cuenta],[data-k-tomar],[data-view],[data-act],[data-per],[data-rf],[data-req],[data-cli],[data-who],[data-del-reg],[data-plan-av],[data-plan-ent],[data-plan-sg],[data-plan-reopen],[data-plan-del],[data-efe-det],[data-pp-del],[data-pp-act],[data-eval],[data-doc-ver],[data-doc-del]');if(!t)return;
+  const t=e.target.closest('[data-kf],[data-kl],[data-cuenta],[data-k-tomar],[data-view],[data-act],[data-per],[data-rf],[data-req],[data-cli],[data-who],[data-del-reg],[data-plan-av],[data-plan-ent],[data-plan-sg],[data-plan-reopen],[data-plan-del],[data-plan-edit],[data-efe-det],[data-pp-del],[data-pp-act],[data-eval],[data-doc-ver],[data-doc-del]');if(!t)return;
   if(t.dataset.kf){S.kf=t.dataset.kf;renderAll();return}
   if(t.dataset.kl){S.kl=t.dataset.kl;renderAll();return}
   if(t.dataset.cuenta){modalCuenta(t.dataset.cuenta);return}
@@ -1331,6 +1345,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.ppDel){if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='¿Quitar?';return}await write(()=>db.doc('plan/'+t.dataset.ppDel).delete(),'Fila quitada');return}
   if(t.dataset.planAv){modalPlanAv(t.dataset.planAv);return}
   if(t.dataset.planEnt){modalPlanEnt(t.dataset.planEnt);return}
+  if(t.dataset.planEdit){modalPlanEdit(t.dataset.planEdit);return}
   if(t.dataset.planSg){modalPlanSg(t.dataset.planSg);return}
   if(t.dataset.planReopen){const r=D.plan.find(x=>x.id===t.dataset.planReopen);if(!r)return;if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent=r.registroId?'¿Reabrir y borrar la entrega?':'¿Reabrir?';return}if(r.registroId)await write(()=>db.doc('registro/'+r.registroId).delete());await write(()=>db.doc('plan/'+r.id).update({estado:'planificada',empresas:0,contactos:0,motivo:'',detalle:'',registroId:'',actualizado:new Date().toISOString()}),'Asignación reabierta');return}
   if(t.dataset.planDel){if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='¿Quitar?';return}await write(()=>db.doc('plan/'+t.dataset.planDel).delete(),'Asignación quitada');return}
