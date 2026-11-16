@@ -460,7 +460,7 @@ VF.plan=function(){
   if(offline)return noConn();if(!L.p)return loading();
   const wk=S.sem,fin=addDays(wk,4);
   let rows=D.plan.filter(r=>r.semana===wk&&(!S.cli||r.clienteId===S.cli)&&(!S.who||r.email===S.who));
-  rows=rows.slice().sort((a,b)=>pname(a.email).localeCompare(pname(b.email),'es')||cname(a.clienteId).localeCompare(cname(b.clienteId),'es'));
+  rows=rows.slice().sort((a,b)=>pname(a.email).localeCompare(pname(b.email),'es')||(+a.prioridad||99)-(+b.prioridad||99)||cname(a.clienteId).localeCompare(cname(b.clienteId),'es'));
   const cnt=k=>rows.filter(r=>r.estado===k).length;const meta=rows.reduce((s,r)=>s+(+r.meta||0),0),ent=rows.reduce((s,r)=>s+(+r.empresas||0),0);
   const cerradas=cnt('entregada')+cnt('sin_gestion');
   let h=`<div class="actions" style="justify-content:space-between;margin-bottom:14px"><div class="actions"><button class="btn sm" data-act="sem-prev" aria-label="Semana anterior">◀</button><b style="font-family:var(--head);font-size:16px">Semana del ${niceDate(wk)} al ${niceDate(fin)}</b><button class="btn sm" data-act="sem-next" aria-label="Semana siguiente">▶</button>${wk!==mondayOf()?'<button class="btn ghost sm" data-act="sem-hoy">Esta semana</button>':''}</div>
@@ -472,13 +472,14 @@ VF.plan=function(){
    ${kpi({ic:'clock',c:cnt('sin_gestion')?'r':'',t:'Sin gestión',v:fmt(cnt('sin_gestion')),sub:cerradas?`${pct(cnt('sin_gestion')/cerradas)} de las cerradas · objetivo 2027: 15% o menos`:'Objetivo 2027: 15% o menos'})}
   </div>`;
   if(!rows.length)return h+`<div class="card empty"><h3>No hay asignaciones para esta semana</h3><p>${isAdmin?'Agrega la meta de cada prospectora por cliente, o copia la semana anterior y ajústala.':'Tu líder aún no carga el plan de esta semana.'}</p>${isAdmin?`<div class="actions" style="justify-content:center"><button class="btn" data-act="plan-copy">Copiar semana anterior</button><button class="btn pri" data-act="plan-add">${ic('plus')} Agregar asignación</button></div>`:''}</div>`;
-  h+=`<div class="card"><div class="tw"><table><thead><tr><th class="l">Prospectora</th><th class="l">Cliente</th><th>Meta</th><th>Entregadas</th><th class="l">En el portal</th><th class="l">Estado</th><th class="l">Motivo o nota</th><th></th></tr></thead><tbody>`;
+  h+=`<div class="card"><div class="tw"><table><thead><tr><th class="l">Prospectora</th><th>Prioridad</th><th class="l">Cliente</th><th>Meta</th><th>Entregadas</th><th class="l">En el portal</th><th class="l">Estado</th><th class="l">Motivo o nota</th><th></th></tr></thead><tbody>`;
   rows.forEach(r=>{const e=PEST[r.estado]||PEST.planificada;const can=canRow(r);
     let act='';
     if(can&&r.estado==='planificada')act=`<button class="btn sm pri" data-plan-ent="${esc(r.id)}">Registrar entrega</button> <button class="btn sm" data-plan-sg="${esc(r.id)}">Sin gestión</button>`;
     else if(isAdmin)act=`<button class="btn ghost sm" data-plan-reopen="${esc(r.id)}">Reabrir</button>`;
     if(isAdmin&&r.estado==='planificada')act+=` <button class="btn ghost sm danger" data-plan-del="${esc(r.id)}">Quitar</button>`;
-    h+=`<tr><td class="l">${who(r.email)}</td><td class="l">${esc(cname(r.clienteId))}</td><td>${fmt(r.meta)}</td><td>${r.estado==='entregada'?fmt(r.empresas):r.avance?`<span class="muted">${fmt(r.avance)} en curso</span>`:'–'}</td><td class="l" data-cp-auto="${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}"></td><td class="l"><span class="pill ${e.c}">${e.t}</span></td><td class="l" style="white-space:normal;max-width:280px;color:var(--muted)">${esc(r.motivo?(r.motivo+(r.detalle?': '+r.detalle:'')):(r.nota||''))}</td><td style="white-space:nowrap">${act}</td></tr>`});
+    const pr=+r.prioridad||0;const prCell=isAdmin?`<input data-pp="prioridad" data-id="${esc(r.id)}" type="number" min="1" step="1" value="${pr||''}" style="width:56px" aria-label="Prioridad" title="1 = la más importante">`:(pr?`<span class="pill ${pr===1?'g':'n'}">${pr}</span>`:'<span class="muted">–</span>');
+    h+=`<tr><td class="l">${who(r.email)}</td><td>${prCell}</td><td class="l">${esc(cname(r.clienteId))}</td><td>${fmt(r.meta)}</td><td>${r.estado==='entregada'?fmt(r.empresas):r.avance?`<span class="muted">${fmt(r.avance)} en curso</span>`:'–'}</td><td class="l" data-cp-auto="${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}"></td><td class="l"><span class="pill ${e.c}">${e.t}</span></td><td class="l" style="white-space:normal;max-width:280px;color:var(--muted)">${esc(r.motivo?(r.motivo+(r.detalle?': '+r.detalle:'')):(r.nota||''))}</td><td style="white-space:nowrap">${act}</td></tr>`});
   return h+'</tbody></table></div></div>';
 };
 function propCard(wk){
@@ -608,7 +609,7 @@ async function planCopy(){
   if(!src.length){toast('La semana anterior no tiene asignaciones para copiar.',true);return}
   const nuevos=src.filter(r=>!D.plan.some(x=>x.semana===S.sem&&x.email===r.email&&x.clienteId===r.clienteId));
   if(!nuevos.length){toast('Esta semana ya tiene todas las asignaciones de la anterior.');return}
-  for(const r of nuevos){const ok=await write(()=>db.collection('plan').add({semana:S.sem,email:r.email,clienteId:r.clienteId,meta:+r.meta||0,nota:r.nota||'',estado:'planificada',creado:new Date().toISOString(),actualizado:new Date().toISOString()}));if(!ok)return}
+  for(const r of nuevos){const ok=await write(()=>db.collection('plan').add({semana:S.sem,email:r.email,clienteId:r.clienteId,meta:+r.meta||0,prioridad:+r.prioridad||0,nota:r.nota||'',estado:'planificada',creado:new Date().toISOString(),actualizado:new Date().toISOString()}));if(!ok)return}
   toast(`${nuevos.length} asignaciones copiadas`);
 }
 function modalPlanEnt(id){
