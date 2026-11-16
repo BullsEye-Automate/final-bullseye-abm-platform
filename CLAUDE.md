@@ -232,6 +232,17 @@ Primer ítem del menú SDR (nov-2026, diseño aprobado por BullsEye a partir de 
 - **Diagnóstico «¿Falta una SDR o un cliente?»** (plegable bajo las vistas): clientes activos sin informe de Pulso, clientes con informe pero sin Status Cliente = Activo, y valores de SDR de HubSpot que no quedan en una SDR activa (cliente, valor, cómo se interpreta, motivo, empresas y contactos). Para un apodo nuevo, agregarlo en `PERSON_NICKNAMES` (`lib/celulasSdr/sheets.ts`).
 - **Caché:** se calcula una vez para todos los SDR y se guarda por SDR en `allo_response_cache` (`dashboard_sdr:v10:<día>:index` con el resumen de cada SDR y las células, y `…:sdr:<clave>`, 3 h); "Actualizar" = `?fresh=1`. API con sesión `GET /api/sdr/dashboard?sdr=<clave>`.
 
+### Formulario de reuniones (`/sdr/formulario-reunion`, nov-2026)
+
+El formulario con que los SDR registran una reunión nueva o actualizan una pendiente (antes solo en GitHub Pages: https://bullseye-automate.github.io/Hubspot-y-SDR-Dashboard/, repo `Hubspot-y-SDR-Dashboard`, `docs/index.html`), ahora también en el menú SDR, debajo de Dashboard SDR. Mismo diseño y misma lógica: sigue escribiendo en la planilla de reuniones por su Apps Script (`SCRIPT_URL`); la app no toca la planilla.
+
+- **De dónde sale** (`GET /api/sdr/formulario-reunion`, con sesión): la versión publicada en GitHub Pages (caché 5 min, tope 5 s) para no tener dos copias desalineadas; si no responde, la copia del repo `content/formulario-reunion/index.html` (en el bundle vía `outputFileTracingIncludes`) y la página lo avisa. **Al cambiar el formulario, cambiarlo en `Hubspot-y-SDR-Dashboard/docs/index.html` y copiarlo también aquí.** El logo relativo se cambia por `/brand/bullseye-logo-white.png`.
+- **Iframe aislado** (`srcDoc`, `sandbox="allow-scripts allow-forms allow-popups…"`, sin `allow-same-origin`: no ve la sesión ni las APIs de la plataforma; `allow-forms` es necesario porque el envío pasa por el evento submit; `allow="clipboard-write"` para "Copiar para WhatsApp").
+- **SDR de la sesión:** correo → Maestra (`identifySdr`); la página inyecta un script que, al cargar las opciones del Apps Script, deja elegido ese SDR en "Responsable" y en "Actualizar reunión" (nombre normalizado, si no nombre + apellido o primer nombre único). Se puede cambiar a mano.
+- GitHub Pages sigue funcionando igual (link "Abrir en otra pestaña").
+
+---
+
 ### Entrenamiento cliente (`/sdr/entrenamiento`, antes "Academia SDR")
 
 Capacitación de cada cliente para los SDR, en el menú SDR debajo de Teléfonos y Llamadas (`/sdr/academia` redirige). **Es la misma academia HTML que se arma con el skill "academia-sdr-bullseye" en el proyecto de Claude del cliente**, mostrada tal cual (sus colores, estructura y diseño); la app no la genera ni pide Contexto IA. Solo la ve el equipo BullsEye (no está en `/portal`). El código y las tablas conservan el nombre interno `academiaSdr` / `academia-sdr` / `sdr_academ*`.
