@@ -43,6 +43,23 @@ export const toRecoCard = (r: RecoRow) => ({
   fit_reason: r.fit_reason,
 });
 
+// Orden en que se sueltan los filtros que salen del ICP cuando la búsqueda se
+// agota (nov-2026: con "palabra clave" muy específica —"SENCE", "maquiladora"—
+// Vigatec, Grupo Tress, CChC y Simplex se quedaban con 0–8 recomendaciones). El
+// fit con el ICP (≥ MIN_FIT) sigue decidiendo cuáles quedan: ampliar la búsqueda
+// no baja la calidad, solo revisa más empresas. País, industria y tamaño no se sueltan.
+const RELAX_ORDER = ["keyword", "revenues", "markets", "companyTypes", "description"] as const;
+export function relaxFilters(f: UnifiedFilters): UnifiedFilters | null {
+  for (const k of RELAX_ORDER) {
+    const v = (f as Record<string, unknown>)[k];
+    if (v == null || (Array.isArray(v) ? !v.length : !String(v).trim())) continue;
+    const next = { ...f } as Record<string, unknown>;
+    delete next[k];
+    return next as UnifiedFilters;
+  }
+  return null;
+}
+
 // Error del dato de entrada (ej. ICP no cargado): la API responde 400 con el mensaje
 export class RecoInputError extends Error {}
 
@@ -64,9 +81,16 @@ export async function runRecommendationRound(db: any, clientId: string, opts: { 
   let filters: UnifiedFilters;
   let cursor = { ...FIRST_CURSOR };
   if (state && state.icp_hash === hash && opts.reset !== true) {
-    if (state.exhausted) return { cards: [] as ReturnType<typeof toRecoCard>[], exhausted: true, applied_filters: state.filters, scanned: 0, low_fit_hidden: 0, existing_clients_hidden: 0 };
     filters = sanitizeUnifiedFilters(state.filters);
     cursor = parseCursor(state.cursor);
+    if (state.exhausted) {
+      // Se agotó la búsqueda con estos filtros: se amplía quitando un filtro a la
+      // vez y se parte de nuevo (las ya evaluadas salen del caché de fit, sin costo).
+      const wider = relaxFilters(filters);
+      if (!wider) return { cards: [] as ReturnType<typeof toRecoCard>[], exhausted: true, applied_filters: state.filters, scanned: 0, low_fit_hidden: 0, existing_clients_hidden: 0 };
+      filters = wider;
+      cursor = { ...FIRST_CURSOR };
+    }
   } else {
     const catalog = await buildFilterCatalog(db, lemlistKey);
     filters = await icpToUnifiedFilters(db, clientId, icpText, catalog);
