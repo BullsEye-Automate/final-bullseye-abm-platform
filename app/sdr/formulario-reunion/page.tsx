@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IconAlertTriangle, IconCalendarPlus, IconExternalLink, IconLoader2, IconRefresh } from "@tabler/icons-react";
 
 // Formulario de reuniones: el mismo formulario que los SDR usaban en GitHub
@@ -12,38 +12,6 @@ import { IconAlertTriangle, IconCalendarPlus, IconExternalLink, IconLoader2, Ico
 const PUBLIC_URL = "https://bullseye-automate.github.io/Hubspot-y-SDR-Dashboard/";
 
 type Payload = { html: string; source: "live" | "local"; sdrName: string | null };
-
-// Deja elegido al SDR de la sesión en "Responsable" y en "Actualizar reunión"
-// cuando el formulario termina de cargar las opciones desde el Apps Script.
-function injectSdr(html: string, sdrName: string | null): string {
-  if (!sdrName) return html;
-  const name = JSON.stringify(sdrName).replace(/</g, "\\u003c");
-  const script = `<script>(function(){
-  var want=${name};
-  function norm(s){return String(s||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase().replace(/\\s+/g," ").trim();}
-  function pick(ts){
-    if(!ts||!ts.options)return false;
-    var keys=Object.keys(ts.options); if(!keys.length)return false;
-    var w=norm(want), wt=w.split(" "), hit=null;
-    keys.forEach(function(k){ if(!hit&&norm(k)===w) hit=k; });
-    if(!hit){ var c=keys.filter(function(k){var t=norm(k).split(" ");return t[0]===wt[0]&&wt.slice(1).some(function(x){return t.indexOf(x)>0;});}); if(c.length===1) hit=c[0]; }
-    if(!hit){ var f=keys.filter(function(k){return norm(k).split(" ")[0]===wt[0];}); if(f.length===1) hit=f[0]; }
-    if(hit&&!ts.getValue()) ts.setValue(hit);
-    return true;
-  }
-  var tries=0, iv=setInterval(function(){
-    tries++;
-    try{
-      var ti=(typeof tomInstances!=="undefined")?tomInstances:null;
-      if(ti&&ti["s-sdr"]&&Object.keys(ti["s-sdr"].options).length){
-        pick(ti["s-sdr"]); pick(ti["edit-sdr-select"]); clearInterval(iv);
-      }
-    }catch(e){ clearInterval(iv); }
-    if(tries>120) clearInterval(iv);
-  },250);
-})();</script>`;
-  return html.includes("</body>") ? html.replace("</body>", script + "</body>") : html + script;
-}
 
 export default function FormularioReunionPage() {
   const [data, setData] = useState<Payload | null>(null);
@@ -68,7 +36,34 @@ export default function FormularioReunionPage() {
     load();
   }, [load]);
 
-  const srcDoc = useMemo(() => (data ? injectSdr(data.html, data.sdrName) : ""), [data]);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // El formulario pide el resumen con IA por postMessage (content/formulario-
+  // reunion/bridge.js): la página llama a la API con la sesión y le devuelve
+  // el resultado. Solo se atienden mensajes del iframe del formulario.
+  useEffect(() => {
+    const onMessage = async (e: MessageEvent) => {
+      const frame = iframeRef.current?.contentWindow;
+      if (!frame || e.source !== frame) return;
+      const m = e.data || {};
+      if (m.type !== "be-form:summary") return;
+      let reply: Record<string, unknown>;
+      try {
+        const res = await fetch("/api/sdr/formulario-reunion/resumen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(m.data || {}),
+        });
+        const json = await res.json().catch(() => ({}));
+        reply = res.ok && json.ai ? { ai: json.ai } : { error: json.error || `error ${res.status}` };
+      } catch (err) {
+        reply = { error: (err as Error).message || "sin conexión" };
+      }
+      frame.postMessage({ type: "be-form:summary-result", id: m.id, ...reply }, "*");
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   return (
     <div className="p-6 space-y-4">
@@ -78,7 +73,8 @@ export default function FormularioReunionPage() {
           <div>
             <h1 className="text-xl font-semibold text-[#251762]">Formulario de reuniones</h1>
             <p className="text-sm text-gray-500">
-              Registra una reunión agendada o actualiza el estado de una pendiente. Se guarda en la planilla de reuniones.
+              Registra una reunión agendada o actualiza el estado de una pendiente. Se guarda en la planilla de reuniones. No se
+              permiten reuniones en feriados del país del prospecto.
               {data?.sdrName ? ` Responsable sugerido: ${data.sdrName}.` : ""}
             </p>
           </div>
@@ -116,8 +112,9 @@ export default function FormularioReunionPage() {
         <div className="card p-0 overflow-hidden">
           <iframe
             key={nonce}
+            ref={iframeRef}
             title="Formulario de reuniones"
-            srcDoc={srcDoc}
+            srcDoc={data.html}
             className="w-full block"
             style={{ height: "88vh", border: 0 }}
             // allow-forms: el envío pasa por el evento submit del formulario.

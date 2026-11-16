@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { currentUserEmail } from "@/lib/academiaSdr/server/client";
 import { identifySdr } from "@/lib/academiaSdr/server/progress";
+import { COUNTRIES, HOLIDAYS } from "@/lib/feriados/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
 // tener dos copias desalineadas; si GitHub Pages no responde se usa la copia
 // del repo (content/formulario-reunion/index.html). Ver CLAUDE.md →
 // "Formulario de reuniones".
+// Se cubren los feriados cargados en lib/feriados/calendar.ts (mismo calendario
+// de la Alerta de feriados).
 const LIVE_URL = "https://bullseye-automate.github.io/Hubspot-y-SDR-Dashboard/";
 const LIVE_TIMEOUT_MS = 5000;
 
@@ -47,5 +50,25 @@ export async function GET() {
   const email = await currentUserEmail();
   const sdrName = email ? (await identifySdr(email).catch(() => ({ sdrName: null }))).sdrName : null;
 
-  return NextResponse.json({ html, source, sdrName }, { headers: { "Cache-Control": "no-store" } });
+  // Puente de la plataforma (SDR, feriados y resumen con IA): se inyecta al
+  // final del HTML, después del script del formulario.
+  let bridge = "";
+  try {
+    bridge = await fs.readFile(path.join(process.cwd(), "content/formulario-reunion/bridge.js"), "utf8");
+  } catch {}
+  const from = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+  const holidays = HOLIDAYS.filter((h) => h.date >= from).map((h) => ({
+    d: h.date,
+    c: COUNTRIES[h.country].name,
+    k: h.kind,
+    n: h.name,
+    ...(h.regions ? { r: h.regions } : {}),
+  }));
+  const cfg = JSON.stringify({ sdrName, holidays }).replace(/</g, "\\u003c");
+  const inject = bridge
+    ? `<script>window.__BE_FORM=${cfg};</script><script>${bridge.replace(/<\/script/gi, "<\\/script")}</script>`
+    : "";
+  const out = inject ? (html.includes("</body>") ? html.replace("</body>", () => inject + "</body>") : html + inject) : html;
+
+  return NextResponse.json({ html: out, source, sdrName }, { headers: { "Cache-Control": "no-store" } });
 }
