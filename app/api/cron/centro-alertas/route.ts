@@ -71,8 +71,9 @@ export async function GET(req: NextRequest) {
     });
   }
   if (!solo || solo === "icp") await step("icp", () => sendIcpDigest());
-  // Fichas alineadas con el ICP de Pulso ABM (solo las que cambiaron)
-  if (!solo || solo === "icp_sync") await step("icp_sync", async () => (await syncFichasFromIcp()).filter((r) => r.estado === "alineada"));
+  // Fichas alineadas con el ICP de Pulso ABM (solo las que cambiaron). Apagado
+  // hasta que BullsEye lo apruebe (16-nov-2026): se activa con CENTRO_ICP_SYNC=on
+  if (((process.env.CENTRO_ICP_SYNC ?? "").toLowerCase() === "on" && !solo) || solo === "icp_sync") await step("icp_sync", async () => (await syncFichasFromIcp()).filter((r) => r.estado === "alineada"));
   if ((isMonday && !solo) || solo === "costo") await step("costo", () => sendWeeklyCostReport());
   if (!solo) await setFlag(flag, out, 3);
   return NextResponse.json(out);
