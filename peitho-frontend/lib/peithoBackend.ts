@@ -228,6 +228,12 @@ export interface MeetingDetail extends MeetingListItem {
   // para poder buscar el bot/video de esta reunión directo en el dashboard
   // de Recall sin tener que pedirlo por SQL cada vez.
   recall_bot_id?: string | null;
+  // Duración real del audio en segundos (17-11-2026) — calculada por
+  // Deepgram al transcribir (metadata.duration); solo se calcula en el flujo
+  // que pasa por Deepgram (extensión de Chrome o fallback), no en el de
+  // Recall (que ya trae el transcript armado, sin pasar por Deepgram) — null
+  // en ese caso, no es que falte el dato, es que esta reunión no lo calculó.
+  audio_duration_seconds?: number | null;
   // true si la reunión vino de una invitación manual al bot (Fase H,
   // disparador b) — habilita el botón "Volver a sincronizar desde Calendar"
   // (solo aplica a este flujo, no al calendario normal de un ejecutivo).

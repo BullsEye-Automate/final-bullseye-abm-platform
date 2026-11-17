@@ -38,6 +38,20 @@ function formatDate(value: string | null): string {
   });
 }
 
+// Pedido explícito del usuario (17-11-2026): no había forma de ver cuánto
+// duró la reunión sin ir al dashboard de Recall (y para reuniones
+// capturadas por la extensión de Chrome, ni con eso). Solo disponible
+// cuando el audio pasó por Deepgram (ver audio_duration_seconds en
+// peithoBackend.ts) — null para reuniones vía Recall, no se muestra nada
+// en ese caso en vez de mostrar "0 min" engañoso.
+function formatDuration(seconds: number | null | undefined): string | null {
+  if (!seconds || seconds <= 0) return null;
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours} h ${minutes} min` : `${minutes} min`;
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
@@ -153,6 +167,7 @@ export default async function MeetingDetailPage({ params }: { params: { id: stri
           <p className="text-sm text-gray-500 mt-1">
             {formatDate(meeting.start_time)} · {meeting.ejecutivo ?? "—"} ·{" "}
             {STATUS_LABEL[meeting.status] ?? meeting.status}
+            {formatDuration(meeting.audio_duration_seconds) ? ` · ${formatDuration(meeting.audio_duration_seconds)}` : ""}
           </p>
         </div>
         <div className="flex items-start gap-2">

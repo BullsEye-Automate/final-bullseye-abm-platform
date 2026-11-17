@@ -329,8 +329,8 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
       }) — se marca como no_show sin calificar`
     );
     await pool.query(
-      `update meetings set analysis = $1, transcript_text = $2, status = 'no_show', updated_at = now() where id = $3`,
-      [{ reunion_valida: reunionValida }, transcript, meetingId]
+      `update meetings set analysis = $1, transcript_text = $2, audio_duration_seconds = coalesce($3, audio_duration_seconds), updated_at = now() where id = $4`,
+      [{ reunion_valida: reunionValida }, transcript, durationSeconds, meetingId]
     );
     return;
   }
@@ -341,9 +341,17 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
   // vuelta en transcript_text — la pestaña "Transcripción" del frontend
   // mostraba "no disponible" aunque el análisis sí se hubiera generado bien.
   // Guardarlo acá es idempotente: si ya venía de Recall, es el mismo valor.
+  // Pedido explícito del usuario (17-11-2026): no había forma de ver cuánto
+  // duró la reunión sin ir al dashboard de Recall (y para reuniones
+  // capturadas por la extensión de Chrome, ni siquiera eso — Recall nunca
+  // estuvo involucrado). Deepgram ya calculaba esta duración (metadata.duration,
+  // arriba) solo para redactar el prompt, y se descartaba después — ahora
+  // queda guardada. coalesce(..., audio_duration_seconds) porque el flujo de
+  // Recall (transcript_text ya venía armado) nunca calcula durationSeconds
+  // acá — no pisa un valor que se haya guardado por otra vía en el futuro.
   await pool.query(
-    `update meetings set analysis = $1, transcript_text = $2, status = 'analyzed', updated_at = now() where id = $3`,
-    [analysis, transcript, meetingId]
+    `update meetings set analysis = $1, transcript_text = $2, audio_duration_seconds = coalesce($3, audio_duration_seconds), status = 'analyzed', updated_at = now() where id = $4`,
+    [analysis, transcript, durationSeconds, meetingId]
   );
 
   console.log(`[analysis] reunión ${meetingId}: análisis guardado, status=analyzed`);

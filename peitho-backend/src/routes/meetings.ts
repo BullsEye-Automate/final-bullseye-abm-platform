@@ -292,6 +292,7 @@ meetingsRouter.get('/meetings/:id', requireAuth, async (req, res) => {
     const { rows } = await pool.query(
       `select m.id, m.ejecutivo, m.contraparte, m.empresa_contraparte, m.empresa_nombre, m.cliente_sales_manager, m.start_time, m.status,
               m.analysis, m.pre_brief, m.pre_brief_status, m.research_run_count, m.client_id, m.transcript_text, m.updated_at,
+              m.audio_duration_seconds,
               m.contacto_nombre, m.contacto_cargo, m.contacto_industria, m.contacto_linkedin_url,
               m.contacto_match_status, m.contacto_match_candidates,
               m.participantes, m.research_share_token, m.analysis_share_token,
