@@ -27,8 +27,17 @@ const LEGAL = new Set([
   "cv", "de", "rl", "sab", "sl", "ltd", "plc", "gmbh", "cia", "compania", "company", "co", "group", "grupo", "holding",
   "holdings", "latam", "latinoamerica", "the", "y", "e", "la", "el", "los", "las", "en", "del", ...COUNTRIES,
 ]);
+// Palabras de rubro: solas no identifican a una empresa ("Banco de Chile" ⊄ "Banco Macro")
+const GENERIC = new Set([
+  "banco", "bank", "clinica", "hospital", "minera", "mineria", "mining", "seguros", "seguro", "empresas", "empresa", "industrias",
+  "industrial", "servicios", "constructora", "construccion", "inmobiliaria", "universidad", "aguas", "energia", "ingenieria",
+  "financiera", "caja", "retail", "tiendas", "supermercados", "farmacias", "transportes", "transporte", "consultores", "consulting",
+  "solutions", "soluciones", "tecnologia", "technologies", "sociedad", "comercial", "corporacion", "nacional", "internacional",
+  "global", "foods", "alimentos", "pesquera", "salud", "red", "fondo", "afp", "isapre", "mutual", "logistica", "chilena", "chileno",
+]);
 const deaccent = (s: string) => s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 const words = (s: string) => deaccent(s).replace(/&/g, " ").replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+const distinctive = (s: string) => words(s).filter((x) => !LEGAL.has(x) && !GENERIC.has(x)).join(" ");
 export const coreName = (s: string) => {
   const w = words(s);
   const k = w.filter((x) => !LEGAL.has(x));
@@ -90,7 +99,7 @@ export async function loadAuditContext(db: SupabaseClient, clientId: string, opt
   const add = (name: string, dom: string | null, src: string, extra?: string) => {
     if (!name?.trim() && !dom) return;
     const n = name?.trim() || dom || "";
-    refs.push({ name: n, dom, src, extra, c: coreName(n), p: ` ${phrase(n)} `, d: fullDomain(dom), root: domainRoot(dom), ctry: countriesOf(n, fullDomain(dom)) });
+    refs.push({ name: n, dom, src, extra, c: distinctive(n) ? coreName(n) : "", p: distinctive(n).length >= 4 ? ` ${phrase(n)} ` : "", d: fullDomain(dom), root: domainRoot(dom), ctry: countriesOf(n, fullDomain(dom)) });
   };
   const links = await loadClientLinks();
   const fichas = links.fichasByClient.get(clientId) ?? [];
@@ -138,14 +147,15 @@ export async function loadAuditContext(db: SupabaseClient, clientId: string, opt
 
 /** Clasifica una empresa. Las coincidencias seguras bloquean; las parecidas dejan nota. */
 export function auditCompany(ctx: AuditContext, name: string, domain: string | null): AuditResult {
-  const c = coreName(name), pp = ` ${phrase(name)} `, d = fullDomain(domain), root = domainRoot(domain), p = phrase(name), ctry = countriesOf(name, d);
+  const dist = distinctive(name);
+  const c = dist ? coreName(name) : "", pp = dist.length >= 4 ? ` ${phrase(name)} ` : "", d = fullDomain(domain), root = domainRoot(domain), p = phrase(name), ctry = countriesOf(name, d);
   const block: string[] = [];
   const note: string[] = [];
   const label = (x: Ref) => `«${x.name}» (${x.src}${x.extra ? `: ${x.extra}` : ""})`;
   for (const x of ctx.refs) {
     const sameName = !!c && c === x.c;
     // parecida: una contiene a la otra por palabras completas ("Camanchaca" ⊂ "Salmones Camanchaca")
-    const similar = !sameName && pp.length >= 7 && x.p.length >= 7 && (pp.includes(x.p) || x.p.includes(pp));
+    const similar = !sameName && !!pp && !!x.p && (pp.includes(x.p) || x.p.includes(pp));
     const sameRoot = !!root && root === x.root;
     const otherCountry = ctry.size > 0 && x.ctry.size > 0 && ![...ctry].some((k) => x.ctry.has(k));
     if ((d && x.d && d === x.d) || sameName || (sameRoot && similar)) {
@@ -158,7 +168,7 @@ export function auditCompany(ctx: AuditContext, name: string, domain: string | n
     const kw = words(k).join(" ");
     if (kw && nn.includes(` ${kw} `)) block.push(`Contiene «${k}» (palabra clave de la lista de exclusión del cliente)`);
   }
-  if (p.length >= 4) {
+  if (dist.length >= 4 && p.length >= 4) {
     for (const t of ctx.texts) if (t.norm.includes(` ${p} `)) (t.strong ? block : note).push(`${t.src[0].toUpperCase()}${t.src.slice(1)}`);
   }
   const uniq = (xs: string[]) => Array.from(new Set(xs)).slice(0, 3);
