@@ -66,12 +66,12 @@ export function createIntelSections() {
     el.innerHTML = card(
       `Inteligencia de la semana del ${lunes(it.semana)}`,
       `Stock de los SDR, sus llamadas y notas, señales de Allo, rechazos y feedback${admin ? ` · IA US$${cost.toFixed(2)}` : ""}`,
-      `<div class="tw"><table><thead><tr><th class="l">Cliente</th><th>Prioridad</th><th>Meta del mes</th><th>Empresas sugeridas</th><th>Stock SDR</th><th>Por decidir</th><th class="l">Qué hacer</th></tr></thead><tbody>${rows.map((r) => {
+      `<div class="tw"><table><thead><tr><th class="l">Cliente</th><th>Prioridad</th><th>Meta del mes</th><th>Sugerencia para el plan</th><th>Stock SDR</th><th>Por decidir</th><th class="l">Qué hacer</th></tr></thead><tbody>${rows.map((r) => {
         if (r.status !== "ok") return `<tr><td class="l"><b>${esc(r.cliente)}</b></td><td colspan="6" class="l muted">${r.status === "sin_datos" ? "Sin datos suficientes esta semana" : `Error: ${esc(r.error)}`}</td></tr>`;
         const p = pending(r).length;
         const d = r.numbers?.diasStock;
         return `<tr><td class="l"><b>${esc(r.cliente)}</b></td><td><span class="pill ${PRIO[r.result.prioridad]}">${esc(r.result.prioridad)}</span></td><td>${goalCell(r.numbers?.meta)}</td><td><b>${n(r.result.empresas_sugeridas)}</b></td><td>${d == null ? "–" : `${n(d)} días`}<div class="muted" style="font-size:11.5px">${n(r.numbers?.sinGestion)} contactos</div></td><td>${p ? `<b>${n(p)}</b>` : "–"}</td><td class="l" style="white-space:normal;max-width:420px;font-size:12.5px">${esc(r.result.resumen)}</td></tr>`;
-      }).join("")}</tbody></table></div><p class="muted" style="font-size:12px;margin-top:8px">Las propuestas de cargos, industrias y exclusiones se aprueban o descartan en la ficha de cada cliente. Las empresas sugeridas se generan solas el domingo en Empresas → Recomendadas por IA.</p>`
+      }).join("")}</tbody></table></div><p class="muted" style="font-size:12px;margin-top:8px">Las propuestas de cargos, industrias y exclusiones se aprueban o descartan en la ficha de cada cliente. La sugerencia de empresas es un insumo para la propuesta del Plan semanal (viernes en la tarde, editable antes de aprobar); el domingo se generan las recomendaciones según la meta de cada cliente en ese plan (mínimo 20) en Empresas → Recomendadas por IA.</p>`
     );
     rerender.push(() => { if (el.isConnected) void renderResumen(el, fichaFilter, admin); });
   };
@@ -132,7 +132,7 @@ export function createIntelSections() {
       `<span class="pill ${PRIO[res.prioridad]}">prioridad ${esc(res.prioridad)}</span>`,
       `<p style="font-size:13.5px">${esc(res.resumen)}</p>
       <div class="kgrid" style="margin:10px 0">
-        <div class="kpi hl"><div class="kpi-h">Empresas sugeridas</div><div class="kv">${n(res.empresas_sugeridas)}</div><div class="ksub">${esc(res.motivo_cantidad)}</div></div>
+        <div class="kpi hl"><div class="kpi-h">Sugerencia para el plan</div><div class="kv">${n(res.empresas_sugeridas)}</div><div class="ksub">${esc(res.motivo_cantidad)}</div></div>
         <div class="kpi"><div class="kpi-h">Meta de reuniones del mes</div><div class="kv">${nb.meta ? `${n(nb.meta.realizadas)} / ${n(nb.meta.meta)}` : "–"}</div><div class="ksub">${nb.meta ? (nb.meta.cumplida ? "Cumplida: se baja el ritmo" : `Faltan ${n(nb.meta.faltan)} · ${n(nb.meta.porRealizar)} por realizar · ${n(nb.meta.diasHabilesRestantes)} días hábiles`) : "Sin meta cargada en Asignación"}</div></div>
         <div class="kpi"><div class="kpi-h">Stock de los SDR</div><div class="kv">${nb.diasStock == null ? "–" : `${n(nb.diasStock)} días`}</div><div class="ksub">${n(nb.sinGestion)} contactos sin gestionar · ${n(nb.ritmoDiario)} por día</div></div>
         <div class="kpi"><div class="kpi-h">Reuniones 30 días</div><div class="kv">${n(nb.reuniones30d)}</div><div class="ksub">${n(nb.realizadas30d)} realizadas</div></div>

@@ -460,7 +460,7 @@ VF.plan=function(){
   if(offline)return noConn();if(!L.p)return loading();
   const wk=S.sem,fin=addDays(wk,4);
   let rows=D.plan.filter(r=>r.semana===wk&&(!S.cli||r.clienteId===S.cli)&&(!S.who||r.email===S.who));
-  rows=rows.slice().sort((a,b)=>pname(a.email).localeCompare(pname(b.email),'es')||cname(a.clienteId).localeCompare(cname(b.clienteId),'es'));
+  rows=rows.slice().sort((a,b)=>pname(a.email).localeCompare(pname(b.email),'es')||(+a.prioridad||99)-(+b.prioridad||99)||cname(a.clienteId).localeCompare(cname(b.clienteId),'es'));
   const cnt=k=>rows.filter(r=>r.estado===k).length;const meta=rows.reduce((s,r)=>s+(+r.meta||0),0),ent=rows.reduce((s,r)=>s+(+r.empresas||0),0);
   const cerradas=cnt('entregada')+cnt('sin_gestion');
   let h=`<div class="actions" style="justify-content:space-between;margin-bottom:14px"><div class="actions"><button class="btn sm" data-act="sem-prev" aria-label="Semana anterior">◀</button><b style="font-family:var(--head);font-size:16px">Semana del ${niceDate(wk)} al ${niceDate(fin)}</b><button class="btn sm" data-act="sem-next" aria-label="Semana siguiente">▶</button>${wk!==mondayOf()?'<button class="btn ghost sm" data-act="sem-hoy">Esta semana</button>':''}</div>
@@ -472,13 +472,15 @@ VF.plan=function(){
    ${kpi({ic:'clock',c:cnt('sin_gestion')?'r':'',t:'Sin gestión',v:fmt(cnt('sin_gestion')),sub:cerradas?`${pct(cnt('sin_gestion')/cerradas)} de las cerradas · objetivo 2027: 15% o menos`:'Objetivo 2027: 15% o menos'})}
   </div>`;
   if(!rows.length)return h+`<div class="card empty"><h3>No hay asignaciones para esta semana</h3><p>${isAdmin?'Agrega la meta de cada prospectora por cliente, o copia la semana anterior y ajústala.':'Tu líder aún no carga el plan de esta semana.'}</p>${isAdmin?`<div class="actions" style="justify-content:center"><button class="btn" data-act="plan-copy">Copiar semana anterior</button><button class="btn pri" data-act="plan-add">${ic('plus')} Agregar asignación</button></div>`:''}</div>`;
-  h+=`<div class="card"><div class="tw"><table><thead><tr><th class="l">Prospectora</th><th class="l">Cliente</th><th>Meta</th><th>Entregadas</th><th class="l">En el portal</th><th class="l">Estado</th><th class="l">Motivo o nota</th><th></th></tr></thead><tbody>`;
+  h+=`<div class="card"><div class="tw"><table><thead><tr><th class="l">Prospectora</th><th>Prioridad</th><th class="l">Cliente</th><th>Meta</th><th>Entregadas</th><th class="l">En el portal</th><th class="l">Estado</th><th class="l">Motivo o nota</th><th></th></tr></thead><tbody>`;
   rows.forEach(r=>{const e=PEST[r.estado]||PEST.planificada;const can=canRow(r);
     let act='';
     if(can&&r.estado==='planificada')act=`<button class="btn sm pri" data-plan-ent="${esc(r.id)}">Registrar entrega</button> <button class="btn sm" data-plan-sg="${esc(r.id)}">Sin gestión</button>`;
     else if(isAdmin)act=`<button class="btn ghost sm" data-plan-reopen="${esc(r.id)}">Reabrir</button>`;
+    if(isAdmin)act+=` <button class="btn ghost sm" data-plan-edit="${esc(r.id)}">Editar</button>`;
     if(isAdmin&&r.estado==='planificada')act+=` <button class="btn ghost sm danger" data-plan-del="${esc(r.id)}">Quitar</button>`;
-    h+=`<tr><td class="l">${who(r.email)}</td><td class="l">${esc(cname(r.clienteId))}</td><td>${fmt(r.meta)}</td><td>${r.estado==='entregada'?fmt(r.empresas):r.avance?`<span class="muted">${fmt(r.avance)} en curso</span>`:'–'}</td><td class="l" data-cp-auto="${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}"></td><td class="l"><span class="pill ${e.c}">${e.t}</span></td><td class="l" style="white-space:normal;max-width:280px;color:var(--muted)">${esc(r.motivo?(r.motivo+(r.detalle?': '+r.detalle:'')):(r.nota||''))}</td><td style="white-space:nowrap">${act}</td></tr>`});
+    const pr=+r.prioridad||0;const prCell=pr?`<span class="pill ${pr===1?'g':'n'}">${pr}</span>`:'<span class="muted">–</span>';
+    h+=`<tr><td class="l">${who(r.email)}</td><td>${prCell}</td><td class="l">${esc(cname(r.clienteId))}</td><td>${fmt(r.meta)}</td><td>${r.estado==='entregada'?fmt(r.empresas):r.avance?`<span class="muted">${fmt(r.avance)} en curso</span>`:'–'}</td><td class="l" data-cp-auto="${esc(r.clienteId)}|${esc(r.email||'')}|${esc(wk)}"></td><td class="l"><span class="pill ${e.c}">${e.t}</span></td><td class="l" style="white-space:normal;max-width:280px;color:var(--muted)">${esc(r.motivo?(r.motivo+(r.detalle?': '+r.detalle:'')):(r.nota||''))}</td><td style="white-space:nowrap">${act}</td></tr>`});
   return h+'</tbody></table></div></div>';
 };
 function propCard(wk){
@@ -603,12 +605,25 @@ function modalPlanAdd(){
     if(D.plan.some(r=>r.semana===S.sem&&r.email===em&&r.clienteId===c)){toast('Esa prospectora ya tiene este cliente asignado esta semana.',true);return}
     const ok=await write(()=>db.collection('plan').add({semana:S.sem,email:em,clienteId:c,meta:Math.max(0,+$('#pa-m').value||0),nota:$('#pa-n').value.trim(),estado:'planificada',creado:new Date().toISOString(),actualizado:new Date().toISOString()}),'Asignación agregada');if(ok)closeModal()});
 }
+function modalPlanEdit(id){
+  const r=D.plan.find(x=>x.id===id);if(!r)return;const tm=team();
+  openModal(mtop('Editar asignación',`Semana del ${niceDate(r.semana)} · ${esc(cname(r.clienteId))}`)+
+  `<form class="form" id="fPx"><label>Prospectora<select id="px-p" required>${tm.map(em=>`<option value="${esc(em)}" ${em===r.email?'selected':''}>${esc(pname(em))}</option>`).join('')}</select></label>
+   <label>Cliente<select id="px-c" required>${vigentes().map(c=>`<option value="${esc(c.id)}" ${c.id===r.clienteId?'selected':''}>${esc(c.nombre)}</option>`).join('')}${vigentes().some(c=>c.id===r.clienteId)?'':`<option value="${esc(r.clienteId)}" selected>${esc(cname(r.clienteId))}</option>`}</select></label>
+   <label>Meta de empresas<input id="px-m" type="number" min="0" step="1" value="${esc(+r.meta||0)}" required></label>
+   <label>Prioridad <span class="hint">1 = la más importante</span><input id="px-r" type="number" min="1" step="1" value="${esc(+r.prioridad||'')}"></label>
+   <label class="full">Nota <span class="hint">La ve la prospectora</span><textarea id="px-n" maxlength="300">${esc(r.nota||'')}</textarea></label>
+   <div class="mact full"><button type="button" class="btn ghost" data-act="close">Cancelar</button><button class="btn pri">Guardar cambios</button></div></form>`);
+  $('#fPx').addEventListener('submit',async e=>{e.preventDefault();const em=$('#px-p').value,c=$('#px-c').value;
+    if((em!==r.email||c!==r.clienteId)&&D.plan.some(x=>x.id!==r.id&&x.semana===r.semana&&x.email===em&&x.clienteId===c)){toast('Esa prospectora ya tiene este cliente asignado esta semana.',true);return}
+    const ok=await write(()=>db.doc('plan/'+r.id).update({email:em,clienteId:c,meta:Math.max(0,Math.round(+$('#px-m').value||0)),prioridad:Math.max(0,Math.round(+$('#px-r').value||0)),nota:$('#px-n').value.trim(),actualizado:new Date().toISOString()}),'Asignación actualizada');if(ok)closeModal()});
+}
 async function planCopy(){
   const prev=addDays(S.sem,-7);const src=D.plan.filter(r=>r.semana===prev);
   if(!src.length){toast('La semana anterior no tiene asignaciones para copiar.',true);return}
   const nuevos=src.filter(r=>!D.plan.some(x=>x.semana===S.sem&&x.email===r.email&&x.clienteId===r.clienteId));
   if(!nuevos.length){toast('Esta semana ya tiene todas las asignaciones de la anterior.');return}
-  for(const r of nuevos){const ok=await write(()=>db.collection('plan').add({semana:S.sem,email:r.email,clienteId:r.clienteId,meta:+r.meta||0,nota:r.nota||'',estado:'planificada',creado:new Date().toISOString(),actualizado:new Date().toISOString()}));if(!ok)return}
+  for(const r of nuevos){const ok=await write(()=>db.collection('plan').add({semana:S.sem,email:r.email,clienteId:r.clienteId,meta:+r.meta||0,prioridad:+r.prioridad||0,nota:r.nota||'',estado:'planificada',creado:new Date().toISOString(),actualizado:new Date().toISOString()}));if(!ok)return}
   toast(`${nuevos.length} asignaciones copiadas`);
 }
 function modalPlanEnt(id){
@@ -995,7 +1010,7 @@ function modalEditMant(){
 
 /* ---------- eventos delegados ---------- */
 onDoc('click',async e=>{
-  const t=e.target.closest('[data-kf],[data-kl],[data-cuenta],[data-k-tomar],[data-view],[data-act],[data-per],[data-rf],[data-req],[data-cli],[data-who],[data-del-reg],[data-plan-av],[data-plan-ent],[data-plan-sg],[data-plan-reopen],[data-plan-del],[data-efe-det],[data-pp-del],[data-pp-act],[data-eval],[data-doc-ver],[data-doc-del]');if(!t)return;
+  const t=e.target.closest('[data-kf],[data-kl],[data-cuenta],[data-k-tomar],[data-view],[data-act],[data-per],[data-rf],[data-req],[data-cli],[data-who],[data-del-reg],[data-plan-av],[data-plan-ent],[data-plan-sg],[data-plan-reopen],[data-plan-del],[data-plan-edit],[data-efe-det],[data-pp-del],[data-pp-act],[data-eval],[data-doc-ver],[data-doc-del]');if(!t)return;
   if(t.dataset.kf){S.kf=t.dataset.kf;renderAll();return}
   if(t.dataset.kl){S.kl=t.dataset.kl;renderAll();return}
   if(t.dataset.cuenta){modalCuenta(t.dataset.cuenta);return}
@@ -1009,6 +1024,7 @@ onDoc('click',async e=>{
   if(t.dataset.ppDel){if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='¿Quitar?';return}await write(()=>db.doc('plan/'+t.dataset.ppDel).delete(),'Fila quitada');return}
   if(t.dataset.planAv){modalPlanAv(t.dataset.planAv);return}
   if(t.dataset.planEnt){modalPlanEnt(t.dataset.planEnt);return}
+  if(t.dataset.planEdit){modalPlanEdit(t.dataset.planEdit);return}
   if(t.dataset.planSg){modalPlanSg(t.dataset.planSg);return}
   if(t.dataset.planReopen){const r=D.plan.find(x=>x.id===t.dataset.planReopen);if(!r)return;if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent=r.registroId?'¿Reabrir y borrar la entrega?':'¿Reabrir?';return}if(r.registroId)await write(()=>db.doc('registro/'+r.registroId).delete());await write(()=>db.doc('plan/'+r.id).update({estado:'planificada',empresas:0,contactos:0,motivo:'',detalle:'',registroId:'',actualizado:new Date().toISOString()}),'Asignación reabierta');return}
   if(t.dataset.planDel){if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='¿Quitar?';return}await write(()=>db.doc('plan/'+t.dataset.planDel).delete(),'Asignación quitada');return}

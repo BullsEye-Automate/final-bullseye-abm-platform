@@ -3,8 +3,7 @@ import { requireCentroUser } from "@/lib/centroProspeccion/access";
 import { loadClientLinks } from "@/lib/centroProspeccion/portalLink";
 import { readDoc, writeDoc } from "@/lib/centroProspeccion/store";
 import type { IntelResult } from "@/lib/centroProspeccion/intel/analyze";
-import { APP_URL, CENTRO_LEADER, esc, sendCentroMail, wrapMail } from "@/lib/centroProspeccion/intel/mail";
-import { kamFor } from "@/lib/respuestasLemlist/directory";
+import { queueIcpValidation } from "@/lib/centroProspeccion/intel/automations";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -57,19 +56,13 @@ export async function POST(req: NextRequest) {
   Object.assign(p, { estado: decision, texto, decidido_por: u.email, decidido_at: new Date().toISOString() });
   await db.from("centro_intel").update({ result, updated_at: new Date().toISOString(), updated_by: u.email }).eq("id", row.id);
 
-  // Cambio de ICP: lo valida el KAM con el cliente
+  // Cambio de ICP: lo valida el KAM con el cliente. No se envía en el momento:
+  // queda en cola y sale en un solo correo a las 8:30 del día hábil siguiente.
   if (decision === "aprobada" && p.toca_icp) {
     const { data: c } = await db.from("clients").select("name").eq("id", client_id).maybeSingle();
     const cliente = (c as { name?: string } | null)?.name ?? "";
-    await sendCentroMail({
-      to: [kamFor(cliente)],
-      cc: [CENTRO_LEADER],
-      subject: `Validar cambio de ICP · ${cliente}`,
-      html: wrapMail(`Cambio de ICP para validar · ${cliente}`,
-        `<p>Prospección aprobó en la ficha un cambio que toca el ICP acordado con el cliente. Por favor valídalo con ${esc(cliente)} y, si corresponde, actualiza el ICP en Sistema → ICP.</p>
-<p><b>${esc(LABEL[p.campo] ?? p.campo)}:</b> ${esc(texto)}</p><p><b>Evidencia (${p.casos} casos):</b> ${esc(p.evidencia)}</p>`,
-        { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }),
-    }).catch((e) => console.warn("[centro-intel] aviso KAM:", (e as Error).message));
+    await queueIcpValidation({ client_id, cliente, campo: p.campo, texto, evidencia: String(p.evidencia ?? ""), casos: Number(p.casos ?? 0), by: u.email, at: new Date().toISOString() })
+      .catch((e) => console.warn("[centro-intel] cola ICP:", (e as Error).message));
   }
   return NextResponse.json({ ok: true, propuesta: p, ficha: fichaNombre });
 }

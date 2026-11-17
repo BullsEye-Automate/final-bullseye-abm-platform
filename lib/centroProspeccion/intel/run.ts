@@ -202,6 +202,9 @@ async function writeSummaryDoc(cliente: string, fichaIds: string[], row: IntelRo
     `Inteligencia de la semana del ${row.semana} — ${cliente}`,
     r.resumen,
     `Empresas sugeridas: ${r.empresas_sugeridas} (prioridad ${r.prioridad}). ${r.motivo_cantidad}`,
+    (n as unknown as { meta?: { meta: number; realizadas: number; porRealizar: number; faltan: number; cumplida: boolean } })?.meta
+      ? (() => { const g = (n as unknown as { meta: { meta: number; realizadas: number; porRealizar: number; faltan: number; cumplida: boolean } }).meta; return `Meta de reuniones del mes: ${g.realizadas} realizadas de ${g.meta} (${g.porRealizar} por realizar${g.cumplida ? ", cumplida" : `, faltan ${g.faltan}`}).`; })()
+      : "",
     n?.sinGestion != null ? `Stock SDR: ${n.sinGestion} contactos sin gestionar, ${n.diasStock ?? "s/i"} días al ritmo actual.` : "",
     r.donde_prospectar.length ? `Dónde prospectar: ${r.donde_prospectar.join("; ")}` : "",
     r.propuestas.length ? `Propuestas para la ficha:\n${r.propuestas.map((p) => `- [${p.estado}] ${p.tipo}: ${p.texto} (${p.casos} casos) — ${p.evidencia}`).join("\n")}` : "",

@@ -5,6 +5,7 @@ import { kamFor, readMasterPeople, resolveSdr } from "@/lib/respuestasLemlist/di
 import { RecoInputError, runRecommendationRound } from "@/lib/wishlistRecommendations";
 import { loadClientLinks } from "../portalLink";
 import { readDocs } from "../store";
+import { loadProspectoraCalendar } from "./prospectoraDays";
 import type { IntelResult } from "./analyze";
 import type { IntelNumbers } from "./numbers";
 import { chileDate, planningMonday } from "./run";
@@ -22,7 +23,7 @@ import { APP_URL, CENTRO_LEADER, PROSPECTORAS, esc, sendCentroMail, wrapMail } f
 
 const DAY = 86_400_000;
 const CLIENT_BUDGET_MS = 240_000;
-const RECO_CAP = 60;
+const RECO_CAP = 80;
 const RECO_DEFAULT = 20;
 // Mínimo por cliente aunque la inteligencia sugiera menos (pedido de BullsEye, 13-nov-2026:
 // normalmente se piden al menos 20 empresas, también a los clientes con stock de sobra)
@@ -63,13 +64,42 @@ export async function recoDone(clientId: string): Promise<boolean> {
   return f.estado !== "ok" || f.pendientes_antes + f.nuevas >= f.objetivo || (f.corridas ?? 1) >= MAX_RECO_RUNS;
 }
 
+// ---------- plan semanal del Centro (colección "plan") ----------
+// Fusión plan + inteligencia (pedido de BullsEye, 16-nov-2026): el Plan semanal
+// manda. La propuesta del viernes (tarea programada) ya lee la inteligencia;
+// la líder la edita y aprueba, y de ahí salen las recomendaciones del domingo y
+// el correo del lunes. Se usan las filas aprobadas; si aún no hay, la propuesta.
+export type PlanRow = { id: string; email: string; fichaId: string; meta: number; prioridad: number; nota: string; estado: string };
+export async function loadWeekPlan(semana: string): Promise<{ rows: PlanRow[]; approved: boolean }> {
+  const all = (await readDocs(["plan"]))
+    .filter((d) => String(d.data?.semana ?? "") === semana)
+    .map((d) => ({
+      id: d.doc_id,
+      email: String(d.data?.email ?? "").trim().toLowerCase(),
+      fichaId: String(d.data?.clienteId ?? ""),
+      meta: Number(d.data?.meta ?? 0) || 0,
+      prioridad: Number(d.data?.prioridad ?? 9) || 9,
+      nota: String(d.data?.nota ?? d.data?.motivo ?? ""),
+      estado: String(d.data?.estado ?? ""),
+    }))
+    .filter((r) => r.email && r.fichaId);
+  const approved = all.filter((r) => r.estado && r.estado !== "propuesta");
+  return approved.length ? { rows: approved, approved: true } : { rows: all, approved: false };
+}
+
 export async function runClientRecommendations(clientId: string): Promise<RecoRun> {
   const db = supabaseAdmin();
   const started = Date.now();
   const semana = planningMonday();
   const { data: intel } = await db.from("centro_intel").select("result, status").eq("client_id", clientId).eq("semana", semana).maybeSingle();
   const sugeridas = intel?.status === "ok" ? Number((intel.result as IntelResult).empresas_sugeridas) : NaN;
-  const objetivo = Math.min(RECO_CAP, Math.max(RECO_MIN, Number.isFinite(sugeridas) ? sugeridas : RECO_DEFAULT));
+  // Cantidad: la meta del cliente en el Plan semanal (suma de prospectoras); sin
+  // plan, lo que sugirió la inteligencia. Siempre al menos RECO_MIN.
+  const [links, week] = await Promise.all([loadClientLinks(), loadWeekPlan(semana)]);
+  const fichaIds = new Set((links.fichasByClient.get(clientId) ?? []).map((f) => f.id));
+  const planMeta = week.rows.filter((r) => fichaIds.has(r.fichaId)).reduce((a, r) => a + r.meta, 0);
+  const base = planMeta > 0 ? planMeta : Number.isFinite(sugeridas) ? sugeridas : RECO_DEFAULT;
+  const objetivo = Math.min(RECO_CAP, Math.max(RECO_MIN, base));
   const { count } = await db.from("client_recommendations").select("id", { count: "exact", head: true }).eq("client_id", clientId).eq("status", "pending");
   const pendientes = count ?? 0;
   const need = Math.max(0, objetivo - pendientes);
@@ -128,32 +158,60 @@ const prospectorasDe = (plan: Map<string, string[]>, fichaIds: string[]) =>
   Array.from(new Set(fichaIds.flatMap((id) => plan.get(id) ?? [])));
 
 // ---------- lunes: plan de la semana ----------
-export async function sendMondayMail(): Promise<{ to: string[]; clientes: number }> {
-  const [intel, links, plan] = await Promise.all([latestIntel(), loadClientLinks(), loadPlanProspectoras()]);
-  const name = new Map(links.clients.map((c) => [c.id, c.name]));
+// Un correo por prospectora con SU plan aprobado (clientes, meta de empresas,
+// prioridad y nota del plan) y, por cliente, el contexto de la inteligencia
+// (prioridad, meta de reuniones del mes, foco) y cuántas recomendaciones
+// quedaron listas. A la líder, el resumen de todos. Sin plan aprobado, las
+// prospectoras no reciben nada y la líder recibe el aviso.
+export async function sendMondayMail(opts: { to?: string[]; late?: boolean; leader?: boolean } = {}): Promise<Record<string, unknown>> {
   const semana = planningMonday();
-  const rows = await Promise.all(intel.filter((i) => i.status === "ok").map(async (i) => ({
-    i, cliente: name.get(i.client_id) ?? "", reco: await getFlag<RecoRun>(recoKey(semana, i.client_id)),
-    prospectora: prospectorasDe(plan, (links.fichasByClient.get(i.client_id) ?? []).map((f) => f.id)).map((e) => PROSPECTORA_NAME[e] ?? e).join(", "),
-  })));
-  const rank = { alta: 0, media: 1, baja: 2 } as const;
-  rows.sort((a, b) => rank[a.i.result.prioridad] - rank[b.i.result.prioridad] || a.cliente.localeCompare(b.cliente));
+  const [intel, links, week] = await Promise.all([latestIntel(), loadClientLinks(), loadWeekPlan(semana)]);
+  const clientOfFicha = new Map<string, string>();
+  for (const [cid, fs] of Array.from(links.fichasByClient)) for (const f of fs) clientOfFicha.set(f.id, cid);
+  const fichaName = new Map(links.fichas.map((f) => [f.id, String(f.data.nombre || f.id)]));
+  const intelBy = new Map(intel.filter((i) => i.status === "ok").map((i) => [i.client_id, i]));
+  const recoBy = new Map<string, RecoRun | null>();
+  for (const cid of Array.from(new Set(Array.from(clientOfFicha.values())))) recoBy.set(cid, await getFlag<RecoRun>(recoKey(semana, cid)));
   const color = { alta: "#c0392b", media: "#b7791f", baja: "#2f855a" } as const;
-  const body = rows.length
-    ? `<p>Esta es la propuesta para la semana del ${esc(semana)}, armada con el stock de los SDR, sus llamadas y notas, las señales de Allo, los rechazos del cliente y el feedback de reuniones. Las empresas recomendadas ya están en <b>Empresas → Recomendadas por IA</b>: revísalas y propón al cliente las que correspondan.</p>
-<table style="width:100%;border-collapse:collapse;font-size:13px">
-<tr style="background:#f3f2fa"><th align="left" style="padding:6px">Cliente</th><th align="left" style="padding:6px">Prioridad</th><th align="right" style="padding:6px">Meta del mes</th><th align="right" style="padding:6px">Sugeridas</th><th align="right" style="padding:6px">Recomendadas listas</th><th align="right" style="padding:6px">Propuestas ficha</th></tr>
-${rows.map(({ i, cliente, reco, prospectora }) => {
-      const pend = i.result.propuestas.filter((p) => !p.estado || p.estado === "pendiente").length;
-      return `<tr style="border-top:1px solid #eee"><td style="padding:6px"><b>${esc(cliente)}</b>${prospectora ? `<br><span style="color:#777">${esc(prospectora)}</span>` : ""}<br><span style="color:#555">${esc(i.result.resumen)}</span>${i.result.donde_prospectar.length ? `<br><span style="color:#555">Foco: ${esc(i.result.donde_prospectar.join("; "))}</span>` : ""}</td>
-<td style="padding:6px;color:${color[i.result.prioridad]}"><b>${i.result.prioridad}</b></td><td align="right" style="padding:6px">${(() => { const g = (i.numbers as { meta?: { meta: number; realizadas: number; faltan: number; cumplida: boolean } })?.meta; return g ? `${g.realizadas} / ${g.meta}<br><span style="color:${g.cumplida ? "#2f855a" : "#777"};font-size:11px">${g.cumplida ? "cumplida" : `faltan ${g.faltan}`}</span>` : "–"; })()}</td><td align="right" style="padding:6px">${i.result.empresas_sugeridas}</td>
-<td align="right" style="padding:6px">${reco ? `${reco.pendientes_antes + reco.nuevas}${reco.estado !== "ok" ? `<br><span style="color:#999;font-size:11px">${esc(reco.estado)}</span>` : ""}` : "–"}</td><td align="right" style="padding:6px">${pend}</td></tr>`;
-    }).join("")}
-</table>
-<p style="color:#666">"Propuestas ficha" = cambios de cargos, industrias o exclusiones que propone la IA con evidencia; se aprueban o descartan en la ficha del cliente en el Centro.</p>`
-    : "<p>Esta semana no se generó la inteligencia de ningún cliente (revisa el checklist de preparación en el Centro).</p>";
-  const r = await sendCentroMail({ to: PROSPECTORAS, cc: [CENTRO_LEADER], subject: `Plan de prospección · semana del ${semana}`, html: wrapMail(`Plan de prospección · semana del ${semana}`, body, { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }) });
-  return { to: r.to, clientes: rows.length };
+
+  const rowHtml = (r: PlanRow, withWho: boolean) => {
+    const cid = clientOfFicha.get(r.fichaId);
+    const i = cid ? intelBy.get(cid) : undefined;
+    const g = (i?.numbers as { meta?: { meta: number; realizadas: number; faltan: number; cumplida: boolean } } | undefined)?.meta;
+    const reco = cid ? recoBy.get(cid) : null;
+    const ctx = i
+      ? `<br><span style="color:${color[i.result.prioridad]}">Prioridad ${esc(i.result.prioridad)}</span>${g ? ` · reuniones del mes ${g.realizadas}/${g.meta}${g.cumplida ? " (cumplida)" : ""}` : ""}${i.result.donde_prospectar.length ? `<br><span style="color:#555">Foco: ${esc(i.result.donde_prospectar.slice(0, 3).join("; "))}</span>` : ""}`
+      : "";
+    return `<tr style="border-top:1px solid #eee"><td style="padding:6px"><b>${esc(fichaName.get(r.fichaId) ?? r.fichaId)}</b>${withWho ? `<br><span style="color:#777">${esc(PROSPECTORA_NAME[r.email] ?? r.email)}</span>` : ""}${r.nota ? `<br><span style="color:#555">${esc(r.nota)}</span>` : ""}${ctx}</td>
+<td align="center" style="padding:6px">${r.prioridad}</td><td align="right" style="padding:6px"><b>${r.meta}</b></td><td align="right" style="padding:6px">${reco ? reco.pendientes_antes + reco.nuevas : "–"}</td></tr>`;
+  };
+  const table = (rows: PlanRow[], withWho: boolean) =>
+    `<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="background:#f3f2fa"><th align="left" style="padding:6px">Cliente</th><th style="padding:6px">Prioridad</th><th align="right" style="padding:6px">Meta de empresas</th><th align="right" style="padding:6px">Recomendadas listas</th></tr>${rows.sort((a, b) => a.prioridad - b.prioridad).map((r) => rowHtml(r, withWho)).join("")}</table>`;
+  const foot = `<p style="color:#666">Las recomendadas están en <b>Centro de prospección → Empresas → Recomendadas por IA</b> (elige el cliente): revisa, descarta las que no sirven y propón el resto al cliente. Si necesitas más, usa «Generar más».</p>`;
+
+  const out: Record<string, unknown> = { semana, planAprobado: week.approved };
+  const targets = (opts.to ?? PROSPECTORAS).map((e) => e.toLowerCase());
+  if (week.approved) {
+    for (const e of targets) {
+      const mine = week.rows.filter((r) => r.email === e);
+      if (!mine.length) { out[e] = "sin asignaciones en el plan"; continue; }
+      const total = mine.reduce((a, r) => a + r.meta, 0);
+      const nombre = PROSPECTORA_NAME[e] ?? "";
+      out[e] = await sendCentroMail({
+        to: [e],
+        subject: `Tu plan de la semana del ${semana}${opts.late ? " (te llega hoy por el feriado)" : ""}`,
+        html: wrapMail(`Tu plan · semana del ${semana}`, `<p>Hola${nombre ? ` ${esc(nombre)}` : ""}: esta es tu semana, ${total} empresas en total.</p>${table(mine, false)}${foot}`, { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }),
+      }).then(() => mine.length).catch((err) => ({ error: (err as Error).message }));
+    }
+  }
+  if (opts.leader !== false) {
+    const body = week.rows.length
+      ? `${week.approved ? "" : `<p style="color:#c0392b"><b>El plan de esta semana aún no está aprobado</b>: las prospectoras no recibieron su correo. Apruébalo en Plan semanal y se lo reenvío al día siguiente, o escríbeles tú.</p>`}${table([...week.rows], true)}${foot}`
+      : `<p style="color:#c0392b"><b>No hay plan para la semana del ${esc(semana)}</b> en el Centro: las prospectoras no recibieron su correo.</p>`;
+    out.lider = await sendCentroMail({ to: [CENTRO_LEADER], subject: `Plan de prospección · semana del ${semana}`, html: wrapMail(`Plan de prospección · semana del ${semana}`, body, { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }) })
+      .then(() => "ok").catch((err) => ({ error: (err as Error).message }));
+  }
+  return out;
 }
 
 // ---------- lunes: costo de IA ----------
@@ -210,6 +268,7 @@ ${table("Por cliente", clCur, clPrev, (k) => (k === "—" ? "Sin cliente" : name
 // ---------- lunes a viernes: alertas ----------
 export async function sendDailyAlerts(today = chileDate()): Promise<Record<string, unknown>> {
   const db = supabaseAdmin();
+  const cal = await loadProspectoraCalendar();
   const [links, intel, plan] = await Promise.all([loadClientLinks(), latestIntel(), loadPlanProspectoras()]);
   const name = new Map(links.clients.map((c) => [c.id, c.name]));
   const cname = (id: string) => name.get(id) ?? id;
@@ -250,6 +309,8 @@ export async function sendDailyAlerts(today = chileDate()): Promise<Record<strin
     }
   }
   for (const [e, l] of Array.from(byProsp)) {
+    const off = cal.offReason(e, today);
+    if (off) { sent[`prosp:${e}`] = `no se envía: ${off}`; continue; }
     sent[`prosp:${e}`] = await sendCentroMail({ to: [e], subject: "Revisión pendiente en Empresas y Contactos", html: wrapMail("Revisión acumulada", `<p>Se está acumulando trabajo por revisar:</p><ul>${l.join("")}</ul>`, { href: `${APP_URL}/centro-prospeccion?tab=contactos`, label: "Revisar" }) }).catch((err) => ({ error: (err as Error).message }));
   }
 
@@ -328,5 +389,45 @@ async function sendReminders(intel: IntelLite[], cname: (id: string) => string, 
   }
   return { enviados };
 }
+
+// ---------- cambios de ICP aprobados en la ficha → KAM, un solo correo al día ----------
+// Antes cada aprobación mandaba un correo al KAM en el momento (13-nov-2026: muchas
+// aprobaciones de noche = muchos correos a Ingri a esa hora). Ahora se acumulan y
+// salen juntos en el correo de las 8:30 del día hábil siguiente.
+export type IcpPending = { client_id: string; cliente: string; campo: string; texto: string; evidencia: string; casos: number; by: string; at: string };
+const ICP_QUEUE = "centro_icp_validar:cola";
+export async function queueIcpValidation(item: IcpPending) {
+  for (let i = 0; i < 3; i++) {
+    const { data } = await supabaseAdmin().from("allo_response_cache").select("response, expires_at").eq("cache_key", ICP_QUEUE).maybeSingle();
+    const list = ((data?.response as IcpPending[] | undefined) ?? []);
+    list.push(item);
+    await setFlag(ICP_QUEUE, list, 60);
+    // Relee: si otra aprobación escribió al mismo tiempo, vuelve a intentar
+    const back = await getFlag<IcpPending[]>(ICP_QUEUE);
+    if (back?.some((x) => x.at === item.at && x.texto === item.texto)) return;
+  }
+}
+const CAMPO_LABEL: Record<string, string> = { cargos: "Cargos objetivo", industrias: "Industrias objetivo", exclusiones: "Exclusiones", zonas: "Zonas", proximos: "Próximos pasos" };
+export async function sendIcpDigest(): Promise<Record<string, unknown>> {
+  const list = (await getFlag<IcpPending[]>(ICP_QUEUE)) ?? [];
+  if (!list.length) return { pendientes: 0 };
+  const byKam = new Map<string, IcpPending[]>();
+  for (const it of list) {
+    const k = kamFor(it.cliente);
+    byKam.set(k, [...(byKam.get(k) ?? []), it]);
+  }
+  const out: Record<string, unknown> = {};
+  for (const [kam, items] of Array.from(byKam)) {
+    const byClient = new Map<string, IcpPending[]>();
+    for (const it of items) byClient.set(it.cliente, [...(byClient.get(it.cliente) ?? []), it]);
+    const body = `<p>Prospección aprobó en la ficha cambios que tocan el ICP acordado con el cliente. Por favor valídalos con cada cliente y, si corresponde, actualiza el ICP en Sistema → ICP.</p>${Array.from(byClient).map(([c, xs]) => `<h3 style="font-size:15px;margin:16px 0 6px">${esc(c)}</h3><ul>${xs.map((x) => `<li><b>${esc(CAMPO_LABEL[x.campo] ?? x.campo)}:</b> ${esc(x.texto)}<br><span style="color:#666">Evidencia (${x.casos} casos): ${esc(x.evidencia)}</span></li>`).join("")}</ul>`).join("")}`;
+    out[kam] = await sendCentroMail({ to: [kam], cc: [CENTRO_LEADER], subject: `Cambios de ICP para validar (${items.length})`, html: wrapMail("Cambios de ICP para validar", body, { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }) }).then(() => items.length).catch((e) => ({ error: (e as Error).message }));
+  }
+  if (!Object.values(out).some((v) => typeof v === "object")) await setFlag(ICP_QUEUE, [], 1);
+  return out;
+}
+
+// ---------- plan del lunes pendiente para quien tuvo feriado ----------
+export const planPendingKey = (semana: string, email: string) => `centro_plan_pendiente:${semana}:${email.toLowerCase()}`;
 
 export { getFlag, setFlag };

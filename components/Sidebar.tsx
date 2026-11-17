@@ -28,6 +28,7 @@ import {
   IconTarget,
   IconMessageReply,
   IconRoad,
+  IconCalendarPlus,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
 import { useGeneration } from "@/lib/generationContext";
@@ -59,6 +60,7 @@ const SECTIONS: Section[] = [
     label: "SDR",
     items: [
       { href: "/sdr/dashboard", label: "Dashboard SDR",       icon: IconLayoutDashboard },
+      { href: "/sdr/formulario-reunion", label: "Formulario de reuniones", icon: IconCalendarPlus },
       { href: "/telefonos",     label: "Teléfonos",           icon: IconPhone },
       { href: "/llamadas",      label: "Llamadas",            icon: IconHeadset },
       { href: "/sdr/entrenamiento", label: "Entrenamiento cliente", icon: IconSchool },
