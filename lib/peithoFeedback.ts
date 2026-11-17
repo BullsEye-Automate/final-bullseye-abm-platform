@@ -22,22 +22,14 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
   return Promise.race([p.catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
 }
 
-export async function peithoFeedbackCoverage(
-  db: SupabaseClient, clientId: string, meetings: SheetMeeting[]
-): Promise<{ enabled: boolean; covered: Set<string> }> {
-  const covered = new Set<string>();
-  const enabled = await isPeithoEnabled(db, clientId);
-  // Con Peitho activado no se pide ninguna: no hace falta ir a Peitho
-  if (enabled || !peithoConfigured() || !meetings.length) return { enabled, covered };
-  const client = await loadPeithoClient(db, clientId);
-  if (!client) return { enabled, covered };
-  const list = await withTimeout(peithoGetJson<MeetingListItem[]>(client, "/meetings?scope=past"), 8000);
-  if (!list) return { enabled, covered };
+// Reuniones de la planilla que calzan con una reunión analizada de Peitho
+// (fecha de la reunión en hora de Chile + empresa o contacto) → esa reunión.
+export function matchPeithoMeetings(list: MeetingListItem[], meetings: SheetMeeting[]): Map<string, MeetingListItem> {
+  const out = new Map<string, MeetingListItem>();
   // Solo reuniones con análisis (no las que quedaron sin grabar o no-show)
   const byDay = new Map<string, MeetingListItem[]>();
   for (const p of list) {
     if (p.status !== "analyzed" || !p.start_time) continue;
-    // Día en hora de Chile (la planilla guarda la fecha local)
     const day = new Date(p.start_time).toLocaleDateString("en-CA", { timeZone: "America/Santiago" });
     byDay.set(day, [...(byDay.get(day) ?? []), p]);
   }
@@ -45,11 +37,29 @@ export async function peithoFeedbackCoverage(
     const cands = m.fecha_reunion ? byDay.get(m.fecha_reunion.slice(0, 10)) : undefined;
     if (!cands) continue;
     const emp = compact(m.empresa), ct = compact(m.contacto_nombre);
-    const hit = cands.some((p) =>
+    const hit = cands.find((p) =>
       near(emp, compact(p.empresa_nombre)) || near(emp, compact((p.empresa_contraparte ?? "").split(".")[0])) ||
       (ct.length >= 6 && (near(ct, compact(p.contacto_nombre)) || near(ct, compact(p.contraparte))))
     );
-    if (hit) covered.add(m.id);
+    if (hit) out.set(m.id, hit);
   }
-  return { enabled, covered };
+  return out;
+}
+
+// Reuniones pasadas de Peitho del cliente (tope de 8 s; null si no responde)
+export async function loadPeithoPast(db: SupabaseClient, clientId: string): Promise<MeetingListItem[] | null> {
+  if (!peithoConfigured()) return null;
+  const client = await loadPeithoClient(db, clientId);
+  if (!client) return null;
+  return withTimeout(peithoGetJson<MeetingListItem[]>(client, "/meetings?scope=past"), 8000);
+}
+
+export async function peithoFeedbackCoverage(
+  db: SupabaseClient, clientId: string, meetings: SheetMeeting[]
+): Promise<{ enabled: boolean; covered: Set<string> }> {
+  const enabled = await isPeithoEnabled(db, clientId);
+  // Con Peitho activado no se pide ninguna: no hace falta ir a Peitho
+  if (enabled || !meetings.length) return { enabled, covered: new Set() };
+  const list = await loadPeithoPast(db, clientId);
+  return { enabled, covered: new Set(list ? matchPeithoMeetings(list, meetings).keys() : []) };
 }
