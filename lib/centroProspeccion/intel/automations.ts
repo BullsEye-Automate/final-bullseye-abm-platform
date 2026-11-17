@@ -260,9 +260,58 @@ export async function sendWeeklyCostReport(): Promise<{ total: number; prev: num
   const body = `<p style="font-size:16px">Gasto de IA de la plataforma en los últimos 7 días: <b>${usd(total)}</b> (semana anterior ${usd(totalPrev)}, ${vari(total, totalPrev)}).</p>
 ${table("Por automatización", fnCur, fnPrev, (k) => FUNCTION_LABEL[k] ?? k)}
 ${table("Por cliente", clCur, clPrev, (k) => (k === "—" ? "Sin cliente" : name.get(k) ?? k))}
-<p style="color:#666">Fuente: registro de uso de IA (ai_usage_log), el mismo de Administración → Uso de IA.</p>`;
+<p style="color:#666">Fuente: registro de uso de IA (ai_usage_log), el mismo de Administración → Uso de IA.</p>
+${await recoQualityHtml(name).catch((e) => `<p style="color:#b91c1c">No se pudo calcular la calidad de las recomendaciones: ${esc((e as Error).message)}</p>`)}`;
   await sendCentroMail({ to: [CENTRO_LEADER], subject: `Costo de IA · ${usd(total)} esta semana (${vari(total, totalPrev)})`, html: wrapMail("Costo de IA de la semana", body, { href: `${APP_URL}/admin/uso-ia`, label: "Ver uso de IA" }) });
   return { total, prev: totalPrev };
+}
+
+// Calidad de las recomendaciones de los últimos 7 días (pedido de BullsEye,
+// 17-nov-2026): cuántas ocultó la revisión automática, cuántas quedaron con
+// nota y los descartes del equipo por motivo. Si "repetida" o "exclusión"
+// bajan a cero, el filtro funciona; si "no calza" sube en un cliente, hay que
+// revisar su ICP.
+async function recoQualityHtml(name: Map<string, string>): Promise<string> {
+  const db = supabaseAdmin();
+  const since = new Date(Date.now() - 7 * DAY).toISOString();
+  const [recos, omit] = await Promise.all([
+    (async () => {
+      const out: { client_id: string; status: string; facts: { label: string }[] | null }[] = [];
+      for (let f = 0; f < 50_000; f += 1000) {
+        const { data, error } = await db.from("client_recommendations").select("client_id, status, facts").gte("created_at", since).range(f, f + 999);
+        if (error) throw new Error(error.message);
+        out.push(...((data ?? []) as typeof out));
+        if (!data || data.length < 1000) break;
+      }
+      return out;
+    })(),
+    db.from("client_omitted_companies").select("client_id, snapshot").gte("created_at", since).limit(10000),
+  ]);
+  type Row = { total: number; ocultas: number; nota: number; desc: Record<string, number> };
+  const m = new Map<string, Row>();
+  const row = (k: string) => m.get(k) ?? (m.set(k, { total: 0, ocultas: 0, nota: 0, desc: {} }), m.get(k)!);
+  for (const r of recos) {
+    const x = row(r.client_id);
+    x.total++;
+    const labels = (r.facts ?? []).map((f) => f.label);
+    if (r.status === "excluded" && labels.includes("__bloqueo")) x.ocultas++;
+    else if (labels.includes("__revisar")) x.nota++;
+  }
+  for (const o of (omit.data ?? []) as { client_id: string; snapshot: { motivo?: string } | null }[]) {
+    const mo = o.snapshot?.motivo;
+    if (!mo) continue;
+    const x = row(o.client_id);
+    x.desc[mo] = (x.desc[mo] ?? 0) + 1;
+  }
+  if (!m.size) return "";
+  const cols: [string, string][] = [["ya_cliente", "Ya cliente"], ["exclusion", "Exclusión"], ["repetida", "Repetida"], ["no_icp", "No calza ICP"], ["otro", "Otro"]];
+  const rows = Array.from(m.entries()).sort((a, b) => b[1].total - a[1].total);
+  const td = (v: string | number) => `<td align="right" style="padding:5px">${v}</td>`;
+  return `<h3 style="font-size:15px;margin:22px 0 6px">Calidad de las recomendaciones (7 días)</h3>
+<p style="font-size:13px;color:#444;margin:0 0 6px">Ocultas = la revisión automática las sacó por coincidir con algo ya trabajado, excluido o repetido. Con nota = se mostraron para revisar a mano. Descartes = los que hizo el equipo, por motivo.</p>
+<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="background:#f3f2fa"><th align="left" style="padding:5px">Cliente</th><th align="right" style="padding:5px">Revisadas</th><th align="right" style="padding:5px">Ocultas</th><th align="right" style="padding:5px">Con nota</th>${cols.map(([, l]) => `<th align="right" style="padding:5px">${l}</th>`).join("")}</tr>${rows
+    .map(([k, x]) => `<tr style="border-top:1px solid #eee"><td style="padding:5px">${esc(name.get(k) ?? k)}</td>${td(x.total)}${td(x.ocultas)}${td(x.nota)}${cols.map(([c]) => td(x.desc[c] ?? 0)).join("")}</tr>`)
+    .join("")}</table>`;
 }
 
 // ---------- lunes a viernes: alertas ----------
