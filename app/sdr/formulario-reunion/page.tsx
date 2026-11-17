@@ -9,7 +9,9 @@ import { IconAlertTriangle, IconCalendarPlus, IconExternalLink, IconLoader2, Ico
 // sesión ni las APIs de la plataforma) y sigue escribiendo en la planilla por
 // el Apps Script de siempre. Ver CLAUDE.md → "Formulario de reuniones".
 
-const PUBLIC_URL = "https://bullseye-automate.github.io/Hubspot-y-SDR-Dashboard/";
+// GitHub Pages redirige al portal; con ?respaldo=1 se queda allá (por si el
+// portal falla).
+const BACKUP_URL = "https://bullseye-automate.github.io/Hubspot-y-SDR-Dashboard/?respaldo=1";
 
 type Payload = { html: string; source: "live" | "local"; sdrName: string | null };
 
@@ -83,8 +85,8 @@ export default function FormularioReunionPage() {
           <button onClick={load} className="btn-secondary flex items-center gap-1 text-sm" title="Volver a cargar el formulario">
             <IconRefresh size={16} /> Recargar
           </button>
-          <a href={PUBLIC_URL} target="_blank" rel="noreferrer" className="btn-secondary flex items-center gap-1 text-sm">
-            <IconExternalLink size={16} /> Abrir en otra pestaña
+          <a href={BACKUP_URL} target="_blank" rel="noreferrer" className="btn-secondary flex items-center gap-1 text-sm">
+            <IconExternalLink size={16} /> Formulario de respaldo
           </a>
         </div>
       </div>
