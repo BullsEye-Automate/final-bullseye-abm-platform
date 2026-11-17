@@ -10,6 +10,7 @@ import {
   sanitizeUnifiedFilters,
 } from "@/lib/unifiedSearch";
 import type { UnifiedFilters } from "@/lib/unifiedFilterDefs";
+import { auditCompany, loadAuditContext, withAuditFact, type AuditResult } from "@/lib/centroProspeccion/recoAudit";
 
 // Una tanda de Recomendaciones IA (búsqueda unificada + fit) de un cliente.
 // Es el mismo cálculo de POST /api/portal/wishlist/recommendations, movido
@@ -115,7 +116,35 @@ export async function runRecommendationRound(db: any, clientId: string, opts: { 
     ? await db.from("client_recommendations").select("source, source_ref").eq("client_id", clientId).eq("icp_hash", hash).eq("status", "pending").in("source_ref", refs)
     : { data: [] };
   const knownSet = new Set(((known ?? []) as { source: string; source_ref: string }[]).map((k) => `${k.source}:${k.source_ref}`));
-  const candidates = result.cards.filter((c) => !knownSet.has(`${c.source}:${c.key}`));
+  const fresh = result.cards.filter((c) => !knownSet.has(`${c.source}:${c.key}`));
+
+  // Revisión antes de evaluar (lib/centroProspeccion/recoAudit.ts): lo que
+  // coincide con seguridad con algo ya trabajado, excluido o recomendado no se
+  // evalúa ni se muestra; lo dudoso se muestra con una nota para revisar.
+  const audit = await loadAuditContext(db, clientId).catch((e) => {
+    console.warn("[reco] revisión:", (e as Error).message);
+    return null;
+  });
+  const verdict = new Map<string, AuditResult>();
+  const blocked: RecoRow[] = [];
+  const candidates: typeof fresh = [];
+  for (const c of fresh) {
+    const v = audit ? auditCompany(audit, c.name, c.domain) : { level: "ok" as const, reasons: [] };
+    if (v.level === "block") {
+      blocked.push({ source: c.source, source_ref: c.key, company_name: c.name, domain: c.domain, linkedin_url: c.linkedin_url, facts: withAuditFact(c.facts, v), fit_score: 0, fit_reason: `Oculta: ${v.reasons.join(" · ")}`.slice(0, 600) });
+      continue;
+    }
+    verdict.set(`${c.source}:${c.key}`, v);
+    audit?.add(c.name, c.domain, "repetida en la misma tanda");
+    candidates.push(c);
+  }
+  if (blocked.length) {
+    const { error } = await db.from("client_recommendations").upsert(
+      blocked.map((g) => ({ ...g, client_id: clientId, icp_hash: hash, status: "excluded", updated_at: new Date().toISOString() })),
+      { onConflict: "client_id,source,source_ref", ignoreDuplicates: true }
+    );
+    if (error) console.warn("[reco] ocultas:", error.message);
+  }
 
   const scores = await scoreCompanies(db, {
     clientId,
@@ -137,7 +166,7 @@ export async function runRecommendationRound(db: any, clientId: string, opts: { 
         company_name: c.name,
         domain: c.domain,
         linkedin_url: c.linkedin_url,
-        facts: c.facts,
+        facts: withAuditFact(c.facts, verdict.get(`${c.source}:${c.key}`) ?? { level: "ok", reasons: [] }),
         fit_score: sc.fit_score,
         fit_reason: sc.fit_reason,
       });

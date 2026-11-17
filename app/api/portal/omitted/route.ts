@@ -21,6 +21,14 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ items: data ?? [] });
 }
 
+const DISCARD_REASONS: Record<string, string> = {
+  ya_cliente: "Ya es cliente del cliente",
+  exclusion: "Está en su exclusión / no contactar",
+  repetida: "Ya trabajada o repetida",
+  no_icp: "No calza con el ICP",
+  otro: "Otro",
+};
+
 const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
 
 // POST — { ref, card?, fit_score?, fit_reason? } omite una empresa de los
@@ -60,6 +68,12 @@ export async function POST(req: NextRequest) {
   if (!card) return NextResponse.json({ error: "Empresa no encontrada" }, { status: 404 });
 
   const fitScore = typeof body?.fit_score === "number" ? Math.max(0, Math.min(100, Math.round(body.fit_score))) : null;
+  // Motivo del descarte (equipo BullsEye): queda en snapshot (sin migración) y
+  // se cuenta en el resumen semanal del Centro. "Ya es cliente" y "Está en su
+  // exclusión" además pasan la empresa a la Lista de exclusión del cliente.
+  const motivo = user.isOperator && typeof body?.motivo === "string" && DISCARD_REASONS[body.motivo] ? body.motivo : null;
+  const nota = str(body?.nota, 300);
+  const notaRevision = str(body?.nota_revision, 400);
   const { error } = await db.from("client_omitted_companies").insert({
     client_id: user.clientId,
     company_name: card.name,
@@ -69,12 +83,23 @@ export async function POST(req: NextRequest) {
     source_ref: id.key,
     fit_score: fitScore,
     fit_reason: str(body?.fit_reason, 600),
-    snapshot: { facts: card.facts },
+    snapshot: { facts: card.facts.filter((f) => !f.label.startsWith("__")), ...(motivo ? { motivo, motivo_label: DISCARD_REASONS[motivo], nota, nota_revision: notaRevision } : {}) },
     omitted_by: user.portalUserId,
     omitted_by_email: user.email,
   });
   // Ya estaba omitida: se considera éxito
   if (error && error.code !== "23505") return NextResponse.json({ error: error.message }, { status: 500 });
   await markRecommendation(db, user.clientId, id.source, id.key, "omitted");
+  if (motivo === "ya_cliente" || motivo === "exclusion") {
+    const { error: exErr } = await db.from("client_exclusions").insert({
+      client_id: user.clientId,
+      kind: "company",
+      company_name: card.name,
+      domain: card.domain,
+      reason: `${DISCARD_REASONS[motivo]}${nota ? `: ${nota}` : ""} (descartada por ${user.email})`.slice(0, 300),
+      created_by_email: user.email,
+    });
+    if (exErr && exErr.code !== "23505") console.warn("[omitted] exclusión:", exErr.message);
+  }
   return NextResponse.json({ ok: true });
 }
