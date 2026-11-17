@@ -1,6 +1,8 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import type { RadarMeeting } from "../types";
 import { pickSub } from "../subAccounts";
+import { isPeithoEnabled } from "@/lib/peitho";
+import { loadPeithoPast, matchPeithoMeetings } from "@/lib/peithoFeedback";
 import { isPilotClient, isReconfValid, pilotClients } from "@/lib/reconfirmacion/rules";
 
 // Reconfirmación (piloto): campos de la reunión para Pulso ABM. Solo reuniones
@@ -86,14 +88,14 @@ export async function loadFeedbackOverlay(clientId: string, subs: string[] = [])
     if (subs.length && pickSub(subs, c.name, null)) ids.add(c.id);
   }
   const since = new Date(Date.now() - 400 * 86400_000).toISOString().slice(0, 10);
-  const meetings: { id: string; client_id: string; propuesta_oportunidad: string | null; realizado: string | null; reconfirmada?: boolean; reconfirmada_en?: string | null; reconfirmada_para?: string | null; cliente_nombre?: string | null; fecha_reunion?: string | null; hora?: string | null }[] = [];
+  const meetings: { id: string; client_id: string; empresa?: string | null; contacto_nombre?: string | null; propuesta_oportunidad: string | null; realizado: string | null; reconfirmada?: boolean; reconfirmada_en?: string | null; reconfirmada_para?: string | null; cliente_nombre?: string | null; fecha_reunion?: string | null; hora?: string | null }[] = [];
   // Con la migración de reconfirmación se lee también su estado (en vivo para el cliente)
   // cliente_nombre y la reconfirmación son columnas opcionales e independientes:
   // si falta una se deja de pedir solo esa (antes, sin cliente_nombre se perdía
   // también la reconfirmación)
   let cliCol = ", cliente_nombre", recCols = ", fecha_reunion, hora, reconfirmada, reconfirmada_en, reconfirmada_para";
   for (let offset = 0; offset < 20000; offset += 1000) {
-    const { data, error } = await supabase.from("meetings").select(`id, client_id, propuesta_oportunidad, realizado${recCols}${cliCol}`)
+    const { data, error } = await supabase.from("meetings").select(`id, client_id, empresa, contacto_nombre, propuesta_oportunidad, realizado${recCols}${cliCol}`)
       .in("client_id", [...ids]).gte("fecha_reunion", since).order("id", { ascending: true }).range(offset, offset + 999);
     if (error && cliCol && /cliente_nombre/.test(error.message)) { cliCol = ""; offset -= 1000; continue; }
     if (error && recCols && /reconfirmada/.test(error.message)) { recCols = ""; offset -= 1000; continue; }
@@ -115,8 +117,20 @@ export async function loadFeedbackOverlay(clientId: string, subs: string[] = [])
     const { data } = await supabase.from("meeting_feedback").select(FEEDBACK_COLS).in("meeting_id", mids.slice(i, i + 300));
     for (const f of data ?? []) out[f.meeting_id] = { ...out[f.meeting_id], ...feedbackPatch(f, opp.get(f.meeting_id)) };
   }
+  // Cliente con Peitho: el feedback de las reuniones es el análisis de Peitho
+  // (pedido de BullsEye nov-2026). Se marca la reunión con análisis (pth) y su
+  // predicción de éxito 1–5 (pthp); "$peitho" avisa al navegador que el
+  // cliente usa Peitho (lo aplica applyFeedback). Si Peitho no responde, el
+  // panel lo dice y no cae a la encuesta.
+  if (await isPeithoEnabled(supabase, clientId).catch(() => false)) {
+    const list = await loadPeithoPast(supabase, clientId).catch(() => null);
+    const hits = list ? matchPeithoMeetings(list, meetings.map((m) => ({ id: m.id, empresa: m.empresa, contacto_nombre: m.contacto_nombre, fecha_reunion: m.fecha_reunion }))) : new Map();
+    for (const [id, p] of hits) out[id] = { ...out[id], pth: 1, ...(p.prediccion_exito != null ? { pthp: Number(p.prediccion_exito) } : {}) };
+    out[PEITHO_FLAG] = { pthOk: list ? 1 : 0 } as Partial<RadarMeeting>;
+  }
   return out;
 }
+export const PEITHO_FLAG = "$peitho";
 
 export async function loadSheetMeetings(input: {
   clientId: string;

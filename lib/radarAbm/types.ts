@@ -73,6 +73,9 @@ export type RadarMeeting = {
   indp?: string;             // industria (planilla), si la reunión no calza con una empresa
   oppv?: string;             // Propuesta/Oportunidad tal cual en la planilla
   fbk?: 1;                   // el cliente respondió la encuesta de feedback
+  pth?: 1;                   // la reunión tiene análisis de Peitho (cliente con Peitho)
+  pthp?: number;             // predicción de éxito de Peitho (1–5)
+  pthOk?: 0 | 1;             // (solo en la marca "$peitho" del estado en vivo) Peitho respondió
   cal?: number;              // calificación del cliente (1–10)
   prob?: number;             // probabilidad de cierre (0–100)
   prop?: string;             // propuesta comercial (Si / No / No aún / Falta otra reunión)
@@ -147,6 +150,7 @@ export type RadarClientData = {
   callEvals?: RadarCallEval[];
   meetingsTotal?: boolean;
   wishlistOnly?: boolean;     // universo = solo empresas de la wishlist (sin filtro Wishlist)
+  peitho?: { ok: boolean };   // cliente con Peitho: el feedback de reuniones sale de Peitho (estado en vivo)
   refCases?: string;         // casos de éxito / clientes de referencia del ICP   // Reuniones = total de la planilla (no se recortan por filtros de empresa)
 };
 

@@ -6,7 +6,9 @@ import type { RadarDataset, RadarMeeting } from "./types";
 export function applyFeedback(ds: RadarDataset | null, feedback?: Record<string, Partial<RadarMeeting>> | null): RadarDataset | null {
   if (!ds || !feedback || !Object.keys(feedback).length) return ds;
   const meetings = ds.client.meetings.map((m) => (feedback[String(m.id)] ? { ...m, ...feedback[String(m.id)] } : m));
-  return { ...ds, client: { ...ds.client, meetings } };
+  // "$peitho": el cliente tiene Peitho (loadFeedbackOverlay); pthOk = Peitho respondió
+  const pf = feedback["$peitho"];
+  return { ...ds, client: { ...ds.client, meetings, ...(pf ? { peitho: { ok: !!pf.pthOk } } : {}) } };
 }
 
 export async function resolveDataset(j: {

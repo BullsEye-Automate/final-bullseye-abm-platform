@@ -189,9 +189,18 @@ function meetingPanel(M: any, realization: number | null) {
     const C = 2 * Math.PI * 34, f = v == null ? 0 : Math.max(0, Math.min(1, v));
     return `<div class="ra-ip-ring"><span class="ra-ip-lbl">${label}</span><svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="34" fill="none" stroke="#1d3a7a" stroke-width="9"/>${f ? `<circle cx="45" cy="45" r="34" fill="none" stroke="#62E0D8" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 45 45)"/>` : ""}<text x="45" y="50" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">${v == null ? "—" : P(v)}</text></svg><span class="ra-ip-sub">${sub}</span></div>`;
   };
-  const opp = held.filter((m) => m.res === "Oportunidad").length, fb = held.filter((m) => m.fbk).length;
-  const cals = held.map((m) => m.cal).filter((x: any) => typeof x === "number" && Number.isFinite(x));
+  const opp = held.filter((m) => m.res === "Oportunidad").length;
+  // Cliente con Peitho: el feedback es el análisis de Peitho (reuniones con
+  // análisis y predicción de éxito 1–5); si no, la encuesta del cliente (1–10)
+  const pe: { ok: boolean } | undefined = M.cl?.peitho;
+  const fb = pe ? held.filter((m) => m.pth).length : held.filter((m) => m.fbk).length;
+  const cals = held.map((m) => (pe ? m.pthp : m.cal)).filter((x: any) => typeof x === "number" && Number.isFinite(x));
   const calAvg = cals.length ? cals.reduce((a: number, b: number) => a + b, 0) / cals.length : null;
+  const fbLabel = pe ? "Con análisis de Peitho" : "Con feedback del cliente";
+  const bigLabel = pe ? "Predicción de éxito (Peitho)" : "Calificación del cliente";
+  const bigSub = calAvg == null
+    ? (pe ? (pe.ok ? "sin reuniones analizadas aún" : "Peitho no respondió; vuelve a cargar") : "sin feedback aún")
+    : `de ${pe ? 5 : 10} · ${N(cals.length)} ${pe ? (cals.length === 1 ? "reunión" : "reuniones") : (cals.length === 1 ? "respuesta" : "respuestas")}`;
   // Barras: realizadas por mes (últimos 6 meses con datos)
   const byMonth = new Map<string, number>();
   for (const m of held) if (m.fecha) byMonth.set(m.fecha.slice(0, 7), (byMonth.get(m.fecha.slice(0, 7)) ?? 0) + 1);
@@ -204,8 +213,8 @@ function meetingPanel(M: any, realization: number | null) {
   return `<div class="ra-ip"><div class="ra-ip-head"><b>Panel de instrumentos · Reuniones</b><span>${N(M.agM.length)} agendadas · ${N(held.length)} realizadas · ${N(M.pendM.length)} pendientes</span></div>
   <div class="ra-ip-grid">
     <div class="ra-ip-cell ra-ip-g"><span class="ra-ip-lbl">Tasa de realización</span>${gauge}<span class="ra-ip-sub">${N(held.length)} de ${N(past)} con fecha pasada</span></div>
-    <div class="ra-ip-cell ra-ip-rings">${ring(held.length ? opp / held.length : null, "Con oportunidad", `${N(opp)} de ${N(held.length)} realizadas`)}${ring(held.length ? fb / held.length : null, "Con feedback del cliente", `${N(fb)} de ${N(held.length)} realizadas`)}</div>
-    <div class="ra-ip-cell ra-ip-big"><span class="ra-ip-lbl">Calificación del cliente</span><b>${calAvg == null ? "—" : F1(calAvg)}</b><span class="ra-ip-sub">${calAvg == null ? "sin feedback aún" : `de 10 · ${N(cals.length)} ${cals.length === 1 ? "respuesta" : "respuestas"}`}</span></div>
+    <div class="ra-ip-cell ra-ip-rings">${ring(held.length ? opp / held.length : null, "Con oportunidad", `${N(opp)} de ${N(held.length)} realizadas`)}${ring(held.length ? fb / held.length : null, fbLabel, `${N(fb)} de ${N(held.length)} realizadas`)}</div>
+    <div class="ra-ip-cell ra-ip-big"><span class="ra-ip-lbl">${bigLabel}</span><b>${calAvg == null ? "—" : F1(calAvg)}</b><span class="ra-ip-sub">${bigSub}</span></div>
     <div class="ra-ip-cell ra-ip-b"><span class="ra-ip-lbl">Realizadas por mes</span>${barsSvg}</div>
   </div></div>`;
 }
