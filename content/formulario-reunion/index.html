@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BullsEye — Nueva Reunión</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" />
+  <style>
+    /* ── Variables ─────────────────────────────────────────────────────── */
+    :root {
+      --bg:           #080a1c;
+      --bg-card:      rgba(255,255,255,0.035);
+      --bg-input:     rgba(255,255,255,0.055);
+      --accent:       #00d4ff;
+      --accent-dim:   rgba(0,212,255,0.15);
+      --text:         #f0f2ff;
+      --muted:        rgba(240,242,255,0.45);
+      --border:       rgba(0,212,255,0.13);
+      --border-focus: rgba(0,212,255,0.55);
+      --success:      #00c9a7;
+      --error:        #ff6b6b;
+      --navy:         #1a1b4d;
+      --radius:       12px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 48px 20px 100px;
+      background-image:
+        radial-gradient(ellipse 80% 60% at 50% -10%, rgba(0,212,255,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 100% 80%, rgba(26,27,77,0.6) 0%, transparent 60%);
+    }
+
+    /* ── Layout ──────────────────────────────────────────────────────────── */
+    .container { max-width: 740px; margin: 0 auto; }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    .header { text-align: center; margin-bottom: 44px; }
+    .logo-wrap { margin-bottom: 28px; display: flex; justify-content: center; }
+    .logo-img  { height: 52px; width: auto; object-fit: contain; }
+    /* Fallback si no carga la imagen */
+    .logo-fallback {
+      display: none; align-items: center; gap: 14px;
+    }
+    .logo-fallback .logo-mark {
+      width: 48px; height: 48px; background: var(--accent);
+      border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; font-size: 22px;
+      box-shadow: 0 0 24px rgba(0,212,255,0.35);
+    }
+    .logo-fallback .logo-name { font-size: 24px; font-weight: 700; color: #fff; }
+    .logo-fallback .logo-name span { color: var(--accent); }
+
+    .header h1 { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+    .header p  { color: var(--muted); font-size: 14px; }
+
+    /* ── Card ────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 28px 32px;
+      margin-bottom: 18px;
+      backdrop-filter: blur(12px);
+    }
+    .card-title {
+      font-size: 11.5px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 1.2px; color: var(--accent);
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 22px;
+    }
+    .card-title::after { content:''; flex:1; height:1px; background: var(--border); }
+
+    /* ── Grid ────────────────────────────────────────────────────────────── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .full   { grid-column: 1 / -1; }
+    @media (max-width: 580px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    /* ── Field ───────────────────────────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 12.5px; font-weight: 500; color: rgba(240,242,255,.7); }
+    .field-hint { font-size: 11.5px; color: var(--muted); margin-top: -2px; }
+    .req { color: var(--accent); margin-left: 2px; }
+    .field input,
+    .field select,
+    .field textarea {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color .18s, box-shadow .18s;
+      width: 100%;
+    }
+    .field select {
+      appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7'%3E%3Cpath fill='%2300d4ff' d='M5 7 0 0h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 13px center;
+      padding-right: 34px;
+      cursor: pointer;
+    }
+    .field select option { background: #1a1b4d; color: #fff; }
+    .field textarea { resize: vertical; min-height: 96px; }
+    .field input::placeholder, .field textarea::placeholder { color: var(--muted); }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(0,212,255,.09);
+    }
+    .field.err input, .field.err select, .field.err .ts-control { border-color: var(--error) !important; }
+    .field-err { font-size: 11.5px; color: var(--error); display: none; }
+    .field.err .field-err { display: block; }
+
+    /* ── Submit ───────────────────────────────────────────────────────────── */
+    .submit-wrap { margin-top: 6px; }
+    .btn {
+      width: 100%; padding: 15px;
+      background: linear-gradient(135deg, #00d4ff 0%, #0095cc 100%);
+      color: #06071a; border: none; border-radius: var(--radius);
+      font-family: inherit; font-size: 15px; font-weight: 700;
+      cursor: pointer; letter-spacing: .3px;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(0,212,255,.3); }
+    .btn:active { transform: translateY(0); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; transform: none; box-shadow: none; }
+    .spin {
+      width: 17px; height: 17px; border-radius: 50%;
+      border: 2.5px solid rgba(6,7,26,.25); border-top-color: #06071a;
+      animation: spin .65s linear infinite; display: none;
+    }
+    .loading .spin { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ───────────────────────────────────────────────────────────── */
+    .toast {
+      display: none; margin-top: 16px; padding: 14px 18px;
+      border-radius: var(--radius); font-size: 14px; font-weight: 500;
+      align-items: center; gap: 10px;
+    }
+    .toast.show   { display: flex; }
+    .toast.ok     { background: rgba(0,201,167,.1);  border:1px solid rgba(0,201,167,.3);  color: #00c9a7; }
+    .toast.fail   { background: rgba(255,107,107,.1); border:1px solid rgba(255,107,107,.3); color: #ff6b6b; }
+
+    /* ── Loading dropdowns ───────────────────────────────────────────────── */
+    .fetch-status { text-align: center; padding: 12px; font-size: 13px; color: var(--muted); display: none; }
+    .fetch-status.show { display: block; }
+
+    /* ── Summary card ────────────────────────────────────────────────────── */
+    .summary-card { display: none; }
+    .summary-header {
+      font-size: 18px; font-weight: 700; color: var(--success);
+      margin-bottom: 20px; text-align: center;
+    }
+    .summary-box {
+      background: rgba(0,201,167,.06);
+      border: 1px solid rgba(0,201,167,.25);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      font-size: 14.5px;
+      line-height: 1.75;
+      white-space: pre-line;
+      color: var(--text);
+      margin-bottom: 18px;
+      font-family: 'Inter', monospace;
+    }
+    .btn-group { display: flex; gap: 12px; }
+    .btn-outline {
+      flex: 1; padding: 13px;
+      background: transparent;
+      border: 1px solid var(--border-focus);
+      border-radius: var(--radius);
+      color: var(--accent);
+      font-family: inherit; font-size: 14px; font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .btn-outline:hover { background: var(--accent-dim); }
+
+    /* ── Tom Select dark theme ───────────────────────────────────────────── */
+    .ts-wrapper .ts-control {
+      background: var(--bg-input) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: var(--radius) !important;
+      color: var(--text) !important;
+      padding: 7px 12px !important;
+      min-height: 41px !important;
+      box-shadow: none !important;
+      cursor: text !important;
+      flex-wrap: nowrap !important;
+    }
+    .ts-wrapper.focus .ts-control {
+      border-color: var(--border-focus) !important;
+      box-shadow: 0 0 0 3px rgba(0,212,255,.09) !important;
+      outline: none !important;
+    }
+    .ts-wrapper .ts-control input {
+      color: var(--text) !important;
+      background: transparent !important;
+      font-family: 'Inter', sans-serif !important;
+      font-size: 14px !important;
+    }
+    .ts-wrapper .ts-control input::placeholder { color: var(--muted) !important; }
+    .ts-wrapper .ts-control .item { color: var(--text) !important; }
+    .ts-dropdown {
+      background: #12143a !important;
+      border: 1px solid var(--border-focus) !important;
+      border-radius: var(--radius) !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,.55) !important;
+      margin-top: 4px !important;
+    }
+    .ts-dropdown .option {
+      color: var(--text) !important;
+      padding: 9px 14px !important;
+      font-size: 14px;
+    }
+    .ts-dropdown .option:hover,
+    .ts-dropdown .option.active {
+      background: var(--accent-dim) !important;
+      color: var(--accent) !important;
+    }
+    .ts-dropdown .no-results {
+      color: var(--muted) !important;
+      background: transparent !important;
+    }
+    /* Ocultar el chevron nativo de Tom Select y usar el nuestro */
+    .ts-wrapper .ts-control::after { border-top-color: var(--accent) !important; }
+
+    /* ── Flatpickr dark ──────────────────────────────────────────────────── */
+    .flatpickr-calendar {
+      background: #1a1b4d !important;
+      border: 1px solid var(--border) !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,.5) !important;
+    }
+    .flatpickr-day { color: var(--text) !important; }
+    .flatpickr-day.selected, .flatpickr-day.selected:hover {
+      background: var(--accent) !important; border-color: var(--accent) !important; color: #06071a !important;
+    }
+    .flatpickr-day:hover { background: var(--accent-dim) !important; }
+    .flatpickr-months .flatpickr-month, .flatpickr-weekdays,
+    span.flatpickr-weekday { background: #1a1b4d !important; color: var(--text) !important; }
+    .flatpickr-current-month, .flatpickr-current-month .numInputWrapper input,
+    .flatpickr-current-month select { color: var(--text) !important; }
+    .flatpickr-day.flatpickr-disabled, .flatpickr-day.flatpickr-disabled:hover { color: var(--muted) !important; }
+    .numInput, .cur-year { color: var(--text) !important; }
+    .flatpickr-prev-month svg, .flatpickr-next-month svg { fill: var(--accent) !important; }
+
+    /* ── Mode selector ───────────────────────────────────────────────────── */
+    .mode-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 8px; }
+    @media (max-width: 580px) { .mode-selector { grid-template-columns: 1fr; } }
+    .mode-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 36px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, transform .15s, box-shadow .2s;
+      backdrop-filter: blur(12px);
+    }
+    .mode-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px rgba(0,212,255,.15);
+    }
+    .mode-card .mode-icon { font-size: 42px; margin-bottom: 16px; }
+    .mode-card .mode-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .mode-card .mode-desc { font-size: 13px; color: var(--muted); }
+    .back-link {
+      display: inline-flex; align-items: center; gap: 6px;
+      color: var(--accent); font-size: 13px; font-weight: 500;
+      cursor: pointer; margin-bottom: 20px;
+      background: none; border: none; font-family: inherit;
+      padding: 0;
+    }
+    .back-link:hover { text-decoration: underline; }
+
+    /* ── Edit mode meeting cards ─────────────────────────────────────────── */
+    .meeting-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px 24px;
+      margin-bottom: 14px;
+      backdrop-filter: blur(12px);
+      transition: border-color .2s;
+    }
+    .meeting-card.updated { border-color: var(--success); }
+    .meeting-meta { margin-bottom: 14px; }
+    .meeting-empresa { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+    .meeting-detail { font-size: 13px; color: var(--muted); }
+    .meeting-fields { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+    @media (max-width: 580px) { .meeting-fields { grid-template-columns: 1fr; } }
+    .btn-update {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #00d4ff 0%, #0095cc 100%);
+      color: #06071a; border: none; border-radius: var(--radius);
+      font-family: inherit; font-size: 13px; font-weight: 700;
+      cursor: pointer; white-space: nowrap;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .btn-update:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,212,255,.3); }
+    .btn-update:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+    .update-status { font-size: 12px; margin-top: 8px; }
+    .update-status.ok { color: var(--success); }
+    .update-status.fail { color: var(--error); }
+    .no-meetings {
+      text-align: center; padding: 48px 24px;
+      color: var(--muted); font-size: 14px;
+    }
+    #edit-search-input:focus {
+      border-color: var(--border-focus) !important;
+      box-shadow: 0 0 0 3px rgba(0,212,255,.09);
+      outline: none;
+    }
+    .meeting-card.hidden { display: none; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ── Redirección al portal ─────────────────────────────────────────────
+       En GitHub Pages este formulario redirige al portal de BullsEye, que
+       valida feriados y arma el resumen para WhatsApp con IA. Dentro del
+       portal (iframe con srcdoc) no redirige. Respaldo si el portal falla:
+       agregar ?respaldo=1 al link para quedarse aquí. -->
+  <div id="moved-banner" style="display:none;margin:0 0 28px;padding:16px 18px;border-radius:12px;
+       background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.5);text-align:center;line-height:1.5;">
+    <div style="font-weight:600;font-size:15px;margin-bottom:4px;">⚠️ Estás en el formulario de respaldo</div>
+    <div style="font-size:13px;opacity:.85;margin-bottom:12px;">
+      Úsalo solo si el portal no carga: aquí no se validan feriados ni se completa el resumen con IA.
+    </div>
+    <a href="https://portal.bullseye-abm.com/sdr/formulario-reunion"
+       style="display:inline-block;padding:10px 18px;border-radius:10px;background:#00d4ff;color:#06121f;
+              font-weight:700;text-decoration:none;">Ir al formulario en el portal →</a>
+  </div>
+  <script>
+    if (/github\.io$/.test(location.hostname)) {
+      if (/[?&]respaldo=1\b/.test(location.search)) {
+        document.getElementById("moved-banner").style.display = "block";
+      } else {
+        location.replace("https://portal.bullseye-abm.com/sdr/formulario-reunion");
+      }
+    }
+  </script>
+
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <div class="header">
+    <div class="logo-wrap">
+      <img src="./logo-white.png" alt="BullsEye" class="logo-img"
+           onerror="this.style.display='none'; document.getElementById('logo-fallback').style.display='flex';" />
+      <div class="logo-fallback" id="logo-fallback">
+        <div class="logo-mark">🎯</div>
+        <div class="logo-name">Bulls<span>Eye</span></div>
+      </div>
+    </div>
+    <h1>Registrar Nueva Reunión</h1>
+    <p>Completa los campos para registrar la reunión agendada en el sistema</p>
+  </div>
+
+  <div class="fetch-status" id="fetch-status">⏳ Cargando opciones desde el sistema...</div>
+
+  <!-- ── Mode selector ────────────────────────────────────────────────────── -->
+  <div id="mode-selector-wrap">
+    <div class="mode-selector">
+      <div class="mode-card" onclick="setMode('new')">
+        <div class="mode-icon">📝</div>
+        <div class="mode-title">Nueva Reunión</div>
+        <div class="mode-desc">Registra una reunión que acabas de agendar</div>
+      </div>
+      <div class="mode-card" onclick="setMode('edit')">
+        <div class="mode-icon">✏️</div>
+        <div class="mode-title">Actualizar Reunión</div>
+        <div class="mode-desc">Cambia el estado o fecha de una reunión pendiente</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── New meeting mode ─────────────────────────────────────────────────── -->
+  <div id="mode-new" style="display:none">
+    <button class="back-link" onclick="setMode(null)">← Volver</button>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!--  FORMULARIO                                                         -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <form id="form" novalidate>
+
+      <!-- ── 1. Información de la reunión ────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">📋 Información de la reunión</div>
+        <div class="grid-2">
+
+          <div class="field">
+            <label>Cliente <span class="req">*</span></label>
+            <select name="cliente" id="s-cliente" required>
+              <option value="">Selecciona un cliente...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Origen <span class="req">*</span></label>
+            <select name="origen" id="s-origen" required>
+              <option value="">Selecciona el origen...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field full">
+            <label>Responsable de la Reunión (SDR) <span class="req">*</span></label>
+            <select name="responsable" id="s-sdr" required>
+              <option value="">Selecciona el responsable...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Fecha de Agendamiento <span class="req">*</span></label>
+            <input type="text" name="fecha_agendamiento" id="fp-agenda"
+                   placeholder="DD/MM/AAAA" readonly required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Fecha de la Reunión <span class="req">*</span></label>
+            <input type="text" name="fecha_reunion" id="fp-reunion"
+                   placeholder="DD/MM/AAAA" readonly required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Hora de la Reunión</label>
+            <select name="hora" id="s-hora">
+              <option value="">Sin especificar</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Estado <span class="req">*</span></label>
+            <select name="realizado" id="s-realizado" required>
+              <option value="Pendiente" selected>⏳ Pendiente</option>
+              <option value="Si">✅ Sí (realizada)</option>
+              <option value="No">❌ No</option>
+              <option value="Reagendar">🔄 Reagendar</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── 2. Empresa y contacto ────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">🏢 Empresa y contacto</div>
+        <div class="grid-2">
+
+          <div class="field">
+            <label>Empresa <span class="req">*</span></label>
+            <input type="text" name="empresa" placeholder="Nombre de la empresa" required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Contacto / Nombre <span class="req">*</span></label>
+            <input type="text" name="contactos" placeholder="Nombre del contacto" required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>URL LinkedIn del contacto <span class="req">*</span></label>
+            <input type="url" name="linkedin_contacto" placeholder="https://www.linkedin.com/in/..." required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>Correo electrónico</label>
+            <input type="email" name="correo" placeholder="contacto@empresa.com" />
+          </div>
+
+          <div class="field">
+            <label>Teléfono</label>
+            <input type="tel" name="telefono" placeholder="+56 9 1234 5678" />
+          </div>
+
+          <div class="field">
+            <label>Cargo <span class="req">*</span></label>
+            <input type="text" name="cargo" placeholder="Ej: Gerente de Tecnología" required />
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field">
+            <label>País <span class="req">*</span></label>
+            <select name="pais" id="s-pais" required>
+              <option value="">Selecciona el país...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+          <div class="field full">
+            <label>Industria <span class="req">*</span></label>
+            <select name="industria" id="s-industria" required>
+              <option value="">Selecciona la industria...</option>
+            </select>
+            <span class="field-err">Requerido</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── 3. Seguimiento ───────────────────────────────────────────────── -->
+      <div class="card">
+        <div class="card-title">📊 Seguimiento</div>
+        <div class="grid-2">
+
+          <div class="field full">
+            <label>Sales Manager</label>
+            <div class="field-hint">Rellenar solo en caso de que corresponda</div>
+            <input type="text" name="sales_manager" placeholder="Nombre del Sales Manager" />
+          </div>
+
+          <div class="field full">
+            <label>Comentario de la Reunión</label>
+            <textarea name="comentario"
+              placeholder="Detalles relevantes, próximos pasos, acuerdos..."></textarea>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── Submit ─────────────────────────────────────────────────────────── -->
+      <div class="submit-wrap">
+        <button type="submit" class="btn" id="btn">
+          <span class="spin" id="spin"></span>
+          <span id="btn-txt">🚀 Registrar Reunión</span>
+        </button>
+        <div class="toast" id="toast"></div>
+      </div>
+
+    </form>
+
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <!--  RESUMEN POST-ENVÍO                                                  -->
+    <!-- ════════════════════════════════════════════════════════════════════ -->
+    <div class="card summary-card" id="summary-card">
+      <div class="summary-header">✅ ¡Reunión registrada!</div>
+      <p style="text-align:center; color:var(--muted); font-size:13px; margin-bottom:4px;">
+        Copia el resumen y compártelo por WhatsApp
+      </p>
+      <p style="text-align:center; font-size:11.5px; color:rgba(240,242,255,0.3); margin-bottom:20px;">
+        ⚠️ Verifica en el Excel que la reunión quedó guardada. Si no aparece, usa "Registrar otra" para volver a enviarla.
+      </p>
+      <div class="summary-box" id="summary-box"></div>
+      <div class="btn-group">
+        <button class="btn-outline" onclick="copySummary()">📋 Copiar resumen</button>
+        <button class="btn-outline" onclick="resetForm()">➕ Registrar otra</button>
+      </div>
+      <div class="toast" id="toast-copy" style="margin-top:12px;"></div>
+    </div>
+
+  </div><!-- /mode-new -->
+
+  <!-- ── Edit mode ────────────────────────────────────────────────────────── -->
+  <div id="mode-edit" style="display:none">
+    <button class="back-link" onclick="setMode(null)">← Volver</button>
+
+    <!-- Paso 1: seleccionar SDR -->
+    <div class="card">
+      <div class="card-title">✏️ Actualizar reunión existente</div>
+      <div class="field">
+        <label>Responsable (SDR)</label>
+        <select id="edit-sdr-select">
+          <option value="">Selecciona el SDR...</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Paso 2: seleccionar cliente (aparece tras elegir SDR) -->
+    <div id="edit-client-wrap" style="display:none">
+      <div class="card">
+        <div class="card-title">🏷️ Filtrar por cliente</div>
+        <div class="field">
+          <label>Cliente</label>
+          <select id="edit-client-select">
+            <option value="">Selecciona el cliente...</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Buscador (aparece cuando hay reuniones cargadas) -->
+    <div id="edit-search-wrap" style="display:none">
+      <div class="card" style="padding:18px 24px;">
+        <div class="field" style="margin:0;">
+          <label style="margin-bottom:8px; display:block;">🔍 Buscar empresa o contacto</label>
+          <input type="text" id="edit-search-input"
+                 placeholder="Escribe para filtrar..."
+                 oninput="filterMeetings(this.value)"
+                 style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;transition:border-color .18s;" />
+          <div id="edit-search-count" style="font-size:12px;color:var(--muted);margin-top:6px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="meetings-list"></div>
+  </div>
+
+</div><!-- /container -->
+
+<!-- ── Scripts ────────────────────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+//  CONFIGURACIÓN
+// ══════════════════════════════════════════════════════════════════════════════
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyRbG9TwFZI3l4arrTsDerZTH05GabWJ2e_bOOKWbrSuowa1D50tHM6UO1LiSmHiN99/exec";
+
+// IDs de selects que tendrán búsqueda (Tom Select)
+const SEARCHABLE_SELECTS = ["s-cliente", "s-sdr", "s-origen", "s-pais", "s-industria", "s-hora"];
+const tomInstances = {};
+
+// Cache de reuniones pendientes (cargadas al inicio)
+let allMeetings   = [];
+let allPropuestas = [];
+
+// ── Inicializar al cargar ─────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  initDatePickers();
+  initTimePicker();
+  if (SCRIPT_URL.startsWith("REEMPLAZAR")) {
+    showToast("toast", "fail", "⚙️ Configura la URL del Apps Script.");
+    document.getElementById("btn").disabled = true;
+  } else {
+    loadDropdowns();
+  }
+});
+
+// ── Modo de la app ─────────────────────────────────────────────────────────
+function setMode(mode) {
+  document.getElementById("mode-selector-wrap").style.display = mode ? "none" : "block";
+  document.getElementById("mode-new").style.display  = mode === "new"  ? "block" : "none";
+  document.getElementById("mode-edit").style.display = mode === "edit" ? "block" : "none";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ── Date pickers ─────────────────────────────────────────────────────────
+function initDatePickers() {
+  const base = { locale: "es", dateFormat: "d/m/Y", disableMobile: true };
+  flatpickr("#fp-agenda",  { ...base, defaultDate: "today" });
+  flatpickr("#fp-reunion", { ...base });
+}
+
+// ── Time picker ──────────────────────────────────────────────────────────
+function initTimePicker() {
+  const sel = document.getElementById("s-hora");
+  for (let h = 7; h <= 22; h++) {
+    for (let m of [0, 15, 30, 45]) {
+      const hh  = String(h).padStart(2,"0");
+      const mm  = String(m).padStart(2,"0");
+      const suf = h < 12 ? "AM" : "PM";
+      const h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+      sel.appendChild(new Option(`${String(h12).padStart(2,"0")}:${mm} ${suf}`, `${hh}:${mm}`));
+    }
+  }
+  // Se inicializa aquí (y no solo al cargar dropdowns) porque este select
+  // no depende del fetch al Apps Script — ya tiene sus opciones listas.
+  initTomSelect("s-hora");
+}
+
+// ── Tom Select ───────────────────────────────────────────────────────────
+function initTomSelect(id) {
+  if (tomInstances[id]) { tomInstances[id].destroy(); delete tomInstances[id]; }
+  tomInstances[id] = new TomSelect(`#${id}`, {
+    allowEmptyOption: true,
+    maxOptions: null,
+    dropdownParent: 'body',
+    placeholder: document.querySelector(`#${id} option`)?.text || "Buscar...",
+  });
+}
+
+// ── Cargar dropdowns desde Apps Script ───────────────────────────────────
+async function loadDropdowns() {
+  const status = document.getElementById("fetch-status");
+  status.classList.add("show");
+  try {
+    const res  = await fetch(SCRIPT_URL);
+    const json = await res.json();
+    if (json.status === "ok") {
+      fill("s-cliente",        json.data.clientes);
+      fill("s-sdr",            json.data.sdrs);
+      fill("s-origen",         json.data.origenes);
+      fill("s-pais",           json.data.paises);
+      fill("s-industria",      json.data.industrias, true); // true = agregar "Otra" al final
+      fill("edit-sdr-select",  json.data.sdrs);
+      // Guardar reuniones pendientes para filtrado local (evita roundtrips al servidor)
+      allMeetings   = json.data.meetings   || [];
+      allPropuestas = json.data.propuestas || [];
+      // Inicializar Tom Select en los searchables DESPUÉS de llenar
+      SEARCHABLE_SELECTS.forEach(id => initTomSelect(id));
+      // Tom Select para el selector de SDR en modo edición
+      if (tomInstances["edit-sdr-select"]) {
+        tomInstances["edit-sdr-select"].destroy();
+        delete tomInstances["edit-sdr-select"];
+      }
+      tomInstances["edit-sdr-select"] = new TomSelect("#edit-sdr-select", {
+        allowEmptyOption: true,
+        maxOptions: null,
+        dropdownParent: 'body',
+        onChange: (val) => loadClientsForSDR(val),
+      });
+    } else {
+      showToast("toast", "fail", "⚠️ Error al cargar opciones: " + json.message);
+    }
+  } catch (e) {
+    showToast("toast", "fail", "⚠️ No se pudo conectar con el Apps Script.");
+  } finally {
+    status.classList.remove("show");
+  }
+}
+
+function fill(id, opts, addOtra = false) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  const placeholder = sel.options[0];
+  sel.innerHTML = "";
+  sel.appendChild(placeholder);
+  if (opts?.length) opts.forEach(o => { if (o) sel.appendChild(new Option(o, o)); });
+  if (addOtra) {
+    // Solo agregar si no viene ya en la lista
+    const vals = Array.from(sel.options).map(o => o.value.toLowerCase());
+    if (!vals.includes("otra")) sel.appendChild(new Option("Otra", "Otra"));
+  }
+}
+
+// ── Envío del formulario ──────────────────────────────────────────────────
+document.getElementById("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!validate()) return;
+
+  const btn  = document.getElementById("btn");
+  const spin = document.getElementById("spin");
+  btn.disabled = true;
+  btn.classList.add("loading");
+  spin.style.display = "block";
+  document.getElementById("btn-txt").textContent = "Registrando...";
+
+  // Capturar datos ANTES de resetear el formulario
+  const formData = new FormData(e.target);
+
+  // Para Tom Select: obtener valor directamente del instance
+  SEARCHABLE_SELECTS.forEach(id => {
+    const fieldName = document.getElementById(id)?.name;
+    if (fieldName && tomInstances[id]) {
+      formData.set(fieldName, tomInstances[id].getValue());
+    }
+  });
+
+  const data = Object.fromEntries(formData.entries());
+
+  // Agregar timestamp de envío
+  const now = new Date();
+  data.timestamp = now.toLocaleString("es-CL", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+
+  try {
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      mode:   "no-cors",
+      body:   new URLSearchParams(data)
+    });
+    showSummary(data);
+  } catch (err) {
+    showToast("toast", "fail", "❌ Error de conexión. Intenta nuevamente.");
+    btn.disabled = false;
+    btn.classList.remove("loading");
+    spin.style.display = "none";
+    document.getElementById("btn-txt").textContent = "🚀 Registrar Reunión";
+  }
+});
+
+// ── Mostrar resumen post-envío ────────────────────────────────────────────
+function showSummary(data) {
+  const horaLabel = data.hora
+    ? (() => {
+        // Convertir "14:30" → "14:30 PM"
+        const [h, m] = (data.hora || "").split(":").map(Number);
+        if (isNaN(h)) return data.hora;
+        const suf  = h < 12 ? "AM" : "PM";
+        const h12  = h > 12 ? h - 12 : h === 0 ? 12 : h;
+        return `${String(h12).padStart(2,"0")}:${String(m).padStart(2,"0")} ${suf}`;
+      })()
+    : "";
+
+  const fechaHora = [data.fecha_reunion, horaLabel].filter(Boolean).join(" — ");
+
+  const lineas = [
+    "🎯 *Nueva reunión agendada!!*",
+    "",
+    `🏢 ${data.empresa || "-"}`,
+    `🌎 ${data.pais || "-"}`,
+    `👤 ${data.contactos || "-"}`,
+    `💼 ${data.cargo || "-"}`,
+    `📅 ${fechaHora || "-"}`,
+  ];
+  if (data.correo?.trim())   lineas.push(`✉️ ${data.correo.trim()}`);
+  if (data.telefono?.trim()) lineas.push(`📞 ${data.telefono.trim()}`);
+  if (data.comentario?.trim()) lineas.push(`\n💬 ${data.comentario.trim()}`);
+
+  document.getElementById("summary-box").textContent = lineas.join("\n");
+
+  // Mostrar tarjeta, ocultar form
+  document.getElementById("form").style.display       = "none";
+  document.getElementById("summary-card").style.display = "block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+
+  // Resetear el spinner/botón para cuando se use "Registrar otra"
+  const btn  = document.getElementById("btn");
+  const spin = document.getElementById("spin");
+  btn.disabled = false;
+  btn.classList.remove("loading");
+  spin.style.display = "none";
+  document.getElementById("btn-txt").textContent = "🚀 Registrar Reunión";
+}
+
+// ── Copiar resumen ────────────────────────────────────────────────────────
+function copySummary() {
+  const text = document.getElementById("summary-box").textContent;
+  navigator.clipboard.writeText(text)
+    .then(() => showToast("toast-copy", "ok", "✅ ¡Copiado! Pega en WhatsApp."))
+    .catch(() => showToast("toast-copy", "fail", "⚠️ No se pudo copiar automáticamente."));
+}
+
+// ── Resetear formulario ───────────────────────────────────────────────────
+function resetForm() {
+  document.getElementById("form").reset();
+  // Resetear Tom Select instances
+  SEARCHABLE_SELECTS.forEach(id => {
+    if (tomInstances[id]) tomInstances[id].setValue("");
+  });
+  // Resetear flatpickr
+  flatpickr("#fp-agenda",  { locale:"es", dateFormat:"d/m/Y", defaultDate:"today", disableMobile:true });
+  flatpickr("#fp-reunion", { locale:"es", dateFormat:"d/m/Y", disableMobile:true });
+
+  document.getElementById("summary-card").style.display = "none";
+  document.getElementById("form").style.display          = "block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ── Validación ────────────────────────────────────────────────────────────
+function validate() {
+  let ok = true;
+  // Inputs / textareas nativos
+  document.querySelectorAll("#form [required]").forEach(f => {
+    const wrap = f.closest(".field");
+    // Para selects con Tom Select: leer valor del instance
+    let val = f.value;
+    if (f.tagName === "SELECT" && tomInstances[f.id]) {
+      val = tomInstances[f.id].getValue();
+    }
+    if (!val || !String(val).trim()) {
+      wrap?.classList.add("err"); ok = false;
+    } else {
+      wrap?.classList.remove("err");
+    }
+  });
+  if (!ok) showToast("toast", "fail", "⚠️ Completa los campos obligatorios marcados con *");
+  return ok;
+}
+
+document.addEventListener("change", e => {
+  e.target.closest?.(".field")?.classList.remove("err");
+});
+
+// ── Edit paso 1: filtrar clientes por SDR (local, sin llamada al servidor) ─
+function loadClientsForSDR(sdrName) {
+  const clientWrap = document.getElementById("edit-client-wrap");
+  const list       = document.getElementById("meetings-list");
+
+  list.innerHTML = "";
+  clientWrap.style.display = "none";
+  document.getElementById("edit-search-wrap").style.display = "none";
+  if (tomInstances["edit-client-select"]) {
+    tomInstances["edit-client-select"].destroy();
+    delete tomInstances["edit-client-select"];
+  }
+
+  if (!sdrName) return;
+
+  // Filtrar localmente desde allMeetings (cargado al inicio)
+  const clientes = [...new Set(
+    allMeetings.filter(m => m.sdr === sdrName).map(m => m.cliente).filter(Boolean)
+  )].sort();
+
+  clientWrap.style.display = "block";
+  const clientSel = document.getElementById("edit-client-select");
+  clientSel.innerHTML = '<option value="">Selecciona el cliente...</option>';
+
+  if (clientes.length) {
+    clientes.forEach(c => clientSel.appendChild(new Option(c, c)));
+  } else {
+    clientSel.innerHTML = '<option value="">— Sin clientes pendientes —</option>';
+  }
+
+  tomInstances["edit-client-select"] = new TomSelect("#edit-client-select", {
+    allowEmptyOption: true,
+    maxOptions: null,
+    dropdownParent: 'body',
+    onChange: (val) => {
+      if (val) {
+        loadMeetings(sdrName, val);
+      } else {
+        list.innerHTML = "";
+        document.getElementById("edit-search-wrap").style.display = "none";
+        document.getElementById("edit-search-input").value = "";
+      }
+    },
+  });
+}
+
+// ── Edit paso 2: filtrar reuniones por SDR + cliente (local, instantáneo) ──
+function loadMeetings(sdrName, clienteName) {
+  const meetings = allMeetings.filter(m => m.sdr === sdrName && m.cliente === clienteName);
+  renderMeetings(meetings);
+}
+
+function renderMeetings(meetings) {
+  const list        = document.getElementById("meetings-list");
+  const searchWrap  = document.getElementById("edit-search-wrap");
+  const searchInput = document.getElementById("edit-search-input");
+  const searchCount = document.getElementById("edit-search-count");
+
+  // Resetear buscador
+  if (searchInput) searchInput.value = "";
+  if (searchCount) searchCount.textContent = "";
+
+  if (!meetings.length) {
+    searchWrap.style.display = "none";
+    list.innerHTML = '<div class="no-meetings">✅ Este SDR no tiene reuniones pendientes.</div>';
+    return;
+  }
+
+  // Mostrar buscador
+  searchWrap.style.display = "block";
+  if (searchCount) searchCount.textContent =
+    `${meetings.length} reunión${meetings.length !== 1 ? "es" : ""} encontrada${meetings.length !== 1 ? "s" : ""}`;
+
+  list.innerHTML = meetings.map((m, i) => `
+    <div class="meeting-card" id="mc-${i}"
+         data-search="${[m.empresa, m.contacto].filter(Boolean).join(" ").toLowerCase()}">
+      <div class="meeting-meta">
+        <div class="meeting-empresa">${m.empresa || "Sin empresa"}</div>
+        <div class="meeting-detail">
+          👤 ${m.contacto || "-"}${m.cargo ? " · " + m.cargo : ""}${m.pais ? " · 🌎 " + m.pais : ""}
+        </div>
+        <div class="meeting-detail" style="margin-top:4px">🏷️ ${m.cliente || "-"}</div>
+      </div>
+      <div class="meeting-fields">
+        <div class="field">
+          <label>Fecha de la reunión</label>
+          <input type="text" id="fp-edit-${i}" value="${m.fecha || ""}"
+                 placeholder="DD/MM/AAAA" readonly
+                 style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;" />
+        </div>
+        <div class="field">
+          <label>Hora de la reunión</label>
+          <select id="hora-edit-${i}" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;appearance:none;">
+            ${buildHoraOptions(m.hora || "")}
+          </select>
+        </div>
+        <div class="field">
+          <label>Estado</label>
+          <select id="est-${i}" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;appearance:none;">
+            ${(() => {
+              // Comparación insensible a mayúsculas/minúsculas y sin tildes:
+              // el Excel puede traer "no", "No", "NO", "sí", "si", etc.
+              const est = (m.estado || "").toLowerCase().trim();
+              const sel = (vals) => vals.includes(est) ? "selected" : "";
+              return `
+            <option value="Pendiente"  ${sel(["pendiente", ""])}>⏳ Pendiente</option>
+            <option value="Si"         ${sel(["si", "sí"])}>✅ Realizada</option>
+            <option value="No"         ${sel(["no"])}>❌ No realizada</option>
+            <option value="Reagendar"  ${sel(["reagendar"])}>🔄 Reagendar</option>`;
+            })()}
+          </select>
+        </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>Propuesta/Oportunidad</label>
+          <select id="prop-${i}" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:inherit;font-size:14px;padding:10px 14px;outline:none;width:100%;appearance:none;">
+            <option value="">Sin especificar</option>
+            ${allPropuestas.map(op => `<option value="${op}"${m.propuesta===op?" selected":""}>${op}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <button class="btn-update" onclick="updateMeeting(${i}, ${m.row})" id="upd-${i}">
+            Actualizar ✓
+          </button>
+        </div>
+      </div>
+      <div class="update-status" id="ust-${i}"></div>
+    </div>
+  `).join("");
+
+  // Init flatpickr on each date input + Tom Select (buscador) en cada hora
+  meetings.forEach((m, i) => {
+    flatpickr(`#fp-edit-${i}`, {
+      locale: "es",
+      dateFormat: "d/m/Y",
+      disableMobile: true,
+      defaultDate: m.fecha || null,
+    });
+    initTomSelect(`hora-edit-${i}`);
+  });
+}
+
+// Genera <option> para select de hora (07:00 → 22:45, cada 15 min)
+function buildHoraOptions(selected) {
+  let opts = '<option value="">Sin especificar</option>';
+  for (let h = 7; h <= 22; h++) {
+    for (let m of [0, 15, 30, 45]) {
+      const hh  = String(h).padStart(2, "0");
+      const mm  = String(m).padStart(2, "0");
+      const val = `${hh}:${mm}`;
+      opts += `<option value="${val}"${val === selected ? " selected" : ""}>${val}</option>`;
+    }
+  }
+  return opts;
+}
+
+async function updateMeeting(idx, rowNum) {
+  const btn       = document.getElementById(`upd-${idx}`);
+  const status    = document.getElementById(`ust-${idx}`);
+  const fecha     = document.getElementById(`fp-edit-${idx}`).value;
+  const hora      = document.getElementById(`hora-edit-${idx}`).value;
+  const estado    = document.getElementById(`est-${idx}`).value;
+  const propuesta = (document.getElementById(`prop-${idx}`) || {}).value || "";
+
+  btn.disabled = true;
+  btn.textContent = "Guardando...";
+  status.textContent = "";
+  status.className = "update-status";
+
+  try {
+    await fetch(SCRIPT_URL, {
+      method: "POST",
+      mode: "no-cors",
+      body: new URLSearchParams({
+        action: "update",
+        row: rowNum,
+        fecha_reunion: fecha,
+        hora: hora,
+        realizado: estado,
+        propuesta: propuesta,
+      })
+    });
+    // Reflejar el cambio en la copia local para que, si el SDR vuelve a esta
+    // lista sin recargar la página, ya no vea el estado viejo ("Pendiente").
+    const meeting = allMeetings.find(m => m.row === rowNum);
+    if (meeting) {
+      meeting.fecha     = fecha;
+      meeting.hora      = hora;
+      meeting.estado    = estado;
+      meeting.propuesta = propuesta;
+    }
+
+    status.textContent = "✅ Actualizado correctamente";
+    status.className = "update-status ok";
+    document.getElementById(`mc-${idx}`).classList.add("updated");
+    btn.textContent = "✓ Guardado";
+  } catch(e) {
+    status.textContent = "❌ Error al actualizar";
+    status.className = "update-status fail";
+    btn.disabled = false;
+    btn.textContent = "Actualizar ✓";
+  }
+}
+
+// ── Buscador en modo edición ───────────────────────────────────────────────
+function filterMeetings(query) {
+  const q     = query.trim().toLowerCase();
+  const cards = document.querySelectorAll("#meetings-list .meeting-card");
+  let visible = 0;
+  cards.forEach(card => {
+    const haystack = card.dataset.search || "";
+    const match    = !q || haystack.includes(q);
+    card.classList.toggle("hidden", !match);
+    if (match) visible++;
+  });
+  const count = document.getElementById("edit-search-count");
+  if (count) {
+    count.textContent = q
+      ? `${visible} resultado${visible !== 1 ? "s" : ""} para "${query}"`
+      : `${cards.length} reunión${cards.length !== 1 ? "es" : ""} encontrada${cards.length !== 1 ? "s" : ""}`;
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function showToast(toastId, type, msg) {
+  const el = document.getElementById(toastId);
+  if (!el) return;
+  el.className = `toast ${type} show`;
+  el.textContent = msg;
+  el.scrollIntoView({ behavior:"smooth", block:"nearest" });
+}
+</script>
+</body>
+</html>

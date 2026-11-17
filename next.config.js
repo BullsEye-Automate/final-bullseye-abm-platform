@@ -15,6 +15,8 @@ const nextConfig = {
       "/api/academia-sdr/html": ["./content/entrenamiento/**"],
       // Página del Onboarding SDR (se lee con fs en app/api/onboarding-sdr/html).
       "/api/onboarding-sdr/html": ["./content/onboarding-sdr/**"],
+      // Formulario de reuniones de los SDR (copia de respaldo de GitHub Pages).
+      "/api/sdr/formulario-reunion": ["./content/formulario-reunion/**"],
       // Guía del equipo de prospección (PDF que se abre desde el Centro).
       "/api/centro/guia": ["./content/centro/**"],
     },
