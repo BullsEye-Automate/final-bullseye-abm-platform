@@ -51,7 +51,7 @@ export async function forwardToPeitho(
   db: SupabaseClient,
   client: PeithoClientRef,
   segments: string[],
-  opts: { internal: boolean }
+  opts: { internal: boolean; salesManager?: { executiveId: string | null; executiveName: string | null } }
 ): Promise<NextResponse> {
   if (!peithoConfigured()) {
     return NextResponse.json({ error: "La conexión con Peitho no está configurada (PEITHO_BACKEND_URL / PEITHO_INTEGRATION_KEY)" }, { status: 503 });
@@ -65,6 +65,25 @@ export async function forwardToPeitho(
   // gestión de usuarios sí se permite antes, para dejarlo listo)
   if (!path.startsWith("/integration/") && !(await isPeithoEnabled(db, client.id))) {
     return NextResponse.json({ error: "Este cliente no tiene Peitho activado" }, { status: 403 });
+  }
+
+  // Sales manager del portal (lib/peithoPortalRole.ts): sin Panel de control,
+  // sin reasignar ejecutivos y solo las reuniones de su ejecutivo. Lo aplica
+  // el portal (Peitho atiende la integración como admin del cliente).
+  const sm = opts.salesManager;
+  if (sm) {
+    if (path.startsWith("/panel/") || (req.method === "PUT" && /\/executive$/.test(path))) {
+      return NextResponse.json({ error: "Tu usuario no tiene acceso a esta sección de Peitho" }, { status: 403 });
+    }
+    const mid = path.match(/^\/meetings\/([A-Za-z0-9-]+)(\/|$)/)?.[1];
+    if (mid) {
+      const owner = sm.executiveId
+        ? await peithoGetJson<{ client_executive_id?: string | null }>(client, `/meetings/${encodeURIComponent(mid)}`).then((d) => d.client_executive_id ?? null).catch(() => null)
+        : null;
+      if (!owner || owner !== sm.executiveId) {
+        return NextResponse.json({ error: "Esta reunión no es tuya" }, { status: 403 });
+      }
+    }
   }
 
   const { search } = new URL(req.url);
@@ -88,7 +107,14 @@ export async function forwardToPeitho(
       cache: "no-store",
       signal: AbortSignal.timeout(55_000),
     });
-    const text = await res.text();
+    let text = await res.text();
+    if (sm && res.ok && req.method === "GET" && (path === "/me" || path === "/meetings")) {
+      try {
+        const body = JSON.parse(text);
+        if (path === "/me") text = JSON.stringify({ ...body, clientSubRole: "user", linkedExecutive: sm.executiveName ?? (sm.executiveId ? "" : null) });
+        else if (Array.isArray(body)) text = JSON.stringify(sm.executiveId ? body.filter((m: { client_executive_id?: string | null }) => m.client_executive_id === sm.executiveId) : []);
+      } catch { /* respuesta no JSON: se deja igual */ }
+    }
     return new NextResponse(text, {
       status: res.status,
       headers: { "Content-Type": res.headers.get("content-type") ?? "application/json", "Cache-Control": "no-store" },

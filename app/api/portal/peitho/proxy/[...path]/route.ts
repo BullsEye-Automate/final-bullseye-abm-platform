@@ -14,7 +14,9 @@ async function handle(req: Request, { params }: { params: { path: string[] } }) 
   const db = supabaseAdmin();
   const client = await loadPeithoClient(db, user.clientId);
   if (!client) return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
-  return forwardToPeitho(req, db, client, params.path, { internal: false });
+  // Sales manager: Peitho limitado a sus reuniones (lib/peithoPortalRole.ts)
+  const salesManager = user.peitho.role === "sales_manager" ? { executiveId: user.peitho.executiveId, executiveName: user.peitho.executiveName } : undefined;
+  return forwardToPeitho(req, db, client, params.path, { internal: false, salesManager });
 }
 
 export { handle as GET, handle as POST, handle as PUT };
