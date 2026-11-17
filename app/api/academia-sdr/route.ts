@@ -2,16 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { currentUserEmail, resolveClient } from "@/lib/academiaSdr/server/client";
 import { getTraining } from "@/lib/academiaSdr/server/source";
-import { htmlTitle } from "@/lib/academiaSdr/catalog";
+import { publishTraining, validateHtml } from "@/lib/academiaSdr/server/publish";
 
 export const dynamic = "force-dynamic";
 
 // Entrenamiento cliente de un cliente (ver lib/academiaSdr/server/source.ts).
 //   GET    ?client_id=  → { training: datos del entrenamiento o null si el cliente no tiene }
-//   PUT    ?client_id=  → sube o reemplaza el HTML ({ html, sourceUrl? }); manda sobre el del repo
+//   PUT    ?client_id=  → sube o reemplaza el HTML ({ html, sourceUrl? }); manda sobre el del repo.
+//                         Claude publica lo mismo por el conector MCP (lib/academiaSdr/server/publish.ts).
 //   DELETE ?client_id=  → quita el HTML subido (vuelve al del repo, si hay)
-
-const MAX_HTML = 4_000_000;
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,17 +30,9 @@ export async function PUT(request: NextRequest) {
     const client = await resolveClient(db, request.nextUrl.searchParams.get("client_id"));
     if (!client) return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 });
     const body = await request.json().catch(() => null);
-    const html = typeof body?.html === "string" ? body.html : "";
-    if (!html || html.length > MAX_HTML || !/<html|<!doctype|<body|<section/i.test(html)) {
-      return NextResponse.json({ error: "El archivo no parece una página HTML (o pesa más de 4 MB)" }, { status: 400 });
-    }
-    const sourceUrl = typeof body?.sourceUrl === "string" && /^https:\/\/claude\.ai\//.test(body.sourceUrl.trim()) ? body.sourceUrl.trim() : null;
-    const now = new Date().toISOString();
-    const { error } = await db.from("sdr_academies").upsert(
-      { client_id: client.id, html, title: htmlTitle(html), source_url: sourceUrl, uploaded_by: await currentUserEmail(), uploaded_at: now, updated_at: now },
-      { onConflict: "client_id" }
-    );
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const invalid = validateHtml(body?.html);
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+    await publishTraining(db, client, { html: body.html, sourceUrl: typeof body?.sourceUrl === "string" ? body.sourceUrl : null, by: await currentUserEmail() });
     const t = await getTraining(db, client, false);
     return NextResponse.json({ training: t?.meta ?? null });
   } catch (err) {

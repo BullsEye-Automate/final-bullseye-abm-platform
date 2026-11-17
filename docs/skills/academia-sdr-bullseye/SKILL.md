@@ -1,13 +1,18 @@
 ---
 name: "academia-sdr-bullseye"
-description: "Crea el Entrenamiento cliente (antes Academia SDR) de BullsEye para el cliente del proyecto actual: guía didáctica en doc + HTML interactivo con colores BullsEye, listo para subir a la plataforma (SDR → Entrenamiento cliente). Usar al pedir 'crea el entrenamiento cliente', 'crea la academia SDR' o una capacitación SDR de un cliente."
+description: "Crea o actualiza el Entrenamiento cliente (antes Academia SDR) de BullsEye para el cliente del proyecto actual: guía didáctica en doc + HTML interactivo con colores BullsEye, publicado directo en la plataforma (SDR → Entrenamiento cliente) con el conector Centro de prospección. Usar al pedir 'crea el entrenamiento cliente', 'actualiza el entrenamiento cliente', 'crea la academia SDR' o una capacitación SDR de un cliente, y cuando se suban documentos nuevos al proyecto."
 ---
 
 # Entrenamiento cliente BullsEye (antes "Academia SDR")
 
 Actúa como diseñador instruccional de BullsEye (agencia de Account Based Marketing). Crea una capacitación para SDRs sin experiencia, para que entiendan al 100% qué hace el cliente del proyecto actual y puedan prospectar sus servicios.
 
-El resultado se usa en la plataforma BullsEye (portal.bullseye-abm.com → **SDR → Entrenamiento cliente**): el HTML se sube tal cual y la plataforma registra los ingresos, las vueltas completadas y el quiz de cada SDR, y avisa por correo a su líder. Por eso el HTML debe cumplir el **formato para la plataforma** de más abajo.
+El resultado se usa en la plataforma BullsEye (portal.bullseye-abm.com → **SDR → Entrenamiento cliente**). **Lo publicas tú directo en la plataforma** con el conector «Centro de prospección» (herramienta `entrenamiento_publicar`): nadie descarga ni sube archivos, y los SDR ven siempre la última versión. La plataforma registra los ingresos, las vueltas completadas y el quiz de cada SDR y avisa por correo a su líder; por eso el HTML debe cumplir el **formato para la plataforma** de más abajo.
+
+## Crear o actualizar
+
+- **Antes de escribir**, llama `entrenamiento_obtener` con el nombre del cliente. Si ya hay un entrenamiento publicado, parte de ese HTML: conserva su contenido y su diseño y cambia solo lo que la información nueva del proyecto obliga a cambiar. Si no hay, créalo desde cero. Si no sabes el nombre exacto del cliente en la plataforma, usa `entrenamiento_clientes`.
+- **Cuándo actualizar:** cada vez que se suban documentos nuevos al proyecto, cambie el ICP, el servicio foco, los países o los casos, o el usuario lo pida. Al terminar de procesar documentos nuevos del proyecto, ofrece actualizar el entrenamiento.
 
 ## Paso 1: lee el proyecto antes de escribir
 
@@ -64,7 +69,7 @@ B) Un HTML interactivo autocontenido (un solo archivo, CSS y JS dentro), publica
 - Interactivos: selector de servicios, tarjetas del diccionario que se dan vuelta, selector de casos por industria, armador de mensajes de 4 piezas (contador de palabras, ideal < 80, botón copiar), simulador de objeciones, checklist de reunión con resultado y quiz con puntaje.
 - Responsive en celular y escritorio.
 
-C) Guarda la capacitación en el proyecto para el equipo y recuerda al usuario el último paso: **subir el .html en la plataforma → SDR → Entrenamiento cliente → elegir el cliente → Configurar → "Subir entrenamiento"** (opcional: pegar el link del artifact).
+C) **Publícalo en la plataforma** con `entrenamiento_publicar` (conector «Centro de prospección»): `cliente` = nombre del cliente en la plataforma, `html` = el HTML completo, `artifact_url` = link del artifact. Revisa la respuesta: si `registra_avance` es falso, corrige el formato y vuelve a publicar. Comparte con el usuario el link `ver_en`. Si el conector no está disponible, entrega el .html y pide subirlo a mano en la plataforma → SDR → Entrenamiento cliente → Configurar.
 
 Al terminar, lista en pocas líneas qué datos hay que confirmar con el cliente antes de usar la capacitación.
 
@@ -84,6 +89,6 @@ La plataforma muestra el HTML dentro de un iframe aislado y lee el avance desde 
 2. **Leer al cargar.** Al iniciar, lee `localStorage.getItem(KEY)` dentro de `try/catch` y usa su `done` (la plataforma precarga ahí las vueltas que el SDR ya completó). Si viene vacío, parte con `{ done: [] }`.
 3. **Guardar en cada cambio.** Cada vez que una vuelta se marca o se desmarca, y cuando se termina el quiz, guarda el estado completo con `localStorage.setItem(KEY, JSON.stringify(state))` dentro de `try/catch`. No guardes el avance en otras claves.
 4. **Quiz.** Al responder la última pregunta, guarda `state.quiz = { score, total }` con el puntaje de ese intento y vuelve a guardar el estado. Si se aprueba (8 o más), marca también la vuelta 10.
-5. **Sin dependencias externas.** Solo Google Fonts. Nada de `<script src>`, `fetch`, `window.claude`, cookies ni `sessionStorage` para datos importantes. Las imágenes van incrustadas (data URI).
+5. **Sin dependencias externas.** Solo Google Fonts. Nada de `<script src>`, `fetch`, `window.claude`, cookies ni `sessionStorage` para datos importantes. Las imágenes van incrustadas (data URI) y livianas (logos pequeños): el HTML completo viaja en la llamada a `entrenamiento_publicar`, así que mantenlo idealmente bajo 300 KB.
 6. **Copiar.** El botón copiar usa `navigator.clipboard.writeText` con respaldo `document.execCommand('copy')` (en el iframe aislado el portapapeles puede fallar).
 7. **Links.** Los enlaces externos se abren con `target="_blank"`. Para el generador de contenido de BullsEye usa `https://portal.bullseye-abm.com`.

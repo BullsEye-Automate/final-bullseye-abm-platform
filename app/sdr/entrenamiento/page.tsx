@@ -189,7 +189,7 @@ export default function EntrenamientoClientePage() {
   }
 
   async function removeUpload() {
-    if (!clientId || !confirm("¿Quitar el entrenamiento subido? El avance registrado de los SDR se conserva.")) return;
+    if (!clientId || !confirm("¿Quitar el entrenamiento publicado? El avance registrado de los SDR se conserva.")) return;
     const r = await fetch(`/api/academia-sdr?client_id=${clientId}`, { method: "DELETE" });
     if (!r.ok) {
       setError("No se pudo quitar el entrenamiento subido");
@@ -330,11 +330,13 @@ export default function EntrenamientoClientePage() {
           </div>
           <ol className="list-decimal pl-5 text-sm space-y-1">
             <li>
-              En el proyecto de Claude de {currentClient?.name}, pide <b>«crea el entrenamiento cliente»</b> (skill <code>academia-sdr-bullseye</code>). Usa los documentos que ya están en el proyecto.
+              En el proyecto de Claude de {currentClient?.name}, pide <b>«crea el entrenamiento cliente»</b> (skill <code>academia-sdr-bullseye</code>). Usa los documentos y conversaciones que ya están en el proyecto.
             </li>
-            <li>Descarga el archivo <b>.html</b> que entrega el skill.</li>
             <li>
-              Súbelo en <button className="underline" onClick={() => setTab("configurar")}>Configurar</button>. Queda disponible para los SDR al instante.
+              Claude lo <b>publica solo aquí</b> con el conector «Centro de prospección». Cada vez que lo actualices en el proyecto (por ejemplo, después de subir documentos nuevos), se actualiza en la plataforma al instante.
+            </li>
+            <li>
+              Si el conector no está disponible, sube el .html a mano en <button className="underline" onClick={() => setTab("configurar")}>Configurar</button>.
             </li>
           </ol>
         </div>
@@ -440,8 +442,10 @@ export default function EntrenamientoClientePage() {
                   <dt className="label">Origen</dt>
                   <dd>
                     {training.origin === "proyecto"
-                      ? "Proyecto de Claude del cliente (conectado en la plataforma)"
-                      : `Subido por ${training.uploadedBy ?? "—"} el ${fmtDate(training.uploadedAt)}`}
+                      ? "Copia en la plataforma de la academia del proyecto de Claude (aún no publicada desde Claude)"
+                      : training.uploadedBy === "claude@proyecto"
+                        ? `Publicado desde el proyecto de Claude el ${fmtDate(training.uploadedAt)}`
+                        : `Subido a mano por ${training.uploadedBy ?? "—"} el ${fmtDate(training.uploadedAt)}`}
                   </dd>
                 </div>
                 {training.sourceUrl && (
@@ -464,15 +468,15 @@ export default function EntrenamientoClientePage() {
             )}
             {training?.origin === "subido" && (
               <button className="btn-secondary flex items-center gap-1.5 text-sm" onClick={() => void removeUpload()}>
-                <IconTrash size={14} /> Quitar el subido{training.hasProjectVersion ? " (vuelve al del proyecto)" : ""}
+                <IconTrash size={14} /> Quitar el publicado{training.hasProjectVersion ? " (vuelve a la copia anterior)" : ""}
               </button>
             )}
           </div>
 
           <div className="card space-y-3">
-            <h2 className="font-semibold">{training ? "Reemplazar entrenamiento" : "Subir entrenamiento"}</h2>
+            <h2 className="font-semibold">Subir a mano (respaldo)</h2>
             <p className="text-sm text-ink-muted">
-              Sube el <b>.html</b> que entrega el skill <code>academia-sdr-bullseye</code> en el proyecto de Claude de {currentClient?.name}. Se muestra tal cual, con su diseño, y reemplaza al actual. El avance de los SDR se conserva.
+              Lo normal es que Claude publique el entrenamiento desde el proyecto de {currentClient?.name} con el conector «Centro de prospección». Usa esto solo si el conector no está disponible: sube el <b>.html</b> que entrega el skill <code>academia-sdr-bullseye</code>. Reemplaza al actual y el avance de los SDR se conserva.
             </p>
             <div>
               <label className="label block mb-1">Link del artifact en Claude (opcional)</label>
