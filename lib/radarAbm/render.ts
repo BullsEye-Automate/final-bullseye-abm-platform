@@ -155,6 +155,60 @@ export function bars(items: BarItem[], opt: { max?: number; pct?: boolean | numb
 // Evolución mes a mes (pedido de BullsEye nov-2026): agendadas por fecha de
 // agendamiento y realizadas por fecha de la reunión, siempre por mes
 const MES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+// Panel de instrumentos de Reuniones (estilo tablero, pedido de BullsEye nov-2026):
+// velocímetro = tasa de realización (realizadas / con fecha pasada: realizadas +
+// no-show + canceladas), anillos = % con oportunidad y % con feedback del
+// cliente (sobre realizadas), número grande = calificación promedio del cliente
+// y barras = realizadas de los últimos 6 meses. Tarjeta oscura en los dos temas.
+function meetingPanel(M: any, realization: number | null) {
+  const held: any[] = M.held, past = M.held.length + M.noshow.length + M.canc.length;
+  const pct = realization == null ? null : Math.max(0, Math.min(1, realization));
+  // Velocímetro: arco de 240° (de 150° a 390°), ticks cada 10%
+  const cx = 110, cy = 112, r = 86, a0 = 150, span = 240;
+  const pt = (deg: number, rr: number) => { const t = (deg * Math.PI) / 180; return [cx + rr * Math.cos(t), cy + rr * Math.sin(t)]; };
+  const arc = (from: number, to: number, rr: number) => { const [x1, y1] = pt(from, rr), [x2, y2] = pt(to, rr); return `M${x1.toFixed(1)} ${y1.toFixed(1)} A${rr} ${rr} 0 ${to - from > 180 ? 1 : 0} 1 ${x2.toFixed(1)} ${y2.toFixed(1)}`; };
+  let ticks = "";
+  for (let i = 0; i <= 10; i++) {
+    const d = a0 + (span * i) / 10, [x1, y1] = pt(d, r - 4), [x2, y2] = pt(d, r - (i % 5 ? 12 : 18)), [tx, ty] = pt(d, r - 30);
+    ticks += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#cfe9ff" stroke-width="${i % 5 ? 1.2 : 2}" opacity=".8"/>`;
+    if (i % 2 === 0) ticks += `<text x="${tx.toFixed(1)}" y="${(ty + 4).toFixed(1)}" text-anchor="middle" font-size="10" fill="#cfe9ff" opacity=".85">${i * 10}</text>`;
+  }
+  const nd = a0 + span * (pct ?? 0), [nx, ny] = pt(nd, r - 22);
+  const gauge = `<svg viewBox="0 0 220 200" class="ra-ip-gauge" role="img" aria-label="Tasa de realización ${pct == null ? "sin datos" : P(pct)}">
+    <path d="${arc(a0, a0 + span, r + 8)}" fill="none" stroke="#62E0D8" stroke-opacity=".18" stroke-width="3"/>
+    <path d="${arc(a0, a0 + span, r)}" fill="none" stroke="#1d3a7a" stroke-width="10" stroke-linecap="round"/>
+    <path d="${arc(a0, a0 + span * 0.5, r)}" fill="none" stroke="#ff5a6e" stroke-opacity=".45" stroke-width="10"/>
+    ${pct ? `<path d="${arc(a0, a0 + span * pct, r)}" fill="none" stroke="#62E0D8" stroke-width="10" stroke-linecap="round"/>` : ""}
+    ${ticks}
+    ${pct == null ? "" : `<line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="#ffb547" stroke-width="3.5" stroke-linecap="round"/>`}
+    <circle cx="${cx}" cy="${cy}" r="8" fill="#0b1640" stroke="#62E0D8" stroke-width="2.5"/>
+    <rect x="${cx - 34}" y="${cy + 34}" width="68" height="28" rx="6" fill="#0b1640" stroke="#62E0D8" stroke-opacity=".5"/>
+    <text x="${cx}" y="${cy + 54}" text-anchor="middle" font-size="17" font-weight="700" fill="#fff">${pct == null ? "—" : P(pct)}</text>
+  </svg>`;
+  const ring = (v: number | null, label: string, sub: string) => {
+    const C = 2 * Math.PI * 34, f = v == null ? 0 : Math.max(0, Math.min(1, v));
+    return `<div class="ra-ip-ring"><span class="ra-ip-lbl">${label}</span><svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="34" fill="none" stroke="#1d3a7a" stroke-width="9"/>${f ? `<circle cx="45" cy="45" r="34" fill="none" stroke="#62E0D8" stroke-width="9" stroke-linecap="round" stroke-dasharray="${(C * f).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 45 45)"/>` : ""}<text x="45" y="50" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">${v == null ? "—" : P(v)}</text></svg><span class="ra-ip-sub">${sub}</span></div>`;
+  };
+  const opp = held.filter((m) => m.res === "Oportunidad").length, fb = held.filter((m) => m.fbk).length;
+  const cals = held.map((m) => m.cal).filter((x: any) => typeof x === "number" && Number.isFinite(x));
+  const calAvg = cals.length ? cals.reduce((a: number, b: number) => a + b, 0) / cals.length : null;
+  // Barras: realizadas por mes (últimos 6 meses con datos)
+  const byMonth = new Map<string, number>();
+  for (const m of held) if (m.fecha) byMonth.set(m.fecha.slice(0, 7), (byMonth.get(m.fecha.slice(0, 7)) ?? 0) + 1);
+  const months = [...byMonth.keys()].sort().slice(-6), maxB = Math.max(1, ...months.map((k) => byMonth.get(k) ?? 0));
+  const bw = 26, gap = 12, bh = 92;
+  const barsSvg = months.length ? `<svg viewBox="0 0 ${months.length * (bw + gap)} ${bh + 30}" class="ra-ip-bars">${months.map((k, i) => {
+    const v = byMonth.get(k) ?? 0, h = Math.max(3, (v / maxB) * bh), x = i * (bw + gap);
+    return `<rect x="${x}" y="${bh - h + 14}" width="${bw}" height="${h}" rx="3" fill="#62E0D8" fill-opacity="${0.45 + 0.55 * (i + 1) / months.length}"><title>${MES[Number(k.slice(5)) - 1]} ${k.slice(0, 4)}: ${v} realizadas</title></rect><text x="${x + bw / 2}" y="${bh - h + 10}" text-anchor="middle" font-size="10" fill="#fff">${v}</text><text x="${x + bw / 2}" y="${bh + 27}" text-anchor="middle" font-size="9.5" fill="#cfe9ff">${MES[Number(k.slice(5)) - 1]}</text>`;
+  }).join("")}</svg>` : `<p class="ra-ip-sub">Sin reuniones realizadas aún.</p>`;
+  return `<div class="ra-ip"><div class="ra-ip-head"><b>Panel de instrumentos · Reuniones</b><span>${N(M.agM.length)} agendadas · ${N(held.length)} realizadas · ${N(M.pendM.length)} pendientes</span></div>
+  <div class="ra-ip-grid">
+    <div class="ra-ip-cell ra-ip-g"><span class="ra-ip-lbl">Tasa de realización</span>${gauge}<span class="ra-ip-sub">${N(held.length)} de ${N(past)} con fecha pasada</span></div>
+    <div class="ra-ip-cell ra-ip-rings">${ring(held.length ? opp / held.length : null, "Con oportunidad", `${N(opp)} de ${N(held.length)} realizadas`)}${ring(held.length ? fb / held.length : null, "Con feedback del cliente", `${N(fb)} de ${N(held.length)} realizadas`)}</div>
+    <div class="ra-ip-cell ra-ip-big"><span class="ra-ip-lbl">Calificación del cliente</span><b>${calAvg == null ? "—" : F1(calAvg)}</b><span class="ra-ip-sub">${calAvg == null ? "sin feedback aún" : `de 10 · ${N(cals.length)} ${cals.length === 1 ? "respuesta" : "respuestas"}`}</span></div>
+    <div class="ra-ip-cell ra-ip-b"><span class="ra-ip-lbl">Realizadas por mes</span>${barsSvg}</div>
+  </div></div>`;
+}
 function meetingMonthly(A: any[]) {
   const ag = new Map<string, number>(), he = new Map<string, number>();
   for (const m of A) {
@@ -405,7 +459,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
 
   const mst: [string, string][] = [["Realizada", "var(--g-int)"], ["Pendiente", "var(--s1)"], ["Reprogramada", "var(--g-act)"], ["No-show", "var(--g-cont)"], ["Cancelada", "var(--g-rej)"]];
   const res: [string | null, string][] = [["Oportunidad", "var(--g-int)"], ["Seguimiento", "var(--s1)"], ["Sin avance", "var(--g-disp)"], ["Descartada", "var(--g-rej)"], [null, "var(--g-pend)"]];
-  s.reuniones = `<div class="tiles">${tile("Agendadas", N(M.agM.length), M.range ? "con fecha de reunión en el rango" : "")}${tile("Realizadas", N(M.held.length))}${tile("Pendientes", N(M.pendM.length))}${tile("No-show", N(M.noshow.length))}${tile("Canceladas", N(M.canc.length))}${tile("Reprogramadas", N(M.reprog.length), "incluye las ya realizadas")}${tile("Tasa de realización", P(k.realization), "sobre reuniones con fecha pasada")}${tile("Empresas con reunión", N(M.coMt.length), `${F1(k.mPerAcc)} reuniones por empresa`)}${tile("Contactos con reunión", N(new Set(M.Mt.map((m: any) => m.ct)).size), `${F1(k.interlocutors)} interlocutores por empresa`)}</div>
+  s.reuniones = meetingPanel(M, k.realization) + `<div class="tiles">${tile("Agendadas", N(M.agM.length), M.range ? "con fecha de reunión en el rango" : "")}${tile("Realizadas", N(M.held.length))}${tile("Pendientes", N(M.pendM.length))}${tile("No-show", N(M.noshow.length))}${tile("Canceladas", N(M.canc.length))}${tile("Reprogramadas", N(M.reprog.length), "incluye las ya realizadas")}${tile("Tasa de realización", P(k.realization), "sobre reuniones con fecha pasada")}${tile("Empresas con reunión", N(M.coMt.length), `${F1(k.mPerAcc)} reuniones por empresa`)}${tile("Contactos con reunión", N(new Set(M.Mt.map((m: any) => m.ct)).size), `${F1(k.interlocutors)} interlocutores por empresa`)}</div>
   <div class="grid2" style="margin-top:14px"><div class="rcard"><h4>Estado de las ${M.agM.length} reuniones agendadas</h4>${stack(mst.map(([l, c]) => ({ l, v: cnt(M.agM, (m: any) => m.st === l), c })))}</div>
   <div class="rcard"><h4>Qué pasó después de las ${M.held.length} realizadas</h4>${bars(res.map(([l, c]) => ({ l: l || "Sin información de resultado", v: cnt(M.held, (m: any) => (m.res || null) === l), c })))}<p class="note">Agendada ≠ realizada, y reunión ≠ oportunidad: solo se cuenta oportunidad cuando hay resultado registrado o un negocio asociado.</p></div></div>
   ${M.pipe ? `<div class="rcard" style="margin-top:14px"><h4>Pipeline asociado (${M.pipe.n} negocios)</h4>${bars(["Calificación", "Propuesta enviada", "Negociación", "Ganado", "Perdido"].map((st) => ({ l: st, v: sum(M.pipe.byStage[st] || [], (d: any) => d.amount), c: st === "Perdido" ? "var(--g-rej)" : st === "Ganado" ? "var(--g-rel)" : "var(--s1)", r: `(${(M.pipe.byStage[st] || []).length})`, tip: `${st}: ${USD(sum(M.pipe.byStage[st] || [], (d: any) => d.amount))}` })))}<p class="note">Montos en dólares; barras en miles.</p></div>` : `<p class="note">Pipeline: sin información disponible para este cliente.</p>`}`;
