@@ -9,7 +9,9 @@ import { IconCopy, IconLoader2, IconUserPlus } from "@tabler/icons-react";
 // en Supabase Auth) y en el portal solo ve la información de esa cuenta.
 // La contraseña temporal se muestra una sola vez.
 
-type PortalUserRow = { id: string; client_name: string; email: string; full_name: string | null; is_active: boolean; created_by: string | null; created_at: string };
+type PeithoRole = { role: "admin" | "sales_manager"; executiveId: string | null; executiveName: string | null };
+type PortalUserRow = { id: string; client_name: string; email: string; full_name: string | null; is_active: boolean; created_by: string | null; created_at: string; peitho?: PeithoRole };
+type Executive = { id: string; name: string };
 
 export default function PortalAccessManager({ clientId, clientName }: { clientId: string | null; clientName: string | null }) {
   const [users, setUsers] = useState<PortalUserRow[] | null>(null);
@@ -28,6 +30,32 @@ export default function PortalAccessManager({ clientId, clientName }: { clientId
   }, [clientId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Ejecutivos del cliente en Peitho (para vincular a un sales manager). Si el
+  // cliente no tiene Peitho activado o no responde, la columna lo indica.
+  const [executives, setExecutives] = useState<Executive[] | null | "off">(null);
+  useEffect(() => {
+    if (!clientId) return;
+    setExecutives(null);
+    const base = `/api/clients/${clientId}/peitho/proxy`;
+    fetch(`${base}/me`, { cache: "no-store" })
+      .then(async (r) => { if (!r.ok) throw new Error(); const me = await r.json(); return fetch(`${base}/clients/${me.clientId}/executives`, { cache: "no-store" }); })
+      .then(async (r) => { if (!r.ok) throw new Error(); setExecutives(await r.json()); })
+      .catch(() => setExecutives("off"));
+  }, [clientId]);
+
+  async function setPeitho(u: PortalUserRow, role: PeithoRole["role"], executiveId: string | null) {
+    setError(null);
+    const ex = Array.isArray(executives) ? executives.find((e) => e.id === executiveId) : undefined;
+    const r = await fetch(`/api/portal-admin/users/${u.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_peitho", peitho_role: role, executive_id: role === "sales_manager" ? executiveId : null, executive_name: ex?.name ?? null }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return setError(j.error ?? "Error");
+    load();
+  }
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -104,13 +132,14 @@ export default function PortalAccessManager({ clientId, clientName }: { clientId
               {!clientId && <th className="p-3">Cliente</th>}
               <th className="p-3">Usuario</th>
               <th className="p-3">Estado</th>
+              {clientId && <th className="p-3" title="Administrador: todo Peitho de su empresa. Sales manager: todo Pulso ABM, pero en Peitho solo sus reuniones (research y feedback), sin Panel de control.">Rol en Peitho</th>}
               <th className="p-3">Creado</th>
               <th className="p-3"></th>
             </tr>
           </thead>
           <tbody>
             {users?.length === 0 && (
-              <tr><td colSpan={5} className="p-4 text-gray-400">Sin accesos todavía.</td></tr>
+              <tr><td colSpan={6} className="p-4 text-gray-400">Sin accesos todavía.</td></tr>
             )}
             {users?.map((u) => (
               <tr key={u.id} className="border-b border-gray-50 last:border-0">
@@ -124,6 +153,35 @@ export default function PortalAccessManager({ clientId, clientName }: { clientId
                     {u.is_active ? "Activo" : "Desactivado"}
                   </span>
                 </td>
+                {clientId && (
+                  <td className="p-3 text-xs">
+                    <select
+                      value={u.peitho?.role ?? "admin"}
+                      onChange={(e) => setPeitho(u, e.target.value as PeithoRole["role"], u.peitho?.executiveId ?? null)}
+                      className="border border-gray-200 rounded-lg px-2 py-1 text-xs"
+                    >
+                      <option value="admin">Administrador</option>
+                      <option value="sales_manager">Sales manager</option>
+                    </select>
+                    {u.peitho?.role === "sales_manager" && (
+                      <div className="mt-1">
+                        {Array.isArray(executives) ? (
+                          <select
+                            value={u.peitho.executiveId ?? ""}
+                            onChange={(e) => setPeitho(u, "sales_manager", e.target.value || null)}
+                            className={`border rounded-lg px-2 py-1 text-xs ${u.peitho.executiveId ? "border-gray-200" : "border-amber-300 bg-amber-50"}`}
+                          >
+                            <option value="">— Vincular ejecutivo —</option>
+                            {executives.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+                          </select>
+                        ) : (
+                          <span className="text-gray-400">{executives === "off" ? "Peitho no activo para este cliente" : "Cargando ejecutivos…"}</span>
+                        )}
+                        {!u.peitho.executiveId && Array.isArray(executives) && <div className="text-amber-700 mt-0.5">Sin ejecutivo: no verá reuniones</div>}
+                      </div>
+                    )}
+                  </td>
+                )}
                 <td className="p-3 text-xs text-gray-500">{new Date(u.created_at).toLocaleDateString("es-CL")}{u.created_by ? ` · ${u.created_by}` : ""}</td>
                 <td className="p-3 text-right whitespace-nowrap text-xs space-x-3">
                   <button onClick={() => act(u, "reset_password")} className="text-[#251762] hover:underline">Nueva contraseña</button>

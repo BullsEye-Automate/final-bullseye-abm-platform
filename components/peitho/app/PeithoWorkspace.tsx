@@ -50,8 +50,10 @@ export default function PeithoWorkspace({ base, internal }: { base: string; inte
   const ctx = useMemo(() => ({ api, openMeeting: setMeetingId, refresh: () => setReloadKey((k) => k + 1) }), [api]);
 
   const me = useList<PeithoSession>(() => api("/me").then(json<PeithoSession>), [api]);
+  // Sales manager (rol "user" de Peitho): sin Panel de control, solo sus reuniones
+  const limited = me.data?.clientSubRole === "user";
   const tabs: [Tab, string][] = [
-    ["panel", "Panel de control"],
+    ...(limited ? [] : ([["panel", "Panel de control"]] as [Tab, string][])),
     ["futuras", "Reuniones futuras"],
     ["pasadas", "Reuniones pasadas"],
     ...(internal ? ([["usuarios", "Usuarios de Peitho"]] as [Tab, string][]) : []),
@@ -66,6 +68,14 @@ export default function PeithoWorkspace({ base, internal }: { base: string; inte
             Feedback automático de reuniones{me.data?.clientName ? ` · ${me.data.clientName}` : ""}
           </div>
         </div>
+
+        {limited && (
+          <div className="bg-amber-50 text-amber-800 text-sm px-4 py-3 rounded-xl">
+            {me.data?.linkedExecutive === null
+              ? "Tu usuario aún no está vinculado a un ejecutivo de Peitho, por eso no ves reuniones. Pídele a BullsEye que lo vincule."
+              : `Ves tus reuniones${me.data?.linkedExecutive ? ` como ${me.data.linkedExecutive}` : ""}, con su research y feedback post reunión.`}
+          </div>
+        )}
 
         {me.error && tab !== "usuarios" && (
           <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-xl">
@@ -90,7 +100,7 @@ export default function PeithoWorkspace({ base, internal }: { base: string; inte
 
         {meetingId ? (
           <MeetingDetail meetingId={meetingId} onBack={() => setMeetingId(null)} />
-        ) : tab === "panel" ? (
+        ) : tab === "panel" && !limited ? (
           <PanelDeControlView isAdmin={false} clients={[]} />
         ) : tab === "futuras" ? (
           <Meetings scope="upcoming" reloadKey={reloadKey} />

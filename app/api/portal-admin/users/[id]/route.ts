@@ -33,6 +33,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ ok: true, password });
   }
 
+  // Rol en Peitho: { peitho_role: "admin" | "sales_manager", executive_id?, executive_name? }
+  // (se guarda en app_metadata sin tocar role / client_id; lib/peithoPortalRole.ts)
+  if (action === "set_peitho") {
+    const role = body?.peitho_role === "sales_manager" ? "sales_manager" : "admin";
+    const { data: au, error: getErr } = await db.auth.admin.getUserById(row.auth_user_id);
+    if (getErr || !au?.user) return NextResponse.json({ error: getErr?.message ?? "Usuario no encontrado" }, { status: 404 });
+    const meta = { ...(au.user.app_metadata ?? {}) } as Record<string, unknown>;
+    meta.peitho_role = role;
+    meta.peitho_executive_id = role === "sales_manager" && body?.executive_id ? String(body.executive_id) : null;
+    meta.peitho_executive_name = role === "sales_manager" && body?.executive_name ? String(body.executive_name).slice(0, 120) : null;
+    const { error } = await db.auth.admin.updateUserById(row.auth_user_id, { app_metadata: meta });
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   if (action === "deactivate" || action === "activate") {
     const active = action === "activate";
     const { error } = await db.auth.admin.updateUserById(row.auth_user_id, {

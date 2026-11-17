@@ -290,6 +290,9 @@ export interface PeithoSession {
   // base de conocimiento); 'user' queda acotado a reuniones. Siempre null
   // para role === 'admin' (BullsEye).
   clientSubRole: "admin" | "user" | null;
+  // Solo en el portal de BullsEye (lo agrega su proxy para el sales manager):
+  // nombre del ejecutivo vinculado al usuario; null = sin vincular (no ve reuniones)
+  linkedExecutive?: string | null;
 }
 
 export interface UserRoleItem {

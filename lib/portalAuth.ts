@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { supabaseAdmin } from "@/lib/supabase";
+import { readPeithoRole, type PeithoPortalRole } from "@/lib/peithoPortalRole";
 
 // Autorización del portal de clientes (/portal, /api/portal/*).
 //
@@ -20,6 +21,7 @@ export type PortalUser = {
   clientLogoUrl: string | null;
   email: string;
   fullName: string | null;
+  peitho: PeithoPortalRole;   // rol dentro de Peitho (app_metadata, lib/peithoPortalRole.ts)
 };
 
 export async function getPortalUser(): Promise<PortalUser | null> {
@@ -47,6 +49,7 @@ export async function getPortalUser(): Promise<PortalUser | null> {
     clientLogoUrl: client.logo_url,
     email: row.email,
     fullName: row.full_name,
+    peitho: readPeithoRole(data.user.app_metadata as Record<string, unknown>),
   };
 }
 

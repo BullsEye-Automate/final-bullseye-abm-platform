@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { PORTAL_ROLE } from "@/lib/portalAuth";
 import { generateTempPassword, getReviewerEmail } from "@/lib/portalAdmin";
+import { readPeithoRole } from "@/lib/peithoPortalRole";
 
 export const dynamic = "force-dynamic";
 
@@ -11,15 +12,24 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   let q = db
     .from("client_users")
-    .select("id, client_id, email, full_name, is_active, created_by, created_at, clients(name)")
+    .select("id, auth_user_id, client_id, email, full_name, is_active, created_by, created_at, clients(name)")
     .order("created_at", { ascending: false });
   if (clientId) q = q.eq("client_id", clientId);
   const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const users = (data ?? []).map((u) => {
+  // Rol de Peitho de cada usuario (app_metadata de Supabase Auth)
+  const roles = new Map<string, ReturnType<typeof readPeithoRole>>();
+  const rows = data ?? [];
+  for (let i = 0; i < rows.length; i += 10) {
+    await Promise.all(rows.slice(i, i + 10).map(async (u) => {
+      const { data: au } = await db.auth.admin.getUserById(u.auth_user_id).catch(() => ({ data: null as any }));
+      roles.set(u.id, readPeithoRole(au?.user?.app_metadata as Record<string, unknown>));
+    }));
+  }
+  const users = rows.map((u) => {
     const c = Array.isArray(u.clients) ? u.clients[0] : u.clients;
-    return { ...u, clients: undefined, client_name: (c as { name: string } | null)?.name ?? "—" };
+    return { ...u, auth_user_id: undefined, clients: undefined, client_name: (c as { name: string } | null)?.name ?? "—", peitho: roles.get(u.id) ?? readPeithoRole(null) };
   });
   return NextResponse.json({ users });
 }
