@@ -138,7 +138,7 @@ async function logEmailToHubspot({
       ];
     }
 
-    await fetch("https://api.hubapi.com/crm/v3/objects/emails", {
+    const emailRes = await fetch("https://api.hubapi.com/crm/v3/objects/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -146,6 +146,10 @@ async function logEmailToHubspot({
       },
       body: JSON.stringify(payload),
     });
+    if (!emailRes.ok) {
+      const errBody = await emailRes.text();
+      console.error(`HubSpot email log failed [${emailRes.status}]:`, errBody);
+    }
 
     return contactId;
   } catch (err) {
