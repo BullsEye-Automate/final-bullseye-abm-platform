@@ -76,6 +76,77 @@ function buildRawEmail(from: string, senderName: string, to: string, subject: st
   return Buffer.from(lines.join("\r\n")).toString("base64url");
 }
 
+async function logEmailToHubspot({
+  to,
+  subject,
+  body,
+  senderEmail,
+  senderName,
+}: {
+  to: string;
+  subject: string;
+  body: string;
+  senderEmail: string;
+  senderName: string;
+}) {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) return;
+  try {
+    // Buscar el contacto por email para asociar la actividad
+    const searchRes = await fetch(
+      "https://api.hubapi.com/crm/v3/objects/contacts/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filterGroups: [
+            { filters: [{ propertyName: "email", operator: "EQ", value: to }] },
+          ],
+          properties: ["hs_object_id"],
+          limit: 1,
+        }),
+      }
+    );
+    const searchData = await searchRes.json();
+    const contactId: string | undefined = searchData.results?.[0]?.id;
+
+    const payload: Record<string, unknown> = {
+      properties: {
+        hs_email_direction: "EMAIL",
+        hs_email_status: "SENT",
+        hs_email_subject: subject,
+        hs_email_text: body,
+        hs_email_to_email: to,
+        hs_email_from_email: senderEmail,
+        hs_email_from_firstname: senderName,
+        hs_timestamp: new Date().toISOString(),
+      },
+    };
+    if (contactId) {
+      payload.associations = [
+        {
+          to: { id: contactId },
+          types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 198 }],
+        },
+      ];
+    }
+
+    await fetch("https://api.hubapi.com/crm/v3/objects/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.error("HubSpot email log error:", err);
+  }
+}
+
 export async function POST(req: NextRequest) {
   let userId: string | null = null;
   try {
@@ -153,9 +224,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: gmailData?.error?.message ?? "Error al enviar" }, { status: 500 });
   }
 
-  // HubSpot Connected Inbox monitorea la carpeta "Enviados" del Gmail del SDR
-  // y registra automáticamente el correo con tracking nativo. No se hace
-  // logging manual para evitar duplicados sin tracking.
+  // Registrar el correo en HubSpot (sin tracking de aperturas; Connected Inbox
+  // no captura correos enviados por API, así que lo hacemos manual).
+  void logEmailToHubspot({ to, subject, body, senderEmail: tokenRow.email, senderName });
 
   return NextResponse.json({ ok: true, messageId: gmailData.id });
 }
