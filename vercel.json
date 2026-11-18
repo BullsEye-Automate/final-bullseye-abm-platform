@@ -61,6 +61,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cron/listas-hubspot",
+      "schedule": "5 21,22 * * 1-5"
+    },
+    {
       "path": "/api/cron/alerta-feriados",
       "schedule": "30 11,12,13 * * 1-5"
     },
@@ -111,6 +115,8 @@
     "app/api/cron/alertas-numeros/route.ts": { "maxDuration": 300 },
     "app/api/analisis/alertas-numeros/route.ts": { "maxDuration": 300 },
     "app/api/cron/alerta-feriados/route.ts": { "maxDuration": 300 },
+    "app/api/cron/listas-hubspot/route.ts": { "maxDuration": 300 },
+    "app/api/listas-hubspot/route.ts": { "maxDuration": 300 },
     "app/api/alerta-feriados/route.ts": { "maxDuration": 120 },
     "app/api/cron/centro-inteligencia/route.ts": { "maxDuration": 300 },
     "app/api/cron/centro-recomendaciones/route.ts": { "maxDuration": 300 },
