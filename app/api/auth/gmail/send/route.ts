@@ -153,5 +153,102 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: gmailData?.error?.message ?? "Error al enviar" }, { status: 500 });
   }
 
+  // Registrar el correo en HubSpot de forma asíncrona (fire-and-forget)
+  logEmailInHubspot({
+    to,
+    subject,
+    body,
+    senderEmail: tokenRow.email,
+    senderName,
+    clientId: clientId ?? null,
+    sentAt: new Date().toISOString(),
+  }).catch((err) => console.error("HubSpot email log error:", err));
+
   return NextResponse.json({ ok: true, messageId: gmailData.id });
+}
+
+async function logEmailInHubspot(opts: {
+  to: string;
+  subject: string;
+  body: string;
+  senderEmail: string;
+  senderName: string;
+  clientId: string | null;
+  sentAt: string;
+}) {
+  const HS = "https://api.hubapi.com";
+
+  // Elegir token: si el cliente tiene HubSpot propio, usarlo; si no, BullsEye
+  let hsToken: string | undefined;
+  if (opts.clientId) {
+    const db = supabaseAdmin();
+    const { data: cfg } = await db
+      .from("client_configs")
+      .select("hubspot_access_token")
+      .eq("client_id", opts.clientId)
+      .maybeSingle();
+    const clientToken = (cfg as { hubspot_access_token?: string | null } | null)?.hubspot_access_token?.trim();
+    if (clientToken) hsToken = clientToken;
+  }
+  const headers = {
+    Authorization: `Bearer ${hsToken || process.env.HUBSPOT_ACCESS_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+
+  // Buscar el contacto destinatario por email
+  const contactSearch = await fetch(`${HS}/crm/v3/objects/contacts/search`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: opts.to }] }],
+      properties: ["email"],
+      limit: 1,
+    }),
+  });
+  const contactData = await contactSearch.json();
+  const contactId: string | undefined = contactData.results?.[0]?.id;
+
+  // Buscar el owner HubSpot del SDR por su email
+  const ownerSearch = await fetch(`${HS}/crm/v3/owners?email=${encodeURIComponent(opts.senderEmail)}&limit=1`, {
+    headers,
+  });
+  const ownerData = await ownerSearch.json();
+  const ownerId: string | undefined = ownerData.results?.[0]?.id;
+
+  // Crear el engagement de email en HubSpot
+  const engagement: Record<string, unknown> = {
+    properties: {
+      hs_email_direction: "EMAIL",
+      hs_email_status: "SENT",
+      hs_email_subject: opts.subject,
+      hs_email_text: opts.body,
+      hs_email_html: opts.body,
+      hs_timestamp: new Date(opts.sentAt).getTime(),
+      hs_email_from_email: opts.senderEmail,
+      hs_email_from_firstname: opts.senderName.split(" ")[0] ?? opts.senderName,
+      hs_email_from_lastname: opts.senderName.split(" ").slice(1).join(" ") || undefined,
+      hs_email_to_email: opts.to,
+      ...(ownerId ? { hubspot_owner_id: ownerId } : {}),
+    },
+  };
+
+  if (contactId) {
+    engagement.associations = [
+      {
+        to: { id: contactId },
+        types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 198 }],
+      },
+    ];
+  }
+
+  const createRes = await fetch(`${HS}/crm/v3/objects/emails`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(engagement),
+  });
+
+  if (!createRes.ok) {
+    const err = await createRes.json().catch(() => ({}));
+    console.error("HubSpot create email engagement failed:", JSON.stringify(err));
+  }
 }
