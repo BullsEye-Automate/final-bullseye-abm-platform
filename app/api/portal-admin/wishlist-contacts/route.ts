@@ -9,7 +9,7 @@ import {
   rejectWishlistContact,
   searchWishlistContacts,
 } from "@/lib/wishlistContacts";
-import { pushContactToHubspot } from "@/lib/wishlistHubspot";
+import { checkApprovedContacts, pushContactToHubspot, tagApprovedContacts } from "@/lib/wishlistHubspot";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -69,6 +69,16 @@ export async function POST(req: NextRequest) {
       case "push_hubspot": {
         if (typeof body.contact_id !== "string") return NextResponse.json({ error: "Falta contact_id" }, { status: 400 });
         return NextResponse.json(await pushContactToHubspot(db, body.contact_id));
+      }
+      case "check_hubspot": {
+        // Solo lectura: ¿existen en HubSpot los contactos aprobados del cliente?
+        if (typeof body.client_id !== "string") return NextResponse.json({ error: "Falta client_id" }, { status: 400 });
+        return NextResponse.json(await checkApprovedContacts(db, body.client_id));
+      }
+      case "tag_client": {
+        // Agrega «Cliente BullsEye» a los contactos ya aprobados del cliente
+        if (typeof body.client_id !== "string") return NextResponse.json({ error: "Falta client_id" }, { status: 400 });
+        return NextResponse.json(await tagApprovedContacts(db, body.client_id));
       }
       case "refresh": {
         if (typeof body.client_id !== "string") return NextResponse.json({ error: "Falta client_id" }, { status: 400 });
