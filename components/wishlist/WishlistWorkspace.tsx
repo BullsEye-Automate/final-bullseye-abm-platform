@@ -50,6 +50,15 @@ function useWorkspace() {
 
 // ── Tipos ────────────────────────────────────────────────────────────────
 
+// Motivos de descarte del equipo (mismos valores en /api/portal/omitted)
+const DISCARD_REASONS = [
+  { value: "ya_cliente", label: "Ya es cliente del cliente" },
+  { value: "exclusion", label: "Está en su exclusión / no contactar" },
+  { value: "repetida", label: "Ya trabajada o repetida" },
+  { value: "no_icp", label: "No calza con el ICP (tamaño, industria, país)" },
+  { value: "otro", label: "Otro" },
+];
+
 type Card = {
   ref: string;
   name: string;
@@ -346,8 +355,12 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
   // Operador: propone al cliente todas las recomendaciones en pantalla (de a una)
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   async function proposeAll() {
-    const list = sortCards(cards, sort);
-    if (!list.length || !confirm(`¿Proponer las ${list.length} empresas al cliente? Las verá en su portal para aprobar o rechazar.`)) return;
+    // Las que tienen nota "Revisar a mano" no se proponen en lote: se revisan una a una
+    const all = sortCards(cards, sort);
+    const list = all.filter((c) => !c.facts.some((f) => f.label === "__revisar"));
+    const held = all.length - list.length;
+    if (!list.length) return alert(held ? `Las ${held} empresas en pantalla tienen nota para revisar a mano: propónlas una a una.` : "No hay empresas para proponer.");
+    if (!confirm(`¿Proponer las ${list.length} empresas al cliente? Las verá en su portal para aprobar o rechazar.${held ? `\n\n${held} con nota «Revisar a mano» no se incluyen: revísalas una a una.` : ""}`)) return;
     setBulk({ done: 0, total: list.length });
     let failed = 0;
     for (let i = 0; i < list.length; i++) {
@@ -355,7 +368,7 @@ function AiTab({ catalog, onAdded }: { catalog: Catalog; onAdded: () => void }) 
       const r = await fetch(ws.url("/api/portal/wishlist"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ref: c.ref, mode: "ai", card: { name: c.name, domain: c.domain, linkedin_url: c.linkedin_url, facts: c.facts } }),
+        body: JSON.stringify({ ref: c.ref, mode: "ai", card: { name: c.name, domain: c.domain, linkedin_url: c.linkedin_url, facts: c.facts.filter((f) => !f.label.startsWith("__")) } }),
       });
       // 409 = ya estaba propuesta o en su wishlist: igual sale de la lista
       if (r.ok || r.status === 409) removeCard(c.ref);
@@ -898,6 +911,13 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
   const [done, setDone] = useState<"added" | "omitted" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  // Nota de la revisión automática (lib/centroProspeccion/recoAudit.ts): viaja
+  // dentro de facts con una etiqueta interna y nunca se envía al cliente
+  const reviewNote = card.facts.find((f) => f.label === "__revisar")?.value ?? null;
+  const visibleFacts = card.facts.filter((f) => !f.label.startsWith("__"));
+  const [asking, setAsking] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [nota, setNota] = useState("");
 
   async function add() {
     setAdding(true);
@@ -905,7 +925,7 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
     const r = await fetch(ws.url("/api/portal/wishlist"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ref: card.ref, mode, card: { name: card.name, domain: card.domain, linkedin_url: card.linkedin_url, facts: card.facts } }),
+      body: JSON.stringify({ ref: card.ref, mode, card: { name: card.name, domain: card.domain, linkedin_url: card.linkedin_url, facts: visibleFacts } }),
     });
     const j = await r.json().catch(() => ({}));
     setAdding(false);
@@ -917,6 +937,11 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
 
   // Omitir: no vuelve a aparecer (se puede restaurar en "Empresas omitidas")
   async function omit() {
+    // El equipo descarta con motivo (se mide en el resumen semanal y, si ya es
+    // cliente o está excluida, pasa a la Lista de exclusión del cliente)
+    if (ws.operator && !asking) return setAsking(true);
+    if (ws.operator && !motivo) return setError("Elige el motivo del descarte");
+    if (ws.operator && motivo === "otro" && !nota.trim()) return setError("Escribe el motivo");
     setOmitting(true);
     setError(null);
     const r = await fetch(ws.url("/api/portal/omitted"), {
@@ -924,9 +949,10 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ref: card.ref,
-        card: { name: card.name, domain: card.domain, linkedin_url: card.linkedin_url, facts: card.facts },
+        card: { name: card.name, domain: card.domain, linkedin_url: card.linkedin_url, facts: visibleFacts },
         fit_score: card.fit_score ?? undefined,
         fit_reason: card.fit_reason ?? undefined,
+        ...(ws.operator ? { motivo, nota: nota.trim() || undefined, nota_revision: reviewNote ?? undefined } : {}),
       }),
     });
     const j = await r.json().catch(() => ({}));
@@ -936,7 +962,7 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
     setTimeout(() => onAdded(card.ref), 400);
   }
 
-  const facts = expanded ? card.facts : card.facts.slice(0, 4);
+  const facts = expanded ? visibleFacts : visibleFacts.slice(0, 4);
   const fit = card.fit_score != null ? fitStyle(card.fit_score) : null;
 
   return (
@@ -988,6 +1014,11 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
           Ya es tu cliente según tu ICP: la pasamos a tu Lista de exclusión.
         </div>
       )}
+      {reviewNote && (
+        <div className="text-xs rounded-lg bg-amber-50 text-amber-900 border border-amber-200 px-2.5 py-1.5 mb-2">
+          <b>Revisar a mano:</b> {reviewNote}. Confirma si está en una lista de exclusión o si no es apta antes de proponerla.
+        </div>
+      )}
       {card.fit_reason && <p className="text-[13px] text-gray-700 leading-relaxed mb-3">{card.fit_reason}</p>}
 
       <dl className="text-xs space-y-1 mb-3">
@@ -998,13 +1029,25 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
           </div>
         ))}
       </dl>
-      {card.facts.length > 4 && (
+      {visibleFacts.length > 4 && (
         <button onClick={() => setExpanded((e) => !e)} className="text-xs text-[#251762] mb-3 self-start">
-          {expanded ? "Ver menos" : `Ver ${card.facts.length - 4} datos más`}
+          {expanded ? "Ver menos" : `Ver ${visibleFacts.length - 4} datos más`}
         </button>
       )}
 
       <div className="mt-auto">
+        {asking && !done && (
+          <div className="rounded-xl border border-gray-200 p-2.5 mb-2 space-y-2">
+            <div className="text-xs font-medium text-gray-700">¿Por qué la descartas?</div>
+            <select value={motivo} onChange={(e) => setMotivo(e.target.value)} className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5">
+              <option value="">Elige un motivo…</option>
+              {DISCARD_REASONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+            <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder={motivo === "otro" ? "Escribe el motivo" : "Nota (opcional)"} className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
+            {(motivo === "ya_cliente" || motivo === "exclusion") && <div className="text-[11px] text-gray-500">Se agregará a la Lista de exclusión del cliente.</div>}
+            <button onClick={() => { setAsking(false); setError(null); }} className="text-xs text-gray-500">Cancelar</button>
+          </div>
+        )}
         {error && <div className="text-xs text-red-600 mb-2">{error}</div>}
         <div className="flex gap-2">
           <button
@@ -1025,7 +1068,7 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
             title={ws.operator ? "Descartar: no se propone y no vuelve a aparecer para este cliente" : "No me interesa: no volverá a aparecer"}
             className="flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-sm border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-60"
           >
-            {done === "omitted" ? (ws.operator ? "Descartada" : "Omitida") : omitting ? <IconLoader2 size={15} className="animate-spin" /> : <><IconEyeOff size={15} /> {ws.operator ? "Descartar" : "Omitir"}</>}
+            {done === "omitted" ? (ws.operator ? "Descartada" : "Omitida") : omitting ? <IconLoader2 size={15} className="animate-spin" /> : <><IconEyeOff size={15} /> {ws.operator ? (asking ? "Confirmar" : "Descartar") : "Omitir"}</>}
           </button>
         </div>
       </div>

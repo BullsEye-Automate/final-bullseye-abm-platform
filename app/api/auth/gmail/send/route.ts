@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase";
 import { createServerClient } from "@supabase/ssr";
 
@@ -38,11 +39,13 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function buildHtmlBody(body: string, senderName: string, clientName: string): string {
+function buildHtmlBody(body: string, senderName: string, clientName: string, trackingId: string): string {
   const bodyHtml = escapeHtml(body).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>");
   const partnerLine = clientName
     ? `Marketing Partner - ${escapeHtml(clientName)}`
     : "Marketing Partner";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://portal.bullseye-abm.com";
+  const pixel = `<img src="${appUrl}/api/track/open/${trackingId}" width="1" height="1" style="display:none" alt="">`;
   return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;font-size:14px;color:#222;margin:0;padding:0;">
 <div>
   <p style="margin:0 0 1em 0;">${bodyHtml}</p>
@@ -50,6 +53,7 @@ function buildHtmlBody(body: string, senderName: string, clientName: string): st
     <strong>${escapeHtml(senderName)}</strong><br>
     ${partnerLine}
   </div>
+  ${pixel}
 </div>
 </body></html>`;
 }
@@ -74,6 +78,83 @@ function buildRawEmail(from: string, senderName: string, to: string, subject: st
     htmlBody,
   ];
   return Buffer.from(lines.join("\r\n")).toString("base64url");
+}
+
+async function logEmailToHubspot({
+  to,
+  subject,
+  body,
+  senderEmail,
+  senderName,
+}: {
+  to: string;
+  subject: string;
+  body: string;
+  senderEmail: string;
+  senderName: string;
+}): Promise<string | undefined> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) return;
+  try {
+    // Buscar el contacto por email para asociar la actividad
+    const searchRes = await fetch(
+      "https://api.hubapi.com/crm/v3/objects/contacts/search",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filterGroups: [
+            { filters: [{ propertyName: "email", operator: "EQ", value: to }] },
+          ],
+          properties: ["hs_object_id"],
+          limit: 1,
+        }),
+      }
+    );
+    const searchData = await searchRes.json();
+    const contactId: string | undefined = searchData.results?.[0]?.id;
+
+    const payload: Record<string, unknown> = {
+      properties: {
+        hs_email_direction: "EMAIL",
+        hs_email_status: "SENT",
+        hs_email_subject: subject,
+        hs_email_text: body,
+        hs_email_to_email: to,
+        hs_email_from_email: senderEmail,
+        hs_email_from_firstname: senderName,
+        hs_timestamp: new Date().toISOString(),
+      },
+    };
+    if (contactId) {
+      payload.associations = [
+        {
+          to: { id: contactId },
+          types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 198 }],
+        },
+      ];
+    }
+
+    const emailRes = await fetch("https://api.hubapi.com/crm/v3/objects/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!emailRes.ok) {
+      const errBody = await emailRes.text();
+      console.error(`HubSpot email log failed [${emailRes.status}]:`, errBody);
+    }
+
+    return contactId;
+  } catch (err) {
+    console.error("HubSpot email log error:", err);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -130,12 +211,8 @@ export async function POST(req: NextRequest) {
     }
   } catch {}
 
-  const htmlBody = buildHtmlBody(
-    body,
-    senderName,
-    clientRow?.name ?? "",
-  );
-
+  const trackingId = randomUUID();
+  const htmlBody = buildHtmlBody(body, senderName, clientRow?.name ?? "", trackingId);
   const raw = buildRawEmail(tokenRow.email, senderName, to, subject, htmlBody);
 
   const gmailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
@@ -152,6 +229,27 @@ export async function POST(req: NextRequest) {
     console.error("Gmail send error:", gmailData);
     return NextResponse.json({ error: gmailData?.error?.message ?? "Error al enviar" }, { status: 500 });
   }
+
+  // Registrar en HubSpot y guardar datos de tracking en caché
+  void (async () => {
+    const contactId = await logEmailToHubspot({
+      to, subject, body, senderEmail: tokenRow.email, senderName,
+    });
+    const dbAdmin = supabaseAdmin();
+    await dbAdmin.from("allo_response_cache").upsert({
+      key: `email_track:${trackingId}`,
+      data: {
+        to,
+        subject,
+        senderEmail: tokenRow.email,
+        senderName,
+        hubspotContactId: contactId ?? null,
+        hubspotNoteId: null,
+        opens: [],
+      },
+      expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+  })();
 
   return NextResponse.json({ ok: true, messageId: gmailData.id });
 }
