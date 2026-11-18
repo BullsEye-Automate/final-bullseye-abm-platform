@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase";
 import { createServerClient } from "@supabase/ssr";
 
@@ -38,11 +39,13 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function buildHtmlBody(body: string, senderName: string, clientName: string): string {
+function buildHtmlBody(body: string, senderName: string, clientName: string, trackingId: string): string {
   const bodyHtml = escapeHtml(body).replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>");
   const partnerLine = clientName
     ? `Marketing Partner - ${escapeHtml(clientName)}`
     : "Marketing Partner";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://portal.bullseye-abm.com";
+  const pixel = `<img src="${appUrl}/api/track/open/${trackingId}" width="1" height="1" style="display:none" alt="">`;
   return `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;font-size:14px;color:#222;margin:0;padding:0;">
 <div>
   <p style="margin:0 0 1em 0;">${bodyHtml}</p>
@@ -50,6 +53,7 @@ function buildHtmlBody(body: string, senderName: string, clientName: string): st
     <strong>${escapeHtml(senderName)}</strong><br>
     ${partnerLine}
   </div>
+  ${pixel}
 </div>
 </body></html>`;
 }
@@ -88,7 +92,7 @@ async function logEmailToHubspot({
   body: string;
   senderEmail: string;
   senderName: string;
-}) {
+}): Promise<string | undefined> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) return;
   try {
@@ -142,6 +146,8 @@ async function logEmailToHubspot({
       },
       body: JSON.stringify(payload),
     });
+
+    return contactId;
   } catch (err) {
     console.error("HubSpot email log error:", err);
   }
@@ -201,12 +207,8 @@ export async function POST(req: NextRequest) {
     }
   } catch {}
 
-  const htmlBody = buildHtmlBody(
-    body,
-    senderName,
-    clientRow?.name ?? "",
-  );
-
+  const trackingId = randomUUID();
+  const htmlBody = buildHtmlBody(body, senderName, clientRow?.name ?? "", trackingId);
   const raw = buildRawEmail(tokenRow.email, senderName, to, subject, htmlBody);
 
   const gmailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
@@ -224,9 +226,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: gmailData?.error?.message ?? "Error al enviar" }, { status: 500 });
   }
 
-  // Registrar el correo en HubSpot (sin tracking de aperturas; Connected Inbox
-  // no captura correos enviados por API, así que lo hacemos manual).
-  void logEmailToHubspot({ to, subject, body, senderEmail: tokenRow.email, senderName });
+  // Registrar en HubSpot y guardar datos de tracking en caché
+  void (async () => {
+    const contactId = await logEmailToHubspot({
+      to, subject, body, senderEmail: tokenRow.email, senderName,
+    });
+    const dbAdmin = supabaseAdmin();
+    await dbAdmin.from("allo_response_cache").upsert({
+      key: `email_track:${trackingId}`,
+      data: {
+        to,
+        subject,
+        senderEmail: tokenRow.email,
+        senderName,
+        hubspotContactId: contactId ?? null,
+        hubspotNoteId: null,
+        opens: [],
+      },
+      expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+  })();
 
   return NextResponse.json({ ok: true, messageId: gmailData.id });
 }
