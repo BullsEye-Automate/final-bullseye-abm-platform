@@ -5,6 +5,9 @@ import {
 } from "@/lib/centroProspeccion/store";
 import { signedAssetUrl } from "@/lib/centroProspeccion/assets";
 import { isValidMcpSecret } from "@/lib/centroProspeccion/mcpSecret";
+import { loadClientLinks } from "@/lib/centroProspeccion/portalLink";
+import { auditCompany, loadAuditContext } from "@/lib/centroProspeccion/recoAudit";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -88,6 +91,24 @@ const TOOLS = [
         },
       },
       required: ["writes"],
+    },
+  },
+  {
+    name: "centro_ya_trabajadas",
+    description:
+      "Empresas que NO se deben volver a proponer a un cliente: las que BullsEye ya trabaja en el HubSpot del cliente (el de BullsEye o el propio del cliente, vía Pulso ABM), su wishlist, lista de exclusión, omitidas, cuentas e historial del Centro, recomendaciones pendientes y clientes nombrados en el ICP o en Exclusiones de la ficha. " +
+      "Con `empresas` revisa una lista (máx. 500): cada una vuelve como \"trabajada\" (no proponer), \"revisar\" (parecida a una trabajada; confirmar a mano) o \"nueva\", con el motivo. Sin `empresas` devuelve la lista completa de nombres y dominios a excluir.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cliente_id: { type: "string", description: "Id de la ficha del cliente en el Centro (clienteId, ej. simplex)" },
+        empresas: {
+          type: "array",
+          maxItems: 500,
+          items: { type: "object", properties: { nombre: { type: "string" }, web: { type: "string" } }, required: ["nombre"] },
+        },
+      },
+      required: ["cliente_id"],
     },
   },
   {
@@ -206,6 +227,38 @@ async function callTool(name: string, a: Record<string, unknown>): Promise<unkno
         results.push({ collection: w.collection, doc_id: w.docId, status: r.status, version: r.version ?? null });
       }
       return { ok: results.every((r) => r.status === "ok"), results };
+    }
+    case "centro_ya_trabajadas": {
+      // Misma revisión que las recomendaciones IA (lib/centroProspeccion/recoAudit.ts)
+      const links = await loadClientLinks();
+      const fichaId = String(a.cliente_id ?? "");
+      const client = links.byFicha.get(fichaId);
+      if (!client) throw new ToolError(`La ficha ${fichaId} no está vinculada a un cliente del portal: usa solo el historial y las exclusiones de la ficha`);
+      const ctx = await loadAuditContext(supabaseAdmin(), client.id);
+      const list = Array.isArray(a.empresas) ? (a.empresas as { nombre?: unknown; web?: unknown }[]).slice(0, 500) : null;
+      if (!list) {
+        return {
+          cliente: client.name,
+          total: ctx.refs.length,
+          palabras_clave_excluidas: ctx.keywords,
+          empresas: ctx.refs.slice(0, 6000).map((r) => [r.name, r.dom ?? "", r.src]),
+        };
+      }
+      const out = list.map((e) => {
+        const nombre = String(e?.nombre ?? "").trim();
+        const web = typeof e?.web === "string" && e.web.trim() && !/no encontrado/i.test(e.web) ? e.web.trim() : null;
+        const v = auditCompany(ctx, nombre, web);
+        ctx.add(nombre, web, "repetida en esta misma lista");
+        return { nombre, estado: v.level === "block" ? "trabajada" : v.level === "note" ? "revisar" : "nueva", motivo: v.reasons.join(" · ") };
+      });
+      return {
+        cliente: client.name,
+        revisadas: out.length,
+        trabajadas: out.filter((x) => x.estado === "trabajada").length,
+        revisar: out.filter((x) => x.estado === "revisar").length,
+        nuevas: out.filter((x) => x.estado === "nueva").length,
+        empresas: out,
+      };
     }
     case "centro_asset_url": {
       const url = await signedAssetUrl(String(a.asset_id ?? ""));
