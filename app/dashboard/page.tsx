@@ -10,6 +10,7 @@ import {
   IconRefresh,
 } from "@tabler/icons-react";
 import { useClient, ALL_CLIENTS } from "@/lib/clientContext";
+import LotesPanel from "@/components/wishlist/LotesPanel";
 import type {
   AllClientsDashboard,
   ClientCard,
@@ -113,6 +114,13 @@ export default function DashboardPage() {
       {!data && !error && <IconLoader2 className="animate-spin text-ink-muted" />}
 
       {data?.mode === "client" && <ClientReport data={data} onChanged={load} />}
+      {data?.mode === "client" && clientId && (
+        <section className="space-y-2">
+          <h2 className="font-semibold">Avance por lote de carga</h2>
+          <p className="text-xs text-ink-muted">Todas las cargas del cliente, sin el filtro de período: de dónde vino cada lote y cuánto avanzó.</p>
+          <LotesPanel clientId={clientId} compact />
+        </section>
+      )}
       {data?.mode === "all" && <AllClientsReport data={data} onOpen={openClient} />}
     </div>
   );

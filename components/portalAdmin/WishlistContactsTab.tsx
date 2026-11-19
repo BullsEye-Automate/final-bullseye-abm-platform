@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LotBadge, LotSelect, useLots } from "@/components/wishlist/LotesPanel";
 import { IconCheck, IconX, IconLoader2, IconSparkles, IconRefresh, IconExternalLink, IconChevronDown, IconBrandLinkedin } from "@tabler/icons-react";
 
 // Contactos de la wishlist con IA (Contactos → Contactos IA):
@@ -66,7 +67,17 @@ const CONTACT_STATUS: Record<Item["contacts_status"], { text: string; cls: strin
 const ROLE_LABEL: Record<string, string> = { decisor: "Decisor", influenciador: "Influenciador", usuario: "Usuario", ninguno: "—" };
 
 export default function WishlistContactsTab({ clientId, clientName }: { clientId: string | null; clientName: string | null }) {
-  const [items, setItems] = useState<Item[] | null>(null);
+  const [allItems, setItems] = useState<Item[] | null>(null);
+  // Filtro por lote de carga (lib/wishlistLotes.ts)
+  const lots = useLots(clientId);
+  const [lotFilter, setLotFilter] = useState("");
+  useEffect(() => setLotFilter(""), [clientId]);
+  const lotCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const i of allItems ?? []) { const l = lots.data?.byItem[i.id]; if (l) m.set(l, (m.get(l) ?? 0) + 1); }
+    return m;
+  }, [allItems, lots.data]);
+  const items = allItems && lotFilter ? allItems.filter((i) => lots.data?.byItem[i.id] === lotFilter) : allItems;
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -198,6 +209,7 @@ export default function WishlistContactsTab({ clientId, clientName }: { clientId
             <button onClick={() => { stopRef.current = true; }} className="px-3 py-1 rounded-lg border border-gray-200 bg-white text-xs">Detener</button>
           </div>
         )}
+        {lots.data && lotCounts.size > 1 && <LotSelect lots={lots.data.lots} value={lotFilter} onChange={(v) => { setLotFilter(v); setSelected(new Set()); }} counts={lotCounts} />}
         <button onClick={load} className="flex items-center gap-1 text-xs text-gray-500"><IconRefresh size={13} /> Actualizar</button>
         {limitation != null && <span className="text-xs text-gray-400">Búsquedas de Lemlist disponibles hoy: {limitation}</span>}
       </div>
@@ -226,6 +238,7 @@ export default function WishlistContactsTab({ clientId, clientName }: { clientId
                     )}
                     {i.linkedin_url && <a href={i.linkedin_url} target="_blank" rel="noreferrer" className="hover:text-[#251762]">LinkedIn</a>}
                     {i.lemlist_status !== "ok" && <span className="text-amber-700">Empresa aún no está en Lemlist</span>}
+                    <LotBadge lot={lots.byId.get(lots.data?.byItem[i.id] ?? "")} />
                   </div>
                 </div>
                 <span className={`text-xs rounded-full px-2.5 py-1 ${st.cls}`}>
