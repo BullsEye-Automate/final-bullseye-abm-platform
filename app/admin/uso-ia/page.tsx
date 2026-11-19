@@ -82,44 +82,58 @@ type FunctionDetail = {
   };
 };
 
-function calculateDaysForFilter(filter: string): number {
+function toDateStr(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+function calculateDateRange(filter: string): { from: string; to: string } {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayStr = toDateStr(today);
 
   switch (filter) {
     case "hoy":
-      return 1;
+      return { from: todayStr, to: todayStr };
     case "ayer": {
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      return Math.ceil((today.getTime() - yesterday.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const ayer = new Date(today);
+      ayer.setDate(today.getDate() - 1);
+      const ayerStr = toDateStr(ayer);
+      return { from: ayerStr, to: ayerStr };
     }
     case "esta-semana": {
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      return Math.ceil((today.getTime() - startOfWeek.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const start = new Date(today);
+      // Lunes como inicio de semana
+      const day = today.getDay() === 0 ? 6 : today.getDay() - 1;
+      start.setDate(today.getDate() - day);
+      return { from: toDateStr(start), to: todayStr };
     }
     case "semana-pasada": {
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      const startOfLastWeek = new Date(startOfWeek);
-      startOfLastWeek.setDate(startOfWeek.getDate() - 7);
-      return 7;
+      const endLast = new Date(today);
+      const day = today.getDay() === 0 ? 6 : today.getDay() - 1;
+      endLast.setDate(today.getDate() - day - 1); // domingo de la semana pasada
+      const startLast = new Date(endLast);
+      startLast.setDate(endLast.getDate() - 6); // lunes de la semana pasada
+      return { from: toDateStr(startLast), to: toDateStr(endLast) };
     }
     case "este-mes": {
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      return Math.ceil((today.getTime() - startOfMonth.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { from: toDateStr(start), to: todayStr };
     }
     case "mes-pasado": {
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const daysInLastMonth = (startOfMonth.getTime() - startOfLastMonth.getTime()) / (1000 * 60 * 60 * 24);
-      return Math.ceil(daysInLastMonth);
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const end   = new Date(today.getFullYear(), today.getMonth(), 0); // último día del mes anterior
+      return { from: toDateStr(start), to: toDateStr(end) };
     }
-    case "ultimos-30":
-      return 30;
-    default:
-      return 7;
+    case "ultimos-30": {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 29);
+      return { from: toDateStr(start), to: todayStr };
+    }
+    default: {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 6);
+      return { from: toDateStr(start), to: todayStr };
+    }
   }
 }
 
@@ -134,19 +148,15 @@ export default function UsoIAPage() {
   const [detailData, setDetailData] = useState<FunctionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const days = customDates ? null : calculateDaysForFilter(filterType);
+  // Siempre usar from/to para rangos exactos (days era impreciso para "mes pasado", "semana pasada")
+  const dateRange = customDates ?? calculateDateRange(filterType);
 
   async function load() {
     setLoading(true);
     setError(null);
     setData(null);
     try {
-      let url = `/api/admin/ai-usage`;
-      if (customDates) {
-        url += `?from=${customDates.from}&to=${customDates.to}`;
-      } else if (days) {
-        url += `?days=${days}`;
-      }
+      const url = `/api/admin/ai-usage?from=${dateRange.from}&to=${dateRange.to}`;
       const r = await fetch(url, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
@@ -160,12 +170,7 @@ export default function UsoIAPage() {
   async function loadFunctionDetail(fn: string) {
     setDetailLoading(true);
     try {
-      let url = `/api/admin/ai-usage/function-detail?function=${fn}`;
-      if (customDates) {
-        url += `&from=${customDates.from}&to=${customDates.to}`;
-      } else if (days) {
-        url += `&days=${days}`;
-      }
+      let url = `/api/admin/ai-usage/function-detail?function=${fn}&from=${dateRange.from}&to=${dateRange.to}`;
       const r = await fetch(url, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
