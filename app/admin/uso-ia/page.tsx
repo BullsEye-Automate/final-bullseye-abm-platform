@@ -33,6 +33,7 @@ const FUNCTION_LABELS: Record<string, string> = {
   prefilter:                      "Pre-filtro de contactos",
   deep_research:                  "Investigación profunda",
   agente_contenido_chat:          "Chat agente SDR",
+  agente_contenido_v2:            "Agente SDR (chat-v2)",
   company_research_fast:          "Investigación rápida de empresa",
   discovery_recommendation:       "Discovery de empresas",
   infer_company_name_from_bio:    "Inferir empresa desde bio (Lemlist)",
@@ -71,6 +72,7 @@ type FunctionDetail = {
   by_client: Record<string, { name: string; calls: number; cost_usd: number; input_tokens: number; output_tokens: number }>;
   by_day: Record<string, { calls: number; cost_usd: number }>;
   by_model: Record<string, { calls: number; cost_usd: number; input_tokens: number; output_tokens: number }>;
+  by_user?: Record<string, { email: string; calls: number; cost_usd: number }>;
   metadata_stats: {
     total_contacts: number;
     total_companies: number;
@@ -80,44 +82,58 @@ type FunctionDetail = {
   };
 };
 
-function calculateDaysForFilter(filter: string): number {
+function toDateStr(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+function calculateDateRange(filter: string): { from: string; to: string } {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayStr = toDateStr(today);
 
   switch (filter) {
     case "hoy":
-      return 1;
+      return { from: todayStr, to: todayStr };
     case "ayer": {
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      return Math.ceil((today.getTime() - yesterday.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const ayer = new Date(today);
+      ayer.setDate(today.getDate() - 1);
+      const ayerStr = toDateStr(ayer);
+      return { from: ayerStr, to: ayerStr };
     }
     case "esta-semana": {
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      return Math.ceil((today.getTime() - startOfWeek.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const start = new Date(today);
+      // Lunes como inicio de semana
+      const day = today.getDay() === 0 ? 6 : today.getDay() - 1;
+      start.setDate(today.getDate() - day);
+      return { from: toDateStr(start), to: todayStr };
     }
     case "semana-pasada": {
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      const startOfLastWeek = new Date(startOfWeek);
-      startOfLastWeek.setDate(startOfWeek.getDate() - 7);
-      return 7;
+      const endLast = new Date(today);
+      const day = today.getDay() === 0 ? 6 : today.getDay() - 1;
+      endLast.setDate(today.getDate() - day - 1); // domingo de la semana pasada
+      const startLast = new Date(endLast);
+      startLast.setDate(endLast.getDate() - 6); // lunes de la semana pasada
+      return { from: toDateStr(startLast), to: toDateStr(endLast) };
     }
     case "este-mes": {
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      return Math.ceil((today.getTime() - startOfMonth.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { from: toDateStr(start), to: todayStr };
     }
     case "mes-pasado": {
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const daysInLastMonth = (startOfMonth.getTime() - startOfLastMonth.getTime()) / (1000 * 60 * 60 * 24);
-      return Math.ceil(daysInLastMonth);
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const end   = new Date(today.getFullYear(), today.getMonth(), 0); // último día del mes anterior
+      return { from: toDateStr(start), to: toDateStr(end) };
     }
-    case "ultimos-30":
-      return 30;
-    default:
-      return 7;
+    case "ultimos-30": {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 29);
+      return { from: toDateStr(start), to: todayStr };
+    }
+    default: {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 6);
+      return { from: toDateStr(start), to: todayStr };
+    }
   }
 }
 
@@ -132,19 +148,15 @@ export default function UsoIAPage() {
   const [detailData, setDetailData] = useState<FunctionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const days = customDates ? null : calculateDaysForFilter(filterType);
+  // Siempre usar from/to para rangos exactos (days era impreciso para "mes pasado", "semana pasada")
+  const dateRange = customDates ?? calculateDateRange(filterType);
 
   async function load() {
     setLoading(true);
     setError(null);
     setData(null);
     try {
-      let url = `/api/admin/ai-usage`;
-      if (customDates) {
-        url += `?from=${customDates.from}&to=${customDates.to}`;
-      } else if (days) {
-        url += `?days=${days}`;
-      }
+      const url = `/api/admin/ai-usage?from=${dateRange.from}&to=${dateRange.to}`;
       const r = await fetch(url, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
@@ -158,12 +170,7 @@ export default function UsoIAPage() {
   async function loadFunctionDetail(fn: string) {
     setDetailLoading(true);
     try {
-      let url = `/api/admin/ai-usage/function-detail?function=${fn}`;
-      if (customDates) {
-        url += `&from=${customDates.from}&to=${customDates.to}`;
-      } else if (days) {
-        url += `&days=${days}`;
-      }
+      let url = `/api/admin/ai-usage/function-detail?function=${fn}&from=${dateRange.from}&to=${dateRange.to}`;
       const r = await fetch(url, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
@@ -336,6 +343,54 @@ export default function UsoIAPage() {
               </p>
             </button>
           )}
+
+          {/* SECCIÓN AGENTE SDR */}
+          {(() => {
+            // Combinar agente_contenido_chat (viejo /chat) + agente_contenido_v2 (nuevo /chat-v2)
+            const sdrV2   = data.by_function["agente_contenido_v2"];
+            const sdrChat = data.by_function["agente_contenido_chat"];
+            const totalCalls = (sdrV2?.calls ?? 0) + (sdrChat?.calls ?? 0);
+            if (totalCalls === 0) return null;
+
+            const totalCost  = (sdrV2?.cost_usd ?? 0) + (sdrChat?.cost_usd ?? 0);
+            const costPerMsg = totalCalls > 0 ? totalCost / totalCalls : 0;
+
+            return (
+              <div className="card overflow-hidden border-2" style={{ borderColor: "#62E0D8" }}>
+                <div className="px-5 py-3 border-b border-[#E5E2F0] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span style={{ color: "#62E0D8" }}>🤖</span>
+                    <p className="font-semibold text-sm text-ink">Agente SDR — uso del período</p>
+                    {sdrChat && sdrV2 && (
+                      <span className="text-[11px] text-ink-muted">(chat + chat-v2 combinados)</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => loadFunctionDetail("agente_contenido_v2,agente_contenido_chat")}
+                    className="btn text-xs"
+                    style={{ background: "#251762", color: "#62E0D8" }}
+                  >
+                    Ver desglose por cliente y SDR
+                  </button>
+                </div>
+
+                {/* KPIs del agente */}
+                <div className="grid grid-cols-4 gap-0 divide-x divide-[#E5E2F0]">
+                  {[
+                    { label: "Mensajes generados", value: totalCalls.toLocaleString() },
+                    { label: "Costo total (USD)", value: `$${fmt(totalCost)}` },
+                    { label: "Costo por mensaje", value: `$${fmt(costPerMsg)}` },
+                    { label: "Costo por mensaje (CLP)", value: `$${Math.round(costPerMsg * 950).toLocaleString()}` },
+                  ].map((s) => (
+                    <div key={s.label} className="px-5 py-4">
+                      <div className="text-xs text-ink-muted mb-1">{s.label}</div>
+                      <div className="text-xl font-semibold text-[#251762]">{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* GRÁFICO DE TENDENCIA TEMPORAL */}
           {byDay.length > 0 && (
@@ -641,6 +696,37 @@ export default function UsoIAPage() {
                               <td className="px-4 py-2 text-ink font-medium">{row.name}</td>
                               <td className="px-4 py-2 text-right text-ink-muted">{row.calls}</td>
                               <td className="px-4 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* DESGLOSE POR SDR/USUARIO */}
+                {detailData.by_user && Object.keys(detailData.by_user).length > 0 && (
+                  <div className="border border-[#E5E2F0] rounded overflow-hidden">
+                    <div className="bg-[#F8F7FC] px-4 py-2 border-b border-[#E5E2F0]">
+                      <p className="text-sm font-semibold text-ink">Uso por SDR</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[#E5E2F0]">
+                          <th className="text-left px-4 py-2 text-[11px] font-semibold text-ink-muted">SDR</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Mensajes</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Costo USD</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Costo / mensaje</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(detailData.by_user)
+                          .sort((a, b) => b[1].calls - a[1].calls)
+                          .map(([id, row]) => (
+                            <tr key={id} className="border-b border-[#F0EEF8] last:border-0">
+                              <td className="px-4 py-2 text-ink font-medium">{row.email.split("@")[0]}</td>
+                              <td className="px-4 py-2 text-right text-ink-muted">{row.calls}</td>
+                              <td className="px-4 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                              <td className="px-4 py-2 text-right text-ink-muted">${fmt(row.calls > 0 ? row.cost_usd / row.calls : 0)}</td>
                             </tr>
                           ))}
                       </tbody>
