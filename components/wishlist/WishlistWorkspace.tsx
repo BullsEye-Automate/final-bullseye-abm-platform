@@ -21,7 +21,10 @@ import {
   IconSend,
   IconClock,
   IconThumbDown,
+  IconStack2,
+  IconAlertTriangle,
 } from "@tabler/icons-react";
+import LotesPanel, { LotBadge, LotSelect, useLots } from "@/components/wishlist/LotesPanel";
 import {
   FILTER_GROUPS,
   type UnifiedFilterDef,
@@ -98,7 +101,7 @@ const STATUS_LABEL: Record<WishlistItem["status"], { text: string; cls: string }
   discarded: { text: "Descartada", cls: "bg-gray-100 text-gray-500" },
 };
 
-type Tab = "ai" | "search" | "upload" | "proposals" | "rejected" | "wishlist" | "worked" | "omitted" | "exclusions";
+type Tab = "ai" | "search" | "upload" | "proposals" | "rejected" | "wishlist" | "worked" | "omitted" | "exclusions" | "lots";
 
 // Clave para no repetir una empresa que aparece en las dos bases
 const dedupeKey = (c: { name: string; domain: string | null }) => c.domain ?? c.name.trim().toLowerCase();
@@ -130,9 +133,13 @@ function WorkspaceTabs() {
       .catch(() => setProxy(false));
   }, [ws.operator, ws.url]);
 
+  // Lotes de carga (solo el equipo): se recargan cada vez que cambia la wishlist
+  const [lotsKey, setLotsKey] = useState(0);
+  const lots = useLots(ws.operator ? ws.clientId : null, lotsKey);
   const loadWishlist = useCallback(async () => {
     const r = await fetch(ws.url("/api/portal/wishlist"), { cache: "no-store" });
     if (r.ok) setWishlist((await r.json()).items);
+    setLotsKey((k) => k + 1);
   }, [ws.url]);
 
   useEffect(() => {
@@ -157,6 +164,7 @@ function WorkspaceTabs() {
         { key: "rejected", label: `Rechazadas por el cliente${count(rejected.length)}`, icon: <IconThumbDown size={16} /> },
         { key: "omitted", label: "Descartadas", icon: <IconEyeOff size={16} /> },
         { key: "exclusions", label: "Lista de exclusión", icon: <IconBan size={16} /> },
+        { key: "lots", label: "Lotes de carga", icon: <IconStack2 size={16} /> },
       ]
     : [
         // El cliente no busca ni genera recomendaciones: aprueba lo que BullsEye
@@ -201,12 +209,13 @@ function WorkspaceTabs() {
       {tab === "ai" && catalog && <AiTab catalog={catalog} onAdded={loadWishlist} />}
       {tab === "search" && catalog && <SearchTab catalog={catalog} onAdded={loadWishlist} />}
       {tab === "upload" && <UploadTab onAdded={loadWishlist} onDone={() => setTab(ws.operator ? "worked" : "wishlist")} />}
-      {tab === "proposals" && <ProposalsTab items={proposed} onChange={loadWishlist} proxy={proxy} />}
+      {tab === "proposals" && <ProposalsTab items={proposed} onChange={loadWishlist} proxy={proxy} lots={lots} />}
       {tab === "rejected" && <RejectedTab items={rejected} />}
       {tab === "wishlist" && <WishlistTab items={own} onChange={loadWishlist} />}
       {tab === "worked" && <WorkedTab />}
       {tab === "omitted" && <OmittedTab />}
       {tab === "exclusions" && <ExclusionsTab />}
+      {tab === "lots" && ws.clientId && <LotesPanel key={lotsKey} clientId={ws.clientId} items={wishlist} />}
     </div>
   );
 }
@@ -1078,9 +1087,18 @@ function CompanyCard({ card, mode, onAdded, fitControls }: { card: Card; mode: "
 
 // ── Propuestas de BullsEye ───────────────────────────────────────────────
 
-function ProposalsTab({ items, onChange, proxy = false }: { items: WishlistItem[]; onChange: () => void; proxy?: boolean }) {
+function ProposalsTab({ items: allItems, onChange, proxy = false, lots }: { items: WishlistItem[]; onChange: () => void; proxy?: boolean; lots?: ReturnType<typeof useLots> }) {
   const ws = useWorkspace();
   const [busy, setBusy] = useState<string | null>(null);
+  // Filtro por lote de carga (solo el equipo)
+  const [lotFilter, setLotFilter] = useState("");
+  const lotOfItem = (id: string) => lots?.data?.byItem[id];
+  const lotCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const i of allItems) { const l = lots?.data?.byItem[i.id]; if (l) m.set(l, (m.get(l) ?? 0) + 1); }
+    return m;
+  }, [allItems, lots?.data]);
+  const items = lotFilter ? allItems.filter((i) => lotOfItem(i.id) === lotFilter) : allItems;
   const [medio, setMedio] = useState<string>("correo");
   const [nota, setNota] = useState("");
 
@@ -1123,7 +1141,7 @@ function ProposalsTab({ items, onChange, proxy = false }: { items: WishlistItem[
     onChange();
   }
 
-  if (!items.length) {
+  if (!allItems.length) {
     return (
       <div className="text-sm text-gray-500 bg-gray-50 rounded-xl px-4 py-3">
         {ws.operator
@@ -1146,6 +1164,12 @@ function ProposalsTab({ items, onChange, proxy = false }: { items: WishlistItem[
             </button>
           </div>
         </>
+      )}
+      {ws.operator && lots?.data && lotCounts.size > 1 && (
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-xs text-gray-500">Lote</span>
+          <LotSelect lots={lots.data.lots} value={lotFilter} onChange={setLotFilter} counts={lotCounts} />
+        </div>
       )}
       <p className="text-sm text-gray-500 mb-4">
         {ws.operator
@@ -1185,6 +1209,7 @@ function ProposalsTab({ items, onChange, proxy = false }: { items: WishlistItem[
               <div className="mt-auto">
                 {ws.operator ? (
                   <div>
+                    <div className="mb-1"><LotBadge lot={lots?.byId.get(lotOfItem(i.id) ?? "")} /></div>
                     <div className="text-xs text-gray-500">
                       Propuesta el {new Date(i.created_at).toLocaleDateString("es-CL")}{i.requested_by_email ? ` por ${i.requested_by_email}` : ""}
                     </div>
@@ -1488,6 +1513,25 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
   const [results, setResults] = useState<UploadResult[] | null>(null);
   const [medio, setMedio] = useState<string>("correo");
   const [nota, setNota] = useState("");
+  // Lote de la carga (lib/wishlistLotes.ts) y revisión de cruces antes de enviar
+  const [lotName, setLotName] = useState("");
+  type UploadCheck = { i: number; estado: "nueva" | "en_lote" | "revisar"; lote?: string; status?: string; motivos?: string[] };
+  const [checks, setChecks] = useState<UploadCheck[] | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  async function review(parsed: UploadRow[]) {
+    if (!ws.operator) return;
+    setChecks(null);
+    setChecking(true);
+    const r = await fetch(ws.url("/api/portal/wishlist/lotes"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows: parsed.map((x) => ({ name: x.name, website: x.domain })) }),
+    }).catch(() => null);
+    const j = r ? await r.json().catch(() => null) : null;
+    setChecking(false);
+    if (r?.ok && j?.checks) setChecks(j.checks);
+  }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -1501,6 +1545,7 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
       if (parsed.length > 2000) return setError("El archivo tiene más de 2.000 filas. Divídelo en partes.");
       setFileName(file.name);
       setRows(parsed);
+      review(parsed);
     } catch {
       setError("No pudimos leer el archivo. Sube un Excel (.xlsx) o CSV.");
     }
@@ -1511,12 +1556,14 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
     setError(null);
     setProgress(0);
     const all: UploadResult[] = [];
+    // Un mismo lote para todas las tandas del archivo
+    const batchInfo = { id: (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`), name: lotName.trim() || null, file: fileName, note: ws.operator ? nota.trim() || null : null, at: new Date().toISOString() };
     for (let i = 0; i < rows.length; i += UPLOAD_BATCH) {
       const batch = rows.slice(i, i + UPLOAD_BATCH).map((r) => ({ name: r.name, website: r.domain, linkedin_url: r.linkedin_url ?? null }));
       const r = await fetch(ws.url("/api/portal/wishlist/upload"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(ws.operator ? { rows: batch, medio, nota } : { rows: batch }),
+        body: JSON.stringify(ws.operator ? { rows: batch, medio, nota, batch: batchInfo } : { rows: batch, batch: batchInfo }),
       });
       const j = await r.json().catch(() => null);
       if (!r.ok || !j) {
@@ -1529,6 +1576,8 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
     setProgress(null);
     setResults(all);
     setRows(null);
+    setChecks(null);
+    setLotName("");
     onAdded();
   }
 
@@ -1572,19 +1621,58 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
             <div className="text-sm">
               <b>{rows.length.toLocaleString("es-CL")}</b> empresas en <span className="text-gray-500">{fileName}</span>
             </div>
+            {ws.operator && (
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs text-gray-600">Nombre del lote</label>
+                <input value={lotName} onChange={(e) => setLotName(e.target.value)} maxLength={120}
+                  placeholder="Opcional. Si lo dejas vacío: «Cliente (cargado por el equipo) · país · fecha»"
+                  className="flex-1 min-w-[260px] border border-gray-200 rounded-lg px-2 py-1 text-sm bg-white" />
+              </div>
+            )}
+            {ws.operator && checking && <div className="flex items-center gap-2 text-xs text-gray-500"><IconLoader2 size={14} className="animate-spin" /> Revisando cruces con cargas anteriores, recomendaciones y lo ya trabajado…</div>}
+            {ws.operator && checks && (() => {
+              const enLote = checks.filter((c) => c.estado === "en_lote");
+              const revisar = checks.filter((c) => c.estado === "revisar");
+              const porLote = new Map<string, number>();
+              for (const c of enLote) porLote.set(c.lote ?? "otra carga", (porLote.get(c.lote ?? "otra carga") ?? 0) + 1);
+              return (
+                <div className={`rounded-xl px-4 py-3 text-sm ${enLote.length || revisar.length ? "bg-amber-50 border border-amber-100" : "bg-green-50 border border-green-100"}`}>
+                  <div className="font-medium mb-1" style={{ color: "#251762" }}>Revisión antes de cargar</div>
+                  <ul className="space-y-0.5 text-gray-700">
+                    <li>· {checks.length - enLote.length - revisar.length} nuevas</li>
+                    {enLote.length > 0 && <li>· {enLote.length} ya estaban cargadas (no se duplican): {Array.from(porLote.entries()).map(([l, n]) => `${n} en «${l}»`).join(", ")}</li>}
+                    {revisar.length > 0 && <li className="text-amber-800">· {revisar.length} calzan con algo ya trabajado, excluido o recomendado: revísalas en la columna «Revisión» antes de enviar</li>}
+                  </ul>
+                </div>
+              );
+            })()}
             <div className="border border-gray-100 rounded-xl overflow-x-auto max-h-72">
               <table className="w-full text-sm">
                 <thead className="text-left text-xs text-gray-500 border-b border-gray-100 bg-gray-50 sticky top-0">
-                  <tr><th className="p-2">Empresa</th><th className="p-2">Sitio web</th><th className="p-2">LinkedIn</th></tr>
+                  <tr><th className="p-2">Empresa</th><th className="p-2">Sitio web</th><th className="p-2">LinkedIn</th>{ws.operator && checks && <th className="p-2">Revisión</th>}</tr>
                 </thead>
                 <tbody>
-                  {rows.slice(0, 100).map((r, i) => (
-                    <tr key={i} className="border-b border-gray-50 last:border-0">
-                      <td className="p-2">{r.name ?? r.domain}</td>
-                      <td className="p-2 text-gray-500">{r.domain ?? "—"}</td>
-                      <td className="p-2 text-gray-500 truncate max-w-[220px]">{r.linkedin_url ?? "—"}</td>
-                    </tr>
-                  ))}
+                  {(ws.operator && checks
+                    // Primero las que tienen algo que revisar
+                    ? [...rows.map((r, i) => ({ r, i }))].sort((a, b) => (checks[b.i]?.estado === "nueva" ? 0 : 1) - (checks[a.i]?.estado === "nueva" ? 0 : 1))
+                    : rows.map((r, i) => ({ r, i }))
+                  ).slice(0, 100).map(({ r, i }) => {
+                    const c = checks?.[i];
+                    return (
+                      <tr key={i} className="border-b border-gray-50 last:border-0 align-top">
+                        <td className="p-2">{r.name ?? r.domain}</td>
+                        <td className="p-2 text-gray-500">{r.domain ?? "—"}</td>
+                        <td className="p-2 text-gray-500 truncate max-w-[220px]">{r.linkedin_url ?? "—"}</td>
+                        {ws.operator && checks && (
+                          <td className="p-2 text-xs max-w-[340px]">
+                            {!c || c.estado === "nueva" ? <span className="text-green-700">Nueva</span>
+                              : c.estado === "en_lote" ? <span className="text-gray-600">Ya cargada en «{c.lote}» ({c.status})</span>
+                              : <span className="text-amber-800 inline-flex gap-1"><IconAlertTriangle size={13} className="shrink-0 mt-0.5" />{(c.motivos ?? []).slice(0, 2).join(" · ")}</span>}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               {rows.length > 100 && <div className="p-2 text-xs text-gray-400">Mostrando 100 de {rows.length.toLocaleString("es-CL")}.</div>}
@@ -1594,7 +1682,7 @@ function UploadTab({ onAdded, onDone }: { onAdded: () => void; onDone: () => voi
                 {progress !== null ? <IconLoader2 size={15} className="animate-spin" /> : <IconSend size={15} />}
                 {progress !== null ? `Enviando… ${progress} de ${rows.length}` : `Enviar ${rows.length.toLocaleString("es-CL")} empresas a prospección`}
               </button>
-              {progress === null && <button onClick={() => setRows(null)} className="text-sm text-gray-500">Cancelar</button>}
+              {progress === null && <button onClick={() => { setRows(null); setChecks(null); }} className="text-sm text-gray-500">Cancelar</button>}
             </div>
             {progress !== null && (
               <div className="h-2 rounded-full bg-gray-100 overflow-hidden">

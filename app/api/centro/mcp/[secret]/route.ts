@@ -8,6 +8,7 @@ import { isValidMcpSecret } from "@/lib/centroProspeccion/mcpSecret";
 import { loadClientLinks } from "@/lib/centroProspeccion/portalLink";
 import { auditCompany, loadAuditContext } from "@/lib/centroProspeccion/recoAudit";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getPortalIcp, IcpPortalError, setPortalIcp, ICP_FIELD_KEYS } from "@/lib/centroProspeccion/icpPortal";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -109,6 +110,31 @@ const TOOLS = [
         },
       },
       required: ["cliente_id"],
+    },
+  },
+  {
+    name: "centro_icp_portal_leer",
+    description:
+      "ICP vigente del cliente en el portal BullsEye (Sistema → ICP; el mismo de Pulso ABM, el que usa la IA de recomendaciones, fit y Contactos IA), por sección (General y, si tiene, una por industria o cuenta), y la lista de campos válidos para centro_icp_portal_cargar.",
+    inputSchema: { type: "object", properties: { cliente_id: { type: "string", description: "Id de la ficha del cliente en el Centro (ej. noventiq)" } }, required: ["cliente_id"] },
+  },
+  {
+    name: "centro_icp_portal_cargar",
+    description:
+      "Carga en el portal el ICP oficial del proyecto de Claude del cliente (la fuente oficial: el portal y la ficha lo copian). Escribe los campos dados en una sección (General por defecto), guarda un respaldo del ICP anterior y alinea la ficha del Centro con el ICP nuevo. " +
+      "Antes de usarla: lee el ICP actual con centro_icp_portal_leer, muestra a la persona qué cambia y escribe solo con su OK. Nunca inventes datos: un campo que el proyecto no trae se omite. Sin correos ni teléfonos de personas.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        cliente_id: { type: "string", description: "Id de la ficha del cliente en el Centro" },
+        seccion: { type: "string", description: "Sección del ICP: \"General\" (por defecto) o el nombre de una industria / cuenta (ej. Retail, Nisum Perú)" },
+        campos: { type: "object", description: `Campos del ICP. Claves válidas: ${ICP_FIELD_KEYS.join(", ")}. Las listas (tamano_empresa, facturacion, modelo_empresa, etapa_empresa, departamentos, seniority, tono, idioma, cta_primer_contacto, canales) van como arreglo de textos.` },
+        reemplazar: { type: "boolean", description: "true = la sección queda solo con estos campos (lo demás se borra). Por defecto false: se actualizan solo los campos dados." },
+        crear_seccion: { type: "boolean", description: "Crear la sección si no existe" },
+        alinear_ficha: { type: "boolean", description: "Alinear la ficha del Centro con el ICP nuevo (por defecto true)" },
+        fuente: { type: "string", description: "Archivo del proyecto de donde sale el ICP (ej. «ICP Noventiq 11.11.2026.xlsx»)" },
+      },
+      required: ["cliente_id", "campos"],
     },
   },
   {
@@ -260,6 +286,22 @@ async function callTool(name: string, a: Record<string, unknown>): Promise<unkno
         empresas: out,
       };
     }
+    case "centro_icp_portal_leer":
+      try { return await getPortalIcp(String(a.cliente_id ?? "")); }
+      catch (e) { if (e instanceof IcpPortalError) throw new ToolError(e.message); throw e; }
+    case "centro_icp_portal_cargar":
+      try {
+        return await setPortalIcp({
+          fichaId: String(a.cliente_id ?? ""),
+          seccion: typeof a.seccion === "string" ? a.seccion : null,
+          campos: obj(a.campos),
+          reemplazar: a.reemplazar === true,
+          crearSeccion: a.crear_seccion === true,
+          alinearFicha: a.alinear_ficha !== false,
+          fuente: typeof a.fuente === "string" ? a.fuente.slice(0, 200) : null,
+          by: "proyecto-claude@centro",
+        });
+      } catch (e) { if (e instanceof IcpPortalError) throw new ToolError(e.message); throw e; }
     case "centro_asset_url": {
       const url = await signedAssetUrl(String(a.asset_id ?? ""));
       if (!url) throw new ToolError("Archivo no encontrado");

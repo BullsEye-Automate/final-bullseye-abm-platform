@@ -14,6 +14,7 @@ import {
 } from "@/lib/wishlist";
 import { decodeRef } from "@/lib/unifiedSearch";
 import { pushWishlistItemToLemlist } from "@/lib/wishlistLemlist";
+import { autoLotId, type LotKind, type LotTag } from "@/lib/wishlistLotes";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +129,16 @@ export async function POST(req: NextRequest) {
   }
 
   const proposed = user.isOperator;
+  // Lote (lib/wishlistLotes.ts): lo que el equipo agrega desde una
+  // recomendación de la IA va al lote semanal de la IA; lo demás, al del día
+  let fromReco = false;
+  if (proposed && sourceRef && (source === "hubspot" || source === "lemlist")) {
+    const { data: rec } = await db.from("client_recommendations").select("id").eq("client_id", user.clientId).eq("source", source).eq("source_ref", sourceRef).maybeSingle();
+    fromReco = !!rec;
+  }
+  const lotKind: LotKind = proposed ? (fromReco ? "ia" : "equipo") : "cliente";
+  const nowIso = new Date().toISOString();
+  const batch: LotTag = { id: autoLotId(lotKind, nowIso, user.email), kind: lotKind, by: user.email, at: nowIso };
   const { data, error } = await db
     .from("client_wishlist")
     .insert({
@@ -140,7 +151,7 @@ export async function POST(req: NextRequest) {
       mode,
       fit_score: fit?.fit_score ?? null,
       fit_reason: fit?.fit_reason ?? null,
-      snapshot: { facts: card.facts, lemlist_fields: lemlistFields, ...(comment ? { client_comment: comment } : {}) },
+      snapshot: { facts: card.facts, lemlist_fields: lemlistFields, batch, ...(comment ? { client_comment: comment } : {}) },
       status: proposed ? "proposed" : "new",
       origin: proposed ? "bullseye" : "client",
       lemlist_status: proposed ? null : "pendiente",
