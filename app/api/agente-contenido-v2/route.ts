@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { getClientContext } from "@/lib/getClientContext";
-import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseServer } from "@/lib/supabase/server";
 import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
@@ -213,7 +214,9 @@ ${channelInfo.hasSubject && !isMeetingBrief
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = getUserIdFromRequest(req);
+    // Leer user_id desde la sesión de cookies (SSR auth)
+    const { data: { user } } = await supabaseServer().auth.getUser();
+    const userId = user?.id ?? null;
     const body = await req.json();
     const {
       clientId, messages, emailType, channel, segmentId,
