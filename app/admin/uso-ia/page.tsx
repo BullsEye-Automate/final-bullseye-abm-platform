@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconLoader2, IconRefresh, IconSparkles, IconAlertCircle, IconTrendingUp, IconCpu, IconDownload } from "@tabler/icons-react";
 
 type FunctionRow = { calls: number; input_tokens: number; output_tokens: number; cost_usd: number };
@@ -149,6 +149,17 @@ export default function UsoIAPage() {
   const [exportSections, setExportSections] = useState({
     resumen: true, funciones: true, clientes: true, usuarios: true, modelos: true, dias: true,
   });
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showExportMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showExportMenu]);
   const [detailData, setDetailData] = useState<FunctionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -317,7 +328,7 @@ export default function UsoIAPage() {
             📅 Personalizado
           </button>
           <div className="ml-auto flex items-center gap-2">
-            <div className="relative">
+            <div className="relative" ref={exportMenuRef}>
               <button
                 onClick={() => setShowExportMenu((v) => !v)}
                 className="btn bg-white border border-[#E5E2F0] text-ink"
