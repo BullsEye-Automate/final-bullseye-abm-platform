@@ -12,23 +12,26 @@ export async function GET(req: NextRequest) {
     const functionName = functionNames[0]; // para compatibilidad con el campo de respuesta
     const db = supabaseAdmin();
 
-    let since: string;
-
     const fromParam = req.nextUrl.searchParams.get("from");
     const toParam = req.nextUrl.searchParams.get("to");
 
+    let since: string;
+    let until: string;
+
     if (fromParam && toParam) {
-      const fromDate = new Date(fromParam + "T00:00:00Z");
-      since = fromDate.toISOString();
+      since = new Date(fromParam + "T00:00:00Z").toISOString();
+      until = new Date(toParam   + "T23:59:59Z").toISOString();
     } else {
       const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
       since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      until = new Date().toISOString();
     }
 
   const query = db
     .from("ai_usage_log")
     .select("*, clients(name)")
     .gte("created_at", since)
+    .lte("created_at", until)
     .order("created_at", { ascending: false });
 
   // Filtrar por una o varias funciones

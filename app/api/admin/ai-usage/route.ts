@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     .from("ai_usage_log")
     .select("*, clients(name)")
     .gte("created_at", since)
+    .lte("created_at", now)
     .order("created_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
