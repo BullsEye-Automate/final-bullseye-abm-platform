@@ -33,6 +33,7 @@ const FUNCTION_LABELS: Record<string, string> = {
   prefilter:                      "Pre-filtro de contactos",
   deep_research:                  "Investigación profunda",
   agente_contenido_chat:          "Chat agente SDR",
+  agente_contenido_v2:            "Agente SDR (chat-v2)",
   company_research_fast:          "Investigación rápida de empresa",
   discovery_recommendation:       "Discovery de empresas",
   infer_company_name_from_bio:    "Inferir empresa desde bio (Lemlist)",
@@ -71,6 +72,7 @@ type FunctionDetail = {
   by_client: Record<string, { name: string; calls: number; cost_usd: number; input_tokens: number; output_tokens: number }>;
   by_day: Record<string, { calls: number; cost_usd: number }>;
   by_model: Record<string, { calls: number; cost_usd: number; input_tokens: number; output_tokens: number }>;
+  by_user?: Record<string, { email: string; calls: number; cost_usd: number }>;
   metadata_stats: {
     total_contacts: number;
     total_companies: number;
@@ -336,6 +338,79 @@ export default function UsoIAPage() {
               </p>
             </button>
           )}
+
+          {/* SECCIÓN AGENTE SDR */}
+          {(() => {
+            const sdrFn = data.by_function["agente_contenido_v2"];
+            if (!sdrFn) return null;
+
+            // SDRs que usaron el agente: filtrar by_user cruzando con by_function por usuario
+            // La API no filtra by_user por función, pero podemos extraer los datos del detalle.
+            // Por ahora mostramos el resumen del agente + botón para ver desglose.
+            const costPerMsg = sdrFn.calls > 0 ? sdrFn.cost_usd / sdrFn.calls : 0;
+
+            return (
+              <div className="card overflow-hidden border-2" style={{ borderColor: "#62E0D8" }}>
+                <div className="px-5 py-3 border-b border-[#E5E2F0] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span style={{ color: "#62E0D8" }}>🤖</span>
+                    <p className="font-semibold text-sm text-ink">Agente SDR — uso del período</p>
+                  </div>
+                  <button
+                    onClick={() => loadFunctionDetail("agente_contenido_v2")}
+                    className="btn text-xs"
+                    style={{ background: "#251762", color: "#62E0D8" }}
+                  >
+                    Ver desglose por cliente
+                  </button>
+                </div>
+
+                {/* KPIs del agente */}
+                <div className="grid grid-cols-4 gap-0 divide-x divide-[#E5E2F0]">
+                  {[
+                    { label: "Mensajes generados", value: sdrFn.calls.toLocaleString() },
+                    { label: "Costo total (USD)", value: `$${fmt(sdrFn.cost_usd)}` },
+                    { label: "Costo por mensaje", value: `$${fmt(costPerMsg)}` },
+                    { label: "Costo por mensaje (CLP)", value: `$${Math.round(costPerMsg * 950).toLocaleString()}` },
+                  ].map((s) => (
+                    <div key={s.label} className="px-5 py-4">
+                      <div className="text-xs text-ink-muted mb-1">{s.label}</div>
+                      <div className="text-xl font-semibold text-[#251762]">{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Desglose por SDR (by_user filtrado al período, todas las funciones incluyen el agente) */}
+                {byUser.length > 0 && (
+                  <div className="border-t border-[#E5E2F0]">
+                    <div className="px-5 py-2.5 bg-[#F8F7FC]">
+                      <p className="text-xs font-semibold text-ink-muted uppercase tracking-wide">Uso por SDR (todos los usos de IA, período seleccionado)</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[#E5E2F0]">
+                          <th className="text-left px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">SDR</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Mensajes</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Costo USD</th>
+                          <th className="text-right px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Costo / mensaje</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {byUser.map(([id, row]) => (
+                          <tr key={id} className="border-b border-[#F0EEF8] last:border-0">
+                            <td className="px-5 py-2 text-ink font-medium text-sm">{row.email.split("@")[0]}</td>
+                            <td className="px-4 py-2 text-right text-ink-muted">{row.calls.toLocaleString()}</td>
+                            <td className="px-5 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                            <td className="px-5 py-2 text-right text-ink-muted">${fmt(row.calls > 0 ? row.cost_usd / row.calls : 0)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* GRÁFICO DE TENDENCIA TEMPORAL */}
           {byDay.length > 0 && (
@@ -641,6 +716,37 @@ export default function UsoIAPage() {
                               <td className="px-4 py-2 text-ink font-medium">{row.name}</td>
                               <td className="px-4 py-2 text-right text-ink-muted">{row.calls}</td>
                               <td className="px-4 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* DESGLOSE POR SDR/USUARIO */}
+                {detailData.by_user && Object.keys(detailData.by_user).length > 0 && (
+                  <div className="border border-[#E5E2F0] rounded overflow-hidden">
+                    <div className="bg-[#F8F7FC] px-4 py-2 border-b border-[#E5E2F0]">
+                      <p className="text-sm font-semibold text-ink">Uso por SDR</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[#E5E2F0]">
+                          <th className="text-left px-4 py-2 text-[11px] font-semibold text-ink-muted">SDR</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Mensajes</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Costo USD</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Costo / mensaje</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(detailData.by_user)
+                          .sort((a, b) => b[1].calls - a[1].calls)
+                          .map(([id, row]) => (
+                            <tr key={id} className="border-b border-[#F0EEF8] last:border-0">
+                              <td className="px-4 py-2 text-ink font-medium">{row.email.split("@")[0]}</td>
+                              <td className="px-4 py-2 text-right text-ink-muted">{row.calls}</td>
+                              <td className="px-4 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                              <td className="px-4 py-2 text-right text-ink-muted">${fmt(row.calls > 0 ? row.cost_usd / row.calls : 0)}</td>
                             </tr>
                           ))}
                       </tbody>

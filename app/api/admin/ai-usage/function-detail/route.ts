@@ -40,6 +40,12 @@ export async function GET(req: NextRequest) {
   const byClient: Record<string, { name: string; calls: number; cost_usd: number; input_tokens: number; output_tokens: number }> = {};
   const byDay: Record<string, { calls: number; cost_usd: number }> = {};
   const byModel: Record<string, { calls: number; cost_usd: number; input_tokens: number; output_tokens: number }> = {};
+  const byUser: Record<string, { email: string; calls: number; cost_usd: number }> = {};
+
+  // Mapear user_id → email
+  const { data: users } = await db.from("auth.users").select("id, email");
+  const userMap: Record<string, string> = {};
+  if (users) for (const u of users) userMap[u.id] = u.email || "Desconocido";
 
   // Métricas de metadata (null si no hay datos)
   const metadataStats = {
@@ -84,6 +90,14 @@ export async function GET(req: NextRequest) {
     byModel[model].cost_usd += Number(row.cost_usd);
     byModel[model].input_tokens += row.input_tokens;
     byModel[model].output_tokens += row.output_tokens;
+
+    // Por usuario
+    if (row.user_id) {
+      const email = userMap[row.user_id] ?? "Desconocido";
+      if (!byUser[row.user_id]) byUser[row.user_id] = { email, calls: 0, cost_usd: 0 };
+      byUser[row.user_id].calls++;
+      byUser[row.user_id].cost_usd += Number(row.cost_usd);
+    }
 
     // Metadata
     if (row.metadata) {
@@ -134,6 +148,7 @@ export async function GET(req: NextRequest) {
       by_client: byClient,
       by_day: byDay,
       by_model: byModel,
+      by_user: byUser,
       metadata_stats: metadataStats,
       all_metadata: allMetadata,
       raw_rows: data,
