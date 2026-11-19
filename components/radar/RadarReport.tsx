@@ -35,10 +35,18 @@ function periodLabel(ds: RadarDataset) {
 const monthName = (mo: string) => `${MONTHS_ES[Number(mo.slice(5, 7)) - 1]} ${mo.slice(0, 4)}`;
 const lastOfMonth = (mo: string) => new Date(Date.UTC(Number(mo.slice(0, 4)), Number(mo.slice(5, 7)), 0)).toISOString().slice(0, 10);
 
-// Selector de fechas: todo el período, un mes, una semana (lunes a domingo) o un día
-type DateGran = "" | "month" | "week" | "day";
+// Selector de fechas: todo el período, un trimestre (Q1–Q4, pedido de BullsEye
+// para Nisum, nov-2026), un mes, una semana (lunes a domingo) o un día
+type DateGran = "" | "quarter" | "month" | "week" | "day";
+const quarterOf = (mo: string) => `${mo.slice(0, 4)}-Q${Math.floor((Number(mo.slice(5, 7)) - 1) / 3) + 1}`;
+const quarterLabel = (q: string) => `${q.slice(5)} ${q.slice(0, 4)}`;
 function dateRange(gran: DateGran, value: string): { from: string; to: string; label: string } | null {
   if (!gran || !value) return null;
+  if (gran === "quarter") {
+    const y = value.slice(0, 4), first = (Number(value.slice(6)) - 1) * 3 + 1;
+    const m = (n: number) => `${y}-${String(n).padStart(2, "0")}`;
+    return { from: m(first) + "-01", to: lastOfMonth(m(first + 2)), label: quarterLabel(value) };
+  }
   if (gran === "month") return { from: value + "-01", to: lastOfMonth(value), label: monthName(value) };
   if (gran === "week") return { from: value, to: addDays(value, 6), label: `semana del ${dmy(value)}` };
   return { from: value, to: value, label: dmy(value) };
@@ -104,6 +112,7 @@ export default function RadarReport({
   }, [dataset]);
   // Opciones del selector de fechas dentro del período del informe (más reciente primero)
   const monthOpts = useMemo(() => periodMonths(dataset.period, dataset.generated).reverse(), [dataset]);
+  const quarterOpts = useMemo(() => Array.from(new Set(monthOpts.map(quarterOf))), [monthOpts]);
   const weekOpts = useMemo(() => {
     const out: string[] = [];
     for (let d = mondayOf(dataset.generated); d >= mondayOf(dataset.period[0]) && out.length < 60; d = addDays(d, -7)) out.push(d);
@@ -117,7 +126,7 @@ export default function RadarReport({
 
   function changeGran(g: DateGran) {
     setGran(g);
-    setDateValue(g === "month" ? monthOpts[0] : g === "week" ? weekOpts[0] : g === "day" ? dataset.generated : "");
+    setDateValue(g === "quarter" ? quarterOpts[0] : g === "month" ? monthOpts[0] : g === "week" ? weekOpts[0] : g === "day" ? dataset.generated : "");
   }
   const M = useMemo(() => compute(filtered, config), [filtered, config]);
   // billingRef: al cambiar filtros se rearma con las marcas al día
@@ -352,10 +361,16 @@ export default function RadarReport({
           <label htmlFor="ra-gran">Fechas</label>
           <select id="ra-gran" className={`ra-select${gran ? " act" : ""}`} value={gran} onChange={(e) => changeGran(e.target.value as DateGran)}>
             <option value="">Todo el período</option>
+            <option value="quarter">Trimestre</option>
             <option value="month">Mes</option>
             <option value="week">Semana</option>
             <option value="day">Día</option>
           </select>
+          {gran === "quarter" && (
+            <select aria-label="Trimestre" className="ra-select act" value={dateValue} onChange={(e) => setDateValue(e.target.value)}>
+              {quarterOpts.map((q) => <option key={q} value={q}>{quarterLabel(q)}</option>)}
+            </select>
+          )}
           {gran === "month" && (
             <select aria-label="Mes" className="ra-select act" value={dateValue} onChange={(e) => setDateValue(e.target.value)}>
               {monthOpts.map((m) => <option key={m} value={m}>{monthName(m)}</option>)}
