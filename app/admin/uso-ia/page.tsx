@@ -623,7 +623,11 @@ export default function UsoIAPage() {
             <div className="sticky top-0 bg-white border-b border-[#E5E2F0] px-6 py-4 flex items-center justify-between">
               <div>
                 <p className="text-xs text-orange-700 font-semibold uppercase">Análisis detallado — {dateRange.from} → {dateRange.to}</p>
-                <h2 className="text-xl font-semibold text-ink">{FUNCTION_LABELS[detailFn] ?? detailFn}</h2>
+                <h2 className="text-xl font-semibold text-ink">
+                  {detailFn === "agente_contenido_v2,agente_contenido_chat"
+                    ? "Agente SDR (chat + chat-v2 combinados)"
+                    : (FUNCTION_LABELS[detailFn] ?? detailFn)}
+                </h2>
               </div>
               <button
                 onClick={() => { setDetailFn(null); setDetailData(null); }}
@@ -643,9 +647,9 @@ export default function UsoIAPage() {
                 {/* RESUMEN RÁPIDO */}
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: "Costo total", value: `$${fmt(detailData.total_cost_usd)}` },
+                    { label: "Costo total", value: `$${fmt(detailData.total_cost_usd, 2)}` },
                     { label: "Llamadas", value: detailData.total_calls },
-                    { label: "Costo / llamada", value: `$${fmt(detailData.total_cost_usd / detailData.total_calls)}` },
+                    { label: "Costo / llamada", value: `$${fmt(detailData.total_cost_usd / detailData.total_calls, 4)}` },
                   ].map((s) => (
                     <div key={s.label} className="bg-[#F8F7FC] p-3 rounded">
                       <p className="text-xs text-ink-muted mb-1">{s.label}</p>
@@ -654,8 +658,8 @@ export default function UsoIAPage() {
                   ))}
                 </div>
 
-                {/* MÉTRICAS DE METADATA */}
-                {detailData.metadata_stats && (
+                {/* MÉTRICAS DE METADATA — solo si hay datos reales */}
+                {detailData.metadata_stats && (detailData.metadata_stats.total_contacts !== null || detailData.metadata_stats.total_companies !== null) && (
                   <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded p-4">
                     <p className="text-sm font-semibold text-ink mb-3">📊 Métricas de impacto</p>
                     <div className="grid grid-cols-2 gap-3">
