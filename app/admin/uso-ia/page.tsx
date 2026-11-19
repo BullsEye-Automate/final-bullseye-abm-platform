@@ -243,6 +243,68 @@ export default function UsoIAPage() {
     setShowExportMenu(false);
   }
 
+  function exportDetailCSV() {
+    if (!detailData || !detailFn) return;
+    const rows: string[][] = [];
+    const q = (s: string | number) => `"${String(s).replace(/"/g, '""')}"`;
+    const fnLabel = detailFn === "agente_contenido_v2,agente_contenido_chat"
+      ? "Agente SDR (chat + chat-v2 combinados)"
+      : (FUNCTION_LABELS[detailFn] ?? detailFn);
+
+    rows.push([fnLabel]);
+    rows.push(["Período", `${dateRange.from} → ${dateRange.to}`]);
+    rows.push(["Llamadas totales", String(detailData.total_calls)]);
+    rows.push(["Costo total USD", fmt(detailData.total_cost_usd)]);
+    rows.push(["Costo / llamada", fmt(detailData.total_cost_usd / detailData.total_calls)]);
+    rows.push([]);
+
+    if (Object.keys(detailData.by_client).length > 0) {
+      rows.push(["--- Consumo por cliente ---"]);
+      rows.push(["Cliente", "Llamadas", "Costo USD"]);
+      Object.entries(detailData.by_client)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([, r]) => rows.push([r.name, String(r.calls), fmt(r.cost_usd)]));
+      rows.push([]);
+    }
+
+    if (detailData.by_user && Object.keys(detailData.by_user).length > 0) {
+      rows.push(["--- Por usuario ---"]);
+      rows.push(["Usuario", "Llamadas", "Costo USD"]);
+      Object.entries(detailData.by_user)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([, r]) => rows.push([r.email, String(r.calls), fmt(r.cost_usd)]));
+      rows.push([]);
+    }
+
+    if (Object.keys(detailData.by_model).length > 0) {
+      rows.push(["--- Por modelo ---"]);
+      rows.push(["Modelo", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
+      Object.entries(detailData.by_model)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([model, r]) =>
+          rows.push([model, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
+        );
+      rows.push([]);
+    }
+
+    if (Object.keys(detailData.by_day).length > 0) {
+      rows.push(["--- Por día ---"]);
+      rows.push(["Día", "Llamadas", "Costo USD"]);
+      Object.entries(detailData.by_day)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .forEach(([day, r]) => rows.push([day, String(r.calls), fmt(r.cost_usd)]));
+    }
+
+    const csv = rows.map((row) => row.map(q).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `uso-ia_detalle_${fnLabel.replace(/[^a-zA-Z0-9]/g, "_")}_${dateRange.from}_${dateRange.to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -772,12 +834,23 @@ export default function UsoIAPage() {
                     : (FUNCTION_LABELS[detailFn] ?? detailFn)}
                 </h2>
               </div>
-              <button
-                onClick={() => { setDetailFn(null); setDetailData(null); }}
-                className="text-ink-muted hover:text-ink text-2xl leading-none"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                {detailData && (
+                  <button
+                    onClick={exportDetailCSV}
+                    className="btn bg-white border border-[#E5E2F0] text-ink text-sm"
+                  >
+                    <IconDownload size={14} />
+                    Exportar CSV
+                  </button>
+                )}
+                <button
+                  onClick={() => { setDetailFn(null); setDetailData(null); }}
+                  className="text-ink-muted hover:text-ink text-2xl leading-none"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {detailLoading ? (
