@@ -209,7 +209,7 @@ function InboxPreview({ subject, body, channel }: { subject: string; body: strin
 
 function EmailCard({ subject, body, showSubject = true, channel = "email", onSend, sending, sendResult, defaultTo }: {
   subject: string; body: string; showSubject?: boolean; channel?: string;
-  onSend?: (subject: string, body: string, to: string) => void;
+  onSend?: (subject: string, body: string, to: string, attachment?: { name: string; base64: string; mimeType: string }) => void;
   sending?: boolean;
   sendResult?: { ok: boolean; msg?: string } | null;
   defaultTo?: string;
@@ -217,6 +217,21 @@ function EmailCard({ subject, body, showSubject = true, channel = "email", onSen
   const [copied, setCopied] = useState(false);
   const [sendTo, setSendTo] = useState(defaultTo ?? "");
   const [showSendForm, setShowSendForm] = useState(false);
+  const [attachment, setAttachment] = useState<{ name: string; base64: string; mimeType: string } | null>(null);
+  const attachRef = useRef<HTMLInputElement>(null);
+
+  function handleAttachPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1];
+      setAttachment({ name: file.name, base64, mimeType: file.type || "application/octet-stream" });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
   const [preview, setPreview] = useState(false);
   const isBrief = channel === "meeting_brief";
 
@@ -306,16 +321,32 @@ function EmailCard({ subject, body, showSubject = true, channel = "email", onSen
           </div>
         </div>
         {showSendForm && onSend && (
-          <div className="mb-3 flex gap-2 items-center">
-            <input type="email" value={sendTo} onChange={e => setSendTo(e.target.value)}
-              placeholder="Email del destinatario"
-              className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
-            <button onClick={() => { if (sendTo) onSend(subject, body, sendTo); }} disabled={!sendTo || sending}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium disabled:opacity-50"
-              style={{ background: "#251762", color: "#62E0D8" }}>
-              {sending ? "Enviando…" : <><IconSend size={13} /> Enviar</>}
-            </button>
+          <div className="mb-3 space-y-2">
+            <div className="flex gap-2 items-center">
+              <input type="email" value={sendTo} onChange={e => setSendTo(e.target.value)}
+                placeholder="Email del destinatario"
+                className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
+                style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
+              <button type="button" onClick={() => attachRef.current?.click()}
+                className="flex items-center gap-1 px-3 py-2 rounded-lg text-[12px] font-medium"
+                style={{ background: "#f4f2fb", color: "#6b66a3", border: "1px solid #e2e0f0" }}
+                title="Adjuntar archivo">
+                📎
+              </button>
+              <button onClick={() => { if (sendTo) onSend(subject, body, sendTo, attachment ?? undefined); }} disabled={!sendTo || sending}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium disabled:opacity-50"
+                style={{ background: "#251762", color: "#62E0D8" }}>
+                {sending ? "Enviando…" : <><IconSend size={13} /> Enviar</>}
+              </button>
+            </div>
+            {attachment && (
+              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[12px]"
+                style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#6b66a3" }}>
+                <span>📎 {attachment.name}</span>
+                <button onClick={() => setAttachment(null)} className="ml-auto text-[11px] hover:text-red-400">✕</button>
+              </div>
+            )}
+            <input ref={attachRef} type="file" className="hidden" onChange={handleAttachPick} />
           </div>
         )}
         {sendResult && (
@@ -336,7 +367,7 @@ function EmailCard({ subject, body, showSubject = true, channel = "email", onSen
 
 function Bubble({ msg, channel, onSend, sending, sendResult, contactEmail }: {
   msg: Message; channel: string;
-  onSend?: (subject: string, body: string, to: string) => void;
+  onSend?: (subject: string, body: string, to: string, attachment?: { name: string; base64: string; mimeType: string }) => void;
   sending?: boolean;
   sendResult?: { ok: boolean; msg?: string } | null;
   contactEmail?: string;
@@ -583,14 +614,14 @@ export default function ChatV2Page() {
     e.target.value = "";
   }
 
-  async function sendGmail(msgIdx: number, to: string, subject: string, body: string) {
+  async function sendGmail(msgIdx: number, to: string, subject: string, body: string, attachment?: { name: string; base64: string; mimeType: string }) {
     setSendingEmail(msgIdx);
     setSendResult(null);
     try {
       const r = await fetch("/api/auth/gmail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, body, clientId }),
+        body: JSON.stringify({ to, subject, body, clientId, attachment }),
       });
       const j = await r.json();
       setSendResult({ idx: msgIdx, ok: r.ok, msg: r.ok ? "Enviado" : (j.error ?? "Error al enviar") });
@@ -997,8 +1028,8 @@ export default function ChatV2Page() {
             <div className="flex-1 overflow-y-auto px-6 py-6">
               {messages.map((msg, i) => (
                 <Bubble key={i} msg={msg} channel={channel}
-                  onSend={gmailEmail && msg.role === "assistant" ? (subj, body, to) => {
-                    sendGmail(i, to, subj, body);
+                  onSend={gmailEmail && msg.role === "assistant" ? (subj, body, to, att) => {
+                    sendGmail(i, to, subj, body, att);
                   } : undefined}
                   sending={sendingEmail === i}
                   sendResult={sendResult?.idx === i ? sendResult : null}

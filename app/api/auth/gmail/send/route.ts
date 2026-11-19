@@ -64,20 +64,55 @@ function encodeRfc2047(text: string): string {
     : text;
 }
 
-function buildRawEmail(from: string, senderName: string, to: string, subject: string, htmlBody: string): string {
+function buildRawEmail(
+  from: string,
+  senderName: string,
+  to: string,
+  subject: string,
+  htmlBody: string,
+  attachment?: { name: string; base64: string; mimeType: string }
+): string {
   const encodedSubject = encodeRfc2047(subject);
   const encodedName = encodeRfc2047(senderName);
   const fromHeader = senderName ? `${encodedName} <${from}>` : from;
-  const lines = [
+
+  if (!attachment) {
+    const lines = [
+      `From: ${fromHeader}`,
+      `To: ${to}`,
+      `Subject: ${encodedSubject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: text/html; charset=UTF-8`,
+      ``,
+      htmlBody,
+    ];
+    return Buffer.from(lines.join("\r\n")).toString("base64url");
+  }
+
+  const boundary = `boundary_${Date.now().toString(36)}`;
+  const encodedFileName = encodeRfc2047(attachment.name);
+  const parts = [
     `From: ${fromHeader}`,
     `To: ${to}`,
     `Subject: ${encodedSubject}`,
     `MIME-Version: 1.0`,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    ``,
+    `--${boundary}`,
     `Content-Type: text/html; charset=UTF-8`,
     ``,
     htmlBody,
+    ``,
+    `--${boundary}`,
+    `Content-Type: ${attachment.mimeType}; name="${encodedFileName}"`,
+    `Content-Transfer-Encoding: base64`,
+    `Content-Disposition: attachment; filename="${encodedFileName}"`,
+    ``,
+    attachment.base64,
+    ``,
+    `--${boundary}--`,
   ];
-  return Buffer.from(lines.join("\r\n")).toString("base64url");
+  return Buffer.from(parts.join("\r\n")).toString("base64url");
 }
 
 async function logEmailToHubspot({
@@ -170,7 +205,7 @@ export async function POST(req: NextRequest) {
   } catch {}
   if (!userId) return NextResponse.json({ error: "No autenticado" }, { status: 401 });
 
-  const { to, subject, body, clientId } = await req.json();
+  const { to, subject, body, clientId, attachment } = await req.json();
   if (!to || !subject || !body) {
     return NextResponse.json({ error: "to, subject y body son requeridos" }, { status: 400 });
   }
@@ -213,7 +248,7 @@ export async function POST(req: NextRequest) {
 
   const trackingId = randomUUID();
   const htmlBody = buildHtmlBody(body, senderName, clientRow?.name ?? "", trackingId);
-  const raw = buildRawEmail(tokenRow.email, senderName, to, subject, htmlBody);
+  const raw = buildRawEmail(tokenRow.email, senderName, to, subject, htmlBody, attachment ?? undefined);
 
   const gmailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
     method: "POST",
