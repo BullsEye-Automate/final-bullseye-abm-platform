@@ -266,7 +266,16 @@ export async function analyzeMeetingAudio(meetingId: string): Promise<void> {
     console.log(`[analysis] reunión ${meetingId}: transcribiendo con Deepgram...`);
     const deepgramResponse = await transcribeAudio(meeting.audio_path);
     transcript = buildTranscriptText(deepgramResponse);
-    durationSeconds = deepgramResponse?.metadata?.duration ?? null;
+    // Bug real (19-11-2026): Deepgram devuelve metadata.duration con
+    // decimales (ej. 185.43) — la columna audio_duration_seconds es
+    // integer, y Postgres rechaza un valor con decimales para ese tipo
+    // (error 22P02, "invalid input syntax for type integer"). Esto hacía
+    // fallar el UPDATE final silenciosamente para TODA reunión que pasara
+    // por Deepgram (extensión de Chrome, o fallback cuando el transcript de
+    // Recall no bajó) — la reunión quedaba pegada en 'captured' para
+    // siempre, sin análisis. Math.round en vez de truncar sin más.
+    const rawDuration = deepgramResponse?.metadata?.duration;
+    durationSeconds = typeof rawDuration === 'number' ? Math.round(rawDuration) : null;
   }
 
   if (!transcript) {
