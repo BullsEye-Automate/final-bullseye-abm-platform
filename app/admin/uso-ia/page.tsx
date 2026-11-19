@@ -145,6 +145,10 @@ export default function UsoIAPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState<string | null>(null);
   const [detailFn, setDetailFn] = useState<string | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportSections, setExportSections] = useState({
+    resumen: true, funciones: true, clientes: true, usuarios: true, modelos: true, dias: true,
+  });
   const [detailData, setDetailData] = useState<FunctionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -154,34 +158,43 @@ export default function UsoIAPage() {
   function exportCSV() {
     if (!data) return;
     const rows: string[][] = [];
-    const sep = ",";
     const q = (s: string | number) => `"${String(s).replace(/"/g, '""')}"`;
 
-    // Resumen
-    rows.push(["Informe de Uso de IA"]);
-    rows.push(["Período", `${dateRange.from} → ${dateRange.to}`]);
-    rows.push(["Costo total USD", fmt(data.total_cost_usd)]);
-    rows.push(["Llamadas totales", String(data.total_calls)]);
-    rows.push([]);
+    if (exportSections.resumen) {
+      rows.push(["Informe de Uso de IA"]);
+      rows.push(["Período", `${dateRange.from} → ${dateRange.to}`]);
+      rows.push(["Costo total USD", fmt(data.total_cost_usd)]);
+      rows.push(["Llamadas totales", String(data.total_calls)]);
+      rows.push([]);
+    }
 
-    // Por función
-    rows.push(["Función", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
-    Object.entries(data.by_function)
-      .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
-      .forEach(([fn, r]) =>
-        rows.push([FUNCTION_LABELS[fn] ?? fn, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
-      );
-    rows.push([]);
+    if (exportSections.funciones) {
+      rows.push(["--- Por función ---"]);
+      rows.push(["Función", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
+      Object.entries(data.by_function)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([fn, r]) =>
+          rows.push([FUNCTION_LABELS[fn] ?? fn, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
+        );
+      rows.push([]);
+    }
 
-    // Por cliente
-    rows.push(["Cliente", "Llamadas", "Costo USD"]);
-    Object.entries(data.by_client)
-      .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
-      .forEach(([, r]) => rows.push([r.name, String(r.calls), fmt(r.cost_usd)]));
-    rows.push([]);
+    if (exportSections.clientes) {
+      rows.push(["--- Por cliente ---"]);
+      rows.push(["Cliente", "Llamadas", "Costo / llamada", "Costo USD", "% del total"]);
+      Object.entries(data.by_client)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([, r]) => rows.push([
+          r.name, String(r.calls),
+          fmt(r.cost_usd / r.calls),
+          fmt(r.cost_usd),
+          fmt((r.cost_usd / data.total_cost_usd) * 100) + "%",
+        ]));
+      rows.push([]);
+    }
 
-    // Por usuario
-    if (Object.keys(data.by_user ?? {}).length > 0) {
+    if (exportSections.usuarios && Object.keys(data.by_user ?? {}).length > 0) {
+      rows.push(["--- Por usuario ---"]);
       rows.push(["Usuario", "Llamadas", "Costo USD"]);
       Object.entries(data.by_user ?? {})
         .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
@@ -189,22 +202,26 @@ export default function UsoIAPage() {
       rows.push([]);
     }
 
-    // Por modelo
-    rows.push(["Modelo", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
-    Object.entries(data.by_model)
-      .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
-      .forEach(([model, r]) =>
-        rows.push([model, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
-      );
-    rows.push([]);
+    if (exportSections.modelos) {
+      rows.push(["--- Por modelo ---"]);
+      rows.push(["Modelo", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
+      Object.entries(data.by_model)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([model, r]) =>
+          rows.push([model, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
+        );
+      rows.push([]);
+    }
 
-    // Por día
-    rows.push(["Día", "Llamadas", "Costo USD"]);
-    Object.entries(data.by_day ?? {})
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .forEach(([day, r]) => rows.push([day, String(r.calls), fmt(r.cost_usd)]));
+    if (exportSections.dias) {
+      rows.push(["--- Por día ---"]);
+      rows.push(["Día", "Llamadas", "Costo USD"]);
+      Object.entries(data.by_day ?? {})
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .forEach(([day, r]) => rows.push([day, String(r.calls), fmt(r.cost_usd)]));
+    }
 
-    const csv = rows.map((row) => row.map(q).join(sep)).join("\r\n");
+    const csv = rows.map((row) => row.map(q).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -212,6 +229,7 @@ export default function UsoIAPage() {
     a.download = `uso-ia_${dateRange.from}_${dateRange.to}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    setShowExportMenu(false);
   }
 
   async function load() {
@@ -299,10 +317,55 @@ export default function UsoIAPage() {
             📅 Personalizado
           </button>
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => exportCSV()} className="btn bg-white border border-[#E5E2F0] text-ink" disabled={!data}>
-              <IconDownload size={14} />
-              Exportar CSV
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu((v) => !v)}
+                className="btn bg-white border border-[#E5E2F0] text-ink"
+                disabled={!data}
+              >
+                <IconDownload size={14} />
+                Exportar CSV ▾
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-[#E5E2F0] rounded-lg shadow-lg z-20 w-56 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-2">Secciones a exportar</p>
+                  {([
+                    ["resumen",   "Resumen del período"],
+                    ["funciones", "Por función"],
+                    ["clientes",  "Por cliente"],
+                    ["usuarios",  "Por usuario"],
+                    ["modelos",   "Por modelo"],
+                    ["dias",      "Por día"],
+                  ] as [keyof typeof exportSections, string][]).map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 text-sm text-ink cursor-pointer hover:text-brand">
+                      <input
+                        type="checkbox"
+                        checked={exportSections[key]}
+                        onChange={(e) => setExportSections((s) => ({ ...s, [key]: e.target.checked }))}
+                        className="accent-brand"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                  <div className="pt-2 border-t border-[#E5E2F0] flex gap-2">
+                    <button
+                      onClick={exportCSV}
+                      disabled={!Object.values(exportSections).some(Boolean)}
+                      className="btn text-xs flex-1 disabled:opacity-40"
+                      style={{ background: "#251762", color: "#62E0D8" }}
+                    >
+                      Descargar
+                    </button>
+                    <button
+                      onClick={() => setShowExportMenu(false)}
+                      className="btn text-xs bg-white border border-[#E5E2F0] text-ink"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <button onClick={() => load()} className="btn bg-white border border-[#E5E2F0] text-ink" disabled={loading}>
               {loading ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
               Refrescar
