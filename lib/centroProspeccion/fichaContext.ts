@@ -14,6 +14,14 @@ const MAX_FIELD = 2500;
 const MAX_CONTEXT = 6000;
 const MAX_TOTAL = 12000;
 
+// Las líneas aprobadas desde la inteligencia semanal son sugerencias para el
+// equipo, no criterio (pedido de BullsEye, 19-nov-2026: el ICP solo cambia
+// cuando se modifica en el proyecto de Claude del cliente). No van a la IA.
+const INTEL_LINE = /\(inteligencia semana [^)]*\)/i;
+const AJUSTES_HDR = "Ajustes aprobados en el Centro";
+const withoutIntel = (v: unknown) =>
+  String(v ?? "").split(`\n\n${AJUSTES_HDR}`)[0].split("\n").filter((l) => !(l.trim().startsWith("•") && INTEL_LINE.test(l))).join("\n");
+
 const clip = (s: unknown, n: number) => {
   const t = String(s ?? "").trim();
   return t.length > n ? t.slice(0, n) + "…" : t;
@@ -44,10 +52,10 @@ export async function fichaContextFor(clientId: string, use: FichaUse): Promise<
   const parts = fichas.map((f) => {
     const lines = [`Ficha: ${clip(f.data.nombre || f.id, 120)}`];
     for (const [label, key] of fields) {
-      const v = clip(f.data[key], MAX_FIELD);
+      const v = clip(withoutIntel(f.data[key]), MAX_FIELD);
       if (v) lines.push(`${label}:\n${v}`);
     }
-    const ctx = clip(f.data.contexto, MAX_CONTEXT);
+    const ctx = clip(withoutIntel(f.data.contexto), MAX_CONTEXT);
     if (ctx) lines.push(`Contexto (extracto):\n${ctx}`);
     return lines.join("\n\n");
   });

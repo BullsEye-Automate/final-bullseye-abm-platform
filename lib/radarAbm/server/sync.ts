@@ -5,7 +5,7 @@ import { CO_ORDER, CT_ORDER, EXCLUDE } from "../dictionaries";
 import { deriveClientData, type FlatCompany, type FlatContact } from "../derive";
 import type { RadarActivity, RadarCallEval, RadarDataset, RadarDeal, RadarMeeting } from "../types";
 import { loadActivities } from "./activities";
-import { batchAssociations, batchRead, dealStages, detectProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
+import { batchAssociations, batchRead, dealStages, detectProperties, listProperties, loadPropertyCatalog, normLabel, searchAll, type DetectedProperty } from "./hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, meetingsTotal, saveSnapshot, subAccounts, subMapping, universeMode, wishlistOnly } from "./store";
 import { pickSub } from "../subAccounts";
 import { checkClientActive } from "./masterClients";
@@ -478,7 +478,24 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
     for (const [co, ds] of coDeals) for (const d of ds) if (!dealCompany.has(d)) dealCompany.set(d, co);
     if (dealCompany.size) {
       const stages = await dealStages(token);
-      const raw = await batchRead("deals", Array.from(dealCompany.keys()), ["dealstage", "amount", "createdate"], token, dealsDeadline);
+      // Solo los negocios de BullsEye (pedido de BullsEye nov-2026, HubSpot de
+      // la CChC): si el HubSpot tiene "Origen del negocio" con una opción que
+      // diga "BullsEye" (ej. "Marketing Bullseye"), solo cuentan los negocios
+      // con ese origen; sin esa propiedad u opción se leen todos.
+      const origin = await listProperties("deals", token).then((props) => {
+        const p = props.find((x) => normLabel(x.label) === "origen del negocio" || x.name === "origen_del_negocio");
+        const opts = (p?.options ?? []).filter((o) => /bulls\s*eye/i.test(o.label) || /bulls\s*eye/i.test(o.value));
+        return p && opts.length ? { prop: p.name, label: p.label, values: new Set(opts.map((o) => o.value)), names: opts.map((o) => o.label) } : null;
+      }).catch((e) => {
+        warnings.push(`Negocios: no se pudieron leer las propiedades de negocios para filtrar por "Origen del negocio" (${(e as Error).message}); se incluyeron todos.`);
+        return null;
+      });
+      let raw = await batchRead("deals", Array.from(dealCompany.keys()), ["dealstage", "amount", "createdate", ...(origin ? [origin.prop] : [])], token, dealsDeadline);
+      if (origin) {
+        const total = raw.length;
+        raw = raw.filter((r) => String(r.properties[origin.prop] ?? "").split(";").some((v) => origin.values.has(v.trim())));
+        warnings.push(`Negocios: solo los de BullsEye ("${origin.label}" = ${origin.names.join(" / ")}): ${raw.length} de ${total}.`);
+      }
       deals = raw.map((r) => ({
         co: dealCompany.get(r.id)!,
         stage: dealStageName(stages.get(r.properties.dealstage ?? ""), r.properties.dealstage ?? ""),
