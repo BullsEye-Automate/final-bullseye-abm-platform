@@ -52,10 +52,14 @@ export async function GET(req: NextRequest) {
   const byModel: Record<string, { calls: number; cost_usd: number; input_tokens: number; output_tokens: number }> = {};
   const byUser: Record<string, { email: string; calls: number; cost_usd: number }> = {};
 
-  // Mapear user_id → email
-  const { data: users } = await db.from("auth.users").select("id, email");
+  // Mapear user_id → email (via admin API, no tabla directa)
   const userMap: Record<string, string> = {};
-  if (users) for (const u of users) userMap[u.id] = u.email || "Desconocido";
+  try {
+    const { data: usersData } = await db.auth.admin.listUsers({ perPage: 500 });
+    if (usersData?.users) {
+      for (const u of usersData.users) userMap[u.id] = u.email || "Desconocido";
+    }
+  } catch { /* sin emails si falla */ }
 
   // Métricas de metadata (null si no hay datos)
   const metadataStats = {
