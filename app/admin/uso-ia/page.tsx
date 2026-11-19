@@ -341,13 +341,14 @@ export default function UsoIAPage() {
 
           {/* SECCIÓN AGENTE SDR */}
           {(() => {
-            const sdrFn = data.by_function["agente_contenido_v2"];
-            if (!sdrFn) return null;
+            // Combinar agente_contenido_chat (viejo /chat) + agente_contenido_v2 (nuevo /chat-v2)
+            const sdrV2   = data.by_function["agente_contenido_v2"];
+            const sdrChat = data.by_function["agente_contenido_chat"];
+            const totalCalls = (sdrV2?.calls ?? 0) + (sdrChat?.calls ?? 0);
+            if (totalCalls === 0) return null;
 
-            // SDRs que usaron el agente: filtrar by_user cruzando con by_function por usuario
-            // La API no filtra by_user por función, pero podemos extraer los datos del detalle.
-            // Por ahora mostramos el resumen del agente + botón para ver desglose.
-            const costPerMsg = sdrFn.calls > 0 ? sdrFn.cost_usd / sdrFn.calls : 0;
+            const totalCost  = (sdrV2?.cost_usd ?? 0) + (sdrChat?.cost_usd ?? 0);
+            const costPerMsg = totalCalls > 0 ? totalCost / totalCalls : 0;
 
             return (
               <div className="card overflow-hidden border-2" style={{ borderColor: "#62E0D8" }}>
@@ -355,21 +356,24 @@ export default function UsoIAPage() {
                   <div className="flex items-center gap-2">
                     <span style={{ color: "#62E0D8" }}>🤖</span>
                     <p className="font-semibold text-sm text-ink">Agente SDR — uso del período</p>
+                    {sdrChat && sdrV2 && (
+                      <span className="text-[11px] text-ink-muted">(chat + chat-v2 combinados)</span>
+                    )}
                   </div>
                   <button
-                    onClick={() => loadFunctionDetail("agente_contenido_v2")}
+                    onClick={() => loadFunctionDetail("agente_contenido_v2,agente_contenido_chat")}
                     className="btn text-xs"
                     style={{ background: "#251762", color: "#62E0D8" }}
                   >
-                    Ver desglose por cliente
+                    Ver desglose por cliente y SDR
                   </button>
                 </div>
 
                 {/* KPIs del agente */}
                 <div className="grid grid-cols-4 gap-0 divide-x divide-[#E5E2F0]">
                   {[
-                    { label: "Mensajes generados", value: sdrFn.calls.toLocaleString() },
-                    { label: "Costo total (USD)", value: `$${fmt(sdrFn.cost_usd)}` },
+                    { label: "Mensajes generados", value: totalCalls.toLocaleString() },
+                    { label: "Costo total (USD)", value: `$${fmt(totalCost)}` },
                     { label: "Costo por mensaje", value: `$${fmt(costPerMsg)}` },
                     { label: "Costo por mensaje (CLP)", value: `$${Math.round(costPerMsg * 950).toLocaleString()}` },
                   ].map((s) => (
@@ -379,35 +383,6 @@ export default function UsoIAPage() {
                     </div>
                   ))}
                 </div>
-
-                {/* Desglose por SDR (by_user filtrado al período, todas las funciones incluyen el agente) */}
-                {byUser.length > 0 && (
-                  <div className="border-t border-[#E5E2F0]">
-                    <div className="px-5 py-2.5 bg-[#F8F7FC]">
-                      <p className="text-xs font-semibold text-ink-muted uppercase tracking-wide">Uso por SDR (todos los usos de IA, período seleccionado)</p>
-                    </div>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-[#E5E2F0]">
-                          <th className="text-left px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">SDR</th>
-                          <th className="text-right px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Mensajes</th>
-                          <th className="text-right px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Costo USD</th>
-                          <th className="text-right px-5 py-2 text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Costo / mensaje</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {byUser.map(([id, row]) => (
-                          <tr key={id} className="border-b border-[#F0EEF8] last:border-0">
-                            <td className="px-5 py-2 text-ink font-medium text-sm">{row.email.split("@")[0]}</td>
-                            <td className="px-4 py-2 text-right text-ink-muted">{row.calls.toLocaleString()}</td>
-                            <td className="px-5 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
-                            <td className="px-5 py-2 text-right text-ink-muted">${fmt(row.calls > 0 ? row.cost_usd / row.calls : 0)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
               </div>
             );
           })()}

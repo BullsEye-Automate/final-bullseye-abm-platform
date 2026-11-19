@@ -6,7 +6,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const functionName = req.nextUrl.searchParams.get("function") ?? "message_generation_sequence";
+    const functionParam = req.nextUrl.searchParams.get("function") ?? "message_generation_sequence";
+    // Acepta múltiples funciones separadas por coma
+    const functionNames = functionParam.split(",").map((f) => f.trim()).filter(Boolean);
+    const functionName = functionNames[0]; // para compatibilidad con el campo de respuesta
     const db = supabaseAdmin();
 
     let since: string;
@@ -22,12 +25,16 @@ export async function GET(req: NextRequest) {
       since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
     }
 
-  const { data, error } = await db
+  const query = db
     .from("ai_usage_log")
     .select("*, clients(name)")
-    .eq("function_name", functionName)
     .gte("created_at", since)
     .order("created_at", { ascending: false });
+
+  // Filtrar por una o varias funciones
+  const { data, error } = functionNames.length === 1
+    ? await query.eq("function_name", functionName)
+    : await query.in("function_name", functionNames);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
