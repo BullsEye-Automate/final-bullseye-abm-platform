@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { IconLoader2, IconRefresh, IconSparkles, IconAlertCircle, IconTrendingUp, IconCpu } from "@tabler/icons-react";
+import { IconLoader2, IconRefresh, IconSparkles, IconAlertCircle, IconTrendingUp, IconCpu, IconDownload } from "@tabler/icons-react";
 
 type FunctionRow = { calls: number; input_tokens: number; output_tokens: number; cost_usd: number };
 type ClientRow   = { name: string; calls: number; cost_usd: number };
@@ -151,6 +151,69 @@ export default function UsoIAPage() {
   // Siempre usar from/to para rangos exactos (days era impreciso para "mes pasado", "semana pasada")
   const dateRange = customDates ?? calculateDateRange(filterType);
 
+  function exportCSV() {
+    if (!data) return;
+    const rows: string[][] = [];
+    const sep = ",";
+    const q = (s: string | number) => `"${String(s).replace(/"/g, '""')}"`;
+
+    // Resumen
+    rows.push(["Informe de Uso de IA"]);
+    rows.push(["Período", `${dateRange.from} → ${dateRange.to}`]);
+    rows.push(["Costo total USD", fmt(data.total_cost_usd)]);
+    rows.push(["Llamadas totales", String(data.total_calls)]);
+    rows.push([]);
+
+    // Por función
+    rows.push(["Función", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
+    Object.entries(data.by_function)
+      .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+      .forEach(([fn, r]) =>
+        rows.push([FUNCTION_LABELS[fn] ?? fn, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
+      );
+    rows.push([]);
+
+    // Por cliente
+    rows.push(["Cliente", "Llamadas", "Costo USD"]);
+    Object.entries(data.by_client)
+      .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+      .forEach(([, r]) => rows.push([r.name, String(r.calls), fmt(r.cost_usd)]));
+    rows.push([]);
+
+    // Por usuario
+    if (Object.keys(data.by_user ?? {}).length > 0) {
+      rows.push(["Usuario", "Llamadas", "Costo USD"]);
+      Object.entries(data.by_user ?? {})
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([, r]) => rows.push([r.email, String(r.calls), fmt(r.cost_usd)]));
+      rows.push([]);
+    }
+
+    // Por modelo
+    rows.push(["Modelo", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
+    Object.entries(data.by_model)
+      .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+      .forEach(([model, r]) =>
+        rows.push([model, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
+      );
+    rows.push([]);
+
+    // Por día
+    rows.push(["Día", "Llamadas", "Costo USD"]);
+    Object.entries(data.by_day ?? {})
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .forEach(([day, r]) => rows.push([day, String(r.calls), fmt(r.cost_usd)]));
+
+    const csv = rows.map((row) => row.map(q).join(sep)).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `uso-ia_${dateRange.from}_${dateRange.to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -235,10 +298,16 @@ export default function UsoIAPage() {
           >
             📅 Personalizado
           </button>
-          <button onClick={() => load()} className="btn bg-white border border-[#E5E2F0] text-ink ml-auto" disabled={loading}>
-            {loading ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
-            Refrescar
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={() => exportCSV()} className="btn bg-white border border-[#E5E2F0] text-ink" disabled={!data}>
+              <IconDownload size={14} />
+              Exportar CSV
+            </button>
+            <button onClick={() => load()} className="btn bg-white border border-[#E5E2F0] text-ink" disabled={loading}>
+              {loading ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
+              Refrescar
+            </button>
+          </div>
         </div>
 
         {/* Selector de fecha personalizada */}
