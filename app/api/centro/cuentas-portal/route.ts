@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { autoLotId, type LotTag } from "@/lib/wishlistLotes";
 import { requireCentroUser, isCentroOwner } from "@/lib/centroProspeccion/access";
 import { loadClientLinks } from "@/lib/centroProspeccion/portalLink";
 import { readDocs } from "@/lib/centroProspeccion/store";
@@ -98,10 +99,13 @@ export async function POST(req: NextRequest) {
     const r = await load(fichaId);
     if (!r.client) return NextResponse.json({ error: "La ficha no está vinculada a un cliente del portal" }, { status: 409 });
     const db = supabaseAdmin();
+    const passedAt = new Date().toISOString();
     const batch = r.pending.slice(0, BATCH);
     const ids: string[] = [];
     const errors: string[] = [];
     for (const c of batch) {
+      // Lote (lib/wishlistLotes.ts): un lote por día y persona que pasa las cuentas
+      const centroLot: LotTag = { id: autoLotId("centro", passedAt, u.email), kind: "centro", by: u.email, at: passedAt };
       const facts = [
         { label: "Origen", value: "Cuenta aprobada por el cliente en el Centro de prospección" },
         ...(c.data.lista ? [{ label: "Lista", value: String(c.data.lista) }] : []),
@@ -119,7 +123,7 @@ export async function POST(req: NextRequest) {
           source: "manual",
           source_ref: `centro:${c.id}`,
           mode: "manual",
-          snapshot: { facts, centro: { cuentaId: c.id, motivos: String(c.data.motivos ?? "").slice(0, 1500) } },
+          snapshot: { facts, centro: { cuentaId: c.id, motivos: String(c.data.motivos ?? "").slice(0, 1500) }, batch: centroLot },
           status: "new",
           origin: "client",
           lemlist_status: "pendiente",

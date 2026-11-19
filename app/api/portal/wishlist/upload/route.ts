@@ -4,6 +4,7 @@ import { requireWishlistActor } from "@/lib/portalAuth";
 import { normalizeDomain } from "@/lib/hubspotPool";
 import { pushWishlistItemToLemlist } from "@/lib/wishlistLemlist";
 import { canActForClient, proxyLabel } from "@/lib/clientProxy";
+import { autoLotId, type LotTag } from "@/lib/wishlistLotes";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -44,6 +45,17 @@ export async function POST(req: NextRequest) {
   // Carga del equipo en nombre del cliente: medio y nota quedan en la traza
   const actorLabel = user.isOperator ? proxyLabel(user.email, typeof body?.medio === "string" ? body.medio : "correo", typeof body?.nota === "string" ? body.nota.trim().slice(0, 200) : null) : user.email;
   const raw: unknown[] = Array.isArray(body?.rows) ? body.rows.slice(0, MAX_ROWS) : [];
+  // Lote de la carga (lib/wishlistLotes.ts): el navegador manda el mismo id en
+  // todas las tandas de un archivo, con el nombre, el archivo y la nota
+  const b = (body?.batch ?? {}) as Record<string, unknown>;
+  const lotKind = user.isOperator ? "cliente_equipo" : "cliente";
+  const startedAt = new Date().toISOString();
+  const lot: LotTag = {
+    id: typeof b.id === "string" && /^[A-Za-z0-9:_-]{6,80}$/.test(b.id) ? `${lotKind}:${b.id}` : autoLotId(lotKind, startedAt, user.email),
+    kind: lotKind,
+    name: str(b.name, 120), file: str(b.file, 200), note: str(b.note, 300),
+    by: user.email, at: typeof b.at === "string" && !Number.isNaN(Date.parse(b.at)) ? b.at : startedAt,
+  };
   if (!raw.length) return NextResponse.json({ error: "No hay empresas en el listado" }, { status: 400 });
 
   const results: Result[] = [];
@@ -111,7 +123,7 @@ export async function POST(req: NextRequest) {
         source: "manual",
         source_ref: null,
         mode: "manual",
-        snapshot: { facts: [{ label: "Origen", value: user.isOperator ? "Listado del cliente cargado por BullsEye" : "Listado subido por el cliente" }], uploaded: true, ...(user.isOperator ? { loadedBy: actorLabel } : {}) },
+        snapshot: { facts: [{ label: "Origen", value: user.isOperator ? "Listado del cliente cargado por BullsEye" : "Listado subido por el cliente" }], uploaded: true, batch: lot, ...(user.isOperator ? { loadedBy: actorLabel } : {}) },
         status: "new",
         origin: "client",
         lemlist_status: "pendiente",
