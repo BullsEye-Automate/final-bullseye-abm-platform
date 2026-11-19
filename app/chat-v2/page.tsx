@@ -207,31 +207,13 @@ function InboxPreview({ subject, body, channel }: { subject: string; body: strin
   );
 }
 
-function EmailCard({ subject, body, showSubject = true, channel = "email", onSend, sending, sendResult, defaultTo }: {
+function EmailCard({ subject, body, showSubject = true, channel = "email", defaultTo }: {
   subject: string; body: string; showSubject?: boolean; channel?: string;
-  onSend?: (subject: string, body: string, to: string, attachment?: { name: string; base64: string; mimeType: string }) => void;
-  sending?: boolean;
-  sendResult?: { ok: boolean; msg?: string } | null;
   defaultTo?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [sendTo, setSendTo] = useState(defaultTo ?? "");
-  const [showSendForm, setShowSendForm] = useState(false);
-  const [attachment, setAttachment] = useState<{ name: string; base64: string; mimeType: string } | null>(null);
-  const attachRef = useRef<HTMLInputElement>(null);
-
-  function handleAttachPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(",")[1];
-      setAttachment({ name: file.name, base64, mimeType: file.type || "application/octet-stream" });
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  }
+  const [showGmailForm, setShowGmailForm] = useState(false);
   const [preview, setPreview] = useState(false);
   const isBrief = channel === "meeting_brief";
 
@@ -305,11 +287,11 @@ function EmailCard({ subject, body, showSubject = true, channel = "email", onSen
               style={{ background: preview ? "rgba(98,224,216,0.12)" : "#f3f1fc", color: preview ? "#1a9e98" : "#6b66a3", border: `1px solid ${preview ? "rgba(98,224,216,0.4)" : "#e2e0f0"}` }}>
               {preview ? "Ocultar" : `Ver como ${channelLabel}`}
             </button>
-            {onSend && channel === "email" && (
-              <button onClick={() => setShowSendForm(v => !v)}
+            {channel === "email" && (
+              <button onClick={() => setShowGmailForm(v => !v)}
                 className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-[12px] font-medium"
-                style={{ background: showSendForm ? "rgba(98,224,216,0.15)" : "#f3f1fc", color: "#1a9e98", border: "1px solid rgba(98,224,216,0.4)" }}>
-                <IconSend size={13} /> Enviar
+                style={{ background: showGmailForm ? "rgba(98,224,216,0.15)" : "#f3f1fc", color: "#1a9e98", border: "1px solid rgba(98,224,216,0.4)" }}>
+                <IconSend size={13} /> Abrir en Gmail
               </button>
             )}
             <button onClick={copy}
@@ -320,39 +302,23 @@ function EmailCard({ subject, body, showSubject = true, channel = "email", onSen
             </button>
           </div>
         </div>
-        {showSendForm && onSend && (
-          <div className="mb-3 space-y-2">
+        {showGmailForm && (
+          <div className="mb-3">
             <div className="flex gap-2 items-center">
               <input type="email" value={sendTo} onChange={e => setSendTo(e.target.value)}
                 placeholder="Email del destinatario"
                 className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
                 style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
-              <button type="button" onClick={() => attachRef.current?.click()}
-                className="flex items-center gap-1 px-3 py-2 rounded-lg text-[12px] font-medium"
-                style={{ background: "#f4f2fb", color: "#6b66a3", border: "1px solid #e2e0f0" }}
-                title="Adjuntar archivo">
-                📎
-              </button>
-              <button onClick={() => { if (sendTo) onSend(subject, body, sendTo, attachment ?? undefined); }} disabled={!sendTo || sending}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium disabled:opacity-50"
-                style={{ background: "#251762", color: "#62E0D8" }}>
-                {sending ? "Enviando…" : <><IconSend size={13} /> Enviar</>}
-              </button>
+              <a
+                href={sendTo ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(sendTo)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` : "#"}
+                target="_blank" rel="noopener noreferrer"
+                onClick={e => { if (!sendTo) e.preventDefault(); }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-medium no-underline"
+                style={{ background: sendTo ? "#251762" : "#ddd", color: sendTo ? "#62E0D8" : "#999", pointerEvents: sendTo ? "auto" : "none" }}>
+                <IconSend size={13} /> Abrir en Gmail
+              </a>
             </div>
-            {attachment && (
-              <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[12px]"
-                style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#6b66a3" }}>
-                <span>📎 {attachment.name}</span>
-                <button onClick={() => setAttachment(null)} className="ml-auto text-[11px] hover:text-red-400">✕</button>
-              </div>
-            )}
-            <input ref={attachRef} type="file" className="hidden" onChange={handleAttachPick} />
           </div>
-        )}
-        {sendResult && (
-          <p className="text-[12px] mb-2" style={{ color: sendResult.ok ? "#1a9e98" : "#e53e3e" }}>
-            {sendResult.ok ? "✓ " : "✗ "}{sendResult.msg}
-          </p>
         )}
         <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: "#2d2950" }}>{body}</p>
       </div>
@@ -365,11 +331,8 @@ function EmailCard({ subject, body, showSubject = true, channel = "email", onSen
   );
 }
 
-function Bubble({ msg, channel, onSend, sending, sendResult, contactEmail }: {
+function Bubble({ msg, channel, contactEmail }: {
   msg: Message; channel: string;
-  onSend?: (subject: string, body: string, to: string, attachment?: { name: string; base64: string; mimeType: string }) => void;
-  sending?: boolean;
-  sendResult?: { ok: boolean; msg?: string } | null;
   contactEmail?: string;
 }) {
   const isUser = msg.role === "user";
@@ -389,7 +352,7 @@ function Bubble({ msg, channel, onSend, sending, sendResult, contactEmail }: {
         )}
         {parsed?.body ? (
           <EmailCard subject={parsed.subject ?? ""} body={parsed.body ?? ""} showSubject={effectiveChannel === "email"} channel={effectiveChannel}
-            onSend={onSend} sending={sending} sendResult={sendResult} defaultTo={contactEmail} />
+            defaultTo={contactEmail} />
         ) : (
           <div className="rounded-2xl px-4 py-3 text-sm leading-relaxed"
             style={isUser ? { background: "#251762", color: "rgba(255,255,255,0.92)" } : { background: "#fff", color: "#2d2950", border: "1px solid #e2e0f0" }}>
@@ -446,8 +409,6 @@ export default function ChatV2Page() {
   // Gmail
   const [gmailEmail, setGmailEmail]       = useState<string | null>(null);
   const [gmailChecked, setGmailChecked]   = useState(false);
-  const [sendingEmail, setSendingEmail]   = useState<number | null>(null); // índice del mensaje
-  const [sendResult, setSendResult]       = useState<{ idx: number; ok: boolean; msg?: string } | null>(null);
   const [userId, setUserId]               = useState<string | null>(null);
 
   useEffect(() => {
@@ -612,24 +573,6 @@ export default function ChatV2Page() {
     };
     reader.readAsDataURL(file);
     e.target.value = "";
-  }
-
-  async function sendGmail(msgIdx: number, to: string, subject: string, body: string, attachment?: { name: string; base64: string; mimeType: string }) {
-    setSendingEmail(msgIdx);
-    setSendResult(null);
-    try {
-      const r = await fetch("/api/auth/gmail/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, subject, body, clientId, attachment }),
-      });
-      const j = await r.json();
-      setSendResult({ idx: msgIdx, ok: r.ok, msg: r.ok ? "Enviado" : (j.error ?? "Error al enviar") });
-    } catch {
-      setSendResult({ idx: msgIdx, ok: false, msg: "Error de red" });
-    } finally {
-      setSendingEmail(null);
-    }
   }
 
   async function handleStart(e: React.FormEvent) {
@@ -1028,11 +971,6 @@ export default function ChatV2Page() {
             <div className="flex-1 overflow-y-auto px-6 py-6">
               {messages.map((msg, i) => (
                 <Bubble key={i} msg={msg} channel={channel}
-                  onSend={gmailEmail && msg.role === "assistant" ? (subj, body, to, att) => {
-                    sendGmail(i, to, subj, body, att);
-                  } : undefined}
-                  sending={sendingEmail === i}
-                  sendResult={sendResult?.idx === i ? sendResult : null}
                   contactEmail={selectedContact?.email ?? ""}
                 />
               ))}
