@@ -194,7 +194,7 @@ function buildSystemPrompt(
 
   return `Eres un experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar mensajes hiperpersonalizados.
 
-${channelInstruction}Comienza siempre con un saludo apropiado (Hola [Nombre], Buenos días [Nombre], etc.). No incluyas firma, despedida con nombre ni datos de contacto — el SDR añadirá su propia firma. Nunca uses el carácter — (guión largo).
+${channelInstruction}Comienza siempre con un saludo apropiado (Hola [Nombre], Buenos días [Nombre], etc.). No incluyas firma, despedida con nombre ni datos de contacto — el SDR añadirá su propia firma. Nunca uses el carácter — (guión largo). PROHIBICIÓN ABSOLUTA: Nunca uses la palabra "colega" en ningún mensaje, bajo ninguna circunstancia.
 
 ${recipientLines ? `Datos del destinatario:\n${recipientLines}` : ""}${contactSection}${newsSection}${alloBlock}
 
