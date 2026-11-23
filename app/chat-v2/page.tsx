@@ -7,13 +7,14 @@ import {
   IconArrowLeft,
 } from "@tabler/icons-react";
 
-type EmailType = "cold" | "no_contact" | "info" | "referral" | "meeting" | "meeting_brief";
+type EmailType = "cold" | "no_contact" | "followup" | "info" | "referral" | "meeting" | "meeting_brief";
 type Channel   = "email" | "whatsapp" | "linkedin" | "meeting_brief";
 type Message   = { role: "user" | "assistant"; content: string; imagePreview?: string; channel?: Channel };
 
 const MSG_TYPE_LABELS: Record<EmailType, string> = {
   cold:          "Primer contacto",
   no_contact:    "Sin contacto telefónico",
+  followup:      "Seguimiento",
   info:          "Más información",
   referral:      "Derivación / Referido",
   meeting:       "Confirmación de reunión",
@@ -23,6 +24,7 @@ const MSG_TYPE_LABELS: Record<EmailType, string> = {
 const MSG_TYPE_DESCRIPTIONS: Record<EmailType, string> = {
   cold:          "Sin conversación previa",
   no_contact:    "SDR intentó llamar, no contestó",
+  followup:      "Seguimiento a un mensaje anterior",
   info:          "El prospecto pidió más información",
   referral:      "Un conocido los refirió",
   meeting:       "Reunión ya agendada",
@@ -388,6 +390,8 @@ export default function ChatV2Page() {
 
   const [emailType, setEmailType]           = useState<EmailType>("cold");
   const [typeOpen, setTypeOpen]             = useState(false);
+  const [followupHsFound, setFollowupHsFound] = useState<boolean | null>(null); // null=no buscado, true=encontrado, false=no encontrado
+  const [followupPreviousText, setFollowupPreviousText] = useState("");
   const [channel, setChannel]               = useState<Channel>("email");
   const [recipientName, setRecipientName]   = useState("");
   const [recipientCompany, setRecipientCompany] = useState("");
@@ -549,10 +553,14 @@ export default function ChatV2Page() {
           alloCallSummary: selectedCall?.summary ?? undefined,
           save: isFirst,
           image: image ? { base64: image.base64, mediaType: image.mediaType } : undefined,
+          previousMessage: emailType === "followup" ? (followupPreviousText || undefined) : undefined,
         }),
       });
 
       const data = await res.json();
+      if (emailType === "followup" && data.previousMessageFound !== undefined) {
+        setFollowupHsFound(data.previousMessageFound);
+      }
       setMessages(prev => [...prev, { role: "assistant", content: data.message ?? data.error ?? "Error al generar.", channel: effectiveChannel }]);
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Error de conexión. Intenta de nuevo." }]);
@@ -765,7 +773,7 @@ export default function ChatV2Page() {
                       style={{ background: "#fff", border: "1px solid #e2e0f0", boxShadow: "0 8px 24px rgba(37,23,98,0.12)" }}>
                       {(Object.entries(MSG_TYPE_LABELS) as [EmailType, string][]).filter(([val]) => val !== "meeting_brief").map(([val, label]) => (
                         <button type="button" key={val}
-                          onClick={() => { setEmailType(val as EmailType); setTypeOpen(false); }}
+                          onClick={() => { setEmailType(val as EmailType); setTypeOpen(false); setFollowupHsFound(null); }}
                           className="w-full text-left px-4 py-2.5 transition hover:bg-[#f4f2fb]">
                           <div className="text-sm" style={{ color: emailType === val ? "#251762" : "#2d2950", fontWeight: emailType === val ? 600 : 400 }}>
                             {label}
@@ -864,6 +872,47 @@ export default function ChatV2Page() {
                     placeholder="Ej: Juan Pérez"
                     className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
                     style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
+                </div>
+              )}
+
+              {/* Seguimiento: aviso HubSpot y contexto manual */}
+              {emailType === "followup" && (
+                <div className="space-y-2">
+                  {followupHsFound === true && (
+                    <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
+                      style={{ background: "rgba(98,224,216,0.10)", border: "1px solid rgba(98,224,216,0.35)", color: "#166b66" }}>
+                      <span>✓</span>
+                      <span>Se encontró el último mensaje enviado en HubSpot y se usó como contexto.</span>
+                    </div>
+                  )}
+                  {followupHsFound === false && (
+                    <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
+                      style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
+                      <span>⚠️</span>
+                      <span>No encontramos mensajes previos en HubSpot para este contacto. Sube una imagen o pega el texto del último mensaje enviado para que el agente tenga contexto.</span>
+                    </div>
+                  )}
+                  {followupHsFound === null && selectedContact && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
+                      style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#9b97c0" }}>
+                      <span>El agente buscará el último mensaje en HubSpot al generar.</span>
+                    </div>
+                  )}
+                  {!selectedContact && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
+                      style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#9b97c0" }}>
+                      <span>Selecciona un contacto para que el agente busque el último mensaje en HubSpot, o pega el texto / sube una imagen abajo.</span>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-widest font-semibold mb-1.5" style={{ color: "#9b97c0" }}>
+                      Mensaje anterior <span style={{ fontWeight: 400 }}>(opcional — si no se encuentra en HubSpot)</span>
+                    </label>
+                    <textarea value={followupPreviousText} onChange={e => setFollowupPreviousText(e.target.value)}
+                      placeholder="Pega aquí el texto del último mensaje enviado..."
+                      rows={3} className="w-full rounded-xl px-4 py-2.5 text-sm outline-none resize-none"
+                      style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
+                  </div>
                 </div>
               )}
 
