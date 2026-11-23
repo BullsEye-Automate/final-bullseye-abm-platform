@@ -7,7 +7,7 @@ import { readMonthCache, writeMonthCache } from "@/lib/celulasSdr/cache";
 import { isExcludedSdr } from "@/lib/celulasSdr/engine";
 import { loadAllDatasets, loadClientSettings, universeMode } from "@/lib/radarAbm/server/store";
 import { canEditMeetings } from "@/lib/celulasSdr/editors";
-import { canMarkBilling, loadBillingMarks } from "./billing";
+import { canMarkComisionable, loadBillingMarks } from "./billing";
 import { loadStatusOverrides, overrideId, type StatusOverride } from "./statusEdit";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
 import { identifySdr } from "@/lib/academiaSdr/server/progress";
@@ -31,7 +31,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v10";
+const VERSION = "v11";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -210,6 +210,7 @@ export async function buildAll(today: string) {
 
       // Contactos por su SDR (si no tiene, el de su empresa)
       const ctById = new Map(d.contacts.map((k) => [String(k.id), k]));
+      const ctKey = new Map<string, string>(); // contacto → SDR (solo los disponibles para la cuenta)
       for (const ct of contacts) {
         const co = String(ct.co);
         const s = ct.sdr?.trim() && ct.sdr !== "Sin SDR" ? sdrOf(ct.sdr) : coSdr.get(co) ?? sdrOf("");
@@ -222,8 +223,34 @@ export async function buildAll(today: string) {
         };
         const x = slice(s, client);
         x.contacts.push(row);
+        ctKey.set(String(ct.id), s.key);
         trackRaw(ct.sdr?.trim() && ct.sdr !== "Sin SDR" ? ct.sdr : coSdrRaw.get(co) ?? "", s, "contacts");
         x.ctData[client] = ctData;
+      }
+
+      // Llamadas del mes en la cartera del SDR (pedido de BullsEye, 23-nov-2026:
+      // tasas de conversión por cuenta). Pulso no guarda quién llamó: cada
+      // llamada va al SDR del contacto llamado o, sin contacto, al de la
+      // empresa. Con la marca own, las llamadas a contactos de otro cliente no
+      // cuentan. Conectada = "Resultado de la llamada" Conectad… (Pulso).
+      const callAgg = new Map<string, { calls: number; conn: number; cts: Set<string> }>();
+      for (const a of d.activities ?? []) {
+        if (a.k !== "call" || !a.d || !a.d.startsWith(month)) continue;
+        const ct = a.ct != null ? String(a.ct) : "";
+        if (ct && d.ownData && !ctKey.has(ct)) continue;
+        const key = (ct && ctKey.get(ct)) || coSdr.get(String(a.co))?.key;
+        if (!key || key === NO_SDR_KEY) continue;
+        const v = callAgg.get(key) ?? { calls: 0, conn: 0, cts: new Set<string>() };
+        v.calls++;
+        if (a.conn) v.conn++;
+        if (ct) v.cts.add(ct);
+        callAgg.set(key, v);
+      }
+      for (const [key, v] of callAgg) {
+        const sl = slices.get(key);
+        if (!sl) continue;
+        const prev = sl.calls?.[client] ?? { calls: 0, conn: 0, cts: 0 };
+        sl.calls = { ...(sl.calls ?? {}), [client]: { calls: prev.calls + v.calls, conn: prev.conn + v.conn, cts: prev.cts + v.cts.size } };
       }
 
       // Reuniones de la planilla por su responsable
@@ -257,6 +284,7 @@ export async function buildAll(today: string) {
     sl.companies = sl.companies.filter((x) => ok(x.c));
     sl.contacts = sl.contacts.filter((x) => ok(x.c));
     sl.meetings = sl.meetings.filter((x) => ok(x.c));
+    if (sl.calls) for (const c of Object.keys(sl.calls)) if (!ok(c)) delete sl.calls[c];
     const cs = clientsOf.get(key);
     if (cs) for (const c of [...cs]) if (!ok(c)) cs.delete(c);
   }
@@ -325,8 +353,9 @@ export async function loadSdrDashboard(opts: { sdr?: string | null; email?: stri
   // Cambios de status hechos desde el dashboard después de armar la caché
   if (sdr) sdr = applyOverrides(sdr, await loadStatusOverrides(), idx.sources);
   let fcReady = false;
-  if (sdr) ({ slice: sdr, fcReady } = await withMeetingNotes(sdr, canMarkBilling(opts.email)));
-  return { ...idx, me: { key: meKey, name: me.sdrName ?? null, canEditAll: canEditMeetings(opts.email), canBill: canMarkBilling(opts.email) }, sdr, fcReady };
+  const canBill = await canMarkComisionable(opts.email);
+  if (sdr) ({ slice: sdr, fcReady } = await withMeetingNotes(sdr, canBill));
+  return { ...idx, me: { key: meKey, name: me.sdrName ?? null, canEditAll: canEditMeetings(opts.email), canBill }, sdr, fcReady };
 }
 
 // Comentario de cada reunión (columna "notas" de la planilla, tabla meetings)
