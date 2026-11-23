@@ -14,40 +14,6 @@ const PERPLEXITY_API = "https://api.perplexity.ai/chat/completions";
 
 const COLD_TYPES = new Set(["cold", "no_contact"]);
 
-async function fetchLastOutboundActivity(contactId: string, token: string): Promise<string | null> {
-  try {
-    // Buscar emails enviados al contacto
-    const r = await fetch(
-      `${HS}/crm/v3/objects/contacts/${contactId}/associations/emails?limit=10`,
-      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
-    );
-    if (!r.ok) return null;
-    const data = await r.json();
-    const ids: string[] = (data?.results ?? []).map((x: any) => x.id).slice(0, 5);
-    if (!ids.length) return null;
-
-    // Leer el más reciente
-    const details = await Promise.all(ids.map(id =>
-      fetch(`${HS}/crm/v3/objects/emails/${id}?properties=hs_email_direction,hs_email_text,hs_email_subject,hs_timestamp`, {
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      }).then(r2 => r2.ok ? r2.json() : null)
-    ));
-
-    const outbound = details
-      .filter(d => d?.properties?.hs_email_direction === "EMAIL")
-      .sort((a, b) => Number(b.properties.hs_timestamp ?? 0) - Number(a.properties.hs_timestamp ?? 0));
-
-    if (!outbound.length) return null;
-    const p = outbound[0].properties;
-    const lines = [
-      p.hs_email_subject ? `Asunto: ${p.hs_email_subject}` : "",
-      p.hs_email_text    ? `Cuerpo:\n${p.hs_email_text.slice(0, 800)}` : "",
-    ].filter(Boolean);
-    return lines.length ? lines.join("\n") : null;
-  } catch {
-    return null;
-  }
-}
 
 async function searchCompanyNews(companyName: string, country: string | null): Promise<string | null> {
   const key = process.env.PERPLEXITY_API_KEY;
@@ -313,17 +279,8 @@ export async function POST(req: NextRequest) {
       companyName = ep.name || recipientCompany || null;
     }
 
-    // Para seguimiento: buscar último mensaje enviado en HubSpot (si hay contactId)
-    let previousMessage: string | null = manualPreviousMessage ?? null;
-    let previousMessageSource: "hubspot" | "manual" = "manual";
-    if (emailType === "followup" && hubspotContactId && !previousMessage) {
-      const token = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
-      const hsMsg = await fetchLastOutboundActivity(hubspotContactId, token);
-      if (hsMsg) {
-        previousMessage = hsMsg;
-        previousMessageSource = "hubspot";
-      }
-    }
+    // Para seguimiento: contexto del mensaje anterior (siempre manual — texto o imagen)
+    const previousMessage: string | null = manualPreviousMessage ?? null;
 
     // Búsqueda de noticias solo para tipos de primer contacto (en paralelo con contexto IA)
     const shouldSearchNews = COLD_TYPES.has(emailType ?? "");
@@ -389,11 +346,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({
-      message: assistantText,
-      previousMessageFound: emailType === "followup" ? !!previousMessage : undefined,
-      previousMessageSource: emailType === "followup" ? (previousMessage ? previousMessageSource : null) : undefined,
-    });
+    return NextResponse.json({ message: assistantText });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("agente-contenido-v2 error:", msg);
