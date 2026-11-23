@@ -14,7 +14,7 @@ const PERPLEXITY_API = "https://api.perplexity.ai/chat/completions";
 
 const COLD_TYPES = new Set(["cold", "no_contact"]);
 
-async function fetchLastOutboundActivity(contactId: string, token: string): Promise<string | null> {
+async function fetchLastOutboundActivity(contactId: string, token: string): Promise<{ text: string; subject: string | null } | null> {
   try {
     // Buscar emails enviados al contacto
     const r = await fetch(
@@ -39,11 +39,13 @@ async function fetchLastOutboundActivity(contactId: string, token: string): Prom
 
     if (!outbound.length) return null;
     const p = outbound[0].properties;
+    const subject: string | null = p.hs_email_subject ?? null;
     const lines = [
-      p.hs_email_subject ? `Asunto: ${p.hs_email_subject}` : "",
+      subject ? `Asunto: ${subject}` : "",
       p.hs_email_text    ? `Cuerpo:\n${p.hs_email_text.slice(0, 800)}` : "",
     ].filter(Boolean);
-    return lines.length ? lines.join("\n") : null;
+    if (!lines.length) return null;
+    return { text: lines.join("\n"), subject };
   } catch {
     return null;
   }
@@ -266,6 +268,7 @@ export async function POST(req: NextRequest) {
       referrerName, meetingDate, meetingCountry, contextNotes,
       hubspotContactId, alloCallSummary, save, image,
       previousMessage: manualPreviousMessage,
+      followupHsDismissed,
     } = body;
 
     if (!clientId || !messages?.length) {
@@ -316,11 +319,13 @@ export async function POST(req: NextRequest) {
     // Para seguimiento: buscar último mensaje enviado en HubSpot (si hay contactId)
     let previousMessage: string | null = manualPreviousMessage ?? null;
     let previousMessageSource: "hubspot" | "manual" = "manual";
-    if (emailType === "followup" && hubspotContactId && !previousMessage) {
+    let previousMessageSubject: string | null = null;
+    if (emailType === "followup" && hubspotContactId && !previousMessage && !followupHsDismissed) {
       const token = process.env.HUBSPOT_ACCESS_TOKEN ?? "";
-      const hsMsg = await fetchLastOutboundActivity(hubspotContactId, token);
-      if (hsMsg) {
-        previousMessage = hsMsg;
+      const hsResult = await fetchLastOutboundActivity(hubspotContactId, token);
+      if (hsResult) {
+        previousMessage = hsResult.text;
+        previousMessageSubject = hsResult.subject;
         previousMessageSource = "hubspot";
       }
     }
@@ -393,6 +398,7 @@ export async function POST(req: NextRequest) {
       message: assistantText,
       previousMessageFound: emailType === "followup" ? !!previousMessage : undefined,
       previousMessageSource: emailType === "followup" ? (previousMessage ? previousMessageSource : null) : undefined,
+      previousMessageSubject: emailType === "followup" ? (previousMessageSubject ?? null) : undefined,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
