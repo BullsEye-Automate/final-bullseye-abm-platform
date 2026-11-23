@@ -298,7 +298,7 @@ export async function POST(req: NextRequest) {
       segmentStyleGuide, contactBlock, alloCallSummary,
       newsBlock: newsBlock ?? undefined,
       previousMessage: previousMessage ?? undefined,
-      previousMessageSource,
+      previousMessageSource: "manual" as const,
       contextMode: segmentContextMode,
     });
 
