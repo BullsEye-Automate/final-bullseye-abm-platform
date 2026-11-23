@@ -144,6 +144,8 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
     const pct = (f: (k: SdrContact) => boolean) => (hasData && ks.length ? Math.round((100 * ks.filter(f).length) / ks.length) : null);
     const ms = mtgStats(meetings.filter((m) => m.c === cl));
     const fx = fixes.filter((f) => f.client === cl);
+    const cl3 = slice.calls?.[cl] ?? { calls: 0, conn: 0, cts: 0 };
+    const managed = ks.filter((k) => !isPendingContact(k)).length;
     return {
       client: cl, cos: cs.length, groups: g,
       stock: ks.filter(isPendingContact).length, cts: ks.length,
@@ -151,6 +153,7 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
       tel: pct((k) => k.ph === 1), mail: pct((k) => k.ml === 1), li: pct((k) => k.lk === 1),
       telN: hasData ? ks.filter((k) => k.ph === 1).length : 0, telD: hasData ? ks.length : 0,
       goal: slice.goals[cl] ?? null, ...ms, ...goalStatus(slice.goals[cl] ?? null, ms.re, prog.share), withMtg: withMtg(cs),
+      calls: cl3.calls, conn: cl3.conn, ctsCalled: cl3.cts, managed,
       fixN: fx.length, fixEst: fx.filter((f) => f.kind === "est").length, fixSeg: fx.filter((f) => f.kind === "seg").length,
     };
   });
@@ -199,6 +202,8 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
       withMtg: withMtg(companies), fix: fixes.length,
     },
     mtg: mtgStats(meetings),
+    funnel: perClient.reduce((t, p) => ({ calls: t.calls + p.calls, conn: t.conn + p.conn, ctsCalled: t.ctsCalled + p.ctsCalled, managed: t.managed + p.managed, ag: t.ag + p.ag }),
+      { calls: 0, conn: 0, ctsCalled: 0, managed: 0, ag: 0 }),
     goal: { total: goalTotal || null, done: goalDone, ...goalStatus(goalTotal || null, goalDone, prog.share), elapsed: prog.elapsed, days: prog.total },
     quality: { depth, returns, ctStatus, worked: worked.length },
     profile: { sen: profile("sen"), area: profile("area"), n: recent.length },
