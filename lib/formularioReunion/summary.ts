@@ -35,6 +35,7 @@ export type SummaryAi = {
 };
 
 const MAX_WEB_SEARCHES = 6;
+const WEB_SEARCH_USD = 0.01;
 const MAX_ROUNDS = 4; // pause_turn de la búsqueda web
 
 const SUMMARY_TOOL = {
@@ -243,6 +244,8 @@ export async function generateMeetingSummary(input: SummaryInput, userId: string
       inputTokens: inTok,
       outputTokens: outTok,
       metadata: { web_searches: searches, empresa: input.empresa },
+      // Búsqueda web: US$10 por 1.000 búsquedas (se cobra aparte de los tokens).
+      extraCostUsd: searches * WEB_SEARCH_USD,
     });
   }
 }
