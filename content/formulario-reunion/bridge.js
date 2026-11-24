@@ -5,7 +5,7 @@
 //  2. No deja registrar (ni mover) una reunión en un feriado nacional del país
 //     elegido; los feriados regionales y días de baja actividad avisan y se
 //     confirman con un segundo clic.
-//  3. Reemplaza el resumen para WhatsApp por el formato enriquecido: se muestra
+//  3. Reemplaza el resumen para WhatsApp por el formato con contexto: se muestra
 //     al tiro con los datos del formulario y la plataforma lo completa con IA.
 (function () {
   var CFG = window.__BE_FORM || {};
@@ -154,30 +154,40 @@
   }
 
   var lastData = null, lastAi = null, reqId = 0;
+  // "07/12/2026" → "Lunes 07/12/2026"
+  var DAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  function dateLabel(dmy) {
+    var m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(dmy || "").trim());
+    if (!m) return dmy || "-";
+    var d = new Date(+m[3], +m[2] - 1, +m[1]);
+    return DAYS[d.getDay()] + " " + ("0" + m[1]).slice(-2) + "/" + ("0" + m[2]).slice(-2) + "/" + m[3];
+  }
+  function section(L, title, items) {
+    if (!items || !items.length) return;
+    L.push(""); L.push(title);
+    items.forEach(function (b) { L.push("• " + b); });
+  }
+
+  // Formato del mensaje (nov-2026, pedido de BullsEye): datos de la reunión,
+  // contexto de la cuenta, sobre el contacto, resumen y recomendaciones.
   function compose(data, ai) {
     ai = ai || {};
     var L = ["🎯 Nueva reunión agendada!!", ""];
     L.push("🏢 " + (ai.empresa || data.empresa || "-"));
-    if (ai.giro) L.push("🏦 " + ai.giro);
     L.push("🌎 " + (data.pais || "-"));
-    L.push("");
     L.push("👤 " + (ai.contacto || data.contactos || "-"));
     L.push("💼 " + (ai.cargo || data.cargo || "-"));
-    if (ai.rol) L.push("🎚️ Rol: " + ai.rol);
-    if (data.correo && data.correo.trim()) L.push("📧 " + data.correo.trim());
-    if (data.telefono && data.telefono.trim()) L.push("📞 " + phoneLabel(data.telefono));
-    L.push("");
-    var when = data.fecha_reunion || "-";
-    if (data.hora) when += " — " + horaLabel(data.hora) + (data.pais ? " (hora " + data.pais + ")" : "");
+    var when = dateLabel(data.fecha_reunion);
+    // Hora del país del prospecto; se aclara solo si no es Chile.
+    if (data.hora) when += " — " + horaLabel(data.hora) + (data.pais && norm(data.pais) !== "chile" ? " (hora " + data.pais + ")" : "");
     L.push("📅 " + when);
-    if (data.origen) L.push("📲 Canal: " + data.origen);
-    var ctx = ai.contexto_llamada || (data.comentario || "").trim();
-    if (ctx) { L.push(""); L.push("💬 Contexto de la llamada:"); L.push(ctx); }
-    if (ai.interes) { L.push(""); L.push("🔥 Nivel de interés: " + ai.interes); }
-    if (ai.contexto_cuenta && ai.contexto_cuenta.length) {
-      L.push(""); L.push("📡 Contexto de la cuenta:");
-      ai.contexto_cuenta.forEach(function (b) { L.push("• " + b); });
-    }
+    if (data.correo && data.correo.trim()) L.push("✉️ " + data.correo.trim());
+    if (data.telefono && data.telefono.trim()) L.push("📞 " + phoneLabel(data.telefono));
+    section(L, "🔎 Contexto de la cuenta", ai.contexto_cuenta);
+    section(L, "👤 Sobre el contacto", ai.sobre_contacto);
+    var resumen = ai.resumen || (data.comentario || "").trim();
+    if (resumen) { L.push(""); L.push("💬 Resumen"); L.push(resumen); }
+    section(L, "✅ Recomendaciones para la reunión", ai.recomendaciones);
     return L.join("\n");
   }
 
@@ -198,7 +208,7 @@
     var id = ++reqId;
     document.getElementById("summary-box").textContent = compose(data);
     if (!window.parent || window.parent === window) return;
-    setStatus("wait", "✨ Completando con IA: rubro de la empresa, rol del contacto y contexto de la cuenta (≈30 s). Ya puedes copiar la versión básica.");
+    setStatus("wait", "✨ Completando con IA: contexto de la cuenta, sobre el contacto y recomendaciones para la reunión (≈30–60 s). Ya puedes copiar la versión básica.");
     // Al parent no viajan el correo ni el teléfono del prospecto.
     window.parent.postMessage({
       type: "be-form:summary", id: id,
