@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { getClientContext } from "@/lib/getClientContext";
-import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseServer } from "@/lib/supabase/server";
 import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
@@ -84,7 +85,7 @@ function buildSystemPrompt(ctx: Awaited<ReturnType<typeof getClientContext>>, re
 
   return `Eres un asistente experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar mensajes de outreach.
 
-Canal de esta sesión: ${channelInfo.label}. Extensión: ${channelInfo.length}. Adapta el tono y formato al canal.${channelInfo.hasSubject ? "" : " No incluyas asunto."} No incluyas firma, despedida con nombre ni datos de contacto. El SDR añadirá su propia firma. Nunca uses el carácter — (guión largo o em dash) en ningún mensaje.
+Canal de esta sesión: ${channelInfo.label}. Extensión: ${channelInfo.length}. Adapta el tono y formato al canal.${channelInfo.hasSubject ? "" : " No incluyas asunto."} No incluyas firma, despedida con nombre ni datos de contacto. El SDR añadirá su propia firma. Nunca uses el carácter — (guión largo o em dash) en ningún mensaje. PROHIBICIÓN ABSOLUTA: Nunca uses la palabra "colega" en ningún mensaje, bajo ninguna circunstancia.
 
 ${recipientBlock ? `Datos del destinatario de esta sesión:\n${recipientBlock}\n\nUsa estos datos en todos los mensajes sin pedirlos de nuevo. Si se indica el cargo del destinatario, adapta SIEMPRE el mensaje a ese cargo: el ángulo, el dolor relevante y el lenguaje deben reflejar su rol específico. Un CEO recibe un mensaje estratégico y de alto nivel; un gerente de operaciones, uno enfocado en eficiencia; un SDR o vendedor, uno orientado a resultados de ventas. Nunca generes un mensaje genérico cuando hay cargo disponible.` : ""}
 
@@ -101,7 +102,8 @@ Para cualquier ajuste o variación, aplica los cambios directamente y devuelve e
 
 export async function POST(req: NextRequest) {
   try {
-  const userId = getUserIdFromRequest(req);
+  const { data: { user } } = await supabaseServer().auth.getUser();
+  const userId = user?.id ?? null;
   const body = await req.json();
   const {
     clientId, messages, emailType, channel, segmentId,

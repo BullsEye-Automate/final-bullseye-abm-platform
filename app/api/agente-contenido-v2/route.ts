@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
 import { getClientContext } from "@/lib/getClientContext";
-import { supabaseAdmin, getUserIdFromRequest } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
+import { supabaseServer } from "@/lib/supabase/server";
 import { logAiUsage } from "@/lib/aiUsageLogger";
 
 export const runtime = "nodejs";
@@ -12,6 +13,7 @@ const HS = "https://api.hubapi.com";
 const PERPLEXITY_API = "https://api.perplexity.ai/chat/completions";
 
 const COLD_TYPES = new Set(["cold", "no_contact"]);
+
 
 async function searchCompanyNews(companyName: string, country: string | null): Promise<string | null> {
   const key = process.env.PERPLEXITY_API_KEY;
@@ -52,6 +54,7 @@ function hsHeaders() {
 const MSG_TYPE_LABELS: Record<string, string> = {
   cold:          "primer contacto frío",
   no_contact:    "seguimiento tras no poder contactar por teléfono",
+  followup:      "seguimiento de un mensaje anterior",
   info:          "solicitud de más información",
   referral:      "contacto derivado por un conocido",
   meeting:       "confirmación de reunión agendada",
@@ -139,6 +142,7 @@ function buildSystemPrompt(
     channel?: string; referrerName?: string; meetingDate?: string; meetingCountry?: string;
     contextNotes?: string; segmentStyleGuide?: string;
     contactBlock?: string; alloCallSummary?: string; newsBlock?: string;
+    previousMessage?: string; previousMessageSource?: "hubspot" | "manual";
     contextMode?: "all" | "icp_only" | "segment_only";
   }
 ): string {
@@ -173,6 +177,10 @@ function buildSystemPrompt(
     ? `\n\nResumen de la última llamada (Allo):\n${recipient.alloCallSummary}`
     : "";
 
+  const previousMessageBlock = recipient.previousMessage
+    ? `\n\n── Último mensaje enviado a este contacto (${recipient.previousMessageSource === "hubspot" ? "desde HubSpot" : "proporcionado por el SDR"}) ──\n${recipient.previousMessage}`
+    : "";
+
   const contactSection = recipient.contactBlock ? `\n\n${recipient.contactBlock}` : "";
   const newsSection = recipient.newsBlock
     ? `\n\n── Noticias recientes de la empresa (web) ──\n${recipient.newsBlock}`
@@ -182,6 +190,7 @@ function buildSystemPrompt(
 
   const typeInstructions: Record<string, string> = {
     no_contact:    `\n\nEste mensaje es para alguien que el SDR no logró contactar por teléfono. Reconoce que se intentó llamar, menciona brevemente el motivo del contacto, y ofrece otra forma de conectarse (correo, LinkedIn, WhatsApp).`,
+    followup:      `\n\nEste es un mensaje de seguimiento a uno enviado anteriormente.${recipient.previousMessage ? " Tienes el mensaje anterior en el contexto: úsalo para dar continuidad sin copiarlo, agrega valor nuevo (un dato, un ángulo diferente, una pregunta concreta) y propón un siguiente paso claro." : " No se encontró el mensaje anterior: redacta un seguimiento genérico pero personalizado, mencionando que ya hubo un contacto previo, agregando un nuevo ángulo de valor y proponiendo un paso concreto."}`,
     meeting_brief: `\n\nGenera una previa de reunión (briefing interno) CONCISA para quien va a reunirse con este contacto. Máximo 220 palabras en total. Exactamente 4 secciones: 1) Contexto rápido (quién es, empresa, cargo, datos relevantes), 2) Fit con nuestro ICP (2-3 razones concretas), 3) Ángulo de entrada (1-2 pain points probables + cómo conectarlos con nuestra propuesta de valor), 4) Dato clave para la reunión (algo específico para personalizar la conversación: un logro, una señal, una objeción previsible). Tono ejecutivo. Sin relleno.`,
     meeting:       `\n\nConfirma la fecha y hora de la reunión. Recuerda brevemente la propuesta de valor y enmarca la reunión como una conversación exploratoria.`,
   };
@@ -193,9 +202,9 @@ function buildSystemPrompt(
 
   return `Eres un experto en prospección B2B que ayuda a los SDRs de ${ctx.clientName} a redactar mensajes hiperpersonalizados.
 
-${channelInstruction}Comienza siempre con un saludo apropiado (Hola [Nombre], Buenos días [Nombre], etc.). No incluyas firma, despedida con nombre ni datos de contacto — el SDR añadirá su propia firma. Nunca uses el carácter — (guión largo).
+${channelInstruction}Comienza siempre con un saludo apropiado (Hola [Nombre], Buenos días [Nombre], etc.). No incluyas firma, despedida con nombre ni datos de contacto — el SDR añadirá su propia firma. Nunca uses el carácter — (guión largo). PROHIBICIÓN ABSOLUTA: Nunca uses la palabra "colega" en ningún mensaje, bajo ninguna circunstancia.
 
-${recipientLines ? `Datos del destinatario:\n${recipientLines}` : ""}${contactSection}${newsSection}${alloBlock}
+${recipientLines ? `Datos del destinatario:\n${recipientLines}` : ""}${contactSection}${newsSection}${alloBlock}${previousMessageBlock}
 
 ${contextBlock ? `Contexto sobre ${ctx.clientName}:\n${contextBlock}` : ""}${icpBlock}${styleBlock}${extraInstruction}
 
@@ -213,13 +222,16 @@ ${channelInfo.hasSubject && !isMeetingBrief
 
 export async function POST(req: NextRequest) {
   try {
-    const userId = getUserIdFromRequest(req);
+    // Leer user_id desde la sesión de cookies (SSR auth)
+    const { data: { user } } = await supabaseServer().auth.getUser();
+    const userId = user?.id ?? null;
     const body = await req.json();
     const {
       clientId, messages, emailType, channel, segmentId,
       recipientName, recipientCompany, recipientTitle,
       referrerName, meetingDate, meetingCountry, contextNotes,
       hubspotContactId, alloCallSummary, save, image,
+      previousMessage: manualPreviousMessage,
     } = body;
 
     if (!clientId || !messages?.length) {
@@ -267,6 +279,9 @@ export async function POST(req: NextRequest) {
       companyName = ep.name || recipientCompany || null;
     }
 
+    // Para seguimiento: contexto del mensaje anterior (siempre manual — texto o imagen)
+    const previousMessage: string | null = manualPreviousMessage ?? null;
+
     // Búsqueda de noticias solo para tipos de primer contacto (en paralelo con contexto IA)
     const shouldSearchNews = COLD_TYPES.has(emailType ?? "");
     const [ctx, newsBlock] = await Promise.all([
@@ -282,6 +297,8 @@ export async function POST(req: NextRequest) {
       referrerName, meetingDate, meetingCountry, contextNotes,
       segmentStyleGuide, contactBlock, alloCallSummary,
       newsBlock: newsBlock ?? undefined,
+      previousMessage: previousMessage ?? undefined,
+      previousMessageSource: "manual" as const,
       contextMode: segmentContextMode,
     });
 

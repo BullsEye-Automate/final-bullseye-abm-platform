@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { IconLoader2, IconRefresh, IconSparkles, IconAlertCircle, IconTrendingUp, IconCpu } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
+import { IconLoader2, IconRefresh, IconSparkles, IconAlertCircle, IconTrendingUp, IconCpu, IconDownload } from "@tabler/icons-react";
 
 type FunctionRow = { calls: number; input_tokens: number; output_tokens: number; cost_usd: number };
 type ClientRow   = { name: string; calls: number; cost_usd: number };
@@ -33,6 +33,7 @@ const FUNCTION_LABELS: Record<string, string> = {
   prefilter:                      "Pre-filtro de contactos",
   deep_research:                  "Investigación profunda",
   agente_contenido_chat:          "Chat agente SDR",
+  agente_contenido_v2:            "Agente SDR (chat-v2)",
   company_research_fast:          "Investigación rápida de empresa",
   discovery_recommendation:       "Discovery de empresas",
   infer_company_name_from_bio:    "Inferir empresa desde bio (Lemlist)",
@@ -71,6 +72,7 @@ type FunctionDetail = {
   by_client: Record<string, { name: string; calls: number; cost_usd: number; input_tokens: number; output_tokens: number }>;
   by_day: Record<string, { calls: number; cost_usd: number }>;
   by_model: Record<string, { calls: number; cost_usd: number; input_tokens: number; output_tokens: number }>;
+  by_user?: Record<string, { email: string; calls: number; cost_usd: number }>;
   metadata_stats: {
     total_contacts: number;
     total_companies: number;
@@ -80,44 +82,58 @@ type FunctionDetail = {
   };
 };
 
-function calculateDaysForFilter(filter: string): number {
+function toDateStr(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+function calculateDateRange(filter: string): { from: string; to: string } {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayStr = toDateStr(today);
 
   switch (filter) {
     case "hoy":
-      return 1;
+      return { from: todayStr, to: todayStr };
     case "ayer": {
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      return Math.ceil((today.getTime() - yesterday.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const ayer = new Date(today);
+      ayer.setDate(today.getDate() - 1);
+      const ayerStr = toDateStr(ayer);
+      return { from: ayerStr, to: ayerStr };
     }
     case "esta-semana": {
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      return Math.ceil((today.getTime() - startOfWeek.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const start = new Date(today);
+      // Lunes como inicio de semana
+      const day = today.getDay() === 0 ? 6 : today.getDay() - 1;
+      start.setDate(today.getDate() - day);
+      return { from: toDateStr(start), to: todayStr };
     }
     case "semana-pasada": {
-      const startOfWeek = new Date(today);
-      startOfWeek.setDate(today.getDate() - today.getDay());
-      const startOfLastWeek = new Date(startOfWeek);
-      startOfLastWeek.setDate(startOfWeek.getDate() - 7);
-      return 7;
+      const endLast = new Date(today);
+      const day = today.getDay() === 0 ? 6 : today.getDay() - 1;
+      endLast.setDate(today.getDate() - day - 1); // domingo de la semana pasada
+      const startLast = new Date(endLast);
+      startLast.setDate(endLast.getDate() - 6); // lunes de la semana pasada
+      return { from: toDateStr(startLast), to: toDateStr(endLast) };
     }
     case "este-mes": {
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      return Math.ceil((today.getTime() - startOfMonth.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const start = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { from: toDateStr(start), to: todayStr };
     }
     case "mes-pasado": {
-      const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-      const daysInLastMonth = (startOfMonth.getTime() - startOfLastMonth.getTime()) / (1000 * 60 * 60 * 24);
-      return Math.ceil(daysInLastMonth);
+      const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const end   = new Date(today.getFullYear(), today.getMonth(), 0); // último día del mes anterior
+      return { from: toDateStr(start), to: toDateStr(end) };
     }
-    case "ultimos-30":
-      return 30;
-    default:
-      return 7;
+    case "ultimos-30": {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 29);
+      return { from: toDateStr(start), to: todayStr };
+    }
+    default: {
+      const start = new Date(today);
+      start.setDate(today.getDate() - 6);
+      return { from: toDateStr(start), to: todayStr };
+    }
   }
 }
 
@@ -129,22 +145,172 @@ export default function UsoIAPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState<string | null>(null);
   const [detailFn, setDetailFn] = useState<string | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exportSections, setExportSections] = useState({
+    resumen: true, funciones: true, clientes: true, usuarios: true, modelos: true, dias: true,
+  });
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showExportMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showExportMenu]);
   const [detailData, setDetailData] = useState<FunctionDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const days = customDates ? null : calculateDaysForFilter(filterType);
+  // Siempre usar from/to para rangos exactos (days era impreciso para "mes pasado", "semana pasada")
+  const dateRange = customDates ?? calculateDateRange(filterType);
+
+  function exportCSV() {
+    if (!data) return;
+    const rows: string[][] = [];
+    const q = (s: string | number) => `"${String(s).replace(/"/g, '""')}"`;
+
+    if (exportSections.resumen) {
+      rows.push(["Informe de Uso de IA"]);
+      rows.push(["Período", `${dateRange.from} → ${dateRange.to}`]);
+      rows.push(["Costo total USD", fmt(data.total_cost_usd)]);
+      rows.push(["Llamadas totales", String(data.total_calls)]);
+      rows.push([]);
+    }
+
+    if (exportSections.funciones) {
+      rows.push(["--- Por función ---"]);
+      rows.push(["Función", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
+      Object.entries(data.by_function)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([fn, r]) =>
+          rows.push([FUNCTION_LABELS[fn] ?? fn, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
+        );
+      rows.push([]);
+    }
+
+    if (exportSections.clientes) {
+      rows.push(["--- Por cliente ---"]);
+      rows.push(["Cliente", "Llamadas", "Costo / llamada", "Costo USD", "% del total"]);
+      Object.entries(data.by_client)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([, r]) => rows.push([
+          r.name, String(r.calls),
+          fmt(r.cost_usd / r.calls),
+          fmt(r.cost_usd),
+          fmt((r.cost_usd / data.total_cost_usd) * 100) + "%",
+        ]));
+      rows.push([]);
+    }
+
+    if (exportSections.usuarios && Object.keys(data.by_user ?? {}).length > 0) {
+      rows.push(["--- Por usuario ---"]);
+      rows.push(["Usuario", "Llamadas", "Costo USD"]);
+      Object.entries(data.by_user ?? {})
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([, r]) => rows.push([r.email, String(r.calls), fmt(r.cost_usd)]));
+      rows.push([]);
+    }
+
+    if (exportSections.modelos) {
+      rows.push(["--- Por modelo ---"]);
+      rows.push(["Modelo", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
+      Object.entries(data.by_model)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([model, r]) =>
+          rows.push([model, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
+        );
+      rows.push([]);
+    }
+
+    if (exportSections.dias) {
+      rows.push(["--- Por día ---"]);
+      rows.push(["Día", "Llamadas", "Costo USD"]);
+      Object.entries(data.by_day ?? {})
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .forEach(([day, r]) => rows.push([day, String(r.calls), fmt(r.cost_usd)]));
+    }
+
+    const csv = rows.map((row) => row.map(q).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `uso-ia_${dateRange.from}_${dateRange.to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowExportMenu(false);
+  }
+
+  function exportDetailCSV() {
+    if (!detailData || !detailFn) return;
+    const rows: string[][] = [];
+    const q = (s: string | number) => `"${String(s).replace(/"/g, '""')}"`;
+    const fnLabel = detailFn === "agente_contenido_v2,agente_contenido_chat"
+      ? "Agente SDR (chat + chat-v2 combinados)"
+      : (FUNCTION_LABELS[detailFn] ?? detailFn);
+
+    rows.push([fnLabel]);
+    rows.push(["Período", `${dateRange.from} → ${dateRange.to}`]);
+    rows.push(["Llamadas totales", String(detailData.total_calls)]);
+    rows.push(["Costo total USD", fmt(detailData.total_cost_usd)]);
+    rows.push(["Costo / llamada", fmt(detailData.total_cost_usd / detailData.total_calls)]);
+    rows.push([]);
+
+    if (Object.keys(detailData.by_client).length > 0) {
+      rows.push(["--- Consumo por cliente ---"]);
+      rows.push(["Cliente", "Llamadas", "Costo USD"]);
+      Object.entries(detailData.by_client)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([, r]) => rows.push([r.name, String(r.calls), fmt(r.cost_usd)]));
+      rows.push([]);
+    }
+
+    if (detailData.by_user && Object.keys(detailData.by_user).length > 0) {
+      rows.push(["--- Por usuario ---"]);
+      rows.push(["Usuario", "Llamadas", "Costo USD"]);
+      Object.entries(detailData.by_user)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([, r]) => rows.push([r.email, String(r.calls), fmt(r.cost_usd)]));
+      rows.push([]);
+    }
+
+    if (Object.keys(detailData.by_model).length > 0) {
+      rows.push(["--- Por modelo ---"]);
+      rows.push(["Modelo", "Llamadas", "Tokens input", "Tokens output", "Costo USD"]);
+      Object.entries(detailData.by_model)
+        .sort((a, b) => b[1].cost_usd - a[1].cost_usd)
+        .forEach(([model, r]) =>
+          rows.push([model, String(r.calls), String(r.input_tokens), String(r.output_tokens), fmt(r.cost_usd)])
+        );
+      rows.push([]);
+    }
+
+    if (Object.keys(detailData.by_day).length > 0) {
+      rows.push(["--- Por día ---"]);
+      rows.push(["Día", "Llamadas", "Costo USD"]);
+      Object.entries(detailData.by_day)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .forEach(([day, r]) => rows.push([day, String(r.calls), fmt(r.cost_usd)]));
+    }
+
+    const csv = rows.map((row) => row.map(q).join(",")).join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `uso-ia_detalle_${fnLabel.replace(/[^a-zA-Z0-9]/g, "_")}_${dateRange.from}_${dateRange.to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function load() {
     setLoading(true);
     setError(null);
     setData(null);
     try {
-      let url = `/api/admin/ai-usage`;
-      if (customDates) {
-        url += `?from=${customDates.from}&to=${customDates.to}`;
-      } else if (days) {
-        url += `?days=${days}`;
-      }
+      const url = `/api/admin/ai-usage?from=${dateRange.from}&to=${dateRange.to}`;
       const r = await fetch(url, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
@@ -158,12 +324,7 @@ export default function UsoIAPage() {
   async function loadFunctionDetail(fn: string) {
     setDetailLoading(true);
     try {
-      let url = `/api/admin/ai-usage/function-detail?function=${fn}`;
-      if (customDates) {
-        url += `&from=${customDates.from}&to=${customDates.to}`;
-      } else if (days) {
-        url += `&days=${days}`;
-      }
+      let url = `/api/admin/ai-usage/function-detail?function=${fn}&from=${dateRange.from}&to=${dateRange.to}`;
       const r = await fetch(url, { cache: "no-store" });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Error");
@@ -228,10 +389,61 @@ export default function UsoIAPage() {
           >
             📅 Personalizado
           </button>
-          <button onClick={() => load()} className="btn bg-white border border-[#E5E2F0] text-ink ml-auto" disabled={loading}>
-            {loading ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
-            Refrescar
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                onClick={() => setShowExportMenu((v) => !v)}
+                className="btn bg-white border border-[#E5E2F0] text-ink"
+                disabled={!data}
+              >
+                <IconDownload size={14} />
+                Exportar CSV ▾
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-[#E5E2F0] rounded-lg shadow-lg z-20 w-56 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-2">Secciones a exportar</p>
+                  {([
+                    ["resumen",   "Resumen del período"],
+                    ["funciones", "Por función"],
+                    ["clientes",  "Por cliente"],
+                    ["usuarios",  "Por usuario"],
+                    ["modelos",   "Por modelo"],
+                    ["dias",      "Por día"],
+                  ] as [keyof typeof exportSections, string][]).map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 text-sm text-ink cursor-pointer hover:text-brand">
+                      <input
+                        type="checkbox"
+                        checked={exportSections[key]}
+                        onChange={(e) => setExportSections((s) => ({ ...s, [key]: e.target.checked }))}
+                        className="accent-brand"
+                      />
+                      {label}
+                    </label>
+                  ))}
+                  <div className="pt-2 border-t border-[#E5E2F0] flex gap-2">
+                    <button
+                      onClick={exportCSV}
+                      disabled={!Object.values(exportSections).some(Boolean)}
+                      className="btn text-xs flex-1 disabled:opacity-40"
+                      style={{ background: "#251762", color: "#62E0D8" }}
+                    >
+                      Descargar
+                    </button>
+                    <button
+                      onClick={() => setShowExportMenu(false)}
+                      className="btn text-xs bg-white border border-[#E5E2F0] text-ink"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+            <button onClick={() => load()} className="btn bg-white border border-[#E5E2F0] text-ink" disabled={loading}>
+              {loading ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />}
+              Refrescar
+            </button>
+          </div>
         </div>
 
         {/* Selector de fecha personalizada */}
@@ -336,6 +548,54 @@ export default function UsoIAPage() {
               </p>
             </button>
           )}
+
+          {/* SECCIÓN AGENTE SDR */}
+          {(() => {
+            // Combinar agente_contenido_chat (viejo /chat) + agente_contenido_v2 (nuevo /chat-v2)
+            const sdrV2   = data.by_function["agente_contenido_v2"];
+            const sdrChat = data.by_function["agente_contenido_chat"];
+            const totalCalls = (sdrV2?.calls ?? 0) + (sdrChat?.calls ?? 0);
+            if (totalCalls === 0) return null;
+
+            const totalCost  = (sdrV2?.cost_usd ?? 0) + (sdrChat?.cost_usd ?? 0);
+            const costPerMsg = totalCalls > 0 ? totalCost / totalCalls : 0;
+
+            return (
+              <div className="card overflow-hidden border-2" style={{ borderColor: "#62E0D8" }}>
+                <div className="px-5 py-3 border-b border-[#E5E2F0] flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span style={{ color: "#62E0D8" }}>🤖</span>
+                    <p className="font-semibold text-sm text-ink">Agente SDR — uso del período</p>
+                    {sdrChat && sdrV2 && (
+                      <span className="text-[11px] text-ink-muted">(chat + chat-v2 combinados)</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => loadFunctionDetail("agente_contenido_v2,agente_contenido_chat")}
+                    className="btn text-xs"
+                    style={{ background: "#251762", color: "#62E0D8" }}
+                  >
+                    Ver desglose por cliente y SDR
+                  </button>
+                </div>
+
+                {/* KPIs del agente */}
+                <div className="grid grid-cols-4 gap-0 divide-x divide-[#E5E2F0]">
+                  {[
+                    { label: "Mensajes generados", value: totalCalls.toLocaleString() },
+                    { label: "Costo total (USD)", value: `$${fmt(totalCost)}` },
+                    { label: "Costo por mensaje", value: `$${fmt(costPerMsg)}` },
+                    { label: "Costo por mensaje (CLP)", value: `$${Math.round(costPerMsg * 950).toLocaleString()}` },
+                  ].map((s) => (
+                    <div key={s.label} className="px-5 py-4">
+                      <div className="text-xs text-ink-muted mb-1">{s.label}</div>
+                      <div className="text-xl font-semibold text-[#251762]">{s.value}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* GRÁFICO DE TENDENCIA TEMPORAL */}
           {byDay.length > 0 && (
@@ -567,15 +827,30 @@ export default function UsoIAPage() {
           <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b border-[#E5E2F0] px-6 py-4 flex items-center justify-between">
               <div>
-                <p className="text-xs text-orange-700 font-semibold uppercase">Análisis detallado — Últimos {days} {days === 1 ? 'día' : 'días'}</p>
-                <h2 className="text-xl font-semibold text-ink">{FUNCTION_LABELS[detailFn] ?? detailFn}</h2>
+                <p className="text-xs text-orange-700 font-semibold uppercase">Análisis detallado — {dateRange.from} → {dateRange.to}</p>
+                <h2 className="text-xl font-semibold text-ink">
+                  {detailFn === "agente_contenido_v2,agente_contenido_chat"
+                    ? "Agente SDR (chat + chat-v2 combinados)"
+                    : (FUNCTION_LABELS[detailFn] ?? detailFn)}
+                </h2>
               </div>
-              <button
-                onClick={() => { setDetailFn(null); setDetailData(null); }}
-                className="text-ink-muted hover:text-ink text-2xl leading-none"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                {detailData && (
+                  <button
+                    onClick={exportDetailCSV}
+                    className="btn bg-white border border-[#E5E2F0] text-ink text-sm"
+                  >
+                    <IconDownload size={14} />
+                    Exportar CSV
+                  </button>
+                )}
+                <button
+                  onClick={() => { setDetailFn(null); setDetailData(null); }}
+                  className="text-ink-muted hover:text-ink text-2xl leading-none"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {detailLoading ? (
@@ -588,9 +863,9 @@ export default function UsoIAPage() {
                 {/* RESUMEN RÁPIDO */}
                 <div className="grid grid-cols-3 gap-3">
                   {[
-                    { label: "Costo total", value: `$${fmt(detailData.total_cost_usd)}` },
+                    { label: "Costo total", value: `$${fmt(detailData.total_cost_usd, 2)}` },
                     { label: "Llamadas", value: detailData.total_calls },
-                    { label: "Costo / llamada", value: `$${fmt(detailData.total_cost_usd / detailData.total_calls)}` },
+                    { label: "Costo / llamada", value: `$${fmt(detailData.total_cost_usd / detailData.total_calls, 4)}` },
                   ].map((s) => (
                     <div key={s.label} className="bg-[#F8F7FC] p-3 rounded">
                       <p className="text-xs text-ink-muted mb-1">{s.label}</p>
@@ -599,8 +874,8 @@ export default function UsoIAPage() {
                   ))}
                 </div>
 
-                {/* MÉTRICAS DE METADATA */}
-                {detailData.metadata_stats && (
+                {/* MÉTRICAS DE METADATA — solo si hay datos reales */}
+                {detailData.metadata_stats && (detailData.metadata_stats.total_contacts !== null || detailData.metadata_stats.total_companies !== null) && (
                   <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded p-4">
                     <p className="text-sm font-semibold text-ink mb-3">📊 Métricas de impacto</p>
                     <div className="grid grid-cols-2 gap-3">
@@ -641,6 +916,37 @@ export default function UsoIAPage() {
                               <td className="px-4 py-2 text-ink font-medium">{row.name}</td>
                               <td className="px-4 py-2 text-right text-ink-muted">{row.calls}</td>
                               <td className="px-4 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* DESGLOSE POR SDR/USUARIO */}
+                {detailData.by_user && Object.keys(detailData.by_user).length > 0 && (
+                  <div className="border border-[#E5E2F0] rounded overflow-hidden">
+                    <div className="bg-[#F8F7FC] px-4 py-2 border-b border-[#E5E2F0]">
+                      <p className="text-sm font-semibold text-ink">Uso por SDR</p>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-[#E5E2F0]">
+                          <th className="text-left px-4 py-2 text-[11px] font-semibold text-ink-muted">SDR</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Mensajes</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Costo USD</th>
+                          <th className="text-right px-4 py-2 text-[11px] font-semibold text-ink-muted">Costo / mensaje</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(detailData.by_user)
+                          .sort((a, b) => b[1].calls - a[1].calls)
+                          .map(([id, row]) => (
+                            <tr key={id} className="border-b border-[#F0EEF8] last:border-0">
+                              <td className="px-4 py-2 text-ink font-medium">{row.email.split("@")[0]}</td>
+                              <td className="px-4 py-2 text-right text-ink-muted">{row.calls}</td>
+                              <td className="px-4 py-2 text-right font-semibold text-[#251762]">${fmt(row.cost_usd)}</td>
+                              <td className="px-4 py-2 text-right text-ink-muted">${fmt(row.calls > 0 ? row.cost_usd / row.calls : 0)}</td>
                             </tr>
                           ))}
                       </tbody>

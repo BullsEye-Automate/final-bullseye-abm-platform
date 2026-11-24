@@ -7,13 +7,14 @@ import {
   IconArrowLeft,
 } from "@tabler/icons-react";
 
-type EmailType = "cold" | "no_contact" | "info" | "referral" | "meeting" | "meeting_brief";
+type EmailType = "cold" | "no_contact" | "followup" | "info" | "referral" | "meeting" | "meeting_brief";
 type Channel   = "email" | "whatsapp" | "linkedin" | "meeting_brief";
 type Message   = { role: "user" | "assistant"; content: string; imagePreview?: string; channel?: Channel };
 
 const MSG_TYPE_LABELS: Record<EmailType, string> = {
   cold:          "Primer contacto",
   no_contact:    "Sin contacto telefónico",
+  followup:      "Seguimiento",
   info:          "Más información",
   referral:      "Derivación / Referido",
   meeting:       "Confirmación de reunión",
@@ -23,6 +24,7 @@ const MSG_TYPE_LABELS: Record<EmailType, string> = {
 const MSG_TYPE_DESCRIPTIONS: Record<EmailType, string> = {
   cold:          "Sin conversación previa",
   no_contact:    "SDR intentó llamar, no contestó",
+  followup:      "Seguimiento a un mensaje anterior",
   info:          "El prospecto pidió más información",
   referral:      "Un conocido los refirió",
   meeting:       "Reunión ya agendada",
@@ -388,6 +390,7 @@ export default function ChatV2Page() {
 
   const [emailType, setEmailType]           = useState<EmailType>("cold");
   const [typeOpen, setTypeOpen]             = useState(false);
+  const [followupPreviousText, setFollowupPreviousText] = useState("");
   const [channel, setChannel]               = useState<Channel>("email");
   const [recipientName, setRecipientName]   = useState("");
   const [recipientCompany, setRecipientCompany] = useState("");
@@ -549,6 +552,7 @@ export default function ChatV2Page() {
           alloCallSummary: selectedCall?.summary ?? undefined,
           save: isFirst,
           image: image ? { base64: image.base64, mediaType: image.mediaType } : undefined,
+          previousMessage: emailType === "followup" ? (followupPreviousText || undefined) : undefined,
         }),
       });
 
@@ -864,6 +868,21 @@ export default function ChatV2Page() {
                     placeholder="Ej: Juan Pérez"
                     className="w-full rounded-xl px-4 py-2.5 text-sm outline-none"
                     style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
+                </div>
+              )}
+
+              {/* Seguimiento: aviso HubSpot y contexto manual */}
+              {emailType === "followup" && (
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-[11px] uppercase tracking-widest font-semibold mb-1.5" style={{ color: "#9b97c0" }}>
+                      Último mensaje enviado <span style={{ fontWeight: 400 }}>(pega el texto o sube una imagen)</span>
+                    </label>
+                    <textarea value={followupPreviousText} onChange={e => setFollowupPreviousText(e.target.value)}
+                      placeholder="Pega aquí el texto del último mensaje enviado al contacto..."
+                      rows={4} className="w-full rounded-xl px-4 py-2.5 text-sm outline-none resize-none"
+                      style={{ background: "#f4f2fb", border: "1px solid #e2e0f0", color: "#1a1535" }} />
+                  </div>
                 </div>
               )}
 

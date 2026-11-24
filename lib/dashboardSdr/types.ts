@@ -67,6 +67,8 @@ export type SdrSlice = {
   ctData: Record<string, boolean>; // cliente → el informe trae teléfono / correo / LinkedIn
   // cliente → registro en la app y cuenta dentro del HubSpot (para escribir el status); edit = se puede escribir
   accts: Record<string, { id: string; sub: string | null; edit: boolean }>;
+  // Llamadas del mes por cliente en su cartera (Pulso): total, conectadas y contactos distintos llamados
+  calls?: Record<string, { calls: number; conn: number; cts: number }>;
 };
 
 // Resumen por SDR para la vista de la líder (se calcula en el servidor)

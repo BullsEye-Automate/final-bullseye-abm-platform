@@ -241,6 +241,7 @@ export default function DashboardSdrPage() {
                       <Line l="Contactos disponibles (por gestionar)" v={`${fmt(p.stock)} de ${fmt(p.cts)}`} />
                       <Line l="Con teléfono" v={p.tel === null ? "Sin dato aún" : `${p.tel}%`} />
                       <Line l="Empresas sin contactos" v={fmt(p.none)} bad={p.none > 0} />
+                      <Line l={`Llamadas de ${monthName}`} v={`${fmt(p.calls)} · ${fmt(p.conn)} conectadas (${pct(p.conn, p.calls)})`} />
                     </div>
                     <GoalBox goal={p.goal} done={p.re} pct={p.pct} expected={p.expected} pace={p.pace} monthName={monthName} pending={p.pe} />
                     <div className={`rounded-lg px-2.5 py-2 text-sm ${p.fixN ? "bg-warning-bg text-warning-fg" : "bg-success-bg text-success-fg"}`}>
@@ -452,6 +453,29 @@ function MeetingsSection({ A, client, monthName, ed, today }: { A: NonNullable<R
             </table>
           </div>
           <p className="px-4 py-2 text-xs text-ink-muted">Meta del SDR en cada cliente (pestaña «Asignación»). Cumplimiento = realizadas ÷ meta. Esperado a la fecha = meta × días hábiles transcurridos ÷ días hábiles del mes (hoy: {A.goal.elapsed} de {A.goal.days}). Ritmo: al día si las realizadas alcanzan lo esperado, en riesgo desde el 70%, atrasado bajo eso.</p>
+        </div>
+        <div className="card p-0 overflow-hidden" style={{ gridColumn: "1 / -1" }}>
+          <h3 className="text-sm font-semibold px-4 pt-3.5 pb-1">Llamadas y conversión por cliente · {monthName}</h3>
+          <p className="px-4 pb-2 text-xs text-ink-muted">Llamadas del mes registradas en HubSpot en las empresas y contactos de la cartera (Pulso ABM); conectada = «Resultado de la llamada» Conectada. Contactos gestionados = status distinto de por gestionar (hoy).</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-ink-muted bg-[#FAF9FD]">
+                <tr><Th>Cliente</Th><Th n>Llamadas</Th><Th n>Conectadas</Th><Th n>% conexión</Th><Th n>Contactos llamados</Th><Th n>Contactos gestionados</Th><Th n>Reuniones agendadas</Th><Th n>Conectadas → reunión</Th><Th n>Gestionados → reunión</Th></tr>
+              </thead>
+              <tbody>
+                {[...A.perClient.map((p) => ({ k: p.client, ...p, total: false })), ...(A.perClient.length > 1 ? [{ k: "Total", client: "Total", ...A.funnel, total: true }] : [])].map((p) => (
+                  <tr key={p.k} className={`border-t ${p.total ? "bg-[#FAF9FD] font-semibold" : ""}`}>
+                    <td className="px-3 py-2 font-medium">{p.client}</td>
+                    <Td n>{p.calls}</Td><Td n>{p.conn}</Td>
+                    <td className="px-3 py-2 text-right tabular-nums">{pct(p.conn, p.calls)}</td>
+                    <Td n>{p.ctsCalled}</Td><Td n>{p.managed}</Td><Td n>{p.ag}</Td>
+                    <td className="px-3 py-2 text-right tabular-nums">{pct(p.ag, p.conn)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{pct(p.ag, p.managed)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
         <div className="card space-y-2">
           <div className="flex justify-between items-center gap-2 flex-wrap">
@@ -796,6 +820,62 @@ function FacturarBox({ m, ed }: { m: SdrMeeting; ed: Editing }) {
 
 // ── Vista Comisionables: reuniones del mes marcadas «Reunión comisionable», por cliente ──
 type BillRow = { id: string; cliente: string; fecha: string; hora: string; empresa: string; contacto: string; cargo: string; sdr: string; realizado: string; oportunidad: string; origen: string; facturar: boolean; by: string | null; at: string | null };
+// Quién valida las reuniones comisionables (lista editable por quienes ya están)
+function ComisionableEditors() {
+  const [data, setData] = useState<{ fixed: string[]; editable: string[] } | null>(null);
+  const [add, setAdd] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/sdr/dashboard/comisionables-editores").then(async (r) => {
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+      setData(j);
+    }).catch((e) => setErr((e as Error).message));
+  }, []);
+  const save = async (emails: string[]) => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch("/api/sdr/dashboard/comisionables-editores", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emails }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+      setData(j); setAdd("");
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+  };
+  const addOne = () => {
+    const e = add.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { setErr("Escribe un correo válido."); return; }
+    if (data && ![...data.fixed, ...data.editable].includes(e)) save([...data.editable, e]); else setAdd("");
+  };
+  return (
+    <section className="card space-y-3">
+      <div>
+        <h2 className="text-base font-semibold">Quién valida las reuniones comisionables</h2>
+        <p className="text-xs text-ink-muted">Estas personas ven la pestaña Comisionables y pueden marcar reuniones. Las líderes de célula e Ingri están siempre. Suma aquí a los KAM nuevos.</p>
+      </div>
+      {!data && !err && <span className="text-sm text-ink-muted inline-flex items-center gap-1"><IconLoader2 size={14} className="animate-spin" /> Cargando…</span>}
+      {data && (
+        <div className="flex flex-wrap gap-2">
+          {data.fixed.map((e) => <span key={e} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs bg-brand/10 text-brand" title="Siempre incluida">{e}</span>)}
+          {data.editable.map((e) => (
+            <span key={e} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-black/5">
+              {e}
+              <button type="button" aria-label={`Quitar ${e}`} disabled={busy} onClick={() => save(data.editable.filter((x) => x !== e))} className="text-ink-muted hover:text-danger-fg">×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      {data && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <input className="input min-w-[260px]" type="email" placeholder="correo@bullseye-abm.com" aria-label="Correo a agregar" value={add} onChange={(e) => setAdd(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addOne(); }} disabled={busy} />
+          <button type="button" onClick={addOne} disabled={busy || !add.trim()} className="px-3 py-2 rounded-lg text-sm border hover:bg-black/5 disabled:opacity-50">{busy ? "Guardando…" : "Agregar"}</button>
+        </div>
+      )}
+      {err && <p className="text-sm text-danger-fg">{err}</p>}
+    </section>
+  );
+}
+
 function BillingView({ today }: { today: string }) {
   const months = useMemo(() => {
     const out: string[] = [];
@@ -888,7 +968,8 @@ function BillingView({ today }: { today: string }) {
               </table>
             </div>
           </section>
-          <p className="text-xs text-ink-muted">«Reunión comisionable» es una marca tuya para contar las reuniones que comisionan los SDR: no cambia nada en la planilla, y solo la ves tú. La marca «Por facturar» al cliente está en Pulso ABM → Detalle de reuniones. Se marca en los desplegables de reuniones del Dashboard SDR. «Marcada por» y «El» = quién cambió la marca por última vez y cuándo. Reuniones de la planilla por fecha de la reunión.</p>
+          <p className="text-xs text-ink-muted">«Reunión comisionable» es una marca interna para validar las reuniones que comisionan los SDR: no cambia nada en la planilla. La ven y la marcan solo las personas de la lista de abajo. La marca «Por facturar» al cliente está en Pulso ABM → Detalle de reuniones. Se marca en los desplegables de reuniones del Dashboard SDR. «Marcada por» y «El» = quién cambió la marca por última vez y cuándo. Reuniones de la planilla por fecha de la reunión.</p>
+          <ComisionableEditors />
         </>
       )}
     </div>

@@ -6,28 +6,38 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const functionName = req.nextUrl.searchParams.get("function") ?? "message_generation_sequence";
+    const functionParam = req.nextUrl.searchParams.get("function") ?? "message_generation_sequence";
+    // Acepta múltiples funciones separadas por coma
+    const functionNames = functionParam.split(",").map((f) => f.trim()).filter(Boolean);
+    const functionName = functionNames[0]; // para compatibilidad con el campo de respuesta
     const db = supabaseAdmin();
-
-    let since: string;
 
     const fromParam = req.nextUrl.searchParams.get("from");
     const toParam = req.nextUrl.searchParams.get("to");
 
+    let since: string;
+    let until: string;
+
     if (fromParam && toParam) {
-      const fromDate = new Date(fromParam + "T00:00:00Z");
-      since = fromDate.toISOString();
+      since = new Date(fromParam + "T00:00:00Z").toISOString();
+      until = new Date(toParam   + "T23:59:59Z").toISOString();
     } else {
       const days = Number(req.nextUrl.searchParams.get("days") ?? "7");
       since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      until = new Date().toISOString();
     }
 
-  const { data, error } = await db
+  const query = db
     .from("ai_usage_log")
     .select("*, clients(name)")
-    .eq("function_name", functionName)
     .gte("created_at", since)
+    .lte("created_at", until)
     .order("created_at", { ascending: false });
+
+  // Filtrar por una o varias funciones
+  const { data, error } = functionNames.length === 1
+    ? await query.eq("function_name", functionName)
+    : await query.in("function_name", functionNames);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -40,6 +50,16 @@ export async function GET(req: NextRequest) {
   const byClient: Record<string, { name: string; calls: number; cost_usd: number; input_tokens: number; output_tokens: number }> = {};
   const byDay: Record<string, { calls: number; cost_usd: number }> = {};
   const byModel: Record<string, { calls: number; cost_usd: number; input_tokens: number; output_tokens: number }> = {};
+  const byUser: Record<string, { email: string; calls: number; cost_usd: number }> = {};
+
+  // Mapear user_id → email (via admin API, no tabla directa)
+  const userMap: Record<string, string> = {};
+  try {
+    const { data: usersData } = await db.auth.admin.listUsers({ perPage: 500 });
+    if (usersData?.users) {
+      for (const u of usersData.users) userMap[u.id] = u.email || "Desconocido";
+    }
+  } catch { /* sin emails si falla */ }
 
   // Métricas de metadata (null si no hay datos)
   const metadataStats = {
@@ -84,6 +104,14 @@ export async function GET(req: NextRequest) {
     byModel[model].cost_usd += Number(row.cost_usd);
     byModel[model].input_tokens += row.input_tokens;
     byModel[model].output_tokens += row.output_tokens;
+
+    // Por usuario
+    if (row.user_id) {
+      const email = userMap[row.user_id] ?? "Desconocido";
+      if (!byUser[row.user_id]) byUser[row.user_id] = { email, calls: 0, cost_usd: 0 };
+      byUser[row.user_id].calls++;
+      byUser[row.user_id].cost_usd += Number(row.cost_usd);
+    }
 
     // Metadata
     if (row.metadata) {
@@ -134,6 +162,7 @@ export async function GET(req: NextRequest) {
       by_client: byClient,
       by_day: byDay,
       by_model: byModel,
+      by_user: byUser,
       metadata_stats: metadataStats,
       all_metadata: allMetadata,
       raw_rows: data,

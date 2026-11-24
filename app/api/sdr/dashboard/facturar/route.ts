@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUserEmail } from "@/lib/academiaSdr/server/client";
-import { canMarkBilling, setBillingMark } from "@/lib/dashboardSdr/billing";
+import { canMarkComisionable, setBillingMark } from "@/lib/dashboardSdr/billing";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const value = b?.value === true;
     if (!id) return NextResponse.json({ error: "Falta el id de la reunión" }, { status: 400 });
 
-    if (!canMarkBilling(email)) return NextResponse.json({ error: "Esta marca es solo para facturación interna." }, { status: 403 });
+    if (!(await canMarkComisionable(email))) return NextResponse.json({ error: "Solo las personas que validan reuniones comisionables pueden marcarlas." }, { status: 403 });
 
     await setBillingMark(id, value, email);
     return NextResponse.json({ ok: true, value });
