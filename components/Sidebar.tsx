@@ -70,6 +70,9 @@ const SECTIONS: Section[] = [
   {
     label: "Oportunidades",
     items: [
+      // Vuelve al menú (24-nov-2026, pedido de BullsEye): total de reuniones
+      // de todos los clientes sin entrar a Pulso ABM de un cliente
+      { href: "/oportunidades/reuniones",              label: "Reuniones",         icon: IconCalendarPlus },
       { href: "/oportunidades/feedback",               label: "Feedback manual",   icon: IconMessageStar },
       { href: "/oportunidades/resumen-feedback",       label: "Resumen Feedback",  icon: IconChartBar },
       { href: "/oportunidades/peitho",                 label: "Peitho",            icon: IconSparkles },
