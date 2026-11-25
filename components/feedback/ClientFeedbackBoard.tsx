@@ -19,8 +19,7 @@ type Meeting = {
   contacto_cargo: string | null;
   fecha_reunion: string | null;
   realizado: string;
-  // "peitho" = el cliente tiene Peitho o la reunión ya tiene análisis en
-  // Peitho: no se pide feedback manual (lib/peithoFeedback.ts)
+  // "peitho" = la reunión ya tiene análisis en Peitho: no se pide feedback manual (lib/peithoFeedback.ts)
   feedback_status: "pendiente" | "con_feedback" | "peitho";
   feedback_token: string;
   sdr_nombre: string | null;
@@ -410,7 +409,7 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
 
         {peithoEnabled && (
           <div className="mb-6 rounded-2xl border border-teal-100 bg-teal-50 p-4 text-sm text-teal-800">
-            <b>No necesitas completar feedback.</b> Tus reuniones se analizan automáticamente con Peitho y el feedback llega desde ahí.
+            Las reuniones que Peitho ya analizó no necesitan feedback (aparecen abajo en «Feedback automático de Peitho»). Completa el feedback de las demás: por ejemplo, cuando el contacto no dejó entrar al asistente de Peitho.
           </div>
         )}
 

@@ -16,12 +16,13 @@ export async function GET(
     .single();
 
   if (error || !data) return NextResponse.json({ error: "Reunión no encontrada" }, { status: 404 });
-  // Cliente con Peitho o reunión ya analizada en Peitho: no se pide feedback
-  // manual (la página muestra el aviso en vez del formulario)
+  // Reunión ya analizada en Peitho: no se pide feedback manual (la página
+  // muestra el aviso en vez del formulario). Sin análisis se pide aunque el
+  // cliente tenga Peitho (el lead pudo no dejar entrar al bot).
   let peitho = false;
   if (data.feedback_status !== "con_feedback" && data.client_id) {
-    const { enabled, covered } = await peithoFeedbackCoverage(supabase, data.client_id, [data]);
-    peitho = enabled || covered.has(data.id);
+    const { covered } = await peithoFeedbackCoverage(supabase, data.client_id, [data]);
+    peitho = covered.has(data.id);
   }
   return NextResponse.json({ ...data, peitho });
 }
@@ -39,8 +40,8 @@ export async function POST(
 
   if (meetingError || !meeting) return NextResponse.json({ error: "Token inválido" }, { status: 404 });
   if (meeting.feedback_status !== "con_feedback" && meeting.client_id) {
-    const { enabled, covered } = await peithoFeedbackCoverage(supabase, meeting.client_id, [meeting]);
-    if (enabled || covered.has(meeting.id)) {
+    const { covered } = await peithoFeedbackCoverage(supabase, meeting.client_id, [meeting]);
+    if (covered.has(meeting.id)) {
       return NextResponse.json({ error: "El feedback de esta reunión llega automáticamente desde Peitho" }, { status: 409 });
     }
   }
