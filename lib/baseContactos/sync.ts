@@ -27,7 +27,7 @@ const BASE_PROPS = ["firstname", "lastname", "jobtitle", "company", "email", "hs
 const FREE_MAIL = /^(gmail|hotmail|outlook|live|yahoo|icloud|me|msn|aol|protonmail|gmx|mail|yandex)\./i;
 
 export type Source = { key: string; label: string; token?: string };
-type SourceState = { cursor: string; done: boolean; count: number; error?: string | null; at?: string };
+type SourceState = { cursor: string; done: boolean; count: number; error?: string | null; at?: string; fails?: number };
 export type SyncState = { passStartedAt: string | null; passFinishedAt: string | null; sources: Record<string, SourceState> };
 
 export async function readState(): Promise<SyncState> {
@@ -151,17 +151,27 @@ async function syncSource(src: Source, st: SourceState, deadline: number): Promi
       filterGroups: filterProps.map((p) => ({ filters: [{ propertyName: p, operator: "HAS_PROPERTY" }, { propertyName: "hs_object_id", operator: "GT", value: cursor }] })),
       properties: wanted, limit: PAGE, sorts: [{ propertyName: "hs_object_id", direction: "ASCENDING" }],
     };
-    const res = await hsFetchWithRetry(`${HS}/crm/v3/objects/contacts/search`, { method: "POST", headers: hsHeaders(src.token), body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`HubSpot ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
-    const d = await res.json();
+    // HubSpot a veces responde 502/504 en búsquedas pesadas: se reintenta con página más chica
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      res = await hsFetchWithRetry(`${HS}/crm/v3/objects/contacts/search`, { method: "POST", headers: hsHeaders(src.token), body: JSON.stringify(attempt ? { ...body, limit: 100 } : body) });
+      if (res.ok || res.status < 500) break;
+      await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+    }
+    if (!res!.ok) {
+      const msg = `HubSpot ${res!.status}: ${(await res!.text().catch(() => "")).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 160)}`;
+      // Se guarda el avance (cursor y conteo) y se sigue en el próximo tramo
+      return { cursor, count, done: false, error: msg, at: new Date().toISOString(), fails: (st.fails ?? 0) + 1 };
+    }
+    const d = await res!.json();
     const results = (d.results ?? []) as { id: string; properties: Record<string, string | null> }[];
-    if (!results.length) return { cursor, count, done: true, error: null, at: new Date().toISOString() };
+    if (!results.length) return { cursor, count, done: true, error: null, at: new Date().toISOString(), fails: 0 };
     await upsertRows(toRows(src, results, clientLabels));
     count += results.length;
     cursor = results[results.length - 1].id;
-    if (results.length < PAGE) return { cursor, count, done: true, error: null, at: new Date().toISOString() };
+    if (results.length < PAGE && results.length < 100) return { cursor, count, done: true, error: null, at: new Date().toISOString(), fails: 0 };
   }
-  return { cursor, count, done: false, error: null, at: new Date().toISOString() };
+  return { cursor, count, done: false, error: null, at: new Date().toISOString(), fails: 0 };
 }
 
 // Un tramo de la sincronización (cron o botón). force = empezar una pasada nueva.
@@ -180,7 +190,11 @@ export async function syncChunk(opts: { budgetMs?: number; force?: boolean } = {
     if (st.done) continue;
     if (Date.now() > deadline) break;
     try {
-      state.sources[src.key] = await syncSource(src, st, deadline);
+      const next = await syncSource(src, st, deadline);
+      // Tras 5 tramos seguidos con error se da por terminado ese HubSpot (queda el motivo)
+      if (!next.done && (next.fails ?? 0) >= 5) next.done = true;
+      state.sources[src.key] = next;
+      if (next.error && !next.done) { await saveState(state); continue; }
     } catch (e) {
       const msg = (e as Error).message;
       if (msg === MIGRATION_HINT) throw e;
