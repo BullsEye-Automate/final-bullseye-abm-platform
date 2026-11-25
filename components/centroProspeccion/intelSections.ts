@@ -2,9 +2,11 @@
 //  - Resumen: una fila por cliente (prioridad, empresas sugeridas, stock de
 //    los SDR, propuestas por decidir).
 //  - Clientes: checklist de qué le falta a cada cliente para el motor.
-//  - Ficha: la inteligencia del cliente con las propuestas (aprobar = se
-//    agrega a la ficha; descartar = queda registrado), recordatorios y
-//    calidad de datos.
+//  - Ficha: la inteligencia del cliente con las propuestas, recordatorios y
+//    calidad de datos. La inteligencia no cambia el ICP (pedido de BullsEye,
+//    25-nov-2026): aprobar = guardar como sugerencia para presentar al
+//    cliente (se lista en «Sugerencias para presentar al cliente»); solo los
+//    próximos pasos se anotan en la ficha.
 
 type Proposal = { id: string; tipo: string; campo: string; texto: string; evidencia: string; casos: number; toca_icp: boolean; estado?: string; decidido_por?: string };
 type Result = {
@@ -71,7 +73,7 @@ export function createIntelSections() {
         const p = pending(r).length;
         const d = r.numbers?.diasStock;
         return `<tr><td class="l"><b>${esc(r.cliente)}</b></td><td><span class="pill ${PRIO[r.result.prioridad]}">${esc(r.result.prioridad)}</span></td><td>${goalCell(r.numbers?.meta)}</td><td><b>${n(r.result.empresas_sugeridas)}</b></td><td>${d == null ? "–" : `${n(d)} días`}<div class="muted" style="font-size:11.5px">${n(r.numbers?.sinGestion)} contactos</div></td><td>${p ? `<b>${n(p)}</b>` : "–"}</td><td class="l" style="white-space:normal;max-width:420px;font-size:12.5px">${esc(r.result.resumen)}</td></tr>`;
-      }).join("")}</tbody></table></div><p class="muted" style="font-size:12px;margin-top:8px">Las propuestas de cargos, industrias y exclusiones se aprueban o descartan en la ficha de cada cliente. La sugerencia de empresas es un insumo para la propuesta del Plan semanal (viernes en la tarde, editable antes de aprobar); el domingo se generan las recomendaciones según la meta de cada cliente en ese plan (mínimo 20) en Empresas → Recomendadas por IA.</p>`
+      }).join("")}</tbody></table></div><p class="muted" style="font-size:12px;margin-top:8px">Las propuestas de cargos, industrias y exclusiones son sugerencias para presentar al cliente: se guardan o descartan en la ficha de cada cliente y no cambian su ICP (solo cambia si se acuerda formalmente y se modifica en su proyecto de Claude). La sugerencia de empresas es un insumo para la propuesta del Plan semanal (viernes en la tarde, editable antes de aprobar); el domingo se generan las recomendaciones según la meta de cada cliente en ese plan (mínimo 20) en Empresas → Recomendadas por IA.</p>`
     );
     rerender.push(() => { if (el.isConnected) void renderResumen(el, fichaFilter, admin); });
   };
@@ -114,13 +116,13 @@ export function createIntelSections() {
       ? props.map((p) => {
           const done = p.estado && p.estado !== "pendiente";
           return `<div style="border:1px solid var(--line, #e3e1f0);border-radius:10px;padding:10px 12px;margin-bottom:8px" data-ci-prop="${esc(p.id)}">
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="tag">${esc(TIPO[p.tipo] ?? p.tipo)}</span><b style="flex:1;min-width:200px">${esc(p.texto)}</b>${p.toca_icp ? `<span class="pill y" title="Al aprobarla se avisa al KAM para validarla con el cliente">Toca el ICP</span>` : ""}</div>
-            <div class="muted" style="font-size:12.5px;margin-top:4px">${esc(p.evidencia)} · ${n(p.casos)} casos · se anotaría en «${esc(CAMPO[p.campo] ?? p.campo)}»</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="tag">${esc(TIPO[p.tipo] ?? p.tipo)}</span><b style="flex:1;min-width:200px">${esc(p.texto)}</b>${p.toca_icp ? `<span class="pill y" title="Al guardarla se avisa al KAM para conversarla con el cliente. El ICP solo cambia si el cliente lo acuerda formalmente">Toca el ICP</span>` : ""}</div>
+            <div class="muted" style="font-size:12.5px;margin-top:4px">${esc(p.evidencia)} · ${n(p.casos)} casos · ${p.campo === "proximos" ? "se anotaría en «Próximos pasos»" : `sugerencia sobre «${esc(CAMPO[p.campo] ?? p.campo)}» para presentar al cliente (no cambia el ICP)`}</div>
             <div style="margin-top:8px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">${done
-              ? `<span class="pill ${p.estado === "aprobada" ? "g" : ""}">${p.estado === "aprobada" ? "Aprobada y anotada en la ficha" : "Descartada"}</span><span class="muted" style="font-size:12px">${esc(p.decidido_por ?? "")}</span>`
-              : `<button class="btn sm pri" data-ci-dec="aprobada">Aprobar y anotar en la ficha</button><button class="btn sm" data-ci-dec="descartada">Descartar</button><span class="muted" style="font-size:12px" data-ci-msg></span>`}</div></div>`;
+              ? `<span class="pill ${p.estado === "aprobada" ? "g" : ""}">${p.estado === "aprobada" ? (p.campo === "proximos" ? "Anotada en Próximos pasos" : "Guardada como sugerencia para el cliente") : "Descartada"}</span><span class="muted" style="font-size:12px">${esc(p.decidido_por ?? "")}</span>`
+              : `<button class="btn sm pri" data-ci-dec="aprobada">${p.campo === "proximos" ? "Anotar en Próximos pasos" : "Guardar como sugerencia para el cliente"}</button><button class="btn sm" data-ci-dec="descartada">Descartar</button><span class="muted" style="font-size:12px" data-ci-msg></span>`}</div></div>`;
         }).join("")
-      : `<p class="muted">Sin patrones claros esta semana: no hay cambios que proponer a la ficha.</p>`;
+      : `<p class="muted">Sin patrones claros esta semana: no hay sugerencias para el cliente.</p>`;
     const rec = res.recordatorios?.length
       ? `<h4 style="font-size:13.5px;margin:14px 0 6px">Recordatorios para los SDR (${n(res.recordatorios.length)})</h4><ul style="font-size:12.5px;padding-left:18px">${res.recordatorios.map((x) => `<li><b>${esc(x.empresa)}</b> · ${esc(x.contacto)} · ${esc(x.cuando)} — ${esc(x.motivo)}${x.sdr ? ` <span class="muted">(${esc(x.sdr)})</span>` : ""}</li>`).join("")}</ul><p class="muted" style="font-size:11.5px">Se envían solos al SDR y su líder de célula cuando llega la fecha.</p>`
       : "";
@@ -138,9 +140,10 @@ export function createIntelSections() {
         <div class="kpi"><div class="kpi-h">Reuniones 30 días</div><div class="kv">${n(nb.reuniones30d)}</div><div class="ksub">${n(nb.realizadas30d)} realizadas</div></div>
       </div>
       ${res.donde_prospectar?.length ? `<p style="font-size:13px"><b>Dónde prospectar:</b> ${res.donde_prospectar.map(esc).join(" · ")}</p>` : ""}
-      <h4 style="font-size:13.5px;margin:14px 0 6px">Propuestas para la ficha</h4>${propHtml}${rec}${cal}${min}
+      <h4 style="font-size:13.5px;margin:14px 0 6px">Propuestas de la semana</h4><p class="muted" style="font-size:12px;margin:-2px 0 8px">Son sugerencias para presentar al cliente: no cambian su ICP ni la ficha.</p>${propHtml}<div data-ci-sug></div>${rec}${cal}${min}
       ${admin ? `<div style="margin-top:10px"><button class="btn sm" data-ci-run>Volver a generar</button> <span class="muted" style="font-size:12px" data-ci-msg></span></div>` : ""}`
     );
+    void renderSugerencias(el.querySelector<HTMLElement>("[data-ci-sug]"), r.client_id);
     el.querySelectorAll<HTMLElement>("[data-ci-prop]").forEach((box) => {
       box.querySelectorAll<HTMLButtonElement>("[data-ci-dec]").forEach((b) => b.addEventListener("click", async () => {
         const msg = box.querySelector<HTMLElement>("[data-ci-msg]");
@@ -160,6 +163,17 @@ export function createIntelSections() {
       }));
     });
     bindRun(el, r, fid, admin);
+  };
+
+  // Sugerencias guardadas de todas las semanas (para presentar al cliente)
+  const renderSugerencias = async (box: HTMLElement | null, clientId: string) => {
+    if (!box) return;
+    const j = await fetch(`/api/centro/inteligencia/sugerencias?client_id=${clientId}`, { cache: "no-store" }).then((x) => x.json()).catch(() => null);
+    const list: { semana: string; tipo: string; campo: string; texto: string; evidencia: string; casos: number; toca_icp: boolean; decidido_por: string | null }[] = j?.sugerencias ?? [];
+    if (!box.isConnected || !list.length) return;
+    box.innerHTML = `<details style="margin-top:12px"><summary style="cursor:pointer;font-size:13.5px;font-weight:600">Sugerencias para presentar al cliente (${n(list.length)})</summary>
+      <p class="muted" style="font-size:12px;margin:6px 0">Guardadas desde la inteligencia de cada semana. No cambian el ICP: si el cliente las acepta formalmente (reunión o correo), se cargan en su proyecto de Claude y de ahí al portal.</p>
+      <ul style="font-size:12.5px;padding-left:18px">${list.map((x) => `<li><span class="tag">${esc(TIPO[x.tipo] ?? x.tipo)}</span> ${esc(x.texto)} <span class="muted">· semana del ${lunes(x.semana)}${x.decidido_por ? ` · ${esc(x.decidido_por)}` : ""}${x.toca_icp ? " · toca el ICP" : ""}</span></li>`).join("")}</ul></details>`;
   };
 
   const bindRun = (el: HTMLElement, r: Row, fid: string, admin: boolean) => {

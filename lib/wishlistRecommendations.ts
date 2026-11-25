@@ -10,6 +10,7 @@ import {
   sanitizeUnifiedFilters,
 } from "@/lib/unifiedSearch";
 import type { UnifiedFilters } from "@/lib/unifiedFilterDefs";
+import { canRelaxFor } from "@/lib/centroProspeccion/recoAmpliar";
 import { auditCompany, loadAuditContext, withAuditFact, type AuditResult } from "@/lib/centroProspeccion/recoAudit";
 
 // Una tanda de Recomendaciones IA (búsqueda unificada + fit) de un cliente.
@@ -49,6 +50,8 @@ export const toRecoCard = (r: RecoRow) => ({
 // Vigatec, Grupo Tress, CChC y Simplex se quedaban con 0–8 recomendaciones). El
 // fit con el ICP (≥ MIN_FIT) sigue decidiendo cuáles quedan: ampliar la búsqueda
 // no baja la calidad, solo revisa más empresas. País, industria y tamaño no se sueltan.
+// APAGADO por defecto desde el 25-nov-2026 (pedido de BullsEye): solo se usa con
+// los clientes que lo aprobaron formalmente (lib/centroProspeccion/recoAmpliar.ts).
 const RELAX_ORDER = ["keyword", "revenues", "markets", "companyTypes", "description"] as const;
 export function relaxFilters(f: UnifiedFilters): UnifiedFilters | null {
   for (const k of RELAX_ORDER) {
@@ -87,7 +90,8 @@ export async function runRecommendationRound(db: any, clientId: string, opts: { 
     if (state.exhausted) {
       // Se agotó la búsqueda con estos filtros: se amplía quitando un filtro a la
       // vez y se parte de nuevo (las ya evaluadas salen del caché de fit, sin costo).
-      const wider = relaxFilters(filters);
+      // Solo si el cliente aprobó ampliar la búsqueda; si no, se busca solo con el ICP
+      const wider = (await canRelaxFor(clientId)) ? relaxFilters(filters) : null;
       if (!wider) return { cards: [] as ReturnType<typeof toRecoCard>[], exhausted: true, applied_filters: state.filters, scanned: 0, low_fit_hidden: 0, existing_clients_hidden: 0 };
       filters = wider;
       cursor = { ...FIRST_CURSOR };

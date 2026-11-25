@@ -22,6 +22,7 @@ export async function logAiUsage({
   inputTokens,
   outputTokens,
   metadata,
+  extraCostUsd,
 }: {
   clientId?: string | null;
   userId?: string | null;
@@ -30,9 +31,11 @@ export async function logAiUsage({
   inputTokens: number;
   outputTokens: number;
   metadata?: Record<string, unknown>;
+  // Costos fuera de los tokens (ej. búsquedas web: US$0,01 cada una).
+  extraCostUsd?: number;
 }): Promise<void> {
   try {
-    const cost_usd = computeCost(model, inputTokens, outputTokens);
+    const cost_usd = computeCost(model, inputTokens, outputTokens) + (extraCostUsd ?? 0);
     await supabaseAdmin()
       .from("ai_usage_log")
       .insert({

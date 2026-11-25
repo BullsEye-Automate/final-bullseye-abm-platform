@@ -13,9 +13,9 @@ import { writeDoc } from "./store";
 // Exclusiones, Contexto, Avances y Próximos no se tocan.
 // - La primera vez, el texto que había a mano en esos 4 campos se guarda en
 //   Contexto como «ICP ANTERIOR DE LA FICHA» (decisión de BullsEye).
-// - Los ajustes aprobados desde la Inteligencia de la semana (líneas «• …
-//   (inteligencia semana …)») se conservan en un bloque aparte en cada sync,
-//   hasta que el KAM los pase al ICP del portal.
+// - Las sugerencias de la Inteligencia de la semana no son ICP (pedido de
+//   BullsEye, 25-nov-2026): no se copian a la ficha; se ven en la ficha en
+//   «Sugerencias para presentar al cliente» (centro_intel).
 // - Se vuelve a sincronizar solo si el ICP cambió (huella `icpHash`).
 
 const FIELDS = ["icp", "industrias", "zonas", "cargos"] as const;
@@ -80,8 +80,7 @@ export function fieldsFromIcp(text: string): Record<Field, string> | null {
   return FIELDS.some((k) => out[k]) ? out : null;
 }
 
-const intelLines = (v: unknown) => String(v ?? "").split("\n").map((l) => l.trim()).filter((l) => l.startsWith("•") && INTEL_LINE.test(l));
-const stripAjustes = (v: unknown) => String(v ?? "").split(`\n\n${AJUSTES_HDR}`)[0].split("\n").filter((l) => !(l.trim().startsWith("•") && INTEL_LINE.test(l))).join("\n").trim();
+export const stripAjustes = (v: unknown) => String(v ?? "").split(`\n\n${AJUSTES_HDR}`)[0].split("\n").filter((l) => !(l.trim().startsWith("•") && INTEL_LINE.test(l))).join("\n").trim();
 
 export type IcpSyncRow = { ficha: string; cliente: string; estado: string; cambios?: Field[]; nuevo?: Record<string, unknown> };
 
@@ -107,8 +106,9 @@ export async function syncFichasFromIcp(opts: { fichaId?: string; dryRun?: boole
     const patch: Record<string, unknown> = {};
     const cambios: Field[] = [];
     for (const k of FIELDS) {
-      const keep = intelLines(f.data[k]);
-      const v = fields[k] + (keep.length ? `\n\n${AJUSTES_HDR}\n${keep.join("\n")}` : "");
+      // Las sugerencias de la inteligencia no son ICP: no se copian a la ficha
+      // (quedan en centro_intel y se ven en «Sugerencias para el cliente»)
+      const v = fields[k];
       if (v.trim() && v !== String(f.data[k] ?? "")) { patch[k] = v; cambios.push(k); }
     }
     // Primera alineación: lo escrito a mano pasa a Contexto
