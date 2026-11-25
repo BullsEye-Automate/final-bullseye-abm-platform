@@ -11,8 +11,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const INTEL_LINE = /\(inteligencia semana [^)]*\)/i;
 const AJUSTES_HDR = /^ajustes aprobados en el centro/i;
 
-// Campos de criterio de la ficha de los que se quitan las líneas de la inteligencia
-export const CRITERIA_FIELDS = ["icp", "industrias", "zonas", "cargos", "exclusiones"] as const;
+// Campos de criterio de la ficha de los que se quitan las líneas de la inteligencia.
+// Exclusiones no: ahí la inteligencia solo anotaba empresas que rechazaron o no
+// aplican (no es ICP) y sirven para no volver a proponerlas.
+export const CRITERIA_FIELDS = ["icp", "industrias", "zonas", "cargos"] as const;
 
 /** Quita de un campo de la ficha las líneas aprobadas desde la inteligencia y el encabezado del bloque. */
 export function stripIntelLines(v: unknown): string {
