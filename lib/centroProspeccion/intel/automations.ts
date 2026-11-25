@@ -439,7 +439,7 @@ async function sendReminders(intel: IntelLite[], cname: (id: string) => string, 
   return { enviados };
 }
 
-// ---------- cambios de ICP aprobados en la ficha → KAM, un solo correo al día ----------
+// ---------- sugerencias que tocan el ICP → KAM, un solo correo al día (no cambian el ICP) ----------
 // Antes cada aprobación mandaba un correo al KAM en el momento (13-nov-2026: muchas
 // aprobaciones de noche = muchos correos a Ingri a esa hora). Ahora se acumulan y
 // salen juntos en el correo de las 8:30 del día hábil siguiente.
@@ -469,8 +469,8 @@ export async function sendIcpDigest(): Promise<Record<string, unknown>> {
   for (const [kam, items] of Array.from(byKam)) {
     const byClient = new Map<string, IcpPending[]>();
     for (const it of items) byClient.set(it.cliente, [...(byClient.get(it.cliente) ?? []), it]);
-    const body = `<p>Prospección aprobó en la ficha cambios que tocan el ICP acordado con el cliente. Por favor valídalos con cada cliente y, si corresponde, actualiza el ICP en Sistema → ICP.</p>${Array.from(byClient).map(([c, xs]) => `<h3 style="font-size:15px;margin:16px 0 6px">${esc(c)}</h3><ul>${xs.map((x) => `<li><b>${esc(CAMPO_LABEL[x.campo] ?? x.campo)}:</b> ${esc(x.texto)}<br><span style="color:#666">Evidencia (${x.casos} casos): ${esc(x.evidencia)}</span></li>`).join("")}</ul>`).join("")}`;
-    out[kam] = await sendCentroMail({ to: [kam], cc: [CENTRO_LEADER], subject: `Cambios de ICP para validar (${items.length})`, html: wrapMail("Cambios de ICP para validar", body, { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }) }).then(() => items.length).catch((e) => ({ error: (e as Error).message }));
+    const body = `<p>La inteligencia de la semana dejó estas sugerencias que tocan el ICP del cliente. Son solo sugerencias para conversar con el cliente: el ICP no cambia. Si el cliente las acepta formalmente (en una reunión o por correo), se actualizan en su proyecto de Claude y de ahí al portal.</p>${Array.from(byClient).map(([c, xs]) => `<h3 style="font-size:15px;margin:16px 0 6px">${esc(c)}</h3><ul>${xs.map((x) => `<li><b>${esc(CAMPO_LABEL[x.campo] ?? x.campo)}:</b> ${esc(x.texto)}<br><span style="color:#666">Evidencia (${x.casos} casos): ${esc(x.evidencia)}</span></li>`).join("")}</ul>`).join("")}`;
+    out[kam] = await sendCentroMail({ to: [kam], cc: [CENTRO_LEADER], subject: `Sugerencias de ICP para conversar con el cliente (${items.length})`, html: wrapMail("Sugerencias de ICP para conversar con el cliente", body, { href: `${APP_URL}/centro-prospeccion`, label: "Abrir el Centro de prospección" }) }).then(() => items.length).catch((e) => ({ error: (e as Error).message }));
   }
   if (!Object.values(out).some((v) => typeof v === "object")) await setFlag(ICP_QUEUE, [], 1);
   return out;

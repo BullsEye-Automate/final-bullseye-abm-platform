@@ -9,12 +9,17 @@ import { supabaseAdmin } from "@/lib/supabase";
 export const dynamic = "force-dynamic";
 
 // Aprobar o descartar una propuesta de la Inteligencia de la semana.
-// Aprobada: se agrega a la ficha del cliente en el campo propuesto (sin
-// borrar lo escrito a mano; queda marcada con la semana y quién aprobó) y,
-// si cambia el ICP acordado con el cliente, se avisa al KAM para validarlo.
+// La inteligencia NO cambia el ICP del cliente (pedido de BullsEye,
+// 25-nov-2026): aprobada = queda guardada como sugerencia para presentar al
+// cliente (centro_intel, se lista en la ficha en «Sugerencias para presentar
+// al cliente») y no se anota en los campos de criterio de la ficha. Solo los
+// «Próximos pasos» (operativos) se anotan en la ficha. Si toca el ICP, se
+// avisa al KAM para conversarlo con el cliente; el ICP cambia solo si se
+// acuerda formalmente y se modifica en el proyecto de Claude del cliente.
 // Body: { client_id, semana, propuesta, decision: "aprobada"|"descartada", ficha_id?, texto? }
 
-const LABEL: Record<string, string> = { cargos: "Cargos objetivo", industrias: "Industrias objetivo", exclusiones: "Exclusiones", zonas: "Zonas", proximos: "Próximos pasos" };
+// Único campo de la ficha donde se anota una propuesta aprobada (operativo, no ICP)
+const LABEL: Record<string, string> = { proximos: "Próximos pasos" };
 
 export async function POST(req: NextRequest) {
   const u = await requireCentroUser();
