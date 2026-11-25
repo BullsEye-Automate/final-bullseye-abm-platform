@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { readMonthCache, writeMonthCache } from "@/lib/celulasSdr/cache";
 import { linkedinSlug, listSources, MIGRATION_HINT, readState } from "./sync";
 import { maskPhone } from "./phones";
+import { qualityColumnsReady, readQualityState } from "./quality";
 
 // Diagnóstico de la Base de contactos: universo que ya tenemos y ahorro de
 // créditos de Lemlist (Centro de prospección → Base de contactos).
@@ -9,10 +10,11 @@ import { maskPhone } from "./phones";
 export const CREDITS_PHONE = 20;   // créditos por teléfono revelado (Lemlist)
 export const CREDITS_EMAIL = 5;    // créditos por correo
 export const USD_PER_CREDIT = 0.009;
-const SUMMARY_KEY = "base_contactos:summary:v1";
+const SUMMARY_KEY = "base_contactos:summary:v2";
 const BACK_DAYS = 180;
 
-type Row = { person_key: string; country: string | null; email: string | null; linkedin: string | null; company_domain: string | null; mobiles: string[]; mobiles_maybe: string[]; clients: string[]; sources: { s: string; id: string; c: string | null; m: boolean; lp: boolean }[] };
+type QMap = Record<string, { st?: string; why?: string }>;
+type Row = { person_key: string; country: string | null; email: string | null; linkedin: string | null; company_domain: string | null; mobiles: string[]; mobiles_maybe: string[]; clients: string[]; sources: { s: string; id: string; c: string | null; m: boolean; lp: boolean }[]; phone_quality?: QMap | null; email_quality?: QMap | null; left_company?: { why: string } | null };
 type Count = { label: string; total: number; mobile: number; maybe: number; email: number };
 
 export type BaseSummary = {
@@ -28,6 +30,11 @@ export type BaseSummary = {
   forward: { companies: number; companiesWithPeople: number; people: number; byClient: { client: string; companies: number; people: number }[] };
   sync: { passStartedAt: string | null; passFinishedAt: string | null; sources: { key: string; label: string; count: number; done: boolean; error?: string | null }[] };
   costs: { phone: number; email: number; usdPerCredit: number };
+  quality: {
+    ready: boolean; phonesOk: number; phonesSuspect: number; phonesBad: number; emailsBad: number; left: number;
+    peopleUsable: number;               // con celular que no está malo
+    state: { alloDay: string | null; backfillDone: boolean; at?: string; error?: string | null } | null;
+  };
 };
 
 function bump(map: Map<string, Count>, label: string, r: Row) {
@@ -47,15 +54,24 @@ export async function buildSummary(): Promise<BaseSummary> {
   const byCountry = new Map<string, Count>(), bySource = new Map<string, Count>(), byClient = new Map<string, Count>();
   const domainPeople = new Map<string, number>();
   let total = 0, mobile = 0, maybe = 0, email = 0, linkedin = 0, multi = 0, mobileOrEmail = 0, dup = 0;
+  const withQ = await qualityColumnsReady();
+  let qOk = 0, qSus = 0, qBad = 0, eBad = 0, left = 0, usable = 0;
   const since = Date.now() - BACK_DAYS * 86400_000;
 
   for (let from = 0; from < 2_000_000; from += 1000) {
     const { data, error } = await db.from("contact_base")
-      .select("person_key, country, email, linkedin, company_domain, mobiles, mobiles_maybe, clients, sources")
+      .select("person_key, country, email, linkedin, company_domain, mobiles, mobiles_maybe, clients, sources" + (withQ ? ", phone_quality, email_quality, left_company" : ""))
       .order("person_key").range(from, from + 999);
     if (error) throw new Error(/does not exist|relation|schema cache|could not find the table/i.test(error.message) ? MIGRATION_HINT : error.message);
-    for (const r of (data ?? []) as Row[]) {
+    for (const r of (data ?? []) as unknown as Row[]) {
       total++;
+      if (withQ) {
+        const pq = r.phone_quality ?? {};
+        for (const v of Object.values(pq)) { if (v.st === "ok") qOk++; else if (v.st === "sospechoso") qSus++; else if (v.st === "malo") qBad++; }
+        eBad += Object.values(r.email_quality ?? {}).filter((v) => v.st === "malo").length;
+        if (r.left_company) left++;
+        if (r.mobiles.some((m) => pq[m]?.st !== "malo")) usable++;
+      }
       if (r.mobiles.length) mobile++; else if (r.mobiles_maybe.length) maybe++;
       if (r.email) email++;
       if (r.linkedin) linkedin++;
@@ -116,6 +132,10 @@ export async function buildSummary(): Promise<BaseSummary> {
       sources: sources.map((s) => ({ key: s.key, label: s.label, count: state.sources[s.key]?.count ?? 0, done: !!state.sources[s.key]?.done, error: state.sources[s.key]?.error ?? null })),
     },
     costs: { phone: CREDITS_PHONE, email: CREDITS_EMAIL, usdPerCredit: USD_PER_CREDIT },
+    quality: {
+      ready: withQ, phonesOk: qOk, phonesSuspect: qSus, phonesBad: qBad, emailsBad: eBad, left, peopleUsable: withQ ? usable : mobile,
+      state: withQ ? await readQualityState().then((q) => ({ alloDay: q.alloDay, backfillDone: q.backfillDone, at: q.at, error: q.error ?? null })) : null,
+    },
   };
   await writeMonthCache(SUMMARY_KEY, summary, 3 * 86400_000);
   return summary;
@@ -134,15 +154,17 @@ export async function searchBase(q: string) {
   const s = q.trim().replace(/[%,()]/g, " ").slice(0, 80);
   if (s.length < 3) return [];
   const { data, error } = await supabaseAdmin().from("contact_base")
-    .select("name, title, company, company_domain, country, linkedin, email, mobiles, mobiles_maybe, clients, sources")
+    .select("name, title, company, company_domain, country, linkedin, email, mobiles, mobiles_maybe, clients, sources" + ((await qualityColumnsReady()) ? ", phone_quality, email_quality, left_company" : ""))
     .or(`name.ilike.%${s}%,company.ilike.%${s}%,company_domain.ilike.%${s}%,linkedin.ilike.%${s}%`)
     .limit(50);
   if (error) throw new Error(/does not exist|relation|schema cache|could not find the table/i.test(error.message) ? MIGRATION_HINT : error.message);
   const sources = await listSources();
   const label = new Map(sources.map((x) => [x.key, x.label.replace(/^HubSpot de /, "")]));
-  return ((data ?? []) as (Row & { name: string | null; title: string | null; company: string | null })[]).map((r) => ({
+  const tag = (q: QMap | null | undefined, k: string) => { const st = q?.[k]?.st; return st === "malo" ? " (malo)" : st === "sospechoso" ? " (sospechoso)" : st === "ok" ? " (verificado)" : ""; };
+  return ((data ?? []) as unknown as (Row & { name: string | null; title: string | null; company: string | null })[]).map((r) => ({
     name: r.name, title: r.title, company: r.company, domain: r.company_domain, country: r.country, linkedin: r.linkedin,
-    hasEmail: !!r.email, mobiles: r.mobiles.map(maskPhone), maybe: r.mobiles_maybe.map(maskPhone), clients: r.clients,
+    hasEmail: !!r.email, emailBad: !!(r.email && r.email_quality?.[r.email]?.st === "malo"), left: r.left_company?.why ?? null,
+    mobiles: r.mobiles.map((m) => maskPhone(m) + tag(r.phone_quality, m)), maybe: r.mobiles_maybe.map((m) => maskPhone(m) + tag(r.phone_quality, m)), clients: r.clients,
     sources: Array.from(new Set(r.sources.map((x) => label.get(x.s) ?? x.s))),
   }));
 }

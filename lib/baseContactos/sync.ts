@@ -27,7 +27,7 @@ const isSundayInChile = () => new Intl.DateTimeFormat("en-US", { timeZone: "Amer
 // grupos de filtros: se usan los 5 que más traen teléfonos.
 const PHONE_PROPS = ["mobilephone", "phone", "telefono_lemlist", "bullseye_telefono_lusha", "bullseye_telefono_clay", "phone_4", "hs_whatsapp_phone_number"];
 const FILTER_PROPS = PHONE_PROPS.slice(0, 5);
-const BASE_PROPS = ["firstname", "lastname", "jobtitle", "company", "email", "hs_linkedin_url", "country", "createdate", "cliente_bullseye"];
+const BASE_PROPS = ["firstname", "lastname", "jobtitle", "company", "email", "hs_linkedin_url", "country", "createdate", "cliente_bullseye", "hs_email_hard_bounce_reason_enum"];
 
 const FREE_MAIL = /^(gmail|hotmail|outlook|live|yahoo|icloud|me|msn|aol|protonmail|gmx|mail|yandex)\./i;
 
@@ -82,6 +82,7 @@ type BaseRow = {
   person_key: string; name: string | null; title: string | null; company: string | null; company_domain: string | null;
   country: string | null; linkedin: string | null; email: string | null; emails: string[]; mobiles: string[];
   mobiles_maybe: string[]; clients: string[]; sources: SrcRef[]; synced_at: string;
+  email_quality?: Record<string, { st: "malo"; why: string; src: string; at: string }>;
 };
 
 // Una página de contactos de un HubSpot → filas de la base (sin unir aún)
@@ -108,6 +109,7 @@ function toRows(src: Source, results: { id: string; properties: Record<string, s
       person_key: key, name, title: p.jobtitle?.trim() || null, company: p.company?.trim() || null,
       company_domain: corporateDomain(email), country, linkedin: li ? `https://www.linkedin.com/in/${li}` : null,
       email, emails: uniq([email]), mobiles: uniq(mobiles), mobiles_maybe: uniq(maybe), clients: uniq(clients),
+      ...(email && p.hs_email_hard_bounce_reason_enum ? { email_quality: { [email]: { st: "malo" as const, why: "Rebote duro en HubSpot", src: "hubspot", at: now } } } : {}),
       sources: [{ s: src.key, id: r.id, c: p.createdate ?? null, m: mobiles.length > 0, lp: !!String(p.telefono_lemlist ?? "").replace(/\D/g, "") }],
       synced_at: now,
     };
@@ -123,7 +125,15 @@ function merge(a: BaseRow, b: BaseRow): BaseRow {
     email: b.email ?? a.email, emails: uniq([...a.emails, ...b.emails]), mobiles: uniq([...a.mobiles, ...b.mobiles]),
     mobiles_maybe: uniq([...a.mobiles_maybe, ...b.mobiles_maybe]), clients: uniq([...a.clients, ...b.clients]),
     sources, synced_at: b.synced_at,
+    ...(a.email_quality || b.email_quality ? { email_quality: { ...(a.email_quality ?? {}), ...(b.email_quality ?? {}) } } : {}),
   };
+}
+
+// La columna email_quality existe solo después de la migración de calidad
+let qualityReady: boolean | null = null;
+async function hasQualityColumns() {
+  if (qualityReady === null) qualityReady = !(await supabaseAdmin().from("contact_base").select("email_quality").limit(1)).error;
+  return qualityReady;
 }
 
 async function upsertRows(rows: BaseRow[]) {
@@ -131,13 +141,20 @@ async function upsertRows(rows: BaseRow[]) {
   const byKey = new Map<string, BaseRow>();
   for (const r of rows) byKey.set(r.person_key, byKey.has(r.person_key) ? merge(byKey.get(r.person_key)!, r) : r);
   const keys = Array.from(byKey.keys());
-  const { data: existing, error } = await db.from("contact_base").select("*").in("person_key", keys);
+  const { data: existing, error } = await db.from("contact_base").select("person_key, name, title, company, company_domain, country, linkedin, email, emails, mobiles, mobiles_maybe, clients, sources, synced_at" + ((await hasQualityColumns()) ? ", email_quality" : "")).in("person_key", keys);
   if (error) throw new Error(/does not exist|relation|schema cache|could not find the table/i.test(error.message) ? MIGRATION_HINT : error.message);
-  for (const e of (existing ?? []) as BaseRow[]) {
+  for (const e of (existing ?? []) as unknown as BaseRow[]) {
     const n = byKey.get(e.person_key);
     if (n) byKey.set(e.person_key, merge({ ...e, sources: (e.sources ?? []) as SrcRef[] }, n));
   }
-  const { error: upErr } = await db.from("contact_base").upsert(Array.from(byKey.values()), { onConflict: "person_key" });
+  const withQ = await hasQualityColumns();
+  // email_quality ya viene unido con lo guardado (rebotes de Lemlist incluidos)
+  const out = Array.from(byKey.values()).map((r) => {
+    if (withQ) return r;
+    const { email_quality: _q, ...rest } = r;
+    return rest;
+  });
+  const { error: upErr } = await db.from("contact_base").upsert(out, { onConflict: "person_key" });
   if (upErr) throw new Error(upErr.message);
 }
 

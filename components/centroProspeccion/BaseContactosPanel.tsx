@@ -15,8 +15,9 @@ type Summary = {
   forward: { companies: number; companiesWithPeople: number; people: number; byClient: { client: string; companies: number; people: number }[] };
   sync: { passStartedAt: string | null; passFinishedAt: string | null; sources: { key: string; label: string; count: number; done: boolean; error?: string | null }[] };
   costs: { phone: number; email: number; usdPerCredit: number };
+  quality?: { ready: boolean; phonesOk: number; phonesSuspect: number; phonesBad: number; emailsBad: number; left: number; peopleUsable: number; state: { alloDay: string | null; backfillDone: boolean; at?: string; error?: string | null } | null };
 };
-type Hit = { name: string | null; title: string | null; company: string | null; domain: string | null; country: string | null; linkedin: string | null; hasEmail: boolean; mobiles: string[]; maybe: string[]; clients: string[]; sources: string[] };
+type Hit = { name: string | null; title: string | null; company: string | null; domain: string | null; country: string | null; linkedin: string | null; hasEmail: boolean; emailBad?: boolean; left?: string | null; mobiles: string[]; maybe: string[]; clients: string[]; sources: string[] };
 
 const n = (x: number) => x.toLocaleString("es-CL");
 const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)}%` : "—");
@@ -129,6 +130,32 @@ export default function BaseContactosPanel() {
         <Kpi label="En más de un HubSpot" value={n(sum.multiSource)} />
       </div>
 
+      {sum.quality && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-4">
+          <div className="text-sm font-semibold text-[#251762]">Calidad de los datos</div>
+          {!sum.quality.ready ? (
+            <div className="text-sm text-gray-500 mt-1">Falta activar la revisión de calidad (migración de Supabase pendiente).</div>
+          ) : (
+            <>
+              <p className="text-xs text-gray-500 mt-1">
+                Con las llamadas de Allo, los rebotes de Lemlist y HubSpot y las respuestas «ya no trabajo aquí». Solo se marca en esta base; no cambia nada en HubSpot.
+                {!sum.quality.state?.backfillDone && " La primera revisión (últimos 90 días) aún no termina."}
+                {sum.quality.state?.alloDay && ` Llamadas revisadas hasta el ${sum.quality.state.alloDay}.`}
+              </p>
+              <div className="grid gap-3 grid-cols-2 lg:grid-cols-6 mt-3">
+                <Kpi label="Personas con celular usable" value={n(sum.quality.peopleUsable)} sub="Celular que no está marcado como malo" hl />
+                <Kpi label="Celulares verificados" value={n(sum.quality.phonesOk)} sub="Contestó y conversó en Allo" />
+                <Kpi label="Celulares sospechosos" value={n(sum.quality.phonesSuspect)} sub="6+ llamadas en 3+ días sin contestar" />
+                <Kpi label="Celulares malos" value={n(sum.quality.phonesBad)} sub="Número equivocado o no existe" />
+                <Kpi label="Correos malos" value={n(sum.quality.emailsBad)} sub="Rebotaron en Lemlist o HubSpot" />
+                <Kpi label="Ya no están en la empresa" value={n(sum.quality.left)} sub="El celular sirve; la empresa no" />
+              </div>
+              {sum.quality.state?.error && <div className="text-xs text-amber-700 mt-2">Último aviso: {sum.quality.state.error}</div>}
+            </>
+          )}
+        </div>
+      )}
+
       <div className="grid gap-3 lg:grid-cols-2">
         <div className="rounded-2xl border border-gray-100 bg-white p-4">
           <div className="text-sm font-semibold text-[#251762]">Créditos que pudimos ahorrar (últimos {sum.back.days} días)</div>
@@ -172,7 +199,7 @@ export default function BaseContactosPanel() {
                     <td className="p-2">{h.company ?? "—"}<div className="text-xs text-gray-400">{h.domain ?? ""}</div></td>
                     <td className="p-2">{h.country ?? "—"}</td>
                     <td className="p-2 whitespace-nowrap">{h.mobiles.length ? h.mobiles.join(", ") : h.maybe.length ? <span className="text-gray-500">{h.maybe.join(", ")} (posible)</span> : "—"}</td>
-                    <td className="p-2">{h.hasEmail ? "Sí" : "—"}</td>
+                    <td className="p-2">{h.hasEmail ? (h.emailBad ? <span className="text-red-700">Malo (rebotó)</span> : "Sí") : "—"}{h.left && <div className="text-xs text-amber-700">Ya no está en la empresa</div>}</td>
                     <td className="p-2 text-xs">{h.sources.join(", ")}{h.clients.length ? <div className="text-gray-400">{h.clients.join(", ")}</div> : null}</td>
                   </tr>
                 ))}
