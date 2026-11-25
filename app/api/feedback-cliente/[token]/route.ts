@@ -33,13 +33,14 @@ export async function GET(
     return NextResponse.json({ error: meetingsError.message }, { status: 500 });
   }
 
-  // Con Peitho activado, o si la reunión ya tiene análisis en Peitho, no se
-  // pide feedback manual: queda como "peitho" (lib/peithoFeedback.ts)
+  // Si la reunión ya tiene análisis en Peitho no se pide feedback manual:
+  // queda como "peitho" (lib/peithoFeedback.ts). Tener Peitho activado ya
+  // no basta: sin análisis (el lead no dejó entrar al bot) se pide igual.
   const list = meetings ?? [];
   const pending = list.filter((m) => m.feedback_status !== "con_feedback");
   const { enabled, covered } = await peithoFeedbackCoverage(db, client.id, pending);
   const out = list.map((m) =>
-    m.feedback_status !== "con_feedback" && (enabled || covered.has(m.id)) ? { ...m, feedback_status: "peitho" } : m
+    m.feedback_status !== "con_feedback" && covered.has(m.id) ? { ...m, feedback_status: "peitho" } : m
   );
   return NextResponse.json({ client, meetings: out, peitho_enabled: enabled });
 }

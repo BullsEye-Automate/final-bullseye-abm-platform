@@ -5,9 +5,10 @@ import type { MeetingListItem } from "@/components/peitho/app/types";
 
 // Feedback de reuniones vs Peitho (pedido de BullsEye nov-2026): al cliente no
 // se le pide feedback manual (link /feedback-cliente/<token>, /encuesta/<token>
-// y el formulario embebido del portal) si tiene Peitho activado (el feedback
-// llega solo con el análisis de cada reunión) o si esa reunión ya tiene
-// análisis en Peitho. Una reunión de la planilla calza con una de Peitho por
+// y el formulario embebido del portal) solo si esa reunión ya tiene análisis
+// en Peitho. Desde el 25-nov-2026 (pedido de BullsEye) tener Peitho activado
+// ya no basta: hay leads que no dejan entrar al bot y esas reuniones siguen
+// necesitando el feedback manual. Una reunión de la planilla calza con una de Peitho por
 // fecha + empresa (nombre compacto, contenido) o fecha + contacto.
 
 type SheetMeeting = { id: string; empresa?: string | null; contacto_nombre?: string | null; fecha_reunion?: string | null };
@@ -58,8 +59,7 @@ export async function peithoFeedbackCoverage(
   db: SupabaseClient, clientId: string, meetings: SheetMeeting[]
 ): Promise<{ enabled: boolean; covered: Set<string> }> {
   const enabled = await isPeithoEnabled(db, clientId);
-  // Con Peitho activado no se pide ninguna: no hace falta ir a Peitho
-  if (enabled || !meetings.length) return { enabled, covered: new Set() };
+  if (!meetings.length) return { enabled, covered: new Set() };
   const list = await loadPeithoPast(db, clientId);
   return { enabled, covered: new Set(list ? matchPeithoMeetings(list, meetings).keys() : []) };
 }
