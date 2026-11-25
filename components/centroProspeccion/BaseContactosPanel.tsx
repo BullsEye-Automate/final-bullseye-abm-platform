@@ -102,7 +102,7 @@ export default function BaseContactosPanel() {
           <h2 className="text-xl font-semibold text-[#251762]">Base de contactos</h2>
           <p className="text-sm text-gray-500 max-w-3xl">
             Personas con teléfono en los HubSpot de BullsEye y de los clientes, unidas en una sola fila por persona (por LinkedIn o correo).
-            Solo cuentan los celulares: los fijos no sirven si la persona cambia de empresa. Se actualiza sola cada noche.
+            Solo cuentan los celulares: los fijos no sirven si la persona cambia de empresa. Se actualiza sola cada domingo con los contactos nuevos o modificados en la semana.
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -116,7 +116,7 @@ export default function BaseContactosPanel() {
       {error && <div className="text-sm text-red-700 bg-red-50 rounded-xl px-4 py-2">{error}</div>}
       {running && (
         <div className="text-sm bg-amber-50 text-amber-800 rounded-xl px-4 py-2">
-          La primera lectura de los HubSpot aún no termina: los números van a crecer. Avanza sola cada noche{canSync ? " o con «Sincronizar ahora»" : ""}.
+          La primera lectura de los HubSpot aún no termina: los números van a crecer. Avanza sola de noche{canSync ? " o con «Sincronizar ahora»" : ""}.
         </div>
       )}
 

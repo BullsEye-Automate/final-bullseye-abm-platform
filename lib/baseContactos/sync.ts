@@ -16,7 +16,12 @@ const HS = "https://api.hubapi.com";
 export const MIGRATION_HINT = "Falta ejecutar la migración supabase/20261125_contact_base_migration.sql en Supabase.";
 const STATE_KEY = "base_contactos:state";
 const PAGE = 200;
-const PASS_EVERY_MS = 18 * 3600_000;
+// Actualización semanal (pedido de BullsEye 25-nov-2026): una pasada nueva solo
+// el domingo (hora de Chile) y solo con los contactos creados o modificados desde
+// la pasada anterior (lastmodifieddate), así entran los contactos nuevos y los
+// que recibieron teléfono. Una pasada sin terminar sigue cualquier día.
+const PASS_EVERY_MS = 6 * 86400_000;
+const isSundayInChile = () => new Intl.DateTimeFormat("en-US", { timeZone: "America/Santiago", weekday: "short" }).format(new Date()) === "Sun";
 
 // Campos de teléfono (los mismos de Calidad de carga). HubSpot acepta hasta 5
 // grupos de filtros: se usan los 5 que más traen teléfonos.
@@ -28,7 +33,7 @@ const FREE_MAIL = /^(gmail|hotmail|outlook|live|yahoo|icloud|me|msn|aol|protonma
 
 export type Source = { key: string; label: string; token?: string };
 type SourceState = { cursor: string; done: boolean; count: number; error?: string | null; at?: string; fails?: number };
-export type SyncState = { passStartedAt: string | null; passFinishedAt: string | null; sources: Record<string, SourceState> };
+export type SyncState = { passStartedAt: string | null; passFinishedAt: string | null; since?: string | null; sources: Record<string, SourceState> };
 
 export async function readState(): Promise<SyncState> {
   return (await readMonthCache<SyncState>(STATE_KEY)) ?? { passStartedAt: null, passFinishedAt: null, sources: {} };
@@ -137,7 +142,7 @@ async function upsertRows(rows: BaseRow[]) {
 }
 
 // Lee un HubSpot desde su cursor hasta el tiempo dado. Devuelve si terminó.
-async function syncSource(src: Source, st: SourceState, deadline: number): Promise<SourceState> {
+async function syncSource(src: Source, st: SourceState, deadline: number, since: string | null): Promise<SourceState> {
   const props = await listProperties("contacts", src.token);
   const have = new Set(props.map((p) => p.name));
   const filterProps = FILTER_PROPS.filter((p) => have.has(p));
@@ -148,7 +153,11 @@ async function syncSource(src: Source, st: SourceState, deadline: number): Promi
   let { cursor, count } = st;
   while (Date.now() < deadline) {
     const body = {
-      filterGroups: filterProps.map((p) => ({ filters: [{ propertyName: p, operator: "HAS_PROPERTY" }, { propertyName: "hs_object_id", operator: "GT", value: cursor }] })),
+      filterGroups: filterProps.map((p) => ({ filters: [
+        { propertyName: p, operator: "HAS_PROPERTY" },
+        { propertyName: "hs_object_id", operator: "GT", value: cursor },
+        ...(since ? [{ propertyName: "lastmodifieddate", operator: "GTE", value: String(new Date(since).getTime()) }] : []),
+      ] })),
       properties: wanted, limit: PAGE, sorts: [{ propertyName: "hs_object_id", direction: "ASCENDING" }],
     };
     // HubSpot a veces responde 502/504 en búsquedas pesadas: se reintenta con página más chica
@@ -180,17 +189,21 @@ export async function syncChunk(opts: { budgetMs?: number; force?: boolean } = {
   const sources = await listSources();
   let state = await readState();
   const finishedRecently = state.passFinishedAt && Date.now() - new Date(state.passFinishedAt).getTime() < PASS_EVERY_MS;
-  if (opts.force || !state.passStartedAt || (state.passFinishedAt && !finishedRecently)) {
-    state = { passStartedAt: new Date().toISOString(), passFinishedAt: null, sources: {} };
-  } else if (finishedRecently) {
-    return { skipped: true, state };
+  if (opts.force || !state.passStartedAt) {
+    // Lectura completa (primera vez o forzada)
+    state = { passStartedAt: new Date().toISOString(), passFinishedAt: null, since: null, sources: {} };
+  } else if (state.passFinishedAt) {
+    if (finishedRecently || !isSundayInChile()) return { skipped: true, state };
+    // Domingo: solo lo creado o modificado desde el inicio de la pasada anterior (1 h de margen)
+    const since = new Date(new Date(state.passStartedAt).getTime() - 3600_000).toISOString();
+    state = { passStartedAt: new Date().toISOString(), passFinishedAt: null, since, sources: {} };
   }
   for (const src of sources) {
     const st = state.sources[src.key] ?? { cursor: "0", done: false, count: 0 };
     if (st.done) continue;
     if (Date.now() > deadline) break;
     try {
-      const next = await syncSource(src, st, deadline);
+      const next = await syncSource(src, st, deadline, state.since ?? null);
       // Tras 5 tramos seguidos con error se da por terminado ese HubSpot (queda el motivo)
       if (!next.done && (next.fails ?? 0) >= 5) next.done = true;
       state.sources[src.key] = next;

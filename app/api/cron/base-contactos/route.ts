@@ -8,8 +8,9 @@ export const maxDuration = 300;
 
 // Vercel Cron (cada hora de noche en Chile, ver vercel.json): un tramo de la
 // sincronización de la Base de contactos desde los HubSpot. Cada corrida sigue
-// donde quedó la anterior; al terminar la pasada recalcula el diagnóstico. Una
-// pasada completa por día (18 h). ?force=1 empieza una pasada nueva.
+// donde quedó la anterior; al terminar la pasada recalcula el diagnóstico. Pasada
+// nueva solo los domingos, con lo creado o modificado en la semana. ?force=1 =
+// lectura completa.
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (secret && (req.headers.get("authorization") ?? "") !== `Bearer ${secret}`) {
