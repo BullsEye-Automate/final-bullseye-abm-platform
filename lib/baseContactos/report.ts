@@ -53,7 +53,7 @@ export async function buildSummary(): Promise<BaseSummary> {
     const { data, error } = await db.from("contact_base")
       .select("person_key, country, email, linkedin, company_domain, mobiles, mobiles_maybe, clients, sources")
       .order("person_key").range(from, from + 999);
-    if (error) throw new Error(/does not exist|relation/i.test(error.message) ? MIGRATION_HINT : error.message);
+    if (error) throw new Error(/does not exist|relation|schema cache|could not find the table/i.test(error.message) ? MIGRATION_HINT : error.message);
     for (const r of (data ?? []) as Row[]) {
       total++;
       if (r.mobiles.length) mobile++; else if (r.mobiles_maybe.length) maybe++;
@@ -137,7 +137,7 @@ export async function searchBase(q: string) {
     .select("name, title, company, company_domain, country, linkedin, email, mobiles, mobiles_maybe, clients, sources")
     .or(`name.ilike.%${s}%,company.ilike.%${s}%,company_domain.ilike.%${s}%,linkedin.ilike.%${s}%`)
     .limit(50);
-  if (error) throw new Error(/does not exist|relation/i.test(error.message) ? MIGRATION_HINT : error.message);
+  if (error) throw new Error(/does not exist|relation|schema cache|could not find the table/i.test(error.message) ? MIGRATION_HINT : error.message);
   const sources = await listSources();
   const label = new Map(sources.map((x) => [x.key, x.label.replace(/^HubSpot de /, "")]));
   return ((data ?? []) as (Row & { name: string | null; title: string | null; company: string | null })[]).map((r) => ({

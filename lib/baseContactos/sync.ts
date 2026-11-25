@@ -127,7 +127,7 @@ async function upsertRows(rows: BaseRow[]) {
   for (const r of rows) byKey.set(r.person_key, byKey.has(r.person_key) ? merge(byKey.get(r.person_key)!, r) : r);
   const keys = Array.from(byKey.keys());
   const { data: existing, error } = await db.from("contact_base").select("*").in("person_key", keys);
-  if (error) throw new Error(/does not exist|relation/i.test(error.message) ? MIGRATION_HINT : error.message);
+  if (error) throw new Error(/does not exist|relation|schema cache|could not find the table/i.test(error.message) ? MIGRATION_HINT : error.message);
   for (const e of (existing ?? []) as BaseRow[]) {
     const n = byKey.get(e.person_key);
     if (n) byKey.set(e.person_key, merge({ ...e, sources: (e.sources ?? []) as SrcRef[] }, n));
