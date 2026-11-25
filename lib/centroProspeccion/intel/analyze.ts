@@ -12,7 +12,8 @@ import type { IntelNumbers } from "./numbers";
 //  - minutas de reuniones con el cliente (diio),
 //  - los rechazos del cliente y el feedback de reuniones,
 //  - la ficha del Centro (cargos, industrias, exclusiones vigentes),
-// y propone cuánto y dónde prospectar y qué cambiar en la ficha.
+// y propone cuánto y dónde prospectar y sugerencias para presentar al cliente
+// (no cambian el ICP: pedido de BullsEye, 25-nov-2026).
 
 export const INTEL_FUNCTION = "centro_inteligencia_semanal";
 
@@ -46,7 +47,7 @@ const SYSTEM = `Eres el analista de prospección de BullsEye, una agencia de pro
 Reglas obligatorias:
 - Básate solo en la evidencia entregada (números, señales de llamadas, notas de SDR, rechazos, feedback). Nunca inventes empresas, cargos, cifras ni fechas.
 - Una propuesta de cambio exige un patrón: al menos 3 casos independientes (o 2 si son rechazos explícitos del cliente). Indica el número de casos y resume la evidencia con conteos.
-- No repitas lo que la ficha ya dice. Si algo ya está en la ficha, no lo propongas de nuevo.
+- Tus propuestas son sugerencias para que el equipo las converse con el cliente: no cambian el ICP. No repitas lo que la ficha o el ICP ya dicen ni lo que ya se propuso en semanas anteriores (guardado o descartado), salvo que haya evidencia nueva y distinta.
 - Cargos: "cargo_sumar" cuando los contactos derivan repetidamente a un cargo que no estamos buscando; "cargo_sacar" cuando un cargo repetidamente dice que no decide o no es su área.
 - Industrias: priorizar o descartar solo con diferencias claras en los números o con objeciones repetidas.
 - Exclusiones: empresas que rechazaron explícitamente, que ya son clientes del cliente o con contratos cerrados largos; nómbralas.

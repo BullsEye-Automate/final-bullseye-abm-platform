@@ -167,9 +167,17 @@ export async function runClientIntel(clientId: string, by = "cron"): Promise<Int
       return await save({ status: "sin_datos", numbers: {}, result: {}, error: "Sin Pulso ABM ni actividad de la semana", model: null, cost_usd: null });
     }
 
+    // Sugerencias de semanas anteriores (guardadas o descartadas): ya no se
+    // anotan en la ficha, así que se le pasan a la IA para que no las repita
+    const { data: prevRows } = await db.from("centro_intel").select("semana, result").eq("client_id", clientId).lt("semana", semana).order("semana", { ascending: false }).limit(8);
+    const prevSug = ((prevRows ?? []) as { semana: string; result: { propuestas?: { estado?: string; tipo?: string; texto?: string }[] } | null }[])
+      .flatMap((r) => (r.result?.propuestas ?? []).filter((p) => p.estado === "aprobada" || p.estado === "descartada").map((p) => `- [${r.semana} · ${p.estado === "aprobada" ? "guardada como sugerencia" : "descartada"}] ${p.tipo}: ${p.texto}`))
+      .slice(0, 60).join("\n");
+    const fichaConPrevias = fichaText(fichas) + (prevSug ? `\n\nSUGERENCIAS YA PROPUESTAS EN SEMANAS ANTERIORES (no son parte del ICP; no las repitas salvo evidencia nueva y distinta):\n${prevSug}` : "");
+
     const { result, costIn, costOut } = await analyzeWeek({
       clientId, cliente: client.name, semana, numbers,
-      ficha: fichaText(fichas), icp,
+      ficha: fichaConPrevias, icp,
       senales: scrubPii(senales), hubspot: scrubPii(hubspot), minutas: scrubPii(minutas),
       rechazos: scrubPii(rechazos), feedback: scrubPii(feedback),
       meta: goalText(goal),
