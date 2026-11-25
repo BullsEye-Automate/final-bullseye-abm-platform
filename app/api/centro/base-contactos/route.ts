@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isCentroOwner, requireCentroUser } from "@/lib/centroProspeccion/access";
 import { getSummary, buildSummary, searchBase } from "@/lib/baseContactos/report";
+import { qualityChunk } from "@/lib/baseContactos/quality";
 import { syncChunk } from "@/lib/baseContactos/sync";
 
 export const dynamic = "force-dynamic";
@@ -26,9 +27,13 @@ export async function POST(req: NextRequest) {
   if (u.response) return u.response;
   if (!isCentroOwner(u.email)) return NextResponse.json({ error: "Solo la líder del Centro" }, { status: 403 });
   try {
-    const r = await syncChunk({ budgetMs: 240_000, force: req.nextUrl.searchParams.get("force") === "1" });
-    const summary = !r.skipped && r.done ? await buildSummary() : null;
-    return NextResponse.json({ skipped: r.skipped, done: "done" in r ? r.done : true, sources: r.state.sources, summary });
+    const deadline = Date.now() + 250_000;
+    const r = await syncChunk({ budgetMs: 200_000, force: req.nextUrl.searchParams.get("force") === "1" });
+    const syncDone = r.skipped || ("done" in r && r.done);
+    // Con la lectura de HubSpot al día, sigue con la revisión de calidad (a mano corre cualquier día)
+    const q = syncDone ? await qualityChunk({ deadline, force: true }).catch((e) => ({ skipped: true, reason: (e as Error).message })) : null;
+    const summary = (!r.skipped && "done" in r && r.done) || (q && !q.skipped) ? await buildSummary() : null;
+    return NextResponse.json({ skipped: r.skipped, done: "done" in r ? r.done : true, sources: r.state.sources, quality: q, summary });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
