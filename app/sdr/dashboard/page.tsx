@@ -10,11 +10,12 @@
 // lib/dashboardSdr/compute.ts (el mismo del correo semanal). Por ahora no
 // suma actividades. ?sdr=<clave>&estancadas=1 / ?vista=celula (links del correo).
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { IconAlertCircle, IconAlertTriangle, IconChevronDown, IconChevronRight, IconLoader2, IconRefresh, IconSearch, IconUserCircle, IconUsersGroup } from "@tabler/icons-react";
-import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeeting } from "@/lib/dashboardSdr/types";
+import { IconAlertCircle, IconAlertTriangle, IconExternalLink, IconChevronDown, IconChevronRight, IconLoader2, IconRefresh, IconSearch, IconUserCircle, IconUsersGroup } from "@tabler/icons-react";
+import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeeting, SdrSlice } from "@/lib/dashboardSdr/types";
 import type { LiveResponse } from "@/lib/dashboardSdr/live";
 import { analyze, CO_GROUP_LABEL, CO_LISTS, companyList, FIX_KINDS, type CoList, goalStatus, monthProgress, type CoGroup, type FixKind, type Pace } from "@/lib/dashboardSdr/compute";
 import { STALE_BUSINESS_DAYS } from "@/lib/dashboardSdr/stale";
+import FichaDrawer from "./Ficha";
 
 const nf = new Intl.NumberFormat("es-CL");
 const fmt = (n: number) => nf.format(n);
@@ -53,6 +54,18 @@ function sortRows<T>(rows: T[], s: SortState, get: (r: T, k: string) => string |
 }
 
 const MAX_ROWS = 500;
+
+// Link a la ficha en HubSpot (empresa 0-2, contacto 0-1) en una pestaña nueva
+function HsName({ name, hs, client, type, ed }: { name: string; hs?: string; client: string; type: "company" | "contact"; ed: Editing }) {
+  const portal = ed.accts[client]?.portal;
+  if (!portal || !hs || !/^\d+$/.test(hs)) return <>{name}</>;
+  return (
+    <a href={`https://app.hubspot.com/contacts/${portal}/record/${type === "company" ? "0-2" : "0-1"}/${hs}`} target="_blank" rel="noopener noreferrer"
+      title="Abrir en HubSpot" className="text-brand hover:underline inline-flex items-center gap-1">
+      {name}<IconExternalLink size={12} className="shrink-0 opacity-60" />
+    </a>
+  );
+}
 
 export default function DashboardSdrPage() {
   const [data, setData] = useState<SdrDashboardResponse | null>(null);
@@ -287,7 +300,7 @@ export default function DashboardSdrPage() {
                 <tbody>
                   {A.fixBy[fixTab].slice(0, MAX_ROWS).map((f, i) => (
                     <tr key={`${f.coId}-${i}`} className="border-t">
-                      <td className="px-3 py-2 font-medium">{f.who}{f.sub && <div className="text-xs font-normal text-ink-muted">{f.sub}</div>}</td>
+                      <td className="px-3 py-2 font-medium">{f.ctHs ? <HsName name={f.who} hs={f.ctHs} client={f.client} type="contact" ed={ed} /> : <HsName name={f.who} hs={A.companies.find((x) => x.id === f.coId)?.hs} client={f.client} type="company" ed={ed} />}{f.sub && <div className="text-xs font-normal text-ink-muted">{f.sub}</div>}</td>
                       {!client && <td className="px-3 py-2">{f.client}</td>}
                       <td className="px-3 py-2">{f.what}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-warning-fg font-medium">{f.since}</td>
@@ -395,11 +408,17 @@ export default function DashboardSdrPage() {
 // empresas del SDR por etapa, con el status vigente del informe de Pulso ABM
 // más los cambios hechos desde el dashboard.
 function ListsView({ A, sdrKey, clients, client, setClient, ed, data, loading }: { A: NonNullable<ReturnType<typeof analyze>>; sdrKey: string; clients: string[]; client: string; setClient: (c: string) => void; ed: Editing; data: SdrDashboardResponse; loading: boolean }) {
-  const [list, setList] = useState<CoList>(() => {
-    if (typeof window === "undefined") return "asignadas";
-    const l = new URLSearchParams(window.location.search).get("lista");
-    return (CO_LISTS.some((x) => x.id === l) ? l : "asignadas") as CoList;
+  // Listas elegidas (se pueden combinar, como el filtro de status de HubSpot); ?lista=asignadas,en_gestion
+  const [sel, setSel] = useState<CoList[]>(() => {
+    // Por defecto las etapas de trabajo (como el filtro habitual de HubSpot)
+    const def: CoList[] = ["asignadas", "en_gestion", "seguimiento", "nutridas"];
+    if (typeof window === "undefined") return def;
+    const l = (new URLSearchParams(window.location.search).get("lista") ?? "").split(",").filter((x) => CO_LISTS.some((c) => c.id === x)) as CoList[];
+    return l.length ? l : def;
   });
+  const toggle = (id: CoList) => setSel((p) => (p.includes(id) ? (p.length > 1 ? p.filter((x) => x !== id) : p) : CO_LISTS.map((c) => c.id).filter((x) => x === id || p.includes(x))));
+  const allSel = sel.length === CO_LISTS.length;
+  const list = sel.join(",");
   const [tab, setTab] = useState<"empresas" | "contactos">("empresas");
   const [onlyFix, setOnlyFix] = useState(false);
   // Lectura en vivo de HubSpot (el informe de Pulso es del último sync)
@@ -446,10 +465,10 @@ function ListsView({ A, sdrKey, clients, client, setClient, ed, data, loading }:
   }, [listOf]);
   const byClient = useMemo(() => {
     const m = new Map<string, number>();
-    for (const c of companies) if (listOf.get(c.id) === list) m.set(c.c, (m.get(c.c) ?? 0) + 1);
+    for (const c of companies) if (sel.includes(listOf.get(c.id)!)) m.set(c.c, (m.get(c.c) ?? 0) + 1);
     return m;
-  }, [companies, listOf, list]);
-  const rows = useMemo(() => companies.filter((c) => listOf.get(c.id) === list), [companies, listOf, list]);
+  }, [companies, listOf, sel]);
+  const rows = useMemo(() => companies.filter((c) => sel.includes(listOf.get(c.id)!)), [companies, listOf, sel]);
   const ids = useMemo(() => new Set(rows.map((r) => r.id)), [rows]);
   const cts = useMemo(() => A.contacts.filter((k) => ids.has(k.co)), [A.contacts, ids]);
   const liveFail = live ? Object.entries(live.clients).filter(([c, x]) => !x.ok && (!client || c === client)) as [string, { ok: false; error: string }][] : [];
@@ -465,16 +484,22 @@ function ListsView({ A, sdrKey, clients, client, setClient, ed, data, loading }:
       });
     },
   };
-  const meta = CO_LISTS.find((x) => x.id === list)!;
+  const metas = CO_LISTS.filter((x) => sel.includes(x.id));
+  const meta = { label: allSel ? "Todas las empresas" : metas.map((m) => m.label).join(" + "), hint: metas.length === 1 ? metas[0].hint : "" };
   // Fecha del informe más antiguo de los clientes visibles (los status vienen de ahí)
   const synced = data.sources.filter((s) => A.clients.includes(s.client) && s.syncedAt).map((s) => s.syncedAt!).sort()[0];
   return (
     <div className={loading ? "opacity-50 pointer-events-none space-y-4" : "space-y-4"}>
+      <div className="flex items-center gap-2 text-xs text-ink-muted flex-wrap">
+        <span>Marca o desmarca las etapas que quieres ver (el filtro de status de abajo muestra los status de las etapas marcadas).</span>
+        <button type="button" onClick={() => setSel(CO_LISTS.map((c) => c.id))} className="text-brand hover:underline">Ver todas ({fmt(companies.length)})</button>
+        <button type="button" onClick={() => setSel(["asignadas", "en_gestion", "seguimiento", "nutridas"])} className="text-brand hover:underline">Asignadas + en gestión + seguimiento + nutridas</button>
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {CO_LISTS.map((l) => (
-          <button key={l.id} type="button" onClick={() => setList(l.id)} title={l.hint}
-            className={`text-left rounded-lg border p-3 transition ${list === l.id ? "border-brand bg-brand/5 ring-1 ring-brand" : "bg-white hover:bg-black/[0.03]"}`}>
-            <div className="text-xs text-ink-muted">{l.label}</div>
+          <button key={l.id} type="button" onClick={() => toggle(l.id)} title={l.hint} aria-pressed={sel.includes(l.id)}
+            className={`text-left rounded-lg border p-3 transition ${sel.includes(l.id) ? "border-brand bg-brand/5 ring-1 ring-brand" : "bg-white hover:bg-black/[0.03]"}`}>
+            <div className="text-xs text-ink-muted flex items-center gap-1.5"><input type="checkbox" readOnly checked={sel.includes(l.id)} className="pointer-events-none" tabIndex={-1} />{l.label}</div>
             <div className="text-2xl font-semibold tabular-nums">{fmt(counts.get(l.id) ?? 0)}</div>
           </button>
         ))}
@@ -879,7 +904,7 @@ type Editing = {
   canBill: boolean;
   fcReady: boolean;
   onFc: (id: string, value: boolean) => void;
-  accts: Record<string, { id: string; sub: string | null; edit: boolean }>;
+  accts: SdrSlice["accts"];
   onSaved: (type: "company" | "contact", client: string, hs: string, st: string) => void;
 };
 type StatusOpts = { writable: boolean; reason: string | null; company: { label: string; options: { value: string; label: string }[] } | null; contact: { label: string; options: { value: string; label: string }[] } | null };
@@ -1197,6 +1222,7 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
   const [q, setQ] = useState("");
   const [sort, toggle] = useSort({ k: "flag", dir: -1 });
   const [openCo, setOpenCo] = useState<string | null>(null);
+  const [ficha, setFicha] = useState<SdrCompany | null>(null);
   const mtgOf = useMemo(() => {
     const m = new Map<string, SdrMeeting[]>();
     for (const x of meetings) if (x.co) m.set(x.co, [...(m.get(x.co) ?? []), x]);
@@ -1243,7 +1269,9 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
               return (
                 <Fragment key={r.id}>
                 <tr className={`border-t ${flag ? "bg-warning-bg/30" : ""}`}>
-                  <td className="px-3 py-2 font-medium">{r.n}{r.lv && <span title="Leída en vivo de HubSpot: aún no está en el informe de Pulso ABM" className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-info-bg text-info-fg align-middle">nueva</span>}<div className="text-xs font-normal text-ink-muted">{[r.pais, r.ind].filter(Boolean).join(" · ")}</div></td>
+                  <td className="px-3 py-2 font-medium"><HsName name={r.n} hs={r.hs} client={r.c} type="company" ed={ed} />
+                    <button type="button" onClick={() => setFicha(r)} title="Ver historial y registrar notas, actividades y seguimientos"
+                      className="ml-2 align-middle text-[11px] font-medium px-1.5 py-0.5 rounded border border-brand/30 text-brand hover:bg-brand/5">Ficha</button>{r.lv && <span title="Leída en vivo de HubSpot: aún no está en el informe de Pulso ABM" className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-info-bg text-info-fg align-middle">nueva</span>}<div className="text-xs font-normal text-ink-muted">{[r.pais, r.ind].filter(Boolean).join(" · ")}</div></td>
                   {showClient && <td className="px-3 py-2">{r.c}</td>}
                   <td className="px-3 py-2"><StatusCell type="company" rec={r} ed={ed} /></td>
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.asg)}</td>
@@ -1273,6 +1301,10 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
           </tbody>
         </table>
       </div>
+      {ficha && (
+        <FichaDrawer rec={ficha} acct={ed.accts[ficha.c]} canWrite={ed.can} onClose={() => setFicha(null)}
+          renderStatus={(type, r, done) => <StatusCell type={type} rec={r} ed={{ ...ed, onSaved: (t, c, hs, st) => { ed.onSaved(t, c, hs, st); done(st); } }} />} />
+      )}
     </>
   );
 }
@@ -1303,9 +1335,9 @@ function ContactsTable({ rows, showClient, ed }: { rows: SdrContact[]; showClien
           <tbody>
             {list.slice(0, MAX_ROWS).map((r) => (
               <tr key={r.id} className="border-t">
-                <td className="px-3 py-2 font-medium">{r.n}</td>
+                <td className="px-3 py-2 font-medium"><HsName name={r.n} hs={r.hs} client={r.c} type="contact" ed={ed} /></td>
                 <td className="px-3 py-2">{r.cargo || "—"}</td>
-                <td className="px-3 py-2">{r.con || "—"}</td>
+                <td className="px-3 py-2">{r.con ? <HsName name={r.con} hs={r.co.split(":").pop()} client={r.c} type="company" ed={ed} /> : "—"}</td>
                 {showClient && <td className="px-3 py-2">{r.c}</td>}
                 <td className="px-3 py-2"><StatusCell type="contact" rec={r} ed={ed} /></td>
                 <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.next)}</td>
