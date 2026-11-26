@@ -409,9 +409,11 @@ export default function DashboardSdrPage() {
 function ListsView({ A, sdrKey, clients, client, setClient, ed, data, loading }: { A: NonNullable<ReturnType<typeof analyze>>; sdrKey: string; clients: string[]; client: string; setClient: (c: string) => void; ed: Editing; data: SdrDashboardResponse; loading: boolean }) {
   // Listas elegidas (se pueden combinar, como el filtro de status de HubSpot); ?lista=asignadas,en_gestion
   const [sel, setSel] = useState<CoList[]>(() => {
-    if (typeof window === "undefined") return ["asignadas"];
+    // Por defecto las etapas de trabajo (como el filtro habitual de HubSpot)
+    const def: CoList[] = ["asignadas", "en_gestion", "seguimiento", "nutridas"];
+    if (typeof window === "undefined") return def;
     const l = (new URLSearchParams(window.location.search).get("lista") ?? "").split(",").filter((x) => CO_LISTS.some((c) => c.id === x)) as CoList[];
-    return l.length ? l : ["asignadas"];
+    return l.length ? l : def;
   });
   const toggle = (id: CoList) => setSel((p) => (p.includes(id) ? (p.length > 1 ? p.filter((x) => x !== id) : p) : CO_LISTS.map((c) => c.id).filter((x) => x === id || p.includes(x))));
   const allSel = sel.length === CO_LISTS.length;
@@ -488,8 +490,9 @@ function ListsView({ A, sdrKey, clients, client, setClient, ed, data, loading }:
   return (
     <div className={loading ? "opacity-50 pointer-events-none space-y-4" : "space-y-4"}>
       <div className="flex items-center gap-2 text-xs text-ink-muted flex-wrap">
-        <span>Haz clic en una o varias etapas para combinarlas.</span>
-        <button type="button" onClick={() => setSel(allSel ? ["asignadas"] : CO_LISTS.map((c) => c.id))} className="text-brand hover:underline">{allSel ? "Solo Asignadas" : `Ver todas (${fmt(companies.length)})`}</button>
+        <span>Marca o desmarca las etapas que quieres ver (el filtro de status de abajo muestra los status de las etapas marcadas).</span>
+        <button type="button" onClick={() => setSel(CO_LISTS.map((c) => c.id))} className="text-brand hover:underline">Ver todas ({fmt(companies.length)})</button>
+        <button type="button" onClick={() => setSel(["asignadas", "en_gestion", "seguimiento", "nutridas"])} className="text-brand hover:underline">Asignadas + en gestión + seguimiento + nutridas</button>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {CO_LISTS.map((l) => (
