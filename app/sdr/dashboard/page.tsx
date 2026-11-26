@@ -10,8 +10,8 @@
 // lib/dashboardSdr/compute.ts (el mismo del correo semanal). Por ahora no
 // suma actividades. ?sdr=<clave>&estancadas=1 / ?vista=celula (links del correo).
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { IconAlertCircle, IconAlertTriangle, IconChevronDown, IconChevronRight, IconLoader2, IconRefresh, IconSearch, IconUserCircle, IconUsersGroup } from "@tabler/icons-react";
-import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeeting } from "@/lib/dashboardSdr/types";
+import { IconAlertCircle, IconAlertTriangle, IconExternalLink, IconChevronDown, IconChevronRight, IconLoader2, IconRefresh, IconSearch, IconUserCircle, IconUsersGroup } from "@tabler/icons-react";
+import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeeting, SdrSlice } from "@/lib/dashboardSdr/types";
 import type { LiveResponse } from "@/lib/dashboardSdr/live";
 import { analyze, CO_GROUP_LABEL, CO_LISTS, companyList, FIX_KINDS, type CoList, goalStatus, monthProgress, type CoGroup, type FixKind, type Pace } from "@/lib/dashboardSdr/compute";
 import { STALE_BUSINESS_DAYS } from "@/lib/dashboardSdr/stale";
@@ -53,6 +53,18 @@ function sortRows<T>(rows: T[], s: SortState, get: (r: T, k: string) => string |
 }
 
 const MAX_ROWS = 500;
+
+// Link a la ficha en HubSpot (empresa 0-2, contacto 0-1) en una pestaña nueva
+function HsName({ name, hs, client, type, ed }: { name: string; hs?: string; client: string; type: "company" | "contact"; ed: Editing }) {
+  const portal = ed.accts[client]?.portal;
+  if (!portal || !hs || !/^\d+$/.test(hs)) return <>{name}</>;
+  return (
+    <a href={`https://app.hubspot.com/contacts/${portal}/record/${type === "company" ? "0-2" : "0-1"}/${hs}`} target="_blank" rel="noopener noreferrer"
+      title="Abrir en HubSpot" className="text-brand hover:underline inline-flex items-center gap-1">
+      {name}<IconExternalLink size={12} className="shrink-0 opacity-60" />
+    </a>
+  );
+}
 
 export default function DashboardSdrPage() {
   const [data, setData] = useState<SdrDashboardResponse | null>(null);
@@ -287,7 +299,7 @@ export default function DashboardSdrPage() {
                 <tbody>
                   {A.fixBy[fixTab].slice(0, MAX_ROWS).map((f, i) => (
                     <tr key={`${f.coId}-${i}`} className="border-t">
-                      <td className="px-3 py-2 font-medium">{f.who}{f.sub && <div className="text-xs font-normal text-ink-muted">{f.sub}</div>}</td>
+                      <td className="px-3 py-2 font-medium">{f.ctHs ? <HsName name={f.who} hs={f.ctHs} client={f.client} type="contact" ed={ed} /> : <HsName name={f.who} hs={A.companies.find((x) => x.id === f.coId)?.hs} client={f.client} type="company" ed={ed} />}{f.sub && <div className="text-xs font-normal text-ink-muted">{f.sub}</div>}</td>
                       {!client && <td className="px-3 py-2">{f.client}</td>}
                       <td className="px-3 py-2">{f.what}</td>
                       <td className="px-3 py-2 whitespace-nowrap text-warning-fg font-medium">{f.since}</td>
@@ -879,7 +891,7 @@ type Editing = {
   canBill: boolean;
   fcReady: boolean;
   onFc: (id: string, value: boolean) => void;
-  accts: Record<string, { id: string; sub: string | null; edit: boolean }>;
+  accts: SdrSlice["accts"];
   onSaved: (type: "company" | "contact", client: string, hs: string, st: string) => void;
 };
 type StatusOpts = { writable: boolean; reason: string | null; company: { label: string; options: { value: string; label: string }[] } | null; contact: { label: string; options: { value: string; label: string }[] } | null };
@@ -1243,7 +1255,7 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
               return (
                 <Fragment key={r.id}>
                 <tr className={`border-t ${flag ? "bg-warning-bg/30" : ""}`}>
-                  <td className="px-3 py-2 font-medium">{r.n}{r.lv && <span title="Leída en vivo de HubSpot: aún no está en el informe de Pulso ABM" className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-info-bg text-info-fg align-middle">nueva</span>}<div className="text-xs font-normal text-ink-muted">{[r.pais, r.ind].filter(Boolean).join(" · ")}</div></td>
+                  <td className="px-3 py-2 font-medium"><HsName name={r.n} hs={r.hs} client={r.c} type="company" ed={ed} />{r.lv && <span title="Leída en vivo de HubSpot: aún no está en el informe de Pulso ABM" className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-info-bg text-info-fg align-middle">nueva</span>}<div className="text-xs font-normal text-ink-muted">{[r.pais, r.ind].filter(Boolean).join(" · ")}</div></td>
                   {showClient && <td className="px-3 py-2">{r.c}</td>}
                   <td className="px-3 py-2"><StatusCell type="company" rec={r} ed={ed} /></td>
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.asg)}</td>
@@ -1303,9 +1315,9 @@ function ContactsTable({ rows, showClient, ed }: { rows: SdrContact[]; showClien
           <tbody>
             {list.slice(0, MAX_ROWS).map((r) => (
               <tr key={r.id} className="border-t">
-                <td className="px-3 py-2 font-medium">{r.n}</td>
+                <td className="px-3 py-2 font-medium"><HsName name={r.n} hs={r.hs} client={r.c} type="contact" ed={ed} /></td>
                 <td className="px-3 py-2">{r.cargo || "—"}</td>
-                <td className="px-3 py-2">{r.con || "—"}</td>
+                <td className="px-3 py-2">{r.con ? <HsName name={r.con} hs={r.co.split(":").pop()} client={r.c} type="company" ed={ed} /> : "—"}</td>
                 {showClient && <td className="px-3 py-2">{r.c}</td>}
                 <td className="px-3 py-2"><StatusCell type="contact" rec={r} ed={ed} /></td>
                 <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.next)}</td>
