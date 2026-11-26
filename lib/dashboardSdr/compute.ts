@@ -28,6 +28,26 @@ export function companyGroup(st: string): CoGroup {
   if (t.includes("en gesti") || t.includes("seguimiento") || t.includes("gestionada por linkedin") || t.includes("retomar")) return "en_gestion";
   return "cerradas";
 }
+// Listas de trabajo del SDR (vista «Mis listas»: reemplaza las listas de
+// HubSpot, que con la licencia actual son estáticas). Más finas que los grupos.
+export type CoList = "asignadas" | "en_gestion" | "seguimiento" | "nutridas" | "reunion" | "descartadas";
+export const CO_LISTS: { id: CoList; label: string; hint: string }[] = [
+  { id: "asignadas", label: "Asignadas", hint: "Asignada / por gestionar: aún sin trabajar." },
+  { id: "en_gestion", label: "En gestión", hint: "En gestión y Gestionada por LinkedIn." },
+  { id: "seguimiento", label: "En seguimiento", hint: "En seguimiento y Sin interés ahora - Retomar." },
+  { id: "nutridas", label: "Nutridas", hint: "Nutrir, Empresa ya nutrida y Sin contactos (ya nutrida)." },
+  { id: "reunion", label: "Reunión / oportunidad", hint: "Reunión Agendada, En conversaciones con el cliente, Clientes." },
+  { id: "descartadas", label: "Descartadas", hint: "No califica, No interesados, Gestionada sin contactos fit o sin comunicación y otros." },
+];
+export function companyList(st: string): CoList {
+  const t = norm(st);
+  if (companyGroup(st) === "reunion") return "reunion";
+  if (companyGroup(st) === "por_gestionar") return "asignadas";
+  if (t.includes("nutri")) return "nutridas";
+  if (t.includes("seguimiento") || t.includes("retomar")) return "seguimiento";
+  if (t.includes("en gesti") || t.includes("gestionada por linkedin")) return "en_gestion";
+  return "descartadas";
+}
 const ctGroup = (st: string) => CT_G[st] ?? "";
 export const isPendingContact = (k: SdrContact) => ctGroup(k.st) === "pend";
 const isClosedContact = (k: SdrContact) => ["rej", "cal", "dispc", "pausa"].includes(ctGroup(k.st)) || norm(k.st).includes("reunion");

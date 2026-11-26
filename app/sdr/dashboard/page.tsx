@@ -12,7 +12,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { IconAlertCircle, IconAlertTriangle, IconChevronDown, IconChevronRight, IconLoader2, IconRefresh, IconSearch, IconUserCircle, IconUsersGroup } from "@tabler/icons-react";
 import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeeting } from "@/lib/dashboardSdr/types";
-import { analyze, CO_GROUP_LABEL, FIX_KINDS, goalStatus, monthProgress, type CoGroup, type FixKind, type Pace } from "@/lib/dashboardSdr/compute";
+import { analyze, CO_GROUP_LABEL, CO_LISTS, companyList, FIX_KINDS, type CoList, goalStatus, monthProgress, type CoGroup, type FixKind, type Pace } from "@/lib/dashboardSdr/compute";
 import { STALE_BUSINESS_DAYS } from "@/lib/dashboardSdr/stale";
 
 const nf = new Intl.NumberFormat("es-CL");
@@ -58,7 +58,7 @@ export default function DashboardSdrPage() {
   const [sdr, setSdr] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [view, setView] = useState<"sdr" | "celula" | "facturacion">("sdr");
+  const [view, setView] = useState<"sdr" | "listas" | "celula" | "facturacion">("sdr");
   const [client, setClient] = useState("");
   const [fixTab, setFixTab] = useState<FixKind>("est");
   const [detTab, setDetTab] = useState<"empresas" | "contactos">("empresas");
@@ -87,11 +87,12 @@ export default function DashboardSdrPage() {
     const q = new URLSearchParams(window.location.search);
     if (q.get("estancadas") === "1") { setFixTab("est"); }
     if (q.get("vista") === "celula") setView("celula");
+    if (q.get("vista") === "listas") setView("listas");
     if (q.get("vista") === "facturacion") setView("facturacion");
     load(q.get("sdr") ?? "");
   }, [load]);
 
-  const openSdr = (key: string) => { setView("sdr"); setClient(""); setSdr(key); load(key); window.scrollTo({ top: 0 }); };
+  const openSdr = (key: string) => { setView((v) => (v === "listas" ? v : "sdr")); setClient(""); setSdr(key); load(key); window.scrollTo({ top: 0 }); };
 
   const slice = data?.sdr ?? null;
   const today = data?.today ?? new Date().toISOString().slice(0, 10);
@@ -119,22 +120,22 @@ export default function DashboardSdrPage() {
         <div>
           <div className="label">SDR</div>
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
-            {view === "sdr" ? <IconUserCircle size={24} className="text-brand" /> : <IconUsersGroup size={24} className="text-brand" />}
-            {view === "celula" ? "Dashboard SDR · células" : view === "facturacion" ? "Dashboard SDR · comisionables" : slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
+            {view === "sdr" || view === "listas" ? <IconUserCircle size={24} className="text-brand" /> : <IconUsersGroup size={24} className="text-brand" />}
+            {view === "celula" ? "Dashboard SDR · células" : view === "listas" ? (slice ? (myself ? `Mis listas · ${slice.name}` : `Listas de ${slice.name}`) : "Dashboard SDR · listas") : view === "facturacion" ? "Dashboard SDR · comisionables" : slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
           </h1>
           <p className="text-sm text-ink-muted mt-1">
-            {view === "sdr" ? "Empresas y contactos asignados por cliente." : view === "celula" ? "Cartera, pendientes y reuniones de cada SDR de la célula." : "Reuniones marcadas «Reunión comisionable» por cliente, con quién las marcó y cuándo."}
+            {view === "sdr" ? "Empresas y contactos asignados por cliente." : view === "listas" ? "Tus empresas por etapa (asignadas, en gestión, en seguimiento, nutridas…), siempre al día con el status de HubSpot del último informe." : view === "celula" ? "Cartera, pendientes y reuniones de cada SDR de la célula." : "Reuniones marcadas «Reunión comisionable» por cliente, con quién las marcó y cuándo."}
             {data && <> Datos de Pulso ABM, calculados {timeCL(data.generated)}.</>}
           </p>
         </div>
         <div className="flex items-end gap-2 flex-wrap">
           <div role="tablist" aria-label="Vista" className="flex rounded-lg border bg-white p-0.5">
-            {([["sdr", "Mi cartera"], ["celula", "Célula"], ...(data?.me.canBill ? [["facturacion", "Comisionables"]] : [])] as [string, string][]).map(([v, l]) => (
+            {([["sdr", "Mi cartera"], ["listas", "Mis listas"], ["celula", "Célula"], ...(data?.me.canBill ? [["facturacion", "Comisionables"]] : [])] as [string, string][]).map(([v, l]) => (
               <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v as typeof view)}
                 className={`px-3 py-1.5 rounded-md text-sm ${view === v ? "bg-brand text-white" : "text-ink-muted hover:text-ink"}`}>{l}</button>
             ))}
           </div>
-          {view === "sdr" && (
+          {(view === "sdr" || view === "listas") && (
             <>
               <label className="flex flex-col gap-1 text-xs text-ink-muted">
                 SDR
@@ -182,7 +183,9 @@ export default function DashboardSdrPage() {
 
       {data && <DataCheck data={data} />}
 
-      {data && view === "sdr" && !slice && !loading && (
+      {data && view === "listas" && slice && A && <ListsView A={A} client={client} ed={ed} data={data} loading={loading} />}
+
+      {data && (view === "sdr" || view === "listas") && !slice && !loading && (
         <div className="card text-sm text-ink-muted">
           {data.me.name
             ? `${data.me.name} no tiene empresas ni contactos asignados en los informes de Pulso ABM. Elige otro SDR arriba.`
@@ -382,6 +385,62 @@ export default function DashboardSdrPage() {
           </details>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Mis listas ────────────────────────────────────────────────────────────
+// Reemplaza las listas de HubSpot (estáticas con la licencia actual): las
+// empresas del SDR por etapa, con el status vigente del informe de Pulso ABM
+// más los cambios hechos desde el dashboard.
+function ListsView({ A, client, ed, data, loading }: { A: NonNullable<ReturnType<typeof analyze>>; client: string; ed: Editing; data: SdrDashboardResponse; loading: boolean }) {
+  const [list, setList] = useState<CoList>(() => {
+    if (typeof window === "undefined") return "asignadas";
+    const l = new URLSearchParams(window.location.search).get("lista");
+    return (CO_LISTS.some((x) => x.id === l) ? l : "asignadas") as CoList;
+  });
+  const [tab, setTab] = useState<"empresas" | "contactos">("empresas");
+  const [onlyFix, setOnlyFix] = useState(false);
+  const listOf = useMemo(() => new Map(A.companies.map((c) => [c.id, companyList(c.st)])), [A.companies]);
+  const counts = useMemo(() => {
+    const m = new Map<CoList, number>();
+    for (const l of listOf.values()) m.set(l, (m.get(l) ?? 0) + 1);
+    return m;
+  }, [listOf]);
+  const rows = useMemo(() => A.companies.filter((c) => listOf.get(c.id) === list), [A.companies, listOf, list]);
+  const ids = useMemo(() => new Set(rows.map((r) => r.id)), [rows]);
+  const cts = useMemo(() => A.contacts.filter((k) => ids.has(k.co)), [A.contacts, ids]);
+  const meta = CO_LISTS.find((x) => x.id === list)!;
+  // Fecha del informe más antiguo de los clientes visibles (los status vienen de ahí)
+  const synced = data.sources.filter((s) => A.clients.includes(s.client) && s.syncedAt).map((s) => s.syncedAt!).sort()[0];
+  return (
+    <div className={loading ? "opacity-50 pointer-events-none space-y-4" : "space-y-4"}>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        {CO_LISTS.map((l) => (
+          <button key={l.id} type="button" onClick={() => setList(l.id)} title={l.hint}
+            className={`text-left rounded-lg border p-3 transition ${list === l.id ? "border-brand bg-brand/5 ring-1 ring-brand" : "bg-white hover:bg-black/[0.03]"}`}>
+            <div className="text-xs text-ink-muted">{l.label}</div>
+            <div className="text-2xl font-semibold tabular-nums">{fmt(counts.get(l.id) ?? 0)}</div>
+          </button>
+        ))}
+      </div>
+      <section className="card space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <h2 className="text-base font-semibold">{meta.label} · {client || "todos los clientes"}</h2>
+            <p className="text-xs text-ink-muted">{meta.hint} Status de HubSpot según el informe de Pulso ABM{synced ? ` (sincronizado ${timeCL(synced)})` : ""}; los cambios que hagas aquí se ven al instante.</p>
+          </div>
+          <div role="tablist" className="flex rounded-lg border bg-white p-0.5">
+            {([["empresas", `Empresas (${fmt(rows.length)})`], ["contactos", `Contactos (${fmt(cts.length)})`]] as const).map(([v, l]) => (
+              <button key={v} role="tab" aria-selected={tab === v} onClick={() => setTab(v)}
+                className={`px-3 py-1.5 rounded-md text-sm ${tab === v ? "bg-brand text-white" : "text-ink-muted hover:text-ink"}`}>{l}</button>
+            ))}
+          </div>
+        </div>
+        {tab === "empresas"
+          ? <CompaniesTable key={list} rows={rows} flagOf={A.flagOf} showClient={!client} onlyFix={onlyFix} setOnlyFix={setOnlyFix} ed={ed} meetings={A.meetings} />
+          : <ContactsTable key={list} rows={cts} showClient={!client} ed={ed} />}
+      </section>
     </div>
   );
 }
