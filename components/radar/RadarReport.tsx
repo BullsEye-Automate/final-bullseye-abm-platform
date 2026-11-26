@@ -2,6 +2,7 @@
 
 import "./radar.css";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { IconAlertTriangle, IconArrowLeft, IconArrowRight, IconMoon, IconSun } from "@tabler/icons-react";
 import { addDays, compute, dmy, filterDataset, mondayOf, N, NO_IND, NO_WL, periodMonths } from "@/lib/radarAbm/engine";
 import { billingCell, FEEDBACK_TABS, INTERNAL_PARTS, LEADS, PARTS, PART_SLUGS, REACT_SECTIONS, render, sec, type BillingMarks } from "@/lib/radarAbm/render";
@@ -12,6 +13,7 @@ import KamInsights from "./KamInsights";
 import IcpPanel from "./IcpPanel";
 import FeedbackPanel from "./FeedbackPanel";
 import PeithoPanel from "@/components/peitho/PeithoPanel";
+import MeetingShots from "@/components/feedback/MeetingShots";
 
 // Informe Pulso ABM de un cliente (una vista = una parte del informe, con
 // sus secciones numeradas). Lo usan la vista interna (Análisis → Pulso ABM)
@@ -93,6 +95,10 @@ export default function RadarReport({
       .then((j) => { if (j?.canBill) { billingRef.current = j.marks ?? {}; setBilling({ ...billingRef.current }); } })
       .catch(() => {});
   }, [audience, dataset.source]);
+  // Pantallazos de una reunión (Detalle de reuniones, vista interna): panel
+  // para verlos o subirlos (lib/meetingShots.ts)
+  const [shotsFor, setShotsFor] = useState<{ id: string; label: string } | null>(null);
+  const shotsOn = audience === "internal" && dataset.source !== "demo";
   const shownView = useRef<number | null>(null);
 
   useEffect(() => {
@@ -130,7 +136,7 @@ export default function RadarReport({
   }
   const M = useMemo(() => compute(filtered, config), [filtered, config]);
   // billingRef: al cambiar filtros se rearma con las marcas al día
-  const secs = useMemo(() => render(M, dataset.mapping, { billing: billing ? billingRef.current : null }), [M, dataset.mapping, billing]);
+  const secs = useMemo(() => render(M, dataset.mapping, { billing: billing ? billingRef.current : null, shots: shotsOn }), [M, dataset.mapping, billing, shotsOn]);
 
   const parts = visibleParts(audience);
   const pi = parts.includes(view) ? view : parts[0];
@@ -256,6 +262,11 @@ export default function RadarReport({
         el.disabled = false;
       }
     };
+    const onShots = (e: Event) => {
+      const el = (e.target as HTMLElement).closest?.<HTMLElement>("[data-ra-shots]");
+      if (el) setShotsFor({ id: el.dataset.raShots!, label: el.dataset.raShotlbl || "" });
+    };
+    root.addEventListener("click", onShots);
     root.addEventListener("change", onBill);
     root.addEventListener("change", onPick);
     root.addEventListener("click", onStage);
@@ -264,6 +275,7 @@ export default function RadarReport({
     root.addEventListener("change", onFilter);
     return () => {
       root.removeEventListener("change", onBill);
+      root.removeEventListener("click", onShots);
       root.removeEventListener("change", onPick); root.removeEventListener("click", onStage); root.removeEventListener("click", onSort);
       root.removeEventListener("input", onFilter); root.removeEventListener("change", onFilter);
     };
@@ -431,6 +443,28 @@ export default function RadarReport({
         )}
       </div>
       <div className="ra-tip" ref={tipRef} role="tooltip" style={{ opacity: 0 }} />
+      {shotsFor && createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShotsFor(null)}>
+          <div className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl bg-white p-5 text-gray-800 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold">Pantallazos de la reunión</h3>
+                <p className="text-xs text-gray-500">{shotsFor.label}</p>
+              </div>
+              <button className="text-sm text-gray-500 hover:text-gray-800" onClick={() => setShotsFor(null)}>Cerrar</button>
+            </div>
+            <MeetingShots mode={{ kind: "team", meetingId: shotsFor.id }} onChange={(n) => {
+              // Actualiza el botón de la tabla sin rearmar el informe
+              rootRef.current?.querySelectorAll<HTMLElement>(`[data-ra-shots="${CSS.escape(shotsFor.id)}"]`).forEach((b) => {
+                b.textContent = `📎 ${n || "Subir"}`;
+                const td = b.closest("td"); if (td) td.dataset.v = String(n);
+              });
+            }} />
+            <p className="mt-3 text-xs text-gray-400">Lo que la IA lee de cada pantallazo se suma al feedback de la reunión (Resumen del feedback e Insights KAM) al volver a abrir el informe.</p>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

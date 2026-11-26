@@ -12,6 +12,7 @@
 // conversación con el cliente. Resultado y seguimiento de cada conversación
 // (pendiente / conversado / descartado + nota) en allo_response_cache, sin
 // migración: `kam_insights:v1:<client_id>`.
+import { loadShotsByMeeting, shotsText } from "@/lib/meetingShots";
 import type Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "@/lib/supabase";
 import { anthropic, CLAUDE_MODEL } from "@/lib/claude";
@@ -113,6 +114,23 @@ async function feedbackLines(clientId: string): Promise<string[]> {
         f.comentarios_adicionales?.trim() ? `comentario: "${clip(f.comentarios_adicionales, 400)}"` : "",
       ].filter(Boolean).join(" · "));
     }
+  }
+  // Pantallazos que el cliente compartió de la reunión (lectura con IA, lib/meetingShots.ts)
+  try {
+    const shots = await loadShotsByMeeting(mids);
+    for (const [id, list] of shots) {
+      const m: any = byId.get(id);
+      const ok = list.filter((s) => s.ai?.status === "ok");
+      if (!ok.length) continue;
+      const coms = ok.flatMap((s) => s.ai?.comentarios ?? []).slice(0, 6).map((c) => `"${clip(c, 200)}"`).join(" ");
+      out.push([
+        `${m?.fecha_reunion ?? "?"} · ${clip(m?.empresa, 60)}${m?.industria ? ` (${clip(m.industria, 40)})` : ""}${m?.pais ? ` · ${m.pais}` : ""}`,
+        `pantallazo del cliente: ${clip(shotsText(ok), 500)}`,
+        coms ? `comentarios: ${coms}` : "",
+      ].filter(Boolean).join(" · "));
+    }
+  } catch (e) {
+    console.warn("[kam-insights] No se pudieron leer los pantallazos:", (e as Error).message);
   }
   return out.sort().reverse();
 }
