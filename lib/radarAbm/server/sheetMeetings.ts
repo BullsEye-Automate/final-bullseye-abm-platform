@@ -1,3 +1,4 @@
+import { loadShotsByMeeting, shotsText } from "@/lib/meetingShots";
 import { supabaseAdmin } from "@/lib/supabase";
 import type { RadarMeeting } from "../types";
 import { pickSub } from "../subAccounts";
@@ -116,6 +117,17 @@ export async function loadFeedbackOverlay(clientId: string, subs: string[] = [])
   for (let i = 0; i < mids.length; i += 300) {
     const { data } = await supabase.from("meeting_feedback").select(FEEDBACK_COLS).in("meeting_id", mids.slice(i, i + 300));
     for (const f of data ?? []) out[f.meeting_id] = { ...out[f.meeting_id], ...feedbackPatch(f, opp.get(f.meeting_id)) };
+  }
+  // Pantallazos con comentarios del cliente (lib/meetingShots.ts): cantidad y
+  // lectura de la IA, que se suman al feedback de la reunión
+  try {
+    const shots = await loadShotsByMeeting(mids);
+    for (const [id, list] of shots) {
+      const shs = shotsText(list);
+      out[id] = { ...out[id], shn: list.length, ...(shs ? { shs: shs.slice(0, 1500) } : {}) };
+    }
+  } catch (e) {
+    console.warn("[radar] No se pudieron leer los pantallazos:", (e as Error).message);
   }
   // Cliente con Peitho: el feedback de las reuniones es el análisis de Peitho
   // (pedido de BullsEye nov-2026). Se marca la reunión con análisis (pth) y su

@@ -5,6 +5,7 @@ import {
   IconCheck, IconAlertCircle, IconMessageCheck, IconCalendar,
   IconStar, IconX, IconSearch, IconChevronDown, IconMessage2,
 } from "@tabler/icons-react";
+import MeetingShots from "@/components/feedback/MeetingShots";
 
 type ClientData = {
   id: string;
@@ -124,6 +125,20 @@ function BoolBtn({ value, onChange }: { value: boolean | null; onChange: (v: boo
         style={{ borderColor: value === false ? "#ef4444" : "#e5e7eb", background: value === false ? "#fef2f2" : "#fff", color: value === false ? "#dc2626" : "#6b7280" }}>
         <IconX size={15} /> No
       </button>
+    </div>
+  );
+}
+
+// Reuniones ya respondidas (o analizadas por Peitho): igual se pueden sumar
+// pantallazos con comentarios de la reunión
+function ShotsToggle({ token }: { token: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="text-xs font-medium text-teal-700 hover:underline">
+        {open ? "Ocultar pantallazos" : "Pantallazos de la reunión"}
+      </button>
+      {open && <div className="mt-2"><MeetingShots mode={{ kind: "token", token }} /></div>}
     </div>
   );
 }
@@ -268,6 +283,8 @@ function FeedbackModal({ meeting, salesManagers, onClose, onSaved }: {
               <textarea value={form.comentarios_adicionales} onChange={e => setForm(p => ({ ...p, comentarios_adicionales: e.target.value }))}
                 placeholder="Puntos de dolor, contexto relevante, próximos pasos acordados…" rows={3}
                 className="mt-3 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#62E0D8] resize-none" />
+              {/* Pantallazos con comentarios de la reunión (WhatsApp, correo…) */}
+              <div className="mt-3"><MeetingShots mode={{ kind: "token", token: meeting.feedback_token }} /></div>
             </div>
 
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -495,7 +512,8 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
             </h2>
             <div className="space-y-2">
               {conFeedback.map(m => (
-                <div key={m.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between gap-4 opacity-70">
+                <div key={m.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                <div className="flex items-center justify-between gap-4 opacity-70">
                   <div className="min-w-0">
                     <p className="font-medium text-gray-700 truncate">{m.empresa}</p>
                     <p className="text-xs text-gray-400 mt-0.5 truncate">
@@ -511,6 +529,8 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
                     <IconCheck size={12} /> Completado
                   </span>
                 </div>
+                <ShotsToggle token={m.feedback_token} />
+                </div>
               ))}
             </div>
           </div>
@@ -525,7 +545,8 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
             </h2>
             <div className="space-y-2">
               {porPeitho.map(m => (
-                <div key={m.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between gap-4 opacity-70">
+                <div key={m.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                <div className="flex items-center justify-between gap-4 opacity-70">
                   <div className="min-w-0">
                     <p className="font-medium text-gray-700 truncate">{m.empresa}</p>
                     <p className="text-xs text-gray-400 mt-0.5 truncate">
@@ -540,6 +561,8 @@ export default function ClientFeedbackBoard({ token, embedded = false }: { token
                   <span className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium bg-teal-50 text-teal-700 border border-teal-100">
                     Peitho
                   </span>
+                </div>
+                <ShotsToggle token={m.feedback_token} />
                 </div>
               ))}
             </div>

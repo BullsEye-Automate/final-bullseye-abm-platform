@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { IconStar, IconCheck, IconX } from "@tabler/icons-react";
+import MeetingShots from "@/components/feedback/MeetingShots";
 
 type MeetingData = {
   id: string;
@@ -222,7 +223,7 @@ export default function EncuestaPage() {
     );
   }
 
-  // Cliente con Peitho o reunión ya analizada en Peitho: no se pide feedback
+  // Reunión ya analizada en Peitho: no se pide feedback (sí se pueden subir pantallazos)
   if (meeting?.peitho && !submitted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
@@ -237,6 +238,7 @@ export default function EncuestaPage() {
             Reunión con {meeting.empresa}
             {meeting.contacto_nombre && ` · ${meeting.contacto_nombre}`}
           </p>
+          <div className="mt-6 text-left bg-white rounded-2xl border border-gray-100 p-4"><MeetingShots mode={{ kind: "token", token }} /></div>
         </div>
       </div>
     );
@@ -258,6 +260,8 @@ export default function EncuestaPage() {
               {meeting.contacto_nombre && ` · ${meeting.contacto_nombre}`}
             </p>
           )}
+          {/* Se pueden seguir sumando pantallazos después de responder */}
+          <div className="mt-6 text-left bg-white rounded-2xl border border-gray-100 p-4"><MeetingShots mode={{ kind: "token", token }} /></div>
         </div>
       </div>
     );
@@ -421,6 +425,8 @@ export default function EncuestaPage() {
               placeholder="Puntos de dolor mencionados, contexto relevante, próximos pasos acordados…"
               rows={3}
               className="mt-3 w-full border border-gray-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-[#62E0D8] resize-none" />
+            {/* Pantallazos con comentarios de la reunión (WhatsApp, correo…) */}
+            <div className="mt-3"><MeetingShots mode={{ kind: "token", token }} /></div>
           </div>
 
           {/* P6: Probabilidad de cierre */}
