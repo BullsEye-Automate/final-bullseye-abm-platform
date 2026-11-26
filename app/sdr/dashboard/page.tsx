@@ -12,6 +12,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { IconAlertCircle, IconAlertTriangle, IconChevronDown, IconChevronRight, IconLoader2, IconRefresh, IconSearch, IconUserCircle, IconUsersGroup } from "@tabler/icons-react";
 import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeeting } from "@/lib/dashboardSdr/types";
+import type { LiveResponse } from "@/lib/dashboardSdr/live";
 import { analyze, CO_GROUP_LABEL, CO_LISTS, companyList, FIX_KINDS, type CoList, goalStatus, monthProgress, type CoGroup, type FixKind, type Pace } from "@/lib/dashboardSdr/compute";
 import { STALE_BUSINESS_DAYS } from "@/lib/dashboardSdr/stale";
 
@@ -124,7 +125,7 @@ export default function DashboardSdrPage() {
             {view === "celula" ? "Dashboard SDR · células" : view === "listas" ? (slice ? (myself ? `Mis listas · ${slice.name}` : `Listas de ${slice.name}`) : "Dashboard SDR · listas") : view === "facturacion" ? "Dashboard SDR · comisionables" : slice ? (myself ? `Mi dashboard · ${slice.name}` : `Dashboard de ${slice.name}`) : "Dashboard SDR"}
           </h1>
           <p className="text-sm text-ink-muted mt-1">
-            {view === "sdr" ? "Empresas y contactos asignados por cliente." : view === "listas" ? "Tus empresas por etapa (asignadas, en gestión, en seguimiento, nutridas…), siempre al día con el status de HubSpot del último informe." : view === "celula" ? "Cartera, pendientes y reuniones de cada SDR de la célula." : "Reuniones marcadas «Reunión comisionable» por cliente, con quién las marcó y cuándo."}
+            {view === "sdr" ? "Empresas y contactos asignados por cliente." : view === "listas" ? "Tus empresas por etapa (asignadas, en gestión, en seguimiento, nutridas…), con el status leído en vivo de HubSpot." : view === "celula" ? "Cartera, pendientes y reuniones de cada SDR de la célula." : "Reuniones marcadas «Reunión comisionable» por cliente, con quién las marcó y cuándo."}
             {data && <> Datos de Pulso ABM, calculados {timeCL(data.generated)}.</>}
           </p>
         </div>
@@ -183,7 +184,7 @@ export default function DashboardSdrPage() {
 
       {data && <DataCheck data={data} />}
 
-      {data && view === "listas" && slice && A && <ListsView A={A} client={client} ed={ed} data={data} loading={loading} />}
+      {data && view === "listas" && slice && A && <ListsView key={slice.key} A={A} sdrKey={slice.key} clients={allClients} client={client} setClient={setClient} ed={ed} data={data} loading={loading} />}
 
       {data && (view === "sdr" || view === "listas") && !slice && !loading && (
         <div className="card text-sm text-ink-muted">
@@ -393,7 +394,7 @@ export default function DashboardSdrPage() {
 // Reemplaza las listas de HubSpot (estáticas con la licencia actual): las
 // empresas del SDR por etapa, con el status vigente del informe de Pulso ABM
 // más los cambios hechos desde el dashboard.
-function ListsView({ A, client, ed, data, loading }: { A: NonNullable<ReturnType<typeof analyze>>; client: string; ed: Editing; data: SdrDashboardResponse; loading: boolean }) {
+function ListsView({ A, sdrKey, clients, client, setClient, ed, data, loading }: { A: NonNullable<ReturnType<typeof analyze>>; sdrKey: string; clients: string[]; client: string; setClient: (c: string) => void; ed: Editing; data: SdrDashboardResponse; loading: boolean }) {
   const [list, setList] = useState<CoList>(() => {
     if (typeof window === "undefined") return "asignadas";
     const l = new URLSearchParams(window.location.search).get("lista");
@@ -401,15 +402,69 @@ function ListsView({ A, client, ed, data, loading }: { A: NonNullable<ReturnType
   });
   const [tab, setTab] = useState<"empresas" | "contactos">("empresas");
   const [onlyFix, setOnlyFix] = useState(false);
-  const listOf = useMemo(() => new Map(A.companies.map((c) => [c.id, companyList(c.st)])), [A.companies]);
+  // Lectura en vivo de HubSpot (el informe de Pulso es del último sync)
+  const [live, setLive] = useState<LiveResponse | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveErr, setLiveErr] = useState<string | null>(null);
+  const loadLive = useCallback(async () => {
+    setLiveLoading(true); setLiveErr(null);
+    try {
+      const res = await fetch(`/api/sdr/dashboard/vivo?sdr=${encodeURIComponent(sdrKey)}`);
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error || `Error ${res.status}`);
+      setLive(j);
+    } catch (e) { setLiveErr((e as Error).message); } finally { setLiveLoading(false); }
+  }, [sdrKey]);
+  useEffect(() => { loadLive(); }, [loadLive]);
+
+  // Empresas = informe de Pulso + lo leído en vivo (status actual, empresas
+  // nuevas y fuera las que ya no son del SDR) en los clientes que respondieron
+  const companies = useMemo(() => {
+    if (!live) return A.companies;
+    const visible = new Set(A.clients);
+    const out: SdrCompany[] = [];
+    const seen = new Set<string>();
+    for (const co of A.companies) {
+      const lc = live.clients[co.c];
+      if (!lc || !lc.ok) { out.push(co); continue; }
+      const r = lc.rows.find((x) => x.hs === co.hs);
+      if (!r) continue;
+      seen.add(`${co.c}|${co.hs}`);
+      out.push(r.st === co.st ? co : { ...co, st: r.st });
+    }
+    for (const [c, lc] of Object.entries(live.clients)) {
+      if (!lc.ok || (client ? c !== client : !visible.has(c))) continue;
+      for (const r of lc.rows) if (!seen.has(`${c}|${r.hs}`)) out.push({ id: `live:${c}:${r.hs}`, hs: r.hs, c, n: r.n, st: r.st, pais: r.pais ?? "", ind: null, nct: 0, nmg: 0, msch: 0, mheld: 0, asg: "", lv: 1 });
+    }
+    return out;
+  }, [A.companies, A.clients, live, client]);
+  const listOf = useMemo(() => new Map(companies.map((c) => [c.id, companyList(c.st)])), [companies]);
   const counts = useMemo(() => {
     const m = new Map<CoList, number>();
     for (const l of listOf.values()) m.set(l, (m.get(l) ?? 0) + 1);
     return m;
   }, [listOf]);
-  const rows = useMemo(() => A.companies.filter((c) => listOf.get(c.id) === list), [A.companies, listOf, list]);
+  const byClient = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of companies) if (listOf.get(c.id) === list) m.set(c.c, (m.get(c.c) ?? 0) + 1);
+    return m;
+  }, [companies, listOf, list]);
+  const rows = useMemo(() => companies.filter((c) => listOf.get(c.id) === list), [companies, listOf, list]);
   const ids = useMemo(() => new Set(rows.map((r) => r.id)), [rows]);
   const cts = useMemo(() => A.contacts.filter((k) => ids.has(k.co)), [A.contacts, ids]);
+  const liveFail = live ? Object.entries(live.clients).filter(([c, x]) => !x.ok && (!client || c === client)) as [string, { ok: false; error: string }][] : [];
+  const newN = companies.filter((c) => c.lv).length;
+  // Un cambio de status hecho aquí actualiza también lo leído en vivo
+  const edL: Editing = {
+    ...ed,
+    onSaved: (type, c, hs, st) => {
+      ed.onSaved(type, c, hs, st);
+      if (type === "company") setLive((l) => {
+        const lc = l?.clients[c];
+        return l && lc?.ok ? { ...l, clients: { ...l.clients, [c]: { ok: true, rows: lc.rows.map((r) => (r.hs === hs ? { ...r, st } : r)) } } } : l;
+      });
+    },
+  };
   const meta = CO_LISTS.find((x) => x.id === list)!;
   // Fecha del informe más antiguo de los clientes visibles (los status vienen de ahí)
   const synced = data.sources.filter((s) => A.clients.includes(s.client) && s.syncedAt).map((s) => s.syncedAt!).sort()[0];
@@ -424,11 +479,26 @@ function ListsView({ A, client, ed, data, loading }: { A: NonNullable<ReturnType
           </button>
         ))}
       </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-ink-muted">Cliente:</span>
+        {["", ...clients].map((c) => (
+          <button key={c || "todos"} type="button" onClick={() => setClient(c)}
+            className={`px-3 py-1 rounded-full text-sm border transition ${client === c ? "bg-brand text-white border-brand" : "bg-white hover:bg-black/[0.03]"}`}>
+            {c || "Todos"}{c && byClient.get(c) ? <span className={`ml-1.5 tabular-nums ${client === c ? "text-white/80" : "text-ink-muted"}`}>{fmt(byClient.get(c)!)}</span> : null}
+          </button>
+        ))}
+        <button type="button" onClick={loadLive} disabled={liveLoading} title="Vuelve a leer las empresas desde HubSpot"
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border hover:bg-black/5 disabled:opacity-50">
+          {liveLoading ? <IconLoader2 size={14} className="animate-spin" /> : <IconRefresh size={14} />} {liveLoading ? "Leyendo HubSpot…" : "Releer HubSpot"}
+        </button>
+      </div>
+      {liveErr && <div className="text-sm text-warning-fg bg-warning-bg rounded-lg p-2">No se pudo leer HubSpot en vivo ({liveErr}): se muestra el informe de Pulso ABM.</div>}
+      {liveFail.length > 0 && <div className="text-xs text-ink-muted">{liveFail.map(([c, x]) => <div key={c}>{c}: {x.error}</div>)}</div>}
       <section className="card space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div>
             <h2 className="text-base font-semibold">{meta.label} · {client || "todos los clientes"}</h2>
-            <p className="text-xs text-ink-muted">{meta.hint} Status de HubSpot según el informe de Pulso ABM{synced ? ` (sincronizado ${timeCL(synced)})` : ""}; los cambios que hagas aquí se ven al instante.</p>
+            <p className="text-xs text-ink-muted">{meta.hint} {live ? <>Status leído en vivo de HubSpot ({timeCL(live.at)}){newN > 0 ? `; ${fmt(newN)} empresa${newN === 1 ? "" : "s"} aún no está${newN === 1 ? "" : "n"} en el informe de Pulso (sin contactos ni reuniones hasta el próximo sync)` : ""}.</> : <>Status del informe de Pulso ABM{synced ? ` (sincronizado ${timeCL(synced)})` : ""}{liveLoading ? "; leyendo HubSpot en vivo…" : ""}.</>}</p>
           </div>
           <div role="tablist" className="flex rounded-lg border bg-white p-0.5">
             {([["empresas", `Empresas (${fmt(rows.length)})`], ["contactos", `Contactos (${fmt(cts.length)})`]] as const).map(([v, l]) => (
@@ -438,8 +508,8 @@ function ListsView({ A, client, ed, data, loading }: { A: NonNullable<ReturnType
           </div>
         </div>
         {tab === "empresas"
-          ? <CompaniesTable key={list} rows={rows} flagOf={A.flagOf} showClient={!client} onlyFix={onlyFix} setOnlyFix={setOnlyFix} ed={ed} meetings={A.meetings} />
-          : <ContactsTable key={list} rows={cts} showClient={!client} ed={ed} />}
+          ? <CompaniesTable key={list} rows={rows} flagOf={A.flagOf} showClient={!client} onlyFix={onlyFix} setOnlyFix={setOnlyFix} ed={edL} meetings={A.meetings} />
+          : <ContactsTable key={list} rows={cts} showClient={!client} ed={edL} />}
       </section>
     </div>
   );
@@ -1173,7 +1243,7 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
               return (
                 <Fragment key={r.id}>
                 <tr className={`border-t ${flag ? "bg-warning-bg/30" : ""}`}>
-                  <td className="px-3 py-2 font-medium">{r.n}<div className="text-xs font-normal text-ink-muted">{[r.pais, r.ind].filter(Boolean).join(" · ")}</div></td>
+                  <td className="px-3 py-2 font-medium">{r.n}{r.lv && <span title="Leída en vivo de HubSpot: aún no está en el informe de Pulso ABM" className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-info-bg text-info-fg align-middle">nueva</span>}<div className="text-xs font-normal text-ink-muted">{[r.pais, r.ind].filter(Boolean).join(" · ")}</div></td>
                   {showClient && <td className="px-3 py-2">{r.c}</td>}
                   <td className="px-3 py-2"><StatusCell type="company" rec={r} ed={ed} /></td>
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.asg)}</td>

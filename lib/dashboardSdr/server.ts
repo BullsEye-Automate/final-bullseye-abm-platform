@@ -31,7 +31,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v11";
+const VERSION = "v12";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -303,6 +303,8 @@ export async function buildAll(today: string) {
       const client = nameOfAccount.get(acc) ?? accName;
       const x = slice(existing ? { key, name: existing.name } : { key, name: gp.name }, client);
       x.goals[client] = goalBy.get(`${key}|${acc}`) ?? 0;
+      // Registro del cliente también sin empresas en Pulso (Mis listas lo lee en vivo de HubSpot)
+      if (!x.accts[client]) x.accts[client] = accts[client] ?? { id: acc.split("~")[0], sub: null, edit: false };
     }
   }
 
