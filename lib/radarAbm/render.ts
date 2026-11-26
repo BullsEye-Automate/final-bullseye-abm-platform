@@ -496,17 +496,19 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   // Tramo SII de la empresa (si el HubSpot del cliente lo tiene, ej. Simplex)
   const hasTramo = mtRows.some((m: any) => m.c?.tramo);
   const tramoOf = (m: any) => m.c?.tramo || "Sin tramo";
-  const billCol = 10 + (hasTramo ? 1 : 0) + (hasReconf ? 1 : 0);
+  const billCol = 11 + (hasTramo ? 1 : 0) + (hasReconf ? 1 : 0);
   const billed = bill ? mtRows.filter((m: any) => bill[billingId(m.id)]?.value).length : 0;
   s["reuniones-detalle"] = mtRows.length
-    ? `<div class="ra-sortlist">${bill ? `<p class="note" style="margin-top:0"><b>Por facturar:</b> <span data-ra-billcount>${billed}</span> de ${N(mtRows.length)} reuniones del período. Marca solo interna (no cambia la planilla); el detalle de quién y cuándo al pasar el mouse.</p>` : ""}${mtRows.length > 5 ? listBar("Buscar empresa o contacto…", [2, 3], [
-        { col: 7, all: "Todos los estados", vals: mtRows.map((m: any) => m.st) },
-        { col: 5, all: "Todos los países", vals: mtRows.map(mtTxt.pais) },
-        { col: 8, all: "Todos los orígenes", vals: mtRows.map(mtTxt.org) }, { col: 9, all: "Propuesta / oportunidad", vals: mtRows.map(mtTxt.opp) },
-        ...(hasTramo ? [{ col: 10, all: "Todos los tramos SII", vals: mtRows.map(tramoOf) }] : []),
+    ? `<div class="ra-sortlist">${bill ? `<p class="note" style="margin-top:0"><b>Por facturar:</b> <span data-ra-billcount>${billed}</span> de ${N(mtRows.length)} reuniones del período. Marca solo interna (no cambia la planilla); el detalle de quién y cuándo al pasar el mouse.</p>` : ""}${mtRows.length > 5 ? listBar("Buscar empresa o contacto…", [3, 4], [
+        { col: 8, all: "Todos los estados", vals: mtRows.map((m: any) => m.st) },
+        { col: 6, all: "Todos los países", vals: mtRows.map(mtTxt.pais) },
+        { col: 9, all: "Todos los orígenes", vals: mtRows.map(mtTxt.org) }, { col: 10, all: "Propuesta / oportunidad", vals: mtRows.map(mtTxt.opp) },
+        ...(hasTramo ? [{ col: 11, all: "Todos los tramos SII", vals: mtRows.map(tramoOf) }] : []),
         ...(bill ? [{ col: billCol, all: "Por facturar: todas", vals: ["Sí", "No"] }] : []),
       ], "reuniones") : ""}` + table([
-        { h: "Agendada", f: (m) => dmy(m.agendada), v: (m) => m.agendada || "" }, { h: "Reunión", f: (m) => dmy(m.fecha), v: (m) => m.fecha || "" }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) },
+        { h: "Agendada", f: (m) => dmy(m.agendada), v: (m) => m.agendada || "" }, { h: "Reunión", f: (m) => dmy(m.fecha), v: (m) => m.fecha || "" },
+        // Hora de la reunión (planilla, hora del país de la reunión); pedido de BullsEye 26-nov-2026
+        { h: "Hora", f: (m) => esc(m.hora || "—"), v: (m) => `${m.fecha || ""} ${m.hora || ""}` }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) },
         { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") }, { h: "Cargo", s: 1, f: (m) => esc(m.cargo || m.k?.cargo || "—") },
         { h: "País", s: 1, f: (m) => esc(mtTxt.pais(m)) }, { h: "SDR", s: 1, f: (m) => esc(m.sdr) }, { h: "Estado", f: (m) => esc(m.st) }, { h: "Origen", s: 1, f: (m) => esc(m.org || "—") },
         { h: "Propuesta / oportunidad", s: 1, f: (m) => esc(m.oppv || m.res || "—") },
