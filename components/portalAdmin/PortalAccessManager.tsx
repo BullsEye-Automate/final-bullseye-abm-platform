@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { PARTS, PART_SLUGS } from "@/lib/radarAbm/render";
 import { IconCopy, IconLoader2, IconUserPlus } from "@tabler/icons-react";
 
 // Accesos al portal de clientes (usuarios por cliente). Se usa en
@@ -10,7 +11,14 @@ import { IconCopy, IconLoader2, IconUserPlus } from "@tabler/icons-react";
 // La contraseña temporal se muestra una sola vez.
 
 type PeithoRole = { role: "admin" | "sales_manager"; executiveId: string | null; executiveName: string | null };
-type PortalUserRow = { id: string; client_name: string; email: string; full_name: string | null; is_active: boolean; created_by: string | null; created_at: string; peitho?: PeithoRole };
+// Último acceso a Pulso ABM (lib/portalAccess.ts)
+const fmtDate = (d: string) => new Date(d).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" });
+const daysAgo = (d: string) => (Date.now() - new Date(d).getTime()) / 86_400_000;
+const viewLabel = (slug: string) => { const i = PART_SLUGS.indexOf(slug); return i >= 0 ? PARTS[i][1] : slug; };
+
+type PortalUserRow = { id: string; client_name: string; email: string; full_name: string | null; is_active: boolean; created_by: string | null; created_at: string; peitho?: PeithoRole;
+  last_sign_in_at?: string | null;
+  pulso?: { first_at: string; last_at: string; visits: number; last_view?: string; views?: Record<string, { n: number; last_at: string }> } | null };
 type Executive = { id: string; name: string };
 
 export default function PortalAccessManager({ clientId, clientName }: { clientId: string | null; clientName: string | null }) {
@@ -133,13 +141,14 @@ export default function PortalAccessManager({ clientId, clientName }: { clientId
               <th className="p-3">Usuario</th>
               <th className="p-3">Estado</th>
               {clientId && <th className="p-3" title="Administrador: todo Peitho de su empresa. Sales manager: todo Pulso ABM, pero en Peitho solo sus reuniones (research y feedback), sin Panel de control.">Rol en Peitho</th>}
+              <th className="p-3" title="Último día y hora en que abrió Pulso ABM en su portal, cuántas visitas lleva y la última vista que miró. Se registra desde el 26-nov-2026.">Último acceso a Pulso</th>
               <th className="p-3">Creado</th>
               <th className="p-3"></th>
             </tr>
           </thead>
           <tbody>
             {users?.length === 0 && (
-              <tr><td colSpan={6} className="p-4 text-gray-400">Sin accesos todavía.</td></tr>
+              <tr><td colSpan={7} className="p-4 text-gray-400">Sin accesos todavía.</td></tr>
             )}
             {users?.map((u) => (
               <tr key={u.id} className="border-b border-gray-50 last:border-0">
@@ -182,6 +191,19 @@ export default function PortalAccessManager({ clientId, clientName }: { clientId
                     )}
                   </td>
                 )}
+                <td className="p-3 text-xs">
+                  {u.pulso ? (
+                    <div title={Object.entries(u.pulso.views ?? {}).sort((a, b) => b[1].n - a[1].n).map(([v, x]) => `${viewLabel(v)}: ${x.n}`).join("\n") || undefined}>
+                      <div className={daysAgo(u.pulso.last_at) > 14 ? "text-amber-700 font-medium" : "text-gray-800"}>{fmtDate(u.pulso.last_at)}</div>
+                      <div className="text-gray-500">
+                        {u.pulso.visits} {u.pulso.visits === 1 ? "visita" : "visitas"}{u.pulso.last_view ? ` · ${viewLabel(u.pulso.last_view)}` : ""}
+                      </div>
+                    </div>
+                  ) : (
+                    <span className="text-gray-400">Sin acceso registrado</span>
+                  )}
+                  {u.last_sign_in_at && <div className="text-gray-400 mt-0.5">Último login: {fmtDate(u.last_sign_in_at)}</div>}
+                </td>
                 <td className="p-3 text-xs text-gray-500">{new Date(u.created_at).toLocaleDateString("es-CL")}{u.created_by ? ` · ${u.created_by}` : ""}</td>
                 <td className="p-3 text-right whitespace-nowrap text-xs space-x-3">
                   <button onClick={() => act(u, "reset_password")} className="text-[#251762] hover:underline">Nueva contraseña</button>
