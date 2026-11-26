@@ -15,6 +15,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 import type { LiveResponse } from "@/lib/dashboardSdr/live";
 import { analyze, CO_GROUP_LABEL, CO_LISTS, companyList, FIX_KINDS, type CoList, goalStatus, monthProgress, type CoGroup, type FixKind, type Pace } from "@/lib/dashboardSdr/compute";
 import { STALE_BUSINESS_DAYS } from "@/lib/dashboardSdr/stale";
+import FichaDrawer from "./Ficha";
 
 const nf = new Intl.NumberFormat("es-CL");
 const fmt = (n: number) => nf.format(n);
@@ -1221,6 +1222,7 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
   const [q, setQ] = useState("");
   const [sort, toggle] = useSort({ k: "flag", dir: -1 });
   const [openCo, setOpenCo] = useState<string | null>(null);
+  const [ficha, setFicha] = useState<SdrCompany | null>(null);
   const mtgOf = useMemo(() => {
     const m = new Map<string, SdrMeeting[]>();
     for (const x of meetings) if (x.co) m.set(x.co, [...(m.get(x.co) ?? []), x]);
@@ -1267,7 +1269,9 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
               return (
                 <Fragment key={r.id}>
                 <tr className={`border-t ${flag ? "bg-warning-bg/30" : ""}`}>
-                  <td className="px-3 py-2 font-medium"><HsName name={r.n} hs={r.hs} client={r.c} type="company" ed={ed} />{r.lv && <span title="Leída en vivo de HubSpot: aún no está en el informe de Pulso ABM" className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-info-bg text-info-fg align-middle">nueva</span>}<div className="text-xs font-normal text-ink-muted">{[r.pais, r.ind].filter(Boolean).join(" · ")}</div></td>
+                  <td className="px-3 py-2 font-medium"><HsName name={r.n} hs={r.hs} client={r.c} type="company" ed={ed} />
+                    <button type="button" onClick={() => setFicha(r)} title="Ver historial y registrar notas, actividades y seguimientos"
+                      className="ml-2 align-middle text-[11px] font-medium px-1.5 py-0.5 rounded border border-brand/30 text-brand hover:bg-brand/5">Ficha</button>{r.lv && <span title="Leída en vivo de HubSpot: aún no está en el informe de Pulso ABM" className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-info-bg text-info-fg align-middle">nueva</span>}<div className="text-xs font-normal text-ink-muted">{[r.pais, r.ind].filter(Boolean).join(" · ")}</div></td>
                   {showClient && <td className="px-3 py-2">{r.c}</td>}
                   <td className="px-3 py-2"><StatusCell type="company" rec={r} ed={ed} /></td>
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDay(r.asg)}</td>
@@ -1297,6 +1301,10 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
           </tbody>
         </table>
       </div>
+      {ficha && (
+        <FichaDrawer rec={ficha} acct={ed.accts[ficha.c]} canWrite={ed.can} onClose={() => setFicha(null)}
+          renderStatus={(type, r, done) => <StatusCell type={type} rec={r} ed={{ ...ed, onSaved: (t, c, hs, st) => { ed.onSaved(t, c, hs, st); done(st); } }} />} />
+      )}
     </>
   );
 }
