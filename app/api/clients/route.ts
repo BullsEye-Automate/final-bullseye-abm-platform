@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   let clients = data ?? [];
+  let masterOk = true;
 
   if (onlyActive) {
     try {
@@ -26,10 +27,11 @@ export async function GET(req: NextRequest) {
       });
     } catch {
       // Si la Maestra no se puede leer, devolver todos para no romper la UI
+      masterOk = false;
     }
   }
 
-  return NextResponse.json({ clients });
+  return NextResponse.json({ clients, ...(onlyActive ? { masterOk } : {}) });
 }
 
 export async function POST(req: NextRequest) {
