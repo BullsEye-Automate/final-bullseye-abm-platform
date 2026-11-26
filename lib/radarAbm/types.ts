@@ -75,6 +75,8 @@ export type RadarMeeting = {
   fbk?: 1;                   // el cliente respondió la encuesta de feedback
   pth?: 1;                   // la reunión tiene análisis de Peitho (cliente con Peitho)
   pthp?: number;             // predicción de éxito de Peitho (1–5)
+  shn?: number;              // pantallazos de la reunión (lib/meetingShots.ts)
+  shs?: string;              // lo que dice el cliente en los pantallazos (lectura con IA)
   pthOk?: 0 | 1;             // (solo en la marca "$peitho" del estado en vivo) Peitho respondió
   cal?: number;              // calificación del cliente (1–10)
   prob?: number;             // probabilidad de cierre (0–100)

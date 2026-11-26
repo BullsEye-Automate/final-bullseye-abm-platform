@@ -331,7 +331,7 @@ export const billingId = (id: unknown) => String(id ?? "").replace(/@\d+$/, "");
 export const billingCell = (id: unknown, mk?: { value: boolean; by: string; at: string }) =>
   `<label class="ra-bill" title="${mk ? esc(`${mk.value ? "Marcada" : "Desmarcada"} por ${mk.by} el ${new Date(mk.at).toLocaleString("es-CL", { dateStyle: "short", timeStyle: "short" })}`) : "Marcar por facturar"}"><input type="checkbox" data-ra-bill="${esc(billingId(id))}"${mk?.value ? " checked" : ""}><span>${mk?.value ? "Sí" : "No"}</span></label>`;
 
-export function render(M: Model, mapping?: { label: string; property: string | null }[] | null, opts: { billing?: BillingMarks | null } = {}): Record<string, string> {
+export function render(M: Model, mapping?: { label: string; property: string | null }[] | null, opts: { billing?: BillingMarks | null; shots?: boolean } = {}): Record<string, string> {
   const k = M.kpi, h = M.health, cl = M.cl, C: any[] = M.C, K: any[] = M.K, f = M.fu, rf = M.ref, TODAY: string = M.TODAY;
   const s: Record<string, string> = {};
   const b = barrier(M);
@@ -497,6 +497,8 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   const hasTramo = mtRows.some((m: any) => m.c?.tramo);
   const tramoOf = (m: any) => m.c?.tramo || "Sin tramo";
   const billCol = 11 + (hasTramo ? 1 : 0) + (hasReconf ? 1 : 0);
+  const shotsOn = !!opts.shots && M.source !== "demo";
+  const shotCell = (m: any) => `<button type="button" class="ra-btn ra-shotbtn" data-ra-shots="${esc(billingId(m.id))}" data-ra-shotlbl="${esc(`${m.c?.n ?? m.emp ?? ""} · ${dmy(m.fecha)}`)}" title="${m.shs ? esc(m.shs) : "Ver o subir pantallazos de la reunión"}">📎 ${m.shn ? N(m.shn) : "Subir"}</button>`;
   const billed = bill ? mtRows.filter((m: any) => bill[billingId(m.id)]?.value).length : 0;
   s["reuniones-detalle"] = mtRows.length
     ? `<div class="ra-sortlist">${bill ? `<p class="note" style="margin-top:0"><b>Por facturar:</b> <span data-ra-billcount>${billed}</span> de ${N(mtRows.length)} reuniones del período. Marca solo interna (no cambia la planilla); el detalle de quién y cuándo al pasar el mouse.</p>` : ""}${mtRows.length > 5 ? listBar("Buscar empresa o contacto…", [3, 4], [
@@ -516,11 +518,14 @@ export function render(M: Model, mapping?: { label: string; property: string | n
         // Reconfirmación con el prospecto (solo clientes del piloto, ver lib/reconfirmacion)
         ...(hasReconf ? [{ h: "Reconfirmación", s: 1, f: (m: any) => reconfCell(m), v: (m: any) => (m.rc === 1 ? `1 ${m.rca || ""}` : m.rcp && m.st === "Pendiente" ? "0" : "") }] : []),
         ...(bill ? [{ h: "Por facturar", f: (m: any) => billingCell(m.id, bill[billingId(m.id)]), v: (m: any) => (bill[billingId(m.id)]?.value ? "1" : "0") }] : []),
+        // Pantallazos con comentarios del cliente (vista interna): abre el panel para verlos o subirlos
+        ...(shotsOn ? [{ h: "Pantallazos", f: (m: any) => shotCell(m), v: (m: any) => String(m.shn || 0) }] : []),
       ], mtRows.slice(0, 400), { sort: true }) + `</div><p class="note">${mtRows.length > 400 ? `Se muestran las 400 más recientes de ${N(mtRows.length)}. ` : ""}${M.source === "hubspot" ? "Fuente: planilla de reuniones (Excel de metas)." : ""} Una empresa puede tener varias reuniones.</p>`
     : `<p class="note" style="margin-top:0">Sin reuniones en el período.</p>`;
 
   // §17 Feedback del cliente (encuesta por reunión realizada)
-  const hasFb = (m: any) => !!m.fbk || (M.source === "demo" && m.fb != null);
+  // Pantallazos leídos por IA (m.shs) también cuentan como feedback del cliente
+  const hasFb = (m: any) => !!m.fbk || !!m.shs || (M.source === "demo" && m.fb != null);
   const fbM = (M.held as any[]).filter(hasFb), fbPend = (M.held as any[]).filter((m) => !hasFb(m));
   const avgOf = (a: any[], f: (x: any) => number | null | undefined) => { const v = a.map(f).filter((x): x is number => x != null && Number.isFinite(x)); return v.length ? sum(v, (x) => x) / v.length : null; };
   const shareYes = (a: any[], f: (x: any) => boolean | null | undefined) => { const v = a.filter((x) => f(x) != null); return v.length ? div(cnt(v, (x) => f(x) === true), v.length) : null; };
@@ -532,7 +537,7 @@ export function render(M: Model, mapping?: { label: string; property: string | n
   ${fbM.length ? `<h4 class="subh">Respuestas del cliente</h4>` + table([
     { h: "Reunión", f: (m) => dmy(m.fecha) }, { h: "Empresa", f: (m) => esc(m.c?.n ?? m.emp) }, { h: "Contacto", s: 1, f: (m) => esc(m.k?.n ?? m.ctn ?? "—") },
     { h: "Calificación", n: 1, f: (m) => (m.cal == null ? '<span class="flag">s/i</span>' : `${m.cal}/10`) }, { h: "Empresa calificada", f: (m) => yn(m.icpfit) }, { h: "Contacto calificado", f: (m) => yn(m.okct) },
-    { h: "Propuesta", s: 1, f: (m) => esc(m.prop === "Si" ? "Sí" : m.prop || "—") }, { h: "Prob. cierre", n: 1, f: (m) => (m.prob == null ? "—" : P(m.prob / 100)) }, { h: "Comentarios", s: 1, f: (m) => esc(m.com || (M.source === "demo" ? m.fb : "") || "—") },
+    { h: "Propuesta", s: 1, f: (m) => esc(m.prop === "Si" ? "Sí" : m.prop || "—") }, { h: "Prob. cierre", n: 1, f: (m) => (m.prob == null ? "—" : P(m.prob / 100)) }, { h: "Comentarios", s: 1, f: (m) => [esc(m.com || (M.source === "demo" ? m.fb : "") || ""), m.shs ? `<span class="note">📎 Pantallazo: ${esc(m.shs)}</span>` : ""].filter(Boolean).join("<br>") || "—" },
   ], [...fbM].sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "")).slice(0, 300)) : `<p class="note">Todavía no hay respuestas del cliente en el período.</p>`}`;
 
   // §22 Score de Desempeño SDR (Allo)
