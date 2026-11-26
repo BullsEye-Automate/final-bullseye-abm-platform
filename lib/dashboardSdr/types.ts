@@ -17,6 +17,7 @@ export type SdrCompany = {
   asg: string;         // fecha de asignación (YYYY-MM-DD; sin propiedad en HubSpot, la de creación)
   next?: string;       // fecha de próximo seguimiento
   tr?: 1;              // tiene al menos un llamado (empresa o sus contactos)
+  lv?: 1;              // leída en vivo de HubSpot (Mis listas), aún no está en el informe de Pulso
 };
 
 export type SdrContact = {

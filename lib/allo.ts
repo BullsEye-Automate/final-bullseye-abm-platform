@@ -309,6 +309,18 @@ export async function searchAlloCalls(params: {
   return items;
 }
 
+// Una página de llamadas sin pasar por el caché compartido (Base de contactos lee
+// semanas completas de llamadas: guardarlas en allo_response_cache no sirve).
+export async function searchAlloCallsPage(params: { date_from: string; date_to: string; page: number; direction?: "INBOUND" | "OUTBOUND" }): Promise<{ items: AlloCallItem[]; hasMore: boolean }> {
+  const body: Record<string, unknown> = { type: "CALL", sort: "DATE", page: params.page, size: 100, date_from: params.date_from, date_to: params.date_to };
+  if (params.direction) body.direction = params.direction;
+  const res = await alloFetchRaw("/v2/api/conversations/items/search", { method: "POST", body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(`Allo API error (${res.status}): ${summarizeAlloError(await res.text().catch(() => ""))}`);
+  const d = await res.json();
+  const raw: any[] = d?.data ?? [];
+  return { items: raw.map(toAlloCallItem), hasMore: !!d?.pagination?.has_more && raw.length > 0 };
+}
+
 // Aproximación de respaldo si fetchAlloConnectedCallIds no puede traer la
 // clasificación oficial de Allo (ver más abajo) — NUNCA la fuente primaria,
 // solo para que el reporte no se caiga entero si ese endpoint falla.
