@@ -23,7 +23,7 @@ const KIND_META: Record<FichaKind, { label: string; icon: typeof IconNote; color
 };
 const COMPOSE: { id: Kind; label: string }[] = [
   { id: "note", label: "Nota" }, { id: "whatsapp", label: "WhatsApp" }, { id: "linkedin", label: "LinkedIn" },
-  { id: "email", label: "Correo enviado" }, { id: "task", label: "Próximo seguimiento" },
+  { id: "email", label: "Correo enviado" }, { id: "task", label: "Próximo seguimiento (llega por correo)" },
 ];
 
 const when = (iso: string | null | undefined) => {
@@ -79,8 +79,11 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
       const r = await fetch("/api/sdr/dashboard/ficha", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: acct.id, sub: acct.sub, hs: rec.hs, ...payload }) });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
-      if (j.owner === false) setMsg({ ok: true, t: "Guardado en HubSpot (tu correo no calza con un usuario de HubSpot: quedó sin propietario)." });
-      else setMsg({ ok: true, t: "Guardado en HubSpot." });
+      const parts = ["Guardado en HubSpot."];
+      if (j.owner === false) parts.push("No se encontró al SDR entre los usuarios de ese HubSpot (ni por correo ni por la propiedad SDR): quedó sin propietario.");
+      if (j.mailed) parts.push(`Correo con la invitación de calendario enviado a ${j.mailed}.`);
+      if (j.mailError) parts.push(`No se pudo enviar el correo (${j.mailError}).`);
+      setMsg({ ok: !j.mailError, t: parts.join(" ") });
       await load();
       return true;
     } catch (e) { setMsg({ ok: false, t: (e as Error).message }); return false; } finally { setSaving(false); }
