@@ -407,11 +407,15 @@ export default function DashboardSdrPage() {
 // empresas del SDR por etapa, con el status vigente del informe de Pulso ABM
 // más los cambios hechos desde el dashboard.
 function ListsView({ A, sdrKey, clients, client, setClient, ed, data, loading }: { A: NonNullable<ReturnType<typeof analyze>>; sdrKey: string; clients: string[]; client: string; setClient: (c: string) => void; ed: Editing; data: SdrDashboardResponse; loading: boolean }) {
-  const [list, setList] = useState<CoList>(() => {
-    if (typeof window === "undefined") return "asignadas";
-    const l = new URLSearchParams(window.location.search).get("lista");
-    return (CO_LISTS.some((x) => x.id === l) ? l : "asignadas") as CoList;
+  // Listas elegidas (se pueden combinar, como el filtro de status de HubSpot); ?lista=asignadas,en_gestion
+  const [sel, setSel] = useState<CoList[]>(() => {
+    if (typeof window === "undefined") return ["asignadas"];
+    const l = (new URLSearchParams(window.location.search).get("lista") ?? "").split(",").filter((x) => CO_LISTS.some((c) => c.id === x)) as CoList[];
+    return l.length ? l : ["asignadas"];
   });
+  const toggle = (id: CoList) => setSel((p) => (p.includes(id) ? (p.length > 1 ? p.filter((x) => x !== id) : p) : CO_LISTS.map((c) => c.id).filter((x) => x === id || p.includes(x))));
+  const allSel = sel.length === CO_LISTS.length;
+  const list = sel.join(",");
   const [tab, setTab] = useState<"empresas" | "contactos">("empresas");
   const [onlyFix, setOnlyFix] = useState(false);
   // Lectura en vivo de HubSpot (el informe de Pulso es del último sync)
@@ -458,10 +462,10 @@ function ListsView({ A, sdrKey, clients, client, setClient, ed, data, loading }:
   }, [listOf]);
   const byClient = useMemo(() => {
     const m = new Map<string, number>();
-    for (const c of companies) if (listOf.get(c.id) === list) m.set(c.c, (m.get(c.c) ?? 0) + 1);
+    for (const c of companies) if (sel.includes(listOf.get(c.id)!)) m.set(c.c, (m.get(c.c) ?? 0) + 1);
     return m;
-  }, [companies, listOf, list]);
-  const rows = useMemo(() => companies.filter((c) => listOf.get(c.id) === list), [companies, listOf, list]);
+  }, [companies, listOf, sel]);
+  const rows = useMemo(() => companies.filter((c) => sel.includes(listOf.get(c.id)!)), [companies, listOf, sel]);
   const ids = useMemo(() => new Set(rows.map((r) => r.id)), [rows]);
   const cts = useMemo(() => A.contacts.filter((k) => ids.has(k.co)), [A.contacts, ids]);
   const liveFail = live ? Object.entries(live.clients).filter(([c, x]) => !x.ok && (!client || c === client)) as [string, { ok: false; error: string }][] : [];
@@ -477,16 +481,21 @@ function ListsView({ A, sdrKey, clients, client, setClient, ed, data, loading }:
       });
     },
   };
-  const meta = CO_LISTS.find((x) => x.id === list)!;
+  const metas = CO_LISTS.filter((x) => sel.includes(x.id));
+  const meta = { label: allSel ? "Todas las empresas" : metas.map((m) => m.label).join(" + "), hint: metas.length === 1 ? metas[0].hint : "" };
   // Fecha del informe más antiguo de los clientes visibles (los status vienen de ahí)
   const synced = data.sources.filter((s) => A.clients.includes(s.client) && s.syncedAt).map((s) => s.syncedAt!).sort()[0];
   return (
     <div className={loading ? "opacity-50 pointer-events-none space-y-4" : "space-y-4"}>
+      <div className="flex items-center gap-2 text-xs text-ink-muted flex-wrap">
+        <span>Haz clic en una o varias etapas para combinarlas.</span>
+        <button type="button" onClick={() => setSel(allSel ? ["asignadas"] : CO_LISTS.map((c) => c.id))} className="text-brand hover:underline">{allSel ? "Solo Asignadas" : `Ver todas (${fmt(companies.length)})`}</button>
+      </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {CO_LISTS.map((l) => (
-          <button key={l.id} type="button" onClick={() => setList(l.id)} title={l.hint}
-            className={`text-left rounded-lg border p-3 transition ${list === l.id ? "border-brand bg-brand/5 ring-1 ring-brand" : "bg-white hover:bg-black/[0.03]"}`}>
-            <div className="text-xs text-ink-muted">{l.label}</div>
+          <button key={l.id} type="button" onClick={() => toggle(l.id)} title={l.hint} aria-pressed={sel.includes(l.id)}
+            className={`text-left rounded-lg border p-3 transition ${sel.includes(l.id) ? "border-brand bg-brand/5 ring-1 ring-brand" : "bg-white hover:bg-black/[0.03]"}`}>
+            <div className="text-xs text-ink-muted flex items-center gap-1.5"><input type="checkbox" readOnly checked={sel.includes(l.id)} className="pointer-events-none" tabIndex={-1} />{l.label}</div>
             <div className="text-2xl font-semibold tabular-nums">{fmt(counts.get(l.id) ?? 0)}</div>
           </button>
         ))}
