@@ -89,7 +89,7 @@ export const FIX_KINDS: { id: FixKind; label: string; help: string }[] = [
   { id: "reu", label: "Reuniones por actualizar", help: "Reuniones en Pendiente con fecha ya pasada en la planilla de reuniones." },
   { id: "hs", label: "Reunión sin status en HubSpot", help: "Reunión agendada en los últimos 30 días, pero la empresa no está en Reunión agendada en HubSpot." },
 ];
-export type FixItem = { kind: FixKind; coId: string; who: string; sub: string; client: string; what: string; since: string; todo: string; sort: number };
+export type FixItem = { kind: FixKind; coId: string; ctHs?: string; who: string; sub: string; client: string; what: string; since: string; todo: string; sort: number };
 
 export type Analysis = ReturnType<typeof analyze>;
 
@@ -121,7 +121,7 @@ export function analyze(slice: SdrSlice, today: string, client = "") {
   }
   for (const k of contacts) {
     if (!k.next || k.next >= today || isClosedContact(k)) continue;
-    fixes.push({ kind: "seg", coId: k.co, who: k.n, sub: [k.cargo, k.con].filter(Boolean).join(" · "), client: k.c, what: `Próxima actividad del contacto (${k.st})`, since: `Vencido el ${shortDay(k.next)}`, todo: "Llamar y reagendar el seguimiento", sort: Number(k.next.replace(/-/g, "")) });
+    fixes.push({ kind: "seg", coId: k.co, ctHs: k.hs, who: k.n, sub: [k.cargo, k.con].filter(Boolean).join(" · "), client: k.c, what: `Próxima actividad del contacto (${k.st})`, since: `Vencido el ${shortDay(k.next)}`, todo: "Llamar y reagendar el seguimiento", sort: Number(k.next.replace(/-/g, "")) });
   }
   const since30 = addDays(today, -30);
   for (const m of meetings) {

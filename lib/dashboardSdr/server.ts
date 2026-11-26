@@ -5,7 +5,7 @@ import { buildClientDirectory } from "@/lib/celulasSdr/server/clientAccounts";
 import { chileToday } from "@/lib/celulasSdr/calendar";
 import { readMonthCache, writeMonthCache } from "@/lib/celulasSdr/cache";
 import { isExcludedSdr } from "@/lib/celulasSdr/engine";
-import { loadAllDatasets, loadClientSettings, universeMode } from "@/lib/radarAbm/server/store";
+import { hubspotTokenFor, loadAllDatasets, loadClientSettings, universeMode } from "@/lib/radarAbm/server/store";
 import { canEditMeetings } from "@/lib/celulasSdr/editors";
 import { canMarkComisionable, loadBillingMarks } from "./billing";
 import { loadStatusOverrides, overrideId, type StatusOverride } from "./statusEdit";
@@ -31,7 +31,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v12";
+const VERSION = "v13";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -46,6 +46,20 @@ function daysBefore(day: string, n: number): string {
   const d = new Date(`${day}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString().slice(0, 10);
+}
+
+// Cuenta de HubSpot de BullsEye (links a app.hubspot.com/contacts/<cuenta>/record/…)
+const BULLSEYE_PORTAL = Number(process.env.HUBSPOT_PORTAL_ID) || 25153925;
+// Cuenta del HubSpot propio de un cliente (con su token; sin dato, sin link)
+async function clientPortalId(clientId: string): Promise<number | null> {
+  try {
+    const token = await hubspotTokenFor(clientId, "client");
+    if (!token) return null;
+    const r = await fetch("https://api.hubapi.com/account-info/v3/details", { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return null;
+    const id = Number((await r.json())?.portalId);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch { return null; }
 }
 
 export async function buildAll(today: string) {
@@ -149,6 +163,8 @@ export async function buildAll(today: string) {
     try { sets = await loadAllDatasets(cl.id); } catch { missing.push(cl.name); continue; }
     const settings = await loadClientSettings(cl.id).catch(() => null);
     const editable = !!settings && settings.hubspot_source !== "client" && universeMode(settings, cl.name) !== "client";
+    // Cuenta de HubSpot para los links a cada registro: la de BullsEye o la propia del cliente
+    const portal = settings?.hubspot_source === "client" ? await clientPortalId(cl.id) : BULLSEYE_PORTAL;
     for (const { sub, dataset, syncedAt } of sets) {
       const client = sub || cl.name;
       curClient = client;
@@ -156,7 +172,7 @@ export async function buildAll(today: string) {
       const pre = `a${acct++}`;
       sources.push({ client, syncedAt });
       const d = dataset.client;
-      accts[client] = { id: cl.id, sub: sub ?? null, edit: editable };
+      accts[client] = { id: cl.id, sub: sub ?? null, edit: editable, ...(portal ? { portal } : {}) };
       // Cambios de status hechos desde el dashboard después de la última sincronización
       const ov = (type: "company" | "contact", hsId: string | number, st: string) => {
         const o = overrides.get(overrideId(cl.id, sub ?? null, type, String(hsId)));
@@ -304,7 +320,7 @@ export async function buildAll(today: string) {
       const x = slice(existing ? { key, name: existing.name } : { key, name: gp.name }, client);
       x.goals[client] = goalBy.get(`${key}|${acc}`) ?? 0;
       // Registro del cliente también sin empresas en Pulso (Mis listas lo lee en vivo de HubSpot)
-      if (!x.accts[client]) x.accts[client] = accts[client] ?? { id: acc.split("~")[0], sub: null, edit: false };
+      if (!x.accts[client]) x.accts[client] = accts[client] ?? { id: acc.split("~")[0], sub: null, edit: false, portal: BULLSEYE_PORTAL };
     }
   }
 
