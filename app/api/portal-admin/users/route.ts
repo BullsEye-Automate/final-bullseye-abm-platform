@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { PORTAL_ROLE } from "@/lib/portalAuth";
 import { generateTempPassword, getReviewerEmail } from "@/lib/portalAdmin";
 import { readPeithoRole } from "@/lib/peithoPortalRole";
+import { loadPortalAccess } from "@/lib/portalAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -20,16 +21,20 @@ export async function GET(req: NextRequest) {
 
   // Rol de Peitho de cada usuario (app_metadata de Supabase Auth)
   const roles = new Map<string, ReturnType<typeof readPeithoRole>>();
+  const signIns = new Map<string, string | null>();
   const rows = data ?? [];
   for (let i = 0; i < rows.length; i += 10) {
     await Promise.all(rows.slice(i, i + 10).map(async (u) => {
       const { data: au } = await db.auth.admin.getUserById(u.auth_user_id).catch(() => ({ data: null as any }));
       roles.set(u.id, readPeithoRole(au?.user?.app_metadata as Record<string, unknown>));
+      signIns.set(u.id, au?.user?.last_sign_in_at ?? null);
     }));
   }
+  // Último acceso a Pulso ABM (lib/portalAccess.ts) y último inicio de sesión
+  const access = await loadPortalAccess(rows.map((u) => u.id)).catch(() => new Map());
   const users = rows.map((u) => {
     const c = Array.isArray(u.clients) ? u.clients[0] : u.clients;
-    return { ...u, auth_user_id: undefined, clients: undefined, client_name: (c as { name: string } | null)?.name ?? "—", peitho: roles.get(u.id) ?? readPeithoRole(null) };
+    return { ...u, auth_user_id: undefined, clients: undefined, client_name: (c as { name: string } | null)?.name ?? "—", peitho: roles.get(u.id) ?? readPeithoRole(null), last_sign_in_at: signIns.get(u.id) ?? null, pulso: access.get(u.id) ?? null };
   });
   return NextResponse.json({ users });
 }

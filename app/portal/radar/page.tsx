@@ -39,6 +39,11 @@ export default function PortalRadarPage() {
   const [sub, setSub] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
 
+  // Registra qué vista abre el cliente (último acceso a Pulso, lib/portalAccess.ts)
+  useEffect(() => {
+    fetch("/api/portal/radar/visto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vista: slug }) }).catch(() => {});
+  }, [slug]);
+
   useEffect(() => {
     fetch("/api/portal/radar", { cache: "no-store" })
       .then(async (r) => {
