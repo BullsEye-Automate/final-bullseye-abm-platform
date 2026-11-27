@@ -77,7 +77,8 @@ Todas las rutas internas (todo excepto los links mágicos de abajo) requieren se
   - `/feedback-cliente/[token]`, `/encuesta/[token]`, `/forms/icp/[token]`, `/review/empresas/[token]`, `/revision/[token]` — links que se comparten con clientes externos.
   - `/api/cron/*` (Vercel Cron, valida `CRON_SECRET`) y los webhooks entrantes de Clay (`x-webhook-secret`).
 - Antes de agregar una ruta nueva a esa lista blanca, confirmar que valida un token o secreto propio — si no, queda expuesta sin sesión.
-- `/api/clients` solo es público como `GET` exacto (lo usa `/chat`). Las subrutas `/api/clients/[id]/*` (config con API keys de Lemlist, contexto IA, borrar cliente…) requieren sesión.
+- **Agente de contenido** (`/chat`, `/chat-v2`): requiere sesión (27-nov-2026). Antes la página `/chat` y las APIs `/api/agente-contenido`, `/api/agente-contenido-v2`, `/api/hubspot/contact-search`, `/api/hubspot/contact-meetings`, `/api/allo/contact-calls` y `/api/training/segments` estaban en la lista pública sin token propio: cualquiera con la URL gastaba IA y sacaba correo y teléfono de prospectos. No volver a agregarlas; si se necesita un uso externo, validar un secreto propio en un header.
+- `/api/clients` solo es público como `GET` exacto (lo usaba `/chat` sin sesión; se dejó igual). Las subrutas `/api/clients/[id]/*` (config con API keys de Lemlist, contexto IA, borrar cliente…) requieren sesión.
 - **Usuarios cliente** (portal): tienen `app_metadata.role = "client"` y el middleware los confina a `/portal` y `/api/portal`. Ver sección "Portal de clientes".
 
 ---

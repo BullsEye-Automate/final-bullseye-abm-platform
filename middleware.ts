@@ -13,7 +13,8 @@ const PUBLIC_PAGE_PREFIXES = [
   "/review/empresas",
   "/revision",
   "/oportunidades/resumen-feedback/compartido",
-  "/chat",
+  // /chat y /chat-v2 (agente de contenido SDR) requieren sesión: llaman a IA
+  // y leen contactos de HubSpot / llamadas de Allo (nov-2026).
 ];
 
 // Rutas de API públicas: cada una valida su propio token o secreto de webhook
@@ -30,13 +31,10 @@ const PUBLIC_API_PREFIXES = [
   "/api/clay/scored-contacts",
   "/api/test-debug", // endpoint de diagnóstico
   "/api/admin/debug-ai-usage", // endpoint de debug para auditar ai_usage_log
-  "/api/agente-contenido",    // agente de contenido SDR — accesible desde /chat sin sesión
-  "/api/agente-contenido-v2", // V2 del agente (beta interna) — accesible desde /chat-v2 sin sesión
-  "/api/hubspot/contact-search",   // búsqueda de contactos HubSpot — usada por /chat-v2
-  "/api/hubspot/contact-meetings", // reuniones HubSpot del contacto — usada por /chat-v2
   "/api/auth/gmail/callback",      // callback OAuth Google — Google redirige sin sesión
-  "/api/allo/contact-calls",  // llamadas Allo por teléfono — usada por /chat-v2
-  "/api/training/segments",   // segmentos de estilo — requeridos por /chat sin sesión
+  // NO públicas (requieren sesión): /api/agente-contenido(-v2), /api/hubspot/contact-search,
+  // /api/hubspot/contact-meetings, /api/allo/contact-calls y /api/training/* — gastan IA y
+  // devuelven datos de prospectos (correo, teléfono, llamadas) sin token propio.
   "/api/centro/mcp",          // conector MCP del Centro de prospección — valida CENTRO_MCP_SECRET en la URL
 ];
 
@@ -58,8 +56,8 @@ function isPublicPath(pathname: string, method: string): boolean {
   if (/^\/api\/resultados-compartidos\/[^/]+/.test(pathname)) {
     return true;
   }
-  // Solo la lista de clientes (GET exacto) es pública porque la usa /chat
-  // sin sesión. Las subrutas /api/clients/[id]/* (config con API keys de
+  // Solo la lista de clientes (GET exacto) es pública: la usaba /chat sin
+  // sesión (hoy /chat requiere login; se mantiene igual por ahora). Las subrutas /api/clients/[id]/* (config con API keys de
   // Lemlist, contexto IA, borrar cliente…) requieren sesión.
   if (pathname === "/api/clients" && method === "GET") {
     return true;
