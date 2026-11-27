@@ -22,7 +22,7 @@ const BODY_MAX = 1200;
 
 export type FichaKind = "note" | "call" | "email" | "whatsapp" | "linkedin" | "comm" | "task" | "meeting";
 export type FichaItem = {
-  id: string; kind: FichaKind; at: string | null; owner: string | null; contacts: string[];
+  id: string; kind: FichaKind; at: string | null; owner: string | null; contacts: string[]; ctIds: string[];
   title: string; body: string; done?: boolean; due?: string | null; dir?: string | null; outcome?: string | null;
 };
 export type FichaContact = { hs: string; n: string; cargo: string; st: string | null; ph: boolean; ml: boolean; lk: boolean };
@@ -155,8 +155,9 @@ export async function loadFicha(clientId: string, sub: string | null, hsCompanyI
     const rows = await batchRead(t, [...m.keys()].slice(0, 300), ENG_PROPS[t], token).catch(() => []);
     for (const r of rows) {
       const p = r.properties;
-      const cts = [...(m.get(r.id) ?? [])].map((c) => ctName.get(c)).filter(Boolean) as string[];
-      const base = { id: `${t}:${r.id}`, at: p.hs_timestamp ?? null, owner: p.hubspot_owner_id ? ownerName.get(p.hubspot_owner_id) ?? null : null, contacts: cts };
+      const ctIds = [...(m.get(r.id) ?? [])];
+      const cts = ctIds.map((c) => ctName.get(c)).filter(Boolean) as string[];
+      const base = { id: `${t}:${r.id}`, at: p.hs_timestamp ?? null, owner: p.hubspot_owner_id ? ownerName.get(p.hubspot_owner_id) ?? null : null, contacts: cts, ctIds };
       if (t === "notes") items.push({ ...base, kind: "note", title: "Nota", body: cut(strip(p.hs_note_body)) });
       else if (t === "calls") {
         const typ = normLabel(p.hs_activity_type ?? "");
