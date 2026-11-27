@@ -25,6 +25,7 @@ type ClientContextValue = {
   // Ids de los clientes con Status Cliente = Activo en la Maestra (null = aún
   // no se sabe o no se pudo leer: se muestran todos). Lo usa el selector del menú.
   activeIds: Set<string> | null;
+  activeReady: boolean;      // ya se consultó la Maestra (con o sin éxito)
 };
 
 const ClientContext = createContext<ClientContextValue>({
@@ -33,6 +34,7 @@ const ClientContext = createContext<ClientContextValue>({
   setCurrentClient: () => {},
   loading: true,
   activeIds: null,
+  activeReady: false,
 });
 
 export function ClientProvider({ children }: { children: ReactNode }) {
@@ -40,6 +42,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   const [currentClient, setCurrentClientState] = useState<ClientSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeIds, setActiveIds] = useState<Set<string> | null>(null);
+  const [activeReady, setActiveReady] = useState(false);
 
   useEffect(() => {
     fetch("/api/clients")
@@ -65,7 +68,8 @@ export function ClientProvider({ children }: { children: ReactNode }) {
       .then((j: { clients?: ClientSummary[]; masterOk?: boolean } | null) => {
         if (j?.clients?.length && j.masterOk !== false) setActiveIds(new Set(j.clients.map((c) => c.id)));
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setActiveReady(true));
   }, []);
 
   function setCurrentClient(client: ClientSummary) {
@@ -74,7 +78,7 @@ export function ClientProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <ClientContext.Provider value={{ clients, currentClient, setCurrentClient, loading, activeIds }}>
+    <ClientContext.Provider value={{ clients, currentClient, setCurrentClient, loading, activeIds, activeReady }}>
       {children}
     </ClientContext.Provider>
   );
