@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Vercel Cron (lunes de madrugada, ver vercel.json): deja calculados los contactos
+// Vercel Cron (cada 30 min, ver vercel.json; salta los clientes ya calculados esta semana): deja calculados los contactos
 // receptivos de cada cliente activo en la Maestra para la semana. Cada corrida
 // sigue con los que faltan (de a uno, hasta ~4 min). ?client_id= uno solo.
 const weekKey = () => { const d = new Date(); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day); return d.toISOString().slice(0, 10); };
