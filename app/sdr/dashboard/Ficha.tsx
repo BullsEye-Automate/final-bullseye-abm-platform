@@ -37,8 +37,9 @@ const tomorrow = () => {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Santiago" }).format(d);
 };
 
-export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus }: {
+export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus, focus }: {
   rec: Rec; acct: Acct | undefined; canWrite: boolean; onClose: () => void;
+  focus?: { hs: string; n: string };   // ficha abierta desde un contacto: historial y registro enfocados en él
   renderStatus: (type: "company" | "contact", r: { c: string; hs: string; st: string }, onSaved: (st: string) => void) => React.ReactNode;
 }) {
   const [data, setData] = useState<Ficha | null>(null);
@@ -47,7 +48,8 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
   const [kind, setKind] = useState<Kind>("note");
   const [body, setBody] = useState("");
   const [subject, setSubject] = useState("");
-  const [contact, setContact] = useState("");
+  const [contact, setContact] = useState(focus?.hs ?? "");
+  const [onlyCt, setOnlyCt] = useState(!!focus);
   const [due, setDue] = useState(`${tomorrow()}T09:30`);
   const [taskType, setTaskType] = useState<"CALL" | "TODO">("CALL");
   const [saving, setSaving] = useState(false);
@@ -96,7 +98,9 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
   const writable = canWrite && !!data?.writable;
   const portal = acct?.portal;
   const hsLink = (type: "0-1" | "0-2", id: string) => (portal ? `https://app.hubspot.com/contacts/${portal}/record/${type}/${id}` : null);
-  const items = (data?.items ?? []).filter((i) => !filter || i.kind === filter || (filter === "comm" && (i.kind === "whatsapp" || i.kind === "linkedin")));
+  const ofCt = (i: FichaItem) => !onlyCt || !focus || (i.ctIds ?? []).includes(focus.hs);
+  const items = (data?.items ?? []).filter((i) => ofCt(i) && (!filter || i.kind === filter || (filter === "comm" && (i.kind === "whatsapp" || i.kind === "linkedin"))));
+  const tasks = (data?.tasks ?? []).filter(ofCt);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={`Ficha de ${rec.n}`}>
@@ -104,7 +108,7 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
       <aside className="relative w-full max-w-2xl h-full bg-[#F7F6FB] shadow-xl overflow-y-auto">
         <header className="sticky top-0 z-10 bg-white border-b px-5 py-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-xs text-ink-muted">{rec.c} · ficha de la empresa</div>
+            <div className="text-xs text-ink-muted">{rec.c} · {focus ? "ficha del contacto" : "ficha de la empresa"}</div>
             <h2 className="text-lg font-semibold truncate flex items-center gap-1.5">
               {data?.company.n ?? rec.n}
               {hsLink("0-2", rec.hs) && <a href={hsLink("0-2", rec.hs)!} target="_blank" rel="noopener noreferrer" title="Abrir en HubSpot" className="text-brand"><IconExternalLink size={16} /></a>}
@@ -118,6 +122,12 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
         </header>
 
         <div className="p-5 space-y-4">
+          {focus && (
+            <div className="flex items-center justify-between gap-2 flex-wrap rounded-lg border bg-white px-3 py-2 text-sm">
+              <span>Contacto: <b>{hsLink("0-1", focus.hs) ? <a href={hsLink("0-1", focus.hs)!} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">{focus.n}</a> : focus.n}</b></span>
+              <button type="button" onClick={() => setOnlyCt(!onlyCt)} className="text-xs text-brand hover:underline">{onlyCt ? "Ver toda la empresa" : `Solo ${focus.n}`}</button>
+            </div>
+          )}
           {err && <div className="text-sm text-danger-fg bg-danger-bg rounded-lg p-3">{err}</div>}
           {loading && !data && <div className="flex items-center gap-2 text-sm text-ink-muted py-8 justify-center"><IconLoader2 size={16} className="animate-spin" /> Leyendo la empresa en HubSpot…</div>}
 
@@ -140,6 +150,7 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
                       <label className="flex flex-col gap-1 text-xs text-ink-muted">Contacto (opcional)
                         <select className="input" value={contact} onChange={(e) => setContact(e.target.value)}>
                           <option value="">Solo la empresa</option>
+                          {focus && !data.contacts.some((c) => c.hs === focus.hs) && <option value={focus.hs}>{focus.n}</option>}
                           {data.contacts.map((c) => <option key={c.hs} value={c.hs}>{c.n}{c.cargo ? ` · ${c.cargo}` : ""}</option>)}
                         </select>
                       </label>
@@ -176,9 +187,9 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
 
               {/* Seguimientos pendientes */}
               <section className="card space-y-2">
-                <h3 className="text-sm font-semibold">Seguimientos pendientes ({data.tasks.length})</h3>
-                {!data.tasks.length && <p className="text-sm text-ink-muted">Sin seguimientos pendientes. Agenda el próximo en «Próximo seguimiento».</p>}
-                {data.tasks.map((t) => (
+                <h3 className="text-sm font-semibold">Seguimientos pendientes ({tasks.length})</h3>
+                {!tasks.length && <p className="text-sm text-ink-muted">Sin seguimientos pendientes. Agenda el próximo en «Próximo seguimiento».</p>}
+                {tasks.map((t) => (
                   <div key={t.id} className={`flex items-start gap-3 rounded-lg border p-2.5 ${isPast(t.due) ? "border-warning-bg bg-warning-bg/30" : "bg-white"}`}>
                     <IconChecklist size={16} className="mt-0.5 text-warning-fg shrink-0" />
                     <div className="min-w-0 flex-1">
@@ -213,7 +224,7 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
               {/* Historial */}
               <section className="card space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <h3 className="text-sm font-semibold">Historial ({data.items.length})</h3>
+                  <h3 className="text-sm font-semibold">Historial ({items.length})</h3>
                   <select className="input text-sm py-1" value={filter} onChange={(e) => setFilter(e.target.value as typeof filter)} aria-label="Filtrar historial">
                     <option value="">Todo</option><option value="call">Llamadas</option><option value="note">Notas</option><option value="email">Correos</option>
                     <option value="whatsapp">WhatsApp</option><option value="linkedin">LinkedIn</option><option value="meeting">Reuniones</option><option value="task">Tareas hechas</option>

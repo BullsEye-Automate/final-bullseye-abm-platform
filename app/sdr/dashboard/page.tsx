@@ -1311,6 +1311,7 @@ function CompaniesTable({ rows, flagOf, showClient, onlyFix, setOnlyFix, ed, mee
 
 function ContactsTable({ rows, showClient, ed }: { rows: SdrContact[]; showClient: boolean; ed: Editing }) {
   const [status, setStatus] = useState("");
+  const [ficha, setFicha] = useState<SdrContact | null>(null);
   const [q, setQ] = useState("");
   const [sort, toggle] = useSort({ k: "con", dir: 1 });
   const list = useMemo(() => {
@@ -1335,7 +1336,9 @@ function ContactsTable({ rows, showClient, ed }: { rows: SdrContact[]; showClien
           <tbody>
             {list.slice(0, MAX_ROWS).map((r) => (
               <tr key={r.id} className="border-t">
-                <td className="px-3 py-2 font-medium"><HsName name={r.n} hs={r.hs} client={r.c} type="contact" ed={ed} /></td>
+                <td className="px-3 py-2 font-medium"><HsName name={r.n} hs={r.hs} client={r.c} type="contact" ed={ed} />
+                  <button type="button" onClick={() => setFicha(r)} title="Ver el historial del contacto y registrar notas, actividades y seguimientos"
+                    className="ml-2 align-middle text-[11px] font-medium px-1.5 py-0.5 rounded border border-brand/30 text-brand hover:bg-brand/5">Ficha</button></td>
                 <td className="px-3 py-2">{r.cargo || "—"}</td>
                 <td className="px-3 py-2">{r.con ? <HsName name={r.con} hs={r.co.split(":").pop()} client={r.c} type="company" ed={ed} /> : "—"}</td>
                 {showClient && <td className="px-3 py-2">{r.c}</td>}
@@ -1348,6 +1351,11 @@ function ContactsTable({ rows, showClient, ed }: { rows: SdrContact[]; showClien
           </tbody>
         </table>
       </div>
+      {ficha && (
+        <FichaDrawer rec={{ c: ficha.c, hs: ficha.co.split(":").pop() ?? "", n: ficha.con }} focus={{ hs: ficha.hs, n: ficha.n }}
+          acct={ed.accts[ficha.c]} canWrite={ed.can} onClose={() => setFicha(null)}
+          renderStatus={(type, r, done) => <StatusCell type={type} rec={r} ed={{ ...ed, onSaved: (t, c, hs, st) => { ed.onSaved(t, c, hs, st); done(st); } }} />} />
+      )}
     </>
   );
 }
