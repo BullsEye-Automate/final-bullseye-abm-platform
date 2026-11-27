@@ -47,7 +47,12 @@ export type ClientReceptivos = {
 
 const norm = (s: string | null | undefined) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const compact = (s: string | null | undefined) => norm(s).replace(/ /g, "");
-const weekKey = () => { const d = new Date(); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day); return d.toISOString().slice(0, 10); };
+// Semana de domingo a sábado (hora de Chile): el cálculo semanal corre el domingo
+export const weekKey = () => {
+  const d = new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago" }).format(new Date()) + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  return d.toISOString().slice(0, 10);
+};
 
 // ¿El contacto ya es de este cliente? (reunión / respuesta por este cliente o «Cliente BullsEye» = cliente)
 function belongsTo(p: ReceptivePerson, clientId: string, clientName: string) {
