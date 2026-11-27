@@ -34,7 +34,16 @@ const PHONE_PROPS: { name: string; label: string }[] = [
   { name: "bullseye_telefono_lusha", label: "Lusha" },
   { name: "phone_4", label: "Teléfono 4" },
   { name: "hs_whatsapp_phone_number", label: "WhatsApp" },
+  // Campos antiguos o paralelos para lo mismo (revisados 27-nov-2026)
+  { name: "numero_de_telefono_2", label: "Teléfono 2" },
+  { name: "phone_3", label: "Teléfono 3" },
+  { name: "phone_5", label: "Teléfono 5" },
+  { name: "telefono_lusha", label: "Lusha" },
+  { name: "telefono_lusha_2", label: "Lusha" },
+  { name: "bullseye_telefono_lemlist", label: "Lemlist" },
 ];
+const EXTRA_EMAIL = ["correo_secundario"];
+const EXTRA_LINKEDIN = ["url_linkedin_bullseye", "linkedin_url_sales_nav"];
 
 export type FitBand = "calza" | "parcial" | "no_calza" | "sin_cargo" | "sin_icp";
 export type CargaContact = {
@@ -137,7 +146,7 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
   }
   const props = Array.from(new Set([
     "firstname", "lastname", "jobtitle", "company", "email", "hs_linkedin_url", "associatedcompanyid", "createdate",
-    ...phoneProps.map((p) => p.name), ...(statusProp ? [statusProp] : []), ...(has("num_contacted_notes") ? ["num_contacted_notes"] : []),
+    ...phoneProps.map((p) => p.name), ...[...EXTRA_EMAIL, ...EXTRA_LINKEDIN].filter(has), ...(statusProp ? [statusProp] : []), ...(has("num_contacted_notes") ? ["num_contacted_notes"] : []),
   ]));
   const range = (a: Date, b: Date) => [{ filters: [...base, { propertyName: "createdate", operator: "BETWEEN", value: String(a.getTime()), highValue: String(b.getTime()) }] }];
   const histTo = new Date(to.getTime() - HISTORY_TO_DAYS * 86400_000);
@@ -185,7 +194,9 @@ async function buildReport(clientId: string, from: Date, to: Date): Promise<Carg
       created, day: created ? chileDay(created) : "",
       fit, band: bandOf(fit, title, hasIcp), role: sc?.buying_role ?? null, reason: sc?.reason ?? "",
       phones: nums.size, phoneSources: Array.from(new Set(Array.from(nums.values()).flat())),
-      lemlist: !!digits(p.telefono_lemlist), email: !!p.email, linkedin: !!p.hs_linkedin_url, hasCompany: !!p.associatedcompanyid,
+      lemlist: !!digits(p.telefono_lemlist) || !!digits(p.bullseye_telefono_lemlist),
+      email: [p.email, ...EXTRA_EMAIL.map((k) => p[k])].some((v) => /@/.test(v ?? "")),
+      linkedin: [p.hs_linkedin_url, ...EXTRA_LINKEDIN.map((k) => p[k])].some((v) => /linkedin\.com/i.test(v ?? "")), hasCompany: !!p.associatedcompanyid,
       status, contacted: isContacted(status), positive: isPositive(status), meeting: isMeeting(status),
       companyId: p.associatedcompanyid || null,
       returned: returnedOf(status),

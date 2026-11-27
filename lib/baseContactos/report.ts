@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase";
 import { readMonthCache, writeMonthCache } from "@/lib/celulasSdr/cache";
-import { linkedinSlug, listSources, MIGRATION_HINT, readState } from "./sync";
+import { linkedinSlug, listSources, MIGRATION_HINT, readState, sourceTotals } from "./sync";
 import { maskPhone } from "./phones";
 import { qualityColumnsReady, readQualityState } from "./quality";
 
@@ -129,7 +129,7 @@ export async function buildSummary(): Promise<BaseSummary> {
     forward: { companies, companiesWithPeople: withPeople, people, byClient: Array.from(fw.values()).sort((a, b) => b.people - a.people) },
     sync: {
       passStartedAt: state.passStartedAt, passFinishedAt: state.passFinishedAt,
-      sources: sources.map((s) => ({ key: s.key, label: s.label, count: state.sources[s.key]?.count ?? 0, done: !!state.sources[s.key]?.done, error: state.sources[s.key]?.error ?? null })),
+      sources: sources.map((s) => ({ key: s.key, label: s.label, ...sourceTotals(state, s.key) })),
     },
     costs: { phone: CREDITS_PHONE, email: CREDITS_EMAIL, usdPerCredit: USD_PER_CREDIT },
     quality: {
