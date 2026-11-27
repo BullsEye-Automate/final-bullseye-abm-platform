@@ -17,6 +17,7 @@ import {
 } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 import type { ClientSummary } from "@/lib/clientContext";
+import { ActiMemberFields, actiValueToBody, emptyActiValue } from "@/components/acti/ActiMemberFields";
 
 function slugify(text: string) {
   return text.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
@@ -35,6 +36,8 @@ export default function NuevoClientePage() {
   const [description, setDescription] = useState("");
   const [saving, setSaving]           = useState(false);
   const [error, setError]             = useState<string | null>(null);
+  const [acti, setActi]               = useState(emptyActiValue());
+  const [actiError, setActiError]     = useState<string | null>(null);
 
   // Estado post-creación
   const [created, setCreated] = useState<{ id: string; summary: ClientSummary } | null>(null);
@@ -78,6 +81,19 @@ export default function NuevoClientePage() {
     const j = await res.json();
     if (j.error) { setError(j.error); setSaving(false); return; }
 
+    // Socio ACTI: se guarda aparte (tabla acti_members); si falla, el cliente igual queda creado
+    if (acti.is_acti) {
+      const r = await fetch(`/api/acti-equipo/members/${j.client.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(actiValueToBody(acti)),
+      }).catch(() => null);
+      if (!r || !r.ok) {
+        const e = r ? await r.json().catch(() => ({})) : {};
+        setActiError(`El cliente se creó, pero no se pudo marcar como socio ACTI: ${e.error ?? "error de red"}. Márcalo en Configuración → Cliente.`);
+      }
+    }
+
     const summary: ClientSummary = {
       id:       j.client.id,
       name:     j.client.name,
@@ -112,6 +128,8 @@ export default function NuevoClientePage() {
             <p className="text-sm text-ink-muted mt-1">
               <strong>{name}</strong> está listo. ¿Qué quieres hacer ahora?
             </p>
+            {acti.is_acti && !actiError && <p className="text-xs mt-2" style={{ color: "#1FA39B" }}>Marcado como socio ACTI.</p>}
+            {actiError && <p className="text-xs text-danger-fg mt-2">{actiError}</p>}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
@@ -239,6 +257,10 @@ export default function NuevoClientePage() {
             placeholder="Ej. Agencia de desarrollo de software especializada en startups..."
             value={description}
             onChange={(e) => setDescription(e.target.value)} />
+        </div>
+
+        <div className="pt-2 border-t border-ink-subtle/20">
+          <ActiMemberFields value={acti} onChange={setActi} />
         </div>
 
         <div className="flex items-center justify-between pt-2 border-t border-ink-subtle/20">

@@ -45,6 +45,14 @@
       "schedule": "20 3-9 * * *"
     },
     {
+      "path": "/api/cron/acti-perfiles",
+      "schedule": "35 10 * * *"
+    },
+    {
+      "path": "/api/cron/acti-cola",
+      "schedule": "*/15 11-23 * * 1-5"
+    },
+    {
       "path": "/api/cron/reporte-sdr?slot=13",
       "schedule": "*/15 15-18 * * 1-5"
     },
@@ -115,6 +123,7 @@
     "app/api/cron/kam-insights/route.ts": { "maxDuration": 300 },
     "app/api/cron/hubspot-pool/route.ts": { "maxDuration": 300 },
     "app/api/cron/base-contactos/route.ts": { "maxDuration": 300 },
+    "app/api/cron/acti-perfiles/route.ts": { "maxDuration": 300 },
     "app/api/centro/base-contactos/route.ts": { "maxDuration": 300 },
     "app/api/cron/reporte-sdr/route.ts": { "maxDuration": 300 },
     "app/api/reporte-sdr/route.ts": { "maxDuration": 300 },

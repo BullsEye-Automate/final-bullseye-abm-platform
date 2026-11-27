@@ -1,6 +1,8 @@
 import { getPortalUser } from "@/lib/portalAuth";
 import PortalShell from "@/components/portal/PortalShell";
 import PortalLogoutButton from "@/components/portal/PortalLogoutButton";
+import { redirect } from "next/navigation";
+import { getActiMember, setUserActiFlag } from "@/lib/acti/server";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,14 @@ export default async function PortalLayout({ children }: { children: React.React
         </div>
       </div>
     );
+  }
+
+  // Socio ACTI: su experiencia vive en /acti. Normalmente el middleware ya lo
+  // redirige (app_metadata.acti); esto cubre a usuarios creados después de
+  // marcar al cliente, a los que se les pone la marca acá.
+  if (await getActiMember(user.clientId)) {
+    await setUserActiFlag(user.authUserId, true).catch(() => {});
+    redirect("/acti");
   }
 
   return (

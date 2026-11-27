@@ -200,6 +200,20 @@ export default function ClientesPage() {
 
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Socios ACTI: etiqueta y filtro (tabla acti_members; sin socios no se muestra nada)
+  const [actiPlans, setActiPlans] = useState<Map<string, string>>(new Map());
+  const [onlyActi, setOnlyActi] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/acti-equipo/members")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j?.members) return;
+        const names: Record<string, string> = { freemium: "Freemium", conecta: "Conecta", crece: "Crece", acelera: "Acelera" };
+        setActiPlans(new Map(j.members.map((m: { client_id: string; plan: string }) => [m.client_id, names[m.plan] ?? m.plan])));
+      })
+      .catch(() => {});
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -252,8 +266,9 @@ export default function ClientesPage() {
     }
   }
 
-  const activeClients   = clients.filter((c) => c.is_active);
-  const inactiveClients = clients.filter((c) => !c.is_active);
+  const shown = onlyActi ? clients.filter((c) => actiPlans.has(c.id)) : clients;
+  const activeClients   = shown.filter((c) => c.is_active);
+  const inactiveClients = shown.filter((c) => !c.is_active);
 
   return (
     <div className="max-w-2xl">
@@ -269,6 +284,13 @@ export default function ClientesPage() {
           Nuevo cliente
         </Link>
       </div>
+
+      {actiPlans.size > 0 && (
+        <label className="flex items-center gap-2 text-sm text-ink mb-4 cursor-pointer w-fit">
+          <input type="checkbox" checked={onlyActi} onChange={(e) => setOnlyActi(e.target.checked)} className="h-4 w-4" />
+          Solo socios ACTI ({actiPlans.size})
+        </label>
+      )}
 
       {loading && (
         <div className="card flex items-center gap-3 text-ink-muted">
@@ -335,6 +357,7 @@ export default function ClientesPage() {
               onToggle={() => toggleActive(client)}
               onSelect={() => setCurrentClient(client)}
               onDelete={() => setConfirmDelete({ id: client.id, name: client.name })}
+              actiPlan={actiPlans.get(client.id)}
             />
           ))}
 
@@ -354,6 +377,7 @@ export default function ClientesPage() {
                   onToggle={() => toggleActive(client)}
                   onSelect={() => setCurrentClient(client)}
                   onDelete={() => setConfirmDelete({ id: client.id, name: client.name })}
+                  actiPlan={actiPlans.get(client.id)}
                 />
               ))}
             </div>
@@ -374,7 +398,8 @@ function ClientCard({
   onSaveEdit,
   onToggle,
   onSelect,
-  onDelete
+  onDelete,
+  actiPlan
 }: {
   client: Client;
   editing: boolean;
@@ -386,6 +411,7 @@ function ClientCard({
   onToggle: () => void;
   onSelect: () => void;
   onDelete: () => void;
+  actiPlan?: string;
 }) {
   const isOnboarding = client.status === "onboarding" && client.onboarding_step > 0;
   const [copied, setCopied] = useState(false);
@@ -431,6 +457,15 @@ function ClientCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <p className="font-semibold text-ink truncate">{client.name}</p>
+              {actiPlan && (
+                <span
+                  className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"
+                  style={{ background: "rgba(31,163,155,0.12)", color: "#1FA39B" }}
+                  title="Socio ACTI · Red de Negocios"
+                >
+                  ACTI · {actiPlan}
+                </span>
+              )}
               {isOnboarding && (
                 <span
                   className="text-xs font-medium px-2 py-0.5 rounded-full shrink-0"

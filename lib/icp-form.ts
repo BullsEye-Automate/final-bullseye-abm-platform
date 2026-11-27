@@ -46,6 +46,13 @@ export type IcpFormData = {
   mejores_clientes: string;
   peores_clientes: string;
   ticket_acv: string;
+  // Campos opcionales agregados para ACTI (nov-2026). Vacíos no se
+  // serializan: el ICP de los demás clientes queda idéntico (mismo hash).
+  regulaciones?: string;          // perfil de empresa objetivo
+  buyer_personas_extra?: string;  // buyer personas adicionales (texto, ver lib/acti/icp.ts)
+  servicios?: string;             // propuesta de valor
+  casos_exito?: string;
+  no_ofrecer?: string;
 };
 
 export const EMPTY_FORM: IcpFormData = {
@@ -58,7 +65,8 @@ export const EMPTY_FORM: IcpFormData = {
   propuesta_valor: "", problemas: "", resultados: "", competidores: "", diferenciadores: "",
   tono: [], idioma: [], cta_primer_contacto: [], canales: [],
   mensajes_exitosos: "", objeciones: "",
-  mejores_clientes: "", peores_clientes: "", ticket_acv: ""
+  mejores_clientes: "", peores_clientes: "", ticket_acv: "",
+  regulaciones: "", buyer_personas_extra: "", servicios: "", casos_exito: "", no_ofrecer: ""
 };
 
 // Opciones de chips
@@ -75,7 +83,7 @@ export const CANALES_OPTS    = ["Email frío", "LinkedIn conexión", "LinkedIn m
 
 // ── Serialización a texto (compatible con discovery.ts) ────────────────
 export function serializeIcpForm(d: IcpFormData): string {
-  function f(label: string, value: string | string[]): string | null {
+  function f(label: string, value: string | string[] | undefined): string | null {
     const v = Array.isArray(value) ? value.join(", ") : value;
     return v?.trim() ? `[${label}]\n${v.trim()}` : null;
   }
@@ -101,6 +109,7 @@ export function serializeIcpForm(d: IcpFormData): string {
       f("Geografías prioritarias", d.geografias),
       f("Modelo de empresa", d.modelo_empresa),
       f("Etapa de la empresa", d.etapa_empresa),
+      f("Regulaciones que aplican", d.regulaciones),
     ]),
     section("SEÑALES DE FIT", [
       f("Señales positivas de fit", d.senales_positivas),
@@ -115,6 +124,7 @@ export function serializeIcpForm(d: IcpFormData): string {
       f("Departamentos objetivo", d.departamentos),
       f("Seniority mínimo", d.seniority),
       f("Perfil psicográfico", d.perfil_psicografico),
+      f("Buyer personas adicionales", d.buyer_personas_extra),
     ]),
     section("PROPUESTA DE VALOR", [
       f("Propuesta de valor en 1-2 oraciones", d.propuesta_valor),
@@ -122,6 +132,9 @@ export function serializeIcpForm(d: IcpFormData): string {
       f("Top 3 resultados que entregas", d.resultados),
       f("Competidores principales", d.competidores),
       f("Por qué te eligen vs competencia", d.diferenciadores),
+      f("Servicios que ofreces", d.servicios),
+      f("Casos de éxito", d.casos_exito),
+      f("Lo que no se debe ofrecer", d.no_ofrecer),
     ]),
     section("OUTREACH Y TONO", [
       f("Tono de comunicación", d.tono),
@@ -171,10 +184,10 @@ export const INDUSTRY_SECTION_LABELS: Record<IndustrySectionKey, { num: number; 
 };
 
 export const SECTION_FIELDS: Record<IndustrySectionKey, (keyof IcpFormData)[]> = {
-  target_company:    ["industrias_objetivo","industrias_excluidas","tamano_empresa","facturacion","geografias","modelo_empresa","etapa_empresa"],
+  target_company:    ["industrias_objetivo","industrias_excluidas","tamano_empresa","facturacion","geografias","modelo_empresa","etapa_empresa","regulaciones"],
   fit_signals:       ["senales_positivas","senales_negativas","tech_stack","eventos_disparadores"],
-  buyer_persona:     ["cargos_decisores","cargos_influenciadores","cargos_evitar","departamentos","seniority","perfil_psicografico"],
-  value_prop:        ["propuesta_valor","problemas","resultados","competidores","diferenciadores"],
+  buyer_persona:     ["cargos_decisores","cargos_influenciadores","cargos_evitar","departamentos","seniority","perfil_psicografico","buyer_personas_extra"],
+  value_prop:        ["propuesta_valor","problemas","resultados","competidores","diferenciadores","servicios","casos_exito","no_ofrecer"],
   outreach:          ["tono","idioma","cta_primer_contacto","canales","mensajes_exitosos","objeciones"],
   reference_clients: ["mejores_clientes","peores_clientes","ticket_acv"],
 };
@@ -225,6 +238,11 @@ export function deserializeIcpForm(text: string): IcpFormData {
     mejores_clientes:       extractField(text, "Mejores clientes actuales o pasados"),
     peores_clientes:        extractField(text, "Peores clientes / mal fit"),
     ticket_acv:             extractField(text, "Ticket / ACV y ciclo de venta"),
+    regulaciones:           extractField(text, "Regulaciones que aplican"),
+    buyer_personas_extra:   extractField(text, "Buyer personas adicionales"),
+    servicios:              extractField(text, "Servicios que ofreces"),
+    casos_exito:            extractField(text, "Casos de éxito"),
+    no_ofrecer:             extractField(text, "Lo que no se debe ofrecer"),
   };
 }
 
@@ -328,6 +346,11 @@ export const ICP_FIELD_LABELS: Record<keyof IcpFormData, string> = {
   mejores_clientes: "Mejores clientes",
   peores_clientes: "Peores clientes",
   ticket_acv: "Ticket / ACV y ciclo",
+  regulaciones: "Regulaciones",
+  buyer_personas_extra: "Buyer personas adicionales",
+  servicios: "Servicios",
+  casos_exito: "Casos de éxito",
+  no_ofrecer: "Lo que no se debe ofrecer",
 };
 
 export type IcpFieldDiff = { key: keyof IcpFormData; label: string; before: string; after: string };
@@ -336,7 +359,7 @@ export type IcpFieldDiff = { key: keyof IcpFormData; label: string; before: stri
 export function diffIcpContent(before: string, after: string): IcpFieldDiff[] {
   const a = deserializeIcpForm(before || "");
   const b = deserializeIcpForm(after || "");
-  const asText = (v: string | string[]) => (Array.isArray(v) ? v.join(", ") : v).trim();
+  const asText = (v: string | string[] | undefined) => (Array.isArray(v) ? v.join(", ") : v ?? "").trim();
   return (Object.keys(ICP_FIELD_LABELS) as (keyof IcpFormData)[])
     .map((key) => ({ key, label: ICP_FIELD_LABELS[key], before: asText(a[key]), after: asText(b[key]) }))
     .filter((d) => d.before !== d.after);

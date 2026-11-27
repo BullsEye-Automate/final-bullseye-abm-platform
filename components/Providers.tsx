@@ -9,7 +9,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   // El portal de clientes no usa el estado interno: ClientProvider descarga
   // la lista de TODOS los clientes, que un usuario cliente no debe ver.
-  if (pathname === "/portal" || pathname?.startsWith("/portal/")) {
+  // Lo mismo para la experiencia ACTI (/acti), que usan socios.
+  if (pathname === "/portal" || pathname?.startsWith("/portal/") || pathname === "/acti" || pathname?.startsWith("/acti/")) {
     return <>{children}</>;
   }
 
