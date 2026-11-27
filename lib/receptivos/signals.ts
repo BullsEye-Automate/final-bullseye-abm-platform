@@ -74,13 +74,15 @@ export async function buildReceptive(): Promise<ReceptivePerson[]> {
   const personKey = (email: string | null, name: string | null, company: string | null) =>
     email ? `em:${email}` : name && company ? `nm:${norm(name)}|${norm(company)}` : null;
 
-  // 1) Reuniones de la planilla
+  // 1) Reuniones de la planilla (cliente_nombre solo si existe la columna:
+  // migración 20261030_meetings_cliente_nombre.sql, aún no ejecutada en producción)
+  const withCli = !(await db.from("meetings").select("cliente_nombre").limit(1)).error;
   for (let from = 0; from < 50_000; from += 1000) {
     const { data, error } = await db.from("meetings")
-      .select("client_id, cliente_nombre, empresa, contacto_nombre, contacto_cargo, correo, telefono, pais, industria, realizado, fecha_reunion, fecha_agendamiento")
+      .select("client_id, " + (withCli ? "cliente_nombre, " : "") + "empresa, contacto_nombre, contacto_cargo, correo, telefono, pais, industria, realizado, fecha_reunion, fecha_agendamiento")
       .or(`fecha_reunion.gte.${since},fecha_agendamiento.gte.${since}`).range(from, from + 999);
     if (error) throw new Error(error.message);
-    for (const m of (data ?? []) as Record<string, string | null>[]) {
+    for (const m of (data ?? []) as unknown as Record<string, string | null>[]) {
       const email = cleanEmail(m.correo);
       const key = personKey(email, m.contacto_nombre, m.empresa);
       if (!key) continue;
