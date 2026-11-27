@@ -56,6 +56,7 @@ export type ActiParams = {
   revenueSharePct: number;      // % de la base mensual para ACTI
   ivaPct: number;
   chargeVariableOn: "realizada" | "agendada";
+  queueReleasePerRun: number;   // solicitudes que pasan de la cola ACTI a la prospección cada 15 min
 };
 
 export type ActiConfig = { plans: Record<ActiPlanId, ActiPlan>; params: ActiParams };
@@ -99,6 +100,7 @@ export const DEFAULT_CONFIG: ActiConfig = {
     revenueSharePct: 10,
     ivaPct: 19,
     chargeVariableOn: "realizada",
+    queueReleasePerRun: 25,
   },
 };
 
@@ -152,6 +154,7 @@ export function normalizeConfig(raw: unknown): ActiConfig {
     revenueSharePct: num(pr.revenueSharePct, dp.revenueSharePct, 0, 100),
     ivaPct: num(pr.ivaPct, dp.ivaPct, 0, 100),
     chargeVariableOn: pr.chargeVariableOn === "agendada" ? "agendada" : "realizada",
+    queueReleasePerRun: Math.round(num(pr.queueReleasePerRun, dp.queueReleasePerRun, 1, 500)),
   };
   return { plans, params };
 }

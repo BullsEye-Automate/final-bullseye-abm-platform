@@ -10,9 +10,9 @@ import {
 } from "@/lib/acti/plans";
 import type { ActiMember } from "@/lib/acti/server";
 
-// ACTI · datos de la pantalla de Inicio del socio. Solo LECTURA de tablas
-// existentes (meetings, meeting_feedback, client_wishlist) filtradas por el
-// client_id de la sesión.
+// ACTI · datos de la pantalla de Inicio del socio. Solo LECTURA: reuniones
+// (meetings, meeting_feedback) y solicitudes del socio (acti_requests, la misma
+// cuenta que usa el cupo del plan), filtradas por el client_id de la sesión.
 
 // Día de hoy en Chile (YYYY-MM-DD)
 export function chileToday(now = new Date()): string {
@@ -66,8 +66,6 @@ export type ActiHome = {
 
 // Estados de la planilla de reuniones: Si / No / Pendiente / Reagendar
 const COUNTS_AS_MEETING = new Set(["Si", "Pendiente", "Reagendar"]);
-// Empresas pedidas que cuentan para el tope (no las propuestas sin responder ni las rechazadas)
-const NOT_REQUESTED = new Set(["proposed", "rejected_by_client"]);
 
 export async function loadActiHome(
   db: SupabaseClient,
@@ -92,10 +90,11 @@ export async function loadActiHome(
       .order("fecha_reunion", { ascending: true })
       .limit(2000),
     db
-      .from("client_wishlist")
+      .from("acti_requests")
       .select("status, created_at")
       .eq("client_id", clientId)
-      .gte("created_at", `${from}T00:00:00Z`)
+      .neq("status", "cancelada")
+      .gte("created_at", `${from}T00:00:00-03:00`)
       .limit(5000),
   ]);
   const ms = (meetings ?? []) as MeetingRow[];
@@ -106,12 +105,12 @@ export async function loadActiHome(
   const done = inMonth.filter((m) => m.realizado === "Si").length;
   const scheduled = inMonth.filter((m) => m.realizado === "Pendiente" || m.realizado === "Reagendar").length;
   const noShows = inMonth.filter((m) => m.realizado === "No").length;
-  const companiesRequested = wl.filter((w) => w.created_at.slice(0, 10) >= mStart && !NOT_REQUESTED.has(w.status)).length;
+  const companiesRequested = wl.filter((w) => w.created_at.slice(0, 10) >= mStart).length;
 
   let trialInfo: TrialState | null = null;
   if (trial) {
     const meetingsUsed = ms.filter((m) => m.fecha_reunion && m.fecha_reunion >= since && COUNTS_AS_MEETING.has(m.realizado ?? "")).length;
-    const companiesUsed = wl.filter((w) => w.created_at.slice(0, 10) >= since && !NOT_REQUESTED.has(w.status)).length;
+    const companiesUsed = wl.filter((w) => w.created_at.slice(0, 10) >= since).length;
     trialInfo = trialState(member, plan, { meetings: meetingsUsed, companies: companiesUsed }, today);
   }
 
