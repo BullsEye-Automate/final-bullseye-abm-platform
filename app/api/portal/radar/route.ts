@@ -3,6 +3,7 @@ import { requirePortalUser } from "@/lib/portalAuth";
 import { isPortalClientActive } from "@/lib/radarAbm/server/masterClients";
 import { loadClientSettings, loadRadarConfig, loadSnapshot, subAccounts } from "@/lib/radarAbm/server/store";
 import { loadFeedbackOverlay } from "@/lib/radarAbm/server/sheetMeetings";
+import { recordPortalAccess } from "@/lib/portalAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const { user, response } = await requirePortalUser();
   if (!user) return response;
+  // Último acceso del cliente a Pulso ABM (se ve en Configuración → Cliente → Portal del cliente — accesos)
   try {
-    const [settings, snapshot, config] = await Promise.all([loadClientSettings(user.clientId), loadSnapshot(user.clientId, "url"), loadRadarConfig()]);
+    const [settings, snapshot, config] = await Promise.all([loadClientSettings(user.clientId), loadSnapshot(user.clientId, "url"), loadRadarConfig(), recordPortalAccess(user.portalUserId)]);
     // Feedback del cliente en vivo (lo que acaba de completar se ve sin esperar al sync)
     const feedback = snapshot ? await loadFeedbackOverlay(user.clientId, subAccounts(settings)).catch(() => ({})) : {};
     if (!settings.portal_enabled) return NextResponse.json({ dataset: null, reason: "disabled" });

@@ -103,7 +103,9 @@ const SECTIONS: Section[] = [
 ];
 
 function ClientSelector() {
-  const { clients, currentClient, setCurrentClient, loading } = useClient();
+  const { clients, currentClient, setCurrentClient, loading, activeIds, activeReady } = useClient();
+  // Solo clientes activos en la Maestra (pedido de BullsEye 27-nov-2026: la
+  // lista completa es muy larga). Si la Maestra no se puede leer, todos.
   const [open, setOpen]   = useState(false);
   const [query, setQuery] = useState("");
   const ref      = useRef<HTMLDivElement>(null);
@@ -128,9 +130,10 @@ function ClientSelector() {
     });
   }
 
+  const visible = activeIds ? clients.filter((c) => activeIds.has(c.id)) : clients;
   const filtered = query.trim()
-    ? clients.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()))
-    : clients;
+    ? visible.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()))
+    : visible;
 
   return (
     <div ref={ref} className="relative px-3 mb-5">
@@ -191,7 +194,9 @@ function ClientSelector() {
                 {currentClient?.id === ALL_CLIENTS.id && <IconCheck size={13} className="shrink-0" />}
               </button>
             )}
-            {filtered.length === 0 ? (
+            {!activeReady ? (
+              <p className="px-3 py-2 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>Cargando clientes activos…</p>
+            ) : filtered.length === 0 ? (
               <p className="px-3 py-2 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
                 {clients.length === 0 ? "Sin clientes aún" : "Sin resultados"}
               </p>
