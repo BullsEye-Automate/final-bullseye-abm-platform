@@ -115,6 +115,20 @@
   border-radius: 8px; padding: 10px 12px; }
 .acti-root a { color: inherit; }
 
+/* Formularios */
+.acti-field { display: flex; flex-direction: column; gap: 6px; }
+.acti-field-label { font-size: 12.5px; font-weight: 600; color: var(--a-muted); }
+.acti-root textarea { resize: vertical; }
+.acti-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.acti-chip { display: inline-flex; align-items: center; border: 1px solid var(--a-line); background: var(--a-surface); border-radius: 999px;
+  padding: 5px 11px; font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; color: var(--a-ink); }
+.acti-chip[data-on] { background: var(--a-btn-bg); border-color: var(--a-btn-bg); color: var(--a-btn-fg); }
+.acti-persona { border: 1px dashed var(--a-line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.acti-savebar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 0;
+  background: linear-gradient(transparent, var(--a-bg) 30%); }
+.acti-ok { color: var(--a-ok); }
+.acti-bad { color: var(--a-bad); }
+
 /* Mi plan */
 .acti-plans { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .acti-plan[data-current] { border: 2px solid var(--a-tink); }

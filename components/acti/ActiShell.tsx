@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import PortalLogoutButton from "@/components/portal/PortalLogoutButton";
-import { ACTI_LIVE_PHASE, ACTI_MODULES } from "@/lib/acti/nav";
+import { ACTI_MODULES } from "@/lib/acti/nav";
 import { PULSO_VIEW_OPTIONS } from "@/lib/acti/plans";
 
 // Estructura de la experiencia ACTI: menú lateral con la marca
@@ -52,7 +52,7 @@ export default function ActiShell({
             return (
               <Link key={m.href} href={m.href} className="acti-nav" data-active={active || undefined}>
                 <span>{m.label}</span>
-                {m.phase > ACTI_LIVE_PHASE && <span className="acti-soon">Pronto</span>}
+                {!m.ready && <span className="acti-soon">Pronto</span>}
               </Link>
             );
           })}
