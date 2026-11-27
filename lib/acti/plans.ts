@@ -42,7 +42,7 @@ export type ActiPlan = {
   // Tope mensual de empresas: null = se calcula con la conversión
   companiesPerMonth: number | null;
   replacesNoResponse: boolean;  // las cuentas sin respuesta se reemplazan
-  hasKam: boolean;
+  hasKam: boolean;              // KAM dedicado (desde Crece)
   priority: number;             // mayor = antes en la cola de prospección
   pulsoViews: string[];         // vistas de Pulso ABM visibles
   pulsoShowContacts: boolean;   // Pulso con nombres de contactos (como un cliente directo)
@@ -74,21 +74,22 @@ export const DEFAULT_CONFIG: ActiConfig = {
     conecta: {
       id: "conecta", name: "Conecta", baseUf: 18, perMeetingUf: 4, guaranteedMeetings: 5,
       trialMeetings: 0, trialCompanies: 0, trialDays: 0, companiesPerMonth: null,
-      replacesNoResponse: true, hasKam: true, priority: 1, pulsoViews: VIEWS_CONECTA, pulsoShowContacts: false,
-      description: "5 reuniones garantizadas al mes.",
+      // KAM dedicado desde Crece (decisión de BullsEye 27-nov-2026)
+      replacesNoResponse: true, hasKam: false, priority: 1, pulsoViews: VIEWS_CONECTA, pulsoShowContacts: false,
+      description: "5 reuniones garantizadas al mes, con soporte del equipo BullsEye.",
     },
     crece: {
       id: "crece", name: "Crece", baseUf: 26, perMeetingUf: 4, guaranteedMeetings: 8,
       trialMeetings: 0, trialCompanies: 0, trialDays: 0, companiesPerMonth: null,
       replacesNoResponse: true, hasKam: true, priority: 2, pulsoViews: VIEWS_CRECE, pulsoShowContacts: false,
-      description: "8 reuniones garantizadas al mes, con Peitho.",
+      description: "8 reuniones garantizadas al mes, con KAM dedicado y Peitho.",
     },
     acelera: {
       id: "acelera", name: "Acelera", baseUf: 35, perMeetingUf: 4, guaranteedMeetings: 12,
       trialMeetings: 0, trialCompanies: 0, trialDays: 0, companiesPerMonth: null,
       replacesNoResponse: true, hasKam: true, priority: 3,
       pulsoViews: PULSO_VIEW_OPTIONS.map((v) => v.slug), pulsoShowContacts: true,
-      description: "12 reuniones garantizadas al mes y Pulso ABM completo.",
+      description: "12 reuniones garantizadas al mes, con KAM dedicado y Pulso ABM completo.",
     },
   },
   params: {
@@ -233,3 +234,77 @@ export function monthProgress(plan: ActiPlan, done: number, scheduled: number) {
 }
 
 export const canSeePulsoView = (plan: ActiPlan, slug: string) => plan.pulsoViews.includes(slug);
+
+// ── Qué incluye cada plan (vista "Mi plan") ──────────────────────────────
+
+export type PlanFeature = { key: string; label: string; value: string; included: boolean };
+
+const fmtUf = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(1).replace(".", ",")} UF`;
+
+export function planPriceLabel(plan: ActiPlan): string {
+  if (plan.baseUf === 0 && plan.perMeetingUf === 0) return "Incluido en tu membresía ACTI";
+  return `${fmtUf(plan.baseUf)} al mes + ${fmtUf(plan.perMeetingUf)} por reunión`;
+}
+
+export function planFeatures(plan: ActiPlan, params: ActiParams): PlanFeature[] {
+  const trial = isTrialPlan(plan);
+  const views = PULSO_VIEW_OPTIONS.filter((v) => plan.pulsoViews.includes(v.slug)).map((v) => v.label);
+  const pulsoViews = views.filter((v) => v !== "Peitho");
+  const charge = params.chargeVariableOn === "realizada" ? "realizada" : "agendada";
+  return [
+    {
+      key: "meetings",
+      label: "Reuniones",
+      value: trial ? `Hasta ${plan.trialMeetings} en ${plan.trialDays} días` : `${plan.guaranteedMeetings} garantizadas al mes`,
+      included: true,
+    },
+    {
+      key: "companies",
+      label: "Empresas trabajadas",
+      value: trial
+        ? `Hasta ${plan.trialCompanies} (lo que ocurra primero)`
+        : `Las necesarias para cumplir (~${monthlyCompanyQuota(plan, params)} al mes)`,
+      included: true,
+    },
+    {
+      key: "kam",
+      label: "KAM dedicado",
+      value: plan.hasKam ? "Sí, un KAM de BullsEye para tu cuenta" : trial ? "Onboarding grupal y soporte en la plataforma" : "Soporte del equipo BullsEye en la plataforma",
+      included: plan.hasKam,
+    },
+    {
+      key: "replace",
+      label: "Reemplazo de cuentas sin respuesta",
+      value: plan.replacesNoResponse
+        ? `Sí (tras ${params.noResponseAttempts} intentos en ${params.noResponseBusinessDays} días hábiles)`
+        : "No",
+      included: plan.replacesNoResponse,
+    },
+    {
+      key: "priority",
+      label: "Prioridad en la prospección",
+      value: trial ? "Estándar" : plan.priority >= 3 ? "Máxima" : plan.priority >= 2 ? "Alta" : "Prioritaria sobre Freemium",
+      included: !trial,
+    },
+    { key: "ai", label: "Recomendaciones de empresas con IA", value: "Según tu ICP", included: true },
+    {
+      key: "peitho",
+      label: "Peitho: análisis de cada reunión",
+      value: plan.pulsoViews.includes("peitho") ? "Sí" : "No",
+      included: plan.pulsoViews.includes("peitho"),
+    },
+    {
+      key: "pulso",
+      label: "Pulso ABM",
+      value: pulsoViews.length === 0 ? "No" : plan.pulsoShowContacts ? "Completo, como un cliente directo de BullsEye" : pulsoViews.join(", "),
+      included: pulsoViews.length > 0,
+    },
+    { key: "events", label: "Eventos y ronda de negocios ACTI", value: "Sí (no consumen el cupo del plan)", included: true },
+    {
+      key: "billing",
+      label: "Cobro variable",
+      value: plan.perMeetingUf > 0 ? `Por reunión ${charge}; si el prospecto no asiste, no se cobra` : "Sin costo",
+      included: true,
+    },
+  ];
+}

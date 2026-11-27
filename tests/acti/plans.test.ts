@@ -5,6 +5,8 @@ import {
   monthProgress,
   monthlyCompanyQuota,
   normalizeConfig,
+  planFeatures,
+  planPriceLabel,
   trialState,
 } from "@/lib/acti/plans";
 
@@ -89,5 +91,23 @@ describe("avance del mes y Pulso por plan", () => {
     expect(canSeePulsoView(cfg.plans.crece, "peitho")).toBe(true);
     expect(cfg.plans.crece.pulsoShowContacts).toBe(false);
     expect(cfg.plans.acelera.pulsoShowContacts).toBe(true);
+  });
+});
+
+describe("qué incluye cada plan", () => {
+  const kam = (id: keyof typeof cfg.plans) => planFeatures(cfg.plans[id], cfg.params).find((f) => f.key === "kam")!;
+  it("KAM dedicado desde Crece en adelante", () => {
+    expect(kam("freemium").included).toBe(false);
+    expect(kam("conecta").included).toBe(false);
+    expect(kam("crece").included).toBe(true);
+    expect(kam("acelera").included).toBe(true);
+  });
+  it("precio", () => {
+    expect(planPriceLabel(cfg.plans.freemium)).toBe("Incluido en tu membresía ACTI");
+    expect(planPriceLabel(cfg.plans.crece)).toBe("26 UF al mes + 4 UF por reunión");
+  });
+  it("Peitho desde Crece", () => {
+    const peitho = (id: keyof typeof cfg.plans) => planFeatures(cfg.plans[id], cfg.params).find((f) => f.key === "peitho")!.included;
+    expect([peitho("freemium"), peitho("conecta"), peitho("crece"), peitho("acelera")]).toEqual([false, false, true, true]);
   });
 });

@@ -12,7 +12,7 @@ export const ACTI_MODULES: ActiModule[] = [
   { slug: "reuniones", href: "/acti/reuniones", label: "Reuniones y feedback", phase: 3, description: "Próximas y realizadas, con el análisis de Peitho y tu feedback." },
   { slug: "eventos", href: "/acti/eventos", label: "Eventos y networking", phase: 4, description: "Eventos de ACTI, inscripción y ronda de negocios." },
   { slug: "facturacion", href: "/acti/facturacion", label: "Facturación", phase: 3, description: "Detalle del mes e historial." },
-  { slug: "mi-plan", href: "/acti/mi-plan", label: "Mi plan", phase: 5, description: "Compara los planes y solicita un cambio." },
+  { slug: "mi-plan", href: "/acti/mi-plan", label: "Mi plan", phase: 1, description: "Compara los planes y solicita un cambio." },
 ];
 
 // Fase ya entregada en producción (las anteriores o iguales se muestran activas)

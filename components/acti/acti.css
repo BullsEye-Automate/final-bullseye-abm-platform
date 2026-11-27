@@ -115,6 +115,20 @@
   border-radius: 8px; padding: 10px 12px; }
 .acti-root a { color: inherit; }
 
+/* Mi plan */
+.acti-plans { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.acti-plan[data-current] { border: 2px solid var(--a-tink); }
+.acti-plan-price { font-size: 18px; font-weight: 700; margin-top: 10px; line-height: 1.25; }
+.acti-features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.acti-features li { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; }
+.acti-features li[data-off] { color: var(--a-muted); }
+.acti-check { width: 18px; height: 18px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 11px;
+  background: var(--a-okbg); color: var(--a-ok); font-weight: 700; }
+.acti-features li[data-off] .acti-check { background: var(--a-soft); color: var(--a-muted); }
+.acti-feature-label { font-weight: 500; }
+@media (max-width: 1100px) { .acti-plans { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .acti-plans { grid-template-columns: minmax(0, 1fr); } }
+
 @media (max-width: 1000px) {
   .acti-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .acti-grid2 { grid-template-columns: minmax(0, 1fr); }

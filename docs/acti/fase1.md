@@ -1,6 +1,6 @@
 # ACTI · Fase 1 — cómo probarla
 
-**Incluye:** marca "Socio ACTI" y plan en el cliente, configuración editable de planes, tema ACTI, navegación del socio y la pantalla de Inicio.
+**Incluye:** marca "Socio ACTI" y plan en el cliente, configuración editable de planes, tema ACTI, navegación del socio, la pantalla de Inicio y **Mi plan** (los cuatro planes lado a lado con lo que incluye cada uno; KAM dedicado desde Crece).
 
 ## Antes de probar
 
@@ -22,12 +22,13 @@
    - Plan pagado: reuniones realizadas del mes contra la garantía, agendadas por realizar, empresas pedidas contra el cupo (reuniones ÷ 10%) y no-shows (sin cobro).
    - Freemium: reuniones (x / 2), empresas (x / 20), días restantes de los 90 y, al completar un tope, aviso de prueba completada con invitación a cambiar de plan.
    - Próximas reuniones (con nombre, cargo, correo y teléfono del contacto, porque ya están agendadas), feedback pendiente, próximo evento y novedades.
-4. El resto de los módulos aparecen en el menú con "Pronto" y se construyen en las fases 2 a 5. Las vistas de Pulso ABM del menú dependen del plan (Freemium ninguna, Conecta 2, Crece 6 con Peitho, Acelera todas).
-5. Si el socio intenta abrir `/portal` lo lleva a `/acti`; las APIs del portal normal le responden 403.
+4. **Mi plan** (`/acti/mi-plan`): los cuatro planes con precio, reuniones, empresas, KAM dedicado (desde Crece), reemplazo de cuentas sin respuesta, prioridad, IA, Peitho (desde Crece), Pulso ABM, eventos y cobro variable; el plan actual destacado. Todo sale de la configuración de planes. La solicitud de cambio de plan llega en la Fase 5.
+5. El resto de los módulos aparecen en el menú con "Pronto" y se construyen en las fases 2 a 5. Las vistas de Pulso ABM del menú dependen del plan (Freemium ninguna, Conecta 2, Crece 6 con Peitho, Acelera todas).
+6. Si el socio intenta abrir `/portal` lo lleva a `/acti`; las APIs del portal normal le responden 403.
 
 ## No regresión
 
-- `npm test`: 24 pruebas (planes y límites, permisos, rutas y **middleware**: usuario interno, cliente normal del portal y anónimo se comportan igual que antes).
+- `npm test`: 27 pruebas (planes y límites, permisos, rutas y **middleware**: usuario interno, cliente normal del portal y anónimo se comportan igual que antes).
 - `npx tsc --noEmit`: sin errores nuevos (los 28 que hay ya existían).
 - `next build`: OK.
 - Manual, con un cliente que **no** es ACTI: crear cliente (sin marcar la casilla), ver ficha y Configuración → Cliente, Sistema → ICP, recomendaciones en Empresas, Reuniones y Peitho; y entrar al portal con un usuario de ese cliente: debe ver exactamente lo mismo que antes.
