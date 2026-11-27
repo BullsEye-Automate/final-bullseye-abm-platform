@@ -3,6 +3,7 @@ import { hsHeaders } from "@/lib/hubspot";
 import { sendMail, mailProvider } from "@/lib/mailer";
 import { getRecipients } from "@/lib/mailRecipients";
 import { tagContactClient } from "@/lib/wishlistHubspot";
+import { readMonthCache } from "@/lib/celulasSdr/cache";
 
 // Listas estáticas de HubSpot con los contactos prospectados (pedido de
 // BullsEye, 18-nov-2026, todos los clientes): una vez al día hábil, los
@@ -90,6 +91,13 @@ export async function runProspectingLists(opts: { day: string; dryRun?: boolean 
     if (error) throw new Error(error.message);
     rows.push(...((data ?? []) as unknown as Row[]));
     if (!data || data.length < 1000) break;
+  }
+  // Contactos receptivos cargados desde el Centro (lib/receptivos/load.ts): entran a la misma lista
+  const receptive = (await readMonthCache<{ id: string; client_id: string; nombre: string; cargo: string; empresa: string; hs: string; at: string; by: string }[]>("receptivos:cargados").catch(() => null)) ?? [];
+  for (const r of receptive) {
+    if (r.at < since) continue;
+    const [first, ...rest] = (r.nombre || "").split(" ");
+    rows.push({ id: r.id, client_id: r.client_id, first_name: first || null, last_name: rest.join(" ") || null, title: r.cargo || null, hubspot_contact_id: r.hs, reviewed_at: r.at, reviewed_by_email: `${r.by} · receptivo`, origin: "receptivo", client_wishlist: { company_name: r.empresa } });
   }
   const pending = rows.filter((r) => !done[r.id]);
   if (!pending.length) return { day: opts.day, clientes: [] as ListResult[], enviado: false, motivo: "Sin contactos nuevos en HubSpot" };
