@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
+import EquipoFacturacion from "@/components/acti/EquipoFacturacion";
 import {
   isTrialPlan,
   monthlyCompanyQuota,
@@ -29,7 +30,7 @@ type Member = {
 };
 
 export default function ActiEquipoPage() {
-  const [tab, setTab] = useState<"socios" | "planes">("socios");
+  const [tab, setTab] = useState<"socios" | "planes" | "facturacion">("socios");
   return (
     <div className="max-w-6xl">
       <h1 className="text-2xl font-bold text-ink">ACTI · Red de Negocios</h1>
@@ -37,13 +38,13 @@ export default function ActiEquipoPage() {
         Socios ACTI y planes. Un cliente se marca como socio en Configuración → Cliente → Socio ACTI (o al crearlo).
       </p>
       <div className="flex gap-2 mb-5">
-        {(["socios", "planes"] as const).map((t) => (
+        {(["socios", "planes", "facturacion"] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)} className={tab === t ? "btn-primary" : "btn-secondary"}>
-            {t === "socios" ? "Socios" : "Planes y parámetros"}
+            {t === "socios" ? "Socios" : t === "planes" ? "Planes y parámetros" : "Facturación"}
           </button>
         ))}
       </div>
-      {tab === "socios" ? <Socios /> : <Planes />}
+      {tab === "socios" ? <Socios /> : tab === "planes" ? <Planes /> : <EquipoFacturacion />}
     </div>
   );
 }

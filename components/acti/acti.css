@@ -166,6 +166,9 @@
 .acti-kc { background: var(--a-surface); border: 1px solid var(--a-line); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
 .acti-kc b { display: block; font-size: 13px; font-weight: 600; }
 
+/* Informe de Peitho dentro de ACTI: se muestra con su diseño (claro) */
+.acti-peitho { color: #1A1733; background: #F4F2FB; border-radius: 16px; padding: 16px; font-family: Outfit, Montserrat, sans-serif; }
+
 /* Mi plan */
 .acti-plans { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .acti-plan[data-current] { border: 2px solid var(--a-tink); }
