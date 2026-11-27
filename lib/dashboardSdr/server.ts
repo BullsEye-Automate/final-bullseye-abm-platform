@@ -31,7 +31,7 @@ import type { SdrCompany, SdrContact, SdrDashboardResponse, SdrIndexRow, SdrMeet
 // allo_response_cache (3 h): cada SDR descarga solo lo suyo; el índice lleva
 // el resumen de cada SDR para la vista de la líder.
 
-const VERSION = "v13";
+const VERSION = "v14";
 const TTL_MS = 3 * 3600_000;
 const MEETING_DAYS = 150; // reuniones con fecha o agendamiento desde hace ~5 meses
 export const NO_SDR_KEY = "sin-sdr";
@@ -94,6 +94,22 @@ export async function buildAll(today: string) {
     if (!gp.accounts.has(acc)) gp.accounts.set(acc, dir.clients.get(acc)?.name ?? g.client.trim());
     goalPeople.set(key, gp);
   }
+  // SDR que entran el mes siguiente (meta ya cargada para ese mes y ninguna este mes, ej. un
+  // SDR nuevo): también aparecen, para que vean su cartera antes de partir (pedido de BullsEye
+  // 27-nov-2026, David Stevens). Su cartera se filtra por los clientes de esa meta.
+  const nextMonth = (() => { const [y, m] = month.split("-").map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`; })();
+  const rawNext = nextMonth.slice(0, 4) === month.slice(0, 4) ? rawGoals
+    : await readAssignment(spreadsheetId, resolvePerson, [], Number(nextMonth.slice(0, 4))).catch(() => []);
+  const upcoming = new Map<string, { name: string; accounts: Map<string, string> }>();
+  for (const g of rawNext) {
+    if (g.month !== nextMonth || !(g.goal > 0)) continue;
+    const key = resolveSdrKey(g.person);
+    if (isExcludedSdr(key) || goalPeople.has(key)) continue;
+    const acc = dir.goalClientId(g.client);
+    const up = upcoming.get(key) ?? { name: g.person, accounts: new Map<string, string>() };
+    if (!up.accounts.has(acc)) up.accounts.set(acc, dir.clients.get(acc)?.name ?? g.client.trim());
+    upcoming.set(key, up);
+  }
 
   // Célula de cada persona (líder incluida)
   const cellOf = new Map<string, string>();
@@ -103,7 +119,7 @@ export async function buildAll(today: string) {
   // tiene metas cargadas, los activos en la Maestra ("Status Responsable" =
   // Activo; sin status, solo si está en una célula). Los demás y "Sin SDR
   // asignado" no aparecen en el selector, la vista de la célula ni el correo.
-  const activeKeys = new Set<string>(goalPeople.keys());
+  const activeKeys = new Set<string>([...goalPeople.keys(), ...upcoming.keys()]);
   if (!activeKeys.size) {
     for (const p of master.people) {
       const k = resolveSdrKey(p.name);
@@ -293,7 +309,7 @@ export async function buildAll(today: string) {
   // Asignación (pedido de BullsEye: si HubSpot lo tiene como SDR en un cliente
   // sin meta, ese cliente no aparece en su dashboard). Sin metas en el mes no
   // se filtra. Se compara por cuenta (accountOf), no por nombre.
-  for (const [key, gp] of goalPeople) {
+  for (const [key, gp] of [...goalPeople, ...upcoming]) {
     const sl = slices.get(key);
     if (!sl) continue;
     const ok = (c: string) => gp.accounts.has(accountOf.get(c) ?? "");
@@ -320,6 +336,16 @@ export async function buildAll(today: string) {
       const x = slice(existing ? { key, name: existing.name } : { key, name: gp.name }, client);
       x.goals[client] = goalBy.get(`${key}|${acc}`) ?? 0;
       // Registro del cliente también sin empresas en Pulso (Mis listas lo lee en vivo de HubSpot)
+      if (!x.accts[client]) x.accts[client] = accts[client] ?? { id: acc.split("~")[0], sub: null, edit: false, portal: BULLSEYE_PORTAL };
+    }
+  }
+
+  // SDR del mes siguiente: una tarjeta por cliente de esa meta (sin meta este mes)
+  for (const [key, up] of upcoming) {
+    const existing = slices.get(key);
+    for (const [acc, accName] of up.accounts) {
+      const client = nameOfAccount.get(acc) ?? accName;
+      const x = slice(existing ? { key, name: existing.name } : { key, name: up.name }, client);
       if (!x.accts[client]) x.accts[client] = accts[client] ?? { id: acc.split("~")[0], sub: null, edit: false, portal: BULLSEYE_PORTAL };
     }
   }
