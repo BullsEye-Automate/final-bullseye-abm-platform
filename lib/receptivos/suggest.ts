@@ -21,7 +21,8 @@ import { getReceptive, SIGNAL_LABEL, type ReceptivePerson, type SignalKind } fro
 
 export const TITLE_MIN = 60;
 export const COMPANY_MIN = 60;
-const MAX_COMPANIES = 300;
+const MAX_COMPANIES = 150;
+const MAX_TITLES = 600;
 const DECISION_PREFIX = "receptivo:";
 
 export type Decision = { st: "cargado" | "descartado"; by: string; at: string; motivo?: string | null; hs?: string | null };
@@ -126,10 +127,18 @@ async function compute(clientId: string): Promise<ClientReceptivos> {
   }
 
   // Cargo vs buyer persona
-  const titles = Array.from(new Set(cands.map((p) => p.title!.trim())));
-  const { scores: tScores } = hasIcp ? await scoreTitlesForClient(db, clientId, titles) : { scores: new Map() };
+  // Solo los cargos de las personas con más señales (máx. MAX_TITLES), en tandas
+  // de 300: así el cálculo de la primera vez cabe en el tiempo del servidor
+  // (los puntajes quedan guardados y la siguiente vez es inmediata)
+  cands.sort((a, b) => b.score - a.score);
+  const titles = Array.from(new Set(cands.map((p) => normTitle(p.title!)))).slice(0, MAX_TITLES);
+  const tScores = new Map<string, { fit_score: number }>();
+  if (hasIcp) for (let i = 0; i < titles.length; i += 300) {
+    const { scores } = await scoreTitlesForClient(db, clientId, titles.slice(i, i + 300));
+    for (const [k, v] of Array.from(scores.entries())) tScores.set(k, v);
+  }
   // (los puntajes se guardan por cargo normalizado: minúsculas y espacios simples)
-  const tFit = (p: ReceptivePerson) => (tScores.get(normTitle(p.title!)) as { fit_score: number } | undefined)?.fit_score ?? 0;
+  const tFit = (p: ReceptivePerson) => tScores.get(normTitle(p.title!))?.fit_score ?? 0;
   const titlePartial = cands.filter((p) => { const f = tFit(p); return f >= 40 && f < TITLE_MIN; }).length;
   const byTitle = cands.filter((p) => tFit(p) >= TITLE_MIN);
 
