@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const done: string[] = [], errors: string[] = [];
   for (const c of clients) {
     if (Date.now() > deadline) break;
-    if (!only && (await readMonthCache(`receptivos:cli:v1:${c.id}:${weekKey()}`))) continue;
+    if (!only && (await readMonthCache(`receptivos:cli:v2:${c.id}:${weekKey()}`))) continue;
     try { await getClientReceptivos(c.id, !!only); done.push(c.name); } catch (e) { errors.push(`${c.name}: ${(e as Error).message.slice(0, 120)}`); }
   }
   return NextResponse.json({ done, errors });
