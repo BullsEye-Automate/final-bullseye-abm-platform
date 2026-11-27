@@ -5,6 +5,11 @@ import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConf
 import { supabaseAdmin } from "@/lib/supabase";
 import { sendMail } from "@/lib/mailer";
 import { readMasterPeople, resolveSdr } from "@/lib/respuestasLemlist/directory";
+import { readMonthCache } from "@/lib/celulasSdr/cache";
+import { alloFetchRaw } from "@/lib/allo";
+import { classifyPhone, countryFromText } from "@/lib/baseContactos/phones";
+import { normTitle, scoreTitlesForClient } from "@/lib/wishlistContacts";
+import type { CargaReport } from "@/lib/calidadCarga/report";
 
 // Dashboard SDR → ficha de empresa (26-nov-2026, etapa 1 de «trabajar desde la
 // app»): historial de actividades de la empresa y sus contactos leído en vivo
@@ -25,9 +30,18 @@ export type FichaItem = {
   id: string; kind: FichaKind; at: string | null; owner: string | null; contacts: string[]; ctIds: string[];
   title: string; body: string; done?: boolean; due?: string | null; dir?: string | null; outcome?: string | null;
 };
-export type FichaContact = { hs: string; n: string; cargo: string; st: string | null; ph: boolean; ml: boolean; lk: boolean };
+// Reunión previa del contacto en la planilla de reuniones (cualquier cliente)
+export type PrevMeeting = { client: string; same: boolean; emp: string; d: string | null; st: string; opp: boolean };
+export type FichaContact = {
+  hs: string; n: string; cargo: string; st: string | null; ph: boolean; ml: boolean; lk: boolean;
+  fit?: number | null; fitWhy?: string | null;   // calce del cargo con el ICP del cliente (0–100)
+  prob?: number | null;                          // probabilidad de agendar (historia de Calidad de carga)
+  prev?: PrevMeeting[];                          // reuniones que ya tuvo (aquí o con otra cuenta)
+};
+export type FichaInfo = { label: string; value: string; href?: string };
 export type Ficha = {
-  company: { hs: string; n: string; st: string | null; dom: string | null };
+  company: { hs: string; n: string; st: string | null; dom: string | null; info: FichaInfo[] };
+  icp: { has: boolean; probBase: string | null };
   contacts: FichaContact[];
   items: FichaItem[];
   tasks: FichaItem[];           // seguimientos pendientes (tareas sin completar)
@@ -47,6 +61,7 @@ const strip = (html: string | null | undefined) =>
 const cut = (s: string) => (s.length > BODY_MAX ? `${s.slice(0, BODY_MAX)}…` : s);
 
 type Ctx = {
+  clientId: string; clientName: string;
   token: string | undefined; writable: boolean; reason: string | null; own: boolean;
   P: Record<string, DetectedProperty>; ctClientProp: string | null; ctClientOpt: string | null;
   coAliases: Record<string, string>; ctAliases: Record<string, string>;
@@ -68,6 +83,7 @@ async function context(clientId: string, sub: string | null): Promise<Ctx> {
     ?? (c.length >= 4 ? (uniCt?.options ?? []).find((o) => { const l = compact(o.label); return l.length >= 4 && (l.startsWith(c) || c.startsWith(l)); }) : undefined);
   const own = settings.hubspot_source === "client";
   return {
+    clientId, clientName: client.name,
     token, P,
     // HubSpot propio del cliente: se intenta escribir; si su token es de solo lectura, HubSpot responde 403 y se avisa
     writable: true, own,
@@ -109,7 +125,10 @@ export async function loadFicha(clientId: string, sub: string | null, hsCompanyI
   const x = await context(clientId, sub);
   const { token, P } = x;
   const stProp = P.companyStatus?.property ?? null, ctStProp = P.contactStatus?.property ?? null;
-  const [coRow] = await batchRead("companies", [hsCompanyId], ["name", "domain", ...(stProp ? [stProp] : [])], token);
+  const prop = (k: string) => P[k]?.property ?? null;
+  const coExtra = Array.from(new Set(["industry", "pais_g", "country", "city", "numberofemployees", "annualrevenue", "website", "linkedin_company_page", "description", "createdate",
+    ...[prop("companyIndustry"), prop("companyCountry"), prop("companySdr"), prop("companyAssignedAt"), prop("companyNextFollowUp"), prop("companyWishlist")].filter(Boolean) as string[]]));
+  const [coRow] = await batchRead("companies", [hsCompanyId], ["name", "domain", ...(stProp ? [stProp] : []), ...coExtra], token);
   if (!coRow) throw new Error("No se encontró la empresa en HubSpot.");
 
   // Contactos de la empresa (solo los de esta cuenta si se puede saber)
@@ -132,6 +151,8 @@ export async function loadFicha(clientId: string, sub: string | null, hsCompanyI
       };
     });
   const ctName = new Map(contacts.map((c) => [c.hs, c.n]));
+  const coName = coRow.properties.name || `Empresa ${hsCompanyId}`;
+  const icp = await enrichContacts(x, contacts, coName);
 
   // Actividades de la empresa y de sus contactos (una sola vez por id)
   const fromIds = [hsCompanyId];
@@ -177,9 +198,105 @@ export async function loadFicha(clientId: string, sub: string | null, hsCompanyI
   const tasks = items.filter((i) => i.kind === "task" && !i.done).sort((a, b) => String(a.due ?? "").localeCompare(String(b.due ?? "")));
   const history = items.filter((i) => !(i.kind === "task" && !i.done)).sort((a, b) => String(b.at ?? "").localeCompare(String(a.at ?? ""))).slice(0, MAX_ITEMS);
   return {
-    company: { hs: hsCompanyId, n: coRow.properties.name || `Empresa ${hsCompanyId}`, st: canonical(stProp ? labeler(P.companyStatus)(coRow.properties[stProp]) : null, CO_ORDER, x.coAliases), dom: coRow.properties.domain ?? null },
-    contacts, items: history, tasks, writable: x.writable, reason: x.reason, at: new Date().toISOString(),
+    company: { hs: hsCompanyId, n: coName, st: canonical(stProp ? labeler(P.companyStatus)(coRow.properties[stProp]) : null, CO_ORDER, x.coAliases), dom: coRow.properties.domain ?? null, info: companyInfo(P, coRow.properties) },
+    icp, contacts, items: history, tasks, writable: x.writable, reason: x.reason, at: new Date().toISOString(),
   };
+}
+
+// ── Datos de la empresa ───────────────────────────────────────────────────
+const fmtDate = (v: string | null | undefined) => {
+  if (!v) return null;
+  const d = new Date(/^\d+$/.test(v) ? Number(v) : v);
+  return Number.isNaN(d.getTime()) ? v : new Intl.DateTimeFormat("es-CL", { timeZone: "America/Santiago", day: "numeric", month: "short", year: "numeric" }).format(d);
+};
+const fmtNum = (v: string | null | undefined) => (v && !Number.isNaN(Number(v)) ? new Intl.NumberFormat("es-CL").format(Number(v)) : v || null);
+const url = (v: string | null | undefined) => (v ? (/^https?:\/\//i.test(v) ? v : `https://${v}`) : undefined);
+
+function companyInfo(P: Record<string, DetectedProperty>, p: Record<string, string | null>): FichaInfo[] {
+  const val = (k: string) => { const d = P[k]; return d?.property ? labeler(d)(p[d.property]) : null; };
+  const rows: [string, string | null, string?][] = [
+    ["Industria", val("companyIndustry") || p.industry || null],
+    ["País", val("companyCountry") || p.pais_g || p.country || null],
+    ["Ciudad", p.city || null],
+    ["Empleados", fmtNum(p.numberofemployees)],
+    ["Facturación anual", fmtNum(p.annualrevenue)],
+    ["Sitio web", p.website || null, url(p.website)],
+    ["LinkedIn", p.linkedin_company_page ? "Página de la empresa" : null, url(p.linkedin_company_page)],
+    ["SDR", val("companySdr")],
+    ["Wishlist", val("companyWishlist")],
+    ["Asignada el", fmtDate(val("companyAssignedAt"))],
+    ["Próximo seguimiento", fmtDate(val("companyNextFollowUp"))],
+    ["Creada en HubSpot", fmtDate(p.createdate)],
+    ["Descripción", p.description ? cut(p.description) : null],
+  ];
+  return rows.filter(([, v]) => !!v).map(([label, value, href]) => ({ label, value: value!, ...(href ? { href } : {}) }));
+}
+
+// ── Calce ICP, probabilidad y reuniones previas de los contactos ─────────
+const FIT_OK = 60, FIT_PARTIAL = 40, MIN_SEGMENT = 25;
+const chileDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santiago" }).format(d);
+const personKey = (s: string) => normLabel(s).replace(/[^a-z ]/g, "").split(" ").filter(Boolean).join(" ");
+
+async function enrichContacts(x: Ctx, contacts: FichaContact[], coName: string): Promise<Ficha["icp"]> {
+  const db = supabaseAdmin();
+  let has = false, probBase: string | null = null;
+  // 1) Calce del cargo con el ICP (misma IA y caché que Contactos IA / Calidad de carga)
+  try {
+    const titles = Array.from(new Set(contacts.map((c) => normTitle(c.cargo)).filter(Boolean)));
+    if (titles.length) {
+      const { scores, hasIcp } = await scoreTitlesForClient(db, x.clientId, titles);
+      has = hasIcp;
+      for (const c of contacts) {
+        const sc = c.cargo ? scores.get(normTitle(c.cargo)) : undefined;
+        c.fit = sc ? sc.fit_score : null; c.fitWhy = sc?.reason ?? null;
+      }
+    }
+  } catch { /* sin calce: la ficha sigue */ }
+  // 2) Probabilidad de agendar: tasa histórica del cliente por calce × teléfono (último informe de Calidad de carga)
+  try {
+    let rep: CargaReport | null = null;
+    for (let i = 0; i < 4 && !rep; i++) rep = (await readMonthCache<CargaReport>(`calidad_carga:v3:${x.clientId}:30:${chileDay(new Date(Date.now() - i * 86400_000))}`)) ?? null;
+    if (rep?.history?.contacts) {
+      const seg = new Map(rep.history.segments.map((s) => [s.key, s]));
+      const tel = (t: boolean) => rep!.history.segments.filter((s) => s.key.endsWith(t ? "|tel" : "|sintel")).reduce((a, s) => ({ n: a.n + s.n, m: a.m + s.meetings }), { n: 0, m: 0 });
+      for (const c of contacts) {
+        const band = c.fit == null ? "otro" : c.fit >= FIT_OK ? "calza" : c.fit >= FIT_PARTIAL ? "parcial" : "otro";
+        const s = seg.get(`${band}|${c.ph ? "tel" : "sintel"}`);
+        const t = tel(c.ph);
+        c.prob = s && s.n >= MIN_SEGMENT ? s.meetings / s.n : t.n >= MIN_SEGMENT ? t.m / t.n : rep.history.rate;
+      }
+      probBase = `${rep.history.contacts} contactos importados del cliente hace 1 a 6 meses (${rep.history.meetings} con reunión)`;
+    }
+  } catch { /* sin probabilidad */ }
+  // 3) Reuniones previas del contacto en la planilla (cualquier cliente), por nombre
+  try {
+    const names = Array.from(new Set(contacts.map((c) => c.n.replace(/[,()%*]/g, " ").trim()).filter((n) => n.split(/\s+/).length >= 2)));
+    if (names.length) {
+      const { data } = await db.from("meetings").select("client_id, empresa, contacto_nombre, fecha_reunion, realizado, propuesta_oportunidad")
+        .or(names.map((n) => `contacto_nombre.ilike.${n}`).join(",")).limit(300);
+      const rows = (data ?? []) as { client_id: string | null; empresa: string; contacto_nombre: string | null; fecha_reunion: string | null; realizado: string; propuesta_oportunidad: string | null }[];
+      const ids = Array.from(new Set(rows.map((r) => r.client_id).filter(Boolean) as string[]));
+      const { data: cl } = ids.length ? await db.from("clients").select("id, name").in("id", ids) : { data: [] };
+      const cName = new Map(((cl ?? []) as { id: string; name: string }[]).map((r) => [r.id, r.name]));
+      const ST: Record<string, string> = { Si: "Realizada", No: "No-show", Reagendar: "Reprogramada", Pendiente: "Pendiente" };
+      const coK = compact(coName.replace(/\b(s\.?a\.?|spa|ltda|s\.?a\.?s|inc|llc)\b\.?/gi, ""));
+      for (const c of contacts) {
+        const k = personKey(c.n);
+        const mine = rows.filter((r) => r.contacto_nombre && personKey(r.contacto_nombre) === k);
+        if (!mine.length) continue;
+        c.prev = mine.map((r) => {
+          const empK = compact(r.empresa.replace(/\b(s\.?a\.?|spa|ltda|s\.?a\.?s|inc|llc)\b\.?/gi, ""));
+          return {
+            client: (r.client_id && cName.get(r.client_id)) || "Sin cliente", same: r.client_id === x.clientId,
+            emp: r.empresa, d: r.fecha_reunion, st: ST[r.realizado] ?? r.realizado, opp: normLabel(r.propuesta_oportunidad ?? "") === "si",
+            // otra empresa con el mismo nombre de persona: puede ser un homónimo
+            ...(coK && empK && !empK.includes(coK) && !coK.includes(empK) ? { emp: `${r.empresa} (otra empresa: revisar si es la misma persona)` } : {}),
+          };
+        }).sort((a, b) => String(b.d ?? "").localeCompare(String(a.d ?? "")));
+      }
+    }
+  } catch { /* sin reuniones previas */ }
+  return { has, probBase };
 }
 
 // ── Registrar ─────────────────────────────────────────────────────────────
@@ -365,4 +482,65 @@ export async function completeTask(clientId: string, sub: string | null, taskId:
   const x = await context(clientId, sub);
   if (!x.writable) throw new Error(x.reason ?? "No se puede escribir en este HubSpot.");
   await hsWrite(`${HS}/crm/v3/objects/tasks/${id}`, "PATCH", x.token, { properties: { hs_task_status: "COMPLETED" } }, x.own);
+}
+
+// ── Llamar con Allo: cola de marcación del SDR ────────────────────────────
+// (27-nov-2026) Agrega los contactos elegidos a la cola de marcación (Power
+// Dialer) de quien hace clic en Allo, por su correo. El teléfono se lee de
+// HubSpot en el servidor y va solo a Allo: no se muestra en la app. Se
+// prefiere el celular. Allo registra la llamada (y la sincroniza con HubSpot).
+const DIAL_PHONE_PROPS = ["mobilephone", "phone", "telefono_lemlist", "hs_whatsapp_phone_number", "bullseye_telefono_clay", "bullseye_telefono_lusha", "phone_4"];
+export type DialResult = { added: number; skipped: { n: string; why: string }[]; queue: string | null };
+
+async function alloJson(path: string, init?: RequestInit) {
+  const r = await alloFetchRaw(path, init);
+  const t = await r.text();
+  if (!r.ok) throw new Error(`Allo respondió ${r.status}: ${t.slice(0, 200)}`);
+  return t ? JSON.parse(t) : {};
+}
+
+export async function addToAlloQueue(clientId: string, sub: string | null, hsCompanyId: string, contactIds: string[], email: string): Promise<DialResult> {
+  if (!contactIds.length) throw new Error("Elige al menos un contacto.");
+  const users = ((await alloJson("/v2/api/users"))?.data ?? []) as { id: string; email: string }[];
+  const me = users.find((u) => (u.email ?? "").toLowerCase() === email.toLowerCase());
+  if (!me) throw new Error(`Tu correo (${email}) no es usuario de Allo: pide que te agreguen al equipo.`);
+
+  const x = await context(clientId, sub);
+  // Solo contactos de esta empresa
+  const ofCo = new Set((await batchAssociations("companies", "contacts", [hsCompanyId], x.token)).get(hsCompanyId) ?? []);
+  const ids = contactIds.filter((id) => ofCo.has(id)).slice(0, 100);
+  const [coRow] = await batchRead("companies", [hsCompanyId], ["name", "domain", "pais_g", "country"], x.token);
+  const rows = ids.length ? await batchRead("contacts", ids, ["firstname", "lastname", "jobtitle", "country", "pais_g", ...DIAL_PHONE_PROPS], x.token) : [];
+  const skipped: DialResult["skipped"] = contactIds.filter((id) => !ofCo.has(id)).map((id) => ({ n: id, why: "no es contacto de esta empresa" }));
+  const numbers: Record<string, unknown>[] = [];
+  for (const r of rows) {
+    const p = r.properties;
+    const name = [p.firstname, p.lastname].filter(Boolean).join(" ") || `Contacto ${r.id}`;
+    const hint = countryFromText(p.pais_g || p.country || coRow?.properties.pais_g || coRow?.properties.country);
+    const cands = DIAL_PHONE_PROPS.map((k) => classifyPhone(p[k], hint)).filter((c): c is NonNullable<typeof c> => !!c && c.number.replace(/\D/g, "").length >= 10);
+    const best = cands.find((c) => c.kind === "mobile") ?? cands.find((c) => c.kind === "maybe") ?? cands[0];
+    if (!best) { skipped.push({ n: name, why: "sin teléfono en HubSpot" }); continue; }
+    numbers.push({
+      number: best.number,
+      ...(p.firstname ? { name: p.firstname } : {}), ...(p.lastname ? { last_name: p.lastname } : {}),
+      ...(p.jobtitle ? { job_title: p.jobtitle } : {}),
+      ...(coRow?.properties.name ? { company: coRow.properties.name } : {}), ...(coRow?.properties.domain ? { website: coRow.properties.domain } : {}),
+    });
+  }
+  if (!numbers.length) return { added: 0, skipped, queue: null };
+
+  // Cola actual del SDR (Allo la crea si no tiene). Se comprueba que la cola
+  // sea suya: si Allo ignorara el correo, los números quedarían en la cola del
+  // dueño de la API key.
+  const q = `email=${encodeURIComponent(me.email)}&user_id=${encodeURIComponent(me.id)}`;
+  const res = await alloJson(`/v2/api/dialing-queues/current/numbers?${q}`, { method: "POST", body: JSON.stringify({ numbers }) });
+  const data = res?.data ?? res;
+  const added = Array.isArray(data?.added) ? data.added.length : Number(data?.added ?? numbers.length);
+  for (const s of (Array.isArray(data?.skipped) ? data.skipped : []) as { number?: string; reason?: string }[]) {
+    skipped.push({ n: s.number ? `${s.number.slice(0, 4)}…${s.number.slice(-2)}` : "número", why: s.reason === "DUPLICATE_NUMBER" ? "ya estaba en tu cola" : s.reason === "INVALID_PHONE_NUMBER" ? "teléfono inválido" : s.reason ?? "omitido" });
+  }
+  const queues = ((await alloJson(`/v2/api/dialing-queues?${q}&size=5`))?.data ?? []) as { id: string; name?: string; assignee_id?: string }[];
+  const mine = queues.find((qq) => qq.assignee_id === me.id);
+  if (!mine) throw new Error("Allo no confirmó que los números quedaran en tu cola de marcación. Revisa tu cola en Allo y avisa a Ingri.");
+  return { added, skipped, queue: mine.name ?? null };
 }

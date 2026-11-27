@@ -4,8 +4,8 @@
 // sus contactos leído en vivo de HubSpot, seguimientos pendientes y registro
 // de notas, WhatsApp, LinkedIn, correos y seguimientos (lib/dashboardSdr/ficha.ts).
 import { useCallback, useEffect, useState } from "react";
-import { IconBrandLinkedin, IconBrandWhatsapp, IconCalendarEvent, IconCheck, IconChecklist, IconExternalLink, IconLoader2, IconMail, IconNote, IconPhone, IconRefresh, IconX } from "@tabler/icons-react";
-import type { Ficha, FichaItem, FichaKind } from "@/lib/dashboardSdr/ficha";
+import { IconArrowLeft, IconBrandLinkedin, IconChevronRight, IconBrandWhatsapp, IconCalendarEvent, IconCheck, IconChecklist, IconExternalLink, IconLoader2, IconMail, IconNote, IconPhone, IconRefresh, IconX } from "@tabler/icons-react";
+import type { Ficha, FichaContact, FichaItem, FichaKind } from "@/lib/dashboardSdr/ficha";
 
 type Acct = { id: string; sub: string | null; edit: boolean; portal?: number };
 type Rec = { c: string; hs: string; n: string };
@@ -37,11 +37,17 @@ const tomorrow = () => {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "America/Santiago" }).format(d);
 };
 
-export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus, focus }: {
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+const fitTone = (f: number) => (f >= 60 ? "bg-success-bg text-success-fg" : f >= 40 ? "bg-warning-bg text-warning-fg" : "bg-black/5 text-ink-muted");
+const fitText = (f: number) => (f >= 60 ? "Calza con el ICP" : f >= 40 ? "Calce parcial" : "No calza");
+const fmtDay = (d: string | null) => (d ? new Intl.DateTimeFormat("es-CL", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(new Date(`${d.slice(0, 10)}T12:00:00Z`)) : "sin fecha");
+
+export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus, focus: initialFocus }: {
   rec: Rec; acct: Acct | undefined; canWrite: boolean; onClose: () => void;
   focus?: { hs: string; n: string };   // ficha abierta desde un contacto: historial y registro enfocados en él
   renderStatus: (type: "company" | "contact", r: { c: string; hs: string; st: string }, onSaved: (st: string) => void) => React.ReactNode;
 }) {
+  const [focus, setFocus] = useState(initialFocus);
   const [data, setData] = useState<Ficha | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -50,6 +56,8 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
   const [subject, setSubject] = useState("");
   const [contact, setContact] = useState(focus?.hs ?? "");
   const [onlyCt, setOnlyCt] = useState(!!focus);
+  const openContact = (c: { hs: string; n: string } | undefined) => { setFocus(c); setOnlyCt(!!c); setContact(c?.hs ?? ""); setMsg(null); };
+  const focusCt: FichaContact | undefined = focus ? data?.contacts.find((c) => c.hs === focus.hs) : undefined;
   const [due, setDue] = useState(`${tomorrow()}T09:30`);
   const [taskType, setTaskType] = useState<"CALL" | "TODO">("CALL");
   const [saving, setSaving] = useState(false);
@@ -90,6 +98,22 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
       return true;
     } catch (e) { setMsg({ ok: false, t: (e as Error).message }); return false; } finally { setSaving(false); }
   };
+  const [dialing, setDialing] = useState(false);
+  const [dialMsg, setDialMsg] = useState<{ ok: boolean; t: string } | null>(null);
+  const dial = async (ids: string[]) => {
+    if (!acct || !ids.length) return;
+    setDialing(true); setDialMsg(null);
+    try {
+      const r = await fetch("/api/sdr/dashboard/ficha", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: acct.id, sub: acct.sub, hs: rec.hs, action: "dial", contacts: ids }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+      const sk = (j.skipped ?? []) as { n: string; why: string }[];
+      const t = j.added
+        ? `${j.added === 1 ? "Agregado" : `${j.added} agregados`} a tu cola de marcación de Allo${j.queue ? ` («${j.queue}»)` : ""}: ábrela en el Power Dialer de Allo.`
+        : "No se agregó ningún número.";
+      setDialMsg({ ok: !!j.added, t: sk.length ? `${t} Omitidos: ${sk.map((x) => `${x.n} (${x.why})`).join(", ")}.` : t });
+    } catch (e) { setDialMsg({ ok: false, t: (e as Error).message }); } finally { setDialing(false); }
+  };
   const save = async () => {
     const ok = await post({ action: "create", kind, body, subject: subject || undefined, contact: contact || undefined, due: kind === "task" ? due : undefined, taskType });
     if (ok) { setBody(""); setSubject(""); }
@@ -125,7 +149,10 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
           {focus && (
             <div className="flex items-center justify-between gap-2 flex-wrap rounded-lg border bg-white px-3 py-2 text-sm">
               <span>Contacto: <b>{hsLink("0-1", focus.hs) ? <a href={hsLink("0-1", focus.hs)!} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">{focus.n}</a> : focus.n}</b></span>
-              <button type="button" onClick={() => setOnlyCt(!onlyCt)} className="text-xs text-brand hover:underline">{onlyCt ? "Ver toda la empresa" : `Solo ${focus.n}`}</button>
+              <span className="flex items-center gap-3">
+                <button type="button" onClick={() => setOnlyCt(!onlyCt)} className="text-xs text-brand hover:underline">{onlyCt ? "Ver historial de toda la empresa" : `Solo ${focus.n}`}</button>
+                <button type="button" onClick={() => openContact(undefined)} className="text-xs text-brand hover:underline flex items-center gap-1"><IconArrowLeft size={12} /> Ficha de la empresa</button>
+              </span>
             </div>
           )}
           {err && <div className="text-sm text-danger-fg bg-danger-bg rounded-lg p-3">{err}</div>}
@@ -133,6 +160,65 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
 
           {data && (
             <>
+              {focus ? (
+                focusCt && <ContactCard c={focusCt} onDial={writable && focusCt.ph ? () => dial([focusCt.hs]) : undefined} dialing={dialing} dialMsg={dialMsg} hasIcp={data.icp.has} probBase={data.icp.probBase} status={renderStatus("contact", { c: rec.c, hs: focusCt.hs, st: focusCt.st ?? "Sin status" }, (st) => setData((d) => (d ? { ...d, contacts: d.contacts.map((k) => (k.hs === focusCt.hs ? { ...k, st } : k)) } : d)))} />
+              ) : (
+                <>
+                  {/* Datos de la empresa */}
+                  <section className="card space-y-2">
+                    <h3 className="text-sm font-semibold">Datos de la empresa</h3>
+                    {!data.company.info.length && <p className="text-sm text-ink-muted">HubSpot no tiene más datos de esta empresa.</p>}
+                    <dl className="grid sm:grid-cols-2 gap-x-4 gap-y-2">
+                      {data.company.info.map((f) => (
+                        <div key={f.label} className={f.label === "Descripción" ? "sm:col-span-2" : ""}>
+                          <dt className="text-xs text-ink-muted">{f.label}</dt>
+                          <dd className="text-sm break-words">{f.href ? <a href={f.href} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">{f.value}</a> : f.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </section>
+
+                  {/* Contactos asociados (plegable) */}
+                  <details className="card group">
+                    <summary className="cursor-pointer text-sm font-semibold flex items-center gap-1.5 list-none">
+                      <IconChevronRight size={14} className="transition-transform group-open:rotate-90" />
+                      Ver contactos asociados ({data.contacts.length})
+                      {(() => { const n = data.contacts.filter((c) => (c.fit ?? 0) >= 60).length, p = data.contacts.filter((c) => c.prev?.length).length; return <span className="text-xs font-normal text-ink-muted">{data.icp.has ? ` · ${n} calzan con el ICP` : ""}{p ? ` · ${p} ya tuvieron reunión` : ""}</span>; })()}
+                    </summary>
+                    <div className="mt-2">
+                      {writable && data.contacts.some((c) => c.ph) && (
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          <button type="button" disabled={dialing} onClick={() => dial(data.contacts.filter((c) => c.ph).map((c) => c.hs))}
+                            className="text-xs px-2.5 py-1.5 rounded-lg bg-brand text-white disabled:opacity-50 flex items-center gap-1">
+                            {dialing ? <IconLoader2 size={12} className="animate-spin" /> : <IconPhone size={12} />} Agregar a mi cola de Allo ({data.contacts.filter((c) => c.ph).length} con teléfono)
+                          </button>
+                          {dialMsg && <span className={`text-xs ${dialMsg.ok ? "text-success-fg" : "text-danger-fg"}`}>{dialMsg.t}</span>}
+                        </div>
+                      )}
+                      {!data.contacts.length && <p className="text-sm text-ink-muted">Sin contactos de este cliente en la empresa.</p>}
+                      <div className="divide-y">
+                        {[...data.contacts].sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).map((c) => (
+                          <div key={c.hs} className="py-2 flex items-center gap-3 flex-wrap">
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-medium flex items-center gap-1.5 flex-wrap">
+                                {hsLink("0-1", c.hs) ? <a href={hsLink("0-1", c.hs)!} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">{c.n}</a> : c.n}
+                                {c.fit != null && <span title={c.fitWhy ?? undefined} className={`text-[11px] px-1.5 py-0.5 rounded ${fitTone(c.fit)}`}>ICP {c.fit}</span>}
+                                {c.prob != null && <span className="text-[11px] px-1.5 py-0.5 rounded bg-info-bg text-info-fg" title="Probabilidad de agendar según la historia del cliente">{pct(c.prob)} reunión</span>}
+                                {!!c.prev?.length && <span className="text-[11px] px-1.5 py-0.5 rounded bg-brand/10 text-brand" title={c.prev.map((m) => `${m.client} · ${m.emp} · ${fmtDay(m.d)} · ${m.st}`).join("\n")}>Ya tuvo {c.prev.length} reunión{c.prev.length > 1 ? "es" : ""}</span>}
+                              </div>
+                              <div className="text-xs text-ink-muted">{c.cargo || "Sin cargo"} · {[c.ph && "teléfono", c.ml && "correo", c.lk && "LinkedIn"].filter(Boolean).join(", ") || "sin datos de contacto"}</div>
+                            </div>
+                            <div className="text-sm">{renderStatus("contact", { c: rec.c, hs: c.hs, st: c.st ?? "Sin status" }, (st) => setData((d) => (d ? { ...d, contacts: d.contacts.map((k) => (k.hs === c.hs ? { ...k, st } : k)) } : d)))}</div>
+                            {writable && c.ph && <button type="button" disabled={dialing} onClick={() => dial([c.hs])} title="Agregar a mi cola de marcación de Allo" className="text-xs px-2 py-1 rounded border bg-white hover:bg-black/5 flex items-center gap-1 disabled:opacity-50"><IconPhone size={12} /> Llamar</button>}
+                            <button type="button" onClick={() => openContact({ hs: c.hs, n: c.n })} className="text-xs px-2 py-1 rounded border bg-white hover:bg-black/5">Ver ficha</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </details>
+                </>
+              )}
+
               {/* Registrar */}
               <section className="card space-y-3">
                 <h3 className="text-sm font-semibold">Registrar</h3>
@@ -202,25 +288,6 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
                 ))}
               </section>
 
-              {/* Contactos */}
-              <section className="card space-y-2">
-                <h3 className="text-sm font-semibold">Contactos de la cuenta ({data.contacts.length})</h3>
-                {!data.contacts.length && <p className="text-sm text-ink-muted">Sin contactos de este cliente en la empresa.</p>}
-                <div className="divide-y">
-                  {data.contacts.map((c) => (
-                    <div key={c.hs} className="py-2 flex items-center gap-3 flex-wrap">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium">
-                          {hsLink("0-1", c.hs) ? <a href={hsLink("0-1", c.hs)!} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">{c.n}</a> : c.n}
-                        </div>
-                        <div className="text-xs text-ink-muted">{c.cargo || "Sin cargo"} · {[c.ph && "teléfono", c.ml && "correo", c.lk && "LinkedIn"].filter(Boolean).join(", ") || "sin datos de contacto"}</div>
-                      </div>
-                      <div className="text-sm">{renderStatus("contact", { c: rec.c, hs: c.hs, st: c.st ?? "Sin status" }, (st) => setData((d) => (d ? { ...d, contacts: d.contacts.map((k) => (k.hs === c.hs ? { ...k, st } : k)) } : d)))}</div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
               {/* Historial */}
               <section className="card space-y-3">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -259,5 +326,58 @@ function HistoryItem({ i }: { i: FichaItem }) {
         {long && <button type="button" onClick={() => setOpen(!open)} className="text-xs text-brand hover:underline mt-0.5">{open ? "Ver menos" : "Ver más"}</button>}
       </div>
     </li>
+  );
+}
+
+function ContactCard({ c, hasIcp, probBase, status, onDial, dialing, dialMsg }: { c: FichaContact; hasIcp: boolean; probBase: string | null; status: React.ReactNode; onDial?: () => void; dialing: boolean; dialMsg: { ok: boolean; t: string } | null }) {
+  const other = (c.prev ?? []).filter((m) => !m.same), here = (c.prev ?? []).filter((m) => m.same);
+  return (
+    <section className="card space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-semibold">{c.n}</h3>
+          <div className="text-xs text-ink-muted">{c.cargo || "Sin cargo"} · {[c.ph && "teléfono", c.ml && "correo", c.lk && "LinkedIn"].filter(Boolean).join(", ") || "sin datos de contacto"}</div>
+        </div>
+        <div className="flex items-center gap-2 text-sm">
+          {onDial && <button type="button" disabled={dialing} onClick={onDial} title="Agregar a mi cola de marcación de Allo" className="text-xs px-2.5 py-1.5 rounded-lg bg-brand text-white disabled:opacity-50 flex items-center gap-1">{dialing ? <IconLoader2 size={12} className="animate-spin" /> : <IconPhone size={12} />} Llamar con Allo</button>}
+          {status}
+        </div>
+      </div>
+      {dialMsg && <p className={`text-xs ${dialMsg.ok ? "text-success-fg" : "text-danger-fg"}`}>{dialMsg.t}</p>}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div className="rounded-lg border bg-white p-3">
+          <div className="text-xs text-ink-muted">Calce con el ICP del cliente</div>
+          {c.fit != null ? (
+            <>
+              <div className="mt-1 flex items-center gap-2"><span className="text-xl font-semibold">{c.fit}</span><span className={`text-xs px-1.5 py-0.5 rounded ${fitTone(c.fit)}`}>{fitText(c.fit)}</span></div>
+              {c.fitWhy && <p className="text-xs text-ink-muted mt-1">{c.fitWhy}</p>}
+            </>
+          ) : <p className="text-sm text-ink-muted mt-1">{!hasIcp ? "El cliente no tiene ICP cargado." : !c.cargo ? "Sin cargo: no se puede evaluar." : "Sin evaluar."}</p>}
+        </div>
+        <div className="rounded-lg border bg-white p-3">
+          <div className="text-xs text-ink-muted">Probabilidad de agendar</div>
+          {c.prob != null ? (
+            <>
+              <div className="mt-1 text-xl font-semibold">{pct(c.prob)}</div>
+              <p className="text-xs text-ink-muted mt-1">Tasa de reunión de contactos parecidos (calce × {c.ph ? "con" : "sin"} teléfono) en {probBase ?? "la historia del cliente"}.{here.length || other.length ? " Las reuniones previas de abajo no están en este cálculo." : ""}</p>
+            </>
+          ) : <p className="text-sm text-ink-muted mt-1">Aún sin historia del cliente (se calcula en Calidad de carga).</p>}
+        </div>
+      </div>
+      <div>
+        <div className="text-xs text-ink-muted mb-1">Reuniones que ya tuvo (planilla de reuniones, por nombre)</div>
+        {!c.prev?.length ? <p className="text-sm text-ink-muted">No aparece en reuniones anteriores.</p> : (
+          <ul className="space-y-1">
+            {[...here, ...other].map((m, i) => (
+              <li key={i} className="text-sm flex flex-wrap gap-x-2">
+                <span className={`text-[11px] px-1.5 py-0.5 rounded ${m.same ? "bg-black/5" : "bg-brand/10 text-brand"}`}>{m.same ? "Este cliente" : `Con ${m.client}`}</span>
+                <span>{m.emp}</span><span className="text-ink-muted">· {fmtDay(m.d)} · {m.st}{m.opp ? " · con oportunidad" : ""}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {!!other.length && <p className="text-xs text-ink-muted mt-1">Ya tuvo una reunión agendada por BullsEye para otro cliente: tenlo en cuenta al contactarlo (no compartas datos de ese otro cliente).</p>}
+      </div>
+    </section>
   );
 }
