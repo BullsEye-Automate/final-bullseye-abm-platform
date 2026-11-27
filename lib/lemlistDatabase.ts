@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { actiLemlistKey, actiListNames, isActiClient } from "@/lib/acti/lemlist";
 
 // Base de datos B2B de Lemlist, consultada con la API key PROPIA de cada
 // cliente (client_configs.lemlist_api_key). A diferencia de getLemlistApiKey(),
@@ -25,7 +26,22 @@ const LEMLIST_API = "https://api.lemlist.com/api";
 export async function getClientOwnLemlistKey(db: SupabaseClient, clientId: string): Promise<string | null> {
   const { data } = await db.from("client_configs").select("lemlist_api_key").eq("client_id", clientId).maybeSingle();
   const key = (data as { lemlist_api_key?: string | null } | null)?.lemlist_api_key?.trim();
-  return key || null;
+  if (key) return key;
+  // Socios ACTI sin cuenta propia: cuenta de BullsEye (lib/acti/lemlist.ts).
+  // Para el resto de los clientes no cambia nada.
+  if (await isActiClient(db, clientId)) return actiLemlistKey();
+  return null;
+}
+
+// Nombres de las listas de Lemlist del cliente: las de siempre, salvo los
+// socios ACTI que usan la cuenta de BullsEye (una lista por socio).
+export async function clientLemlistListNames(db: SupabaseClient, clientId: string): Promise<{ companies: string; contacts: string }> {
+  const defaults = { companies: WISHLIST_LIST_NAME, contacts: WISHLIST_CONTACT_LIST_NAME };
+  const { data } = await db.from("client_configs").select("lemlist_api_key").eq("client_id", clientId).maybeSingle();
+  if ((data as { lemlist_api_key?: string | null } | null)?.lemlist_api_key?.trim()) return defaults;
+  if (!(await isActiClient(db, clientId))) return defaults;
+  const { data: c } = await db.from("clients").select("name").eq("id", clientId).maybeSingle();
+  return actiListNames((c?.name as string | undefined) ?? "");
 }
 
 function headers(apiKey: string) {
@@ -254,18 +270,18 @@ export async function upsertLemlistCompany(
 }
 
 // Busca la lista estática "Wishlist BullsEye" en la cuenta del cliente o la crea
-export async function ensureWishlistCompanyList(apiKey: string): Promise<Result<{ listId: string }>> {
+export async function ensureWishlistCompanyList(apiKey: string, name: string = WISHLIST_LIST_NAME): Promise<Result<{ listId: string }>> {
   const found = await call<{ _id: string; name: string; dynamic?: boolean }[]>(
     apiKey,
-    `/companies/lists?search=${encodeURIComponent(WISHLIST_LIST_NAME)}`
+    `/companies/lists?search=${encodeURIComponent(name)}`
   );
   if (!found.ok) return found;
-  const existing = (found.data ?? []).find((l) => l.name === WISHLIST_LIST_NAME && !l.dynamic);
+  const existing = (found.data ?? []).find((l) => l.name === name && !l.dynamic);
   if (existing) return { ok: true, data: { listId: existing._id } };
 
   const created = await call<{ list?: { id?: string } }>(apiKey, "/companies/lists", {
     method: "POST",
-    body: JSON.stringify({ name: WISHLIST_LIST_NAME }),
+    body: JSON.stringify({ name }),
   });
   if (!created.ok) return created;
   const id = created.data?.list?.id;

@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Red de Negocios ACTI · MVP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F6F7FB; --surface:#FFFFFF; --ink:#251762; --muted:#5A5E8A; --line:#E6E7F1; --soft:#EEEFF8;
+  --teal:#62E0D8; --tink:#1FA39B; --navy:#251762; --side:#251762; --field:#FFFFFF;
+  --warn:#B45309; --warnbg:#FEF3C7; --ok:#0F766E; --okbg:#D9F7F4; --bad:#B91C1C; --badbg:#FEE2E2;
+  --shadow:0 2px 14px rgba(37,23,98,.06);
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#120A33; --surface:#1E1352; --ink:#FFFFFF; --muted:#C9C6E6; --line:#33276F; --soft:#2A1E66;
+  --tink:#62E0D8; --side:#0E0828; --field:#170E44; --warn:#FCD34D; --warnbg:#3B2A06; --ok:#62E0D8; --okbg:#0E3B3A; --bad:#FCA5A5; --badbg:#3F1111;
+  --shadow:0 2px 14px rgba(0,0,0,.25);}}
+:root[data-theme="dark"]{
+  --bg:#120A33; --surface:#1E1352; --ink:#FFFFFF; --muted:#C9C6E6; --line:#33276F; --soft:#2A1E66;
+  --tink:#62E0D8; --side:#0E0828; --field:#170E44; --warn:#FCD34D; --warnbg:#3B2A06; --ok:#62E0D8; --okbg:#0E3B3A; --bad:#FCA5A5; --badbg:#3F1111;
+  --shadow:0 2px 14px rgba(0,0,0,.25);}
+html,body{height:100%}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Montserrat,"Helvetica Neue",Arial,sans-serif;font-size:14px;font-weight:500;line-height:1.45;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--tink);outline-offset:2px}
+.app{display:grid;grid-template-columns:224px minmax(0,1fr);min-height:100%}
+/* sidebar */
+.side{background:var(--side);color:#fff;padding:22px 14px;display:flex;flex-direction:column;gap:20px;position:sticky;top:0;height:100vh;height:100dvh}
+.brand{display:flex;flex-direction:column;gap:10px;padding:0 8px}
+.brand .acti{font-weight:800;font-size:20px;letter-spacing:.02em;line-height:1}
+.brand .acti span{display:block;font-size:13px;font-weight:600;color:#C9C6E6;letter-spacing:0;margin-top:4px}
+.brand .pw{display:flex;align-items:center;gap:8px;font-size:11px;color:#C9C6E6}
+.brand .pw img{height:16px;width:auto}
+nav.menu{display:flex;flex-direction:column;gap:2px}
+.nav{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;border:0;background:transparent;color:#DCD9F2;font-size:13px;font-weight:600;cursor:pointer;text-align:left;width:100%}
+.nav svg{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nav:hover{background:rgba(255,255,255,.07);color:#fff}
+.nav.on{background:rgba(98,224,216,.14);color:#62E0D8}
+.nav .badge{margin-left:auto;background:#62E0D8;color:#251762;border-radius:999px;font-size:11px;padding:1px 7px;font-weight:800}
+.side .foot{margin-top:auto;font-size:12px;color:#C9C6E6;padding:0 8px;display:flex;flex-direction:column;gap:10px}
+.side .foot button{background:transparent;border:1px solid rgba(255,255,255,.2);color:#fff;border-radius:8px;padding:7px 10px;font-size:12px;font-weight:700;cursor:pointer;text-align:left}
+/* top */
+.main{min-width:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 28px;border-bottom:1px solid var(--line);background:var(--surface);flex-wrap:wrap}
+.who{display:flex;align-items:center;gap:12px}
+.av{width:34px;height:34px;border-radius:50%;background:var(--soft);display:grid;place-items:center;font-weight:800;font-size:13px;color:var(--ink);flex:none}
+.who b{display:block;font-size:13.5px;font-weight:700}
+.who small{color:var(--muted);font-size:12px}
+.meter{display:flex;align-items:center;gap:12px;font-size:12.5px;font-weight:600}
+.bar{width:160px;height:8px;border-radius:99px;background:var(--soft);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--tink);border-radius:99px}
+.plan{font-size:11.5px;font-weight:700;background:var(--navy);color:#fff;border-radius:999px;padding:4px 10px}
+:root[data-theme="dark"] .plan{background:#62E0D8;color:#251762}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .plan{background:#62E0D8;color:#251762}}
+.content{padding:24px 28px 48px;max-width:1440px;width:100%}
+.demo{font-size:12px;color:var(--muted);margin-bottom:18px}
+h1{font-size:24px;font-weight:800;letter-spacing:-.01em;margin:0 0 4px;line-height:1.2}
+.lead{color:var(--muted);margin:0 0 20px;max-width:80ch;font-size:14.5px}
+h2{font-size:16px;font-weight:700;margin:0 0 12px}
+h3{font-size:14px;font-weight:700;margin:0 0 6px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.stat{border-top:4px solid var(--teal)}
+.stat .v{font-size:24px;font-weight:800;line-height:1.1}
+.stat .l{font-size:13px;font-weight:600;margin-top:4px}
+.stat .b{font-size:12px;color:var(--muted);margin-top:2px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.tiny{font-size:12px}
+.row{display:flex;align-items:center;gap:12px}
+.between{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.stack{display:flex;flex-direction:column;gap:12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer;background:var(--navy);color:#fff;white-space:nowrap}
+:root[data-theme="dark"] .btn{background:#62E0D8;color:#251762}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn{background:#62E0D8;color:#251762}}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn.sm{padding:6px 11px;font-size:12.5px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 11px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink)}
+.chip.on{background:var(--navy);border-color:var(--navy);color:#fff}
+:root[data-theme="dark"] .chip.on{background:#62E0D8;border-color:#62E0D8;color:#251762}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .chip.on{background:#62E0D8;border-color:#62E0D8;color:#251762}}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.tag{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 9px;font-size:11px;font-weight:700;background:var(--soft);color:var(--ink);white-space:nowrap}
+.tag.ok{background:var(--okbg);color:var(--ok)}
+.tag.warn{background:var(--warnbg);color:var(--warn)}
+.tag.bad{background:var(--badbg);color:var(--bad)}
+.tag.navy{background:var(--navy);color:#fff}
+.note{border-left:3px solid var(--teal);padding:6px 0 6px 14px;font-size:13px;color:var(--muted)}
+.banner{display:flex;gap:14px;align-items:center;justify-content:space-between;background:var(--okbg);border-radius:12px;padding:12px 16px;font-size:13.5px}
+.banner.warn{background:var(--warnbg)}
+.banner b{font-weight:700}
+/* search */
+.search{display:grid;grid-template-columns:300px minmax(0,1fr);gap:24px;align-items:start}
+.filters{position:sticky;top:16px;max-height:calc(100dvh - 32px);overflow:auto}
+.fg+.fg{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.fg h3{display:flex;justify-content:space-between;align-items:center}
+.fg h3 small{font-weight:700;color:var(--muted);font-size:11px}
+.ftitle{font-size:12px;font-weight:800;color:var(--tink);margin:0 0 10px}
+input[type=text],input[type=search],textarea,select{width:100%;font:inherit;font-size:13.5px;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+textarea{min-height:90px;resize:vertical}
+.fl{display:flex;flex-direction:column;align-items:flex-start;gap:6px;font-size:13px;font-weight:700;color:var(--muted)}
+label.fl{align-items:stretch}
+.fl{font-size:12.5px;font-weight:600}
+.check{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:500;padding:3px 0;cursor:pointer}
+.check input{accent-color:#1FA39B;width:16px;height:16px}
+.results-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.co{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:16px;align-items:start;padding:18px 20px}
+.co+.co{border-top:1px solid var(--line)}
+.logo-co{width:44px;height:44px;border-radius:10px;background:var(--soft);display:grid;place-items:center;font-weight:700;font-size:14px}
+.co .nm{font-size:15px;font-weight:700}
+.co .meta{font-size:13px;color:var(--muted);margin:2px 0 10px}
+.prof{display:flex;flex-wrap:wrap;gap:6px}
+.prof .p{font-size:11.5px;font-weight:600;border:1px dashed var(--line);border-radius:8px;padding:4px 8px;background:var(--bg)}
+.prof .p.match{border-style:solid;border-color:var(--tink);color:var(--tink)}
+.co .side-actions{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.empty{padding:40px;text-align:center;color:var(--muted)}
+/* tables */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+thead th{background:var(--soft);font-size:12px;font-weight:700}
+tbody tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+tfoot td{font-weight:800;background:var(--soft);border-bottom:0}
+/* kanban */
+.kb{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:14px;overflow-x:auto;padding-bottom:6px}
+.col{background:var(--soft);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:120px}
+.col h3{font-size:13px;display:flex;justify-content:space-between}
+.kc{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px}
+.kc b{display:block;font-size:13px;font-weight:700}
+/* meetings */
+.mt{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:14px;align-items:center;padding:12px 14px;cursor:pointer;border-radius:12px;border:1px solid var(--line);background:var(--surface)}
+.mt:hover{border-color:var(--tink)}
+.date{width:54px;border-radius:10px;background:var(--soft);text-align:center;padding:6px 0;line-height:1.1}
+.date b{display:block;font-size:18px;font-weight:800}
+.date small{font-size:10.5px;font-weight:800;color:var(--muted)}
+.score{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:24px;flex:none}
+.bant{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.bant div{border:1px solid var(--line);border-radius:12px;padding:12px;font-size:13px}
+.bant b{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+ul.lst{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:13.5px}
+ul.lst li{position:relative;padding-left:20px}
+ul.lst li::before{content:"▸";color:var(--tink);font-weight:800;position:absolute;left:0;top:0}
+.quote{border-left:3px solid var(--teal);padding:4px 0 4px 14px;font-size:14px}
+.quote small{display:block;color:var(--muted);font-weight:700;font-size:12px;margin-bottom:2px}
+.talk{height:12px;border-radius:99px;overflow:hidden;display:flex;background:var(--soft)}
+.talk i{background:var(--navy)}
+:root[data-theme="dark"] .talk i{background:#62E0D8}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .talk i{background:#62E0D8}}
+.stars{display:flex;gap:4px}
+.stars button{border:0;background:transparent;font-size:22px;cursor:pointer;color:var(--muted);opacity:.35;padding:0 2px;line-height:1}
+.stars button.on{color:#E8A33D;opacity:1}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--navy);color:#fff}
+:root[data-theme="dark"] .seg button.on{background:#62E0D8;color:#251762}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .seg button.on{background:#62E0D8;color:#251762}}
+/* events */
+.ev{display:flex;flex-direction:column;gap:12px;padding:0;overflow:hidden}
+.ev .hd{background:var(--navy);color:#fff;padding:18px 20px;display:flex;gap:16px;align-items:center;position:relative;overflow:hidden}
+.ev .hd .d{background:rgba(255,255,255,.12);border-radius:12px;padding:8px 10px;text-align:center;line-height:1.05;min-width:58px}
+.ev .hd .d b{display:block;font-size:18px}
+.ev .hd .d small{font-size:11px;font-weight:800;color:#62E0D8}
+.ev .hd h3{font-size:14.5px;color:#fff;margin:0}
+.ev .hd p{margin:2px 0 0;font-size:12.5px;color:#C9C6E6}
+.ev .bd{padding:0 20px 18px;display:flex;flex-direction:column;gap:12px;flex:1}
+.prog{height:6px;border-radius:99px;background:var(--soft);overflow:hidden}
+.prog i{display:block;height:100%;background:var(--tink)}
+.att{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.att:last-child{border-bottom:0}
+.news{display:flex;flex-direction:column;gap:14px}
+.news div{border-left:3px solid var(--teal);padding-left:12px;font-size:13px}
+.news small{display:block;color:var(--muted);font-size:12px;font-weight:700}
+.slots{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.slots button{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:9px 0;font-weight:800;font-size:13px;cursor:pointer;color:var(--ink)}
+.slots button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.slots button[disabled]{opacity:.35;cursor:not-allowed;text-decoration:line-through}
+/* modal / drawer */
+.ov{position:fixed;inset:0;background:rgba(14,8,40,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+.ov.on{display:flex}
+.modal{background:var(--surface);border-radius:16px;max-width:540px;width:100%;max-height:calc(100dvh - 40px);overflow:auto;padding:22px;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal.wide{max-width:920px}
+.mhead{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:16px}
+.x{border:0;background:var(--soft);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;flex:none}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:#251762;color:#fff;border-radius:12px;padding:11px 16px;font-size:13px;font-weight:600;opacity:0;transition:.2s;z-index:60;pointer-events:none;max-width:90vw}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.tabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:20px;overflow-x:auto}
+.tabs button{border:0;background:transparent;padding:9px 12px;font-weight:700;font-size:13.5px;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--tink)}
+.pairs{display:flex;flex-direction:column;gap:10px}
+.pair{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:start}
+.prog-ring{display:flex;align-items:center;gap:14px}
+
+.db{display:grid;grid-template-columns:256px minmax(0,1fr);gap:18px;align-items:start}
+.dbf{padding:14px;position:sticky;top:16px;max-height:calc(100dvh - 32px);overflow:auto}
+.dbf .ftitle{margin:8px 4px 4px}
+.facet{border-bottom:1px solid var(--line)}
+.facet summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;padding:9px 4px;font-size:13px;font-weight:700}
+.facet summary::-webkit-details-marker{display:none}
+.facet summary::after{content:"+";margin-left:auto;color:var(--tink);font-size:18px;line-height:1}
+.facet[open] summary::after{content:"−"}
+.fsel{background:var(--tink);color:#fff;border-radius:999px;font-size:11px;padding:0 7px}
+.fopts{display:flex;flex-direction:column;gap:2px;padding:0 4px 10px;max-height:220px;overflow:auto}
+.fopt{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:center;font-size:12.5px;padding:4px 0;cursor:pointer}
+.fopt input{accent-color:#1FA39B;width:15px;height:15px;margin:0}
+.fopt em{font-style:normal;font-size:12px;color:var(--muted);font-weight:700}
+.linkbtn{border:0;background:transparent;color:var(--tink);font-weight:800;font-size:13px;cursor:pointer;padding:0}
+.dbt td{padding:10px 8px}
+.dbt th{padding:10px}
+.dbt td:nth-child(3){min-width:150px}
+.dbt th{white-space:nowrap}
+.dbrow{cursor:pointer}
+.dbrow:hover td{background:var(--soft)}
+.logo-co.sm{width:34px;height:34px;font-size:12px;border-radius:8px;flex:none}
+.cn{font-size:13.5px;font-weight:700}
+.ib{border:1px solid var(--line);background:var(--surface);border-radius:8px;width:34px;height:32px;cursor:pointer;font-size:16px;color:var(--muted)}
+.ib.on{color:#E8A33D;border-color:#E8A33D}
+.fit{display:inline-block;min-width:46px;text-align:center;border-radius:999px;padding:3px 8px;font-size:12px;font-weight:800}
+.fit.hi{background:var(--okbg);color:var(--ok)}.fit.md{background:var(--warnbg);color:var(--warn)}.fit.lo{background:var(--soft);color:var(--muted)}
+.sm-chip{padding:4px 10px;font-size:12px}
+.iahead{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap;border-top:4px solid var(--teal)}
+.iahead>div:first-child{max-width:640px}
+.rec{display:flex;flex-direction:column;gap:14px}
+.rec .why{background:var(--bg);border-radius:12px;padding:12px 14px;flex:1}
+.fitbig{font-size:22px;font-weight:800;color:var(--tink);line-height:1}
+.coact .btn{flex:none}
+.rec .coact{justify-content:flex-start!important}
+.secn{width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px;flex:none}
+:root[data-theme="dark"] .secn{background:#62E0D8;color:#251762}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .secn{background:#62E0D8;color:#251762}}
+.spin{width:36px;height:36px;border-radius:50%;border:4px solid var(--soft);border-top-color:var(--tink);margin:0 auto;animation:sp 0.9s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.spin{animation:none}}
+@media (max-width:1100px){.db{grid-template-columns:minmax(0,1fr)}.dbf{position:static;max-height:none}}
+
+.pw-badge{font-size:11.5px;font-weight:700;color:var(--tink);border:1px solid var(--tink);border-radius:999px;padding:4px 10px}
+.ptabs{display:flex;gap:28px;border-bottom:1px solid var(--line);margin:18px 0 22px;overflow-x:auto}
+.ptabs button{border:0;background:transparent;padding:10px 2px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+.ptabs button.on{color:var(--ink);border-bottom-color:var(--teal)}
+.pwrap{display:flex;flex-direction:column;gap:20px}
+.pgrid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.pgrid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+.pcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+.plab{font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+.ptxt{font-size:13.5px;line-height:1.6;color:var(--ink);margin:14px 0 0}
+.pbar{flex:1;height:10px;border-radius:99px;background:var(--soft);overflow:hidden}
+.pbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#251762,#62E0D8)}
+.pnum{font-size:13px;color:var(--muted)}.pnum b{font-size:24px;color:var(--ink);font-weight:800}
+.ppill{display:inline-block;border-radius:999px;padding:5px 12px;font-weight:700;font-size:14px}
+.ppill.ok,.cs.ok{background:var(--okbg);color:var(--ok)}.ppill.warn,.cs.warn{background:var(--warnbg);color:var(--warn)}.ppill.bad,.cs.bad{background:var(--badbg);color:var(--bad)}
+.ph{font-size:15px;font-weight:700;margin:0 0 14px}
+.crit{display:grid;grid-template-columns:200px 36px minmax(0,1fr);gap:16px;align-items:start;border:1px solid var(--line);border-radius:12px;padding:16px}
+.crit b{font-size:13.5px;font-weight:700}
+.cs{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:800}
+.mej{border:1px solid var(--line);border-radius:12px;padding:18px}
+.mej h4,.dolor h4,.pend h4,.rec2 h4{font-size:14px;font-weight:700;margin:10px 0 6px}
+.dolor h4,.rec2 h4,.pend h4{margin-top:0}
+.bolt{width:34px;height:34px;border-radius:8px;background:var(--soft);display:grid;place-items:center}
+.bolt svg{width:18px;height:18px;fill:none;stroke:var(--ink);stroke-width:2;stroke-linejoin:round}
+.dolor{display:flex;gap:12px;border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--bg)}
+.dot{width:10px;height:10px;border-radius:50%;background:#C0392B;flex:none;margin-top:6px}
+.commit{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;font-size:13.5px}
+.commit input{width:20px;height:20px;accent-color:#1FA39B;flex:none}
+.commit .done{text-decoration:line-through;color:var(--muted)}
+.pend{border:1px solid var(--line);border-radius:12px;padding:16px}
+.sug{margin:8px 0 0;border-left:3px solid var(--teal);padding-left:12px;font-size:13px;color:var(--muted)}
+.sug b{color:var(--tink)}
+.rec2{display:flex;gap:14px;border:1px solid var(--line);border-radius:12px;padding:16px}
+.num{width:30px;height:30px;border-radius:50%;background:#251762;color:#fff;display:grid;place-items:center;font-weight:800;font-size:13px;flex:none}
+:root[data-theme="dark"] .num{background:#62E0D8;color:#251762}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .num{background:#62E0D8;color:#251762}}
+.tline{display:grid;grid-template-columns:56px minmax(0,1fr);gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.tline:last-child{border-bottom:0}
+.ts{font-size:12px;font-weight:800;color:var(--muted);padding-top:2px}
+.crit .ptxt,.mej .ptxt,.dolor .ptxt,.rec2 .ptxt{color:var(--muted)}
+.tline b.us{color:var(--tink)}.tline b.them{color:var(--ink)}
+@media (max-width:1000px){.pgrid2,.pgrid3{grid-template-columns:minmax(0,1fr)}.crit{grid-template-columns:minmax(0,1fr) 36px}.crit p{grid-column:1/-1}}
+.plancard{display:flex;flex-direction:column;gap:8px}
+.plancard.cur{border:2px solid var(--tink)}
+.pp{font-size:26px;font-weight:800;line-height:1.1;margin-top:6px}
+@media (prefers-reduced-motion: reduce){.toast{transition:none}}
+@media (max-width:1100px){.grid4{grid-template-columns:repeat(2,minmax(0,1fr))}.search{grid-template-columns:minmax(0,1fr)}.filters{position:static;max-height:none}}
+@media (max-width:900px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .side{position:static;height:auto;flex-direction:row;align-items:center;padding:12px 16px;gap:16px;overflow-x:auto;padding-top:calc(12px + env(safe-area-inset-top,0px))}
+  .brand .pw{display:none}
+  nav.menu{flex-direction:row}
+  .nav{white-space:nowrap;padding:8px 10px}
+  .nav svg{display:none}
+  .side .foot{display:none}
+  .grid2,.grid3{grid-template-columns:minmax(0,1fr)}
+  .top,.content{padding-left:18px;padding-right:18px}
+  .bant{grid-template-columns:repeat(2,1fr)}
+  .co{grid-template-columns:44px minmax(0,1fr)}
+  .co .side-actions{grid-column:1/-1;flex-direction:row;flex-wrap:wrap;justify-content:space-between;align-items:center;min-width:0}
+  .co .side-actions .row{justify-content:flex-start!important}
+  .co>div{min-width:0}
+  .pair{grid-template-columns:1fr}
+}
+@media (max-width:560px){.grid4{grid-template-columns:minmax(0,1fr)}.bar{width:100px}.slots{grid-template-columns:repeat(3,1fr)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="acti">ACTI<span>Red de Negocios</span></div>
+      <div class="pw">Operado por <img alt="BullsEye" src="data:image/png;base64,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"></div>
+    </div>
+    <nav class="menu" id="menu" aria-label="Módulos"></nav>
+    <div class="foot">
+      <button type="button" id="themeBtn">Cambiar a modo oscuro</button>
+      <span>MVP de demostración · Datos ficticios. Cambia de plan en "Mi plan" para ver cada experiencia.</span>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="top">
+      <div class="who"><div class="av">NS</div><div><b>Nube Segura SpA</b><small>Socio ACTI · Ciberseguridad y nube</small></div></div>
+      <div class="meter" id="meter"></div>
+    </header>
+    <main class="content" id="view" tabindex="-1"></main>
+  </div>
+</div>
+<div class="ov" id="ov" role="dialog" aria-modal="true"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+"use strict";
+var $=function(id){return document.getElementById(id)};
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function fmt(v,d){return Number(v).toLocaleString("es-CL",{minimumFractionDigits:d||0,maximumFractionDigits:d||0})}
+var UF=40800, IVA=0.19;
+var TODAY="16 de febrero de 2027";
+
+/* ---------- datos de demostración ---------- */
+var CARGOS=[["CEO","General","C-level"],["Gerente General","General","Gerencia"],["CTO","Tecnología","C-level"],["CIO","Tecnología","C-level"],["CISO","Tecnología","C-level"],["Gerente de TI","Tecnología","Gerencia"],["Jefe de Infraestructura","Tecnología","Jefatura"],["Jefe de Transformación Digital","Tecnología","Jefatura"],["CFO","Finanzas","C-level"],["Gerente de Finanzas","Finanzas","Gerencia"],["Controller","Finanzas","Jefatura"],["Gerente Comercial","Comercial","Gerencia"],["Jefe de Ventas","Comercial","Jefatura"],["COO","Operaciones","C-level"],["Gerente de Operaciones","Operaciones","Gerencia"],["Jefe de Logística","Operaciones","Jefatura"],["CMO","Marketing","C-level"],["Gerente de Marketing","Marketing","Gerencia"],["Gerente de Personas","Personas","Gerencia"],["Jefe de Desarrollo Organizacional","Personas","Jefatura"]];
+var AREAS=["Tecnología","Finanzas","Comercial","Operaciones","Marketing","Personas","General"];
+var SENIOR=["C-level","Gerencia","Jefatura"];
+var SIZES=["50 a 200","201 a 1.000","1.001 a 5.000","Más de 5.000"];
+var REVS=["Hasta 100.000 UF","100.000 a 1 MM UF","1 a 5 MM UF","Más de 5 MM UF"];
+// name, industria, país, ciudad, size idx, rev idx, fuente(0 BullsEye,1 extendida), demanda, cargos idx
+var CO=[
+["Banco Cordillera","Banca y servicios financieros","Chile","Santiago",3,3,0,7,[0,2,3,4,5,8,9,13]],
+["Financiera Altamar","Banca y servicios financieros","Chile","Santiago",2,2,0,3,[2,4,5,8,10,11]],
+["Seguros Andinos del Sur","Seguros","Chile","Santiago",2,2,0,2,[3,4,6,9,16,17]],
+["Cooperativa Raíces","Banca y servicios financieros","Chile","Concepción",1,1,0,0,[1,5,9,11,18]],
+["Retail Austral","Retail","Chile","Santiago",3,3,0,6,[0,3,7,8,11,13,16]],
+["Tiendas Mirador","Retail","Chile","Viña del Mar",2,2,0,1,[1,5,12,14,15,17]],
+["Minera Quebrada Alta","Minería","Chile","Antofagasta",2,3,0,2,[4,5,6,13,14,18]],
+["Cobre del Norte Grande","Minería","Chile","Calama",3,3,0,4,[0,3,4,8,13,15]],
+["Clínica Valle Central","Salud","Chile","Santiago",2,2,0,1,[1,5,6,9,14,18]],
+["Red de Salud Integra Sur","Salud","Chile","Temuco",1,1,0,0,[1,5,9,14,19]],
+["Universidad del Litoral","Educación","Chile","Valparaíso",2,2,0,0,[3,5,7,9,18]],
+["Energía Viento Claro","Energía","Chile","Santiago",1,2,0,2,[2,6,9,14]],
+["Generadora Puelche","Energía","Chile","Puerto Montt",2,3,0,1,[0,3,4,8,13]],
+["LogiPuerto","Logística y transporte","Chile","San Antonio",1,1,0,0,[1,6,11,14,15]],
+["Transportes Ruta Cinco","Logística y transporte","Chile","Santiago",2,2,0,1,[5,10,13,14,15]],
+["Telco Horizonte","Telecomunicaciones","Chile","Santiago",3,3,0,5,[2,3,4,7,11,16,17]],
+["Agrícola Los Maitenes","Agroindustria","Chile","Rancagua",1,1,0,0,[1,9,14,15]],
+["Viña Piedra Blanca","Agroindustria","Chile","Santa Cruz",0,1,1,0,[0,9,12,17]],
+["Alimentos Patagonia","Manufactura","Chile","Santiago",2,2,0,1,[5,8,13,14,17,18]],
+["Envases del Maipo","Manufactura","Chile","Santiago",1,1,1,0,[1,5,10,14]],
+["Constructora Lomas del Mar","Construcción","Chile","Santiago",2,2,0,1,[1,5,9,14,18]],
+["Banco Inca Capital","Banca y servicios financieros","Perú","Lima",2,3,1,1,[2,3,4,8,11]],
+["Retail Andes Perú","Retail","Perú","Lima",3,3,1,0,[3,7,11,13,16]],
+["Seguros Cafetal","Seguros","Colombia","Bogotá",2,2,1,0,[3,4,8,16]],
+["Logística Azteca Norte","Logística y transporte","México","Monterrey",2,2,1,0,[5,6,13,14,15]]
+].map(function(c,i){return {id:i,name:c[0],ind:c[1],country:c[2],city:c[3],size:c[4],rev:c[5],ext:!!c[6],demand:c[7],cargos:c[8]}});
+/* ---------- base ampliada (demo) ---------- */
+function rng(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;var t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+var R=rng(2027);
+var TECH=["AWS","Microsoft Azure","Google Cloud","SAP","Salesforce","Microsoft 365","Oracle","ServiceNow","Fortinet","Kubernetes"];
+var SIGNALS=["Contratando en TI","Migración a la nube","Nuevo líder de TI","Expansión regional","Auditoría o regulación próxima","Incidente de seguridad reciente","Ronda de inversión","Licitación abierta"];
+var CITIES={"Chile":["Santiago","Valparaíso","Concepción","Antofagasta","Puerto Montt","Temuco","La Serena"],"Perú":["Lima","Arequipa"],"Colombia":["Bogotá","Medellín"],"México":["Ciudad de México","Monterrey"]};
+var GEN=[["Clínica","Salud"],["Seguros","Seguros"],["Financiera","Banca y servicios financieros"],["Retail","Retail"],["Minera","Minería"],["Logística","Logística y transporte"],["Energía","Energía"],["Alimentos","Manufactura"],["Constructora","Construcción"],["Agrícola","Agroindustria"],["Inmobiliaria","Inmobiliario"],["Laboratorio","Farmacéutica"],["Instituto","Educación"],["Telecom","Telecomunicaciones"]];
+var PLACES=["Sierra Azul","Los Robles","Cumbre Sur","Litoral Norte","Bosque Nativo","Altiplano","Puerto Claro","Valle Hermoso","Nueva Aurora","Tres Ríos","Las Araucarias","Mar Abierto","Cerro Verde","Llanquihue","Atacama Digital","Pehuén","Quillay","Rapel"];
+var used={};CO.forEach(function(c){used[c.name]=1});
+for(var gi=0;gi<38;gi++){var g=GEN[Math.floor(R()*GEN.length)],pl=PLACES[Math.floor(R()*PLACES.length)],nm=g[0]+" "+pl;if(used[nm])continue;used[nm]=1;
+  var ctry=R()<0.75?"Chile":["Perú","Colombia","México"][Math.floor(R()*3)],cs=CITIES[ctry],sz=Math.floor(R()*4);
+  var pool=[],n=3+Math.floor(R()*4);while(pool.length<n){var k=Math.floor(R()*CARGOS.length);if(pool.indexOf(k)<0)pool.push(k)}
+  CO.push({id:CO.length,name:nm,ind:g[1],country:ctry,city:cs[Math.floor(R()*cs.length)],size:sz,rev:Math.min(3,Math.max(0,sz+(R()<0.3?-1:0))),ext:R()<0.35,demand:Math.floor(R()*3),cargos:pool.sort(function(a,b){return a-b})});}
+CO.forEach(function(c){c.tech=[];c.sig=[];var nt=1+Math.floor(R()*3),ns=Math.floor(R()*3);
+  while(c.tech.length<nt){var t=TECH[Math.floor(R()*TECH.length)];if(c.tech.indexOf(t)<0)c.tech.push(t)}
+  while(c.sig.length<ns){var s=SIGNALS[Math.floor(R()*SIGNALS.length)];if(c.sig.indexOf(s)<0)c.sig.push(s)}
+  c.domain=c.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z]/g,"").slice(0,24)+(c.country==="Chile"?".cl":c.country==="Perú"?".pe":c.country==="Colombia"?".co":".mx");
+  c.emp=[120,600,2400,8500][c.size]+Math.floor(R()*[80,400,2600,6000][c.size]);});
+// señales y tecnología coherentes para cuentas clave de la demo
+[[0,["Microsoft Azure","SAP","Fortinet"],["Auditoría o regulación próxima","Nuevo líder de TI"]],[1,["AWS","Salesforce"],["Migración a la nube"]],[2,["Microsoft Azure","Microsoft 365"],["Auditoría o regulación próxima"]],[3,["Microsoft 365"],["Contratando en TI","Migración a la nube"]],[12,["AWS","Kubernetes"],["Incidente de seguridad reciente"]],[21,["AWS","Oracle"],["Expansión regional","Migración a la nube"]],[23,["Microsoft Azure"],["Auditoría o regulación próxima"]],[11,["Google Cloud"],["Ronda de inversión","Contratando en TI"]]].forEach(function(x){CO[x[0]].tech=x[1];CO[x[0]].sig=x[2]});
+
+var INDS=Array.from(new Set(CO.map(function(c){return c.ind}))).sort();
+var COUNTRIES=["Chile","Perú","Colombia","México"];
+function ini(n){return n.split(" ").filter(function(w){return w.length>2||w===w.toUpperCase()}).slice(0,2).map(function(w){return w[0]}).join("").toUpperCase()}
+
+var PLANS={
+ freemium:{key:"freemium",name:"Freemium",fee:0,garant:0,variable:0,maxReu:2,maxEmp:20,ia:5},
+ conecta:{key:"conecta",name:"Conecta",fee:18,garant:5,variable:4},
+ crece:{key:"crece",name:"Crece",fee:26,garant:8,variable:4},
+ acelera:{key:"acelera",name:"Acelera",fee:35,garant:12,variable:4}};
+var PLAN=PLANS.crece;
+var TRIAL={end:"12 de abril",days:55};
+function isFree(){return PLAN.key==="freemium"}
+function cuentasPlan(){return Math.round(PLAN.garant/0.15)}
+function meetMonth(){return MEET.filter(function(m){return m.mon==="FEB"&&(m.st==="agendada"||m.st==="realizada")}).length}
+function meetYear(){return MEET.filter(function(m){return m.st==="agendada"||m.st==="realizada"}).length}
+function freeLeft(){return Math.max(0,PLANS.freemium.maxEmp-S.used)}
+var S={
+  view:"inicio",
+  used:18, repos:0,
+  profilePct:80,
+  filters:{q:"",ind:[],country:["Chile"],city:[],size:[],rev:[],tech:[],sig:[],src:[],area:["Tecnología"],sen:[],cargo:[]},
+  searches:[{name:"Banca y seguros · TI C-level",f:{q:"",ind:["Banca y servicios financieros","Seguros"],country:["Chile"],city:[],size:[],rev:[],tech:[],sig:[],src:[],area:["Tecnología"],sen:["C-level"],cargo:[]}}],
+  savedCo:{2:true,23:true}, commit:{"m1_1":true}, iaUsed:2, dismissed:{}, sort:"fit", page:1, icpPct:0, aiRan:false,
+  icp:{ind:["Banca y servicios financieros","Seguros","Salud","Minería"],country:["Chile","Perú"],size:["1","2"],rev:["1","2"],mat:["Intermedia"],tech:["Microsoft Azure","AWS","Microsoft 365"],reg:["CMF","Ley de datos personales","Ley Marco de Ciberseguridad"],sig:["Auditoría o regulación próxima","Migración a la nube","Incidente de seguridad reciente","Nuevo líder de TI"],pains:"Equipos de TI pequeños sin monitoreo 24/7; auditorías regulatorias próximas; miedo a incidentes de ransomware.",usecases:"SOC 24/7 para entidades reguladas; preparación para auditorías; gestión de identidades en operaciones distribuidas.",personas:[{cargo:"CISO",rol:"Decide",pri:"Alta"},{cargo:"CIO",rol:"Decide",pri:"Alta"},{cargo:"Gerente de TI",rol:"Influye",pri:"Media"}],refs:["Minera Quebrada Alta","Seguros Andinos del Sur",""],excl:["Clínica Valle Central"],comp:"",exInd:["Agroindustria"],ticket:"900",cycle:"3 a 6 meses",close:"25%"},
+  sol:[
+    {co:8,cargo:"Gerente de TI",st:"realizada",d:"2 feb"},{co:6,cargo:"CISO",st:"realizada",d:"28 ene"},{co:4,cargo:"CIO",st:"noshow",d:"9 feb"},
+    {co:11,cargo:"CTO",st:"agendada",d:"18 feb"},{co:13,cargo:"Gerente de Operaciones",st:"agendada",d:"23 feb"},
+    {co:1,cargo:"CISO",st:"contacto",d:"5 feb"},{co:2,cargo:"CISO",st:"contacto",d:"6 feb"},{co:15,cargo:"CTO",st:"contacto",d:"8 feb"},{co:10,cargo:"CIO",st:"contacto",d:"9 feb"},
+    {co:0,cargo:"CISO",st:"research",d:"12 feb"},{co:7,cargo:"CISO",st:"research",d:"12 feb"},{co:12,cargo:"CIO",st:"research",d:"13 feb"},{co:18,cargo:"Gerente de TI",st:"research",d:"13 feb"},
+    {co:5,cargo:"Gerente de TI",st:"sinresp",d:"1 feb"},{co:9,cargo:"Gerente de TI",st:"sinresp",d:"1 feb"},{co:20,cargo:"Gerente de TI",st:"sinresp",d:"2 feb"},
+    {co:14,cargo:"Gerente de TI",st:"cola",d:"15 feb"},{co:3,cargo:"Gerente de TI",st:"cola",d:"15 feb"}
+  ],
+  feedback:{m2:{done:true,stars:5,opp:"Sí",held:"Sí",comment:"Muy buena reunión. Pidieron propuesta para auditoría de nube."}},
+  regEvents:{e1:true},
+  evMeet:[{ev:"e1",att:"a3",slot:"09:30",st:"Confirmada"}],
+  profile:{vp:"Protegemos la nube de empresas reguladas con un centro de operaciones de seguridad 24/7 y cumplimiento listo para auditoría.",services:["SOC 24/7","Auditoría de nube","Gestión de identidades","Respuesta a incidentes"],cases:"Banco regional: redujimos 60% el tiempo de detección de incidentes en 6 meses.",obj:[["Ya tenemos un proveedor de seguridad","Proponemos un diagnóstico sin costo para comparar cobertura y tiempos de respuesta."],["No tenemos presupuesto este año","Ofrecemos un plan escalonado que parte con monitoreo básico."]],diff:"Equipo certificado local, SLA de 15 minutos y reportes listos para la CMF.",avoid:""}
+};
+var STAGES=[["cola","En cola"],["research","En research"],["contacto","En contacto"],["agendada","Reunión agendada"],["sinresp","Sin respuesta"]];
+
+var MEET=[
+ {id:"m1",co:8,cargo:"Gerente de TI",day:"02",mon:"FEB",time:"11:00",mode:"Google Meet",st:"realizada",dur:"38 min",
+  score:82,temp:"Caliente",sum:"El Gerente de TI de Clínica Valle Central busca reforzar la seguridad de su historia clínica en la nube antes de la auditoría de la Superintendencia de Salud, prevista para el segundo semestre. Hoy no tienen monitoreo fuera de horario y su equipo interno es de tres personas.",
+  needs:["Monitoreo de seguridad fuera de horario laboral","Cumplir requisitos de auditoría antes de julio","Bajar la carga del equipo interno de TI"],
+  objs:[["“Ya tenemos un firewall gestionado por otro proveedor”","Se explicó que el SOC complementa al firewall y no lo reemplaza. El cliente aceptó comparar coberturas."],["“El presupuesto lo define finanzas en marzo”","Se acordó enviar una propuesta escalonada antes del 1 de marzo."]],
+  next:[["Enviar propuesta escalonada","25 feb","Nube Segura"],["Reunión técnica con el equipo de infraestructura","4 mar","Ambos"],["Compartir requisitos de la auditoría","20 feb","Clínica"]],
+  bant:[["Presupuesto","En definición (marzo)","warn"],["Autoridad","Decide con el CFO","warn"],["Necesidad","Alta y urgente","ok"],["Tiempo","Antes de julio","ok"]],
+  quotes:[["12:40","Si no llegamos a la auditoría con monitoreo 24/7, tenemos un problema serio."],["27:15","Me interesa ver cómo reportan, porque eso es lo que me pide el directorio."]],
+  talk:44, coach:{good:["Abriste con el caso del banco regional y conectó de inmediato","Hiciste preguntas sobre la auditoría antes de presentar"],improve:["Hablar de precios antes de entender el presupuesto","Faltó confirmar quién más participa en la decisión"]}},
+ {id:"m2",co:6,cargo:"CISO",day:"28",mon:"ENE",time:"16:00",mode:"Presencial · Antofagasta",st:"realizada",dur:"52 min",
+  score:91,temp:"Caliente",sum:"El CISO de Minera Quebrada Alta necesita centralizar la gestión de identidades de 2.300 usuarios entre faenas y oficina central. Tienen un incidente reciente de credenciales y el directorio pidió un plan en 90 días.",
+  needs:["Gestión centralizada de identidades","Plan de seguridad en 90 días para el directorio","Cobertura en faenas con conectividad limitada"],
+  objs:[["“Nos preocupa la conectividad en faena”","Se mostró la operación en modo desconectado y la sincronización posterior."]],
+  next:[["Enviar propuesta de auditoría de nube","3 feb","Nube Segura"],["Visita técnica a faena","17 feb","Ambos"]],
+  bant:[["Presupuesto","Aprobado para el plan","ok"],["Autoridad","Decide el CISO","ok"],["Necesidad","Alta","ok"],["Tiempo","90 días","ok"]],
+  quotes:[["08:05","El directorio nos dio 90 días, así que esto es prioridad uno."]],
+  talk:39, coach:{good:["Excelente manejo de la objeción de conectividad","Cerraste con un próximo paso concreto y fecha"],improve:["Podías profundizar en el incidente para dimensionar el dolor"]}},
+ {id:"m3",co:4,cargo:"CIO",day:"09",mon:"FEB",time:"10:00",mode:"Microsoft Teams",st:"noshow",dur:"–"},
+ {id:"m4",co:11,cargo:"CTO",day:"18",mon:"FEB",time:"10:00",mode:"Google Meet",st:"agendada"},
+ {id:"m5",co:13,cargo:"Gerente de Operaciones",day:"23",mon:"FEB",time:"15:30",mode:"Presencial · San Antonio",st:"agendada"}
+];
+var STORE={freemium:{used:7,repos:0,sol:[
+ {co:8,cargo:"Gerente de TI",st:"realizada",d:"20 ene"},{co:1,cargo:"CISO",st:"contacto",d:"5 feb"},{co:2,cargo:"CISO",st:"contacto",d:"6 feb"},
+ {co:15,cargo:"CTO",st:"research",d:"12 feb"},{co:0,cargo:"CISO",st:"research",d:"12 feb"},{co:12,cargo:"CIO",st:"cola",d:"15 feb"},{co:10,cargo:"CIO",st:"sinresp",d:"25 ene"}],
+ meet:null}};
+function setPlan(k){
+  var from=isFree()?"freemium":"paid", to=k==="freemium"?"freemium":"paid";
+  if(from!==to){STORE[from]={used:S.used,repos:S.repos,sol:S.sol,meet:MEET};var t=STORE[to];S.used=t.used;S.repos=t.repos;S.sol=t.sol;MEET=t.meet;}
+  PLAN=PLANS[k];S.aiRan=false;
+}
+var HIST=[{mes:"Enero 2027",cupo:13,reu:4,noshow:0,estado:"Pagada"},{mes:"Diciembre 2026",cupo:0,reu:0,noshow:0,estado:"Antes del piloto"}];
+STORE.freemium.meet=[MEET[0]];
+var JAN=[["7 ene","Seguros Andinos del Sur","CIO"],["14 ene","Telco Horizonte","CISO"],["21 ene","Universidad del Litoral","Gerente de TI"],["28 ene","Minera Quebrada Alta","CISO"]];
+
+var EVENTS=[
+ {id:"e1",day:"24",mon:"FEB",title:"Desayuno CIO: IA aplicada a la banca",type:"Presencial",place:"Centro de eventos ACTI, Providencia",time:"08:30 a 10:30",cap:60,ins:46,net:true,desc:"Conversación entre líderes de tecnología de banca y servicios financieros sobre casos reales de IA en riesgo, fraude y atención. Incluye 45 minutos de reuniones uno a uno entre asistentes.",agenda:[["08:30","Recepción y café"],["08:50","Panel: IA en riesgo y fraude"],["09:30","Reuniones uno a uno"],["10:15","Cierre"]],slots:["09:30","09:45","10:00","10:15"]},
+ {id:"e2",day:"03",mon:"MAR",title:"Webinar: ciberseguridad para la minería",type:"Online",place:"Transmisión en vivo",time:"11:00 a 12:00",cap:300,ins:124,net:false,desc:"Buenas prácticas de seguridad OT e IT para operaciones mineras, con casos de faenas en el norte de Chile.",agenda:[["11:00","Presentación"],["11:40","Preguntas"]],slots:[]},
+ {id:"e3",day:"18",mon:"MAR",title:"ACTI Tech Summit 2027",type:"Presencial",place:"Santiago",time:"09:00 a 18:00",cap:500,ins:312,net:true,desc:"El encuentro anual de la industria tecnológica chilena. Charlas, muestra de socios y una ronda de negocios con agenda de reuniones de 15 minutos.",agenda:[["09:00","Inauguración"],["10:00","Charlas principales"],["14:30","Ronda de negocios"],["17:30","Cóctel de networking"]],slots:["14:30","14:45","15:00","15:15","15:30","15:45","16:00","16:15"]},
+ {id:"e4",day:"08",mon:"ABR",title:"Ronda de negocios: retail y tecnología",type:"Presencial",place:"Centro de eventos ACTI, Providencia",time:"15:00 a 18:00",cap:80,ins:38,net:true,desc:"Ronda de reuniones uno a uno entre socios de ACTI y gerentes de retail, con foco en omnicanalidad, datos y ciberseguridad.",agenda:[["15:00","Bienvenida"],["15:20","Ronda de reuniones"],["17:30","Networking libre"]],slots:["15:20","15:40","16:00","16:20","16:40","17:00"]},
+ {id:"e5",day:"22",mon:"ABR",title:"Encuentro de socios ACTI Biobío",type:"Presencial",place:"Concepción",time:"18:30 a 21:00",cap:120,ins:41,net:true,desc:"Encuentro regional de socios y empresas del Biobío: novedades del gremio y networking.",agenda:[["18:30","Novedades de ACTI"],["19:15","Networking"]],slots:["19:15","19:30","19:45","20:00"]}
+];
+var NEWS=[["Hoy","Se abrieron las inscripciones al ACTI Tech Summit 2027. La ronda de negocios tiene cupos limitados."],["12 feb","El Desayuno CIO del 24 de febrero ya tiene 46 inscritos de 60 cupos."],["5 feb","Nuevo programa de formación ACTI: venta consultiva para equipos técnicos, desde abril."]];
+var ATT={
+ e1:[["a1","Banco Cordillera","CIO","Banca y servicios financieros","Empresa invitada",true],["a2","Financiera Altamar","CTO","Banca y servicios financieros","Empresa invitada",true],["a3","Seguros Andinos del Sur","Gerente de TI","Seguros","Empresa invitada",true],["a4","Cooperativa Raíces","Gerente General","Banca y servicios financieros","Empresa invitada",false],["a5","DataNorte SpA","Gerente Comercial","Tecnología","Socio ACTI",true],["a6","Banco Inca Capital","CISO","Banca y servicios financieros","Empresa invitada",true],["a7","Analítica Pacífico","CEO","Tecnología","Socio ACTI",true]],
+ e2:[["b1","Cobre del Norte Grande","CISO","Minería","Empresa invitada",false],["b2","Minera Quebrada Alta","Jefe de Infraestructura","Minería","Empresa invitada",false]],
+ e3:[["c1","Telco Horizonte","CTO","Telecomunicaciones","Empresa invitada",true],["c2","Retail Austral","CIO","Retail","Empresa invitada",true],["c3","Clínica Valle Central","Gerente de TI","Salud","Empresa invitada",true],["c4","Generadora Puelche","CIO","Energía","Empresa invitada",true],["c5","Alimentos Patagonia","CFO","Manufactura","Empresa invitada",false],["c6","Software Austral","CEO","Tecnología","Socio ACTI",true],["c7","Universidad del Litoral","CIO","Educación","Empresa invitada",true],["c8","Constructora Lomas del Mar","Gerente de TI","Construcción","Empresa invitada",true]],
+ e4:[["d1","Tiendas Mirador","Gerente de TI","Retail","Empresa invitada",true],["d2","Retail Andes Perú","CMO","Retail","Empresa invitada",true],["d3","Retail Austral","Gerente Comercial","Retail","Empresa invitada",true]],
+ e5:[["f1","Cooperativa Raíces","Gerente de TI","Banca y servicios financieros","Empresa invitada",true],["f2","Envases del Maipo","Gerente General","Manufactura","Empresa invitada",true]]
+};
+
+/* ---------- navegación ---------- */
+var ICON={
+ inicio:'<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
+ icp:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+ perfil:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
+ buscar:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+ solicitudes:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/>',
+ reuniones:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+ eventos:'<path d="M12 3l2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/>',
+ facturacion:'<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
+ planes:'<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>'
+};
+var MENU=[["inicio","Inicio"],["perfil","Mi perfil comercial"],["icp","Mi ICP"],["buscar","Buscar cuentas"],["solicitudes","Mis solicitudes"],["reuniones","Reuniones"],["eventos","Eventos"],["facturacion","Facturación"],["planes","Mi plan"]];
+function pending(){return MEET.filter(function(m){return m.st==="realizada"&&!(S.feedback[m.id]&&S.feedback[m.id].done)}).length}
+function renderMenu(){
+  $("menu").innerHTML=MENU.map(function(m){var b=m[0]==="reuniones"&&pending()?'<span class="badge">'+pending()+'</span>':'';
+    return '<button type="button" class="nav'+(S.view===m[0]?' on':'')+'" data-go="'+m[0]+'"'+(S.view===m[0]?' aria-current="page"':'')+'><svg viewBox="0 0 24 24" aria-hidden="true">'+ICON[m[0]]+'</svg>'+m[1]+b+'</button>'}).join("");
+  if(isFree()){var ry=meetYear();
+    $("meter").innerHTML='<span class="plan">Plan Freemium</span><div><div class="tiny muted">Prueba · '+TRIAL.days+' días restantes</div><div class="row"><div class="bar"><i style="width:'+Math.min(100,ry/2*100)+'%"></i></div><span>'+ry+' de 2 reuniones</span></div></div><span class="tag">'+S.used+' de 20 empresas</span><button class="btn sm" type="button" data-go="planes">Mejorar plan</button>';return}
+  var mm=meetMonth();
+  $("meter").innerHTML='<span class="plan">Plan '+PLAN.name+'</span><div><div class="tiny muted">Reuniones garantizadas de febrero</div><div class="row"><div class="bar"><i style="width:'+Math.min(100,mm/PLAN.garant*100)+'%"></i></div><span>'+mm+' de '+PLAN.garant+'</span></div></div>';
+}
+function go(v){S.view=v;render();window.scrollTo(0,0);$("view").focus({preventScroll:true})}
+
+/* ---------- vistas ---------- */
+function vInicio(){
+  var ag=MEET.filter(function(m){return m.st==="agendada"}), rea=MEET.filter(function(m){return m.st==="realizada"}).length;
+  var ev=EVENTS[0], free=isFree(), lead, extra, stats;
+  if(free){var ry=meetYear();
+    lead='Como socio de ACTI tienes la plataforma, los eventos y todos los módulos incluidos. Además puedes probar el servicio con hasta 2 reuniones calificadas al año, prospectando hasta 20 empresas.';
+    extra='<div class="banner" style="margin-bottom:20px"><div><b>Tu prueba vence el '+TRIAL.end+'.</b> Llevas '+ry+' de 2 reuniones y '+S.used+' de 20 empresas. Después de tu segunda reunión revisamos contigo los informes de Peitho.</div><button class="btn sm" data-go="planes">Ver planes</button></div>';
+    stats=stat(ry+' de 2',"Reuniones de prueba","Hasta 2 al año")+stat(S.used+' de 20',"Empresas en prospección","Hasta 20 al año")+stat(TRIAL.days,"Días de prueba","Vence el "+TRIAL.end)+stat(pending(),"Feedback pendiente",pending()?"Cuéntanos cómo te fue":"Todo al día");
+  } else {var mm=meetMonth();
+    lead='Tu plan '+PLAN.name+' garantiza '+PLAN.garant+' reuniones al mes. Para cumplirlas trabajamos unas '+cuentasPlan()+' cuentas; si eliges menos, la IA completa tu lista con recomendaciones.';
+    extra=(S.profilePct<100?'<div class="banner warn" style="margin-bottom:20px"><div><b>Tu perfil comercial está al '+S.profilePct+'%.</b> Nuestra escudería usa esta información para contactar en tu nombre. Completa los diferenciadores para mejorar la conversión.</div><button class="btn sm" data-go="perfil">Completar perfil</button></div>':'');
+    stats=stat(mm+' de '+PLAN.garant,"Reuniones garantizadas","Febrero 2027")+stat(S.used,"Cuentas en prospección","Elegidas por ti y por la IA")+stat(rea,"Reuniones con informe Peitho","Desde enero 2027")+stat(pending(),"Feedback pendiente",pending()?"Cuéntanos cómo te fue":"Todo al día");
+  }
+  return '<p class="demo">Hoy es '+TODAY+' · Demostración con empresas ficticias</p>'+
+  '<h1>Hola, equipo Nube Segura</h1><p class="lead">'+lead+'</p>'+extra+
+  '<div class="grid4">'+stats+'</div>'+
+  '<div class="grid2" style="margin-top:20px"><section class="card"><div class="between"><h2>Próximas reuniones</h2><button class="btn ghost sm" data-go="reuniones">Ver todas</button></div><div class="stack" style="margin-top:6px">'+
+   (ag.length?ag.map(meetRow).join(""):'<p class="small muted" style="margin:8px 0">No tienes reuniones agendadas. Las verás aquí apenas nuestro equipo confirme una.</p>')+'</div></section>'+
+  '<section class="card"><div class="between"><h2>Próximo evento ACTI</h2><button class="btn ghost sm" data-go="eventos">Ver eventos</button></div>'+
+   '<div class="row" style="margin:8px 0 12px"><div class="date"><b>'+ev.day+'</b><small>'+ev.mon+'</small></div><div><h3>'+ev.title+'</h3><div class="small muted">'+ev.place+' · '+ev.time+'</div></div></div>'+
+   '<div class="note">Estás inscrito y tienes 1 reunión uno a uno confirmada a las 09:30.</div>'+
+   '<h3 style="margin-top:18px">Novedades</h3><div class="news">'+NEWS.slice(0,2).map(function(n){return '<div><small>'+n[0]+'</small>'+n[1]+'</div>'}).join("")+'</div></section></div>';
+}
+function stat(v,l,b){return '<div class="card stat"><div class="v">'+v+'</div><div class="l">'+l+'</div><div class="b">'+b+'</div></div>'}
+function meetRow(m){var c=CO[m.co];var tag=m.st==="agendada"?'<span class="tag navy">Agendada</span>':m.st==="noshow"?'<span class="tag bad">No asistió</span>':(S.feedback[m.id]&&S.feedback[m.id].done?'<span class="tag ok">Feedback listo</span>':'<span class="tag warn">Feedback pendiente</span>');
+  return '<div class="mt" role="button" tabindex="0" data-meet="'+m.id+'"><div class="date"><b>'+m.day+'</b><small>'+m.mon+'</small></div><div><b>'+c.name+'</b><div class="small muted">'+m.cargo+' · '+m.time+' · '+m.mode+'</div></div>'+tag+'</div>'}
+
+function vPerfil(){
+  var p=S.profile;
+  return '<h1>Mi perfil comercial</h1><p class="lead">Es obligatorio para activar el plan. Con esta información nuestra escudería prepara cada contacto en tu nombre y Peitho evalúa tus reuniones.</p>'+
+  '<div class="card" style="margin-bottom:20px"><div class="between"><div><b>Perfil al '+S.profilePct+'%</b><div class="small muted">Falta: diferenciadores y lo que no quieres que ofrezcamos</div></div><div class="bar" style="width:220px"><i style="width:'+S.profilePct+'%"></i></div></div></div>'+
+  '<div class="grid2"><section class="card stack"><h2>Tu oferta</h2>'+
+   '<label class="fl">Propuesta de valor<textarea id="pVp">'+esc(p.vp)+'</textarea></label>'+
+   '<div><div class="fl" style="margin-bottom:8px">Servicios principales</div><div class="chips" id="pServ">'+p.services.map(function(s,i){return '<span class="tag">'+esc(s)+' <button type="button" class="x" style="width:18px;height:18px;font-size:11px;background:transparent" data-rmserv="'+i+'" aria-label="Quitar '+esc(s)+'">×</button></span>'}).join("")+'</div>'+
+   '<div class="row" style="margin-top:10px"><input type="text" id="pNewServ" placeholder="Agregar servicio"><button class="btn ghost sm" type="button" data-act="addserv">Agregar</button></div></div>'+
+   '<label class="fl">Casos de éxito<textarea id="pCases">'+esc(p.cases)+'</textarea></label>'+
+   '<label class="fl">Diferenciadores frente a la competencia<textarea id="pDiff">'+esc(p.diff)+'</textarea></label></section>'+
+  '<section class="card stack"><h2>Manejo de objeciones</h2><p class="small muted" style="margin:0">El SDR y Peitho usan estas respuestas. Peitho además detecta objeciones nuevas en tus reuniones.</p><div class="pairs" id="pObj">'+
+   p.obj.map(function(o,i){return '<div class="pair"><input type="text" value="'+esc(o[0])+'" data-obj="'+i+'" data-k="0" aria-label="Objeción"><input type="text" value="'+esc(o[1])+'" data-obj="'+i+'" data-k="1" aria-label="Respuesta"><button class="btn ghost sm" type="button" data-rmobj="'+i+'">Quitar</button></div>'}).join("")+
+   '</div><button class="btn ghost sm" type="button" data-act="addobj" style="align-self:flex-start">Agregar objeción</button>'+
+   '<label class="fl">Lo que no quieres que ofrezcamos<textarea id="pAvoid" placeholder="Ej.: no ofrecer descuentos ni plazos de implementación">'+esc(p.avoid)+'</textarea></label>'+
+   '<label class="fl">Material de apoyo (link a presentación o casos)<input type="text" placeholder="https://"></label>'+
+   '<button class="btn" type="button" data-act="saveprof">Guardar perfil</button></section></div>';
+}
+
+/* ---------- búsqueda tipo base de datos ---------- */
+var FKEYS=["ind","country","city","size","rev","tech","sig","src","area","sen","cargo"];
+function emptyF(){return {q:"",ind:[],country:[],city:[],size:[],rev:[],tech:[],sig:[],src:[],area:[],sen:[],cargo:[]}}
+function val(c,k){switch(k){case "ind":return [c.ind];case "country":return [c.country];case "city":return [c.city];case "size":return [String(c.size)];case "rev":return [String(c.rev)];case "tech":return c.tech;case "sig":return c.sig;case "src":return [c.ext?"Extendida":"BullsEye"];case "area":return c.cargos.map(function(i){return CARGOS[i][1]});case "sen":return c.cargos.map(function(i){return CARGOS[i][2]});case "cargo":return c.cargos.map(function(i){return CARGOS[i][0]})}}
+function passes(c,f,skip){
+  if(f.q&&(c.name+" "+c.domain).toLowerCase().indexOf(f.q.toLowerCase())<0)return false;
+  for(var i=0;i<FKEYS.length;i++){var k=FKEYS[i];if(k===skip||!f[k].length)continue;if(k==="area"||k==="sen"||k==="cargo")continue;var v=val(c,k);if(!f[k].some(function(x){return v.indexOf(x)>=0}))return false}
+  if(skip!=="persona"&&(f.area.length||f.sen.length||f.cargo.length)&&!matches(c,f).length)return false;
+  return true;
+}
+function matches(c,f){f=f||S.filters;return c.cargos.filter(function(i){var g=CARGOS[i];
+  if(f.area.length&&f.area.indexOf(g[1])<0)return false;if(f.sen.length&&f.sen.indexOf(g[2])<0)return false;if(f.cargo.length&&f.cargo.indexOf(g[0])<0)return false;return true})}
+function filtered(){var r=CO.filter(function(c){return passes(c,S.filters)&&!S.dismissed[c.id]});
+  var so=S.sort||"fit";r.sort(function(a,b){if(so==="name")return a.name.localeCompare(b.name,"es");if(so==="emp")return b.emp-a.emp;return fit(b).score-fit(a).score});return r}
+function facet(key,title,opts,labels,open){
+  var f=S.filters, sel=f[key].length;
+  var rows=opts.map(function(o,i){var tmp=JSON.parse(JSON.stringify(f));if(key!=="area"&&key!=="sen"&&key!=="cargo")tmp[key]=[];
+    var cnt=CO.filter(function(c){if(S.dismissed[c.id])return false;if(key==="area"||key==="sen"||key==="cargo"){var t2=JSON.parse(JSON.stringify(f));t2[key]=[o];return passes(c,t2,null)&&matches(c,t2).length}return passes(c,tmp,key)&&val(c,key).indexOf(o)>=0}).length;
+    var on=f[key].indexOf(o)>=0;
+    return '<label class="fopt"><input type="checkbox" data-fk="'+key+'" data-fv="'+esc(o)+'"'+(on?' checked':'')+'><span>'+esc(labels?labels[i]:o)+'</span><em>'+cnt+'</em></label>'}).join("");
+  return '<details class="facet"'+(open||sel?' open':'')+'><summary>'+title+(sel?'<span class="fsel">'+sel+'</span>':'')+'</summary><div class="fopts">'+rows+'</div></details>';
+}
+function vBuscar(){
+  var t=S.btabS||"base";
+  var tabs='<div class="tabs" role="tablist">'+[["base","Base de empresas"],["ia","Recomendadas por IA"],["saved","Guardadas ("+Object.keys(S.savedCo).length+")"]].map(function(x){return '<button role="tab" aria-selected="'+(t===x[0])+'" class="'+(t===x[0]?'on':'')+'" data-stab="'+x[0]+'">'+x[1]+'</button>'}).join("")+'</div>';
+  var left=isFree()?freeLeft():Math.max(0,cuentasPlan()-S.used);
+  var head='<div class="between" style="flex-wrap:wrap;margin-bottom:6px"><div><h1>Buscar cuentas</h1><p class="lead" style="margin-bottom:14px">Explora la base completa, o deja que la IA te recomiende empresas según tu ICP. Mostramos empresas y cargos; los nombres de las personas los identifica nuestro equipo cuando solicitas una reunión.</p></div><span class="tag ok" style="font-size:13px;padding:6px 12px">'+(isFree()?left+' de 20 empresas disponibles en tu prueba':left+' cuentas por elegir este mes')+'</span></div>';
+  if(t==="ia")return head+tabs+vIA();
+  if(t==="saved")return head+tabs+vSaved();
+  var f=S.filters, res=filtered(), per=15, pages=Math.max(1,Math.ceil(res.length/per)), pg=Math.min(S.page||1,pages), slice=res.slice((pg-1)*per,pg*per);
+  var active=[];FKEYS.forEach(function(k){f[k].forEach(function(v){var lb=k==="size"?SIZES[+v]+" empl.":k==="rev"?REVS[+v]:k==="src"?(v==="BullsEye"?"Base BullsEye":"Base extendida"):v;active.push('<button class="chip on sm-chip" data-rmf="'+k+'" data-rmv="'+esc(v)+'">'+esc(lb)+' ×</button>')})});
+  var cities=[];CO.forEach(function(c){if(cities.indexOf(c.city)<0)cities.push(c.city)});cities.sort();
+  return head+tabs+'<div class="db">'+
+  '<aside class="dbf card" aria-label="Filtros"><div class="between" style="padding:2px 4px 10px"><b>Filtros</b><button class="linkbtn" data-act="clearf">Limpiar</button></div>'+
+   '<input type="search" id="q" placeholder="Nombre o dominio" value="'+esc(f.q)+'" aria-label="Buscar empresa" style="margin-bottom:8px">'+
+   '<p class="ftitle">Empresa</p>'+
+   facet("ind","Industria",INDS,null,true)+facet("country","País",COUNTRIES)+facet("city","Ciudad",cities)+facet("size","Empleados",["0","1","2","3"],SIZES)+facet("rev","Facturación anual",["0","1","2","3"],REVS)+facet("tech","Tecnologías que usa",TECH)+facet("sig","Señales de compra",SIGNALS)+facet("src","Fuente de datos",["BullsEye","Extendida"],["Base BullsEye","Base extendida (Apollo y Lemlist)"])+
+   '<p class="ftitle" style="margin-top:14px">Buyer persona</p>'+
+   facet("area","Área",AREAS,null,true)+facet("sen","Nivel",SENIOR)+facet("cargo","Cargo",CARGOS.map(function(g){return g[0]}))+
+   '<button class="btn ghost sm" style="width:100%;margin-top:12px" data-act="savesearch">Guardar esta búsqueda</button>'+
+   (S.searches.length?'<div style="margin-top:12px"><div class="tiny muted" style="font-weight:800;margin-bottom:6px">Búsquedas guardadas</div><div class="stack" style="gap:6px">'+S.searches.map(function(s,i){return '<button class="linkbtn" style="text-align:left" data-loads="'+i+'">'+esc(s.name)+'</button>'}).join("")+'</div></div>':'')+
+  '</aside><section class="dbr">'+
+   '<div class="between" style="flex-wrap:wrap;margin-bottom:10px"><div><b>'+fmt(res.length)+' empresas</b> <span class="muted small">· '+res.reduce(function(a,c){return a+matches(c).length},0)+' perfiles disponibles</span></div>'+
+   '<div class="row"><label class="small muted" for="sortSel">Ordenar</label><select id="sortSel" style="width:auto"><option value="fit"'+(S.sort==="fit"||!S.sort?' selected':'')+'>Mayor fit con mi ICP</option><option value="emp"'+(S.sort==="emp"?' selected':'')+'>Más empleados</option><option value="name"'+(S.sort==="name"?' selected':'')+'>Nombre A–Z</option></select></div></div>'+
+   (active.length?'<div class="chips" style="margin-bottom:12px">'+active.join("")+'</div>':'')+
+   '<div class="tw"><table class="dbt"><thead><tr><th>Empresa y señales</th><th>Industria</th><th>Cargos disponibles</th><th class="r">Fit</th><th></th></tr></thead><tbody>'+
+   (slice.length?slice.map(dbRow).join(""):'<tr><td colspan="5"><p class="empty">No hay empresas con estos filtros.</p></td></tr>')+'</tbody></table></div>'+
+   '<div class="between" style="margin-top:12px"><span class="small muted">Página '+pg+' de '+pages+'</span><div class="row"><button class="btn ghost sm" data-page="'+(pg-1)+'"'+(pg<=1?' disabled':'')+'>Anterior</button><button class="btn ghost sm" data-page="'+(pg+1)+'"'+(pg>=pages?' disabled':'')+'>Siguiente</button></div></div>'+
+  '</section></div>';
+}
+function fitPill(s){return '<span class="fit '+(s>=75?'hi':s>=55?'md':'lo')+'">'+s+'%</span>'}
+function dbRow(c){var m=matches(c), fs=fit(c).score, sv=S.savedCo[c.id], req=requested(c).length;
+  var cg=(m.length?m:c.cargos), pf=S.filters.area.length||S.filters.sen.length||S.filters.cargo.length;
+  return '<tr class="dbrow" data-co="'+c.id+'" tabindex="0"><td><div class="row" style="gap:10px;align-items:flex-start"><div class="logo-co sm">'+ini(c.name)+'</div><div style="min-width:0"><b class="cn">'+c.name+'</b><div class="tiny muted">'+c.domain+(c.ext?' · base extendida':'')+'</div>'+
+  ((c.sig.length||c.demand>=4)?'<div class="chips" style="gap:4px;margin-top:6px">'+c.sig.slice(0,2).map(function(x){return '<span class="tag ok">'+x+'</span>'}).join("")+(c.demand>=4?'<span class="tag warn">Alta demanda</span>':'')+'</div>':'')+'</div></div></td>'+
+  '<td class="small">'+c.ind+'<div class="tiny muted">'+c.city+', '+c.country+' · '+fmt(c.emp)+' empl.</div></td>'+
+  '<td><div class="prof">'+cg.slice(0,2).map(function(i){return '<span class="p'+(pf&&m.indexOf(i)>=0?' match':'')+'">'+CARGOS[i][0]+'</span>'}).join("")+(cg.length>2?'<span class="p">+'+(cg.length-2)+'</span>':'')+'</div></td>'+
+  '<td class="r">'+fitPill(fs)+'</td>'+
+  '<td class="r"><div class="row" style="justify-content:flex-end;gap:6px"><button class="ib'+(sv?' on':'')+'" data-save="'+c.id+'" aria-label="'+(sv?'Quitar de guardadas':'Guardar empresa')+'" title="'+(sv?'Guardada':'Guardar')+'">'+(sv?'★':'☆')+'</button><button class="btn sm" data-req="'+c.id+'">'+(req?'Solicitada':'Reunirme')+'</button></div></td></tr>';
+}
+function openCo(id){var c=CO[id],F=fit(c);
+  modal('<div class="mhead"><div class="row"><div class="logo-co">'+ini(c.name)+'</div><div><h2 style="margin:0">'+c.name+'</h2><div class="small muted">'+c.domain+' · '+c.ind+' · '+c.city+', '+c.country+'</div></div></div><button class="x" data-close aria-label="Cerrar">×</button></div>'+
+  '<div class="grid2"><div class="stack"><div class="bant"><div><b>Empleados</b>'+fmt(c.emp)+'</div><div><b>Facturación</b>'+REVS[c.rev]+'</div><div><b>Fuente</b>'+(c.ext?'Base extendida':'Base BullsEye')+'</div><div><b>Fit con tu ICP</b>'+fitPill(F.score)+'</div></div>'+
+  '<h3>Tecnologías</h3><div class="chips">'+c.tech.map(function(t){return '<span class="tag">'+t+'</span>'}).join("")+'</div>'+
+  '<h3>Señales de compra</h3>'+(c.sig.length?'<div class="chips">'+c.sig.map(function(t){return '<span class="tag ok">'+t+'</span>'}).join("")+'</div>':'<p class="small muted" style="margin:0">Sin señales recientes.</p>')+'</div>'+
+  '<div class="stack"><h3>Cargos disponibles</h3><div class="prof">'+c.cargos.map(function(i){return '<span class="p">'+CARGOS[i][0]+'</span>'}).join("")+'</div><p class="tiny muted" style="margin:0">Los nombres de las personas no se muestran. Nuestro equipo identifica y valida el contacto cuando solicitas la reunión.</p>'+
+  '<h3>Por qué calza con tu ICP</h3><ul class="lst">'+F.reasons.map(function(r){return '<li>'+r+'</li>'}).join("")+'</ul>'+(F.warn.length?'<div class="note">'+F.warn.join(" ")+'</div>':'')+'</div></div>'+
+  coActions(c.id,true),true);
+}
+function coActions(id,inModal){var sv=S.savedCo[id];
+  return '<div class="row coact" style="justify-content:flex-end;flex-wrap:wrap;margin-top:'+(inModal?'20px':'0')+'"><button class="btn ghost sm" data-dismiss="'+id+'">No me interesa</button><button class="btn ghost sm" data-save="'+id+'">'+(sv?'★ Guardada':'☆ Guardar empresa')+'</button><button class="btn sm" data-req="'+id+'">Quiero reunirme con ellos</button></div>'}
+
+/* ---------- IA (simulada en el MVP) ---------- */
+function fit(c){
+  var I=S.icp, sc=0, rs=[], warn=[];
+  if(I.ind.indexOf(c.ind)>=0){sc+=28;rs.push("Está en <b>"+c.ind.toLowerCase()+"</b>, una de tus industrias objetivo.")}
+  if(I.country.indexOf(c.country)>=0)sc+=8;
+  if(I.size.indexOf(String(c.size))>=0){sc+=14;rs.push("Tiene <b>"+fmt(c.emp)+" empleados</b>, dentro del tamaño que definiste.")}
+  var tm=c.tech.filter(function(t){return I.tech.indexOf(t)>=0});if(tm.length){sc+=Math.min(14,tm.length*8);rs.push("Usa <b>"+tm.join(" y ")+"</b>, tecnologías donde tu servicio aplica.")}
+  var sm=c.sig.filter(function(s){return I.sig.indexOf(s)>=0});if(sm.length){sc+=Math.min(22,sm.length*12);rs.push("Señal de compra: <b>"+sm.join(", ").toLowerCase()+"</b>.")}
+  var pm=c.cargos.filter(function(i){return I.personas.some(function(p){return p.cargo===CARGOS[i][0]})});
+  if(pm.length){sc+=12;rs.push("Tenemos acceso a <b>"+pm.map(function(i){return CARGOS[i][0]}).join(", ")+"</b>, tu buyer persona.")}
+  var look=I.refs.filter(function(r){var rc=CO.filter(function(x){return x.name===r})[0];return rc&&rc.id!==c.id&&rc.ind===c.ind&&Math.abs(rc.size-c.size)<=1});
+  if(look.length){sc+=8;rs.push("Se parece a <b>"+look[0]+"</b>, uno de tus clientes de referencia.")}
+  if(c.demand>=4){sc-=8;warn.push("Otros "+c.demand+" socios la pidieron este mes: la prospección puede tardar más.")}
+  if(I.excl.some(function(e){return e&&c.name.toLowerCase()===e.toLowerCase()})||I.exInd.indexOf(c.ind)>=0)sc=0;
+  return {score:Math.max(0,Math.min(98,sc)),reasons:rs.length?rs:["Calce bajo con tu ICP actual."],warn:warn,persona:pm.length>0};
+}
+function vIA(){
+  var I=S.icp;
+  var intro='<div class="card iahead"><div><h2 style="margin:0 0 4px">Buscar empresas con IA según mi ICP</h2><p class="small muted" style="margin:0">La IA lee tu ICP ('+S.icpPct+'% completo) y tu perfil comercial, cruza la base y recomienda las empresas con mejor calce, explicando por qué. Aprende de lo que guardas, descartas y del feedback de tus reuniones.</p></div><div class="row" style="flex-wrap:wrap">'+(isFree()?'<span class="tag">'+S.iaUsed+' de 5 búsquedas este mes</span>':'')+'<button class="btn ghost sm" data-go="icp">Editar mi ICP</button><button class="btn" data-act="runai">'+(S.aiRan?'Actualizar recomendaciones':'Buscar con IA')+'</button></div></div>';
+  if(S.icpPct<60)return intro+'<div class="banner warn" style="margin-top:16px"><div><b>Tu ICP está incompleto.</b> Complétalo para obtener buenas recomendaciones.</div></div>';
+  if(S.aiLoading)return intro+'<div class="card" style="margin-top:16px;text-align:center;padding:48px"><div class="spin" aria-hidden="true"></div><p class="muted" style="margin:14px 0 0" role="status">Leyendo tu ICP y analizando '+CO.length+' empresas…</p></div>';
+  if(!S.aiRan)return intro+'<div class="card" style="margin-top:16px"><p class="empty" style="padding:28px">Presiona "Buscar con IA" para ver tus recomendaciones del mes.</p></div>';
+  var recs=CO.filter(function(c){return !S.dismissed[c.id]&&!requested(c).length}).map(function(c){return [c,fit(c)]}).filter(function(x){return x[1].persona&&x[1].score>=50}).sort(function(a,b){return b[1].score-a[1].score}).slice(0,8);
+  return intro+'<div class="between" style="margin:18px 0 12px;flex-wrap:wrap"><b>'+recs.length+' empresas recomendadas para ti</b><span class="small muted">Priorizamos empresas con menos demanda de otros socios para que tus contactos lleguen primero.</span></div>'+
+  '<div class="grid2">'+recs.map(function(x){var c=x[0],F=x[1];
+    return '<article class="card rec"><div class="between" style="align-items:flex-start"><div class="row" style="cursor:pointer" data-co="'+c.id+'"><div class="logo-co">'+ini(c.name)+'</div><div><b style="font-size:14.5px">'+c.name+'</b><div class="small muted">'+c.ind+' · '+c.city+' · '+fmt(c.emp)+' empl.</div></div></div><div style="text-align:center"><div class="fitbig">'+F.score+'%</div><div class="tiny muted">fit</div></div></div>'+
+    '<div class="why"><div class="tiny" style="font-weight:800;color:var(--tink);margin-bottom:6px">Por qué te la recomendamos</div><ul class="lst small">'+F.reasons.slice(0,4).map(function(r){return '<li>'+r+'</li>'}).join("")+'</ul>'+(F.warn.length?'<div class="tiny muted" style="margin-top:8px">'+F.warn[0]+'</div>':'')+'</div>'+
+    coActions(c.id)+'</article>'}).join("")+'</div>'+
+  (Object.keys(S.dismissed).length?'<p class="note" style="margin-top:16px">Descartaste '+Object.keys(S.dismissed).length+' empresas. No volverán a aparecer y la IA usa tus motivos para afinar las próximas recomendaciones. <button class="linkbtn" data-act="undismiss">Restaurar descartadas</button></p>':'');
+}
+function vSaved(){var ids=Object.keys(S.savedCo).map(Number);
+  if(!ids.length)return '<div class="card"><p class="empty">Aún no guardas empresas. Usa ☆ en la base o "Guardar empresa" en las recomendaciones.</p></div>';
+  return '<div class="tw"><table class="dbt"><thead><tr><th>Empresa</th><th>Industria</th><th>Ubicación</th><th class="r">Fit</th><th></th></tr></thead><tbody>'+ids.map(function(id){var c=CO[id];return '<tr class="dbrow" data-co="'+id+'" tabindex="0"><td><div class="row" style="gap:10px"><div class="logo-co sm">'+ini(c.name)+'</div><b>'+c.name+'</b></div></td><td class="small">'+c.ind+'</td><td class="small">'+c.city+', '+c.country+'</td><td class="r">'+fitPill(fit(c).score)+'</td><td class="r">'+coActions(id)+'</td></tr>'}).join("")+'</tbody></table></div>';
+}
+function openDismiss(id){var c=CO[id];
+  modal('<div class="mhead"><div><h2 style="margin:0">No me interesa</h2><div class="small muted">'+c.name+'</div></div><button class="x" data-close aria-label="Cerrar">×</button></div><div class="stack"><div class="fl">¿Por qué? Nos ayuda a mejorar tus recomendaciones.</div><div class="chips">'+["Ya es mi cliente","Es competencia","Industria no relevante","Muy grande o muy pequeña","Ya la contactamos","Otro motivo"].map(function(r){return '<button type="button" class="chip" data-dreason="'+r+'">'+r+'</button>'}).join("")+'</div><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close>Cancelar</button><button class="btn" data-confirmdis="'+id+'">Descartar empresa</button></div></div>');
+  S._dr="";
+}
+
+/* ---------- formulario de ICP ---------- */
+function chk(key,opts,labels){return '<div class="chips">'+opts.map(function(o,i){var on=S.icp[key].indexOf(o)>=0;return '<button type="button" class="chip'+(on?' on':'')+'" aria-pressed="'+on+'" data-icp="'+key+'" data-v="'+esc(o)+'">'+esc(labels?labels[i]:o)+'</button>'}).join("")+'</div>'}
+function icpPct(){var I=S.icp,n=0,t=12;[I.ind,I.country,I.size,I.rev,I.tech,I.sig,I.reg].forEach(function(a){if(a.length)n++});[I.pains,I.usecases,I.ticket,I.cycle].forEach(function(v){if(v&&String(v).trim())n++});if(I.personas.length)n++;if(I.refs.filter(Boolean).length)n+=0;return Math.round(n/t*100)}
+function vICP(){var I=S.icp;S.icpPct=icpPct();
+  return '<h1>Mi ICP</h1><p class="lead">Tu perfil de cliente ideal. Mientras más detalle, mejores recomendaciones de la IA y mejor research de nuestra escudería antes de cada contacto.</p>'+
+  '<div class="card" style="margin-bottom:20px"><div class="between"><div><b>ICP '+S.icpPct+'% completo</b><div class="small muted">'+(S.icpPct<100?'Completa todas las secciones para mejorar las recomendaciones':'Listo para recomendar')+'</div></div><div class="bar" style="width:220px"><i style="width:'+S.icpPct+'%"></i></div></div></div>'+
+  '<div class="stack" style="gap:20px">'+
+  sec("1","Empresa ideal","Las características de las empresas que más te compran.",
+   '<div class="fl">Industrias objetivo</div>'+chk("ind",INDS)+
+   '<div class="grid2"><div><div class="fl">Países</div>'+chk("country",COUNTRIES)+'</div><div><div class="fl">Madurez digital</div>'+chk("mat",["Básica","Intermedia","Avanzada"])+'</div></div>'+
+   '<div class="grid2"><div><div class="fl">Tamaño (empleados)</div>'+chk("size",["0","1","2","3"],SIZES)+'</div><div><div class="fl">Facturación anual</div>'+chk("rev",["0","1","2","3"],REVS)+'</div></div>')+
+  sec("2","Tecnología, regulación y señales","Qué tiene que pasar en la empresa para que tu oferta sea urgente.",
+   '<div class="fl">Tecnologías que usan tus mejores clientes</div>'+chk("tech",TECH)+
+   '<div class="fl">Regulaciones que los afectan</div>'+chk("reg",["CMF","Ley de datos personales","Ley Marco de Ciberseguridad","ISO 27001","PCI DSS","Superintendencia de Salud"])+
+   '<div class="fl">Señales de compra que buscas</div>'+chk("sig",SIGNALS))+
+  sec("3","Problemas que resuelves","La IA y nuestro SDR usan esto para explicar por qué contactamos a cada empresa.",
+   '<div class="grid2"><label class="fl">Dolores principales de tu cliente<textarea data-icpt="pains">'+esc(I.pains)+'</textarea></label><label class="fl">Casos de uso y resultados típicos<textarea data-icpt="usecases">'+esc(I.usecases)+'</textarea></label></div>')+
+  sec("4","Buyer personas","Con quién quieres reunirte y qué rol tiene en la decisión.",
+   '<div class="tw"><table><thead><tr><th>Cargo</th><th>Rol en la decisión</th><th>Prioridad</th><th></th></tr></thead><tbody>'+I.personas.map(function(p,i){return '<tr><td><select data-pers="'+i+'" data-k="cargo" aria-label="Cargo">'+CARGOS.map(function(g){return '<option'+(g[0]===p.cargo?' selected':'')+'>'+g[0]+'</option>'}).join("")+'</select></td><td><select data-pers="'+i+'" data-k="rol" aria-label="Rol">'+["Decide","Influye","Usa la solución"].map(function(r){return '<option'+(r===p.rol?' selected':'')+'>'+r+'</option>'}).join("")+'</select></td><td><select data-pers="'+i+'" data-k="pri" aria-label="Prioridad">'+["Alta","Media","Baja"].map(function(r){return '<option'+(r===p.pri?' selected':'')+'>'+r+'</option>'}).join("")+'</select></td><td class="r"><button class="btn ghost sm" data-rmpers="'+i+'">Quitar</button></td></tr>'}).join("")+'</tbody></table></div><button class="btn ghost sm" style="align-self:flex-start" data-act="addpers">Agregar buyer persona</button>')+
+  sec("5","Clientes de referencia","Tus mejores clientes actuales. La IA busca empresas parecidas.",
+   '<div class="grid3">'+[0,1,2].map(function(i){return '<label class="fl">Cliente '+(i+1)+'<input type="text" list="coList" data-ref="'+i+'" value="'+esc(I.refs[i]||"")+'" placeholder="Nombre de la empresa"></label>'}).join("")+'</div><datalist id="coList">'+CO.map(function(c){return '<option value="'+esc(c.name)+'">'}).join("")+'</datalist>')+
+  sec("6","Exclusiones","Para no contactar a quien no corresponde.",
+   '<div class="grid2"><label class="fl">Clientes actuales y empresas a no contactar (una por línea)<textarea data-icpt="exclTxt">'+esc(I.excl.join("\n"))+'</textarea></label><label class="fl">Competidores (una por línea)<textarea data-icpt="comp">'+esc(I.comp)+'</textarea></label></div><div class="fl">Industrias excluidas</div>'+chk("exInd",INDS))+
+  sec("7","Tu venta","Nos ayuda a priorizar y a medir el retorno de las reuniones.",
+   '<div class="grid3"><label class="fl">Ticket promedio anual (UF)<input type="text" data-icpt="ticket" value="'+esc(I.ticket)+'"></label><label class="fl">Ciclo de venta<select data-icpt="cycle">'+["Menos de 1 mes","1 a 3 meses","3 a 6 meses","Más de 6 meses"].map(function(o){return '<option'+(o===I.cycle?' selected':'')+'>'+o+'</option>'}).join("")+'</select></label><label class="fl">Tasa de cierre actual<input type="text" data-icpt="close" value="'+esc(I.close)+'" placeholder="Ej.: 20%"></label></div>')+
+  '<div class="row" style="justify-content:flex-end"><button class="btn ghost" data-act="saveicpgo">Guardar y ver recomendaciones</button><button class="btn" data-act="saveicpf">Guardar ICP</button></div></div>';
+}
+function sec(n,t,d,body){return '<section class="card stack"><div class="row" style="align-items:flex-start"><span class="secn">'+n+'</span><div><h2 style="margin:0">'+t+'</h2><p class="small muted" style="margin:2px 0 0">'+d+'</p></div></div>'+body+'</section>'}
+function readICP(){document.querySelectorAll("[data-icpt]").forEach(function(e){var k=e.dataset.icpt;if(k==="exclTxt")S.icp.excl=e.value.split("\n").map(function(x){return x.trim()}).filter(Boolean);else S.icp[k]=e.value});
+  document.querySelectorAll("[data-ref]").forEach(function(e){S.icp.refs[+e.dataset.ref]=e.value.trim()});
+  document.querySelectorAll("[data-pers]").forEach(function(e){S.icp.personas[+e.dataset.pers][e.dataset.k]=e.value})}
+
+function requested(c){return S.sol.filter(function(s){return s.co===c.id})}
+function openReq(id){
+  if(isFree()&&(freeLeft()<=0||meetYear()>=2)){modal('<div class="mhead"><div><h2 style="margin:0">Completaste tu prueba</h2><div class="small muted">Plan Freemium</div></div><button class="x" data-close aria-label="Cerrar">×</button></div><div class="stack"><p style="margin:0">'+(meetYear()>=2?'Ya tienes tus 2 reuniones de prueba de este año.':'Ya usaste tus 20 empresas de prueba de este año.')+' Con un plan pagado tienes reuniones garantizadas todos los meses.</p><div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close>Cerrar</button><button class="btn" data-close data-go="planes">Ver planes</button></div></div>');return}
+  var c=CO[id], m=matches(c); var opts=(m.length?m:c.cargos);
+  modal('<div class="mhead"><div><h2 style="margin:0">Solicitar reunión</h2><div class="small muted">'+c.name+' · '+c.ind+'</div></div><button class="x" data-close aria-label="Cerrar">×</button></div>'+
+  '<div class="stack"><label class="fl">¿Con qué cargo quieres reunirte?<select id="rCargo">'+opts.map(function(i){return '<option>'+CARGOS[i][0]+'</option>'}).join("")+'</select></label>'+
+  '<label class="fl">Objetivo de la reunión<select id="rObj"><option>Presentar nuestros servicios</option><option>Diagnóstico sin costo</option><option>Invitar a un evento o demo</option><option>Retomar una relación anterior</option></select></label>'+
+  '<label class="fl">Contexto para nuestro equipo (opcional)<textarea id="rCtx" placeholder="Ej.: vimos que están migrando a la nube; conocemos al gerente de finanzas"></textarea></label>'+
+  (c.demand>=4?'<div class="banner warn"><div><b>Cuenta con alta demanda.</b> '+c.demand+' socios la solicitaron este mes. Para no saturar al prospecto, coordinamos los contactos y puede tardar más.</div></div>':'')+
+  (c.ext?'<div class="note">Esta empresa viene de la base extendida. La prospectamos desde cero: research, contacto y validación.</div>':'')+
+  '<div class="note">'+(isFree()?'Usa 1 de tus '+freeLeft()+' empresas de prueba. Tus 2 reuniones de prueba no tienen costo.':'Esta cuenta se suma a las que trabajamos para cumplir tus '+PLAN.garant+' reuniones garantizadas. El variable de '+fmt(PLAN.variable,1)+' UF se cobra solo por reunión agendada.')+'</div>'+
+  '<div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close>Cancelar</button><button class="btn" data-confirmreq="'+id+'">Confirmar solicitud</button></div></div>');
+}
+
+function vSolicitudes(){
+  var meetFeb=meetMonth(), free=isFree();
+  var sin=S.sol.filter(function(s){return s.st==="sinresp"});
+  return '<h1>Mis solicitudes</h1><p class="lead">Sigue en qué etapa está cada cuenta. Nuestra escudería avanza las cuentas de izquierda a derecha.</p>'+
+  (free?'<div class="banner" style="margin-bottom:20px"><div><b>Prueba Freemium.</b> Llevas '+S.used+' de 20 empresas y '+meetYear()+' de 2 reuniones. En la prueba las cuentas sin respuesta no se reemplazan.</div><button class="btn sm" data-go="planes">Ver planes</button></div>':
+   (meetFeb<PLAN.garant&&sin.length?'<div class="banner warn" style="margin-bottom:20px"><div><b>Garantía en curso.</b> Llevas '+meetFeb+' de '+PLAN.garant+' reuniones garantizadas de febrero. Las '+sin.length+' cuentas sin respuesta se reemplazan con recomendaciones de la IA para cumplir la garantía.</div><button class="btn sm" data-act="reponerAll">Reemplazar ahora</button></div>':''))+
+  '<div class="kb">'+STAGES.map(function(st){var items=S.sol.map(function(s,i){return [s,i]}).filter(function(x){return x[0].st===st[0]||(st[0]==="agendada"&&(x[0].st==="realizada"||x[0].st==="noshow"))});
+    return '<div class="col"><h3>'+st[1]+'<span class="muted">'+items.length+'</span></h3>'+items.map(function(x){var s=x[0],c=CO[s.co];
+      var extra=s.st==="realizada"?'<span class="tag ok">Realizada</span>':s.st==="noshow"?'<span class="tag bad">No asistió · reagendando</span>':s.st==="repuesta"?'':'';
+      var btn=s.st==="sinresp"&&!free?'<button class="btn ghost sm" style="margin-top:8px" data-repo="'+x[1]+'">Reemplazar cuenta</button>':'';
+      return '<div class="kc"><b>'+c.name+'</b><span class="muted">'+s.cargo+'</span><div class="tiny muted" style="margin-top:4px">Solicitada el '+s.d+'</div>'+(extra?'<div style="margin-top:6px">'+extra+'</div>':'')+btn+'</div>'}).join("")+'</div>'}).join("")+'</div>'+
+  '<p class="note" style="margin-top:18px">Una cuenta pasa a "Sin respuesta" después de 6 intentos de contacto en 10 días hábiles. En los planes pagados la reemplazamos para cumplir tus reuniones garantizadas.</p>';
+}
+
+function vReuniones(){
+  var t=S.mtab||"todas";
+  var list=MEET.filter(function(m){return t==="todas"||(t==="proximas"&&m.st==="agendada")||(t==="realizadas"&&m.st!=="agendada")});
+  return '<h1>Reuniones y feedback</h1><p class="lead">Peitho acompaña cada reunión: resume la conversación, detecta necesidades y objeciones, y propone próximos pasos. Tú confirmas si se realizó y si es una oportunidad.</p>'+
+  '<div class="tabs" role="tablist">'+[["todas","Todas"],["proximas","Próximas"],["realizadas","Realizadas"]].map(function(x){return '<button role="tab" aria-selected="'+(t===x[0])+'" class="'+(t===x[0]?'on':'')+'" data-mtab="'+x[0]+'">'+x[1]+'</button>'}).join("")+'</div>'+
+  '<div class="stack">'+list.map(meetRow).join("")+'</div>';
+}
+/* ---------- Peitho: análisis de reuniones (diseño real) ---------- */
+var PEI={
+ m1:{seller:[7,"El equipo de Nube Segura condujo una reunión de descubrimiento y presentación sólida, enganchando a Andrés con ejemplos concretos del sector salud y asegurando un siguiente paso con el verdadero decisor. La presentación institucional fue extensa y pudo recortarse para dar más espacio a preguntas de descubrimiento antes de la demo."],
+  pred:[4,"Bueno","Andrés mostró interés genuino, validó un dolor concreto (no tienen monitoreo fuera de horario y se acerca la auditoría de la Superintendencia) y propuso explícitamente el siguiente paso: una sesión con su gerente de operaciones y el CFO. Pidió material adicional para avanzar internamente, aunque la fecha de la próxima reunión quedó pendiente de confirmar por correo."],
+  fitE:[9,"Clínica Valle Central es una red de salud con 1.800 colaboradores, datos clínicos en la nube y una auditoría regulatoria en el segundo semestre. Coincide directamente con las señales positivas del ICP de Nube Segura: salud, regulación próxima, equipo de TI pequeño y uso de Microsoft Azure."],
+  fitC:[6,"El cargo confirmado es Gerente de TI, que en el ICP de Nube Segura está como influenciador (prioridad media). No está en la lista de decisores explícitos (CISO, CIO). Puede recomendar e influir en la evaluación técnica, pero no aprobar presupuesto por sí solo."],
+  fitR:[5,"En la llamada Andrés mostró buen conocimiento técnico y validó dolores reales, pero dijo explícitamente que la decisión pasa por el gerente de operaciones y el CFO. Actúa como influenciador técnico que escala la oportunidad, no como decisor final."],
+  resumen:"Primera reunión de descubrimiento y presentación entre el equipo comercial de Nube Segura (Camila y Tomás) y Andrés, Gerente de TI de Clínica Valle Central. La conversación tuvo buen nivel técnico y terminó con interés genuino de Andrés en avanzar a una sesión con los decisores.",
+  crit:[["Descubrimiento",4,"Camila indagó bien sobre el equipo de TI, las plataformas actuales y el calendario de la auditoría, generando buen contexto antes de presentar la solución."],["Escucha activa",3,"El equipo habló una proporción alta del tiempo durante la presentación institucional. Pudo balancearse con más preguntas abiertas antes de mostrar la propuesta."],["Manejo de objeciones",3,"La objeción del firewall gestionado por otro proveedor se respondió bien, pero la de presupuesto quedó abierta sin explorar montos ni plazos."],["Avance hacia el cierre",4,"Se definió un siguiente paso concreto con los decisores y el envío de una propuesta escalonada, aunque sin fecha exacta confirmada en la llamada."],["Claridad de la propuesta de valor",4,"Tomás conectó el SOC 24/7 con los dolores de Andrés (auditoría, falta de monitoreo nocturno, equipo pequeño) usando ejemplos del sector salud."]],
+  mejoras:[["Balance conversacional","Acortar la presentación institucional y usar 2 o 3 minutos más en preguntas abiertas sobre la auditoría antes de desplegar toda la propuesta."],["Cierre con compromiso concreto","En vez de dejar la próxima reunión para coordinar por correo, proponer fecha y hora tentativa en vivo mientras el interés está caliente."],["Uso de casos de éxito específicos","Mencionar por nombre el caso del banco regional y sus métricas (60% menos tiempo de detección) en vez de hablar de casos del sector en forma genérica."]],
+  dolores:[["Sin monitoreo fuera de horario","Los incidentes de noche y fin de semana se detectan recién al día hábil siguiente."],["Auditoría regulatoria próxima","La Superintendencia de Salud auditará la seguridad de la historia clínica en el segundo semestre y hoy no tienen evidencias ordenadas."],["Equipo de TI sobrecargado","Tres personas cubren infraestructura, soporte y seguridad para toda la red de clínicas."]],
+  comp:["Enviar propuesta escalonada antes del 25 de febrero","Compartir tres opciones de agenda para la próxima sesión","Coordinar reunión con el gerente de operaciones y el CFO","Enviar el caso del banco regional con métricas"],
+  pend:[["¿Cuál es el presupuesto disponible para seguridad este año?","Explorarlo en la sesión con el CFO, enmarcado en el costo de no cumplir la auditoría y en el ROI del monitoreo 24/7."],["¿Qué requisitos exactos pidió la Superintendencia?","Pedir a Andrés el documento de la auditoría para ajustar la propuesta a cada requisito."]],
+  recs:[["Enviar propuesta y caso de éxito específico","Aprovechar el pedido explícito de Andrés de material para su gerente, incluyendo el caso del banco regional con métricas de impacto."],["Confirmar fecha concreta de la próxima reunión","Hacer seguimiento por correo en 48 horas para fijar día y hora con el gerente de operaciones y el CFO, evitando que la oportunidad se enfríe."],["Preparar la sesión con decisores","Llevar un mapa de cumplimiento de la auditoría y una estimación de costo de un incidente para el CFO."]],
+  trans:[["00:12","Camila (Nube Segura)","Andrés, gracias por el espacio. Para partir, ¿cómo está organizado hoy el equipo de TI de la clínica?"],["00:31","Andrés (Clínica Valle Central)","Somos tres personas para toda la red. Vemos infraestructura, soporte y lo que podemos de seguridad."],["03:05","Camila (Nube Segura)","¿Y qué pasa si hay un incidente un sábado en la noche?"],["03:14","Andrés (Clínica Valle Central)","Honestamente, nos enteramos el lunes. Esa es una de mis preocupaciones."],["12:40","Andrés (Clínica Valle Central)","Si no llegamos a la auditoría con monitoreo 24/7, tenemos un problema serio."],["21:10","Tomás (Nube Segura)","Con el SOC monitoreamos todo el entorno de Azure y generamos los reportes que pide la auditoría."],["27:15","Andrés (Clínica Valle Central)","Me interesa ver cómo reportan, porque eso es lo que me pide el directorio."],["35:50","Andrés (Clínica Valle Central)","Mándenme algo para mostrarle al gerente de operaciones y al CFO, y armamos una reunión con ellos."]],
+  learn:[["Lo que funcionó","Preguntar por el escenario de un incidente en fin de semana hizo que el prospecto verbalizara el dolor principal. Repite esa pregunta en reuniones con salud y retail."],["Patrón detectado","En 3 de tus últimas 4 reuniones el primer contacto fue un influenciador técnico. Pide desde el inicio quién más participa en la decisión."],["Objeción nueva para tu perfil","“El presupuesto lo define finanzas en marzo”. Te sugerimos agregarla a tu perfil comercial con una respuesta sobre plan escalonado."]],
+  mail:{subj:"Propuesta de monitoreo 24/7 para Clínica Valle Central",body:"Hola Andrés:\n\nGracias por la conversación de hoy. Nos quedamos con tres puntos clave: la auditoría de la Superintendencia en el segundo semestre, la falta de monitoreo fuera de horario y la carga de tu equipo de tres personas.\n\nTe adjunto el caso de un banco regional donde redujimos en 60% el tiempo de detección de incidentes en seis meses, y una propuesta escalonada pensada para llegar a la auditoría con todo en orden.\n\nPara avanzar con tu gerente de operaciones y el CFO, te propongo estas opciones:\n- Martes 23 de febrero, 10:00\n- Miércoles 24 de febrero, 16:00\n- Jueves 25 de febrero, 11:30\n\nQuedo atenta.\n\nCamila\nNube Segura"}},
+ m2:{seller:[9,"Reunión muy bien conducida. El equipo manejó con solvencia la objeción de conectividad en faena y cerró con fecha concreta para la visita técnica."],
+  pred:[5,"Muy bueno","Patricia tiene presupuesto aprobado, plazo de 90 días impuesto por el directorio y autoridad para decidir. Agendó la visita técnica en la misma llamada."],
+  fitE:[9,"Minera Quebrada Alta calza con el ICP: minería, 2.300 usuarios distribuidos entre faenas y oficina central, incidente de seguridad reciente."],
+  fitC:[10,"CISO es uno de los decisores explícitos del ICP de Nube Segura, con prioridad alta."],
+  fitR:[9,"Patricia confirmó que decide y que el presupuesto ya está aprobado para el plan de 90 días."],
+  resumen:"Reunión presencial en Antofagasta entre Nube Segura (Camila y Tomás) y Patricia, CISO de Minera Quebrada Alta. Se acordó una visita técnica a faena y el envío de una propuesta de auditoría de nube.",
+  crit:[["Descubrimiento",5,"Se dimensionó el incidente reciente, la cantidad de usuarios y las restricciones de conectividad."],["Escucha activa",4,"Buen balance de conversación, con espacio para que la prospecta explicara el contexto del directorio."],["Manejo de objeciones",5,"La objeción de conectividad se resolvió con una demostración del modo desconectado."],["Avance hacia el cierre",5,"Visita técnica agendada en la misma llamada, con fecha y responsables."],["Claridad de la propuesta de valor",4,"Propuesta clara, aunque faltó cuantificar el costo del incidente reciente."]],
+  mejoras:[["Cuantificar el dolor","Preguntar cuánto costó el incidente reciente para usarlo en la justificación de la inversión."],["Mapear a otros actores","Identificar quién de finanzas firmará el contrato para evitar demoras."],["Anticipar la competencia","Preguntar si están evaluando otras alternativas."]],
+  dolores:[["Identidades descentralizadas","Cada faena administra sus propios accesos."],["Presión del directorio","Plan de seguridad exigido en 90 días tras el incidente."]],
+  comp:["Enviar propuesta de auditoría de nube","Visita técnica a faena el 17 de febrero"],
+  pend:[["¿Quién firma el contrato en finanzas?","Preguntarlo en la visita técnica."]],
+  recs:[["Preparar la visita técnica","Llevar el checklist de faena y el plan de 90 días en borrador."],["Enviar propuesta antes de la visita","Así la visita se enfoca en validar el alcance técnico."]],
+  trans:[["08:05","Patricia (Minera Quebrada Alta)","El directorio nos dio 90 días, así que esto es prioridad uno."],["24:30","Tomás (Nube Segura)","Les muestro cómo funciona sin conexión y cómo sincroniza al volver la red."]],
+  learn:[["Lo que funcionó","Mostrar la solución en el contexto real de la faena despejó la objeción principal."]],
+  mail:{subj:"Propuesta de auditoría de nube y visita técnica",body:"Hola Patricia:\n\nGracias por recibirnos en Antofagasta. Como acordamos, te enviamos la propuesta de auditoría de nube y confirmamos la visita técnica a faena el 17 de febrero.\n\nSaludos,\nCamila\nNube Segura"}}
+};
+function sc10(v){return v>=8?'ok':v>=6?'warn':'bad'}
+function sc5(v){return v>=4?'ok':v>=3?'warn':'bad'}
+function vReunion(){
+  var m=MEET.filter(function(x){return x.id===S.meetId})[0], c=CO[m.co], P=PEI[m.id], t=S.ptab||"analisis", fb=S.feedback[m.id];
+  var head='<button class="btn ghost sm" data-go="reuniones" style="margin-bottom:16px">Volver a reuniones</button>'+
+   '<div class="between" style="flex-wrap:wrap;align-items:flex-end;margin-bottom:6px"><div><div class="tiny muted">'+m.day+' '+m.mon+' 2027 · '+m.time+' · '+m.mode+' · '+m.dur+'</div><h1 style="margin:4px 0 2px">'+c.name+'</h1><div class="muted small">'+m.cargo+' · '+c.ind+'</div></div>'+
+   '<div class="row"><span class="pw-badge">Análisis por Peitho</span>'+(fb&&fb.done?'<span class="tag ok">Feedback enviado</span>':'<button class="btn sm" data-ptab="feedback">Dar mi feedback</button>')+'</div></div>';
+  var tabs='<div class="ptabs" role="tablist">'+[["analisis","Análisis"],["trans","Transcripción"],["learn","Aprendizaje"],["mail","Propuesta de correo"],["feedback","Tu feedback"]].map(function(x){return '<button role="tab" aria-selected="'+(t===x[0])+'" class="'+(t===x[0]?'on':'')+'" data-ptab="'+x[0]+'">'+x[1]+'</button>'}).join("")+'</div>';
+  var body="";
+  if(t==="analisis"){
+    body='<div class="pgrid2"><div class="pcard"><p class="plab">Desempeño del vendedor</p><div class="row" style="gap:16px;margin:6px 0 14px"><div class="pbar"><i style="width:'+P.seller[0]*10+'%"></i></div><span class="pnum"><b>'+P.seller[0]+'</b>/10</span></div><p class="ptxt">'+P.seller[1]+'</p></div>'+
+     '<div class="pcard"><p class="plab">Predicción de éxito</p><span class="ppill '+sc5(P.pred[0])+'">'+P.pred[0]+'/5 · '+P.pred[1]+'</span><p class="ptxt">'+P.pred[2]+'</p></div></div>'+
+     '<div class="pgrid3">'+[["Fit score — empresa",P.fitE],["Fit cargo — contacto",P.fitC],["Fit rol — contacto",P.fitR]].map(function(x){return '<div class="pcard"><p class="plab">'+x[0]+'</p><span class="ppill '+sc10(x[1][0])+'">'+x[1][0]+'/10</span><p class="ptxt">'+x[1][1]+'</p></div>'}).join("")+'</div>'+
+     '<div class="pcard"><h3 class="ph">Resumen general</h3><p class="ptxt" style="margin:0">'+P.resumen+'</p></div>'+
+     '<div class="pcard"><h3 class="ph">Desempeño del ejecutivo</h3><div class="stack" style="gap:10px">'+P.crit.map(function(r){return '<div class="crit"><b>'+r[0]+'</b><span class="cs '+sc5(r[1])+'">'+r[1]+'</span><p class="ptxt" style="margin:0">'+r[2]+'</p></div>'}).join("")+'</div></div>'+
+     '<div class="pcard"><h3 class="ph">Oportunidades de mejora</h3><div class="pgrid3" style="margin:0">'+P.mejoras.map(function(r){return '<div class="mej"><span class="bolt" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span><h4>'+r[0]+'</h4><p class="ptxt" style="margin:0">'+r[1]+'</p></div>'}).join("")+'</div></div>'+
+     '<div class="pgrid2"><div class="pcard"><h3 class="ph">Dolores del cliente</h3><div class="stack" style="gap:10px">'+P.dolores.map(function(r){return '<div class="dolor"><span class="dot" aria-hidden="true"></span><div><h4>'+r[0]+'</h4><p class="ptxt" style="margin:0">'+r[1]+'</p></div></div>'}).join("")+'</div></div>'+
+     '<div class="pcard"><h3 class="ph">Compromisos</h3><div class="stack" style="gap:10px">'+P.comp.map(function(r,i){var k=m.id+"_"+i,on=S.commit[k];return '<label class="commit"><input type="checkbox" data-commit="'+k+'"'+(on?' checked':'')+'><span'+(on?' class="done"':'')+'>'+r+'</span></label>'}).join("")+'</div></div></div>'+
+     '<div class="pcard"><h3 class="ph">Temas pendientes</h3><div class="stack" style="gap:10px">'+P.pend.map(function(r){return '<div class="pend"><h4>'+r[0]+'</h4><p class="sug"><b>Sugerencia:</b> '+r[1]+'</p></div>'}).join("")+'</div></div>'+
+     '<div class="pcard"><h3 class="ph">Recomendaciones — próximos pasos</h3><div class="stack" style="gap:10px">'+P.recs.map(function(r,i){return '<div class="rec2"><span class="num">'+(i+1)+'</span><div><h4>'+r[0]+'</h4><p class="ptxt" style="margin:0">'+r[1]+'</p></div></div>'}).join("")+'</div></div>';
+  } else if(t==="trans"){
+    body='<div class="pcard"><div class="between" style="margin-bottom:10px;flex-wrap:wrap"><h3 class="ph" style="margin:0">Transcripción</h3><span class="small muted">Extracto de la demo · '+m.dur+'</span></div>'+P.trans.map(function(r){var us=r[1].indexOf("Nube Segura")>=0;return '<div class="tline"><span class="ts">'+r[0]+'</span><div><b class="'+(us?'us':'them')+'">'+r[1]+'</b><p class="ptxt" style="margin:2px 0 0">'+r[2]+'</p></div></div>'}).join("")+'</div>';
+  } else if(t==="learn"){
+    body='<div class="pgrid3">'+P.learn.map(function(r){return '<div class="pcard"><p class="plab">'+r[0]+'</p><p class="ptxt" style="margin:0">'+r[1]+'</p></div>'}).join("")+'</div><p class="note">Peitho compara esta reunión con tus reuniones anteriores para detectar patrones y sugerir mejoras a tu perfil comercial.</p>';
+  } else if(t==="mail"){
+    body='<div class="pcard"><div class="between" style="flex-wrap:wrap"><h3 class="ph" style="margin:0">Correo de seguimiento sugerido</h3><button class="btn sm" data-act="copymail">Copiar correo</button></div><label class="fl" style="margin-top:14px">Asunto<input type="text" id="mSubj" value="'+esc(P.mail.subj)+'"></label><label class="fl" style="margin-top:12px">Cuerpo<textarea id="mBody" style="min-height:300px">'+esc(P.mail.body)+'</textarea></label></div>';
+  } else {
+    var f=fb||{stars:0,opp:"",held:"Sí",comment:""};S._fb=JSON.parse(JSON.stringify(f));
+    body='<div class="pcard"><h3 class="ph">Tu feedback sobre la reunión</h3><p class="small muted" style="margin-top:-6px">Confirma la facturación del mes y ayuda a la IA a recomendarte mejores cuentas.</p>'+
+     '<div class="grid2"><div class="stack"><div class="fl">¿Se realizó la reunión?<div class="seg" data-seg="held">'+["Sí","No"].map(function(o){return '<button type="button" class="'+(f.held===o?'on':'')+'" data-segv="'+o+'">'+o+'</button>'}).join("")+'</div></div>'+
+     '<div class="fl">Calidad del perfil contactado<div class="stars">'+[1,2,3,4,5].map(function(i){return '<button type="button" class="'+(f.stars>=i?'on':'')+'" data-star="'+i+'" aria-label="'+i+' estrellas">★</button>'}).join("")+'</div></div>'+
+     '<div class="fl">¿Es una oportunidad comercial?<div class="seg" data-seg="opp">'+["Sí","Tal vez","No"].map(function(o){return '<button type="button" class="'+(f.opp===o?'on':'')+'" data-segv="'+o+'">'+o+'</button>'}).join("")+'</div></div></div>'+
+     '<label class="fl">Comentarios para nuestro equipo<textarea id="fbC" placeholder="Ej.: el perfil era correcto, pero buscan algo para el próximo año">'+esc(f.comment)+'</textarea></label></div>'+
+     '<div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" data-savefb="'+m.id+'">'+(f.done?'Actualizar feedback':'Enviar feedback')+'</button></div></div>';
+  }
+  return head+tabs+'<div class="pwrap">'+body+'</div>';
+}
+
+function scoreColor(s){return s>=80?'background:var(--okbg);color:var(--ok)':s>=60?'background:var(--warnbg);color:var(--warn)':'background:var(--badbg);color:var(--bad)'}
+function openMeet(id){
+  var m=MEET.filter(function(x){return x.id===id})[0], c=CO[m.co], fb=S.feedback[id]||{stars:0,opp:"",held:"Sí",comment:""};
+  var head='<div class="mhead"><div><div class="tiny muted">'+m.day+' '+m.mon+' 2027 · '+m.time+' · '+m.mode+'</div><h2 style="margin:4px 0 0">'+c.name+'</h2><div class="small muted">'+m.cargo+' · '+c.ind+'</div></div><button class="x" data-close aria-label="Cerrar">×</button></div>';
+  if(m.st==="agendada"){
+    modal(head+'<div class="stack"><div class="banner"><div><b>Peitho asistirá a esta reunión.</b> Al terminar recibirás el resumen, las objeciones detectadas y los próximos pasos.</div></div>'+
+    '<h3>Preparación sugerida por Peitho</h3><ul class="lst"><li>'+c.name+' tiene '+SIZES[c.size]+' empleados y opera en '+c.city+'.</li><li>Abre con tu caso de éxito más cercano a '+c.ind.toLowerCase()+'.</li><li>Objeción probable: “Ya tenemos un proveedor”. Respuesta de tu perfil: ofrecer diagnóstico sin costo.</li></ul>'+
+    '<div class="row" style="justify-content:flex-end"><button class="btn ghost" data-act="toast" data-msg="Le avisamos a nuestro equipo para reagendar">Pedir reagendar</button><button class="btn" data-close>Listo</button></div></div>',true);return;}
+  if(m.st==="realizada"){S.meetId=id;S.ptab="analisis";go("reunion");return}
+  if(m.st==="noshow"){
+    modal(head+'<div class="stack"><div class="banner warn"><div><b>El prospecto no asistió.</b> No se cobra esta reunión. Nuestro SDR la está reagendando y te avisaremos la nueva fecha.</div></div><div class="row" style="justify-content:flex-end"><button class="btn" data-close>Entendido</button></div></div>');return;}
+  modal(head+
+  '<div class="row" style="gap:20px;align-items:center;margin-bottom:20px;flex-wrap:wrap"><div class="score" style="'+scoreColor(m.score)+'">'+m.score+'</div><div style="flex:1;min-width:240px"><div class="row"><b>Interés del prospecto</b><span class="tag ok">'+m.temp+'</span><span class="tag">Duración '+m.dur+'</span></div><p class="small" style="margin:8px 0 0">'+m.sum+'</p></div></div>'+
+  '<div class="grid2"><div class="stack"><h3>Necesidades detectadas</h3><ul class="lst">'+m.needs.map(function(n){return '<li>'+n+'</li>'}).join("")+'</ul>'+
+   '<h3 style="margin-top:8px">Objeciones y cómo se manejaron</h3>'+m.objs.map(function(o){return '<div class="quote"><small>'+o[0]+'</small>'+o[1]+'</div>'}).join("")+
+   '<h3 style="margin-top:8px">Momentos clave</h3>'+m.quotes.map(function(q){return '<div class="quote"><small>Minuto '+q[0]+'</small>'+q[1]+'</div>'}).join("")+'</div>'+
+  '<div class="stack"><h3>Calificación de la oportunidad</h3><div class="bant">'+m.bant.map(function(b){return '<div><b>'+b[0]+'</b><span class="tag '+b[2]+'">'+b[1]+'</span></div>'}).join("")+'</div>'+
+   '<h3 style="margin-top:8px">Próximos pasos acordados</h3><div class="tw"><table><thead><tr><th>Acción</th><th>Fecha</th><th>Responsable</th></tr></thead><tbody>'+m.next.map(function(n){return '<tr><td>'+n[0]+'</td><td>'+n[1]+'</td><td>'+n[2]+'</td></tr>'}).join("")+'</tbody></table></div>'+
+   '<h3 style="margin-top:8px">Coaching de la reunión</h3><div class="small"><div class="between"><span>Tu equipo habló el '+m.talk+'% del tiempo</span><span class="muted">Ideal: 40–50%</span></div><div class="talk" style="margin-top:6px"><i style="width:'+m.talk+'%"></i></div></div>'+
+   '<div class="small"><b>Funcionó bien</b><ul class="lst" style="margin-top:6px">'+m.coach.good.map(function(x){return '<li>'+x+'</li>'}).join("")+'</ul></div>'+
+   '<div class="small"><b>Para la próxima</b><ul class="lst" style="margin-top:6px">'+m.coach.improve.map(function(x){return '<li>'+x+'</li>'}).join("")+'</ul></div></div></div>'+
+  '<section class="card" style="margin-top:22px;background:var(--soft);border:0;box-shadow:none"><h2>Tu feedback</h2><p class="small muted" style="margin-top:-6px">Nos ayuda a elegir mejores cuentas y confirma la facturación del mes.</p>'+
+   '<div class="grid2"><div class="stack"><div class="fl">¿Se realizó la reunión?<div class="seg" data-seg="held">'+["Sí","No"].map(function(o){return '<button type="button" class="'+(fb.held===o?'on':'')+'" data-segv="'+o+'">'+o+'</button>'}).join("")+'</div></div>'+
+   '<div class="fl">Calidad del perfil contactado<div class="stars" id="stars">'+[1,2,3,4,5].map(function(i){return '<button type="button" class="'+(fb.stars>=i?'on':'')+'" data-star="'+i+'" aria-label="'+i+' estrellas">★</button>'}).join("")+'</div></div>'+
+   '<div class="fl">¿Es una oportunidad comercial?<div class="seg" data-seg="opp">'+["Sí","Tal vez","No"].map(function(o){return '<button type="button" class="'+(fb.opp===o?'on':'')+'" data-segv="'+o+'">'+o+'</button>'}).join("")+'</div></div></div>'+
+   '<label class="fl">Comentarios para nuestro equipo<textarea id="fbC" placeholder="Ej.: el perfil era correcto, pero buscan algo para el próximo año">'+esc(fb.comment)+'</textarea></label></div>'+
+   '<div class="row" style="justify-content:flex-end;margin-top:14px">'+(fb.done?'<span class="tag ok">Feedback enviado</span>':'')+'<button class="btn" data-savefb="'+id+'">'+(fb.done?'Actualizar feedback':'Enviar feedback')+'</button></div></section>',true);
+  S._fb=JSON.parse(JSON.stringify(fb));
+}
+
+function vEventos(){
+  var t=S.etab||"todos";
+  var list=EVENTS.filter(function(e){return t==="todos"||(t==="inscritos"&&S.regEvents[e.id])||e.type===t});
+  return '<h1>Eventos y networking</h1><p class="lead">Inscríbete en los eventos de ACTI y agenda reuniones uno a uno con los asistentes antes de llegar.</p>'+
+  '<div class="grid3" style="grid-template-columns:minmax(0,2fr) minmax(0,1fr)"><div>'+
+  '<div class="chips" style="margin-bottom:16px">'+[["todos","Todos"],["Presencial","Presenciales"],["Online","Online"],["inscritos","Mis inscripciones"]].map(function(x){return '<button type="button" class="chip'+(t===x[0]?' on':'')+'" aria-pressed="'+(t===x[0])+'" data-etab="'+x[0]+'">'+x[1]+'</button>'}).join("")+'</div>'+
+  '<div class="grid2">'+(list.length?list.map(evCard).join(""):'<p class="empty">Todavía no te inscribes en ningún evento.</p>')+'</div></div>'+
+  '<aside class="card"><h2>Últimas novedades</h2><div class="news">'+NEWS.map(function(n){return '<div><small>'+n[0]+'</small>'+n[1]+'</div>'}).join("")+'</div></aside></div>';
+}
+function evCard(e){var reg=S.regEvents[e.id];
+  return '<article class="card ev"><div class="hd"><div class="d"><b>'+e.day+'</b><small>'+e.mon+'</small></div><div><h3>'+e.title+'</h3><p>'+e.time+' · '+e.place+'</p></div></div>'+
+  '<div class="bd"><div class="row" style="flex-wrap:wrap"><span class="tag">'+e.type+'</span>'+(e.net?'<span class="tag ok">Reuniones uno a uno</span>':'')+(reg?'<span class="tag navy">Inscrito</span>':'')+'</div>'+
+  '<div class="small muted">'+e.ins+' inscritos de '+e.cap+' cupos</div><div class="prog"><i style="width:'+(e.ins/e.cap*100)+'%"></i></div>'+
+  '<div class="row" style="margin-top:auto"><button class="btn sm" data-ev="'+e.id+'">Ver evento</button>'+(reg?'':'<button class="btn ghost sm" data-reg="'+e.id+'">Inscribirme</button>')+'</div></div></article>'}
+function vEvento(){
+  var e=EVENTS.filter(function(x){return x.id===S.evId})[0], reg=S.regEvents[e.id], att=ATT[e.id]||[];
+  var af=S.attF||"";
+  var my=S.evMeet.filter(function(x){return x.ev===e.id});
+  var shown=att.filter(function(a){return !af||a[3]===af});
+  return '<button class="btn ghost sm" data-go="eventos" style="margin-bottom:16px">Volver a eventos</button>'+
+  '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="ev"><div class="hd" style="padding:26px"><div class="d"><b>'+e.day+'</b><small>'+e.mon+'</small></div><div><h3 style="font-size:19px">'+e.title+'</h3><p>'+e.time+' · '+e.place+' · '+e.type+'</p></div></div></div>'+
+  '<div style="padding:22px" class="grid2"><div class="stack"><p style="margin:0">'+e.desc+'</p><h3>Agenda</h3><div class="tw"><table><tbody>'+e.agenda.map(function(a){return '<tr><td style="width:80px"><b>'+a[0]+'</b></td><td>'+a[1]+'</td></tr>'}).join("")+'</tbody></table></div></div>'+
+  '<div class="stack"><div class="small muted">'+e.ins+' inscritos de '+e.cap+' cupos</div><div class="prog"><i style="width:'+(e.ins/e.cap*100)+'%"></i></div>'+
+   (reg?'<div class="banner"><div><b>Estás inscrito.</b> Te enviamos la confirmación y el acceso por correo.</div></div><button class="btn ghost" data-unreg="'+e.id+'">Cancelar inscripción</button>':'<button class="btn" data-reg="'+e.id+'">Inscribirme</button>')+
+   (my.length?'<h3>Mis reuniones en este evento</h3>'+my.map(function(x){var a=att.filter(function(y){return y[0]===x.att})[0];return '<div class="kc"><b>'+x.slot+' · '+a[1]+'</b><span class="muted">'+a[2]+'</span> <span class="tag '+(x.st==="Confirmada"?'ok':'warn')+'">'+x.st+'</span></div>'}).join(""):'')+
+  '</div></div></div>'+
+  '<section class="card"><div class="between" style="flex-wrap:wrap"><h2 style="margin:0">Asistentes ('+att.length+')</h2><select id="attF" style="max-width:260px" aria-label="Filtrar asistentes por industria"><option value="">Todas las industrias</option>'+Array.from(new Set(att.map(function(a){return a[3]}))).map(function(i){return '<option'+(af===i?' selected':'')+'>'+i+'</option>'}).join("")+'</select></div>'+
+  (!reg?'<div class="banner warn" style="margin-top:14px"><div>Inscríbete para agendar reuniones con los asistentes.</div></div>':'')+
+  (!e.net?'<div class="note" style="margin-top:14px">Este evento no tiene ronda de reuniones uno a uno. Puedes ver quién asiste y solicitar una reunión posterior a través de Buscar cuentas.</div>':'')+
+  '<div style="margin-top:8px">'+shown.map(function(a){var has=S.evMeet.filter(function(x){return x.ev===e.id&&x.att===a[0]})[0];
+    return '<div class="att"><div class="logo-co" style="width:44px;height:44px;font-size:14px">'+ini(a[1])+'</div><div><b>'+a[1]+'</b><div class="small muted">'+a[2]+' · '+a[3]+'</div><div style="margin-top:4px"><span class="tag'+(a[4]==="Socio ACTI"?' navy':'')+'">'+a[4]+'</span>'+(a[5]?'':' <span class="tag">No recibe reuniones</span>')+'</div></div>'+
+    (has?'<span class="tag '+(has.st==="Confirmada"?'ok':'warn')+'">'+has.slot+' · '+has.st+'</span>':'<button class="btn sm" data-evreq="'+a[0]+'" '+(!reg||!a[5]||!e.net?'disabled':'')+'>Agendar reunión</button>')+'</div>'}).join("")+'</div>'+
+  '<p class="note" style="margin-top:12px">Por privacidad mostramos empresa y cargo. Los asistentes deciden si reciben reuniones y confirman cada solicitud. Las reuniones de eventos no consumen tu cupo mensual.</p></section>';
+}
+function openEvReq(aid){
+  var e=EVENTS.filter(function(x){return x.id===S.evId})[0], a=ATT[e.id].filter(function(x){return x[0]===aid})[0];
+  var taken=S.evMeet.filter(function(x){return x.ev===e.id}).map(function(x){return x.slot});
+  S._slot=null;
+  modal('<div class="mhead"><div><h2 style="margin:0">Agendar reunión en el evento</h2><div class="small muted">'+a[1]+' · '+a[2]+'</div></div><button class="x" data-close aria-label="Cerrar">×</button></div>'+
+  '<div class="stack"><div class="fl">Elige un horario de la ronda de reuniones<div class="slots">'+e.slots.map(function(s){return '<button type="button" data-slot="'+s+'" '+(taken.indexOf(s)>=0?'disabled title="Ya tienes una reunión en este horario"':'')+'>'+s+'</button>'}).join("")+'</div></div>'+
+  '<label class="fl">Mensaje para el asistente<textarea id="evMsg">Hola, somos Nube Segura, socios de ACTI. Nos encantaría conversar 15 minutos sobre seguridad en la nube para '+a[3].toLowerCase()+'.</textarea></label>'+
+  '<div class="note">El asistente recibe la solicitud y la confirma. Te avisaremos por correo y aquí mismo.</div>'+
+  '<div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close>Cancelar</button><button class="btn" data-confirmev="'+aid+'">Enviar solicitud</button></div></div>');
+}
+
+function vFactFree(){
+  return '<h1>Facturación</h1><p class="lead">Tu plan Freemium está incluido en tu membresía de ACTI. Las reuniones de prueba no tienen costo.</p>'+
+  '<div class="grid4">'+stat("$0","Este mes","Incluido en la membresía ACTI")+stat(meetYear()+' de 2',"Reuniones de prueba","Sin costo")+stat(S.used+' de 20',"Empresas prospectadas","En tu prueba")+stat(TRIAL.days,"Días de prueba","Vence el "+TRIAL.end)+'</div>'+
+  '<section class="card" style="margin-top:20px"><div class="between" style="flex-wrap:wrap"><div><h2 style="margin:0 0 4px">¿Quieres reuniones todos los meses?</h2><p class="small muted" style="margin:0">Los planes pagados garantizan entre 5 y 12 reuniones al mes, con una base mensual y 4 UF por reunión agendada.</p></div><button class="btn" data-go="planes">Ver planes</button></div></section>';
+}
+function vFacturacion(){
+  if(isFree())return vFactFree();
+  var t=S.btab||"feb";
+  var rea=MEET.filter(function(m){return m.mon==="FEB"&&m.st==="realizada"}), ns=MEET.filter(function(m){return m.mon==="FEB"&&m.st==="noshow"}), ag=MEET.filter(function(m){return m.st==="agendada"});
+  var rows, cupo=PLAN.fee, n, title, status;
+  if(t==="feb"){n=rea.length;rows=rea.map(function(m){return [m.day+" feb",CO[m.co].name,m.cargo,S.feedback[m.id]&&S.feedback[m.id].done?'<span class="tag ok">Confirmada</span>':'<span class="tag warn">Feedback pendiente</span>',PLAN.variable]}).concat(ns.map(function(m){return [m.day+" feb",CO[m.co].name,m.cargo,'<span class="tag bad">No asistió · sin cargo</span>',0]}));title="Febrero 2027";status='<span class="tag warn">En curso · cierra el 28 feb</span>';}
+  else{n=Math.min(4,PLAN.garant);rows=JAN.slice(0,n).map(function(j){return [j[0],j[1],j[2],'<span class="tag ok">Confirmada</span>',PLAN.variable]});title="Enero 2027";status='<span class="tag ok">Pagada</span>';}
+  var vari=n*PLAN.variable, sub=cupo+vari, iva=sub*IVA, tot=sub+iva;
+  return '<h1>Facturación</h1><p class="lead">Pagas la base mensual de tu plan y '+fmt(PLAN.variable,1)+' UF por cada reunión realizada. Las reuniones a las que el prospecto no asiste no se cobran.</p>'+
+  '<div class="tabs" role="tablist">'+[["feb","Febrero 2027"],["ene","Enero 2027"]].map(function(x){return '<button role="tab" aria-selected="'+(t===x[0])+'" class="'+(t===x[0]?'on':'')+'" data-btab="'+x[0]+'">'+x[1]+'</button>'}).join("")+'</div>'+
+  '<div class="between" style="margin-bottom:16px;flex-wrap:wrap"><h2 style="margin:0">'+title+'</h2>'+status+'</div>'+
+  '<div class="grid4">'+stat(fmt(cupo,1)+' UF',"Base Plan "+PLAN.name,PLAN.garant+" reuniones garantizadas")+stat(n,"Reuniones realizadas",fmt(PLAN.variable,1)+" UF cada una")+stat(fmt(vari,1)+' UF',"Variable del mes",n+" × "+fmt(PLAN.variable,1)+" UF")+stat(fmt(sub,1)+' UF',"Subtotal neto","$"+fmt(Math.round(sub*UF))+" + IVA")+'</div>'+
+  '<div class="grid2" style="margin-top:20px;grid-template-columns:minmax(0,2fr) minmax(0,1fr)"><section class="card"><h2>Detalle de reuniones</h2><div class="tw"><table><thead><tr><th>Fecha</th><th>Empresa</th><th>Cargo</th><th>Estado</th><th class="r">Monto (UF)</th></tr></thead><tbody>'+
+   rows.map(function(r){return '<tr><td>'+r[0]+'</td><td>'+r[1]+'</td><td>'+r[2]+'</td><td>'+r[3]+'</td><td class="r">'+fmt(r[4],1)+'</td></tr>'}).join("")+'</tbody></table></div>'+
+   (t==="feb"?'<p class="note" style="margin-top:14px">Quedan '+ag.length+' reuniones agendadas este mes. Si se realizan, el variable sube a '+fmt((n+ag.length)*PLAN.variable,1)+' UF.</p>':'')+'</section>'+
+  '<section class="card stack"><h2>Resumen</h2><div class="between small"><span>Base Plan '+PLAN.name+'</span><b>'+fmt(cupo,1)+' UF</b></div><div class="between small"><span>Variable ('+n+' reuniones)</span><b>'+fmt(vari,1)+' UF</b></div><div class="between small"><span>IVA 19%</span><b>'+fmt(iva,2)+' UF</b></div><div class="between" style="border-top:2px solid var(--tink);padding-top:10px"><b>Total</b><b>'+fmt(tot,2)+' UF</b></div><div class="small muted">$'+fmt(Math.round(tot*UF))+' con UF de $'+fmt(UF)+'</div>'+
+   '<button class="btn ghost" data-act="toast" data-msg="La descarga estará disponible en la versión final">Descargar detalle</button></section></div>'+
+  '<section class="card" style="margin-top:20px"><h2>Historial</h2><div class="tw"><table><thead><tr><th>Mes</th><th class="r">Base (UF)</th><th class="r">Reuniones</th><th class="r">Total neto (UF)</th><th>Estado</th></tr></thead><tbody><tr><td>Febrero 2027</td><td class="r">'+fmt(PLAN.fee,1)+'</td><td class="r">'+rea.length+' a la fecha</td><td class="r">'+fmt(PLAN.fee+rea.length*PLAN.variable,1)+'</td><td><span class="tag warn">En curso</span></td></tr><tr><td>Enero 2027</td><td class="r">'+fmt(PLAN.fee,1)+'</td><td class="r">'+PLAN.garant+'</td><td class="r">'+fmt(PLAN.fee+PLAN.garant*PLAN.variable,1)+'</td><td><span class="tag ok">Pagada</span></td></tr></tbody></table></div></section>';
+}
+
+function vPlanes(){
+  var order=["freemium","conecta","crece","acelera"];
+  var FEAT={freemium:["Plataforma y todos los módulos","Eventos y networking de ACTI","Hasta 2 reuniones al año, en una prueba de 90 días","Hasta 20 empresas prospectadas al año","5 búsquedas con IA al mes","Onboarding grupal y soporte en la plataforma"]};
+  function paidFeat(p){return [p.garant+" reuniones garantizadas al mes","Trabajamos las cuentas necesarias para cumplirlas","Recomendaciones con IA según tu ICP","KAM asignado","Informe de Peitho en cada reunión","Eventos y networking de ACTI"]}
+  return '<h1>Mi plan</h1><p class="lead">Todo socio de ACTI parte con el plan Freemium. Cuando quieras reuniones todos los meses, eliges un plan pagado: base mensual y 4 UF por reunión agendada.</p>'+
+  '<div class="grid4 plans">'+order.map(function(k){var p=PLANS[k],cur=PLAN.key===k,free=k==="freemium";
+    var price=free?'<div class="pp">Incluido</div><div class="small muted">en tu membresía ACTI</div>':'<div class="pp">'+p.fee+' UF</div><div class="small muted">base + 4 UF por reunión</div>';
+    var tot=free?'Sin costo':'Total '+(p.fee+p.garant*4)+' UF al mes · ≈ $'+fmt(Math.round((p.fee+p.garant*4)/p.garant*UF/1000))+' mil por reunión';
+    return '<article class="card plancard'+(cur?' cur':'')+'"><div class="between"><h2 style="margin:0">'+p.name+'</h2>'+(cur?'<span class="tag ok">Tu plan</span>':(k==="crece"?'<span class="tag">Más elegido</span>':''))+'</div>'+price+
+    '<div class="small" style="font-weight:700;margin:4px 0 10px">'+tot+'</div><ul class="lst small">'+(free?FEAT.freemium:paidFeat(p)).map(function(f){return '<li>'+f+'</li>'}).join("")+'</ul>'+
+    '<button class="btn'+(cur?' ghost':'')+'" style="margin-top:auto;width:100%" data-setplan="'+k+'"'+(cur?' disabled':'')+'>'+(cur?'Tu plan actual':(free?'Volver a Freemium':'Cambiar a '+p.name))+'</button></article>'}).join("")+'</div>'+
+  '<p class="note" style="margin-top:18px">Valores mensuales + IVA. En la demostración, al cambiar de plan la plataforma muestra la experiencia de ese plan.</p>';
+}
+
+/* ---------- render y eventos ---------- */
+var VIEWS={planes:vPlanes,reunion:vReunion,inicio:vInicio,perfil:vPerfil,icp:vICP,buscar:vBuscar,solicitudes:vSolicitudes,reuniones:vReuniones,eventos:vEventos,evento:vEvento,facturacion:vFacturacion};
+function render(){renderMenu();$("view").innerHTML=VIEWS[S.view]();if(S.view==="evento"){var m=document.querySelector('.nav[data-go="eventos"]');if(m)m.classList.add("on")}if(S.view==="reunion"){var m2=document.querySelector('.nav[data-go="reuniones"]');if(m2)m2.classList.add("on")}}
+function modal(html,wide){var m=$("modal");m.className="modal"+(wide?" wide":"");m.innerHTML=html;$("ov").classList.add("on");m.setAttribute("tabindex","-1");setTimeout(function(){m.focus({preventScroll:true});m.scrollTop=0},30)}
+function close(){$("ov").classList.remove("on")}
+var tt;function toast(t){var e=$("toast");e.textContent=t;e.classList.add("on");clearTimeout(tt);tt=setTimeout(function(){e.classList.remove("on")},2600)}
+function readProfile(){var p=S.profile;var g=function(id){var e=$(id);return e?e.value:null};
+  if(g("pVp")!==null){p.vp=g("pVp");p.cases=g("pCases");p.diff=g("pDiff");p.avoid=g("pAvoid");document.querySelectorAll("[data-obj]").forEach(function(i){p.obj[+i.dataset.obj][+i.dataset.k]=i.value})}}
+
+document.addEventListener("click",function(e){
+  var t=e.target.closest("button,input,select,label,[data-meet],[data-go],[data-co]");if(!t)return;if(t.tagName==="INPUT"||t.tagName==="SELECT"||t.tagName==="LABEL")return;
+  var d=t.dataset;
+  if(e.target===$("ov")){close();return}
+  if(d.go){close();go(d.go);return}
+  if("close" in d){close();return}
+  if(d.rmf){var ar=S.filters[d.rmf];ar.splice(ar.indexOf(d.rmv),1);S.page=1;render();return}
+  if(d.stab){S.btabS=d.stab;render();return}
+  if(d.page){S.page=+d.page;render();window.scrollTo(0,0);return}
+  if(d.save){var sid=+d.save;if(S.savedCo[sid]){delete S.savedCo[sid];toast("Quitada de guardadas")}else{S.savedCo[sid]=true;toast(CO[sid].name+" guardada")}if($("ov").classList.contains("on"))openCo(sid);render();return}
+  if(d.dismiss){openDismiss(+d.dismiss);return}
+  if(d.dreason){S._dr=d.dreason;t.parentNode.querySelectorAll(".chip").forEach(function(b){b.classList.toggle("on",b===t)});return}
+  if(d.confirmdis){S.dismissed[+d.confirmdis]=S._dr||"Sin motivo";delete S.savedCo[+d.confirmdis];close();render();toast("Descartada. No volverá a aparecer en tus recomendaciones.");return}
+  if(d.icp){readICP();var ia=S.icp[d.icp],ix=ia.indexOf(d.v);if(ix>=0)ia.splice(ix,1);else ia.push(d.v);render();return}
+  if(d.rmpers){readICP();S.icp.personas.splice(+d.rmpers,1);render();return}
+  if(d.loads){S.filters=JSON.parse(JSON.stringify(S.searches[+d.loads].f));S.page=1;render();toast("Búsqueda cargada");return}
+  if(d.req){openReq(+d.req);return}
+  if(d.confirmreq){var c=+d.confirmreq;S.sol.push({co:c,cargo:$("rCargo").value,st:"cola",d:"16 feb"});S.used++;close();render();toast("Solicitud enviada: "+CO[c].name+". La verás en Mis solicitudes.");return}
+  if(d.meet){openMeet(d.meet);return}
+  if(d.co!==undefined&&!t.matches("button")){openCo(+d.co);return}
+  if(d.mtab){S.mtab=d.mtab;render();return}
+  if(d.etab){S.etab=d.etab;render();return}
+  if(d.btab){S.btab=d.btab;render();return}
+  if(d.ev){S.evId=d.ev;S.attF="";go("evento");return}
+  if(d.reg){S.regEvents[d.reg]=true;EVENTS.forEach(function(x){if(x.id===d.reg)x.ins++});render();toast("Inscripción confirmada. Ya puedes agendar reuniones con los asistentes.");return}
+  if(d.unreg){delete S.regEvents[d.unreg];EVENTS.forEach(function(x){if(x.id===d.unreg)x.ins--});S.evMeet=S.evMeet.filter(function(x){return x.ev!==d.unreg});render();toast("Cancelaste tu inscripción");return}
+  if(d.evreq){openEvReq(d.evreq);return}
+  if(d.slot){S._slot=d.slot;document.querySelectorAll("[data-slot]").forEach(function(b){b.classList.toggle("on",b.dataset.slot===d.slot)});return}
+  if(d.confirmev){if(!S._slot){toast("Elige un horario para la reunión");return}S.evMeet.push({ev:S.evId,att:d.confirmev,slot:S._slot,st:"Pendiente de confirmación"});close();render();toast("Solicitud enviada. El asistente debe confirmarla.");return}
+  if(d.repo){var s=S.sol[+d.repo];s.st="repuesta";S.sol.splice(+d.repo,1);S.repos++;render();toast("Cuenta reemplazada. La IA sumará una nueva recomendación.");return}
+  if(d.star){S._fb.stars=+d.star;document.querySelectorAll("[data-star]").forEach(function(b){b.classList.toggle("on",+b.dataset.star<=+d.star)});return}
+  if(d.segv){var g=t.parentNode.dataset.seg;S._fb[g]=d.segv;t.parentNode.querySelectorAll("button").forEach(function(b){b.classList.toggle("on",b===t)});return}
+  if(d.setplan){setPlan(d.setplan);render();toast("Ahora ves la plataforma con el plan "+PLAN.name+".");return}
+  if(d.ptab){S.ptab=d.ptab;render();return}
+  if(d.savefb){if(!S._fb.stars||!S._fb.opp){toast("Califica el perfil y dinos si es una oportunidad");return}S._fb.comment=$("fbC").value;S._fb.done=true;S.feedback[d.savefb]=S._fb;S.ptab="analisis";render();toast("Gracias. Tu feedback ya está registrado.");return}
+  if(d.rmserv){readProfile();S.profile.services.splice(+d.rmserv,1);render();return}
+  if(d.rmobj){readProfile();S.profile.obj.splice(+d.rmobj,1);render();return}
+  switch(d.act){
+    case "clearf":S.filters=emptyF();S.page=1;render();break;
+    case "savesearch":var nm=prompt("Nombre para esta búsqueda","Búsqueda "+(S.searches.length+1));if(nm){S.searches.push({name:nm,f:JSON.parse(JSON.stringify(S.filters))});render();toast("Búsqueda guardada")}break;
+    case "runai":if(isFree()&&S.iaUsed>=5){toast("Usaste tus 5 búsquedas con IA de este mes. Se renuevan el 1 de marzo.");break}if(isFree())S.iaUsed++;S.aiLoading=true;render();setTimeout(function(){S.aiLoading=false;S.aiRan=true;render()},1400);break;
+    case "undismiss":S.dismissed={};render();break;
+    case "addpers":readICP();S.icp.personas.push({cargo:"CTO",rol:"Decide",pri:"Media"});render();break;
+    case "saveicpf":readICP();render();toast("ICP guardado. La IA usará esta versión.");break;
+    case "saveicpgo":readICP();S.btabS="ia";S.aiRan=false;go("buscar");break;
+    case "addserv":readProfile();var v=$("pNewServ").value.trim();if(v){S.profile.services.push(v);render()}break;
+    case "addobj":readProfile();S.profile.obj.push(["",""]);render();break;
+    case "saveprof":readProfile();S.profilePct=S.profile.diff&&S.profile.avoid?100:90;render();toast("Perfil guardado. Nuestra escudería ya tiene la versión actualizada.");break;
+    case "reponerAll":var k=S.sol.filter(function(s){return s.st==="sinresp"}).length;S.sol=S.sol.filter(function(s){return s.st!=="sinresp"});S.repos+=k;render();toast(k+" cuentas reemplazadas con recomendaciones de la IA.");break;
+    case "toast":toast(d.msg);break;
+    case "copymail":var txt="Asunto: "+$("mSubj").value+"\n\n"+$("mBody").value;try{navigator.clipboard.writeText(txt).then(function(){toast("Correo copiado")},function(){toast("Selecciona el texto y cópialo")})}catch(er){toast("Selecciona el texto y cópialo")}break;
+  }
+});
+document.addEventListener("keydown",function(e){
+  if(e.key==="Escape")close();
+  if((e.key==="Enter"||e.key===" ")&&e.target.dataset&&e.target.dataset.meet){e.preventDefault();openMeet(e.target.dataset.meet)}
+  if(e.key==="Enter"&&e.target.classList&&e.target.classList.contains("dbrow")){openCo(+e.target.dataset.co)}
+});
+$("ov").addEventListener("click",function(e){if(e.target===$("ov"))close()});
+document.addEventListener("change",function(e){var t=e.target;
+  if(t.dataset.fk){var a=S.filters[t.dataset.fk],i=a.indexOf(t.dataset.fv);if(t.checked&&i<0)a.push(t.dataset.fv);if(!t.checked&&i>=0)a.splice(i,1);S.page=1;var openSet=[].map.call(document.querySelectorAll("details.facet"),function(d){return d.open});render();document.querySelectorAll("details.facet").forEach(function(d,j){if(openSet[j])d.open=true})}
+  if(t.id==="sortSel"){S.sort=t.value;render()}
+  if(t.id==="attF"){S.attF=t.value;render()}
+  if(t.dataset.commit){S.commit[t.dataset.commit]=t.checked;render()}
+});
+document.addEventListener("input",function(e){if(e.target.id==="q"){S.filters.q=e.target.value;S.page=1;var pos=e.target.selectionStart;render();var q=$("q");q.focus();q.setSelectionRange(pos,pos)}});
+
+var btn=$("themeBtn"),root=document.documentElement;
+function isDark(){var t=root.getAttribute("data-theme");if(t)return t==="dark";return window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches}
+function lab(){btn.textContent=isDark()?"Cambiar a modo claro":"Cambiar a modo oscuro"}
+try{var sv=localStorage.getItem("acti-mvp-theme");if(sv)root.setAttribute("data-theme",sv)}catch(e){}
+btn.addEventListener("click",function(){var n=isDark()?"light":"dark";root.setAttribute("data-theme",n);try{localStorage.setItem("acti-mvp-theme",n)}catch(e){}lab()});
+lab();S.icpPct=icpPct();render();
+})();
+</script>
+</body>
+</html>

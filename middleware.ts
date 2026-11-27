@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { actiClientRoute } from "@/lib/acti/routes";
 
 // Prefijos que NO requieren sesión: son los links mágicos que se comparten
 // con clientes externos (protegidos por su propio token en la URL/DB), más
@@ -137,6 +138,14 @@ export async function middleware(req: NextRequest) {
   // (lib/portalAuth.ts) — esto es solo la primera barrera.
   const isPortalPath = isPortalRoute(pathname);
   if (user.app_metadata?.role === "client") {
+    // Socios ACTI (app_metadata.acti, la pone lib/acti/server.ts): quedan en
+    // /acti y /api/acti. Sin la marca, la regla de siempre (abajo).
+    if (user.app_metadata?.acti === true) {
+      const decision = actiClientRoute(pathname);
+      if (decision === "allow") return response;
+      if (decision === "forbid") return NextResponse.json({ error: "Sin acceso" }, { status: 403 });
+      return NextResponse.redirect(new URL("/acti", req.url));
+    }
     if (isPortalPath) return response;
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Sin acceso" }, { status: 403 });

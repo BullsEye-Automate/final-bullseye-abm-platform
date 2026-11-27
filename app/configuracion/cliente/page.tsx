@@ -26,6 +26,7 @@ import RadarSettings from "./RadarSettings";
 import PortalAccessManager from "@/components/portalAdmin/PortalAccessManager";
 import HubspotPoolPanel from "@/components/portalAdmin/HubspotPoolPanel";
 import PeithoSetting from "./PeithoSetting";
+import ActiMemberSection from "@/components/acti/ActiMemberSection";
 
 type Config = {
   lemlist_api_key:                    string;
@@ -771,6 +772,9 @@ export default function ConfigClientePage() {
               <PortalAccessManager clientId={currentClient.id} clientName={currentClient.name} />
             </section>
           )}
+
+          {/* Socio ACTI: marca y plan de la Red de Negocios ACTI */}
+          {currentClient && currentClient.id !== ALL_CLIENTS.id && <ActiMemberSection clientId={currentClient.id} />}
 
           {/* Peitho: feedback automático de reuniones (servicio contratado aparte) */}
           {currentClient && currentClient.id !== ALL_CLIENTS.id && <PeithoSetting clientId={currentClient.id} clientName={currentClient.name} />}

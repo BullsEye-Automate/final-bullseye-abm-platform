@@ -99,6 +99,12 @@ const SECTIONS: Section[] = [
       { href: "/configuracion/icp",       label: "ICP",              icon: IconSettings },
       { href: "/admin/uso-ia",            label: "Uso de IA",        icon: IconChartBar },
     ]
+  },
+  {
+    label: "ACTI",
+    items: [
+      { href: "/acti-equipo",             label: "Red de Negocios",  icon: IconUsersGroup },
+    ]
   }
 ];
 

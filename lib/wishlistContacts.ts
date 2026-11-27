@@ -13,6 +13,7 @@ import {
   addContactsToList,
   ensureContactList,
   getClientOwnLemlistKey,
+  clientLemlistListNames,
   getLemlistEnrichment,
   getLemlistPeopleFilters,
   searchLemlistPeople,
@@ -632,7 +633,7 @@ export async function approveWishlistContact(
     });
     if (up.ok) {
       lemlistContactId = up.data.contactId;
-      const list = await ensureContactList(apiKey);
+      const list = await ensureContactList(apiKey, (await clientLemlistListNames(db, c.client_id)).contacts);
       const added = list.ok ? await addContactsToList(apiKey, list.data.listId, [lemlistContactId]) : list;
       if (!added.ok) errors.push(`Lista (${added.status}): ${added.error}`);
     } else {
