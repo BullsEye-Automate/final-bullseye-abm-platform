@@ -91,6 +91,11 @@ export function ActiMemberFields({ value, onChange }: { value: ActiMemberValue; 
               </div>
             </>
           )}
+          {(value.plan === "crece" || value.plan === "acelera") && (
+            <p className="sm:col-span-2 text-xs text-ink-muted">
+              Este plan incluye Peitho: activa «Incluir Peitho» en Configuración → Cliente para que el socio vea el análisis de sus reuniones.
+            </p>
+          )}
           <div className="sm:col-span-2">
             <label className="label block mb-1">Notas internas</label>
             <textarea className="input" rows={2} value={value.notes} onChange={(e) => set("notes", e.target.value)} />

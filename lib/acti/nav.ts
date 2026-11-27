@@ -10,9 +10,9 @@ export const ACTI_MODULES: ActiModule[] = [
   { slug: "icp", href: "/acti/icp", label: "Mi ICP", phase: 2, ready: true, description: "Tu cliente ideal y tus buyer personas." },
   { slug: "buscar", href: "/acti/buscar", label: "Buscar cuentas", phase: 2, ready: true, description: "Base de empresas, recomendadas por IA y guardadas." },
   { slug: "solicitudes", href: "/acti/solicitudes", label: "Mis solicitudes", phase: 2, ready: true, description: "El avance de cada empresa que pediste." },
-  { slug: "reuniones", href: "/acti/reuniones", label: "Reuniones y feedback", phase: 3, ready: false, description: "Próximas y realizadas, con el análisis de Peitho y tu feedback." },
+  { slug: "reuniones", href: "/acti/reuniones", label: "Reuniones y feedback", phase: 3, ready: true, description: "Próximas y realizadas, con el análisis de Peitho y tu feedback." },
   { slug: "eventos", href: "/acti/eventos", label: "Eventos y networking", phase: 4, ready: false, description: "Eventos de ACTI, inscripción y ronda de negocios." },
-  { slug: "facturacion", href: "/acti/facturacion", label: "Facturación", phase: 3, ready: false, description: "Detalle del mes e historial." },
+  { slug: "facturacion", href: "/acti/facturacion", label: "Facturación", phase: 3, ready: true, description: "Detalle del mes e historial." },
   { slug: "mi-plan", href: "/acti/mi-plan", label: "Mi plan", phase: 1, ready: true, description: "Compara los planes y solicita un cambio." },
 ];
 
