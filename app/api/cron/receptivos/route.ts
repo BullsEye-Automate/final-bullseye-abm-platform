@@ -2,17 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { readMonthCache } from "@/lib/celulasSdr/cache";
 import { findMasterRow, readMasterClients } from "@/lib/radarAbm/server/masterClients";
-import { getClientReceptivos } from "@/lib/receptivos/suggest";
+import { getClientReceptivos, weekKey } from "@/lib/receptivos/suggest";
 import { getReceptive } from "@/lib/receptivos/signals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-// Vercel Cron (cada 30 min, ver vercel.json; salta los clientes ya calculados esta semana): deja calculados los contactos
+// Vercel Cron (domingos cada 30 min de 15:00 a 20:30 de Chile, después de la Base de contactos; salta los clientes ya calculados esta semana): deja calculados los contactos
 // receptivos de cada cliente activo en la Maestra para la semana. Cada corrida
 // sigue con los que faltan (de a uno, hasta ~4 min). ?client_id= uno solo.
-const weekKey = () => { const d = new Date(); const day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day); return d.toISOString().slice(0, 10); };
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;

@@ -46,7 +46,7 @@
     },
     {
       "path": "/api/cron/receptivos",
-      "schedule": "10,40 * * * *"
+      "schedule": "10,40 18-23 * * 0"
     },
     {
       "path": "/api/cron/acti-perfiles",
