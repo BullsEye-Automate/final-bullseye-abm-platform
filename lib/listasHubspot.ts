@@ -92,12 +92,12 @@ export async function runProspectingLists(opts: { day: string; dryRun?: boolean 
     rows.push(...((data ?? []) as unknown as Row[]));
     if (!data || data.length < 1000) break;
   }
-  // Contactos receptivos cargados desde el Centro (lib/receptivos/load.ts): entran a la misma lista
+  // «Contactos que ya mostraron interés» cargados desde el Centro (lib/receptivos/load.ts): entran a la misma lista
   const receptive = (await readMonthCache<{ id: string; client_id: string; nombre: string; cargo: string; empresa: string; hs: string; at: string; by: string }[]>("receptivos:cargados").catch(() => null)) ?? [];
   for (const r of receptive) {
     if (r.at < since) continue;
     const [first, ...rest] = (r.nombre || "").split(" ");
-    rows.push({ id: r.id, client_id: r.client_id, first_name: first || null, last_name: rest.join(" ") || null, title: r.cargo || null, hubspot_contact_id: r.hs, reviewed_at: r.at, reviewed_by_email: `${r.by} · receptivo`, origin: "receptivo", client_wishlist: { company_name: r.empresa } });
+    rows.push({ id: r.id, client_id: r.client_id, first_name: first || null, last_name: rest.join(" ") || null, title: r.cargo || null, hubspot_contact_id: r.hs, reviewed_at: r.at, reviewed_by_email: `${r.by} · ya mostró interés`, origin: "receptivo", client_wishlist: { company_name: r.empresa } });
   }
   const pending = rows.filter((r) => !done[r.id]);
   if (!pending.length) return { day: opts.day, clientes: [] as ListResult[], enviado: false, motivo: "Sin contactos nuevos en HubSpot" };

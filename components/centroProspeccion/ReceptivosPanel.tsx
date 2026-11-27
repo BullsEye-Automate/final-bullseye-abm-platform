@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { IconLoader2, IconRefresh, IconAlertTriangle } from "@tabler/icons-react";
 import { useClient } from "@/lib/clientContext";
 
-// Centro de prospección → «Contactos receptivos» (pedido de la reunión de líderes
+// Centro de prospección → «Contactos que ya mostraron interés» (código interno: receptivos) (pedido de la reunión de líderes
 // 26-nov-2026): personas que ya mostraron disposición a reunirse con BullsEye (por
 // cualquier cliente) y que calzan con el ICP del cliente elegido. La prospectora
 // valida y las carga al HubSpot; llegan al SDR en la lista diaria de las 18:00.
@@ -80,7 +80,7 @@ export default function ReceptivosPanel() {
     <div className="space-y-5 max-w-[1640px]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-[#251762]">Contactos receptivos</h2>
+          <h2 className="text-xl font-semibold text-[#251762]">Contactos que ya mostraron interés</h2>
           <p className="text-sm text-gray-500 max-w-3xl">
             Personas que en los últimos 12 meses tuvieron o agendaron una reunión con BullsEye, respondieron con interés o conversaron por teléfono
             (por cualquier cliente) y que calzan con el ICP del cliente elegido: cargo y empresa. Valídalas y cárgalas: llegan al SDR en la lista diaria de las 18:00.
@@ -119,7 +119,7 @@ export default function ReceptivosPanel() {
         <>
           {!data.hasIcp && <div className="text-sm bg-amber-50 text-amber-800 rounded-xl px-4 py-2">{data.clientName} no tiene ICP cargado en el portal: sin ICP no se puede filtrar.</div>}
           <div className="grid gap-3 grid-cols-2 lg:grid-cols-6">
-            <Kpi label="Receptivos en toda la base" value={n(data.stats.receptiveTotal)} sub="Últimos 12 meses, todos los clientes" />
+            <Kpi label="Con interés en toda la base" value={n(data.stats.receptiveTotal)} sub="Últimos 12 meses, todos los clientes" />
             <Kpi label="Ya trabajados para este cliente" value={n(data.stats.alreadyThisClient)} sub="No se sugieren" />
             <Kpi label="Cargo calza con el buyer persona" value={n(data.stats.titleFit)} sub={`${n(data.stats.titlePartial)} con calce parcial`} />
             <Kpi label="Sugeridos (cargo + empresa en ICP)" value={n(data.stats.final)} hl />
@@ -145,7 +145,7 @@ export default function ReceptivosPanel() {
           <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-gray-500 border-b border-gray-100">
-                <tr><th className="p-2">Persona</th><th className="p-2">Empresa</th><th className="p-2">Por qué es receptivo</th><th className="p-2">Calce ICP</th><th className="p-2">Datos</th><th className="p-2"></th></tr>
+                <tr><th className="p-2">Persona</th><th className="p-2">Empresa</th><th className="p-2">Interés que mostró</th><th className="p-2">Calce ICP</th><th className="p-2">Datos</th><th className="p-2"></th></tr>
               </thead>
               <tbody>
                 {list.map((s) => (
