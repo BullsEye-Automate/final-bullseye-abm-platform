@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase";
+import { CONTACT_EMAIL_FIELDS, CONTACT_LINKEDIN_FIELDS, CONTACT_PHONE_FIELDS } from "@/lib/hubspotContactFields";
 import { fetchHSOwners } from "@/lib/hubspot";
 import { chileToday } from "@/lib/celulasSdr/calendar";
 import { CO_ORDER, CT_ORDER, EXCLUDE } from "../dictionaries";
@@ -81,8 +82,8 @@ function periodStart(today: string, months: number): string {
 const ACTIVITIES_BUDGET_MS = 200_000;
 const DEALS_BUDGET_MS = 235_000;
 
-// Campos de teléfono del contacto (los mismos de Calidad de carga)
-const CONTACT_PHONE_PROPS = ["phone", "mobilephone", "telefono_lemlist", "bullseye_telefono_clay", "bullseye_telefono_lusha", "phone_4", "hs_whatsapp_phone_number"];
+// Campos de teléfono, correo y LinkedIn del contacto: todos los que existen
+// para lo mismo en HubSpot (lib/hubspotContactFields.ts)
 
 // sub: uno de los clientes de la cuenta (subAccounts, ej. "Nisum Colombia"):
 // sus propiedades se detectan por su nombre y sus reuniones y llamadas se
@@ -313,8 +314,10 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
   // Disponibilidad de datos (Dashboard SDR): teléfono, correo y LinkedIn del
   // contacto. Solo las propiedades que existen en este HubSpot.
   const ctPropNames = new Set((catalog.contacts ?? []).map((x) => x.name));
-  const phoneProps = CONTACT_PHONE_PROPS.filter((x) => ctPropNames.has(x));
-  const contactDataProps = [...phoneProps, ...(ctPropNames.has("hs_linkedin_url") ? ["hs_linkedin_url"] : [])];
+  const phoneProps = CONTACT_PHONE_FIELDS.filter((x) => ctPropNames.has(x));
+  const emailProps = CONTACT_EMAIL_FIELDS.filter((x) => ctPropNames.has(x));
+  const linkedinProps = CONTACT_LINKEDIN_FIELDS.filter((x) => ctPropNames.has(x));
+  const contactDataProps = [...phoneProps, ...emailProps, ...linkedinProps];
   const contactProps = Array.from(new Set([
     "firstname", "lastname", "email", "jobtitle", "hubspot_owner_id", "notes_last_contacted", "notes_next_activity_date", contactStatusProp,
     ...(uniCt ? [uniCt.name] : []),
@@ -400,8 +403,8 @@ export async function syncClientRadar(clientId: string, by: string, sub?: string
       ...(toDay(p.notes_next_activity_date) ? { next: toDay(p.notes_next_activity_date) } : {}),
       ...(obj ? { obj } : {}), ...(sig ? { sig } : {}),
       ...(phoneProps.some((x) => (p[x] ?? "").replace(/\D/g, "").length >= 7) ? { ph: 1 as const } : {}),
-      ...(/@/.test(p.email ?? "") ? { ml: 1 as const } : {}),
-      ...((p.hs_linkedin_url ?? "").trim() ? { lk: 1 as const } : {}),
+      ...([...emailProps, "email"].some((x) => /@/.test(p[x] ?? "")) ? { ml: 1 as const } : {}),
+      ...(linkedinProps.some((x) => /linkedin\.com/i.test(p[x] ?? "")) ? { lk: 1 as const } : {}),
       // "Cliente BullsEye" del contacto = este cliente (Dashboard SDR: contactos disponibles para la cuenta)
       ...(filterByClient && isClientContact(p[uniCt!.name]) ? { own: 1 as const } : {}),
     };

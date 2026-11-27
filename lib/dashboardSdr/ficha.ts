@@ -1,4 +1,5 @@
 import { hsFetchWithRetry, hsHeaders, fetchHSOwners } from "@/lib/hubspot";
+import { CONTACT_PHONE_FIELDS } from "@/lib/hubspotContactFields";
 import { CO_ORDER, CT_ORDER } from "@/lib/radarAbm/dictionaries";
 import { batchAssociations, batchRead, detectProperties, loadPropertyCatalog, normLabel, type DetectedProperty } from "@/lib/radarAbm/server/hubspot";
 import { effectiveProperties, hubspotTokenFor, loadClientSettings, loadRadarConfig, subMapping, universeMode } from "@/lib/radarAbm/server/store";
@@ -489,7 +490,8 @@ export async function completeTask(clientId: string, sub: string | null, taskId:
 // Dialer) de quien hace clic en Allo, por su correo. El teléfono se lee de
 // HubSpot en el servidor y va solo a Allo: no se muestra en la app. Se
 // prefiere el celular. Allo registra la llamada (y la sincroniza con HubSpot).
-const DIAL_PHONE_PROPS = ["mobilephone", "phone", "telefono_lemlist", "hs_whatsapp_phone_number", "bullseye_telefono_clay", "bullseye_telefono_lusha", "phone_4"];
+// Todos los campos de teléfono (también los antiguos: Teléfono 2/3/5, Lusha 1/2…), celular primero
+const DIAL_PHONE_PROPS = CONTACT_PHONE_FIELDS;
 export type DialResult = { added: number; skipped: { n: string; why: string }[]; queue: string | null };
 
 async function alloJson(path: string, init?: RequestInit) {
