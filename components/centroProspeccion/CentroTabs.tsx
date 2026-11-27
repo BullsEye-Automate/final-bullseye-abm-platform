@@ -9,7 +9,7 @@ import { IconLoader2 } from "@tabler/icons-react";
 // cual (mismas APIs, mismo selector de cliente del menú lateral). Sus rutas
 // propias (/dashboard, /empresas, /contactos, /busqueda-manual) siguen vivas.
 
-export type CentroTab = "centro" | "empresas" | "contactos" | "busqueda" | "dashboard" | "calidad" | "base";
+export type CentroTab = "centro" | "empresas" | "contactos" | "busqueda" | "dashboard" | "calidad" | "base" | "receptivos";
 
 export const CENTRO_TABS: { key: CentroTab; label: string; hint: string }[] = [
   { key: "centro", label: "Centro", hint: "Equipo, clientes, plan semanal y solicitudes" },
@@ -18,6 +18,7 @@ export const CENTRO_TABS: { key: CentroTab; label: string; hint: string }[] = [
   { key: "busqueda", label: "Búsqueda manual", hint: "Empresas con pocos contactos automáticos" },
   { key: "dashboard", label: "Dashboard", hint: "Prospección automática por cliente y evolución" },
   { key: "calidad", label: "Calidad de carga", hint: "Contactos cargados a HubSpot: calce ICP, teléfonos, calidad y probabilidad de agendamiento" },
+  { key: "receptivos", label: "Contactos receptivos", hint: "Personas que ya mostraron interés en reunirse con BullsEye y calzan con el ICP del cliente" },
   { key: "base", label: "Base de contactos", hint: "Celulares y correos que ya tenemos en todos los HubSpot y créditos de Lemlist que se ahorran" },
 ];
 
@@ -33,6 +34,7 @@ const EmpresasPage = dynamic(() => import("@/app/empresas/page"), { ssr: false, 
 const ContactosPage = dynamic(() => import("@/app/contactos/page"), { ssr: false, loading });
 const BusquedaManualPage = dynamic(() => import("@/app/busqueda-manual/page"), { ssr: false, loading });
 const DashboardPage = dynamic(() => import("@/app/dashboard/page"), { ssr: false, loading });
+const ReceptivosPanel = dynamic(() => import("@/components/centroProspeccion/ReceptivosPanel"), { ssr: false, loading });
 const BaseContactosPanel = dynamic(() => import("@/components/centroProspeccion/BaseContactosPanel"), { ssr: false, loading });
 const CalidadCargaPage = dynamic(() => import("@/app/analisis/calidad-carga/page"), { ssr: false, loading });
 
@@ -88,5 +90,6 @@ export function CentroTabPanel({ tab }: { tab: CentroTab }) {
   if (tab === "dashboard") return <DashboardPage />;
   if (tab === "calidad") return <CalidadCargaPage />;
   if (tab === "base") return <BaseContactosPanel />;
+  if (tab === "receptivos") return <ReceptivosPanel />;
   return null;
 }

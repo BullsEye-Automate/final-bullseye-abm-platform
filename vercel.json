@@ -45,6 +45,10 @@
       "schedule": "20 3-9 * * *"
     },
     {
+      "path": "/api/cron/receptivos",
+      "schedule": "40 9-12 * * 1"
+    },
+    {
       "path": "/api/cron/reporte-sdr?slot=13",
       "schedule": "*/15 15-18 * * 1-5"
     },
@@ -115,6 +119,8 @@
     "app/api/cron/kam-insights/route.ts": { "maxDuration": 300 },
     "app/api/cron/hubspot-pool/route.ts": { "maxDuration": 300 },
     "app/api/cron/base-contactos/route.ts": { "maxDuration": 300 },
+    "app/api/cron/receptivos/route.ts": { "maxDuration": 300 },
+    "app/api/centro/receptivos/route.ts": { "maxDuration": 300 },
     "app/api/centro/base-contactos/route.ts": { "maxDuration": 300 },
     "app/api/cron/reporte-sdr/route.ts": { "maxDuration": 300 },
     "app/api/reporte-sdr/route.ts": { "maxDuration": 300 },
