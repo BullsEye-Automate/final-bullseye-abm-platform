@@ -4,7 +4,7 @@ import { anthropic, HAIKU_MODEL } from "@/lib/claude";
 import { logAiUsage } from "@/lib/aiUsageLogger";
 import { getClientExclusions, getClientIcpText } from "@/lib/wishlist";
 import { scoreCompanies } from "@/lib/wishlistFit";
-import { scoreTitlesForClient } from "@/lib/wishlistContacts";
+import { normTitle, scoreTitlesForClient } from "@/lib/wishlistContacts";
 import { normalizeDomain } from "@/lib/hubspotPool";
 import { getReceptive, SIGNAL_LABEL, type ReceptivePerson, type SignalKind } from "./signals";
 
@@ -128,7 +128,8 @@ async function compute(clientId: string): Promise<ClientReceptivos> {
   // Cargo vs buyer persona
   const titles = Array.from(new Set(cands.map((p) => p.title!.trim())));
   const { scores: tScores } = hasIcp ? await scoreTitlesForClient(db, clientId, titles) : { scores: new Map() };
-  const tFit = (p: ReceptivePerson) => (tScores.get(p.title!.trim()) as { fit_score: number } | undefined)?.fit_score ?? 0;
+  // (los puntajes se guardan por cargo normalizado: minúsculas y espacios simples)
+  const tFit = (p: ReceptivePerson) => (tScores.get(normTitle(p.title!)) as { fit_score: number } | undefined)?.fit_score ?? 0;
   const titlePartial = cands.filter((p) => { const f = tFit(p); return f >= 40 && f < TITLE_MIN; }).length;
   const byTitle = cands.filter((p) => tFit(p) >= TITLE_MIN);
 
@@ -198,7 +199,7 @@ async function compute(clientId: string): Promise<ClientReceptivos> {
 }
 
 export async function getClientReceptivos(clientId: string, fresh = false): Promise<ClientReceptivos> {
-  const key = `receptivos:cli:v1:${clientId}:${weekKey()}`;
+  const key = `receptivos:cli:v2:${clientId}:${weekKey()}`;
   let r = fresh ? null : await readMonthCache<ClientReceptivos>(key);
   if (!r) { r = await compute(clientId); await writeMonthCache(key, { ...r, suggestions: r.suggestions.map((s) => ({ ...s, decision: null })) }, 8 * 86400_000); }
   const decisions = await loadDecisions(clientId);
@@ -207,7 +208,7 @@ export async function getClientReceptivos(clientId: string, fresh = false): Prom
 
 // Resumen de todos los clientes con resultado ya calculado esta semana
 export async function listCachedSummaries(): Promise<{ clientId: string; clientName: string; final: number; pending: number; loaded: number; at: string }[]> {
-  const { data } = await supabaseAdmin().from("allo_response_cache").select("response").like("cache_key", `receptivos:cli:v1:%:${weekKey()}`).limit(200);
+  const { data } = await supabaseAdmin().from("allo_response_cache").select("response").like("cache_key", `receptivos:cli:v2:%:${weekKey()}`).limit(200);
   const rows = (data ?? []) as { response: ClientReceptivos }[];
   const out = [];
   for (const { response: r } of rows) {
