@@ -37,7 +37,7 @@ async function throttleAllo() {
   if (nextSlot > now) await new Promise((r) => setTimeout(r, nextSlot - now));
 }
 
-async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 5): Promise<Response> {
+export async function alloFetchRaw(path: string, init?: RequestInit, retriesLeft = 5): Promise<Response> {
   await throttleAllo();
   const res = await fetch(`${ALLO_API}${path}`, {
     ...init,

@@ -6,6 +6,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { sendMail } from "@/lib/mailer";
 import { readMasterPeople, resolveSdr } from "@/lib/respuestasLemlist/directory";
 import { readMonthCache } from "@/lib/celulasSdr/cache";
+import { alloFetchRaw } from "@/lib/allo";
+import { classifyPhone, countryFromText } from "@/lib/baseContactos/phones";
 import { normTitle, scoreTitlesForClient } from "@/lib/wishlistContacts";
 import type { CargaReport } from "@/lib/calidadCarga/report";
 
@@ -480,4 +482,65 @@ export async function completeTask(clientId: string, sub: string | null, taskId:
   const x = await context(clientId, sub);
   if (!x.writable) throw new Error(x.reason ?? "No se puede escribir en este HubSpot.");
   await hsWrite(`${HS}/crm/v3/objects/tasks/${id}`, "PATCH", x.token, { properties: { hs_task_status: "COMPLETED" } }, x.own);
+}
+
+// ── Llamar con Allo: cola de marcación del SDR ────────────────────────────
+// (27-nov-2026) Agrega los contactos elegidos a la cola de marcación (Power
+// Dialer) de quien hace clic en Allo, por su correo. El teléfono se lee de
+// HubSpot en el servidor y va solo a Allo: no se muestra en la app. Se
+// prefiere el celular. Allo registra la llamada (y la sincroniza con HubSpot).
+const DIAL_PHONE_PROPS = ["mobilephone", "phone", "telefono_lemlist", "hs_whatsapp_phone_number", "bullseye_telefono_clay", "bullseye_telefono_lusha", "phone_4"];
+export type DialResult = { added: number; skipped: { n: string; why: string }[]; queue: string | null };
+
+async function alloJson(path: string, init?: RequestInit) {
+  const r = await alloFetchRaw(path, init);
+  const t = await r.text();
+  if (!r.ok) throw new Error(`Allo respondió ${r.status}: ${t.slice(0, 200)}`);
+  return t ? JSON.parse(t) : {};
+}
+
+export async function addToAlloQueue(clientId: string, sub: string | null, hsCompanyId: string, contactIds: string[], email: string): Promise<DialResult> {
+  if (!contactIds.length) throw new Error("Elige al menos un contacto.");
+  const users = ((await alloJson("/v2/api/users"))?.data ?? []) as { id: string; email: string }[];
+  const me = users.find((u) => (u.email ?? "").toLowerCase() === email.toLowerCase());
+  if (!me) throw new Error(`Tu correo (${email}) no es usuario de Allo: pide que te agreguen al equipo.`);
+
+  const x = await context(clientId, sub);
+  // Solo contactos de esta empresa
+  const ofCo = new Set((await batchAssociations("companies", "contacts", [hsCompanyId], x.token)).get(hsCompanyId) ?? []);
+  const ids = contactIds.filter((id) => ofCo.has(id)).slice(0, 100);
+  const [coRow] = await batchRead("companies", [hsCompanyId], ["name", "domain", "pais_g", "country"], x.token);
+  const rows = ids.length ? await batchRead("contacts", ids, ["firstname", "lastname", "jobtitle", "country", "pais_g", ...DIAL_PHONE_PROPS], x.token) : [];
+  const skipped: DialResult["skipped"] = contactIds.filter((id) => !ofCo.has(id)).map((id) => ({ n: id, why: "no es contacto de esta empresa" }));
+  const numbers: Record<string, unknown>[] = [];
+  for (const r of rows) {
+    const p = r.properties;
+    const name = [p.firstname, p.lastname].filter(Boolean).join(" ") || `Contacto ${r.id}`;
+    const hint = countryFromText(p.pais_g || p.country || coRow?.properties.pais_g || coRow?.properties.country);
+    const cands = DIAL_PHONE_PROPS.map((k) => classifyPhone(p[k], hint)).filter((c): c is NonNullable<typeof c> => !!c && c.number.replace(/\D/g, "").length >= 10);
+    const best = cands.find((c) => c.kind === "mobile") ?? cands.find((c) => c.kind === "maybe") ?? cands[0];
+    if (!best) { skipped.push({ n: name, why: "sin teléfono en HubSpot" }); continue; }
+    numbers.push({
+      number: best.number,
+      ...(p.firstname ? { name: p.firstname } : {}), ...(p.lastname ? { last_name: p.lastname } : {}),
+      ...(p.jobtitle ? { job_title: p.jobtitle } : {}),
+      ...(coRow?.properties.name ? { company: coRow.properties.name } : {}), ...(coRow?.properties.domain ? { website: coRow.properties.domain } : {}),
+    });
+  }
+  if (!numbers.length) return { added: 0, skipped, queue: null };
+
+  // Cola actual del SDR (Allo la crea si no tiene). Se comprueba que la cola
+  // sea suya: si Allo ignorara el correo, los números quedarían en la cola del
+  // dueño de la API key.
+  const q = `email=${encodeURIComponent(me.email)}&user_id=${encodeURIComponent(me.id)}`;
+  const res = await alloJson(`/v2/api/dialing-queues/current/numbers?${q}`, { method: "POST", body: JSON.stringify({ numbers }) });
+  const data = res?.data ?? res;
+  const added = Array.isArray(data?.added) ? data.added.length : Number(data?.added ?? numbers.length);
+  for (const s of (Array.isArray(data?.skipped) ? data.skipped : []) as { number?: string; reason?: string }[]) {
+    skipped.push({ n: s.number ? `${s.number.slice(0, 4)}…${s.number.slice(-2)}` : "número", why: s.reason === "DUPLICATE_NUMBER" ? "ya estaba en tu cola" : s.reason === "INVALID_PHONE_NUMBER" ? "teléfono inválido" : s.reason ?? "omitido" });
+  }
+  const queues = ((await alloJson(`/v2/api/dialing-queues?${q}&size=5`))?.data ?? []) as { id: string; name?: string; assignee_id?: string }[];
+  const mine = queues.find((qq) => qq.assignee_id === me.id);
+  if (!mine) throw new Error("Allo no confirmó que los números quedaran en tu cola de marcación. Revisa tu cola en Allo y avisa a Ingri.");
+  return { added, skipped, queue: mine.name ?? null };
 }
