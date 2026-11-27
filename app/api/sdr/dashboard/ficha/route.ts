@@ -4,7 +4,7 @@ import { identifySdr } from "@/lib/academiaSdr/server/progress";
 import { canEditMeetings } from "@/lib/celulasSdr/editors";
 import { resolveSdrKey } from "@/lib/sdrAnalytics";
 import { loadSdrDashboard } from "@/lib/dashboardSdr/server";
-import { completeTask, createActivity, loadFicha } from "@/lib/dashboardSdr/ficha";
+import { addToAlloQueue, completeTask, createActivity, loadFicha } from "@/lib/dashboardSdr/ficha";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -13,6 +13,7 @@ export const maxDuration = 120;
 //   GET  ?client_id=&sub=&hs=   → historial, contactos y seguimientos pendientes (todos ven todo)
 //   POST { client_id, sub, hs, action: "create", kind, body, subject?, due?, taskType?, contact? }
 //   POST { client_id, sub, hs, action: "complete", task }
+//   POST { client_id, sub, hs, action: "dial", contacts: [hs ids] } → cola de Allo de quien hace clic
 // Escribe el SDR dueño de la empresa (correo de la sesión = Maestra) y las
 // líderes de célula e Ingri (MEETING_EDITOR_EMAILS), igual que «Cambiar status».
 
@@ -48,6 +49,11 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (b?.action === "dial") {
+      // A la cola de Allo de quien hace clic (su correo de la sesión)
+      const ids = (Array.isArray(b?.contacts) ? b.contacts : []).map(String).filter((x: string) => /^\d+$/.test(x));
+      return NextResponse.json({ ok: true, ...(await addToAlloQueue(clientId, sub, hs, ids, email)) });
+    }
     if (b?.action === "complete") {
       await completeTask(clientId, sub, String(b?.task ?? ""));
       return NextResponse.json({ ok: true });

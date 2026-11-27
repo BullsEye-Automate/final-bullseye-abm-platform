@@ -98,6 +98,22 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
       return true;
     } catch (e) { setMsg({ ok: false, t: (e as Error).message }); return false; } finally { setSaving(false); }
   };
+  const [dialing, setDialing] = useState(false);
+  const [dialMsg, setDialMsg] = useState<{ ok: boolean; t: string } | null>(null);
+  const dial = async (ids: string[]) => {
+    if (!acct || !ids.length) return;
+    setDialing(true); setDialMsg(null);
+    try {
+      const r = await fetch("/api/sdr/dashboard/ficha", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: acct.id, sub: acct.sub, hs: rec.hs, action: "dial", contacts: ids }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+      const sk = (j.skipped ?? []) as { n: string; why: string }[];
+      const t = j.added
+        ? `${j.added === 1 ? "Agregado" : `${j.added} agregados`} a tu cola de marcación de Allo${j.queue ? ` («${j.queue}»)` : ""}: ábrela en el Power Dialer de Allo.`
+        : "No se agregó ningún número.";
+      setDialMsg({ ok: !!j.added, t: sk.length ? `${t} Omitidos: ${sk.map((x) => `${x.n} (${x.why})`).join(", ")}.` : t });
+    } catch (e) { setDialMsg({ ok: false, t: (e as Error).message }); } finally { setDialing(false); }
+  };
   const save = async () => {
     const ok = await post({ action: "create", kind, body, subject: subject || undefined, contact: contact || undefined, due: kind === "task" ? due : undefined, taskType });
     if (ok) { setBody(""); setSubject(""); }
@@ -145,7 +161,7 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
           {data && (
             <>
               {focus ? (
-                focusCt && <ContactCard c={focusCt} hasIcp={data.icp.has} probBase={data.icp.probBase} status={renderStatus("contact", { c: rec.c, hs: focusCt.hs, st: focusCt.st ?? "Sin status" }, (st) => setData((d) => (d ? { ...d, contacts: d.contacts.map((k) => (k.hs === focusCt.hs ? { ...k, st } : k)) } : d)))} />
+                focusCt && <ContactCard c={focusCt} onDial={writable && focusCt.ph ? () => dial([focusCt.hs]) : undefined} dialing={dialing} dialMsg={dialMsg} hasIcp={data.icp.has} probBase={data.icp.probBase} status={renderStatus("contact", { c: rec.c, hs: focusCt.hs, st: focusCt.st ?? "Sin status" }, (st) => setData((d) => (d ? { ...d, contacts: d.contacts.map((k) => (k.hs === focusCt.hs ? { ...k, st } : k)) } : d)))} />
               ) : (
                 <>
                   {/* Datos de la empresa */}
@@ -170,6 +186,15 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
                       {(() => { const n = data.contacts.filter((c) => (c.fit ?? 0) >= 60).length, p = data.contacts.filter((c) => c.prev?.length).length; return <span className="text-xs font-normal text-ink-muted">{data.icp.has ? ` · ${n} calzan con el ICP` : ""}{p ? ` · ${p} ya tuvieron reunión` : ""}</span>; })()}
                     </summary>
                     <div className="mt-2">
+                      {writable && data.contacts.some((c) => c.ph) && (
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          <button type="button" disabled={dialing} onClick={() => dial(data.contacts.filter((c) => c.ph).map((c) => c.hs))}
+                            className="text-xs px-2.5 py-1.5 rounded-lg bg-brand text-white disabled:opacity-50 flex items-center gap-1">
+                            {dialing ? <IconLoader2 size={12} className="animate-spin" /> : <IconPhone size={12} />} Agregar a mi cola de Allo ({data.contacts.filter((c) => c.ph).length} con teléfono)
+                          </button>
+                          {dialMsg && <span className={`text-xs ${dialMsg.ok ? "text-success-fg" : "text-danger-fg"}`}>{dialMsg.t}</span>}
+                        </div>
+                      )}
                       {!data.contacts.length && <p className="text-sm text-ink-muted">Sin contactos de este cliente en la empresa.</p>}
                       <div className="divide-y">
                         {[...data.contacts].sort((a, b) => (b.fit ?? -1) - (a.fit ?? -1)).map((c) => (
@@ -184,6 +209,7 @@ export default function FichaDrawer({ rec, acct, canWrite, onClose, renderStatus
                               <div className="text-xs text-ink-muted">{c.cargo || "Sin cargo"} · {[c.ph && "teléfono", c.ml && "correo", c.lk && "LinkedIn"].filter(Boolean).join(", ") || "sin datos de contacto"}</div>
                             </div>
                             <div className="text-sm">{renderStatus("contact", { c: rec.c, hs: c.hs, st: c.st ?? "Sin status" }, (st) => setData((d) => (d ? { ...d, contacts: d.contacts.map((k) => (k.hs === c.hs ? { ...k, st } : k)) } : d)))}</div>
+                            {writable && c.ph && <button type="button" disabled={dialing} onClick={() => dial([c.hs])} title="Agregar a mi cola de marcación de Allo" className="text-xs px-2 py-1 rounded border bg-white hover:bg-black/5 flex items-center gap-1 disabled:opacity-50"><IconPhone size={12} /> Llamar</button>}
                             <button type="button" onClick={() => openContact({ hs: c.hs, n: c.n })} className="text-xs px-2 py-1 rounded border bg-white hover:bg-black/5">Ver ficha</button>
                           </div>
                         ))}
@@ -303,7 +329,7 @@ function HistoryItem({ i }: { i: FichaItem }) {
   );
 }
 
-function ContactCard({ c, hasIcp, probBase, status }: { c: FichaContact; hasIcp: boolean; probBase: string | null; status: React.ReactNode }) {
+function ContactCard({ c, hasIcp, probBase, status, onDial, dialing, dialMsg }: { c: FichaContact; hasIcp: boolean; probBase: string | null; status: React.ReactNode; onDial?: () => void; dialing: boolean; dialMsg: { ok: boolean; t: string } | null }) {
   const other = (c.prev ?? []).filter((m) => !m.same), here = (c.prev ?? []).filter((m) => m.same);
   return (
     <section className="card space-y-3">
@@ -312,8 +338,12 @@ function ContactCard({ c, hasIcp, probBase, status }: { c: FichaContact; hasIcp:
           <h3 className="text-sm font-semibold">{c.n}</h3>
           <div className="text-xs text-ink-muted">{c.cargo || "Sin cargo"} · {[c.ph && "teléfono", c.ml && "correo", c.lk && "LinkedIn"].filter(Boolean).join(", ") || "sin datos de contacto"}</div>
         </div>
-        <div className="text-sm">{status}</div>
+        <div className="flex items-center gap-2 text-sm">
+          {onDial && <button type="button" disabled={dialing} onClick={onDial} title="Agregar a mi cola de marcación de Allo" className="text-xs px-2.5 py-1.5 rounded-lg bg-brand text-white disabled:opacity-50 flex items-center gap-1">{dialing ? <IconLoader2 size={12} className="animate-spin" /> : <IconPhone size={12} />} Llamar con Allo</button>}
+          {status}
+        </div>
       </div>
+      {dialMsg && <p className={`text-xs ${dialMsg.ok ? "text-success-fg" : "text-danger-fg"}`}>{dialMsg.t}</p>}
       <div className="grid sm:grid-cols-2 gap-3">
         <div className="rounded-lg border bg-white p-3">
           <div className="text-xs text-ink-muted">Calce con el ICP del cliente</div>
