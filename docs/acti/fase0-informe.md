@@ -136,3 +136,25 @@ Servicios ACTI que **llaman** a lo existente sin modificarlo:
 ## 7. Plan por fases (sin cambios de alcance)
 
 Igual al del encargo. Cada fase en su rama y PR, con datos demo de 3 socios (uno por tipo de plan, incluido Freemium) y una nota de prueba. La Fase 1 incluiría las migraciones `acti_members` y `acti_config`, la sección ACTI en el cliente, el tema, el shell, la navegación y el Inicio con datos reales de `meetings`.
+
+---
+
+## 8. Decisiones (respuestas del 27-nov-2026)
+
+1. **ICP**: el socio ACTI lo edita directo y el cambio se ve al instante en Sistema → ICP. Solo para clientes ACTI; el resto sigue con propuesta y aprobación.
+2. **Maestra IA**: los socios entran como **Activo** (para tener toda su información). Pulso ABM se muestra **por plan**: en los planes básicos, vistas básicas; en los más altos, todo lo que ve un cliente directo de BullsEye. La lista de vistas por plan va en la configuración editable de planes.
+3. **Lemlist**: se usa la **cuenta de BullsEye** para ACTI (y para todos los clientes). Una cuenta propia solo si un cliente no ACTI paga un fee adicional.
+4. **HubSpot → portal**: desde enero la gestión vive en el portal (propiedades, status y llamadas con Allo); HubSpot queda como respaldo. ACTI se construye así: **el estado de cada cuenta vive en tablas del portal** y se refleja en HubSpot mientras dure la transición. Coordinar con el nuevo dashboard SDR de Ingri.
+5. **Buyer persona**: **varios por socio**.
+6. **Contacto**: desde "reunión agendada" el socio ve nombre, cargo, **correo y teléfono** de ese contacto, y Peitho completo después de la reunión. Antes de eso, solo empresas y tipos de cargo.
+7. **Búsquedas con IA**: el límite se define por las empresas necesarias para la meta de reuniones del plan, no por un número fijo de búsquedas. La IA recomienda **primero desde nuestra base** (pool de HubSpot) y **prioriza empresas con contactos con teléfono** (Base de contactos), porque su gestión es más barata.
+8. **UF**: mindicador.cl, último día del mes, editable a mano antes del cierre.
+9. **Permisos**:
+   - Editar planes y precios: amadriz@, ihincapie@, jkarmy@.
+   - Cargar eventos: administradores ACTI + jguajardo@, iarrieta@, ccontador@.
+   - Crear administradores ACTI (desde Accesos): amadriz@, ihincapie@, ccontador@, jguajardo@, jkarmy@.
+   - ACTI puede tener administradores ilimitados, que ven todo lo gestionado con las cuentas ACTI.
+10. **Pruebas**: aprobado `vitest` (desarrollo) + prueba rápida con Playwright.
+11. **Archivos compartidos**: aprobados los cambios mínimos (middleware, layout del portal, menú, /clientes, /clientes/nuevo, Configuración → Cliente).
+12. **Rondas de negocios**: solo entre socios, dentro de la plataforma.
+13. **Mi perfil comercial**: sobre los campos del ICP, más servicios, casos de éxito y "qué no ofrecer" como campos opcionales.
