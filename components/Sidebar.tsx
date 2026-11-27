@@ -103,10 +103,9 @@ const SECTIONS: Section[] = [
 ];
 
 function ClientSelector() {
-  const { clients, currentClient, setCurrentClient, loading, activeIds } = useClient();
-  // Solo clientes activos en la Maestra (pedido de BullsEye 27-nov-2026); los
-  // inactivos se ven con «Ver inactivos» (o al buscarlos por nombre)
-  const [showInactive, setShowInactive] = useState(false);
+  const { clients, currentClient, setCurrentClient, loading, activeIds, activeReady } = useClient();
+  // Solo clientes activos en la Maestra (pedido de BullsEye 27-nov-2026: la
+  // lista completa es muy larga). Si la Maestra no se puede leer, todos.
   const [open, setOpen]   = useState(false);
   const [query, setQuery] = useState("");
   const ref      = useRef<HTMLDivElement>(null);
@@ -131,11 +130,10 @@ function ClientSelector() {
     });
   }
 
-  const isActive = (c: { id: string }) => !activeIds || activeIds.has(c.id);
-  const inactiveCount = activeIds ? clients.filter((c) => !activeIds.has(c.id)).length : 0;
+  const visible = activeIds ? clients.filter((c) => activeIds.has(c.id)) : clients;
   const filtered = query.trim()
-    ? clients.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()))
-    : clients.filter((c) => showInactive || isActive(c));
+    ? visible.filter((c) => c.name.toLowerCase().includes(query.toLowerCase()))
+    : visible;
 
   return (
     <div ref={ref} className="relative px-3 mb-5">
@@ -196,7 +194,9 @@ function ClientSelector() {
                 {currentClient?.id === ALL_CLIENTS.id && <IconCheck size={13} className="shrink-0" />}
               </button>
             )}
-            {filtered.length === 0 ? (
+            {!activeReady ? (
+              <p className="px-3 py-2 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>Cargando clientes activos…</p>
+            ) : filtered.length === 0 ? (
               <p className="px-3 py-2 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
                 {clients.length === 0 ? "Sin clientes aún" : "Sin resultados"}
               </p>
@@ -210,9 +210,7 @@ function ClientSelector() {
                     className="w-full flex items-center justify-between px-3 py-2 text-[12px] text-left transition hover:bg-white/10"
                     style={{ color: active ? "#62E0D8" : "rgba(255,255,255,0.8)" }}
                   >
-                    <span className="truncate" style={isActive(c) ? undefined : { opacity: 0.5 }}>
-                      {c.name}{!isActive(c) && <span className="ml-1 text-[10px]">(inactivo)</span>}
-                    </span>
+                    <span className="truncate">{c.name}</span>
                     {active && <IconCheck size={13} className="shrink-0" />}
                   </button>
                 );
@@ -221,16 +219,6 @@ function ClientSelector() {
           </div>
 
           <div className="mt-1 pt-1" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-            {inactiveCount > 0 && !query.trim() && (
-              <button
-                onClick={() => setShowInactive((v) => !v)}
-                className="w-full text-left px-3 py-2 text-[11px] transition hover:bg-white/10"
-                style={{ color: "rgba(255,255,255,0.4)" }}
-                title="Solo se muestran los clientes con Status Cliente = Activo en la Maestra"
-              >
-                {showInactive ? "Ocultar inactivos" : `Ver inactivos en la Maestra (${inactiveCount})`}
-              </button>
-            )}
             <Link
               href="/clientes"
               onClick={() => { setOpen(false); setQuery(""); }}
