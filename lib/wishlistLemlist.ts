@@ -3,8 +3,8 @@ import {
   addCompaniesToList,
   ensureWishlistCompanyList,
   getClientOwnLemlistKey,
+  clientLemlistListNames,
   upsertLemlistCompany,
-  WISHLIST_LIST_NAME,
 } from "./lemlistDatabase";
 import type { LemlistCompanyFields } from "./wishlist";
 
@@ -52,9 +52,10 @@ export async function pushWishlistItemToLemlist(
     return { ok: false, error: company.error };
   }
 
-  const list = await ensureWishlistCompanyList(apiKey);
+  const listName = (await clientLemlistListNames(db, item.client_id)).companies;
+  const list = await ensureWishlistCompanyList(apiKey, listName);
   if (!list.ok) {
-    await save({ lemlist_status: "error", lemlist_error: `Lista "${WISHLIST_LIST_NAME}" (${list.status}): ${list.error}`.slice(0, 500) });
+    await save({ lemlist_status: "error", lemlist_error: `Lista "${listName}" (${list.status}): ${list.error}`.slice(0, 500) });
     return { ok: false, error: list.error };
   }
 
