@@ -1,0 +1,130 @@
+/* ACTI · Red de Negocios — tema propio.
+   Todo va bajo .acti-root: no cambia el tema del portal ni de la app interna.
+   Colores BullsEye: azul oscuro #251762, turquesa #62E0D8, turquesa oscuro #1FA39B.
+   Tipografía Montserrat; escala compacta: texto 14 px, títulos 24 px,
+   negrita solo en títulos y números clave. */
+
+.acti-root {
+  --a-bg: #F6F7FB; --a-surface: #FFFFFF; --a-ink: #251762; --a-muted: #5A5E8A; --a-line: #E6E7F1; --a-soft: #EEEFF8;
+  --a-teal: #62E0D8; --a-tink: #1FA39B; --a-navy: #251762; --a-side: #251762; --a-field: #FFFFFF;
+  --a-btn-bg: #251762; --a-btn-fg: #FFFFFF;
+  --a-warn: #B45309; --a-warnbg: #FEF3C7; --a-ok: #0F766E; --a-okbg: #D9F7F4; --a-bad: #B91C1C; --a-badbg: #FEE2E2;
+  --a-shadow: 0 2px 14px rgba(37, 23, 98, .06);
+  min-height: 100vh; width: 100%; align-self: flex-start;
+  background: var(--a-bg); color: var(--a-ink);
+  font-family: Montserrat, "Helvetica Neue", Arial, sans-serif; font-size: 14px; font-weight: 400; line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+@media (prefers-color-scheme: dark) {
+  .acti-root:not([data-theme="light"]) {
+    --a-bg: #120A33; --a-surface: #1E1352; --a-ink: #FFFFFF; --a-muted: #C9C6E6; --a-line: #33276F; --a-soft: #2A1E66;
+    --a-tink: #62E0D8; --a-side: #0E0828; --a-field: #170E44; --a-btn-bg: #62E0D8; --a-btn-fg: #251762;
+    --a-warn: #FCD34D; --a-warnbg: #3B2A06; --a-ok: #62E0D8; --a-okbg: #0E3B3A; --a-bad: #FCA5A5; --a-badbg: #3F1111;
+    --a-shadow: 0 2px 14px rgba(0, 0, 0, .25);
+  }
+}
+.acti-root *, .acti-root *::before, .acti-root *::after { box-sizing: border-box; }
+.acti-root :focus-visible { outline: 2px solid var(--a-tink); outline-offset: 2px; }
+
+/* Estructura */
+.acti-app { display: grid; grid-template-columns: 232px minmax(0, 1fr); min-height: 100vh; }
+.acti-side { background: var(--a-side); color: #fff; padding: 22px 14px; display: flex; flex-direction: column; gap: 18px;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+.acti-brand { display: flex; flex-direction: column; gap: 10px; padding: 0 8px; }
+.acti-brand .acti-name { font-weight: 700; font-size: 20px; letter-spacing: .02em; line-height: 1; }
+.acti-brand .acti-name span { display: block; font-size: 13px; font-weight: 500; color: #C9C6E6; letter-spacing: 0; margin-top: 4px; }
+.acti-brand .acti-pw { display: flex; align-items: center; gap: 8px; font-size: 11px; color: #C9C6E6; }
+.acti-brand .acti-pw img { height: 16px; width: auto; }
+.acti-logo-slot { height: 32px; border: 1px dashed rgba(255, 255, 255, .25); border-radius: 8px; display: grid; place-items: center;
+  font-size: 10px; color: rgba(255, 255, 255, .45); }
+.acti-client { font-size: 12.5px; color: #fff; background: rgba(255, 255, 255, .07); border-radius: 8px; padding: 8px 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acti-menu { display: flex; flex-direction: column; gap: 2px; }
+.acti-menu-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: rgba(255, 255, 255, .45);
+  padding: 12px 10px 4px; }
+.acti-nav { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: #DCD9F2;
+  font-size: 13px; font-weight: 500; text-decoration: none; }
+.acti-nav:hover { background: rgba(255, 255, 255, .07); color: #fff; }
+.acti-nav[data-active] { background: rgba(98, 224, 216, .14); color: #62E0D8; }
+.acti-nav .acti-soon { margin-left: auto; font-size: 10px; color: rgba(255, 255, 255, .45); }
+.acti-foot { margin-top: auto; font-size: 12px; color: #C9C6E6; padding: 0 8px; display: flex; flex-direction: column; gap: 8px; }
+.acti-foot a, .acti-foot button { background: transparent; border: 1px solid rgba(255, 255, 255, .2); color: #fff; border-radius: 8px;
+  padding: 7px 10px; font: inherit; font-size: 12px; text-align: left; cursor: pointer; text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.acti-main { min-width: 0; display: flex; flex-direction: column; }
+.acti-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 28px;
+  border-bottom: 1px solid var(--a-line); background: var(--a-surface); flex-wrap: wrap; }
+.acti-who { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.acti-av { width: 34px; height: 34px; border-radius: 50%; background: var(--a-soft); display: grid; place-items: center;
+  font-weight: 700; font-size: 13px; flex: none; }
+.acti-who b { display: block; font-size: 13.5px; font-weight: 600; }
+.acti-who small { color: var(--a-muted); font-size: 12px; }
+.acti-plan-tag { font-size: 11.5px; font-weight: 600; background: var(--a-btn-bg); color: var(--a-btn-fg); border-radius: 999px; padding: 4px 10px; }
+.acti-content { padding: 24px 28px 48px; max-width: 1440px; width: 100%; }
+.acti-footer { margin-top: auto; border-top: 1px solid var(--a-line); font-size: 11px; color: var(--a-muted);
+  padding: 14px 28px; display: flex; justify-content: space-between; gap: 12px; }
+
+/* Tipografía */
+.acti-root h1 { font-size: 24px; font-weight: 700; letter-spacing: -.01em; margin: 0 0 4px; line-height: 1.2; }
+.acti-root h2 { font-size: 16px; font-weight: 700; margin: 0 0 12px; }
+.acti-root h3 { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+.acti-lead { color: var(--a-muted); margin: 0 0 20px; max-width: 80ch; }
+.acti-muted { color: var(--a-muted); }
+.acti-small { font-size: 13px; }
+.acti-tiny { font-size: 12px; }
+
+/* Componentes */
+.acti-card { background: var(--a-surface); border: 1px solid var(--a-line); border-radius: 16px; box-shadow: var(--a-shadow); padding: 18px; }
+.acti-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.acti-grid4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.acti-stack { display: flex; flex-direction: column; gap: 12px; }
+.acti-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.acti-stat { border-top: 4px solid var(--a-teal); }
+.acti-stat .v { font-size: 24px; font-weight: 700; line-height: 1.1; }
+.acti-stat .l { font-size: 13px; font-weight: 500; margin-top: 4px; }
+.acti-stat .b { font-size: 12px; color: var(--a-muted); margin-top: 2px; }
+.acti-bar { width: 100%; height: 8px; border-radius: 99px; background: var(--a-soft); overflow: hidden; }
+.acti-bar i { display: block; height: 100%; background: var(--a-tink); border-radius: 99px; }
+.acti-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 8px; padding: 9px 14px;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--a-btn-bg); color: var(--a-btn-fg);
+  white-space: nowrap; text-decoration: none; }
+.acti-btn.ghost { background: transparent; color: var(--a-ink); border: 1px solid var(--a-line); }
+.acti-btn.sm { padding: 6px 11px; font-size: 12.5px; }
+.acti-btn[disabled] { opacity: .45; cursor: not-allowed; }
+.acti-tag { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 600;
+  background: var(--a-soft); color: var(--a-ink); white-space: nowrap; }
+.acti-tag.ok { background: var(--a-okbg); color: var(--a-ok); }
+.acti-tag.warn { background: var(--a-warnbg); color: var(--a-warn); }
+.acti-tag.bad { background: var(--a-badbg); color: var(--a-bad); }
+.acti-banner { display: flex; gap: 14px; align-items: center; justify-content: space-between; background: var(--a-okbg);
+  border-radius: 12px; padding: 12px 16px; font-size: 13.5px; flex-wrap: wrap; }
+.acti-banner.warn { background: var(--a-warnbg); }
+.acti-note { border-left: 3px solid var(--a-teal); padding: 6px 0 6px 14px; font-size: 13px; color: var(--a-muted); }
+.acti-empty { padding: 28px; text-align: center; color: var(--a-muted); font-size: 13px; }
+.acti-list { list-style: none; margin: 0; padding: 0; }
+.acti-list li { padding: 10px 0; border-top: 1px solid var(--a-line); }
+.acti-list li:first-child { border-top: 0; }
+.acti-tw { overflow-x: auto; border: 1px solid var(--a-line); border-radius: 12px; }
+.acti-root table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.acti-root th, .acti-root td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--a-line); vertical-align: middle; }
+.acti-root thead th { background: var(--a-soft); font-size: 12px; font-weight: 600; }
+.acti-root tbody tr:last-child td { border-bottom: 0; }
+.acti-root input[type=text], .acti-root input[type=password], .acti-root input[type=email], .acti-root textarea, .acti-root select {
+  width: 100%; font: inherit; font-size: 13.5px; color: var(--a-ink); background: var(--a-field); border: 1px solid var(--a-line);
+  border-radius: 8px; padding: 10px 12px; }
+.acti-root a { color: inherit; }
+
+@media (max-width: 1000px) {
+  .acti-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .acti-grid2 { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .acti-app { grid-template-columns: minmax(0, 1fr); }
+  .acti-side { position: static; height: auto; padding: 14px 16px; }
+  .acti-menu { flex-direction: row; overflow-x: auto; }
+  .acti-menu-label, .acti-nav .acti-soon { display: none; }
+  .acti-nav { white-space: nowrap; }
+  .acti-top, .acti-content, .acti-footer { padding-left: 16px; padding-right: 16px; }
+  .acti-grid4 { grid-template-columns: minmax(0, 1fr); }
+}

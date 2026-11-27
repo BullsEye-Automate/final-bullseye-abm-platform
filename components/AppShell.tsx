@@ -10,7 +10,7 @@ const SIDEBAR_KEY = "bullseye:sidebar-hidden";
 // Oculta el sidebar en rutas sin navegación interna: los links mágicos
 // públicos para clientes (protegidos por token, ver middleware.ts) y /chat
 // y /login, que son de layout full-bleed, y el portal de clientes (/portal),
-// que tiene su propio layout. Esto es solo cosmético — el
+// que tiene su propio layout, igual que la experiencia ACTI (/acti). Esto es solo cosmético — el
 // middleware es quien decide qué requiere sesión, no esta lista.
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -26,7 +26,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0"); } catch {}
   }
 
-  const isPublic = pathname?.startsWith("/forms/") || pathname?.startsWith("/review/") || pathname?.startsWith("/chat") || pathname?.startsWith("/encuesta/") || pathname?.startsWith("/feedback-cliente/") || pathname?.startsWith("/revision/") || pathname?.startsWith("/oportunidades/resumen-feedback/compartido/") || pathname?.startsWith("/login") || pathname === "/portal" || pathname?.startsWith("/portal/");
+  const isPublic = pathname?.startsWith("/forms/") || pathname?.startsWith("/review/") || pathname?.startsWith("/chat") || pathname?.startsWith("/encuesta/") || pathname?.startsWith("/feedback-cliente/") || pathname?.startsWith("/revision/") || pathname?.startsWith("/oportunidades/resumen-feedback/compartido/") || pathname?.startsWith("/login") || pathname === "/portal" || pathname?.startsWith("/portal/") || pathname === "/acti" || pathname?.startsWith("/acti/");
 
   if (isPublic) {
     return <>{children}</>;
