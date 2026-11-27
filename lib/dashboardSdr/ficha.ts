@@ -332,7 +332,7 @@ async function hsWrite(url: string, method: string, token: string | undefined, b
 
 const normName = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
 // Usuario de HubSpot: por correo y, si no calza, por nombre (cruce con el valor de la propiedad SDR)
-async function ownerIdFor(o: { emails: (string | null)[]; names: (string | null)[] }, token?: string): Promise<string | null> {
+export async function ownerIdFor(o: { emails: (string | null)[]; names: (string | null)[] }, token?: string): Promise<string | null> {
   const owners = await fetchHSOwners(token).catch(() => []);
   for (const e of o.emails) {
     if (!e) continue;
